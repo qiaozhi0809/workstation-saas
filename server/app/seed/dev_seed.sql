@@ -54,3 +54,42 @@ SELECT id, '44444444-4444-4444-4444-444444444444', '22222222-2222-2222-2222-2222
        ((row_number() OVER (ORDER BY mk) - 1) % 4) + 1
 FROM students
 WHERE school_id = '11111111-1111-1111-1111-111111111111';
+
+-- M2a:生日(含闰日)、职务、副班主任 teacher02、数学任课 teacher03(密码均为 dev123)
+UPDATE students SET birthdate = v.b::date
+FROM (VALUES
+  ('S0001','2017-11-03'),('S0002','2017-11-20'),('S0003','2016-02-29'),('S0004','2017-05-12'),
+  ('S0005','2017-08-08'),('S0006','2017-11-01'),('S0007','2017-01-15'),('S0008','2017-09-30'),
+  ('S0009','2017-12-24'),('S0010','2017-06-01')
+) AS v(mk, b)
+WHERE students.mk = v.mk;
+
+UPDATE enrollments e SET class_role = v.role
+FROM students s, (VALUES ('S0001','班长'),('S0002','学习委员'),('S0005','体育委员')) AS v(mk, role)
+WHERE e.student_id = s.id AND s.mk = v.mk;
+
+INSERT INTO users (id, school_id, login_name, password_hash, display_name) VALUES
+  ('77777777-7777-7777-7777-777777777777', '11111111-1111-1111-1111-111111111111',
+   'teacher02', crypt('dev123', gen_salt('bf', 10)), '王老师'),
+  ('88888888-8888-8888-8888-888888888888', '11111111-1111-1111-1111-111111111111',
+   'teacher03', crypt('dev123', gen_salt('bf', 10)), '赵老师');
+
+INSERT INTO teachers (id, user_id, employee_no, title, subjects) VALUES
+  ('66666666-6666-6666-6666-666666666667', '77777777-7777-7777-7777-777777777777',
+   'T002', '英语', ARRAY['英语']),
+  ('66666666-6666-6666-6666-666666666668', '88888888-8888-8888-8888-888888888888',
+   'T003', '数学', ARRAY['数学']);
+
+INSERT INTO teacher_assignments (teacher_id, class_id, academic_year_id, identity, subject) VALUES
+  ('66666666-6666-6666-6666-666666666667', '44444444-4444-4444-4444-444444444444',
+   '22222222-2222-2222-2222-222222222222', 'assistant', NULL),
+  ('66666666-6666-6666-6666-666666666668', '44444444-4444-4444-4444-444444444444',
+   '22222222-2222-2222-2222-222222222222', 'subject', '数学');
+
+INSERT INTO role_bindings (user_id, role_type, scope, academic_year_id) VALUES
+  ('77777777-7777-7777-7777-777777777777', 'assistant_teacher',
+   '{"class_id":"44444444-4444-4444-4444-444444444444"}'::jsonb,
+   '22222222-2222-2222-2222-222222222222'),
+  ('88888888-8888-8888-8888-888888888888', 'subject_teacher',
+   '{"class_id":"44444444-4444-4444-4444-444444444444","subject":"数学"}'::jsonb,
+   '22222222-2222-2222-2222-222222222222');
