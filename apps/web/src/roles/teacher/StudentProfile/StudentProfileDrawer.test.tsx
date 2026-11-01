@@ -8,7 +8,7 @@ import StudentProfileDrawer from './StudentProfileDrawer'
 
 vi.mock('@/shared/api/students', () => ({ studentsApi: { detail: vi.fn() } }))
 
-const student = { id: 's1', mk: 'S0001', name: '王小一', class_id: 'c', gender: '男', family_structure: '双亲家庭' }
+const student = { id: 's1', enrollment_id: 'e1', mk: 'S0001', name: '王小一', class_id: 'c', gender: '男', family_structure: '双亲家庭' }
 
 const renderDrawer = () => render(
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>

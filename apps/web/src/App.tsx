@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClient } from '@/shared/api/queryClient'
@@ -5,6 +6,8 @@ import LoginPage from '@/auth/LoginPage'
 import TeacherLayout from '@/roles/teacher/TeacherLayout'
 import ClassroomPage from '@/roles/teacher/Classroom/ClassroomPage'
 import ProtectedRoute from '@/shared/components/ProtectedRoute'
+
+const ClassroomPlayground = import.meta.env.DEV ? lazy(() => import('@/dev/ClassroomPlayground')) : null
 
 export default function App() {
   return (
@@ -17,6 +20,9 @@ export default function App() {
             <Route path="classroom" element={<ClassroomPage />} />
             <Route path="students/:id" element={<ClassroomPage />} />
           </Route>
+          {ClassroomPlayground && (
+            <Route path="/dev/classroom" element={<Suspense fallback={null}><ClassroomPlayground /></Suspense>} />
+          )}
           <Route path="/admin" element={<div className="p-6">管理端(M3)</div>} />
           <Route path="/parent" element={<div className="p-6">家长端(M4)</div>} />
           <Route path="/" element={<Navigate to="/login" replace />} />
