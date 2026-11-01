@@ -17,7 +17,7 @@ export default function ClassroomPage() {
   })
 
   if (classes.isLoading) return <div className="p-6">加载中…</div>
-  if (classes.isError) return <div className="p-6">名单加载失败</div>
+  if (classes.isError) return <div className="p-6">班级加载失败</div>
   const items = classes.data?.items ?? []
   if (items.length === 0) return <div className="p-6">没有可查看的班级</div>
   if (!classId) return <div className="p-6">加载中…</div>

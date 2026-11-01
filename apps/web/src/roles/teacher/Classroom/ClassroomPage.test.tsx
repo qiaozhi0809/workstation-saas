@@ -85,6 +85,13 @@ it('navigates to the student page when a seat is clicked', async () => {
   expect(await screen.findByTestId('loc')).toHaveTextContent('/teacher/students/s1')
 })
 
+it('shows a class-list error when my-classes fails', async () => {
+  vi.mocked(classesApi.mine).mockRejectedValue(new Error('500'))
+  setup()
+  expect(await screen.findByText('班级加载失败')).toBeInTheDocument()
+  expect(studentsApi.listInClass).not.toHaveBeenCalled()
+})
+
 it('shows an error when the roster request fails', async () => {
   vi.mocked(classesApi.mine).mockResolvedValue({ items: [cls] })
   vi.mocked(studentsApi.listInClass).mockRejectedValue(new Error('403'))

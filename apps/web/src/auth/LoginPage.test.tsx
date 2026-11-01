@@ -48,6 +48,13 @@ it('shows invalid credentials message', async () => {
   expect(await screen.findByRole('alert')).toHaveTextContent('登录名或密码不正确')
 })
 
+it('shows invalid credentials message for a 400 BAD_REQUEST', async () => {
+  vi.mocked(authApi.login).mockRejectedValue(new ApiError(400, 'BAD_REQUEST', 'bad input'))
+  render(<MemoryRouter><LoginPage /></MemoryRouter>)
+  fill('   ', 'x')
+  expect(await screen.findByRole('alert')).toHaveTextContent('登录名或密码不正确')
+})
+
 it('shows generic message for other errors', async () => {
   vi.mocked(authApi.login).mockRejectedValue(new Error('network'))
   render(<MemoryRouter><LoginPage /></MemoryRouter>)

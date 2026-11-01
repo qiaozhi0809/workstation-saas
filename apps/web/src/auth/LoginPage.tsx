@@ -6,6 +6,7 @@ import { useAuthStore } from '@/shared/stores/auth'
 
 const MESSAGES: Record<string, string> = {
   INVALID_CREDENTIALS: '登录名或密码不正确',
+  BAD_REQUEST: '登录名或密码不正确',
   ACCOUNT_LOCKED: '失败次数过多,请 15 分钟后再试',
 }
 const FALLBACK = '登录失败,请稍后再试'
