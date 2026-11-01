@@ -41,3 +41,16 @@ def test_unknown_route_is_404_with_shape():
     res = make_client().get("/nope")
     assert res.status_code == 404
     assert res.json()["error"]["code"] == "NOT_FOUND"
+
+
+def test_unhandled_exception_is_500_with_envelope():
+    app = create_app()
+
+    @app.get("/crash")
+    def crash():
+        raise RuntimeError("secret detail")
+
+    res = TestClient(app, raise_server_exceptions=False).get("/crash")
+    assert res.status_code == 500
+    assert res.json() == {"error": {"code": "INTERNAL", "message": "服务器内部错误"}}
+    assert "secret detail" not in res.text

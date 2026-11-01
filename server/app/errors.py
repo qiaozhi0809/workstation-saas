@@ -1,5 +1,6 @@
 from typing import Any
 
+import structlog
 from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
@@ -52,3 +53,13 @@ def install_error_handlers(app: FastAPI) -> None:
         code = _HTTP_CODES.get(exc.status_code, f"HTTP_{exc.status_code}")
         message = exc.detail if isinstance(exc.detail, str) else code
         return error_response(exc.status_code, code, message, headers=exc.headers)
+
+    @app.exception_handler(Exception)
+    async def _unhandled_error(request: Request, exc: Exception) -> JSONResponse:
+        structlog.get_logger().error(
+            "unhandled_exception",
+            method=request.method,
+            path=request.url.path,
+            exc_info=exc,
+        )
+        return error_response(500, "INTERNAL", "服务器内部错误")
