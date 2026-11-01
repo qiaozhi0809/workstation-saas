@@ -63,6 +63,8 @@ export function useReviewMode(o: Options) {
   const timers = useRef(new Set<ReturnType<typeof setTimeout>>())
   // 同步守卫:第二次点击发生在 React 重渲染(按钮禁用)之前也不会再发请求
   const inflight = useRef(false)
+  // 结果不明的失败(网络 / 5xx)后,同样的请求重试沿用同一个 op_id,服务端幂等,已入库的不会重复记分
+  const pending = useRef<{ key: string; opId: string } | null>(null)
 
   useEffect(() => {
     const set = timers.current
@@ -100,9 +102,12 @@ export function useReviewMode(o: Options) {
   const submit = (body: Omit<ReviewCreate, 'op_id'>, summaryText: string) => {
     if (inflight.current) return
     inflight.current = true
-    const op_id = newOpId()
+    const key = JSON.stringify(body)
+    const op_id = pending.current?.key === key ? pending.current.opId : newOpId()
+    pending.current = null
     post.mutate({ op_id, ...body }, {
       onSuccess: (res) => {
+        pending.current = null
         void qc.invalidateQueries({ queryKey: ['review-summary', classId] })
         void qc.invalidateQueries({ queryKey: ['reviews', classId] })
         pushFloats(res.items)
@@ -110,6 +115,7 @@ export function useReviewMode(o: Options) {
         toast(summaryText, { action: { label: '撤销', onClick: () => void revoke(res.items[0]?.op_id ?? op_id) }, ms: UNDO_MS })
       },
       onError: (err) => {
+        if (!(err instanceof ApiError) || err.status >= 500) pending.current = { key, opId: op_id }
         if (err instanceof ApiError && err.code === 'NO_TARGETS') toast('今天全班都请假了')
         else toast(err.message)
       },

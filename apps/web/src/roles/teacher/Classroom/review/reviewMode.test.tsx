@@ -37,8 +37,8 @@ it('posts once when a reason is double-clicked', async () => {
   setup({ mode: '点评' })
   fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
   const btn = await screen.findByRole('button', { name: '积极发言 +1' })
-  fireEvent.click(btn)
-  fireEvent.click(btn)
+  // 同一批里连点两次:此时按钮还没来得及被禁用,只有同步守卫能拦住第二次
+  act(() => { btn.click(); btn.click() })
   await waitFor(() => expect(reviewsApi.create).toHaveBeenCalledTimes(1))
   expect(btn).toBeDisabled()
   expect(screen.getByRole('button', { name: '作业优秀 +1' })).toBeDisabled()
@@ -47,15 +47,82 @@ it('posts once when a reason is double-clicked', async () => {
   expect(reviewsApi.create).toHaveBeenCalledTimes(1)
 })
 
-it('gives the whole class +1 and explains an empty class', async () => {
+it('posts the whole-class bonus once when double-clicked', async () => {
+  let resolve!: (v: { items: Review[] }) => void
+  vi.mocked(reviewsApi.create).mockReturnValue(new Promise((r) => { resolve = r }))
   setup({ mode: '点评' })
-  fireEvent.click(await screen.findByRole('button', { name: '全班 +1' }))
-  await waitFor(() => expect(reviewsApi.create).toHaveBeenCalledWith('c1', expect.objectContaining({
-    category: 'whole_class', reason_text: '全班表现好', score_delta: 1 })))
-  expect(vi.mocked(reviewsApi.create).mock.calls[0][1]).not.toHaveProperty('enrollment_ids')
-  vi.mocked(reviewsApi.create).mockRejectedValue(new ApiError(400, 'NO_TARGETS', 'x'))
-  fireEvent.click(screen.getByRole('button', { name: '全班 +1' }))
-  expect(await screen.findByText('今天全班都请假了')).toBeInTheDocument()
+  const btn = await screen.findByRole('button', { name: '全班 +1' })
+  act(() => { btn.click(); btn.click() })
+  await waitFor(() => expect(reviewsApi.create).toHaveBeenCalledTimes(1))
+  expect(btn).toBeDisabled()
+  await act(async () => { resolve({ items: [review()] }) })
+  await waitFor(() => expect(btn).toBeEnabled())
+  expect(reviewsApi.create).toHaveBeenCalledTimes(1)
+})
+
+it('reuses the op id when retrying after an ambiguous failure', async () => {
+  vi.mocked(reviewsApi.create).mockRejectedValueOnce(new TypeError('Failed to fetch'))
+  setup({ mode: '点评' })
+  fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
+  fireEvent.click(await screen.findByRole('button', { name: '积极发言 +1' }))
+  await screen.findByText('Failed to fetch')
+  await waitFor(() => expect(screen.getByRole('button', { name: '积极发言 +1' })).toBeEnabled())
+  fireEvent.click(screen.getByRole('button', { name: '积极发言 +1' }))
+  await waitFor(() => expect(reviewsApi.create).toHaveBeenCalledTimes(2))
+  const ids = vi.mocked(reviewsApi.create).mock.calls.map((c) => c[1].op_id)
+  expect(ids[1]).toBe(ids[0])
+  // 成功后清除:再点同一条理由是新的一次点评
+  fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
+  fireEvent.click(await screen.findByRole('button', { name: '积极发言 +1' }))
+  await waitFor(() => expect(reviewsApi.create).toHaveBeenCalledTimes(3))
+  expect(vi.mocked(reviewsApi.create).mock.calls[2][1].op_id).not.toBe(ids[0])
+})
+
+it('uses a fresh op id for a different payload or after a 4xx', async () => {
+  vi.mocked(reviewsApi.create)
+    .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    .mockRejectedValueOnce(new ApiError(400, 'BAD', 'bad request'))
+  setup({ mode: '点评' })
+  fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
+  fireEvent.click(await screen.findByRole('button', { name: '积极发言 +1' }))
+  await screen.findByText('Failed to fetch')
+  await waitFor(() => expect(screen.getByRole('button', { name: '作业优秀 +1' })).toBeEnabled())
+  fireEvent.click(screen.getByRole('button', { name: '作业优秀 +1' }))
+  await screen.findByText('bad request')
+  await waitFor(() => expect(screen.getByRole('button', { name: '作业优秀 +1' })).toBeEnabled())
+  fireEvent.click(screen.getByRole('button', { name: '作业优秀 +1' }))
+  await waitFor(() => expect(reviewsApi.create).toHaveBeenCalledTimes(3))
+  const ids = vi.mocked(reviewsApi.create).mock.calls.map((c) => c[1].op_id)
+  expect(new Set(ids).size).toBe(3)
+})
+
+it('closes the popover on stage pointerdown but not inside it', async () => {
+  setup({ mode: '点评' })
+  fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
+  const dialog = await screen.findByRole('dialog', { name: '点评 王小一' })
+  fireEvent.pointerDown(within(dialog).getByLabelText('理由'))
+  expect(screen.getByRole('dialog', { name: '点评 王小一' })).toBeInTheDocument()
+  fireEvent.pointerDown(screen.getByRole('button', { name: '李小二' }))
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: '点评 王小一' })).not.toBeInTheDocument())
+})
+
+it('removes the float after 1400ms', async () => {
+  setup({ mode: '点评' })
+  fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
+  // 记录 1400ms 的定时器,手动触发,避免假时钟卡住 waitFor
+  const real = globalThis.setTimeout
+  const floatTimers: (() => void)[] = []
+  const spy = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((fn: () => void, ms?: number, ...rest: unknown[]) => {
+    if (ms === 1400) { floatTimers.push(fn); return 0 as unknown as ReturnType<typeof setTimeout> }
+    return real(fn, ms, ...rest)
+  }) as typeof setTimeout)
+  try {
+    fireEvent.click(await screen.findByRole('button', { name: '积极发言 +1' }))
+    await waitFor(() => expect(floatTimers).toHaveLength(1))
+    expect(await screen.findByText('+1')).toBeInTheDocument()
+    act(() => { floatTimers[0]() })
+    expect(screen.queryByText('+1')).not.toBeInTheDocument()
+  } finally { spy.mockRestore() }
 })
 
 it('revokes from the undo toast', async () => {
