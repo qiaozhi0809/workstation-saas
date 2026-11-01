@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from app.auth.tokens import issue_access_token
-from tests.seed_ids import TEACHER_USER_ID
+from tests.seed_ids import SCHOOL_ID, TEACHER_USER_ID
 
 
 def login(client, name="teacher01", pw="dev123"):
@@ -93,3 +93,12 @@ def test_validation_error_does_not_echo_input(client):
     assert errors
     for item in errors:
         assert set(item) == {"type", "loc", "msg"}
+
+
+def test_lockout_lasts_full_window_after_final_failure(client, settings, redis_client):
+    key = f"ws:login_fail:{SCHOOL_ID}:teacher01"
+    login(client, pw="wrong")
+    redis_client.expire(key, 10)
+    for _ in range(4):
+        login(client, pw="wrong")
+    assert redis_client.ttl(key) > settings.login_lock_seconds - 5

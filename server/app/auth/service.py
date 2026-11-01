@@ -51,7 +51,9 @@ def login(
 
     user = get_user_by_login(db, settings.school_id, login_name)
     if user is None or user.status != "active" or not verify_password(password, user.password_hash):
-        if redis.incr(fail_key) == 1:
+        failures = redis.incr(fail_key)
+        if failures == 1 or failures == settings.login_max_failures:
+            # 首次失败开计数窗口;达到上限时重新计时,保证锁定满整个窗口
             redis.expire(fail_key, settings.login_lock_seconds)
         raise ApiError(401, "INVALID_CREDENTIALS", "登录名或密码不正确")
 
