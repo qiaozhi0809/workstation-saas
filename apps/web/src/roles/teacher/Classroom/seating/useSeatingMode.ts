@@ -115,6 +115,13 @@ export function useSeatingMode(o: Options) {
   const setSeatingDirty = useTeacherStore((s) => s.setSeatingDirty)
   useEffect(() => { setSeatingDirty(dirty) }, [dirty, setSeatingDirty])
   useEffect(() => () => setSeatingDirty(false), [setSeatingDirty])
+  // 有未保存的修改时,关闭 / 刷新页面前让浏览器提示
+  useEffect(() => {
+    if (!dirty) return
+    const guard = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', guard)
+    return () => window.removeEventListener('beforeunload', guard)
+  }, [dirty])
 
   const update = useCallback((f: (d: SeatDraft) => SeatDraft) => setDrafts((cur) => {
     if (!cur) return cur

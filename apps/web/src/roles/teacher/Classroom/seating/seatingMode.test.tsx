@@ -303,3 +303,25 @@ it('keeps an unsaved draft when a background refetch of classes or roster fails'
   expect(screen.queryByText('班级加载失败')).toBeNull()
   expect(screen.queryByText('名单加载失败')).toBeNull()
 })
+
+it('guards page unload only while the draft has unsaved changes', async () => {
+  const unload = () => {
+    const ev = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(ev)
+    return ev.defaultPrevented
+  }
+  const add = vi.spyOn(window, 'addEventListener')
+  const { unmount } = setup({ mode: '排座' })
+  fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
+  expect(unload()).toBe(false)
+  fireEvent.click(screen.getByRole('button', { name: '李小二' }))
+  expect(add).toHaveBeenCalledWith('beforeunload', expect.any(Function))
+  expect(unload()).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: '放弃修改' }))
+  expect(unload()).toBe(false)
+  fireEvent.click(screen.getByRole('button', { name: '王小一' }))
+  fireEvent.click(screen.getByRole('button', { name: '李小二' }))
+  expect(unload()).toBe(true)
+  unmount()
+  expect(unload()).toBe(false)
+})
