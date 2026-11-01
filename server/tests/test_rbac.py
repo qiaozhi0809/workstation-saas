@@ -74,3 +74,71 @@ def test_load_excludes_ended_and_other_year(db):
     assert [x.academic_year_id for x in load_bindings(db, u.id, UUID(YEAR_ID))] == [None]
     other_year = uuid4()
     assert len(load_bindings(db, u.id, other_year)) == 1
+
+
+def test_role_perms_full_matrix():
+    from app.rbac.roles import ROLE_PERMS
+
+    everything = {
+        Perm.CLASS_READ,
+        Perm.STUDENT_LIST,
+        Perm.STUDENT_BASIC,
+        Perm.STUDENT_FAMILY,
+        Perm.STUDENT_LEARNING,
+        Perm.STUDENT_PROFILE,
+        Perm.TEACHER_NOTES,
+    }
+    expected = {
+        Role.principal: {
+            Perm.CLASS_READ,
+            Perm.STUDENT_LIST,
+            Perm.STUDENT_BASIC,
+            Perm.STUDENT_FAMILY,
+            Perm.STUDENT_LEARNING,
+            Perm.STUDENT_PROFILE,
+        },
+        Role.dean: {
+            Perm.CLASS_READ,
+            Perm.STUDENT_LIST,
+            Perm.STUDENT_BASIC,
+            Perm.STUDENT_FAMILY,
+            Perm.STUDENT_LEARNING,
+            Perm.STUDENT_PROFILE,
+        },
+        Role.grade_head: {
+            Perm.CLASS_READ,
+            Perm.STUDENT_LIST,
+            Perm.STUDENT_BASIC,
+            Perm.STUDENT_FAMILY,
+            Perm.STUDENT_LEARNING,
+            Perm.STUDENT_PROFILE,
+        },
+        Role.it_admin: set(),
+        Role.homeroom_teacher: everything,
+        Role.subject_teacher: {
+            Perm.CLASS_READ,
+            Perm.STUDENT_LIST,
+            Perm.STUDENT_BASIC,
+            Perm.STUDENT_LEARNING,
+            Perm.STUDENT_PROFILE,
+        },
+        Role.assistant_teacher: {Perm.CLASS_READ, Perm.STUDENT_LIST, Perm.STUDENT_BASIC},
+        Role.primary_parent: {
+            Perm.STUDENT_BASIC,
+            Perm.STUDENT_FAMILY,
+            Perm.STUDENT_LEARNING,
+            Perm.STUDENT_PROFILE,
+        },
+        Role.secondary_parent: {
+            Perm.STUDENT_BASIC,
+            Perm.STUDENT_FAMILY,
+            Perm.STUDENT_LEARNING,
+            Perm.STUDENT_PROFILE,
+        },
+    }
+    assert set(Perm) == everything, "new Perm added: update the matrix in this test"
+    assert set(ROLE_PERMS) == set(Role), "every Role needs a ROLE_PERMS entry"
+    assert set(expected) == set(Role)
+    for role in Role:
+        for perm in Perm:
+            assert (perm in ROLE_PERMS[role]) == (perm in expected[role]), (role, perm)
