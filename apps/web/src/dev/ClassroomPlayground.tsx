@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import ClassroomMap from '@/shared/components/ClassroomMap'
-import type { ClassroomMode, IdleAction } from '@/shared/components/ClassroomMap/types'
+import type { ClassroomMode, IdleAction, TeacherAction } from '@/shared/components/ClassroomMap/types'
 import FigureGallery from './FigureGallery'
+import ScenePreview from './ScenePreview'
 import { makeSeats } from './fixtures'
 
 const MODES: ClassroomMode[] = ['daily', 'attendance', 'review', 'seating', 'overview', 'mini']
@@ -15,6 +16,7 @@ export default function ClassroomPlayground() {
   const [presenting, setPresenting] = useState(false)
   const [idle, setIdle] = useState<IdleAction | ''>('')
   const [figure, setFigure] = useState<'female' | 'male'>('female')
+  const [action, setAction] = useState<TeacherAction>('idle')
 
   const seats = useMemo(() => makeSeats(rows, cols, filled), [rows, cols, filled])
   const effects = useMemo(
@@ -55,11 +57,17 @@ export default function ClassroomPlayground() {
             <option value="male">男</option>
           </select>
         </label>
+        <label className="flex items-center gap-1 text-sm">老师动作
+          <select value={action} onChange={(e) => setAction(e.target.value as TeacherAction)} className="rounded border px-1">
+            {(['idle', 'sip', 'point'] as const).map((a) => <option key={a} value={a}>{a}</option>)}
+          </select>
+        </label>
       </div>
       <ClassroomMap
         rows={rows} cols={cols} seats={seats} mode={mode} presenting={presenting}
         teacher={{ figure, label: '班主任' }} effects={effects}
       />
+      <ScenePreview rows={rows} cols={cols} figure={figure} action={action} />
       <FigureGallery />
     </div>
   )
