@@ -194,6 +194,8 @@ function ClassroomView({ cls }: { cls: ClassView }) {
   const setMode = (next: ClassroomUiMode) => {
     if (mode === 'seating' && !confirmLeaveSeating()) return
     if (next === 'seating') pick.close()
+    // 离开考勤模式时考勤日期回到学校今天,日常 / 点评叠加的是今天的考勤
+    if (mode === 'attendance' && next !== 'attendance') attDate.followToday()
     setParams(next === 'daily' ? {} : { mode: next }, { replace: true })
   }
   const pickReward = usePickReward(classId, subject.value, pick.close)

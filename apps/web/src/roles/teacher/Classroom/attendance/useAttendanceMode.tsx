@@ -123,7 +123,13 @@ export function useAttendanceMode(o: Options) {
         onPickDate={o.onPickDate}
         onFollowToday={o.onFollowToday}
         onConfirm={() => confirm.mutate(false)}
-        onAllPresent={() => confirm.mutate(true)}
+        onAllPresent={() => {
+          // 一键全部出勤会清掉当天已记的异常:有记录时先确认
+          if (items.length > 0 && !window.confirm(
+            `将清除${date === o.today ? '今天' : '这一天'}已记的 ${items.length} 条请假/缺勤/迟到,确定全部出勤吗?`,
+          )) return
+          confirm.mutate(true)
+        }}
         onExport={() => void exportMonth()}
       />
     )

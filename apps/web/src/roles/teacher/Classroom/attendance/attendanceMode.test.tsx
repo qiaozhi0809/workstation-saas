@@ -117,3 +117,49 @@ it('exports the month as CSV', async () => {
   fireEvent.click(await screen.findByRole('button', { name: '导出本月' }))
   await waitFor(() => expect(spy).toHaveBeenCalledWith('三年二班-考勤-2026-11.csv', expect.stringContaining('请假')))
 })
+
+const twoExceptions = () => vi.mocked(attendanceApi.day).mockImplementation(async (_c, date) => ({ date, confirmed_at: null, items: [
+  { enrollment_id: 'e1', status: 'leave' as const, reason: null, marked_at: '2026-11-02T01:00:00Z' },
+  { enrollment_id: 'e2', status: 'late' as const, reason: null, marked_at: '2026-11-02T01:00:00Z' },
+] }))
+
+it('asks before 全部出勤 clears the day\'s exceptions and sends nothing on cancel', async () => {
+  twoExceptions()
+  const ask = vi.spyOn(window, 'confirm').mockReturnValue(false)
+  setup({ mode: '考勤' })
+  await screen.findByText('请假 1')
+  fireEvent.click(screen.getByRole('button', { name: '全部出勤' }))
+  expect(ask).toHaveBeenCalledWith('将清除今天已记的 2 条请假/缺勤/迟到,确定全部出勤吗?')
+  expect(attendanceApi.confirm).not.toHaveBeenCalled()
+  ask.mockReturnValue(true)
+  fireEvent.click(screen.getByRole('button', { name: '全部出勤' }))
+  await waitFor(() => expect(attendanceApi.confirm).toHaveBeenCalledWith('c1', '2026-11-02', true))
+  ask.mockRestore()
+})
+
+it('says 这一天 when clearing a past day and does not ask for an empty day', async () => {
+  const ask = vi.spyOn(window, 'confirm').mockReturnValue(true)
+  setup({ mode: '考勤' })
+  fireEvent.click(await screen.findByRole('button', { name: '全部出勤' }))
+  await waitFor(() => expect(attendanceApi.confirm).toHaveBeenCalledTimes(1))
+  expect(ask).not.toHaveBeenCalled()
+  twoExceptions()
+  fireEvent.change(screen.getByLabelText('考勤日期'), { target: { value: '2026-10-30' } })
+  await screen.findByText('请假 1')
+  fireEvent.click(screen.getByRole('button', { name: '全部出勤' }))
+  expect(ask).toHaveBeenCalledWith('将清除这一天已记的 2 条请假/缺勤/迟到,确定全部出勤吗?')
+  await waitFor(() => expect(attendanceApi.confirm).toHaveBeenLastCalledWith('c1', '2026-10-30', true))
+  ask.mockRestore()
+})
+
+it('goes back to the school today when leaving attendance mode', async () => {
+  vi.mocked(attendanceApi.day).mockImplementation(async (_c, date) => ({ date, confirmed_at: null,
+    items: date === '2026-10-30' ? [{ enrollment_id: 'e1', status: 'absent' as const, reason: null, marked_at: '' }] : [] }))
+  setup({ mode: '考勤' })
+  fireEvent.change(await screen.findByLabelText('考勤日期'), { target: { value: '2026-10-30' } })
+  expect(await screen.findByText('缺勤')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('tab', { name: '日常' }))
+  await waitFor(() => expect(screen.queryByText('缺勤')).toBeNull())
+  fireEvent.click(screen.getByRole('tab', { name: '考勤' }))
+  expect(await screen.findByLabelText('考勤日期')).toHaveValue('2026-11-02')
+})
