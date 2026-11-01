@@ -1,12 +1,14 @@
 import { M } from '../layout'
 import { seededRandom } from './hash'
-import { GROUP_COLORS, INK, ROOM, SHADOW } from './palette'
+import { GROUP_COLORS, INK, ROOM } from './palette'
 import { WOOD, edge, shade, thin, tint } from './kit'
 
 type Kind = 'book' | 'pencils' | 'bottle' | 'notebook'
 interface Prop { kind: Kind; dx: number; dy: number; color: string }
 const KINDS: Kind[] = ['book', 'pencils', 'bottle', 'notebook']
 const W = M.DESK_W, D = M.DESK_D
+// 各道具的最右伸出量(含旋转后的笔尖),用于把 dx 限制在桌面内
+const SPAN: Record<Kind, number> = { book: 18, pencils: 24, bottle: 15, notebook: 21 }
 
 // 桌面分成三格,每格至多一件,1–3 件
 // eslint-disable-next-line react-refresh/only-export-components
@@ -18,12 +20,15 @@ export function deskProps(seed: string): Prop[] {
     const j = Math.floor(rnd() * (i + 1))
     ;[slots[i], slots[j]] = [slots[j], slots[i]]
   }
-  return slots.slice(0, n).sort().map((s) => ({
-    kind: KINDS[Math.floor(rnd() * KINDS.length)],
-    dx: s * 28 + 4 + Math.floor(rnd() * 5),
-    dy: 5 + Math.floor(rnd() * 6),
-    color: GROUP_COLORS[Math.floor(rnd() * GROUP_COLORS.length)],
-  }))
+  return slots.slice(0, n).sort((a, b) => a - b).map((s) => {
+    const kind = KINDS[Math.floor(rnd() * KINDS.length)]
+    return {
+      kind,
+      dx: Math.min(s * 28 + 4 + Math.floor(rnd() * 5), W - 3 - SPAN[kind]),
+      dy: 5 + Math.floor(rnd() * 6),
+      color: GROUP_COLORS[Math.floor(rnd() * GROUP_COLORS.length)],
+    }
+  })
 }
 
 function DeskProp({ kind, dx, dy, color }: Prop) {
@@ -68,15 +73,14 @@ function DeskProp({ kind, dx, dy, color }: Prop) {
   }
 }
 
-// x,y = 座位左上角(即桌面左上角);桌面 84×40,下沿 6px 是朝向学生的桌边
-export default function Desk({ x, y, seed }: { x: number; y: number; seed: string }) {
+// x,y = 座位左上角(即桌面左上角);桌面 84×40,下沿 6px 是朝向学生的桌边。
+// 不传 seed = 空桌(无道具)。投影由外层整组桌椅统一加 SHADOW。
+export default function Desk({ x, y, seed }: { x: number; y: number; seed?: string }) {
   return (
     <g className="cr-desk" transform={`translate(${x} ${y})`}>
-      <g filter={SHADOW}>
-        <rect x={1} y={1} width={W - 2} height={D - 2} rx={3} fill={ROOM.desk} {...edge} />
-        <rect x={1} y={D - 7} width={W - 2} height={6} rx={2} fill={ROOM.deskEdge} />
-      </g>
-      {deskProps(seed).map((p, i) => <DeskProp key={i} {...p} />)}
+      <rect x={1} y={1} width={W - 2} height={D - 2} rx={3} fill={ROOM.desk} {...edge} />
+      <rect x={1} y={D - 7} width={W - 2} height={6} rx={2} fill={ROOM.deskEdge} />
+      {seed && deskProps(seed).map((p, i) => <DeskProp key={i} {...p} />)}
     </g>
   )
 }
@@ -95,7 +99,7 @@ export function ChairSeat({ x, y }: { x: number; y: number }) {
 // 椅背:离观察者更近,压在学生衣摆上
 export function ChairBack({ x, y }: { x: number; y: number }) {
   return (
-    <g className="cr-chair-back" transform={`translate(${x + W / 2} ${y})`} filter={SHADOW}>
+    <g className="cr-chair-back" transform={`translate(${x + W / 2} ${y})`}>
       <rect x={-30} y={SEAT_Y + 18} width={6} height={20} rx={2} fill={shade(CHAIR, 0.1)} {...thin} />
       <rect x={24} y={SEAT_Y + 18} width={6} height={20} rx={2} fill={shade(CHAIR, 0.1)} {...thin} />
       <rect x={-33} y={SEAT_Y + 23} width={66} height={14} rx={5} fill={CHAIR} {...edge} />

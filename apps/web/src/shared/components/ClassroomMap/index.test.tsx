@@ -2,66 +2,88 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { vi } from 'vitest'
 import type { StudentSeat } from '@/shared/types/student'
 import ClassroomMap from './index'
+import { fitName } from './SeatLayer'
 
 const seat = (over: Partial<StudentSeat>): StudentSeat => ({
-  enrollment_id: 'e1', student_id: 's1', name: '王小一', mk: 'S0001',
-  seat_row: 1, seat_col: 1, avatar_seed: null,
-  gender: null, student_no: null, birthdate: null, class_role: null, seat_locked: false, ...over,
+  enrollment_id: 'e1', student_id: 's1', name: '王小一', mk: 'S0001', seat_row: 1, seat_col: 1,
+  avatar_seed: 'seed-01', gender: '男', student_no: '2026001', birthdate: null, class_role: null,
+  seat_locked: false, ...over,
 })
+const q = (c: HTMLElement, sel: string) => c.querySelector(sel)
 
-it('renders seated students and skips unseated ones', () => {
+it('renders seated students and skips unseated or out-of-grid ones', () => {
   render(<ClassroomMap rows={2} cols={2} seats={[
-    seat({}), seat({ enrollment_id: 'e2', name: '李小二', seat_row: null, seat_col: null }),
+    seat({}),
+    seat({ enrollment_id: 'e2', name: '李小二', seat_row: null, seat_col: null }),
+    seat({ enrollment_id: 'e3', name: '张小三', seat_row: 3, seat_col: 1 }),
   ]} />)
   expect(screen.getByText('王小一')).toBeInTheDocument()
   expect(screen.queryByText('李小二')).toBeNull()
+  expect(screen.queryByText('张小三')).toBeNull()
 })
 
-it('calls onSeatClick and shows hover card', () => {
+it('marks every empty cell and makes them clickable only with a handler', () => {
+  const onEmpty = vi.fn()
+  const { container, rerender } = render(<ClassroomMap rows={2} cols={3} seats={[seat({})]} />)
+  expect(container.querySelectorAll('[data-seat]:not([data-enrollment])')).toHaveLength(5)
+  expect(screen.queryByRole('button', { name: '空座 2排3列' })).toBeNull()
+  rerender(<ClassroomMap rows={2} cols={3} seats={[seat({})]} onEmptySeatClick={onEmpty} />)
+  fireEvent.click(screen.getByRole('button', { name: '空座 2排3列' }))
+  expect(onEmpty).toHaveBeenCalledWith({ row: 2, col: 3 })
+})
+
+it('reports clicks with an anchor and supports Enter', () => {
   const onClick = vi.fn()
   render(<ClassroomMap rows={2} cols={2} seats={[seat({})]} onSeatClick={onClick} />)
-  fireEvent.mouseEnter(screen.getByText('王小一'))
-  expect(screen.getByText('编号 S0001')).toBeInTheDocument()
-  fireEvent.click(screen.getAllByText('王小一')[0])
-  expect(onClick).toHaveBeenCalledWith(expect.objectContaining({ student_id: 's1' }), expect.any(Object))
-})
-
-it('hides the hover card on mouseLeave', () => {
-  render(<ClassroomMap rows={2} cols={2} seats={[seat({})]} />)
-  fireEvent.mouseEnter(screen.getByText('王小一'))
-  expect(screen.getByText('编号 S0001')).toBeInTheDocument()
-  fireEvent.mouseLeave(screen.getAllByText('王小一')[0].closest('g')!)
-  expect(screen.queryByText('编号 S0001')).toBeNull()
-})
-
-it('renders dashed circles for empty cells', () => {
-  const { container } = render(<ClassroomMap rows={2} cols={3} seats={[seat({})]} />)
-  expect(container.querySelectorAll('circle[stroke-dasharray]')).toHaveLength(5)
-})
-
-it('does not render seats outside the grid', () => {
-  render(<ClassroomMap rows={2} cols={2} seats={[seat({ seat_row: 3, seat_col: 1 })]} />)
-  expect(screen.queryByText('王小一')).toBeNull()
-})
-
-it('halves the radius in mini mode', () => {
-  const { container } = render(<ClassroomMap rows={2} cols={2} mode="mini" seats={[seat({})]} />)
-  const filled = container.querySelector('circle:not([stroke-dasharray])')!
-  expect(filled.getAttribute('r')).toBe('10')
-})
-
-it('triggers onSeatClick with Enter on a focused seat', () => {
-  const onClick = vi.fn()
-  render(<ClassroomMap rows={2} cols={2} seats={[seat({})]} onSeatClick={onClick} />)
-  fireEvent.keyDown(screen.getByRole('button', { name: '王小一' }), { key: 'Enter' })
-  expect(onClick).toHaveBeenCalledTimes(1)
-})
-
-it('shows the hover card on keyboard focus and hides it on blur', () => {
-  render(<ClassroomMap rows={2} cols={2} seats={[seat({})]} onSeatClick={vi.fn()} />)
   const btn = screen.getByRole('button', { name: '王小一' })
-  fireEvent.focus(btn)
-  expect(screen.getByText('编号 S0001')).toBeInTheDocument()
-  fireEvent.blur(btn)
-  expect(screen.queryByText('编号 S0001')).toBeNull()
+  fireEvent.click(btn)
+  fireEvent.keyDown(btn, { key: 'Enter' })
+  expect(onClick).toHaveBeenCalledTimes(2)
+  expect(onClick.mock.calls[0][0]).toMatchObject({ enrollment_id: 'e1' })
+  expect(onClick.mock.calls[0][1]).toEqual(expect.objectContaining({ left: expect.any(Number) }))
+})
+
+it('applies seat views', () => {
+  const { container } = render(<ClassroomMap rows={1} cols={2} seats={[seat({ class_role: '班长' })]}
+    views={{ e1: { ghost: true, chip: { text: '请假', tone: 'amber' },
+      badge: { text: '+3', tone: 'green' }, locked: true, selected: true } }} />)
+  expect(q(container, '[data-enrollment="e1"][data-ghost="true"]')).not.toBeNull()
+  expect(screen.getByText('请假')).toBeInTheDocument()
+  expect(screen.getByText('+3')).toBeInTheDocument()
+  expect(screen.getByText('班长')).toBeInTheDocument()
+  expect(screen.getByLabelText('固定座位')).toBeInTheDocument()
+  expect(q(container, '.cr-selected')).not.toBeNull()
+})
+
+it('drives poses and effects', () => {
+  const two = [seat({}), seat({ enrollment_id: 'e2', student_id: 's2', name: '李小二', seat_col: 2 })]
+  const { container } = render(<ClassroomMap rows={1} cols={2} seats={two}
+    effects={{ idle: { e1: 'doze' }, pickedId: 'e2', spotlightId: 'e2',
+      floats: [{ key: 'f1', enrollmentId: 'e1', text: '+2', tone: 'plus' }] }} />)
+  expect(q(container, '[data-enrollment="e1"] [data-pose="doze"]')).not.toBeNull()
+  expect(q(container, '[data-enrollment="e2"] [data-pose="stand"]')).not.toBeNull()
+  expect(q(container, '.cr-spotlight')).not.toBeNull()
+  expect(q(container, '[data-action="point"]')).not.toBeNull()
+  expect(screen.getByText('+2')).toBeInTheDocument()
+})
+
+it('renders the chosen teacher figure and label', () => {
+  const { container } = render(<ClassroomMap rows={1} cols={2} seats={[]}
+    teacher={{ figure: 'male', label: '张老师 · 班主任' }} />)
+  expect(q(container, '[data-figure="male"]')).not.toBeNull()
+  expect(screen.getByText('张老师 · 班主任')).toBeInTheDocument()
+})
+
+it('keeps the mini map bare and the overview map read-only', () => {
+  const { container, rerender } = render(
+    <ClassroomMap rows={2} cols={2} seats={[seat({})]} mode="mini" onSeatClick={vi.fn()} />)
+  expect(q(container, '[data-zone]')).toBeNull()
+  expect(screen.queryByText('本周之星')).toBeNull()
+  rerender(<ClassroomMap rows={2} cols={2} seats={[seat({})]} mode="overview" onSeatClick={vi.fn()} />)
+  expect(screen.queryByRole('button', { name: '王小一' })).toBeNull()
+})
+
+it('truncates long names', () => {
+  expect(fitName('欧阳纳兰容若')).toBe('欧阳纳兰容…')
+  expect(fitName('王小一')).toBe('王小一')
 })

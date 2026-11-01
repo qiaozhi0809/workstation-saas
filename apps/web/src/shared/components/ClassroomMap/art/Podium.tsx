@@ -1,7 +1,7 @@
 import type { Rect } from '../layout'
 import type { TeacherAction } from '../types'
 import { GROUP_COLORS, INK, ROOM, SHADOW } from './palette'
-import { WOOD, WOOD_DARK, clip, edge, shade, thin, tint } from './kit'
+import { WOOD, WOOD_DARK, clip, edge, shade, textW, thin, tint } from './kit'
 import TeacherFigure from './TeacherFigure'
 
 interface Props {
@@ -13,11 +13,11 @@ interface Props {
 
 const LECTERN_W = 148, TOP_D = 40, FACE = 12, STAND_Y = 62
 
-// 讲台平台 → 讲桌(桌面道具都画在桌面内,不越过后沿)→ 老师。
+// 讲台平台 → 讲桌(桌面道具都画在桌面内,不越过后沿;姓名牌挂在朝向学生的前沿)→ 老师。
 // 老师躯干在 y=0 平切、正好落在桌面后沿,先画讲桌不会遮住身体,而教鞭能压在桌面上指向学生。
 export default function Podium({ rect, teacher, action, pointAt }: Props) {
   const cx = rect.x + rect.w / 2, oy = rect.y + STAND_Y, lx = cx - LECTERN_W / 2
-  const plate = clip(teacher.label, 50, 11)
+  const plate = clip(teacher.label, LECTERN_W - 32, 10.5), pw = textW(plate, 10.5) + 18
   return (
     <g className="cr-podium">
       <g filter={SHADOW}>
@@ -34,11 +34,13 @@ export default function Podium({ rect, teacher, action, pointAt }: Props) {
         <rect width={46} height={25} rx={3} fill={ROOM.trim} {...edge} />
         <circle cx={23} cy={12} r={3.5} fill={ROOM.desk} />
       </g>
-      <g className="cr-nameplate" transform={`translate(${cx - 12} ${oy + 12})`}>
-        <path d="M 2 0 L 54 0 L 58 22 L -2 22 Z" fill={ROOM.desk} {...edge} />
-        <rect x={2} y={18} width={52} height={3} fill={GROUP_COLORS[0]} />
-        <text x={28} y={14} textAnchor="middle" fontSize={11} fontWeight={600} fill={INK.hair}>{plate}</text>
-      </g>
+      {plate && (
+        <g className="cr-nameplate" transform={`translate(${cx} ${oy + TOP_D - 3})`}>
+          <rect x={-pw / 2} width={pw} height={17} rx={3} fill={ROOM.desk} {...edge} />
+          <rect x={-pw / 2 + 2} y={13} width={pw - 4} height={2.5} fill={GROUP_COLORS[0]} />
+          <text y={11.5} textAnchor="middle" fontSize={10.5} fontWeight={600} fill={INK.hair}>{plate}</text>
+        </g>
+      )}
       {action !== 'sip' && (
         <g className="cr-mug" transform={`translate(${cx + 52} ${oy + 12})`}>
           <path d="M 12 4 q 6 0 6 5 q 0 5 -6 5" fill="none" stroke={INK.outline} strokeWidth={5} />

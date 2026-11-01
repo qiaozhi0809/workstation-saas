@@ -118,3 +118,23 @@
 @media (prefers-reduced-motion: reduce) {
   .cr-anim, .cr-anim * { animation: none !important; transition: none !important; }
 }
+
+/* 积分气泡配色:加分 TONES.green.fg,扣分 TONES.coral.fg(星和字都用 currentColor) */
+.cr-float-plus { color: #2f855a; }
+.cr-float-minus { color: #d1603d; }
+
+/* 点名聚光灯:位置写在 style transform 上,换人时平移过去 */
+.cr-spotlight { transition: transform 120ms ease-out; }
+
+/* 选中虚线框(TONES.blue.fg) */
+.cr-selected {
+  fill: none;
+  stroke: #2b6cb0;
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+  pointer-events: none;
+}
+
+/* 可点的座位:鼠标指针 + 键盘焦点框 */
+.cr-pressable { cursor: pointer; outline: none; }
+.cr-pressable:focus-visible .cr-hit { stroke: #2b6cb0; stroke-width: 2; }

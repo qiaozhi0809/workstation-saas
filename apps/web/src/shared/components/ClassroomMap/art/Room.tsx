@@ -31,7 +31,7 @@ export default function Room({ layout, rows }: { layout: Layout; rows: number })
       <g stroke={ROOM.plank} strokeWidth={1.5}>
         {seams.map((y) => <path key={y} d={`M ${W} ${y} L ${xr} ${y}`} />)}
       </g>
-      <g fill="#ffffff" opacity={0.42}>
+      <g fill={INK.outline} opacity={0.42}>
         {wins.map((wy) => (
           <path key={wy} d={`M ${xr} ${wy} L ${xr} ${wy + wl} L ${xr - skew} ${wy + wl + 44} L ${xr - skew} ${wy + 44} Z`} />
         ))}

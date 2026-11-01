@@ -64,11 +64,11 @@ export default function FrontWall({ rect, board, now }: { rect: Rect; board?: Bo
         <>
           <g transform={`translate(${s.star} ${PIN_Y})`}>
             <PinBoard w={s.smw} title="本周之星" accent={ROOM.gold}
-              rows={board?.stars.map((r) => ({ name: r.name, value: `★${r.points}` }))} />
+              rows={board?.stars.map((r) => ({ name: r.name, value: `★${r.points}` })) ?? []} />
           </g>
           <g transform={`translate(${s.bday} ${PIN_Y})`}>
             <PinBoard w={s.smw} title="本月寿星" accent={GROUP_COLORS[1]}
-              rows={board?.birthdays.map((r) => ({ name: r.name, value: mmdd(r.date) }))} />
+              rows={board?.birthdays.map((r) => ({ name: r.name, value: mmdd(r.date) })) ?? []} />
           </g>
         </>
       )}
