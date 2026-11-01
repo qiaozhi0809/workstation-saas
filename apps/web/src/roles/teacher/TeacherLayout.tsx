@@ -1,13 +1,15 @@
 import { useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link, Outlet, useNavigate } from 'react-router-dom'
+import { Link, Outlet, useMatch, useNavigate } from 'react-router-dom'
 import { authApi } from '@/shared/api/auth'
 import { classesApi } from '@/shared/api/classes'
 import { useAuthStore } from '@/shared/stores/auth'
 import { useTeacherStore } from '@/shared/stores/teacher'
+import StudentProfileDrawer from './StudentProfile/StudentProfileDrawer'
 
 export default function TeacherLayout() {
   const navigate = useNavigate()
+  const studentMatch = useMatch('/teacher/students/:id')
   const user = useAuthStore((s) => s.user)
   const classId = useTeacherStore((s) => s.classId)
   const setClass = useTeacherStore((s) => s.setClass)
@@ -45,6 +47,7 @@ export default function TeacherLayout() {
         </div>
       </header>
       <main className="overflow-auto"><Outlet /></main>
+      {studentMatch?.params.id && <StudentProfileDrawer studentId={studentMatch.params.id} />}
     </div>
   )
 }

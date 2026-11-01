@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, vi } from 'vitest'
 import { authApi } from '@/shared/api/auth'
 import { classesApi } from '@/shared/api/classes'
+import { studentsApi } from '@/shared/api/students'
 import { useAuthStore } from '@/shared/stores/auth'
 import { useTeacherStore } from '@/shared/stores/teacher'
 import type { ClassView } from '@/shared/types/class'
@@ -11,6 +12,7 @@ import TeacherLayout from './TeacherLayout'
 
 vi.mock('@/shared/api/classes', () => ({ classesApi: { mine: vi.fn() } }))
 vi.mock('@/shared/api/auth', () => ({ authApi: { logout: vi.fn() } }))
+vi.mock('@/shared/api/students', () => ({ studentsApi: { detail: vi.fn() } }))
 
 const cls = (id: string, name: string, role: ClassView['role']): ClassView =>
   ({ id, name, grade_name: '三年级', seat_rows: 6, seat_cols: 4, role })
@@ -92,4 +94,24 @@ it('logs out: calls the API, clears state and lands on /login', async () => {
   expect(useAuthStore.getState().user).toBeNull()
   expect(useTeacherStore.getState().classId).toBeNull()
   expect(await screen.findByText('登录页')).toBeInTheDocument()
+})
+
+it('mounts the student profile drawer at /teacher/students/:id', async () => {
+  vi.mocked(classesApi.mine).mockResolvedValue({ items: [cls('a', '三年二班', 'homeroom_teacher')] })
+  vi.mocked(studentsApi.detail).mockResolvedValue({ id: 's1', mk: 'S0001', name: '王小一', class_id: 'a' })
+  render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <MemoryRouter initialEntries={['/teacher/students/s1']}>
+        <Routes>
+          <Route element={<TeacherLayout />}>
+            <Route path="/teacher/students/:id" element={<div>教室页</div>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  )
+  expect(await screen.findByRole('dialog', { name: '王小一' })).toBeInTheDocument()
+  expect(studentsApi.detail).toHaveBeenCalledWith('s1')
+  expect(screen.getByText('教室页')).toBeInTheDocument()
+  await screen.findByText('三年二班')
 })
