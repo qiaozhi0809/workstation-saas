@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useEscapeLayer } from '@/shared/hooks/useEscapeLayer'
 import { toolButton } from '../Toolbar'
 import type { DraftStudent } from './draft'
@@ -6,7 +7,11 @@ const MIN_SIZE = 1
 const MAX_SIZE = 12
 const primaryButton =
   'rounded-lg bg-ink px-3 py-1 text-sm text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50'
-const sizeInput = 'w-14 rounded-lg border border-line-2 bg-panel px-2 py-1'
+// 隐藏浏览器自带的上下箭头:它们逐次触发 change,改由两侧的步进按钮提交
+const sizeInput = 'w-12 rounded-lg border border-line-2 bg-panel px-2 py-1 text-center [appearance:textfield] '
+  + '[&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none '
+  + 'aria-[invalid=true]:border-red'
+const stepButton = 'h-7 w-7 rounded-lg border border-line-2 text-sm disabled:cursor-not-allowed disabled:opacity-40'
 
 export interface SeatingBarProps {
   rows: number
@@ -33,16 +38,41 @@ export interface SeatingBarProps {
 
 const clamp = (n: number) => Math.min(MAX_SIZE, Math.max(MIN_SIZE, Math.round(n)))
 
+// 输入过程中只改输入框里的文字;失焦、按 Enter 或点步进按钮才调整网格,
+// 否则从 6 排改成 10 排时会先变成 1 排,把后排学生挤进待安排
 function SizeInput({ label, value, disabled, onChange }: { label: string; value: number; disabled: boolean; onChange(n: number): void }) {
+  const [text, setText] = useState<string | null>(null)
+  const typed = text === null ? value : Number(text)
+  const invalid = text !== null && !(text.trim() !== '' && Number.isInteger(typed) && typed >= MIN_SIZE && typed <= MAX_SIZE)
+  const apply = (n: number) => {
+    setText(null)
+    const next = clamp(n)
+    if (next !== value) onChange(next)
+  }
+  const commit = () => {
+    if (text === null) return
+    if (text.trim() === '' || !Number.isFinite(typed)) setText(null)
+    else apply(typed)
+  }
   return (
-    <label className="flex items-center gap-1">
-      {label}
-      <input type="number" className={sizeInput} min={MIN_SIZE} max={MAX_SIZE} value={value} disabled={disabled}
-        onChange={(e) => {
-          const n = e.target.valueAsNumber
-          if (Number.isFinite(n)) onChange(clamp(n))
+    <div className="flex items-center gap-1">
+      <label htmlFor={`seat-size-${label}`}>{label}</label>
+      <button type="button" className={stepButton} aria-label={`减少${label}`} disabled={disabled || value <= MIN_SIZE}
+        onClick={() => apply(value - 1)}>−</button>
+      <input id={`seat-size-${label}`} type="number" className={sizeInput} min={MIN_SIZE} max={MAX_SIZE}
+        value={text ?? value} disabled={disabled} aria-invalid={invalid || undefined}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commit()
+          else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+            e.preventDefault()
+            apply(value + (e.key === 'ArrowUp' ? 1 : -1))
+          }
         }} />
-    </label>
+      <button type="button" className={stepButton} aria-label={`增加${label}`} disabled={disabled || value >= MAX_SIZE}
+        onClick={() => apply(value + 1)}>+</button>
+    </div>
   )
 }
 

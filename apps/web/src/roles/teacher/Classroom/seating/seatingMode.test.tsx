@@ -8,7 +8,7 @@ import { studentsApi } from '@/shared/api/students'
 import { useTeacherStore } from '@/shared/stores/teacher'
 import type { SeatingSaved } from '@/shared/types/seating'
 import type { StudentSeat } from '@/shared/types/student'
-import { defaultApiMocks, rosterFixture, setup, summaryFixture } from '../pageTestUtils'
+import { classFixture, defaultApiMocks, rosterFixture, setup, summaryFixture } from '../pageTestUtils'
 
 vi.mock('@/shared/api/classes')
 vi.mock('@/shared/api/students')
@@ -201,15 +201,56 @@ it('resizes within 1-12 and discards changes', async () => {
   setup({ mode: '排座' })
   const cols = await screen.findByRole('spinbutton', { name: '列数' })
   fireEvent.change(cols, { target: { value: '1' } })
+  fireEvent.blur(cols)
   expect(screen.getByRole('region', { name: '待安排 (2)' })).toBeInTheDocument()
-  fireEvent.change(screen.getByRole('spinbutton', { name: '排数' }), { target: { value: '20' } })
-  expect(screen.getByRole('spinbutton', { name: '排数' })).toHaveValue(12)
+  const rows = screen.getByRole('spinbutton', { name: '排数' })
+  fireEvent.change(rows, { target: { value: '20' } })
+  expect(rows).toHaveAttribute('aria-invalid', 'true')
+  fireEvent.keyDown(rows, { key: 'Enter' })
+  expect(rows).toHaveValue(12)
   expect(screen.getByRole('button', { name: '撤销' })).toBeEnabled()
   fireEvent.click(screen.getByRole('button', { name: '放弃修改' }))
   expect(screen.getByRole('region', { name: '待安排 (1)' })).toBeInTheDocument()
   expect(screen.getByRole('spinbutton', { name: '列数' })).toHaveValue(4)
   expect(screen.getByRole('button', { name: '保存座位' })).toBeDisabled()
   expect(screen.getByRole('button', { name: '撤销' })).toBeDisabled()
+})
+
+it('applies a typed row count only when committed, keeping every seat', async () => {
+  const sixRows = { ...classFixture, seat_rows: 6 }
+  vi.mocked(classesApi.mine).mockResolvedValue({ items: [sixRows] })
+  const spread = roster.map((s) => (s.enrollment_id === 'e2' ? { ...s, seat_row: 6, seat_col: 2 } : s))
+  vi.mocked(studentsApi.listInClass).mockResolvedValue({ items: spread })
+  setup({ mode: '排座', roster: spread })
+  const rows = await screen.findByRole('spinbutton', { name: '排数' })
+  expect(rows).toHaveValue(6)
+  // 逐键输入 "1" → "10":中途不调整网格,没有学生被挤进待安排
+  fireEvent.change(rows, { target: { value: '1' } })
+  expect(screen.getByRole('region', { name: '待安排 (1)' })).toBeInTheDocument()
+  fireEvent.change(rows, { target: { value: '10' } })
+  expect(screen.getByRole('region', { name: '待安排 (1)' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '保存座位' })).toBeDisabled()
+  fireEvent.blur(rows)
+  expect(rows).toHaveValue(10)
+  expect(screen.getByRole('region', { name: '待安排 (1)' })).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '保存座位' }))
+  await waitFor(() => expect(seatingApi.save).toHaveBeenCalledWith('c1', { base_version: 4, rows: 10, cols: 4,
+    seats: [{ enrollment_id: 'e1', row: 1, col: 1, locked: false }, { enrollment_id: 'e2', row: 6, col: 2, locked: false }] }))
+})
+
+it('steps the size with the buttons and ignores invalid typing', async () => {
+  setup({ mode: '排座' })
+  const rows = await screen.findByRole('spinbutton', { name: '排数' })
+  fireEvent.click(screen.getByRole('button', { name: '增加排数' }))
+  expect(rows).toHaveValue(4)
+  fireEvent.click(screen.getByRole('button', { name: '减少排数' }))
+  expect(rows).toHaveValue(3)
+  fireEvent.change(rows, { target: { value: '' } })
+  expect(rows).toHaveAttribute('aria-invalid', 'true')
+  fireEvent.blur(rows)
+  expect(rows).toHaveValue(3)
+  expect(rows).not.toHaveAttribute('aria-invalid')
+  expect(screen.getByRole('button', { name: '保存座位' })).toBeDisabled()
 })
 
 it('marks the class switcher as guarded while the draft is dirty', async () => {
