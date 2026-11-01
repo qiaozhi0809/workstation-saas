@@ -1,14 +1,25 @@
-import { useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import ClassroomMap from '@/shared/components/ClassroomMap'
 import type {
-  ClassroomEffects, ClassroomMode, FloatFx, IdleAction, TeacherAction,
+  Cell, ClassroomEffects, ClassroomMode, ClassroomViewportHandle, FloatFx, IdleAction, TeacherAction,
 } from '@/shared/components/ClassroomMap/types'
+import type { StudentSeat } from '@/shared/types/student'
 import FigureGallery from './FigureGallery'
 import { SAMPLE_BOARD, makeSeats, sampleViews } from './fixtures'
 
 const MODES: ClassroomMode[] = ['daily', 'attendance', 'review', 'seating', 'overview', 'mini']
 const IDLES: IdleAction[] = ['look', 'raise', 'doze', 'stretch']
 const pick = <T,>(xs: T[]) => xs[Math.floor(Math.random() * xs.length)]
+
+// 拖到有人的格子 → 两人互换;拖到空格 → 搬过去
+function moveSeat(seats: StudentSeat[], from: Cell, to: Cell): StudentSeat[] {
+  const at = (c: Cell) => (s: StudentSeat) => s.seat_row === c.row && s.seat_col === c.col
+  return seats.map((s) => {
+    if (at(from)(s)) return { ...s, seat_row: to.row, seat_col: to.col }
+    if (at(to)(s)) return { ...s, seat_row: from.row, seat_col: from.col }
+    return s
+  })
+}
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return <label className="flex items-center gap-1 text-sm">{label}{children}</label>
@@ -27,9 +38,12 @@ export default function ClassroomPlayground() {
   const [withViews, setWithViews] = useState(false)
   const [floats, setFloats] = useState<FloatFx[]>([])
   const [last, setLast] = useState('')
+  const [draggable, setDraggable] = useState(false)
   const seq = useRef(0)
+  const viewport = useRef<ClassroomViewportHandle>(null)
 
-  const seats = useMemo(() => makeSeats(rows, cols, filled), [rows, cols, filled])
+  const [seats, setSeats] = useState(() => makeSeats(rows, cols, filled))
+  useEffect(() => setSeats(makeSeats(rows, cols, filled)), [rows, cols, filled])
   const picked = seats.some((s) => s.enrollment_id === pickedId) ? pickedId : null
   const effects = useMemo<ClassroomEffects>(() => ({
     idle: idle ? Object.fromEntries(seats.map((s) => [s.enrollment_id, idle])) : {},
@@ -95,14 +109,26 @@ export default function ClassroomPlayground() {
         <Field label="">
           <input type="checkbox" checked={withViews} onChange={(e) => setWithViews(e.target.checked)} />示例外观
         </Field>
+        <Field label="">
+          <input type="checkbox" checked={draggable} onChange={(e) => setDraggable(e.target.checked)} />允许拖拽
+        </Field>
+        <button type="button" className={btn} onClick={() => viewport.current?.zoomIn()}>放大</button>
+        <button type="button" className={btn} onClick={() => viewport.current?.zoomOut()}>缩小</button>
+        <button type="button" className={btn} onClick={() => viewport.current?.fit()}>适应</button>
         {last && <span className="text-sm text-ink-2">{last}</span>}
       </div>
-      <ClassroomMap
-        rows={rows} cols={cols} seats={seats} mode={mode} presenting={presenting}
-        teacher={{ figure, label: '张老师 · 班主任' }} board={SAMPLE_BOARD} views={views} effects={effects}
-        onSeatClick={(s) => setLast(`点击:${s.name}`)}
-        onEmptySeatClick={(c) => setLast(`空座:${c.row}排${c.col}列`)}
-      />
+      <div className="h-[70vh] overflow-hidden rounded-lg border">
+        <ClassroomMap
+          rows={rows} cols={cols} seats={seats} mode={mode} presenting={presenting} viewportRef={viewport}
+          teacher={{ figure, label: '张老师 · 班主任' }} board={SAMPLE_BOARD} views={views} effects={effects}
+          onSeatClick={(s) => setLast(`点击:${s.name}`)}
+          onEmptySeatClick={(c) => setLast(`空座:${c.row}排${c.col}列`)}
+          onSeatDrop={draggable ? (from, to) => {
+            setSeats((ss) => moveSeat(ss, from, to))
+            setLast(`拖拽:${from.row}-${from.col} → ${to.row}-${to.col}`)
+          } : undefined}
+        />
+      </div>
       <FigureGallery />
     </div>
   )

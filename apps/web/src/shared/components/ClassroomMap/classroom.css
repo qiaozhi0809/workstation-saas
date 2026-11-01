@@ -138,3 +138,23 @@
 /* 可点的座位:鼠标指针 + 键盘焦点框 */
 .cr-pressable { cursor: pointer; outline: none; }
 .cr-pressable:focus-visible .cr-hit { stroke: #2b6cb0; stroke-width: 2; }
+
+/* 老师 / 讲台不挡住第一排座位的点击 */
+.cr-podium { pointer-events: none; }
+
+/* 舞台:空白处拖动平移 */
+.cr-stage[data-pan] { cursor: grab; }
+.cr-stage.cr-grabbing, .cr-stage.cr-grabbing * { cursor: grabbing !important; }
+
+/* 悬停卡(舞台内 HTML 浮层,不接收指针) */
+.cr-hovercard { pointer-events: none; }
+.cr-anim .cr-hovercard { animation: cr-card-in 120ms ease-out both; }
+@keyframes cr-card-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* 座位拖拽:原座位变淡,经过的座位描蓝框(TONES.blue),影子跟随指针 */
+.cr-dragging { opacity: 0.35; }
+.cr-drop-on .cr-hit { fill: #e3eefb; fill-opacity: 0.7; stroke: #2b6cb0; stroke-width: 2; stroke-dasharray: 6 4; }
+.cr-drag-ghost { transform: translate(-50%, -50%) scale(1.05); filter: drop-shadow(0 4px 6px rgb(0 0 0 / 0.2)); }

@@ -1,20 +1,51 @@
-import type { StudentSeat } from '@/shared/types/student'
+import { useLayoutEffect, useRef, type ReactNode, type RefObject } from 'react'
+import type { StudentSeat as Seat } from '@/shared/types/student'
+import Avatar from './art/Avatar'
+import { groupColor } from './art/palette'
+import { genderOf } from './art/StudentFigure'
+import { groupOf } from './layout'
+import { placeCard } from './placeCard'
 
-interface Props {
-  seat: StudentSeat
-  x: number
-  y: number
-}
+const FALLBACK = { w: 200, h: 120 }  // jsdom 量不出尺寸时的估计
 
-const W = 120
-const H = 48
+interface Props { stageRef: RefObject<HTMLElement>; seatKey: string; children: ReactNode }
 
-export default function HoverCard({ seat, x, y }: Props) {
+// 舞台内的 HTML 浮层:每次渲染后按座位在舞台中的位置重新摆放(右侧优先,放不下翻左)
+export default function HoverCard({ stageRef, seatKey, children }: Props) {
+  const ref = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const el = ref.current, stage = stageRef.current
+    const seat = stage?.querySelector(`[data-seat="${seatKey}"]`)
+    if (!el || !stage || !seat) return
+    const s = stage.getBoundingClientRect(), a = seat.getBoundingClientRect()
+    const p = placeCard(
+      { left: a.left - s.left, top: a.top - s.top, width: a.width, height: a.height },
+      { w: el.offsetWidth || FALLBACK.w, h: el.offsetHeight || FALLBACK.h },
+      { w: stage.clientWidth, h: stage.clientHeight },
+    )
+    el.style.left = `${p.left}px`
+    el.style.top = `${p.top}px`
+    el.dataset.side = p.side
+  })
   return (
-    <g transform={`translate(${x}, ${y - H / 2})`} pointerEvents="none">
-      <rect width={W} height={H} rx={8} className="fill-panel stroke-line-2" />
-      <text x={12} y={20} fontSize={13} className="fill-ink">{seat.name}</text>
-      <text x={12} y={37} fontSize={11} className="fill-ink-2">{`编号 ${seat.mk}`}</text>
-    </g>
+    <div ref={ref} className="cr-hovercard absolute left-0 top-0 z-10 rounded-xl border border-line-2 bg-panel px-3 py-2 text-ink shadow-lg">
+      {children}
+    </div>
   )
 }
+
+export function SeatCard({ seat }: { seat: Seat }) {
+  return (
+    <div className="flex items-center gap-3 whitespace-nowrap">
+      <Avatar gender={genderOf(seat.gender)} seed={seat.avatar_seed ?? seat.student_id}
+        color={groupColor(groupOf(seat.seat_col ?? 1))} size={44} title={seat.name} />
+      <div className="flex flex-col text-sm leading-5">
+        <span className="text-base font-semibold">{seat.name}</span>
+        {seat.student_no && <span className="text-ink-2">{`学号 ${seat.student_no}`}</span>}
+        {seat.class_role && <span className="text-ink-2">{seat.class_role}</span>}
+      </div>
+    </div>
+  )
+}
+
+export const PresentingCard = ({ seat }: { seat: Seat }) => <span className="whitespace-nowrap text-2xl font-semibold">{seat.name}</span>
