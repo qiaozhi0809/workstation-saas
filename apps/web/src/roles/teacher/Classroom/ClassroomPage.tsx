@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { classesApi } from '@/shared/api/classes'
@@ -25,6 +25,8 @@ import SeatingBar from './seating/SeatingBar'
 import UnseatedTray from './seating/UnseatedTray'
 import { useSeatingMode } from './seating/useSeatingMode'
 import { buildBoard } from './buildBoard'
+import { useIdleActions } from './idle/useIdleActions'
+import OverviewRail from './rail/OverviewRail'
 import ModeBar, { modesFor, type ClassroomUiMode } from './ModeBar'
 import Toolbar, { toolButton } from './Toolbar'
 import { useAttendanceDate } from './useAttendanceDate'
@@ -32,6 +34,19 @@ import { useFullscreen } from './useFullscreen'
 
 const NO_PERMS: ClassPerm[] = []
 const RAIL_MIN_WIDTH = 1100
+const REDUCED_MOTION = '(prefers-reduced-motion: reduce)'
+
+function usePrefersReducedMotion() {
+  const [reduced, setReduced] = useState(() => !!window.matchMedia?.(REDUCED_MOTION).matches)
+  useEffect(() => {
+    const mql = window.matchMedia?.(REDUCED_MOTION)
+    if (!mql) return
+    const on = () => setReduced(mql.matches)
+    mql.addEventListener?.('change', on)
+    return () => mql.removeEventListener?.('change', on)
+  }, [])
+  return reduced
+}
 
 // 讲台姓名牌上的身份:有排座权的是班主任,能记考勤的是副班主任,其余是任课老师
 const roleLabel = (perms: readonly ClassPerm[]) =>
@@ -205,11 +220,22 @@ function ClassroomView({ cls }: { cls: ClassView }) {
     }
   }
 
+  const reducedMotion = usePrefersReducedMotion()
+  const seatedIds = useMemo(
+    () => (roster.data?.items ?? []).filter((s) => s.seat_row != null && s.seat_col != null).map((s) => s.enrollment_id),
+    [roster.data],
+  )
+  const { idle, teacher: idleTeacher } = useIdleActions({
+    ids: seatedIds,
+    enabled: !!preferences.data?.idle_animation && !reducedMotion && mode !== 'seating',
+    paused: picking,
+  })
   const pickEffects: ClassroomEffects = {
     ...slot.effects,
+    idle,
     spotlightId: pick.spotlightId,
     pickedId: pick.pickedId,
-    teacher: pick.pickedId ? 'point' : slot.effects?.teacher,
+    teacher: pick.pickedId ? 'point' : slot.effects?.teacher ?? idleTeacher,
   }
 
   let stage: ReactNode
@@ -286,8 +312,15 @@ function ClassroomView({ cls }: { cls: ClassView }) {
         {review.leaderboard}
         <ModeBar mode={mode} perms={perms} onChange={setMode} />
       </section>
-      {railOpen && !presenting && (
-        <aside aria-label="班级概况" className="flex w-[300px] shrink-0 flex-col gap-3 overflow-y-auto" />
+      {railOpen && !presenting && summary.data && roster.data && (
+        <OverviewRail
+          classId={classId}
+          summary={summary.data}
+          roster={roster.data?.items ?? []}
+          perms={perms}
+          todayAttendance={todayAttendance.data}
+          onRollCall={() => { if (mode !== 'attendance') setMode('attendance') }}
+        />
       )}
     </div>
   )
