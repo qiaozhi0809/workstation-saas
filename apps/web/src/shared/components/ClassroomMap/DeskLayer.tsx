@@ -1,10 +1,11 @@
+import { memo } from 'react'
 import Desk, { ChairBack, ChairSeat } from './art/Desk'
 import { SHADOW } from './art/palette'
 import type { Layout } from './layout'
 import type { MapCell } from './SeatLayer'
 
 // 全部桌椅放进一个挂投影的组,只算一次滤镜。椅背在有人的座位上会由 SeatLayer 再画一遍(无滤镜)压住衣摆
-export default function DeskLayer({ layout, cells }: { layout: Layout; cells: MapCell[] }) {
+export default memo(function DeskLayer({ layout, cells }: { layout: Layout; cells: MapCell[] }) {
   return (
     <g className="cr-desks" filter={SHADOW}>
       {cells.map(({ row, col, seat }) => {
@@ -19,4 +20,4 @@ export default function DeskLayer({ layout, cells }: { layout: Layout; cells: Ma
       })}
     </g>
   )
-}
+})

@@ -1,4 +1,7 @@
-import { memo, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type PointerEvent, type MouseEvent } from 'react'
+import {
+  memo, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState,
+  type FocusEvent, type MouseEvent, type PointerEvent, type UIEvent,
+} from 'react'
 import type { StudentSeat as Seat } from '@/shared/types/student'
 import Avatar from './art/Avatar'
 import CrDefs from './art/CrDefs'
@@ -39,14 +42,19 @@ function buildCells(rows: number, cols: number, seats: Seat[]): MapCell[] {
 
 type SceneProps = Pick<ClassroomMapProps, 'rows' | 'board' | 'views' | 'effects' | 'onSeatClick' | 'onEmptySeatClick'> & {
   L: Layout; mini: boolean; interactive: boolean; cells: MapCell[]; placed: Seat[]
-  teacher: NonNullable<ClassroomMapProps['teacher']>
+  figure: 'female' | 'male'; label: string
   turnedId: string | null; onHover: OnHover; dragKey: string | null; overKey: string | null
+}
+
+// 只有前墙跟着每分钟的挂钟重画
+function LiveFrontWall(props: Omit<Parameters<typeof FrontWall>[0], 'now'>) {
+  return <FrontWall {...props} now={useNow()} />
 }
 
 // 整张 svg(自然尺寸);平移 / 缩放只改外层 transform,不重画这里
 // 顺序:房间 → 陈设 → 前墙 → 桌椅 → 座位 → 讲台(教鞭压住第一排)→ 聚光灯 → 积分气泡
-const Scene = memo(function Scene({ L, mini, rows, board, teacher, effects, placed, ...seat }: SceneProps) {
-  const now = useNow()
+const Scene = memo(function Scene({ L, mini, rows, board, figure, label, effects, placed, ...seat }: SceneProps) {
+  const teacher = useMemo(() => ({ figure, label }), [figure, label])
   const headOf = (id?: string | null) => {
     const s = id ? placed.find((p) => p.enrollment_id === id) : undefined
     return s ? L.head(s.seat_row!, s.seat_col!) : null
@@ -62,7 +70,7 @@ const Scene = memo(function Scene({ L, mini, rows, board, teacher, effects, plac
         <>
           <Room layout={L} rows={rows} />
           <Zones zones={L.zones} />
-          {L.frontWall && <FrontWall rect={L.frontWall} board={board} now={now} />}
+          {L.frontWall && <LiveFrontWall rect={L.frontWall} board={board} />}
         </>
       )}
       <DeskLayer layout={L} cells={seat.cells} />
@@ -102,6 +110,12 @@ export default function ClassroomMap({
   })
   const ph = vp.panHandlers
 
+  // 回调存最新值、往下传稳定包装:父组件传内联函数也不会重画全部座位;有没有传仍决定座位是否可点
+  const latest = useRef({ onSeatClick, onEmptySeatClick })
+  latest.current = { onSeatClick, onEmptySeatClick }
+  const seatClick = useCallback<NonNullable<typeof onSeatClick>>((s, a) => latest.current.onSeatClick?.(s, a), [])
+  const emptyClick = useCallback<NonNullable<typeof onEmptySeatClick>>((c) => latest.current.onEmptySeatClick?.(c), [])
+
   // 鼠标悬停与键盘聚焦分开记:最近发生的一方生效,它结束后退回另一方
   const [hover, setHover] = useState<HoverState>(NO_HOVER)
   const onHover = useCallback<OnHover>((src, id, key, on) => setHover((h) => {
@@ -135,16 +149,22 @@ export default function ClassroomMap({
     onPointerUp: (e: PointerEvent) => { dh.onPointerUp(e); ph.onPointerUp(e) },
     onPointerCancel: (e: PointerEvent) => { dh.onPointerCancel(e); ph.onPointerCancel(e) },
     onClickCapture: (e: MouseEvent) => { dh.onClickCapture(e); ph.onClickCapture(e) },
+    // 舞台自己永不滚动(否则悬停卡 / 缩放中心 / 影子全部错位);聚焦到视口外的座位时改为平移视图
+    onScroll: (e: UIEvent<HTMLDivElement>) => { e.currentTarget.scrollTop = 0; e.currentTarget.scrollLeft = 0 },
+    onFocus: (e: FocusEvent) => {
+      const seat = (e.target as Element).closest?.('[data-seat]')
+      if (seat) vp.ensureVisible(seat.getBoundingClientRect())
+    },
   }
   const { s, x, y } = vp.view
-  const stageCls = `cr-stage cr-anim relative h-full w-full overflow-hidden ${mini ? 'min-h-[160px]' : 'min-h-[480px] touch-none select-none'}`
+  const stageCls = `cr-stage cr-anim relative h-full w-full ${mini ? 'min-h-[160px]' : 'min-h-[480px] touch-none select-none'}`
 
   return (
     <div ref={stageRef} className={`${stageCls}${busy ? ' cr-grabbing' : ''}`} data-pan={mini ? undefined : ''} {...stageHandlers}>
       <div className="cr-canvas absolute left-0 top-0" style={{ transform: `translate(${x}px, ${y}px) scale(${s})`, transformOrigin: '0 0' }}>
-        <Scene L={L} mini={mini} rows={rows} board={board} teacher={teacher} views={views} effects={effects}
-          interactive={mode !== 'overview'} cells={cells} placed={placed}
-          onSeatClick={onSeatClick} onEmptySeatClick={onEmptySeatClick}
+        <Scene L={L} mini={mini} rows={rows} board={board} figure={teacher.figure} label={teacher.label}
+          views={views} effects={effects} interactive={mode !== 'overview'} cells={cells} placed={placed}
+          onSeatClick={onSeatClick ? seatClick : undefined} onEmptySeatClick={onEmptySeatClick ? emptyClick : undefined}
           turnedId={active?.id ?? null} onHover={onHover}
           dragKey={drag ? `${drag.from.row}-${drag.from.col}` : null} overKey={drag?.over ?? null} />
       </div>

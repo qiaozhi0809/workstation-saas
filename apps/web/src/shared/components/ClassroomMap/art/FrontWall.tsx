@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import type { Rect } from '../layout'
 import type { BoardData } from '../types'
 import { GROUP_COLORS, ROOM } from './palette'
@@ -38,7 +39,7 @@ function slots(w: number) {
 const mmdd = (date: string) => date.split('-').map(Number).join('/')
 const BOARD_Y = 22, SCREEN_Y = 30, PIN_Y = 62
 
-export default function FrontWall({ rect, board, now }: { rect: Rect; board?: BoardData; now: Date }) {
+export default memo(function FrontWall({ rect, board, now }: { rect: Rect; board?: BoardData; now: Date }) {
   const s = slots(rect.w), { hour, minute } = clockAngles(now)
   return (
     <g className="cr-front-wall" transform={`translate(${rect.x} ${rect.y})`}>
@@ -75,4 +76,4 @@ export default function FrontWall({ rect, board, now }: { rect: Rect; board?: Bo
       <g transform={`translate(${rect.w - 30} 36)`}><Clock hour={hour} minute={minute} /></g>
     </g>
   )
-}
+})

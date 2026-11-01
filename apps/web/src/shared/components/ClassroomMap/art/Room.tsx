@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { M, type Layout } from '../layout'
 import { GROUP_COLORS, INK, ROOM, SHADOW } from './palette'
 import { WOOD, WOOD_DARK, edge, shade, thin, tint } from './kit'
@@ -5,7 +6,7 @@ import { WOOD, WOOD_DARK, edge, shade, thin, tint } from './kit'
 const W = M.WALL, LOCKER = 70
 
 // 地板 + 侧墙 / 后墙:右墙一排窗(地面斜向光斑)、左墙前后两扇门、后墙储物柜
-export default function Room({ layout, rows }: { layout: Layout; rows: number }) {
+export default memo(function Room({ layout, rows }: { layout: Layout; rows: number }) {
   const { width, height, grid } = layout
   const top = layout.frontWall ? layout.frontWall.y + layout.frontWall.h : W
   const bottom = height - W, fw = width - 2 * W
@@ -69,4 +70,4 @@ export default function Room({ layout, rows }: { layout: Layout; rows: number })
       </g>
     </g>
   )
-}
+})

@@ -40,7 +40,7 @@ function pressable(label: string, mark: DragMark, fire: (el: Element) => void) {
     onKeyDown: (e: KeyboardEvent<SVGGElement>) => {
       if (e.key !== 'Enter' && e.key !== ' ') return
       e.preventDefault()
-      fire(e.currentTarget)
+      if (!e.repeat) fire(e.currentTarget)
     },
   }
 }
@@ -51,6 +51,19 @@ interface CellProps {
   row: number; col: number; seat: Seat; layout: Layout; pose: Pose; view: SeatView; mark: DragMark
   onSeatClick?: ClassroomMapProps['onSeatClick']
   onHover: OnHover
+}
+
+// 外观按值比较:父组件每次新建 views 对象、但内容没变时不重画该格
+const sameView = (a: SeatView, b: SeatView) => a === b || (
+  a.ghost === b.ghost && a.selected === b.selected && a.locked === b.locked
+  && a.chip?.text === b.chip?.text && a.chip?.tone === b.chip?.tone
+  && a.badge?.text === b.badge?.text && a.badge?.tone === b.badge?.tone && a.badge?.strong === b.badge?.strong
+)
+const sameCell = (a: CellProps, b: CellProps) => {
+  for (const k of Object.keys(a) as (keyof CellProps)[]) {
+    if (k === 'view' ? !sameView(a.view, b.view) : a[k] !== b[k]) return false
+  }
+  return true
 }
 
 const OccupiedSeat = memo(function OccupiedSeat({ row, col, seat, layout, pose, view, mark, onSeatClick, onHover }: CellProps) {
@@ -78,7 +91,7 @@ const OccupiedSeat = memo(function OccupiedSeat({ row, col, seat, layout, pose, 
       {view.selected && <g transform={`translate(${s.x} ${s.y})`}><Selected /></g>}
     </g>
   )
-})
+}, sameCell)
 
 function EmptySeat({ row, col, layout, mark, onEmptySeatClick }: {
   row: number; col: number; layout: Layout; mark: DragMark; onEmptySeatClick?: ClassroomMapProps['onEmptySeatClick']

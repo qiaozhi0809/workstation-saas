@@ -52,6 +52,12 @@ export function useSeatDrag({ stageRef, cellAt, locked, onDrop }: Options) {
     press.current = { id: e.pointerId, x: e.clientX, y: e.clientY, from: cell as DragState['from'], state: 'pending' }
     return true
   }
+  // 可放下的格子:另一格,且格内若有人则不能是固定座位
+  const target = (key: string | null, from: MapCell) => {
+    const c = key ? cellAt(key) : undefined
+    if (!c || (c.row === from.row && c.col === from.col) || (c.seat && locked(c.seat))) return null
+    return c
+  }
   const onPointerMove = (e: PointerEvent) => {
     const p = press.current
     if (!p || p.id !== e.pointerId || p.state === 'cancelled') return
@@ -60,8 +66,8 @@ export function useSeatDrag({ stageRef, cellAt, locked, onDrop }: Options) {
       p.state = 'drag'
       capture(e.currentTarget, e.pointerId, true)
     }
-    const over = keyAt(stageRef.current, e)
-    setDrag({ from: p.from, ...local(e), over: over && over !== `${p.from.row}-${p.from.col}` ? over : null })
+    const over = target(keyAt(stageRef.current, e), p.from)
+    setDrag({ from: p.from, ...local(e), over: over ? `${over.row}-${over.col}` : null })
   }
   const end = (e: PointerEvent, drop: boolean) => {
     const p = press.current
@@ -72,8 +78,8 @@ export function useSeatDrag({ stageRef, cellAt, locked, onDrop }: Options) {
     capture(e.currentTarget, e.pointerId, false)
     guard.arm()
     if (!drop || p.state !== 'drag') return
-    const to = cellAt(keyAt(stageRef.current, e) ?? '')
-    if (to && (to.row !== p.from.row || to.col !== p.from.col)) onDrop?.({ row: p.from.row, col: p.from.col }, { row: to.row, col: to.col })
+    const to = target(keyAt(stageRef.current, e), p.from)
+    if (to) onDrop?.({ row: p.from.row, col: p.from.col }, { row: to.row, col: to.col })
   }
 
   const handlers = {

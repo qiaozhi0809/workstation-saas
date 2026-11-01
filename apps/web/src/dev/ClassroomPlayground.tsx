@@ -117,7 +117,7 @@ export default function ClassroomPlayground() {
         <button type="button" className={btn} onClick={() => viewport.current?.fit()}>适应</button>
         {last && <span className="text-sm text-ink-2">{last}</span>}
       </div>
-      <div className="h-[70vh] overflow-hidden rounded-lg border">
+      <div className="h-[70vh] overflow-clip rounded-lg border">
         <ClassroomMap
           rows={rows} cols={cols} seats={seats} mode={mode} presenting={presenting} viewportRef={viewport}
           teacher={{ figure, label: '张老师 · 班主任' }} board={SAMPLE_BOARD} views={views} effects={effects}

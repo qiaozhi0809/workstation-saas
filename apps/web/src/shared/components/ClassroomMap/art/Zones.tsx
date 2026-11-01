@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import type { Layout, ZoneId } from '../layout'
 import { MUTED } from './kit'
 import ZoneArt from './zoneArt'
@@ -8,7 +9,7 @@ export const ZONE_LABEL: Record<ZoneId, string> = {
 }
 
 // 两侧陈设区:布局已决定放哪些;每区内容 + 底部浅色标签
-export default function Zones({ zones }: { zones: Layout['zones'] }) {
+export default memo(function Zones({ zones }: { zones: Layout['zones'] }) {
   return (
     <g className="cr-zones">
       {zones.map(({ id, rect }) => (
@@ -21,4 +22,4 @@ export default function Zones({ zones }: { zones: Layout['zones'] }) {
       ))}
     </g>
   )
-}
+})

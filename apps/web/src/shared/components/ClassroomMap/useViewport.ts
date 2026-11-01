@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type Pointer
 import { capture, moved, useClickGuard } from './pointer'
 import { clampView, fitView, wheelZoomFactor, zoomAt, type Size, type View } from './viewport'
 
-const STEP = 1.2
+const STEP = 1.2, MARGIN = 16
 
 // 舞台视口:挂载 / 舞台尺寸变化时自动适应,用户缩放或平移后不再自动适应,直到 fit()
 export function useViewport(stageRef: RefObject<HTMLElement>, content: Size, enabled = true) {
@@ -33,6 +33,21 @@ export function useViewport(stageRef: RefObject<HTMLElement>, content: Size, ena
     if (auto.current) fit()
     else setView((v) => clampView(v, contentRef.current, stage()))
   }, [fit, stage])
+
+  // 键盘聚焦到视口外的座位:平移到可见(算作用户平移,停止自动适应);rect 为视口坐标
+  const ensureVisible = useCallback((r: { left: number; top: number; width: number; height: number }) => {
+    const el = stageRef.current, { w, h } = stage()
+    if (!el || !w || !h) return
+    const o = el.getBoundingClientRect()
+    const shift = (lo: number, len: number, room: number) => {
+      const m = Math.min(MARGIN, Math.max(0, (room - len) / 2))
+      if (lo < m) return m - lo
+      if (lo + len > room - m) return Math.max(room - m - lo - len, m - lo)
+      return 0
+    }
+    const dx = shift(r.left - o.left, r.width, w), dy = shift(r.top - o.top, r.height, h)
+    if (dx || dy) apply((v) => ({ ...v, x: v.x + dx, y: v.y + dy }))
+  }, [apply, stage, stageRef])
 
   const { w, h } = content
   useLayoutEffect(() => refit(), [w, h, refit])
@@ -98,5 +113,5 @@ export function useViewport(stageRef: RefObject<HTMLElement>, content: Size, ena
     onClickCapture: guard.onClickCapture,
   }
 
-  return { view, panning, onWheel, panHandlers, zoomIn, zoomOut, fit }
+  return { view, panning, onWheel, panHandlers, zoomIn, zoomOut, fit, ensureVisible }
 }
