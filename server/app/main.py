@@ -8,6 +8,7 @@ from app.domain.attendance.router import router as attendance_router
 from app.domain.classes.router import router as classes_router
 from app.domain.classroom.router import router as classroom_router
 from app.domain.reviews.router import router as reviews_router
+from app.domain.seating.router import router as seating_router
 from app.domain.students.router import router as students_router
 from app.errors import install_error_handlers
 from app.logging import configure_logging
@@ -34,5 +35,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     router.include_router(attendance_router)
     router.include_router(students_router)
     router.include_router(reviews_router)
+    router.include_router(seating_router)
     app.include_router(router)
     return app
