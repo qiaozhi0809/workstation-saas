@@ -11,8 +11,8 @@ def test_unicode_roundtrip(pw):
 
 
 def test_nfc_normalization():
-    decomposed = "café"  # e + 组合重音
-    composed = "café"  # é
+    decomposed = "cafe\u0301"  # e + 组合重音
+    composed = "caf\u00e9"  # é
     assert decomposed != composed
     assert verify_password(composed, hash_password(decomposed))
 
