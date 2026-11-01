@@ -9,7 +9,7 @@
 **班级三角色协作平台**(workstation-saas),一个面向中小学的 **B 端 SaaS**(单校整体采购)。
 
 - **三角色**:教师 / 管理 / 家长 — 共享一个 Web 应用的三种视图(**不是三个独立前端项目**)
-- **技术栈**:前端 React 18 + TypeScript + Vite + Tailwind + shadcn/ui + TanStack Query;后端 Go + Gin + PostgreSQL 16 + Redis 7
+- **技术栈**:前端 React 18 + TypeScript + Vite + Tailwind + shadcn/ui + TanStack Query;后端 Python 3.12 + FastAPI + SQLAlchemy 2(同步)+ Alembic + PostgreSQL 16 + Redis 7
 - **部署**:v1 单校定制化,Docker Compose 一键起,数据不出校
 
 ---
@@ -20,7 +20,8 @@
 |---|---|---|
 | 1 | [`README.md`](README.md) | 项目做什么、目录结构 |
 | 2 | [`docs/superpowers/specs/2026-11-01-三角色协作平台-design.md`](docs/superpowers/specs/2026-11-01-三角色协作平台-design.md) | **设计文档(方向定稿)** — 全部设计决策的权威。**不要擅改**,偏离必须征得用户同意 |
-| 3 | [`docs/superpowers/plans/2026-11-01-M1-骨架与教师角色底座.md`](docs/superpowers/plans/2026-11-01-M1-骨架与教师角色底座.md) | **M1 实施计划** — 你要执行的任务清单,共 19 个 task,全部 TDD 粒度 |
+| 3 | [`docs/superpowers/plans/2026-11-01-总体路线图与计划审查.md`](docs/superpowers/plans/2026-11-01-总体路线图与计划审查.md) | 里程碑路线、待决事项、spec 能力归属 |
+| [`docs/superpowers/plans/2026-11-01-M1-骨架与教师角色底座.md`](docs/superpowers/plans/2026-11-01-M1-骨架与教师角色底座.md) | **M1 实施计划** — 你要执行的任务清单,共 17 个 task,全部 TDD 粒度 |
 | 4 | [`reference-html/features-extracted.md`](reference-html/features-extracted.md) | 原 HTML 项目的功能考古报告 — 新项目的**内部 PRD**。遇到"原版这个功能怎么做的"查这里 |
 | 5 | [`reference-html/index.html`](reference-html/index.html) | 原始 HTML(只读参考) — 功能考古写不清楚的,去这里查原文 |
 
@@ -61,7 +62,7 @@
 | 里程碑 | 状态 | 产出 |
 |---|---|---|
 | **M0 考古** | ✅ 已完成 | [`reference-html/features-extracted.md`](reference-html/features-extracted.md)(1771 行,PRD 级) |
-| **M1 骨架 + 教师角色底座** | 🔜 **你要做的** | 19 task,文件:[`docs/superpowers/plans/2026-11-01-M1-骨架与教师角色底座.md`](docs/superpowers/plans/2026-11-01-M1-骨架与教师角色底座.md) |
+| **M1 骨架 + 教师角色底座** | 🔜 **你要做的** | 17 task,文件:[`docs/superpowers/plans/2026-11-01-M1-骨架与教师角色底座.md`](docs/superpowers/plans/2026-11-01-M1-骨架与教师角色底座.md) |
 | M2 教师核心功能 | ⏳ 未开始 | plan 待写 |
 | M3 管理角色 | ⏳ 未开始 | plan 待写 |
 | M4 家长角色 | ⏳ 未开始 | plan 待写 |
@@ -73,7 +74,7 @@
 
 ### 5.1 整体节奏
 
-19 个 task,从 Task 1 开始,按顺序执行。每个 task 内部按 Step 顺序走,每个 Step 粒度在 2-5 分钟:
+17 个 task,从 Task 1 开始,按顺序执行(段 B 与 Task 10–12 可并行,见 plan 的 Task 概览)。每个 task 内部按 Step 顺序走,每个 Step 粒度在 2-5 分钟:
 
 ```
 Step N: Write failing test   → 写测试代码
@@ -93,7 +94,7 @@ Step N+(1-k): Commit          → git add && git commit
 - **成本更高(每 task 两次 fresh context)但一次性做对的概率最大**
 
 #### 选项 B:主代理单线执行
-- 由主代理按顺序实现全部 19 个 task
+- 由主代理按顺序实现全部 17 个 task
 - 最后派一个 reviewer 整体 review
 - **成本最低,但中间无独立质量门,主代理 context 可能爆**
 
@@ -103,8 +104,8 @@ Step N+(1-k): Commit          → git add && git commit
 
 ### 5.3 完成 M1 的 Done 标准
 
-- [ ] 全部 19 个 task 的测试都通过
-- [ ] Task 19 的 E2E 冒烟测试通过(login → classroom → student profile)
+- [ ] 全部 17 个 task 的测试都通过
+- [ ] Task 17 的 E2E 冒烟测试通过(login → classroom → student profile)
 - [ ] [`README.md`](README.md) 里的本地启动文档被实际跑通
 - [ ] git log 清晰,commit 消息符合 Conventional Commits
 - [ ] 打 tag `v0.1.0-m1-foundation` 并 push 到 origin
@@ -130,7 +131,7 @@ Step N+(1-k): Commit          → git add && git commit
 
 | 维度 | 版本 |
 |---|---|
-| Go | ≥ 1.22 |
+| Python | 3.12(`>=3.12,<3.13`,用 uv 管理) |
 | Node | ≥ 20 |
 | PostgreSQL | 16 |
 | Redis | 7 |
@@ -148,13 +149,13 @@ Step N+(1-k): Commit          → git add && git commit
 
 | 层 | 工具 | 命令 |
 |---|---|---|
-| 后端单元/集成 | Go test + testcontainers(真 Postgres) | `cd server && go test ./...` |
+| 后端单元/集成 | pytest + testcontainers(真 Postgres / 真 Redis) | `cd server && uv run pytest` |
 | 前端单元 | Vitest + Testing Library | `cd apps/web && npm run test` |
 | 前端 E2E | Playwright | `cd apps/web && npm run e2e` |
-| 后端 Lint | gofmt + golangci-lint | `gofmt -l . && golangci-lint run` |
+| 后端 Lint | ruff | `uv run ruff check . && uv run ruff format --check .` |
 | 前端 Lint | ESLint + Prettier | `npm run lint` |
 
-**不要 mock 数据库**。用 testcontainers 跑真 Postgres(plan 已经提供 helper 函数)。
+**不要 mock 数据库和 Redis**。用 testcontainers 跑真服务(plan Task 3 提供 conftest);本机需先启动 Docker。
 
 ---
 
@@ -164,7 +165,9 @@ Step N+(1-k): Commit          → git add && git commit
 |---|---|---|
 | B 端学校整体采购,单校定制化 v1 | 商业模式确定 | spec §0.1 |
 | 三角色 = 三视图(非三前端) | 单 Web 应用更一致 | spec §2 |
-| React + Go | 用户选定 | spec §1.2 |
+| React + Python(FastAPI) | 用户选定(D12 取代原 D04 的 Go) | spec §1.2 |
+| SQLAlchemy 同步 + Alembic | 简单可测,单校并发足够 | spec §1.2 |
+| 源码保护推迟到 M5 | Docker 本身不保护源码,部署时再定方案 | spec D13 |
 | 抛弃原 HTML 代码,只借鉴设计 | 用户决定 | spec §4.1 |
 | 原项目 features-extracted.md 作为 PRD | M0 考古产出 | reference-html/ |
 | 监控 v1 只做视频流接入,砍掉 AI 事件 | 用户明确砍 | spec §5 |
@@ -174,7 +177,7 @@ Step N+(1-k): Commit          → git add && git commit
 | v1 单租户,v2 再多租户 | 复杂度管理 | spec §0.2 |
 | 永久脱敏编号 `s.mk` | AI 对话里稳定对应 | reference-html PRD §1 |
 
-完整决策历史见 spec 附录 A(11 条)。
+完整决策历史见 spec 附录 A(13 条)。
 
 ---
 

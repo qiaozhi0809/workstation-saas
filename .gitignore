@@ -1,14 +1,12 @@
-# ---- Backend (Go) ----
-server/*.exe
-server/*.exe~
-server/*.dll
-server/*.so
-server/*.dylib
-server/vendor/
+# ---- Backend (Python) ----
+server/.venv/
 server/.env
-server/config.yaml
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
 server/dist/
-server/tmp/
+server/build/
 
 # ---- Frontend (Node) ----
 apps/web/node_modules/
