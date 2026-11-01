@@ -62,8 +62,9 @@
 | 里程碑 | 状态 | 产出 |
 |---|---|---|
 | **M0 考古** | ✅ 已完成 | [`reference-html/features-extracted.md`](reference-html/features-extracted.md)(1771 行,PRD 级) |
-| **M1 骨架 + 教师角色底座** | 🔜 **你要做的** | 17 task,文件:[`docs/superpowers/plans/2026-11-01-M1-骨架与教师角色底座.md`](docs/superpowers/plans/2026-11-01-M1-骨架与教师角色底座.md) |
-| M2 教师核心功能 | ⏳ 未开始 | plan 待写 |
+| **M1 骨架 + 教师角色底座** | ✅ 已完成(`v0.1.0-m1-foundation`) | 17 task,文件:[`docs/superpowers/plans/2026-11-01-M1-骨架与教师角色底座.md`](docs/superpowers/plans/2026-11-01-M1-骨架与教师角色底座.md) |
+| **M2a 教室交互** | ✅ 已完成(`v0.2.0-m2a-classroom`) | 23 task,文件:[`docs/superpowers/plans/2026-11-01-M2a-教室交互.md`](docs/superpowers/plans/2026-11-01-M2a-教室交互.md) |
+| M2b 成绩 / M2c AI 与学年 | ⏳ 未开始 | plan 待写 |
 | M3 管理角色 | ⏳ 未开始 | plan 待写 |
 | M4 家长角色 | ⏳ 未开始 | plan 待写 |
 | M5 监控 + 部署 | ⏳ 未开始 | plan 待写 |
