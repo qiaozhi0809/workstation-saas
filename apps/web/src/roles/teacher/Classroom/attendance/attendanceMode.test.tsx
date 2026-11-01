@@ -1,6 +1,7 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { attendanceApi } from '@/shared/api/attendance'
+import type { AttendanceUpdated } from '@/shared/types/attendance'
 import { ApiError } from '@/shared/api/client'
 import * as csv from '@/shared/lib/csv'
 import { defaultApiMocks, setup } from '../pageTestUtils'
@@ -14,42 +15,44 @@ vi.mock('@/shared/api/seating')
 vi.mock('@/shared/api/todos')
 vi.mock('@/shared/api/preferences')
 
-// 真实网络有往返延迟;mock 立即兑现时,乐观值与结果在同一次渲染里合并,看不到中间态
-const later = <T,>(f: () => Promise<T>) => new Promise<T>((res, rej) => setTimeout(() => f().then(res, rej), 30))
-
 beforeEach(() => {
   vi.resetAllMocks()
   defaultApiMocks()
-  const echo = vi.mocked(attendanceApi.set).getMockImplementation()!
-  vi.mocked(attendanceApi.set).mockImplementation((...a) => later(() => echo(...a)))
 })
 
 it('cycles status with absolute PUTs', async () => {
+  let resolve!: (v: AttendanceUpdated) => void
+  vi.mocked(attendanceApi.set).mockReturnValue(new Promise((r) => { resolve = r }))
   setup({ mode: '考勤' })
   fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
   await waitFor(() => expect(attendanceApi.set).toHaveBeenCalledWith('c1', '2026-11-02', 'e1', { status: 'leave' }))
+  expect(await screen.findByText('请假')).toBeInTheDocument()
   vi.mocked(attendanceApi.day).mockResolvedValue({ date: '2026-11-02', confirmed_at: null,
     items: [{ enrollment_id: 'e1', status: 'leave', reason: null, marked_at: '2026-11-02T01:00:00Z' }] })
+  await act(async () => { resolve({ enrollment_id: 'e1', status: 'leave', reason: null }) })
   await screen.findByText('请假')
+  vi.mocked(attendanceApi.set).mockReturnValue(new Promise(() => {}))
   fireEvent.click(screen.getByRole('button', { name: '王小一' }))
   await waitFor(() => expect(attendanceApi.set).toHaveBeenLastCalledWith('c1', '2026-11-02', 'e1', { status: 'absent' }))
 })
 
 it('shows the chip optimistically and rolls back on error', async () => {
-  vi.mocked(attendanceApi.set).mockImplementation(() =>
-    later(() => Promise.reject(new ApiError(400, 'DATE_OUT_OF_RANGE', '只能记录本学年内、不晚于今天的考勤'))))
+  let reject!: (e: Error) => void
+  vi.mocked(attendanceApi.set).mockReturnValue(new Promise((_, rej) => { reject = rej }))
   setup({ mode: '考勤' })
   fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
   expect(await screen.findByText('请假')).toBeInTheDocument()
+  await act(async () => { reject(new ApiError(400, 'DATE_OUT_OF_RANGE', '只能记录本学年内、不晚于今天的考勤')) })
   expect(await screen.findByText('只能记录本学年内、不晚于今天的考勤')).toBeInTheDocument()
   await waitFor(() => expect(screen.queryByText('请假')).toBeNull())
 })
 
 it('confirms the whole class present', async () => {
+  vi.mocked(attendanceApi.confirm).mockResolvedValue({ date: '2026-11-02', confirmed_at: '2026-11-02T01:30:00Z', items: [] })
   setup({ mode: '考勤' })
   fireEvent.click(await screen.findByRole('button', { name: '全部出勤' }))
   await waitFor(() => expect(attendanceApi.confirm).toHaveBeenCalledWith('c1', '2026-11-02', true))
-  expect(await screen.findByText(/已确认 \d{2}:\d{2}/)).toBeInTheDocument()
+  expect(await screen.findByText('已确认 09:30')).toBeInTheDocument()
 })
 
 it('confirms keeping the exceptions', async () => {
