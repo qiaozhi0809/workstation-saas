@@ -105,3 +105,29 @@ it('returns undefined on 204 and HTTP_ERROR for non-envelope bodies', async () =
   await expect(api('DELETE', '/x')).resolves.toBeUndefined()
   await expect(api('GET', '/y')).rejects.toMatchObject({ status: 502, code: 'HTTP_ERROR', message: 'Bad Gateway' })
 })
+
+it('does not resurrect the session when logout happens during an in-flight refresh', async () => {
+  let resolveRefresh!: (r: Response) => void
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(json({ error: { code: 'TOKEN_EXPIRED', message: 'x' } }, 401))
+    .mockImplementationOnce(() => new Promise<Response>((resolve) => { resolveRefresh = resolve }))
+  vi.stubGlobal('fetch', fetchMock)
+  const pending = api('GET', '/auth/me')
+  await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+  useAuthStore.getState().logout()
+  resolveRefresh(json({ access_token: 'new', expires_at: '2026-01-01T00:00:00Z' }))
+  await expect(pending).rejects.toMatchObject({ status: 401, code: 'UNAUTHORIZED' })
+  expect(useAuthStore.getState().accessToken).toBeNull()
+  expect(fetchMock).toHaveBeenCalledTimes(2)
+})
+
+it('logs out and throws UNAUTHORIZED when the retry after a successful refresh is still 401', async () => {
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(json({ error: { code: 'TOKEN_EXPIRED', message: 'x' } }, 401))
+    .mockResolvedValueOnce(json({ access_token: 'new', expires_at: '2026-01-01T00:00:00Z' }))
+    .mockResolvedValueOnce(json({ error: { code: 'UNAUTHORIZED', message: 'x' } }, 401))
+  vi.stubGlobal('fetch', fetchMock)
+  await expect(api('GET', '/auth/me')).rejects.toMatchObject({ status: 401, code: 'UNAUTHORIZED' })
+  expect(fetchMock).toHaveBeenCalledTimes(3)
+  expect(useAuthStore.getState().accessToken).toBeNull()
+})

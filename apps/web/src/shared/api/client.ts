@@ -27,6 +27,7 @@ async function doRefresh(refreshToken: string): Promise<boolean> {
     if (!res.ok) return false
     const data = (await res.json()) as { access_token?: string }
     if (!data.access_token) return false
+    if (useAuthStore.getState().refreshToken !== refreshToken) return false
     useAuthStore.getState().updateAccess(data.access_token)
     return true
   } catch {
