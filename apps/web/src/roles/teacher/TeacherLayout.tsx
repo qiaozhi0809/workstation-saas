@@ -5,7 +5,7 @@ import { authApi } from '@/shared/api/auth'
 import { classesApi } from '@/shared/api/classes'
 import { Toaster } from '@/shared/components/Toast'
 import { useAuthStore } from '@/shared/stores/auth'
-import { useTeacherStore } from '@/shared/stores/teacher'
+import { confirmLeaveSeating, useTeacherStore } from '@/shared/stores/teacher'
 import StudentProfileDrawer from './StudentProfile/StudentProfileDrawer'
 
 export default function TeacherLayout() {
@@ -37,7 +37,7 @@ export default function TeacherLayout() {
           {isError && <span>班级加载失败</span>}
           {classes.length === 1 && <span>{classes[0].name}</span>}
           {classes.length > 1 && (
-            <select aria-label="切换班级" value={classId ?? ''} onChange={(e) => setClass(e.target.value)}>
+            <select aria-label="切换班级" value={classId ?? ''} onChange={(e) => { if (confirmLeaveSeating()) setClass(e.target.value) }}>
               {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           )}

@@ -25,7 +25,7 @@ const renderLayout = () => render(
 
 beforeEach(() => {
   vi.clearAllMocks()
-  useTeacherStore.setState({ classId: null })
+  useTeacherStore.setState({ classId: null, seatingDirty: false })
   useAuthStore.setState({
     accessToken: 'at', refreshToken: 'rt', user: { id: 'u1', display_name: '王老师' },
   })
@@ -65,6 +65,24 @@ it('updates the store when another class is selected', async () => {
   renderLayout()
   fireEvent.change(await screen.findByRole('combobox', { name: '切换班级' }), { target: { value: 'b' } })
   expect(useTeacherStore.getState().classId).toBe('b')
+})
+
+it('asks before switching classes with unsaved seating changes', async () => {
+  vi.mocked(classesApi.mine).mockResolvedValue({ items: [
+    cls('a', '三年二班', 'homeroom_teacher'), cls('b', '三年三班', 'subject_teacher'),
+  ] })
+  const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+  renderLayout()
+  const select = await screen.findByRole('combobox', { name: '切换班级' })
+  useTeacherStore.setState({ seatingDirty: true })
+  fireEvent.change(select, { target: { value: 'b' } })
+  expect(confirmSpy).toHaveBeenCalledWith('有未保存的座位修改,确定离开吗?')
+  expect(useTeacherStore.getState().classId).toBe('a')
+  expect(select).toHaveValue('a')
+  confirmSpy.mockReturnValue(true)
+  fireEvent.change(select, { target: { value: 'b' } })
+  expect(useTeacherStore.getState().classId).toBe('b')
+  confirmSpy.mockRestore()
 })
 
 it('shows an error text when classes fail to load', async () => {

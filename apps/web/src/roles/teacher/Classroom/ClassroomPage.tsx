@@ -11,7 +11,7 @@ import type {
   ClassroomEffects, ClassroomMapProps, ClassroomViewportHandle, SeatView,
 } from '@/shared/components/ClassroomMap/types'
 import { useAuthStore } from '@/shared/stores/auth'
-import { useTeacherStore } from '@/shared/stores/teacher'
+import { confirmLeaveSeating, useTeacherStore } from '@/shared/stores/teacher'
 import type { ClassView } from '@/shared/types/class'
 import type { ClassPerm } from '@/shared/types/classroom'
 import type { StudentSeat } from '@/shared/types/student'
@@ -21,6 +21,9 @@ import { usePick, usePickReward } from './pick/usePick'
 import { attendanceApi } from '@/shared/api/attendance'
 import { useAttendanceMode } from './attendance/useAttendanceMode'
 import { useReviewMode } from './review/useReviewMode'
+import SeatingBar from './seating/SeatingBar'
+import UnseatedTray from './seating/UnseatedTray'
+import { useSeatingMode } from './seating/useSeatingMode'
 import { buildBoard } from './buildBoard'
 import ModeBar, { modesFor, type ClassroomUiMode } from './ModeBar'
 import Toolbar from './Toolbar'
@@ -37,6 +40,9 @@ const roleLabel = (perms: readonly ClassPerm[]) =>
 /** 每个模式往地图和工具栏里接的东西;没有给出的项按地图默认处理(例如不传 onSeatClick 座位就不可点)。 */
 interface ModeSlot {
   seats?: StudentSeat[]
+  /** 覆盖班级行列(排座草稿可改行列) */
+  rows?: number
+  cols?: number
   views?: Record<string, SeatView>
   effects?: ClassroomEffects
   onSeatClick?: ClassroomMapProps['onSeatClick']
@@ -95,7 +101,6 @@ function ClassroomView({ cls }: { cls: ClassView }) {
 
   const requested = params.get('mode')
   const mode: ClassroomUiMode = modesFor(perms).find((m) => m === requested) ?? 'daily'
-  const setMode = (next: ClassroomUiMode) => setParams(next === 'daily' ? {} : { mode: next }, { replace: true })
 
   const today = summary.data?.today
   const board = useMemo(
@@ -156,6 +161,21 @@ function ClassroomView({ cls }: { cls: ClassView }) {
     return pickPool(roster.data?.items ?? [], (id) => status.get(id))
   }, [todayAttendance.data, roster.data])
   const pick = usePick({ pool })
+  const seating = useSeatingMode({
+    classId,
+    className: cls.name,
+    enabled: mode === 'seating',
+    roster: roster.data?.items,
+    rows: cls.seat_rows,
+    cols: cls.seat_cols,
+    seatVersion: summary.data?.seat_version,
+  })
+  // 离开排座前确认未保存的修改;进入排座时收起点名(聚光灯 / 指向不落在排座地图上)
+  const setMode = (next: ClassroomUiMode) => {
+    if (mode === 'seating' && !confirmLeaveSeating()) return
+    if (next === 'seating') pick.close()
+    setParams(next === 'daily' ? {} : { mode: next }, { replace: true })
+  }
   const pickReward = usePickReward(classId, pick.close)
   const pickedSeat = roster.data?.items.find((s) => s.enrollment_id === pick.pickedId) ?? null
   const cardOpen = pick.state === 'picked' || pick.state === 'empty'
@@ -170,6 +190,12 @@ function ClassroomView({ cls }: { cls: ClassView }) {
     slot = {
       views: review.views, effects: { floats: review.floats }, toolbar: review.toolbar,
       onSeatClick: presenting ? undefined : review.onSeatClick,
+    }
+  } else if (mode === 'seating' && seating.ready) {
+    slot = {
+      seats: seating.seats, rows: seating.rows, cols: seating.cols, views: seating.views,
+      onSeatClick: seating.onSeatClick, onEmptySeatClick: seating.onEmptySeatClick, onSeatDrop: seating.onSeatDrop,
+      bar: <><SeatingBar {...seating.bar} /><UnseatedTray {...seating.tray} /></>,
     }
   }
 
@@ -186,8 +212,8 @@ function ClassroomView({ cls }: { cls: ClassView }) {
   else {
     stage = (
       <ClassroomMap
-        rows={cls.seat_rows}
-        cols={cls.seat_cols}
+        rows={slot.rows ?? cls.seat_rows}
+        cols={slot.cols ?? cls.seat_cols}
         seats={slot.seats ?? roster.data.items}
         mode={mode}
         teacher={teacher}
