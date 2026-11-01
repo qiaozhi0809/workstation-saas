@@ -18,15 +18,11 @@ export default function OverviewRail({ classId, summary, roster, perms, todayAtt
 }) {
   return (
     <aside aria-label="班级概况" className="flex w-[300px] shrink-0 flex-col gap-3 overflow-y-auto">
-      {(
-        <>
-          <TodaySection summary={summary} roster={roster} />
-          {perms.includes('attendance.read') && (
-            <AttendanceSection day={todayAttendance} roster={roster} onRollCall={onRollCall} />
-          )}
-          <BirthdaySection roster={roster} today={summary.today} />
-        </>
+      <TodaySection summary={summary} roster={roster} />
+      {perms.includes('attendance.read') && (
+        <AttendanceSection day={todayAttendance} roster={roster} onRollCall={onRollCall} />
       )}
+      <BirthdaySection roster={roster} today={summary.today} />
       <TodoSection />
       {perms.includes('review.read') && (
         <FeedSection classId={classId} roster={roster} timezone={summary.timezone} />

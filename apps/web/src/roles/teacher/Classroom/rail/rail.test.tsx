@@ -80,3 +80,18 @@ it('shows recent reviews without naming other teachers', async () => {
   expect(await screen.findByText('王小一 积极发言 +1 · 老师 · 10:05')).toBeInTheDocument()
   expect(reviewsApi.list).toHaveBeenCalledWith('c1', { limit: 6 })
 })
+
+it('colours the attendance bar like the map chips', async () => {
+  vi.mocked(attendanceApi.day).mockResolvedValue({ date: '2026-11-02', confirmed_at: null, items: [
+    { enrollment_id: 'e1', status: 'leave', reason: null, marked_at: '' },
+    { enrollment_id: 'e2', status: 'absent', reason: null, marked_at: '' },
+    { enrollment_id: 'e3', status: 'late', reason: null, marked_at: '' },
+  ] })
+  setup()
+  const rail = await screen.findByRole('complementary', { name: '班级概况' })
+  await within(rail).findByText('实到 1 / 3')
+  const bar = (status: string) => rail.querySelector(`[data-status="${status}"]`)
+  expect(bar('leave')).toHaveClass('bg-amber')
+  expect(bar('absent')).toHaveClass('bg-red')
+  expect(bar('late')).toHaveClass('bg-blue')
+})

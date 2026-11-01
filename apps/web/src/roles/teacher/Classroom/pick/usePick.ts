@@ -1,12 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { prefersReducedMotion } from '@/shared/hooks/useReducedMotion'
 import { useReviewSubmit } from '../review/useReviewSubmit'
 import { choosePick, spinDelays } from './pickLogic'
 
 export type PickState = 'idle' | 'spinning' | 'picked' | 'empty'
-
-/** 读取系统的"减少动态效果"偏好(没有 matchMedia 的环境视为未开启)。 */
-export const prefersReducedMotion = () =>
-  typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
 interface Options {
   pool: string[]

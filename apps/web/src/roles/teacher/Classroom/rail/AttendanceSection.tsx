@@ -2,7 +2,8 @@ import { ATTENDANCE_LABEL } from '../attendance/cycle'
 import type { AttendanceDay } from '@/shared/types/attendance'
 import type { StudentSeat } from '@/shared/types/student'
 
-const BAR: Record<string, string> = { present: 'bg-green', late: 'bg-amber-400', leave: 'bg-blue-400', absent: 'bg-red' }
+// 与地图上的考勤标签同色(ATTENDANCE_LABEL):请假琥珀、缺勤红、迟到蓝
+const BAR: Record<string, string> = { present: 'bg-green', leave: 'bg-amber', absent: 'bg-red', late: 'bg-blue' }
 const MAX_LISTED = 4
 
 export default function AttendanceSection({ day, roster, onRollCall }: {
@@ -28,7 +29,7 @@ export default function AttendanceSection({ day, roster, onRollCall }: {
       <p className="mt-1 text-sm">{`实到 ${arrived} / ${total}`}</p>
       <div aria-hidden className="mt-1 flex h-2 overflow-hidden rounded-full bg-fill">
         {segments.map(([k, n]) => n > 0 && (
-          <span key={k} className={BAR[k]} style={{ width: `${(n / Math.max(total, 1)) * 100}%` }} />
+          <span key={k} data-status={k} className={BAR[k]} style={{ width: `${(n / Math.max(total, 1)) * 100}%` }} />
         ))}
       </div>
       <p className="mt-1 text-xs text-ink-2">{`请假 ${leave} · 缺勤 ${absent} · 迟到 ${late}`}</p>

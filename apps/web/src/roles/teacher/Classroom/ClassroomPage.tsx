@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { classesApi } from '@/shared/api/classes'
@@ -10,6 +10,7 @@ import ClassroomMap from '@/shared/components/ClassroomMap'
 import type {
   ClassroomEffects, ClassroomMapProps, ClassroomViewportHandle, SeatView,
 } from '@/shared/components/ClassroomMap/types'
+import { useReducedMotion } from '@/shared/hooks/useReducedMotion'
 import { useAuthStore } from '@/shared/stores/auth'
 import { confirmLeaveSeating, useTeacherStore } from '@/shared/stores/teacher'
 import type { ClassView } from '@/shared/types/class'
@@ -37,19 +38,6 @@ import { useFullscreen } from './useFullscreen'
 const NO_PERMS: ClassPerm[] = []
 const NO_SUBJECTS: string[] = []
 const RAIL_MIN_WIDTH = 1100
-const REDUCED_MOTION = '(prefers-reduced-motion: reduce)'
-
-function usePrefersReducedMotion() {
-  const [reduced, setReduced] = useState(() => !!window.matchMedia?.(REDUCED_MOTION).matches)
-  useEffect(() => {
-    const mql = window.matchMedia?.(REDUCED_MOTION)
-    if (!mql) return
-    const on = () => setReduced(mql.matches)
-    mql.addEventListener?.('change', on)
-    return () => mql.removeEventListener?.('change', on)
-  }, [])
-  return reduced
-}
 
 // 讲台姓名牌上的身份:有排座权的是班主任,能记考勤的是副班主任,其余是任课老师
 const roleLabel = (perms: readonly ClassPerm[]) =>
@@ -233,7 +221,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
     }
   }
 
-  const reducedMotion = usePrefersReducedMotion()
+  const reducedMotion = useReducedMotion()
   const seatedIds = useMemo(
     () => (roster.data?.items ?? []).filter((s) => s.seat_row != null && s.seat_col != null).map((s) => s.enrollment_id),
     [roster.data],
