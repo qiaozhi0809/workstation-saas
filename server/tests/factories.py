@@ -4,7 +4,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.auth.passwords import hash_password
-from app.models import RoleBinding, SchoolClass, User
+from app.models import Enrollment, RoleBinding, SchoolClass, Student, User
 from app.rbac.roles import Role
 from tests.seed_ids import GRADE_ID, SCHOOL_ID, YEAR_ID
 
@@ -73,3 +73,26 @@ def make_class(
     db.add(cls)
     db.flush()
     return cls.id
+
+
+def make_student(
+    db: Session,
+    class_id: UUID,
+    name: str,
+    mk: str,
+    *,
+    year_id: str | UUID = YEAR_ID,
+    **fields,
+) -> UUID:
+    student = Student(school_id=UUID(SCHOOL_ID), name=name, mk=mk, **fields)
+    db.add(student)
+    db.flush()
+    db.add(
+        Enrollment(
+            student_id=student.id,
+            class_id=class_id,
+            academic_year_id=UUID(str(year_id)),
+        )
+    )
+    db.flush()
+    return student.id

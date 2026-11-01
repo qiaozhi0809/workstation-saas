@@ -45,7 +45,17 @@ ROLE_PERMS: dict[Role, frozenset[Perm]] = {
     Role.dean: _LEADERS,
     Role.grade_head: _LEADERS,
     Role.it_admin: frozenset(),
-    Role.homeroom_teacher: frozenset(Perm),
+    Role.homeroom_teacher: frozenset(
+        {
+            Perm.CLASS_READ,
+            Perm.STUDENT_LIST,
+            Perm.STUDENT_BASIC,
+            Perm.STUDENT_FAMILY,
+            Perm.STUDENT_LEARNING,
+            Perm.STUDENT_PROFILE,
+            Perm.TEACHER_NOTES,
+        }
+    ),
     Role.subject_teacher: frozenset(
         {
             Perm.CLASS_READ,
