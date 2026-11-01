@@ -8,7 +8,7 @@ import { reviewsApi } from '@/shared/api/reviews'
 import { studentsApi } from '@/shared/api/students'
 import ClassroomMap from '@/shared/components/ClassroomMap'
 import type {
-  ClassroomMapProps, ClassroomViewportHandle, SeatView,
+  ClassroomEffects, ClassroomMapProps, ClassroomViewportHandle, SeatView,
 } from '@/shared/components/ClassroomMap/types'
 import { useAuthStore } from '@/shared/stores/auth'
 import { useTeacherStore } from '@/shared/stores/teacher'
@@ -16,6 +16,7 @@ import type { ClassView } from '@/shared/types/class'
 import type { ClassPerm } from '@/shared/types/classroom'
 import type { StudentSeat } from '@/shared/types/student'
 import { useAttendanceMode } from './attendance/useAttendanceMode'
+import { useReviewMode } from './review/useReviewMode'
 import { buildBoard } from './buildBoard'
 import ModeBar, { modesFor, type ClassroomUiMode } from './ModeBar'
 import Toolbar from './Toolbar'
@@ -33,6 +34,7 @@ const roleLabel = (perms: readonly ClassPerm[]) =>
 interface ModeSlot {
   seats?: StudentSeat[]
   views?: Record<string, SeatView>
+  effects?: ClassroomEffects
   onSeatClick?: ClassroomMapProps['onSeatClick']
   onEmptySeatClick?: ClassroomMapProps['onEmptySeatClick']
   onSeatDrop?: ClassroomMapProps['onSeatDrop']
@@ -124,11 +126,31 @@ function ClassroomView({ cls }: { cls: ClassView }) {
     onPickDate: attDate.pick,
     onFollowToday: attDate.followToday,
   })
+  const stageRef = useRef<HTMLDivElement>(null)
+  const review = useReviewMode({
+    classId,
+    className: cls.name,
+    enabled: mode === 'review',
+    canRead: perms.includes('review.read'),
+    canWrite: perms.includes('review.write'),
+    reasons: preferences.data?.review_reasons,
+    subjects: summary.data?.my_subjects ?? [],
+    roster: roster.data?.items ?? [],
+    timezone: summary.data?.timezone,
+    summary: reviewSummary.data,
+    overlay: attendance.views,
+    stageRef,
+  })
   const overlay = mode === 'seating' ? undefined : attendance.views
   let slot: ModeSlot = {}
   if (mode === 'daily') slot = { views: overlay, onSeatClick: presenting ? undefined : openProfile }
   else if (mode === 'attendance') slot = { views: overlay, onSeatClick: attendance.onSeatClick, bar: attendance.bar }
-  else if (mode === 'review') slot = { views: overlay }
+  else if (mode === 'review') {
+    slot = {
+      views: review.views, effects: { floats: review.floats }, toolbar: review.toolbar,
+      onSeatClick: presenting ? undefined : review.onSeatClick,
+    }
+  }
 
   let stage: ReactNode
   if (roster.isError) stage = <div className="p-6">名单加载失败</div>
@@ -143,6 +165,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
         teacher={teacher}
         board={board}
         views={slot.views}
+        effects={slot.effects}
         presenting={presenting}
         onSeatClick={slot.onSeatClick}
         onEmptySeatClick={slot.onEmptySeatClick}
@@ -176,9 +199,19 @@ function ClassroomView({ cls }: { cls: ClassView }) {
           extra={slot.toolbar}
         />
         {slot.bar}
-        <div className="relative min-h-[480px] flex-1 overflow-hidden rounded-2xl border border-line bg-panel">
+        {/* 弹层锚点是点击瞬间的快照:在舞台上按下或滚轮平移 / 缩放时先关掉弹层 */}
+        <div
+          ref={stageRef}
+          className="relative min-h-[480px] flex-1 overflow-hidden rounded-2xl border border-line bg-panel"
+          onPointerDownCapture={(e) => {
+            if (!(e.target instanceof Element && e.target.closest('[role="dialog"]'))) review.closePopover()
+          }}
+          onWheel={review.closePopover}
+        >
           {stage}
+          {review.popover}
         </div>
+        {review.leaderboard}
         <ModeBar mode={mode} perms={perms} onChange={setMode} />
       </section>
       {railOpen && !presenting && (
