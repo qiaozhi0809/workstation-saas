@@ -1,0 +1,45 @@
+# ---- Backend (Go) ----
+server/*.exe
+server/*.exe~
+server/*.dll
+server/*.so
+server/*.dylib
+server/vendor/
+server/.env
+server/config.yaml
+server/dist/
+server/tmp/
+
+# ---- Frontend (Node) ----
+apps/web/node_modules/
+apps/web/dist/
+apps/web/.env
+apps/web/.env.local
+apps/web/coverage/
+apps/web/playwright-report/
+apps/web/test-results/
+
+# ---- Deploy ----
+deploy/data/
+deploy/config/*.yaml
+!deploy/config/*.example.yaml
+
+# ---- System ----
+.DS_Store
+Thumbs.db
+
+# ---- IDE / Editor ----
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ---- Logs ----
+*.log
+logs/
+
+# ---- Secrets ----
+*.pem
+*.key
+.secrets/
