@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import ClassroomMap from '@/shared/components/ClassroomMap'
 import type { ClassroomMode, IdleAction } from '@/shared/components/ClassroomMap/types'
+import FigureGallery from './FigureGallery'
 import { makeSeats } from './fixtures'
 
 const MODES: ClassroomMode[] = ['daily', 'attendance', 'review', 'seating', 'overview', 'mini']
@@ -59,6 +60,7 @@ export default function ClassroomPlayground() {
         rows={rows} cols={cols} seats={seats} mode={mode} presenting={presenting}
         teacher={{ figure, label: '班主任' }} effects={effects}
       />
+      <FigureGallery />
     </div>
   )
 }

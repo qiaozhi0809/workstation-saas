@@ -4,6 +4,7 @@ import HoverCard from './HoverCard'
 import { computeLayout } from './layout'
 import StudentSeat, { SEAT_RADIUS } from './StudentSeat'
 import type { ClassroomMapProps } from './types'
+import './classroom.css'
 
 export default function ClassroomMap({ seats, rows, cols, mode = 'daily', onSeatClick }: ClassroomMapProps) {
   const [hovered, setHovered] = useState<Seat | null>(null)
