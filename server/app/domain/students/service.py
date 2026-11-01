@@ -80,7 +80,6 @@ def _clean(value: Any) -> Any:
 def build_profile(
     student: Student, scope: Scope, bindings: Sequence[Binding], caller_id: UUID
 ) -> StudentProfile:
-    assert scope.class_id is not None
     data: dict[str, Any] = {
         "id": student.id,
         "mk": student.mk,

@@ -6,7 +6,7 @@ from app.auth.tokens import issue_access_token
 from app.models.audit import AuditLog
 from app.rbac.roles import Role
 from tests.factories import bind, make_class, make_student, make_user
-from tests.seed_ids import CLASS_ID, GRADE_ID, TEACHER_USER_ID
+from tests.seed_ids import CLASS_ID, GRADE_ID, SCHOOL_ID, TEACHER_USER_ID
 
 WANG = "a0000001-0000-0000-0000-000000000001"  # 王小一,family_structure='双亲家庭'
 LI = "a0000002-0000-0000-0000-000000000002"  # 李小二,family_structure=NULL
@@ -51,6 +51,7 @@ def test_roster_unknown_class_404(client, settings):
         headers=auth(settings),
     )
     assert res.status_code == 404
+    assert res.json()["error"]["code"] == "NOT_FOUND"
 
 
 def test_profile_homeroom_sees_family_and_is_audited(client, db, settings):
@@ -96,6 +97,10 @@ def test_subject_teacher_field_level(client, db, settings):
     u = make_user(db, "t_subject")
     bind(db, u.id, Role.subject_teacher, class_id=UUID(CLASS_ID))
     db.execute(text("UPDATE students SET personality = '开朗' WHERE id = :id"), {"id": WANG})
+    db.execute(
+        text("UPDATE students SET teacher_notes = CAST(:n AS jsonb) WHERE id = :id"),
+        {"id": WANG, "n": f'{{"{u.id}": {{"text": "自己的笔记"}}}}'},
+    )
     body = client.get(f"/api/v1/students/{WANG}", headers=auth(settings, u.id)).json()
     assert "family_structure" not in body
     assert "teacher_notes" not in body
@@ -107,6 +112,7 @@ def test_profile_other_class_forbidden_and_audited(client, db, settings):
     sid = make_student(db, other, "外班生", "S9001", family_structure="单亲")
     res = client.get(f"/api/v1/students/{sid}", headers=auth(settings))
     assert res.status_code == 403
+    assert res.json()["error"]["code"] == "FORBIDDEN"
     assert [(r.action, r.success) for r in audit_rows(db, sid)] == [("student.read_profile", False)]
 
 
@@ -139,3 +145,34 @@ def test_grade_head_scope_fully_populated(client, db, settings):
     body = res.json()
     assert body["family_structure"] == "双亲家庭"
     assert "teacher_notes" not in body
+
+
+def test_profile_unknown_student_404(client, settings):
+    res = client.get(
+        "/api/v1/students/00000000-0000-0000-0000-000000000000", headers=auth(settings)
+    )
+    assert res.status_code == 404
+    assert res.json()["error"]["code"] == "NOT_FOUND"
+
+
+def test_transferred_enrollment_is_hidden(client, db, settings):
+    sid = make_student(db, UUID(CLASS_ID), "转走生", "S9100")
+    db.execute(
+        text("UPDATE enrollments SET status = 'transferred' WHERE student_id = :id"), {"id": sid}
+    )
+    res = client.get(f"/api/v1/students/{sid}", headers=auth(settings))
+    assert res.status_code == 404
+    assert res.json()["error"]["code"] == "NOT_FOUND"
+    roster = client.get(f"/api/v1/classes/{CLASS_ID}/students", headers=auth(settings)).json()
+    assert str(sid) not in [i["student_id"] for i in roster["items"]]
+
+
+def test_principal_school_scope(client, db, settings):
+    u = make_user(db, "principal_user")
+    bind(db, u.id, Role.principal, school_id=SCHOOL_ID)
+    roster = client.get(f"/api/v1/classes/{CLASS_ID}/students", headers=auth(settings, u.id))
+    assert roster.status_code == 200
+    assert len(roster.json()["items"]) == 10
+    res = client.get(f"/api/v1/students/{WANG}", headers=auth(settings, u.id))
+    assert res.status_code == 200
+    assert res.json()["family_structure"] == "双亲家庭"
