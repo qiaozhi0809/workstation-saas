@@ -98,7 +98,7 @@ it('logs out: calls the API, clears state and lands on /login', async () => {
 
 it('mounts the student profile drawer at /teacher/students/:id', async () => {
   vi.mocked(classesApi.mine).mockResolvedValue({ items: [cls('a', '三年二班', 'homeroom_teacher')] })
-  vi.mocked(studentsApi.detail).mockResolvedValue({ id: 's1', mk: 'S0001', name: '王小一', class_id: 'a' })
+  vi.mocked(studentsApi.detail).mockResolvedValue({ id: 's1', enrollment_id: 'e1', mk: 'S0001', name: '王小一', class_id: 'a' })
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <MemoryRouter initialEntries={['/teacher/students/s1']}>
@@ -119,7 +119,7 @@ it('mounts the student profile drawer at /teacher/students/:id', async () => {
 it('resets the drawer tab when switching to another student', async () => {
   vi.mocked(classesApi.mine).mockResolvedValue({ items: [cls('a', '三年二班', 'homeroom_teacher')] })
   vi.mocked(studentsApi.detail).mockImplementation(async (id: string) =>
-    ({ id, mk: 'M' + id, name: id === 's1' ? '王小一' : '李小二', class_id: 'a' }))
+    ({ id, enrollment_id: 'e' + id, mk: 'M' + id, name: id === 's1' ? '王小一' : '李小二', class_id: 'a' }))
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <MemoryRouter initialEntries={['/teacher/students/s1']}>

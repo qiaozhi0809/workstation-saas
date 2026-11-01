@@ -1,8 +1,13 @@
 from uuid import UUID, uuid4
 
-from app.rbac.bindings import Binding, Scope, can, covers, load_bindings
-from app.rbac.roles import Perm, Role
+import pytest
+
+from app.errors import ApiError
+from app.rbac.bindings import Binding, Scope, can, covers, load_bindings, subjects_in_class
+from app.rbac.guard import ensure
+from app.rbac.roles import ROLE_PERMS, Perm, Role
 from tests.factories import bind, make_class, make_user
+from tests.helpers import audit_rows
 from tests.seed_ids import CLASS_ID, TEACHER_USER_ID, YEAR_ID
 
 
@@ -76,69 +81,93 @@ def test_load_excludes_ended_and_other_year(db):
     assert len(load_bindings(db, u.id, other_year)) == 1
 
 
-def test_role_perms_full_matrix():
-    from app.rbac.roles import ROLE_PERMS
+READ_STUDENTS = {
+    Perm.CLASS_READ,
+    Perm.STUDENT_LIST,
+    Perm.STUDENT_BASIC,
+    Perm.STUDENT_FAMILY,
+    Perm.STUDENT_LEARNING,
+    Perm.STUDENT_PROFILE,
+}
 
-    everything = {
-        Perm.CLASS_READ,
-        Perm.STUDENT_LIST,
-        Perm.STUDENT_BASIC,
-        Perm.STUDENT_FAMILY,
-        Perm.STUDENT_LEARNING,
-        Perm.STUDENT_PROFILE,
-        Perm.TEACHER_NOTES,
-    }
+
+def test_role_perms_full_matrix():
+    leaders = READ_STUDENTS | {Perm.ATTENDANCE_READ, Perm.REVIEW_READ}
+    parent = {Perm.STUDENT_BASIC, Perm.STUDENT_FAMILY, Perm.STUDENT_LEARNING, Perm.STUDENT_PROFILE}
     expected = {
-        Role.principal: {
-            Perm.CLASS_READ,
-            Perm.STUDENT_LIST,
-            Perm.STUDENT_BASIC,
-            Perm.STUDENT_FAMILY,
-            Perm.STUDENT_LEARNING,
-            Perm.STUDENT_PROFILE,
-        },
-        Role.dean: {
-            Perm.CLASS_READ,
-            Perm.STUDENT_LIST,
-            Perm.STUDENT_BASIC,
-            Perm.STUDENT_FAMILY,
-            Perm.STUDENT_LEARNING,
-            Perm.STUDENT_PROFILE,
-        },
-        Role.grade_head: {
-            Perm.CLASS_READ,
-            Perm.STUDENT_LIST,
-            Perm.STUDENT_BASIC,
-            Perm.STUDENT_FAMILY,
-            Perm.STUDENT_LEARNING,
-            Perm.STUDENT_PROFILE,
-        },
+        Role.principal: leaders,
+        Role.dean: leaders,
+        Role.grade_head: leaders,
         Role.it_admin: set(),
-        Role.homeroom_teacher: everything,
+        Role.homeroom_teacher: READ_STUDENTS
+        | {
+            Perm.TEACHER_NOTES,
+            Perm.ATTENDANCE_READ,
+            Perm.ATTENDANCE_WRITE,
+            Perm.REVIEW_READ,
+            Perm.REVIEW_WRITE,
+            Perm.SEATING_WRITE,
+            Perm.BOARD_WRITE,
+            Perm.STUDENT_BASIC_WRITE,
+        },
         Role.subject_teacher: {
             Perm.CLASS_READ,
             Perm.STUDENT_LIST,
             Perm.STUDENT_BASIC,
             Perm.STUDENT_LEARNING,
             Perm.STUDENT_PROFILE,
+            Perm.ATTENDANCE_READ,
+            Perm.REVIEW_READ,
+            Perm.REVIEW_WRITE,
         },
-        Role.assistant_teacher: {Perm.CLASS_READ, Perm.STUDENT_LIST, Perm.STUDENT_BASIC},
-        Role.primary_parent: {
+        Role.assistant_teacher: {
+            Perm.CLASS_READ,
+            Perm.STUDENT_LIST,
             Perm.STUDENT_BASIC,
-            Perm.STUDENT_FAMILY,
-            Perm.STUDENT_LEARNING,
-            Perm.STUDENT_PROFILE,
+            Perm.ATTENDANCE_READ,
+            Perm.ATTENDANCE_WRITE,
+            Perm.REVIEW_READ,
+            Perm.REVIEW_WRITE,
         },
-        Role.secondary_parent: {
-            Perm.STUDENT_BASIC,
-            Perm.STUDENT_FAMILY,
-            Perm.STUDENT_LEARNING,
-            Perm.STUDENT_PROFILE,
-        },
+        Role.primary_parent: parent,
+        Role.secondary_parent: parent,
     }
-    assert set(Perm) == everything, "new Perm added: update the matrix in this test"
-    assert set(ROLE_PERMS) == set(Role), "every Role needs a ROLE_PERMS entry"
-    assert set(expected) == set(Role)
+    assert set(ROLE_PERMS) == set(Role)
     for role in Role:
-        for perm in Perm:
-            assert (perm in ROLE_PERMS[role]) == (perm in expected[role]), (role, perm)
+        assert set(ROLE_PERMS[role]) == expected[role], role
+    assert set().union(*expected.values()) == set(Perm)
+
+
+def test_subject_is_loaded_from_scope(db):
+    u = make_user(db, "t_physics")
+    bind(db, u.id, Role.subject_teacher, class_id=CLASS_ID, subject="物理")
+    [binding] = load_bindings(db, u.id, UUID(YEAR_ID))
+    assert binding.subject == "物理"
+
+
+def test_subjects_in_class_only_counts_subject_bindings():
+    c = UUID(CLASS_ID)
+    bs = [
+        Binding(Role.subject_teacher, Scope(class_id=c), None, "数学"),
+        Binding(Role.subject_teacher, Scope(class_id=c), None, "科学"),
+        Binding(Role.subject_teacher, Scope(class_id=uuid4()), None, "英语"),
+        Binding(Role.homeroom_teacher, Scope(class_id=c), None, "语文"),
+    ]
+    assert subjects_in_class(bs, c) == ["数学", "科学"]
+
+
+def test_ensure_denies_with_perm_as_action(db):
+    u = make_user(db, "t_guard")
+    with pytest.raises(ApiError) as exc:
+        ensure(
+            db,
+            None,
+            u.id,
+            [],
+            Perm.SEATING_WRITE,
+            Scope(class_id=UUID(CLASS_ID)),
+            object_id=CLASS_ID,
+        )
+    assert exc.value.code == "FORBIDDEN"
+    rows = audit_rows(db, CLASS_ID)
+    assert [(r.action, r.success, r.user_id) for r in rows] == [("seating.write", False, u.id)]

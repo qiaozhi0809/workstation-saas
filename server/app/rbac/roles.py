@@ -24,6 +24,25 @@ class Perm(StrEnum):
     STUDENT_LEARNING = "student.read_learning"
     STUDENT_PROFILE = "student.read_profile"
     TEACHER_NOTES = "student.teacher_notes"
+    ATTENDANCE_READ = "attendance.read"
+    ATTENDANCE_WRITE = "attendance.write"
+    REVIEW_READ = "review.read"
+    REVIEW_WRITE = "review.write"
+    SEATING_WRITE = "seating.write"
+    BOARD_WRITE = "board.write"
+    STUDENT_BASIC_WRITE = "student.write_basic"
+
+
+# Order matches ClassroomSummary.my_perms.
+CLASSROOM_PERMS: tuple[Perm, ...] = (
+    Perm.ATTENDANCE_READ,
+    Perm.ATTENDANCE_WRITE,
+    Perm.REVIEW_READ,
+    Perm.REVIEW_WRITE,
+    Perm.SEATING_WRITE,
+    Perm.BOARD_WRITE,
+    Perm.STUDENT_BASIC_WRITE,
+)
 
 
 _LEADERS = frozenset(
@@ -34,6 +53,8 @@ _LEADERS = frozenset(
         Perm.STUDENT_FAMILY,
         Perm.STUDENT_LEARNING,
         Perm.STUDENT_PROFILE,
+        Perm.ATTENDANCE_READ,
+        Perm.REVIEW_READ,
     }
 )
 _PARENT = frozenset(
@@ -54,6 +75,13 @@ ROLE_PERMS: dict[Role, frozenset[Perm]] = {
             Perm.STUDENT_LEARNING,
             Perm.STUDENT_PROFILE,
             Perm.TEACHER_NOTES,
+            Perm.ATTENDANCE_READ,
+            Perm.ATTENDANCE_WRITE,
+            Perm.REVIEW_READ,
+            Perm.REVIEW_WRITE,
+            Perm.SEATING_WRITE,
+            Perm.BOARD_WRITE,
+            Perm.STUDENT_BASIC_WRITE,
         }
     ),
     Role.subject_teacher: frozenset(
@@ -63,9 +91,22 @@ ROLE_PERMS: dict[Role, frozenset[Perm]] = {
             Perm.STUDENT_BASIC,
             Perm.STUDENT_LEARNING,
             Perm.STUDENT_PROFILE,
+            Perm.ATTENDANCE_READ,
+            Perm.REVIEW_READ,
+            Perm.REVIEW_WRITE,
         }
     ),
-    Role.assistant_teacher: frozenset({Perm.CLASS_READ, Perm.STUDENT_LIST, Perm.STUDENT_BASIC}),
+    Role.assistant_teacher: frozenset(
+        {
+            Perm.CLASS_READ,
+            Perm.STUDENT_LIST,
+            Perm.STUDENT_BASIC,
+            Perm.ATTENDANCE_READ,
+            Perm.ATTENDANCE_WRITE,
+            Perm.REVIEW_READ,
+            Perm.REVIEW_WRITE,
+        }
+    ),
     Role.primary_parent: _PARENT,
     Role.secondary_parent: _PARENT,
 }

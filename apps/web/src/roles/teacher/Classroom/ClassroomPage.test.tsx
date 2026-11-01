@@ -13,6 +13,7 @@ vi.mock('@/shared/api/students', () => ({ studentsApi: { listInClass: vi.fn() } 
 const cls = { id: 'c1', name: '三年二班', grade_name: '三年级', seat_rows: 3, seat_cols: 4, role: 'homeroom_teacher' as const }
 const seat = (id: string, name: string, row: number, col: number) => ({
   enrollment_id: 'e' + id, student_id: id, name, mk: 'S' + id, seat_row: row, seat_col: col, avatar_seed: null,
+  gender: null, student_no: null, birthdate: null, class_role: null, seat_locked: false,
 })
 
 function Loc() { return <div data-testid="loc">{useLocation().pathname}</div> }

@@ -63,6 +63,7 @@ class SchoolClass(Base):
     name: Mapped[str] = mapped_column(Text)
     seat_rows: Mapped[int] = mapped_column(server_default=text("7"))
     seat_cols: Mapped[int] = mapped_column(server_default=text("4"))
+    seat_version: Mapped[int] = mapped_column(server_default=text("0"))
     homeroom_teacher_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     active: Mapped[bool] = mapped_column(server_default=text("true"))
     created_at: Mapped[datetime] = mapped_column(**_NOW)

@@ -1,0 +1,135 @@
+import { memo, type KeyboardEvent, type SyntheticEvent } from 'react'
+import type { StudentSeat as Seat } from '@/shared/types/student'
+import { ChairBack } from './art/Desk'
+import { groupColor } from './art/palette'
+import StudentFigure, { genderOf, type Pose } from './art/StudentFigure'
+import { groupOf, type Layout } from './layout'
+import { Badge, CELL, Chip, Lock, NameTag, Ribbon, Selected } from './seatParts'
+import type { ClassroomEffects, ClassroomMapProps, SeatAnchor, SeatView } from './types'
+
+export interface MapCell { row: number; col: number; seat: Seat | null }
+export type HoverSource = 'mouse' | 'focus'
+export type OnHover = (src: HoverSource, id: string, key: string, on: boolean) => void
+export type DragMark = 'dragging' | 'drop-on' | undefined
+
+// 按字符计数,超出截断为 max 个字符 + …
+// eslint-disable-next-line react-refresh/only-export-components
+export function fitName(name: string, max = 5): string {
+  const chars = Array.from(name)
+  return chars.length > max ? chars.slice(0, max).join('') + '…' : name
+}
+
+function poseOf(id: string, hovered: boolean, effects?: ClassroomEffects): Pose {
+  if (effects?.pickedId === id) return 'stand'
+  if (hovered) return 'turn'
+  return effects?.idle?.[id] ?? 'sit'
+}
+
+const anchorOf = (el: Element): SeatAnchor => {
+  const { left, top, width, height } = el.getBoundingClientRect()
+  return { left, top, width, height }
+}
+
+// 可点的格子:role=button + Enter / 空格
+const seatClass = (mark: DragMark, extra = '') => `cr-seat${extra}${mark ? ` cr-${mark}` : ''}`
+
+function pressable(label: string, mark: DragMark, fire: (el: Element) => void) {
+  return {
+    role: 'button', tabIndex: 0, 'aria-label': label, className: seatClass(mark, ' cr-pressable'),
+    onClick: (e: SyntheticEvent<SVGGElement>) => fire(e.currentTarget),
+    onKeyDown: (e: KeyboardEvent<SVGGElement>) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return
+      e.preventDefault()
+      if (!e.repeat) fire(e.currentTarget)
+    },
+  }
+}
+
+const HitArea = () => <rect className="cr-hit" x={CELL.x} y={CELL.y} width={CELL.w} height={CELL.h} rx={8} fill="transparent" />
+
+interface CellProps {
+  row: number; col: number; seat: Seat; layout: Layout; pose: Pose; view: SeatView; mark: DragMark
+  onSeatClick?: ClassroomMapProps['onSeatClick']
+  onHover: OnHover
+}
+
+// 外观按值比较:父组件每次新建 views 对象、但内容没变时不重画该格
+const sameView = (a: SeatView, b: SeatView) => a === b || (
+  a.ghost === b.ghost && a.selected === b.selected && a.locked === b.locked
+  && a.chip?.text === b.chip?.text && a.chip?.tone === b.chip?.tone
+  && a.badge?.text === b.badge?.text && a.badge?.tone === b.badge?.tone && a.badge?.strong === b.badge?.strong
+)
+const sameCell = (a: CellProps, b: CellProps) => {
+  for (const k of Object.keys(a) as (keyof CellProps)[]) {
+    if (k === 'view' ? !sameView(a.view, b.view) : a[k] !== b[k]) return false
+  }
+  return true
+}
+
+const OccupiedSeat = memo(function OccupiedSeat({ row, col, seat, layout, pose, view, mark, onSeatClick, onHover }: CellProps) {
+  const s = layout.seat(row, col), h = layout.head(row, col), id = seat.enrollment_id, key = `${row}-${col}`
+  const hover = {
+    onMouseEnter: () => onHover('mouse', id, key, true), onMouseLeave: () => onHover('mouse', id, key, false),
+    onFocus: () => onHover('focus', id, key, true), onBlur: () => onHover('focus', id, key, false),
+  }
+  const act = onSeatClick ? pressable(seat.name, mark, (el) => onSeatClick(seat, anchorOf(el))) : { className: seatClass(mark) }
+  return (
+    <g data-seat={key} data-enrollment={id} data-ghost={view.ghost ? 'true' : undefined} {...hover} {...act}>
+      <g transform={`translate(${s.x} ${s.y})`}><HitArea /></g>
+      <g opacity={view.ghost ? 0.4 : undefined}>
+        <StudentFigure x={h.x} y={h.y} gender={genderOf(seat.gender)} seed={seat.avatar_seed ?? seat.student_id}
+          color={groupColor(groupOf(col))} pose={pose} />
+        <ChairBack x={s.x} y={s.y} />
+        <g transform={`translate(${s.x} ${s.y})`}>
+          {seat.class_role && <Ribbon text={seat.class_role} />}
+          <NameTag name={fitName(seat.name)} />
+          {(seat.seat_locked || view.locked) && <Lock />}
+          {view.chip && <Chip chip={view.chip} locked={seat.seat_locked || view.locked} badge={view.badge} />}
+          {view.badge && <Badge badge={view.badge} />}
+        </g>
+      </g>
+      {view.selected && <g transform={`translate(${s.x} ${s.y})`}><Selected /></g>}
+    </g>
+  )
+}, sameCell)
+
+function EmptySeat({ row, col, layout, mark, onEmptySeatClick }: {
+  row: number; col: number; layout: Layout; mark: DragMark; onEmptySeatClick?: ClassroomMapProps['onEmptySeatClick']
+}) {
+  const s = layout.seat(row, col)
+  const act = onEmptySeatClick ? pressable(`空座 ${row}排${col}列`, mark, () => onEmptySeatClick({ row, col })) : { className: seatClass(mark) }
+  return (
+    <g data-seat={`${row}-${col}`} {...act}>
+      <g transform={`translate(${s.x} ${s.y})`}><HitArea /></g>
+    </g>
+  )
+}
+
+const NO_VIEW: SeatView = {}
+
+interface Props {
+  layout: Layout; cells: MapCell[]; interactive: boolean
+  views?: ClassroomMapProps['views']; effects?: ClassroomEffects
+  onSeatClick?: ClassroomMapProps['onSeatClick']; onEmptySeatClick?: ClassroomMapProps['onEmptySeatClick']
+  turnedId: string | null; onHover: OnHover; dragKey: string | null; overKey: string | null
+}
+
+// 每格一个 <g data-seat>:学生 + 椅背 + 彩带 + 名字 + 锁标 / 贴纸 / 角标 + 选中框;桌椅本体在 DeskLayer
+export default function SeatLayer({
+  layout, cells, interactive, views, effects, onSeatClick, onEmptySeatClick, turnedId, onHover, dragKey, overKey,
+}: Props) {
+  const markOf = (key: string): DragMark => (key === dragKey ? 'dragging' : key === overKey ? 'drop-on' : undefined)
+  return (
+    <g className="cr-seats">
+      {cells.map(({ row, col, seat }) => seat ? (
+        <OccupiedSeat key={`${row}-${col}`} row={row} col={col} seat={seat} layout={layout}
+          pose={poseOf(seat.enrollment_id, turnedId === seat.enrollment_id, effects)} mark={markOf(`${row}-${col}`)}
+          view={views?.[seat.enrollment_id] ?? NO_VIEW} onHover={onHover}
+          onSeatClick={interactive ? onSeatClick : undefined} />
+      ) : (
+        <EmptySeat key={`${row}-${col}`} row={row} col={col} layout={layout} mark={markOf(`${row}-${col}`)}
+          onEmptySeatClick={interactive ? onEmptySeatClick : undefined} />
+      ))}
+    </g>
+  )
+}
