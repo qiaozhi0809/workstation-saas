@@ -43,6 +43,8 @@ export default function TeacherLayout() {
           )}
         </div>
         <div className="flex items-center gap-4">
+          <Link to="/teacher/preferences"
+            onClick={(e) => { if (!confirmLeaveSeating()) e.preventDefault() }}>我的偏好</Link>
           <span>{user?.display_name}</span>
           <button type="button" onClick={logout}>退出登录</button>
         </div>

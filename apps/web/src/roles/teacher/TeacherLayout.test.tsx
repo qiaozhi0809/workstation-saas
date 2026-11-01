@@ -12,6 +12,7 @@ import TeacherLayout from './TeacherLayout'
 
 vi.mock('@/shared/api/classes', () => ({ classesApi: { mine: vi.fn() } }))
 vi.mock('@/shared/api/auth', () => ({ authApi: { logout: vi.fn() } }))
+vi.mock('@/shared/api/classroom', () => ({ classroomApi: { summary: vi.fn().mockResolvedValue({ my_perms: [] }) } }))
 vi.mock('@/shared/api/students', () => ({ studentsApi: { detail: vi.fn() } }))
 
 const cls = (id: string, name: string, role: ClassView['role']): ClassView =>
@@ -155,4 +156,10 @@ it('resets the drawer tab when switching to another student', async () => {
   fireEvent.click(screen.getByText('去二号'))
   await screen.findByRole('dialog', { name: '李小二' })
   expect(screen.getByRole('tab', { name: '概览' })).toHaveAttribute('aria-selected', 'true')
+})
+
+it('links to my preferences', async () => {
+  vi.mocked(classesApi.mine).mockResolvedValue({ items: [cls('a', '三年二班', 'homeroom_teacher')] })
+  renderLayout()
+  expect(await screen.findByRole('link', { name: '我的偏好' })).toHaveAttribute('href', '/teacher/preferences')
 })

@@ -21,6 +21,7 @@ import { usePick, usePickReward } from './pick/usePick'
 import { attendanceApi } from '@/shared/api/attendance'
 import { useAttendanceMode } from './attendance/useAttendanceMode'
 import { useReviewMode } from './review/useReviewMode'
+import BoardEditor from './BoardEditor'
 import SeatingBar from './seating/SeatingBar'
 import UnseatedTray from './seating/UnseatedTray'
 import { useSeatingMode } from './seating/useSeatingMode'
@@ -93,6 +94,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
   const rootRef = useRef<HTMLDivElement>(null)
   const viewport = useRef<ClassroomViewportHandle>(null)
   const { active: presenting, toggle: togglePresent } = useFullscreen(rootRef)
+  const [editingBoard, setEditingBoard] = useState(false)
   const [railOpen, setRailOpen] = useState(() => window.innerWidth >= RAIL_MIN_WIDTH)
 
   const roster = useQuery({
@@ -284,7 +286,12 @@ function ClassroomView({ cls }: { cls: ClassView }) {
           onTogglePresent={togglePresent}
           railOpen={railOpen}
           onToggleRail={() => setRailOpen((o) => !o)}
-          extra={slot.toolbar}
+          extra={<>
+            {perms.includes('board.write') && !presenting && summary.data && (
+              <button type="button" className={toolButton} onClick={() => setEditingBoard(true)}>编辑黑板</button>
+            )}
+            {slot.toolbar}
+          </>}
         />
         {slot.bar}
         {/* 弹层锚点是点击瞬间的快照:在舞台上按下或滚轮平移 / 缩放时先关掉弹层 */}
@@ -312,6 +319,9 @@ function ClassroomView({ cls }: { cls: ClassView }) {
         {review.leaderboard}
         <ModeBar mode={mode} perms={perms} onChange={setMode} />
       </section>
+      {editingBoard && summary.data && (
+        <BoardEditor classId={classId} board={summary.data.board} onClose={() => setEditingBoard(false)} />
+      )}
       {railOpen && !presenting && summary.data && roster.data && (
         <OverviewRail
           classId={classId}

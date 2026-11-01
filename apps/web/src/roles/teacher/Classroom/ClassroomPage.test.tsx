@@ -175,3 +175,18 @@ it('does not open a student profile from a seat while presenting', async () => {
   expect(screen.queryByTestId('loc')).toBeNull()
   expect(screen.getByRole('button', { name: '退出全屏' })).toBeInTheDocument()
 })
+
+it('shows 编辑黑板 only with board.write and opens the editor', async () => {
+  setup()
+  fireEvent.click(await screen.findByRole('button', { name: '编辑黑板' }))
+  expect(screen.getByRole('dialog', { name: '编辑黑板' })).toBeInTheDocument()
+  fireEvent.keyDown(document, { key: 'Escape' })
+  expect(screen.queryByRole('dialog', { name: '编辑黑板' })).toBeNull()
+})
+
+it('hides 编辑黑板 without board.write', async () => {
+  setup({ perms: ['review.write'] })
+  await screen.findByRole('toolbar', { name: '教室工具' })
+  await screen.findByText(/第 10 周/)
+  expect(screen.queryByRole('button', { name: '编辑黑板' })).toBeNull()
+})

@@ -6,6 +6,7 @@ import { ApiError } from '@/shared/api/client'
 import { studentsApi } from '@/shared/api/students'
 import StudentProfileDrawer from './StudentProfileDrawer'
 
+vi.mock('@/shared/api/classroom', () => ({ classroomApi: { summary: vi.fn().mockResolvedValue({ my_perms: [] }) } }))
 vi.mock('@/shared/api/students', () => ({ studentsApi: { detail: vi.fn() } }))
 
 const student = { id: 's1', enrollment_id: 'e1', mk: 'S0001', name: '王小一', class_id: 'c', gender: '男', family_structure: '双亲家庭' }
