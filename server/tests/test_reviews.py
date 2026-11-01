@@ -1,0 +1,208 @@
+from datetime import date, datetime
+from uuid import UUID, uuid4
+
+from sqlalchemy import func, select
+
+from app.models import Attendance, Review
+from app.rbac.roles import Role
+from tests.factories import bind, make_user
+from tests.helpers import audit_rows, auth, enrollment_of, freeze
+from tests.seed_ids import CLASS_ID, STUDENT_IDS, SUBJECT_USER_ID, TEACHER_USER_ID
+
+BASE = f"/api/v1/classes/{CLASS_ID}/reviews"
+NOW = "2026-11-02T02:00:00+00:00"
+
+
+def individual(enrollments, op_id=None, delta=1, reason="积极发言", **extra):
+    return {
+        "op_id": str(op_id or uuid4()),
+        "category": "individual",
+        "enrollment_ids": [str(e) for e in enrollments],
+        "reason_text": reason,
+        "score_delta": delta,
+        **extra,
+    }
+
+
+def whole_class(op_id=None):
+    return {
+        "op_id": str(op_id or uuid4()),
+        "category": "whole_class",
+        "reason_text": "全班表现好",
+        "score_delta": 1,
+    }
+
+
+def mark(db, student_id, status, day="2026-11-02"):
+    db.add(
+        Attendance(
+            enrollment_id=enrollment_of(db, student_id),
+            class_id=UUID(CLASS_ID),
+            date=date.fromisoformat(day),
+            status=status,
+        )
+    )
+    db.flush()
+
+
+def review_count(db):
+    return db.scalar(select(func.count()).select_from(Review))
+
+
+def test_create_individual_review(client, db, settings):
+    e = enrollment_of(db, STUDENT_IDS[0])
+    res = client.post(BASE, json=individual([e]), headers=auth(settings))
+    assert res.status_code == 201
+    [item] = res.json()["items"]
+    assert (item["enrollment_id"], item["score_delta"]) == (str(e), 1)
+    assert item["category"] == "individual"
+    assert (item["given_by_me"], item["subject"]) == (True, None)
+    assert "given_by_user_id" not in item
+
+
+def test_replayed_op_id_returns_existing_rows(client, db, settings):
+    payload = individual([enrollment_of(db, STUDENT_IDS[0])])
+    first = client.post(BASE, json=payload, headers=auth(settings))
+    second = client.post(BASE, json=payload, headers=auth(settings))
+    assert (first.status_code, second.status_code) == (201, 200)
+    assert second.json()["items"] == first.json()["items"]
+    assert review_count(db) == 1
+
+
+def test_op_id_reused_by_other_user_is_409(client, db, settings):
+    payload = individual([enrollment_of(db, STUDENT_IDS[0])])
+    client.post(BASE, json=payload, headers=auth(settings))
+    res = client.post(BASE, json=payload, headers=auth(settings, SUBJECT_USER_ID))
+    assert (res.status_code, res.json()["error"]["code"]) == (409, "OP_ID_CONFLICT")
+
+
+def test_whole_class_skips_leave_and_absent(client, db, settings, monkeypatch):
+    freeze(monkeypatch, NOW)
+    mark(db, STUDENT_IDS[0], "leave")
+    mark(db, STUDENT_IDS[1], "absent")
+    mark(db, STUDENT_IDS[2], "late")
+    items = client.post(BASE, json=whole_class(), headers=auth(settings)).json()["items"]
+    got = {i["enrollment_id"] for i in items}
+    assert len(got) == 8
+    assert str(enrollment_of(db, STUDENT_IDS[2])) in got
+    assert str(enrollment_of(db, STUDENT_IDS[0])) not in got
+    assert {i["category"] for i in items} == {"whole_class"}
+
+
+def test_whole_class_all_on_leave_is_400(client, db, settings, monkeypatch):
+    freeze(monkeypatch, NOW)
+    for sid in STUDENT_IDS:
+        mark(db, sid, "leave")
+    res = client.post(BASE, json=whole_class(), headers=auth(settings))
+    assert (res.status_code, res.json()["error"]["code"]) == (400, "NO_TARGETS")
+    assert review_count(db) == 0
+
+
+def test_body_shape_rules(client, db, settings):
+    e = enrollment_of(db, STUDENT_IDS[0])
+    with_ids = {**whole_class(), "enrollment_ids": [str(e)]}
+    zero = individual([e], delta=0)
+    duplicated = individual([e, e])
+    for bad in (with_ids, zero, duplicated):
+        assert client.post(BASE, json=bad, headers=auth(settings)).status_code == 400
+    unknown = client.post(BASE, json=individual([uuid4()]), headers=auth(settings))
+    assert unknown.json()["error"]["code"] == "UNKNOWN_ENROLLMENT"
+
+
+def test_subject_rules(client, db, settings):
+    e = enrollment_of(db, STUDENT_IDS[0])
+    math = client.post(BASE, json=individual([e]), headers=auth(settings, SUBJECT_USER_ID))
+    assert math.json()["items"][0]["subject"] == "数学"
+    english = client.post(
+        BASE, json=individual([e], subject="英语"), headers=auth(settings, SUBJECT_USER_ID)
+    )
+    assert english.json()["error"]["code"] == "SUBJECT_NOT_ALLOWED"
+    two = make_user(db, "t_two_subjects")
+    bind(db, two.id, Role.subject_teacher, class_id=CLASS_ID, subject="物理")
+    bind(db, two.id, Role.subject_teacher, class_id=CLASS_ID, subject="化学")
+    missing = client.post(BASE, json=individual([e]), headers=auth(settings, two.id))
+    assert missing.json()["error"]["code"] == "SUBJECT_REQUIRED"
+    chosen = client.post(BASE, json=individual([e], subject="化学"), headers=auth(settings, two.id))
+    assert chosen.json()["items"][0]["subject"] == "化学"
+
+
+def test_list_hides_givers_and_revoked(client, db, settings):
+    e = enrollment_of(db, STUDENT_IDS[0])
+    theirs, mine = uuid4(), uuid4()
+    client.post(BASE, json=individual([e], op_id=theirs), headers=auth(settings, SUBJECT_USER_ID))
+    client.post(BASE, json=individual([e], op_id=mine), headers=auth(settings))
+    client.post(f"{BASE}/{mine}/revoke", headers=auth(settings))
+    items = client.get(BASE, headers=auth(settings)).json()["items"]
+    assert [(i["op_id"], i["given_by_me"]) for i in items] == [(str(theirs), False)]
+
+
+def test_list_paginates_without_overlap(client, db, settings):
+    e = enrollment_of(db, STUDENT_IDS[0])
+    for _ in range(3):
+        client.post(BASE, json=individual([e]), headers=auth(settings))
+    page1 = client.get(BASE, params={"limit": 2}, headers=auth(settings)).json()
+    page2 = client.get(
+        BASE, params={"limit": 2, "cursor": page1["next_cursor"]}, headers=auth(settings)
+    ).json()
+    ids = [i["id"] for i in page1["items"] + page2["items"]]
+    assert len(page1["items"]) == 2 and page2["next_cursor"] is None
+    assert len(set(ids)) == 3
+    bad = client.get(BASE, params={"cursor": "not-a-cursor"}, headers=auth(settings))
+    assert bad.status_code == 400
+
+
+def test_summary_counts_week_and_total(client, db, settings, monkeypatch):
+    freeze(monkeypatch, NOW)
+    e = enrollment_of(db, STUDENT_IDS[0])
+    for delta, at in (
+        (2, "2026-11-01T15:00:00+00:00"),  # 学校时区 11-01 23:00,上周
+        (3, "2026-11-01T16:30:00+00:00"),  # 学校时区 11-02 00:30,本周
+        (-1, "2026-11-02T01:00:00+00:00"),
+    ):
+        db.add(
+            Review(
+                op_id=uuid4(),
+                enrollment_id=e,
+                class_id=UUID(CLASS_ID),
+                category="individual",
+                reason_text="测试",
+                score_delta=delta,
+                given_by_user_id=UUID(TEACHER_USER_ID),
+                given_at=datetime.fromisoformat(at),
+            )
+        )
+    db.flush()
+    body = client.get(f"{BASE}/summary", headers=auth(settings)).json()
+    assert body["week_start"] == "2026-11-02"
+    assert len(body["items"]) == 10
+    row = next(i for i in body["items"] if i["enrollment_id"] == str(e))
+    assert row == {
+        "enrollment_id": str(e),
+        "total": 4,
+        "week": 2,
+        "plus_count": 2,
+        "minus_count": 1,
+    }
+
+
+def test_revoke_own_op_is_audited_once(client, db, settings):
+    op = uuid4()
+    client.post(
+        BASE, json=individual([enrollment_of(db, STUDENT_IDS[0])], op_id=op), headers=auth(settings)
+    )
+    first = client.post(f"{BASE}/{op}/revoke", headers=auth(settings)).json()
+    again = client.post(f"{BASE}/{op}/revoke", headers=auth(settings)).json()
+    assert (first["revoked"], again["revoked"]) == (1, 0)
+    assert [(r.action, r.success) for r in audit_rows(db, op)] == [("review.revoke", True)]
+
+
+def test_revoke_others_forbidden_and_audited(client, db, settings):
+    op = uuid4()
+    client.post(
+        BASE,
+        json=individual([enrollment_of(db, STUDENT_IDS[0])], op_id=op),
+        headers=auth(settings, SUBJECT_USER_ID),
+    )
+    res = client.post(f"{BASE}/{op}/revoke", headers=auth(settings))
+    assert res.status_code == 403
+    assert [(r.action, r.success) for r in audit_rows(db, op)] == [("review.revoke", False)]
