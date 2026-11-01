@@ -13,7 +13,7 @@ export default function ClassroomPage() {
   const roster = useQuery({
     queryKey: ['class-students', classId],
     queryFn: () => studentsApi.listInClass(classId as string),
-    enabled: !!classId,
+    enabled: !!classId && !!classes.data?.items.some((c) => c.id === classId),
   })
 
   if (classes.isLoading) return <div className="p-6">加载中…</div>

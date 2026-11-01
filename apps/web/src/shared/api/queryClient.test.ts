@@ -1,11 +1,13 @@
 import { afterEach, expect, it } from 'vitest'
 import { useAuthStore } from '@/shared/stores/auth'
+import { useTeacherStore } from '@/shared/stores/teacher'
 import { ApiError } from './client'
 import { queryClient, shouldRetry } from './queryClient'
 
 afterEach(() => {
   queryClient.clear()
   useAuthStore.getState().logout()
+  useTeacherStore.setState({ classId: null })
   localStorage.clear()
 })
 
@@ -29,4 +31,20 @@ it('clears the query cache when the access token goes from set to null', () => {
   expect(queryClient.getQueryData(['k'])).toBe(1)
   useAuthStore.getState().logout()
   expect(queryClient.getQueryData(['k'])).toBeUndefined()
+})
+
+it('resets the selected class on logout', () => {
+  useAuthStore.getState().setTokens('a', 'r', { id: 'u', display_name: 't' })
+  useTeacherStore.setState({ classId: 'c1' })
+  useAuthStore.getState().logout()
+  expect(useTeacherStore.getState().classId).toBeNull()
+})
+
+it('clears the cache and class when the user changes without logout', () => {
+  useAuthStore.getState().setTokens('a', 'r', { id: 'u1', display_name: 't' })
+  queryClient.setQueryData(['k'], 1)
+  useTeacherStore.setState({ classId: 'c1' })
+  useAuthStore.getState().setTokens('b', 'r2', { id: 'u2', display_name: 't2' })
+  expect(queryClient.getQueryData(['k'])).toBeUndefined()
+  expect(useTeacherStore.getState().classId).toBeNull()
 })

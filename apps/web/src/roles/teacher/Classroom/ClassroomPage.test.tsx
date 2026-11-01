@@ -65,6 +65,7 @@ it('shows loading when classId is stale and not among my classes', async () => {
   await vi.waitFor(() => expect(classesApi.mine).toHaveBeenCalled())
   expect(await screen.findByText('加载中…')).toBeInTheDocument()
   expect(screen.queryByText('没有可查看的班级')).toBeNull()
+  expect(studentsApi.listInClass).not.toHaveBeenCalled()
 })
 
 it('renders class title and seated students for the selected class', async () => {
