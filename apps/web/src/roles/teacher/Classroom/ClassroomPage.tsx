@@ -24,6 +24,7 @@ import { useAttendanceMode } from './attendance/useAttendanceMode'
 import { useReviewMode } from './review/useReviewMode'
 import { useReviewSubject } from './review/useReviewSubmit'
 import BoardEditor from './BoardEditor'
+import SeatHoverCard from './SeatHoverCard'
 import SeatingBar from './seating/SeatingBar'
 import UnseatedTray from './seating/UnseatedTray'
 import { useSeatingMode } from './seating/useSeatingMode'
@@ -173,6 +174,16 @@ function ClassroomView({ cls }: { cls: ClassView }) {
     return pickPool(roster.data?.items ?? [], (id) => status.get(id))
   }, [todayAttendance.data, roster.data])
   const pick = usePick({ pool })
+  // 悬停卡:今日考勤固定看学校"今天"(与考勤模式正在看的日期无关),本周积分要有 review.read 才有
+  const renderHoverCard = useCallback<NonNullable<ClassroomMapProps['renderHoverCard']>>((s) => {
+    const status = todayAttendance.data
+      ? todayAttendance.data.items.find((i) => i.enrollment_id === s.enrollment_id)?.status ?? 'present'
+      : undefined
+    const week = reviewSummary.data
+      ? reviewSummary.data.items.find((t) => t.enrollment_id === s.enrollment_id)?.week ?? 0
+      : undefined
+    return <SeatHoverCard seat={s} attendance={status} week={week} />
+  }, [todayAttendance.data, reviewSummary.data])
   const seating = useSeatingMode({
     classId,
     className: cls.name,
@@ -254,6 +265,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
         views={slot.views}
         effects={pickEffects}
         presenting={presenting}
+        renderHoverCard={renderHoverCard}
         onSeatClick={slot.onSeatClick}
         onEmptySeatClick={slot.onEmptySeatClick}
         onSeatDrop={slot.onSeatDrop}

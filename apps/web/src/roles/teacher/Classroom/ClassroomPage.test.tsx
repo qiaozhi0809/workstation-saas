@@ -1,11 +1,11 @@
-import { act, fireEvent, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { attendanceApi } from '@/shared/api/attendance'
 import { classesApi } from '@/shared/api/classes'
 import { classroomApi } from '@/shared/api/classroom'
 import { reviewsApi } from '@/shared/api/reviews'
 import { studentsApi } from '@/shared/api/students'
-import { defaultApiMocks, setup } from './pageTestUtils'
+import { defaultApiMocks, rosterFixture, setup } from './pageTestUtils'
 
 vi.mock('@/shared/api/classes')
 vi.mock('@/shared/api/students')
@@ -254,4 +254,41 @@ it('lets the teacher review while presenting and closes the popover when present
   fireEvent.click(screen.getByRole('button', { name: '全屏' }))
   expect(await screen.findByRole('button', { name: '退出全屏' })).toBeInTheDocument()
   expect(screen.queryByRole('dialog', { name: '点评 李小二' })).toBeNull()
+})
+
+const hoverCard = async (container: HTMLElement, seat: string) => {
+  fireEvent.mouseEnter(container.querySelector(`[data-seat="${seat}"]`) as Element)
+  return waitFor(() => {
+    const card = container.querySelector('.cr-hovercard')
+    expect(card).not.toBeNull()
+    return card as HTMLElement
+  })
+}
+
+it('shows number, role, today\'s attendance and this week\'s points in the hover card', async () => {
+  leaveE1()
+  vi.mocked(reviewsApi.summary).mockResolvedValue({ week_start: '2026-11-02', items: [
+    { enrollment_id: 'e1', total: 5, week: 3, plus_count: 5, minus_count: 0 },
+    { enrollment_id: 'e2', total: 0, week: 0, plus_count: 0, minus_count: 0 },
+  ] })
+  const { container } = setup({ roster: rosterFixture.map((s) => (s.enrollment_id === 'e1' ? { ...s, class_role: '班长' } : s)) })
+  await screen.findByText('请假')
+  const card = await hoverCard(container, '1-1')
+  expect(within(card).getByText('王小一')).toBeInTheDocument()
+  expect(within(card).getByText('学号 2026001')).toBeInTheDocument()
+  expect(within(card).getByText('班长')).toBeInTheDocument()
+  expect(within(card).getByText('今日考勤 请假')).toBeInTheDocument()
+  expect(await within(card).findByText('本周积分 +3')).toBeInTheDocument()
+  fireEvent.mouseEnter(container.querySelector('[data-seat="1-2"]') as Element)
+  expect(await within(container).findByText('今日考勤 出勤')).toBeInTheDocument()
+  expect(within(container).getByText('本周积分 0')).toBeInTheDocument()
+})
+
+it('leaves weekly points out of the hover card without review.read', async () => {
+  const { container } = setup({ perms: ['attendance.read'] })
+  await screen.findByRole('button', { name: '王小一' })
+  await waitFor(() => expect(attendanceApi.day).toHaveBeenCalled())
+  const card = await hoverCard(container, '1-1')
+  expect(await within(card).findByText('今日考勤 出勤')).toBeInTheDocument()
+  expect(within(card).queryByText(/本周积分/)).toBeNull()
 })
