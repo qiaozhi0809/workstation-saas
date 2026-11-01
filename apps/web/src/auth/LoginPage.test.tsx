@@ -1,8 +1,9 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { authApi } from '@/shared/api/auth'
 import { ApiError } from '@/shared/api/client'
+import type { LoginResponse } from '@/shared/types/api'
 import { useAuthStore } from '@/shared/stores/auth'
 import LoginPage from './LoginPage'
 
@@ -20,6 +21,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  cleanup()
   useAuthStore.getState().logout()
 })
 
@@ -80,12 +82,12 @@ it('disables the button while pending and clears the error on resubmit', async (
   fill('teacher01', 'x')
   expect(await screen.findByRole('alert')).toBeInTheDocument()
 
-  let resolve!: (v: never) => void
-  vi.mocked(authApi.login).mockReturnValueOnce(new Promise((r) => { resolve = r as typeof resolve }))
+  let resolve!: (v: LoginResponse) => void
+  vi.mocked(authApi.login).mockReturnValueOnce(new Promise((r) => { resolve = r }))
   fireEvent.click(screen.getByRole('button', { name: '登录' }))
   const btn = await screen.findByRole('button', { name: '登录中…' })
   expect(btn).toBeDisabled()
   expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-  resolve(undefined as never)
-  await waitFor(() => expect(screen.getByRole('button', { name: '登录' })).toBeEnabled())
+  resolve({ access_token: 'a', refresh_token: 'r', expires_at: 'x', user: { id: 'u', display_name: 't' } })
+  await waitFor(() => expect(useAuthStore.getState().accessToken).toBe('a'))
 })

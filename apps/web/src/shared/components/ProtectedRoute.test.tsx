@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react'
+import { act, cleanup, render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it } from 'vitest'
 import { useAuthStore } from '@/shared/stores/auth'
@@ -15,7 +15,10 @@ const renderApp = () =>
   )
 
 beforeEach(() => useAuthStore.getState().logout())
-afterEach(() => useAuthStore.getState().logout())
+afterEach(() => {
+  cleanup()
+  useAuthStore.getState().logout()
+})
 
 it('redirects to /login without a token', () => {
   renderApp()
