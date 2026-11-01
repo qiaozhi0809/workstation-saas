@@ -32,6 +32,8 @@ function setup() {
 
 beforeEach(() => {
   vi.resetAllMocks()
+  vi.mocked(classesApi.mine).mockResolvedValue({ items: [cls] })
+  vi.mocked(studentsApi.listInClass).mockResolvedValue({ items: [] })
   act(() => useTeacherStore.setState({ classId: 'c1' }))
 })
 
