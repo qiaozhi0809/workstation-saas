@@ -65,6 +65,7 @@
 
 ## 文档
 
+- 🤖 [AI 代理工作指南(AGENTS.md)](AGENTS.md) — **AI 代理 / 开发者先读这个**
 - [三角色协作平台设计文档](docs/superpowers/specs/2026-11-01-三角色协作平台-design.md)
 - [M1 实施计划 · 骨架与教师角色底座](docs/superpowers/plans/2026-11-01-M1-骨架与教师角色底座.md)
 - [原 HTML 项目功能考古](reference-html/features-extracted.md)
