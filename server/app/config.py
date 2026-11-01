@@ -2,6 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from uuid import UUID
 
+from fastapi import Request
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -37,3 +38,7 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+def settings_dep(request: Request) -> Settings:
+    return request.app.state.settings
