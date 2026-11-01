@@ -15,9 +15,11 @@ import { useTeacherStore } from '@/shared/stores/teacher'
 import type { ClassView } from '@/shared/types/class'
 import type { ClassPerm } from '@/shared/types/classroom'
 import type { StudentSeat } from '@/shared/types/student'
+import { useAttendanceMode } from './attendance/useAttendanceMode'
 import { buildBoard } from './buildBoard'
 import ModeBar, { modesFor, type ClassroomUiMode } from './ModeBar'
 import Toolbar from './Toolbar'
+import { useAttendanceDate } from './useAttendanceDate'
 import { useFullscreen } from './useFullscreen'
 
 const NO_PERMS: ClassPerm[] = []
@@ -107,7 +109,26 @@ function ClassroomView({ cls }: { cls: ClassView }) {
     [navigate],
   )
   // 投屏时只展示姓名:档案抽屉在全屏根元素之外,不能在投屏中打开(退出全屏时会把档案亮在投影上)
-  const slot: ModeSlot = mode === 'daily' ? { onSeatClick: presenting ? undefined : openProfile } : {}
+  // 考勤日期跟随服务端的学校"今天",不用浏览器时钟;日常/考勤/点评叠加当天考勤外观,排座不叠加
+  const attDate = useAttendanceDate(today)
+  const attendance = useAttendanceMode({
+    classId,
+    className: cls.name,
+    date: attDate.date,
+    canWrite: perms.includes('attendance.write'),
+    enabled: mode !== 'seating',
+    today,
+    yearStart: summary.data?.year.start_date,
+    timezone: summary.data?.timezone,
+    roster: roster.data?.items ?? [],
+    onPickDate: attDate.pick,
+    onFollowToday: attDate.followToday,
+  })
+  const overlay = mode === 'seating' ? undefined : attendance.views
+  let slot: ModeSlot = {}
+  if (mode === 'daily') slot = { views: overlay, onSeatClick: presenting ? undefined : openProfile }
+  else if (mode === 'attendance') slot = { views: overlay, onSeatClick: attendance.onSeatClick, bar: attendance.bar }
+  else if (mode === 'review') slot = { views: overlay }
 
   let stage: ReactNode
   if (roster.isError) stage = <div className="p-6">名单加载失败</div>
