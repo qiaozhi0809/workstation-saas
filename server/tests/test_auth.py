@@ -79,3 +79,17 @@ def test_success_resets_failure_counter(client):
     for _ in range(4):
         login(client, pw="wrong")
     assert login(client).status_code == 200
+
+
+def test_validation_error_does_not_echo_input(client):
+    res = client.post(
+        "/api/v1/auth/login",
+        json={"login_name": "teacher01", "password": "p" * 300 + "SECRETMARK"},
+    )
+    assert res.status_code == 400
+    assert res.json()["error"]["code"] == "BAD_REQUEST"
+    assert "SECRETMARK" not in res.text
+    errors = res.json()["error"]["details"]["errors"]
+    assert errors
+    for item in errors:
+        assert set(item) == {"type", "loc", "msg"}

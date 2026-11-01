@@ -21,6 +21,11 @@ class ApiError(Exception):
         self.details = details
 
 
+def _safe_error(err: dict[str, Any]) -> dict[str, Any]:
+    # pydantic 的 input / ctx 会回显请求内容(如密码),只保留 type / loc / msg
+    return {"type": err["type"], "loc": err["loc"], "msg": err["msg"]}
+
+
 def error_response(
     status: int,
     code: str,
@@ -45,7 +50,7 @@ def install_error_handlers(app: FastAPI) -> None:
             400,
             "BAD_REQUEST",
             "Invalid request",
-            {"errors": jsonable_encoder(exc.errors())},
+            {"errors": jsonable_encoder([_safe_error(e) for e in exc.errors()])},
         )
 
     @app.exception_handler(StarletteHTTPException)
