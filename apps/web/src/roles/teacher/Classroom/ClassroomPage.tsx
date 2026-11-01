@@ -15,6 +15,10 @@ import { useTeacherStore } from '@/shared/stores/teacher'
 import type { ClassView } from '@/shared/types/class'
 import type { ClassPerm } from '@/shared/types/classroom'
 import type { StudentSeat } from '@/shared/types/student'
+import { pickPool } from './pick/pickLogic'
+import PickCard from './pick/PickCard'
+import { usePick, usePickReward } from './pick/usePick'
+import { attendanceApi } from '@/shared/api/attendance'
 import { useAttendanceMode } from './attendance/useAttendanceMode'
 import { useReviewMode } from './review/useReviewMode'
 import { buildBoard } from './buildBoard'
@@ -141,6 +145,23 @@ function ClassroomView({ cls }: { cls: ClassView }) {
     overlay: attendance.views,
     stageRef,
   })
+  // 点名候选池固定用学校"今天"的考勤(与考勤模式正在看的日期无关,缓存键相同所以共用),且只含已排座的同学
+  const todayAttendance = useQuery({
+    queryKey: ['attendance', classId, today],
+    queryFn: () => attendanceApi.day(classId, today!),
+    enabled: !!today,
+  })
+  const pool = useMemo(() => {
+    const status = new Map((todayAttendance.data?.items ?? []).map((i) => [i.enrollment_id, i.status]))
+    return pickPool(roster.data?.items ?? [], (id) => status.get(id))
+  }, [todayAttendance.data, roster.data])
+  const pick = usePick({ pool })
+  const pickReward = usePickReward(classId, pick.close)
+  const pickedSeat = roster.data?.items.find((s) => s.enrollment_id === pick.pickedId) ?? null
+  const cardOpen = pick.state === 'picked' || pick.state === 'empty'
+  // 点名进行中(转动或结果卡打开):Task 21 据此暂停空闲动画
+  const picking = pick.state === 'spinning' || cardOpen
+  const canPick = mode !== 'seating' && todayAttendance.isSuccess && !!roster.data
   const overlay = mode === 'seating' ? undefined : attendance.views
   let slot: ModeSlot = {}
   if (mode === 'daily') slot = { views: overlay, onSeatClick: presenting ? undefined : openProfile }
@@ -150,6 +171,13 @@ function ClassroomView({ cls }: { cls: ClassView }) {
       views: review.views, effects: { floats: review.floats }, toolbar: review.toolbar,
       onSeatClick: presenting ? undefined : review.onSeatClick,
     }
+  }
+
+  const pickEffects: ClassroomEffects = {
+    ...slot.effects,
+    spotlightId: pick.spotlightId,
+    pickedId: pick.pickedId,
+    teacher: pick.pickedId ? 'point' : slot.effects?.teacher,
   }
 
   let stage: ReactNode
@@ -165,7 +193,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
         teacher={teacher}
         board={board}
         views={slot.views}
-        effects={slot.effects}
+        effects={pickEffects}
         presenting={presenting}
         onSeatClick={slot.onSeatClick}
         onEmptySeatClick={slot.onEmptySeatClick}
@@ -191,6 +219,8 @@ function ClassroomView({ cls }: { cls: ClassView }) {
           </header>
         )}
         <Toolbar
+          onPick={canPick ? pick.start : undefined}
+          picking={picking}
           viewport={viewport}
           presenting={presenting}
           onTogglePresent={togglePresent}
@@ -210,6 +240,16 @@ function ClassroomView({ cls }: { cls: ClassView }) {
         >
           {stage}
           {review.popover}
+          {cardOpen && (
+            <PickCard
+              seat={pick.state === 'picked' ? pickedSeat : null}
+              canReward={perms.includes('review.write')}
+              rewarding={pickReward.pending}
+              onReward={() => pick.pickedId && pickReward.reward(pick.pickedId)}
+              onAgain={pick.start}
+              onClose={pick.close}
+            />
+          )}
         </div>
         {review.leaderboard}
         <ModeBar mode={mode} perms={perms} onChange={setMode} />
