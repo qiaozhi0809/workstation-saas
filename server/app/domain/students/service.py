@@ -43,6 +43,11 @@ def list_roster(db: Session, class_id: UUID, year_id: UUID) -> list[StudentSeat]
             seat_row=e.seat_row,
             seat_col=e.seat_col,
             avatar_seed=s.avatar_seed,
+            gender=s.gender,
+            student_no=s.student_no,
+            birthdate=s.birthdate,
+            class_role=e.class_role,
+            seat_locked=e.seat_locked,
         )
         for e, s in rows
     ]
@@ -50,9 +55,9 @@ def list_roster(db: Session, class_id: UUID, year_id: UUID) -> list[StudentSeat]
 
 def find_enrolled_student(
     db: Session, student_id: UUID, year_id: UUID
-) -> tuple[Student, Scope] | None:
+) -> tuple[Student, Scope, Enrollment] | None:
     row = db.execute(
-        select(Student, SchoolClass)
+        select(Student, SchoolClass, Enrollment)
         .join(Enrollment, Enrollment.student_id == Student.id)
         .join(SchoolClass, Enrollment.class_id == SchoolClass.id)
         .where(
@@ -63,11 +68,11 @@ def find_enrolled_student(
     ).first()
     if row is None:
         return None
-    student, cls = row
+    student, cls, enrollment = row
     scope = Scope(
         school_id=cls.school_id, grade_id=cls.grade_id, class_id=cls.id, student_id=student.id
     )
-    return student, scope
+    return student, scope, enrollment
 
 
 def _clean(value: Any) -> Any:
@@ -79,10 +84,16 @@ def _clean(value: Any) -> Any:
 
 
 def build_profile(
-    student: Student, scope: Scope, bindings: Sequence[Binding], caller_id: UUID
+    student: Student,
+    scope: Scope,
+    enrollment: Enrollment,
+    bindings: Sequence[Binding],
+    caller_id: UUID,
 ) -> StudentProfile:
     data: dict[str, Any] = {
         "id": student.id,
+        "enrollment_id": enrollment.id,
+        "class_role": _clean(enrollment.class_role),
         "mk": student.mk,
         "name": student.name,
         "class_id": scope.class_id,

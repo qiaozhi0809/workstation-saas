@@ -62,7 +62,7 @@ def student_profile(
     found = find_enrolled_student(db, student_id, year.id) if year is not None else None
     if found is None:
         raise ApiError(404, "NOT_FOUND", "学生不存在")
-    student, scope = found
+    student, scope, enrollment = found
     if not can(bindings, Perm.STUDENT_BASIC, scope):
         deny(
             db,
@@ -72,7 +72,7 @@ def student_profile(
             object_id=str(student_id),
             request=request,
         )
-    profile = build_profile(student, scope, bindings, user.id)
+    profile = build_profile(student, scope, enrollment, bindings, user.id)
     record(
         db,
         user_id=user.id,

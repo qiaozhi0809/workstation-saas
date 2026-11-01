@@ -13,10 +13,16 @@ class StudentSeat(BaseModel):
     seat_row: int | None
     seat_col: int | None
     avatar_seed: str | None
+    gender: str | None
+    student_no: str | None
+    birthdate: date | None
+    class_role: str | None
+    seat_locked: bool
 
 
 class StudentProfile(BaseModel):
     id: UUID
+    enrollment_id: UUID
     mk: str
     name: str
     class_id: UUID
@@ -24,6 +30,7 @@ class StudentProfile(BaseModel):
     student_no: str | None = None
     birthdate: date | None = None
     avatar_seed: str | None = None
+    class_role: str | None = None
     family_structure: str | None = None
     learning_summary: str | None = None
     personality: str | None = None

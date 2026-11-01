@@ -5,6 +5,7 @@ from sqlalchemy import create_engine
 from app.auth.router import router as auth_router
 from app.config import Settings, get_settings
 from app.domain.classes.router import router as classes_router
+from app.domain.classroom.router import router as classroom_router
 from app.domain.students.router import router as students_router
 from app.errors import install_error_handlers
 from app.logging import configure_logging
@@ -27,6 +28,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     router.include_router(auth_router)
     router.include_router(classes_router)
+    router.include_router(classroom_router)
     router.include_router(students_router)
     app.include_router(router)
     return app
