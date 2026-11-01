@@ -206,3 +206,21 @@ def test_revoke_others_forbidden_and_audited(client, db, settings):
     res = client.post(f"{BASE}/{op}/revoke", headers=auth(settings))
     assert res.status_code == 403
     assert [(r.action, r.success) for r in audit_rows(db, op)] == [("review.revoke", False)]
+
+
+def test_empty_cursor_is_first_page(client, db, settings):
+    client.post(BASE, json=individual([enrollment_of(db, STUDENT_IDS[0])]), headers=auth(settings))
+    res = client.get(BASE, params={"cursor": ""}, headers=auth(settings))
+    assert res.status_code == 200
+    assert len(res.json()["items"]) == 1
+
+
+def test_replay_after_revoke_does_not_resurrect(client, db, settings):
+    payload = individual([enrollment_of(db, STUDENT_IDS[0])])
+    assert client.post(BASE, json=payload, headers=auth(settings)).status_code == 201
+    client.post(f"{BASE}/{payload['op_id']}/revoke", headers=auth(settings))
+    again = client.post(BASE, json=payload, headers=auth(settings))
+    assert (again.status_code, again.json()["items"]) == (200, [])
+    assert review_count(db) == 1
+    other = client.post(BASE, json=payload, headers=auth(settings, SUBJECT_USER_ID))
+    assert other.status_code == 409

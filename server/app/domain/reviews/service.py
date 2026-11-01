@@ -47,7 +47,7 @@ def _existing(db: Session, cls: SchoolClass, user_id: UUID, op_id: UUID) -> list
         return None
     if any(r.given_by_user_id != user_id or r.class_id != cls.id for r in rows):
         raise ApiError(409, "OP_ID_CONFLICT", "该操作编号已被使用")
-    return [_out(r, user_id) for r in rows]
+    return [_out(r, user_id) for r in rows if r.revoked_at is None]
 
 
 def _resolve_subject(bindings: list[Binding], class_id: UUID, requested: str | None) -> str | None:
@@ -149,7 +149,7 @@ def list_reviews(
         .order_by(Review.given_at.desc(), Review.id.desc())
         .limit(limit + 1)
     )
-    if cursor is not None:
+    if cursor:
         at, rid = _decode_cursor(cursor)
         if at.tzinfo is None:
             raise ApiError(400, "BAD_REQUEST", "分页游标无效")

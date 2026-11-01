@@ -124,3 +124,42 @@ def test_set_class_role_rules(client, db, settings):
         headers=auth(settings),
     )
     assert res.status_code == 404
+
+
+def test_board_put_requires_every_field(client, settings):
+    for bad in ({}, {k: v for k, v in A_BOARD.items() if k != "countdown_date"}):
+        res = client.put(BOARD, json=bad, headers=auth(settings))
+        assert (res.status_code, res.json()["error"]["code"]) == (400, "BAD_REQUEST")
+    assert client.get(SUMMARY, headers=auth(settings)).json()["board"]["left_title"] == "今日课程"
+
+
+def test_board_strips_titles_and_label(client, settings):
+    blank_title = {**A_BOARD, "left_title": "   "}
+    blank_label = {**A_BOARD, "countdown_label": ""}
+    for bad in (blank_title, blank_label):
+        res = client.put(BOARD, json=bad, headers=auth(settings))
+        assert (res.status_code, res.json()["error"]["code"]) == (400, "BAD_REQUEST")
+    padded = {**A_BOARD, "left_title": " 课程 ", "countdown_label": " 期末 "}
+    res = client.put(BOARD, json=padded, headers=auth(settings))
+    assert (res.json()["left_title"], res.json()["countdown_label"]) == ("课程", "期末")
+    no_countdown = {**A_BOARD, "countdown_label": "  ", "countdown_date": None}
+    assert (
+        client.put(BOARD, json=no_countdown, headers=auth(settings)).json()["countdown_label"]
+        is None
+    )
+
+
+def test_second_board_put_overwrites_first(client, settings):
+    other = {**A_BOARD, "left_text": "改了", "countdown_label": None, "countdown_date": None}
+    client.put(BOARD, json=A_BOARD, headers=auth(settings))
+    assert client.put(BOARD, json=other, headers=auth(settings)).json() == other
+    assert client.get(SUMMARY, headers=auth(settings)).json()["board"] == other
+
+
+def test_class_role_body_requires_key(client, db, settings):
+    e = enrollment_of(db, STUDENT_IDS[2])
+    url = f"/api/v1/classes/{CLASS_ID}/students/{e}/class-role"
+    client.put(url, json={"class_role": "班长"}, headers=auth(settings))
+    res = client.put(url, json={}, headers=auth(settings))
+    assert res.status_code == 400
+    assert client.get(SUMMARY, headers=auth(settings)).status_code == 200

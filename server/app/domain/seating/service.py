@@ -55,7 +55,11 @@ def save_seating(db: Session, cls: SchoolClass, body: SeatingSave, user_id: UUID
     if body.seats:
         db.connection().execute(
             update(Enrollment)
-            .where(Enrollment.id == bindparam("b_id"))
+            .where(
+                Enrollment.id == bindparam("b_id"),
+                Enrollment.class_id == cls.id,
+                Enrollment.status == "active",
+            )
             .values(
                 seat_row=bindparam("b_row"),
                 seat_col=bindparam("b_col"),
