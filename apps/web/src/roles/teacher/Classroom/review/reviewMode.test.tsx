@@ -60,6 +60,19 @@ it('posts the whole-class bonus once when double-clicked', async () => {
   expect(reviewsApi.create).toHaveBeenCalledTimes(1)
 })
 
+it('gives the whole class +1 and explains an empty class', async () => {
+  setup({ mode: '点评' })
+  fireEvent.click(await screen.findByRole('button', { name: '全班 +1' }))
+  await waitFor(() => expect(reviewsApi.create).toHaveBeenCalledWith('c1', expect.objectContaining({
+    category: 'whole_class', reason_text: '全班表现好', score_delta: 1 })))
+  expect(vi.mocked(reviewsApi.create).mock.calls[0][1]).not.toHaveProperty('enrollment_ids')
+  await screen.findByRole('button', { name: '撤销' })
+  await waitFor(() => expect(screen.getByRole('button', { name: '全班 +1' })).toBeEnabled())
+  vi.mocked(reviewsApi.create).mockRejectedValue(new ApiError(400, 'NO_TARGETS', 'x'))
+  fireEvent.click(screen.getByRole('button', { name: '全班 +1' }))
+  expect(await screen.findByText('今天全班都请假了')).toBeInTheDocument()
+})
+
 it('reuses the op id when retrying after an ambiguous failure', async () => {
   vi.mocked(reviewsApi.create).mockRejectedValueOnce(new TypeError('Failed to fetch'))
   setup({ mode: '点评' })
