@@ -12,6 +12,7 @@ import TeacherLayout from './TeacherLayout'
 
 vi.mock('@/shared/api/classes', () => ({ classesApi: { mine: vi.fn() } }))
 vi.mock('@/shared/api/auth', () => ({ authApi: { logout: vi.fn() } }))
+vi.mock('@/shared/api/classroom', () => ({ classroomApi: { summary: vi.fn().mockResolvedValue({ my_perms: [] }) } }))
 vi.mock('@/shared/api/students', () => ({ studentsApi: { detail: vi.fn() } }))
 
 const cls = (id: string, name: string, role: ClassView['role']): ClassView =>
@@ -25,7 +26,7 @@ const renderLayout = () => render(
 
 beforeEach(() => {
   vi.clearAllMocks()
-  useTeacherStore.setState({ classId: null })
+  useTeacherStore.setState({ classId: null, seatingDirty: false })
   useAuthStore.setState({
     accessToken: 'at', refreshToken: 'rt', user: { id: 'u1', display_name: '王老师' },
   })
@@ -65,6 +66,24 @@ it('updates the store when another class is selected', async () => {
   renderLayout()
   fireEvent.change(await screen.findByRole('combobox', { name: '切换班级' }), { target: { value: 'b' } })
   expect(useTeacherStore.getState().classId).toBe('b')
+})
+
+it('asks before switching classes with unsaved seating changes', async () => {
+  vi.mocked(classesApi.mine).mockResolvedValue({ items: [
+    cls('a', '三年二班', 'homeroom_teacher'), cls('b', '三年三班', 'subject_teacher'),
+  ] })
+  const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+  renderLayout()
+  const select = await screen.findByRole('combobox', { name: '切换班级' })
+  useTeacherStore.setState({ seatingDirty: true })
+  fireEvent.change(select, { target: { value: 'b' } })
+  expect(confirmSpy).toHaveBeenCalledWith('有未保存的座位修改,确定离开吗?')
+  expect(useTeacherStore.getState().classId).toBe('a')
+  expect(select).toHaveValue('a')
+  confirmSpy.mockReturnValue(true)
+  fireEvent.change(select, { target: { value: 'b' } })
+  expect(useTeacherStore.getState().classId).toBe('b')
+  confirmSpy.mockRestore()
 })
 
 it('shows an error text when classes fail to load', async () => {
@@ -137,4 +156,10 @@ it('resets the drawer tab when switching to another student', async () => {
   fireEvent.click(screen.getByText('去二号'))
   await screen.findByRole('dialog', { name: '李小二' })
   expect(screen.getByRole('tab', { name: '概览' })).toHaveAttribute('aria-selected', 'true')
+})
+
+it('links to my preferences', async () => {
+  vi.mocked(classesApi.mine).mockResolvedValue({ items: [cls('a', '三年二班', 'homeroom_teacher')] })
+  renderLayout()
+  expect(await screen.findByRole('link', { name: '我的偏好' })).toHaveAttribute('href', '/teacher/preferences')
 })

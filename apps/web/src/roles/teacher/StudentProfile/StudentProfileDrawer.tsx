@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { ApiError } from '@/shared/api/client'
 import { studentsApi } from '@/shared/api/students'
+import { useEscapeLayer } from '@/shared/hooks/useEscapeLayer'
 import ArchiveTab from './ArchiveTab'
 import OverviewTab from './OverviewTab'
 
@@ -23,15 +24,8 @@ export default function StudentProfileDrawer({ studentId }: { studentId: string 
     queryFn: () => studentsApi.detail(studentId),
   })
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') navigate('/teacher/classroom', { replace: true })
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [navigate])
-
   const close = () => navigate('/teacher/classroom', { replace: true })
+  useEscapeLayer(true, close)
 
   return (
     <div className="fixed inset-0 bg-black/30 z-50 flex justify-end" onClick={close}>

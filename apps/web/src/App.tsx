@@ -5,6 +5,7 @@ import { queryClient } from '@/shared/api/queryClient'
 import LoginPage from '@/auth/LoginPage'
 import TeacherLayout from '@/roles/teacher/TeacherLayout'
 import ClassroomPage from '@/roles/teacher/Classroom/ClassroomPage'
+import PreferencesPage from '@/roles/teacher/Preferences/PreferencesPage'
 import ProtectedRoute from '@/shared/components/ProtectedRoute'
 
 const ClassroomPlayground = import.meta.env.DEV ? lazy(() => import('@/dev/ClassroomPlayground')) : null
@@ -18,6 +19,7 @@ export default function App() {
           <Route path="/teacher" element={<ProtectedRoute><TeacherLayout /></ProtectedRoute>}>
             <Route index element={<Navigate to="classroom" replace />} />
             <Route path="classroom" element={<ClassroomPage />} />
+            <Route path="preferences" element={<PreferencesPage />} />
             <Route path="students/:id" element={<ClassroomPage />} />
           </Route>
           {ClassroomPlayground && (
