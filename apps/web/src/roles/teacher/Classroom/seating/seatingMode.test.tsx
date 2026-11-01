@@ -6,7 +6,8 @@ import { seatingApi } from '@/shared/api/seating'
 import { studentsApi } from '@/shared/api/students'
 import { useTeacherStore } from '@/shared/stores/teacher'
 import type { SeatingSaved } from '@/shared/types/seating'
-import { defaultApiMocks, rosterFixture, setup } from '../pageTestUtils'
+import type { StudentSeat } from '@/shared/types/student'
+import { defaultApiMocks, rosterFixture, setup, summaryFixture } from '../pageTestUtils'
 
 vi.mock('@/shared/api/classes')
 vi.mock('@/shared/api/students')
@@ -74,6 +75,27 @@ it('refetches the roster when the server rejects the layout', async () => {
   await waitFor(() => expect(vi.mocked(studentsApi.listInClass).mock.calls.length).toBeGreaterThan(before))
 })
 
+it('rebuilds a clean draft from the changed roster after SEAT_INVALID', async () => {
+  vi.mocked(seatingApi.save).mockRejectedValue(new ApiError(400, 'SEAT_INVALID', 'x', { reason: 'unknown_enrollment' }))
+  setup({ mode: '排座' })
+  fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
+  fireEvent.click(screen.getByRole('button', { name: '李小二' }))
+  // 服务端名单已变:张小三转走了
+  vi.mocked(studentsApi.listInClass).mockResolvedValue({ items: roster.filter((s) => s.enrollment_id !== 'e3') })
+  fireEvent.click(screen.getByRole('button', { name: '保存座位' }))
+  expect(await screen.findByText('学生名单有变化,已重新加载')).toBeInTheDocument()
+  expect(await screen.findByRole('region', { name: '待安排 (0)' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '保存座位' })).toBeDisabled()
+  // 草稿按服务端的原位置重建,没有半途应用的交换
+  fireEvent.click(screen.getByRole('button', { name: '王小一' }))
+  fireEvent.click(screen.getByRole('button', { name: '李小二' }))
+  vi.mocked(seatingApi.save).mockImplementation(async (_c, body) => ({ version: body.base_version + 1, rows: body.rows, cols: body.cols }))
+  fireEvent.click(screen.getByRole('button', { name: '保存座位' }))
+  await waitFor(() => expect(seatingApi.save).toHaveBeenLastCalledWith('c1', { base_version: 4, rows: 3, cols: 4,
+    seats: [{ enrollment_id: 'e2', row: 1, col: 1, locked: false }, { enrollment_id: 'e1', row: 1, col: 2, locked: false }] }))
+  await waitFor(() => expect(screen.getByRole('button', { name: '随机打乱' })).toBeEnabled())
+})
+
 it('pairs boys and girls, then undoes', async () => {
   setup({ mode: '排座' })
   fireEvent.click(await screen.findByRole('button', { name: '男女同桌' }))
@@ -112,14 +134,15 @@ it('rebuilds the draft from fresh data after saving', async () => {
   fireEvent.click(screen.getByRole('button', { name: '保存座位' }))
   expect(await screen.findByText('座位已保存')).toBeInTheDocument()
   await waitFor(() => expect(vi.mocked(studentsApi.listInClass).mock.calls.length).toBeGreaterThan(before))
-  await waitFor(() => expect(screen.getByRole('button', { name: '保存座位' })).toBeDisabled())
+  await waitFor(() => expect(screen.getByRole('button', { name: '随机打乱' })).toBeEnabled())
+  expect(screen.getByRole('button', { name: '保存座位' })).toBeDisabled()
   // 新草稿以返回的版本为基准
   fireEvent.click(screen.getByRole('button', { name: '李小二' }))
   fireEvent.click(screen.getByRole('button', { name: '王小一' }))
   fireEvent.click(screen.getByRole('button', { name: '保存座位' }))
   await waitFor(() => expect(seatingApi.save).toHaveBeenLastCalledWith('c1', { base_version: 5, rows: 3, cols: 4,
     seats: [{ enrollment_id: 'e1', row: 1, col: 1, locked: false }, { enrollment_id: 'e2', row: 1, col: 2, locked: false }] }))
-  await waitFor(() => expect(screen.getByRole('button', { name: '保存座位' })).toBeDisabled())
+  await waitFor(() => expect(screen.getByRole('button', { name: '随机打乱' })).toBeEnabled())
 })
 
 it('saves once when the save button is double-clicked', async () => {
@@ -132,9 +155,15 @@ it('saves once when the save button is double-clicked', async () => {
   act(() => { btn.click(); btn.click() })
   expect(seatingApi.save).toHaveBeenCalledTimes(1)
   expect(btn).toBeDisabled()
+  // 保存中草稿不可编辑:地图座位不可点、行列与托盘禁用
+  expect(screen.queryByRole('button', { name: '王小一' })).toBeNull()
+  expect(screen.queryByRole('button', { name: '空座 2排1列' })).toBeNull()
+  expect(screen.getByRole('spinbutton', { name: '排数' })).toBeDisabled()
+  expect(within(screen.getByRole('region', { name: '待安排 (1)' })).getByRole('button', { name: '张小三' })).toBeDisabled()
   await act(async () => { resolve({ version: 5, rows: 3, cols: 4 }) })
   expect(await screen.findByText('座位已保存')).toBeInTheDocument()
-  await waitFor(() => expect(btn).toBeDisabled())
+  await waitFor(() => expect(screen.getByRole('button', { name: '随机打乱' })).toBeEnabled())
+  expect(btn).toBeDisabled()
   expect(seatingApi.save).toHaveBeenCalledTimes(1)
 })
 
@@ -200,4 +229,60 @@ it('closes the pick card when entering seating mode', async () => {
   fireEvent.click(screen.getByRole('tab', { name: '排座' }))
   expect(screen.queryByRole('dialog', { name: '随机点名' })).toBeNull()
   expect(await screen.findByRole('region', { name: '待安排 (1)' })).toBeInTheDocument()
+})
+
+it('builds the draft from data fetched summary-first when entering seating mode', async () => {
+  setup()
+  await screen.findByRole('button', { name: '王小一' })
+  // 停留在日常时别人保存了座位:版本变 5,王小一被移到 2排1列
+  vi.mocked(classroomApi.summary).mockResolvedValue(summaryFixture({ seat_version: 5 }))
+  let resolveRoster!: (v: { items: StudentSeat[] }) => void
+  vi.mocked(studentsApi.listInClass).mockReturnValue(new Promise((r) => { resolveRoster = r }))
+  const summaryBefore = vi.mocked(classroomApi.summary).mock.calls.length
+  const rosterBefore = vi.mocked(studentsApi.listInClass).mock.calls.length
+  fireEvent.click(screen.getByRole('tab', { name: '排座' }))
+  expect(screen.getByText('座位表加载中…')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '保存座位' })).toBeNull()
+  expect(screen.queryByRole('button', { name: '王小一' })).toBeNull()
+  await waitFor(() => expect(vi.mocked(studentsApi.listInClass).mock.calls.length).toBeGreaterThan(rosterBefore))
+  const summaryCalls = vi.mocked(classroomApi.summary).mock
+  expect(summaryCalls.calls.length).toBeGreaterThan(summaryBefore)
+  // 名单在概况返回之后才请求
+  const summaryAt = summaryCalls.invocationCallOrder[summaryCalls.invocationCallOrder.length - 1]
+  const rosterAt = vi.mocked(studentsApi.listInClass).mock.invocationCallOrder.at(-1)!
+  expect(rosterAt).toBeGreaterThan(summaryAt)
+  expect(screen.queryByRole('button', { name: '保存座位' })).toBeNull()
+  await act(async () => {
+    resolveRoster({ items: roster.map((s) => (s.enrollment_id === 'e1' ? { ...s, seat_row: 2, seat_col: 1 } : s)) })
+  })
+  fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
+  fireEvent.click(screen.getByRole('button', { name: '李小二' }))
+  fireEvent.click(screen.getByRole('button', { name: '保存座位' }))
+  await waitFor(() => expect(seatingApi.save).toHaveBeenCalledWith('c1', { base_version: 5, rows: 3, cols: 4,
+    seats: [{ enrollment_id: 'e1', row: 1, col: 2, locked: false }, { enrollment_id: 'e2', row: 2, col: 1, locked: false }] }))
+  await waitFor(() => expect(screen.getByRole('button', { name: '随机打乱' })).toBeEnabled())
+})
+
+it('stays read-only with a retry when fresh data cannot be loaded after saving', async () => {
+  setup({ mode: '排座' })
+  fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
+  fireEvent.click(screen.getByRole('button', { name: '李小二' }))
+  vi.mocked(studentsApi.listInClass).mockRejectedValue(new Error('boom'))
+  fireEvent.click(screen.getByRole('button', { name: '保存座位' }))
+  expect(await screen.findByText('座位表加载失败,请重试')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '保存座位' })).toBeNull()
+  vi.mocked(studentsApi.listInClass).mockResolvedValue({ items: roster.map((s) =>
+    s.enrollment_id === 'e1' ? { ...s, seat_col: 2 } : s.enrollment_id === 'e2' ? { ...s, seat_col: 1 } : s) })
+  fireEvent.click(screen.getByRole('button', { name: '重新加载' }))
+  expect(await screen.findByRole('region', { name: '待安排 (1)' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '保存座位' })).toBeDisabled()
+})
+
+it('focuses 继续编辑 when the conflict dialog opens', async () => {
+  vi.mocked(seatingApi.save).mockRejectedValue(new ApiError(409, 'SEAT_VERSION_CONFLICT', 'x', { current_version: 5 }))
+  setup({ mode: '排座' })
+  fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
+  fireEvent.click(screen.getByRole('button', { name: '李小二' }))
+  fireEvent.click(screen.getByRole('button', { name: '保存座位' }))
+  expect(await screen.findByRole('button', { name: '继续编辑' })).toHaveFocus()
 })

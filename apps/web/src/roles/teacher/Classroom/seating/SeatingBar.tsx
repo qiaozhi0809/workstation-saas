@@ -33,11 +33,11 @@ export interface SeatingBarProps {
 
 const clamp = (n: number) => Math.min(MAX_SIZE, Math.max(MIN_SIZE, Math.round(n)))
 
-function SizeInput({ label, value, onChange }: { label: string; value: number; onChange(n: number): void }) {
+function SizeInput({ label, value, disabled, onChange }: { label: string; value: number; disabled: boolean; onChange(n: number): void }) {
   return (
     <label className="flex items-center gap-1">
       {label}
-      <input type="number" className={sizeInput} min={MIN_SIZE} max={MAX_SIZE} value={value}
+      <input type="number" className={sizeInput} min={MIN_SIZE} max={MAX_SIZE} value={value} disabled={disabled}
         onChange={(e) => {
           const n = e.target.valueAsNumber
           if (Number.isFinite(n)) onChange(clamp(n))
@@ -56,7 +56,8 @@ function ConflictDialog({ onReload, onKeepEditing }: Pick<SeatingBarProps, 'onRe
         <p className="text-sm text-ink-2">你的修改还没有保存。可以放弃修改并载入最新的座位表,也可以继续编辑。</p>
         <div className="flex justify-end gap-2">
           <button type="button" className={toolButton} onClick={onReload}>放弃我的修改并重新加载</button>
-          <button type="button" className={primaryButton} onClick={onKeepEditing}>继续编辑</button>
+          {/* 对话框打开时焦点落在不丢数据的选项上 */}
+          <button type="button" className={primaryButton} autoFocus onClick={onKeepEditing}>继续编辑</button>
         </div>
       </div>
     </div>
@@ -71,8 +72,8 @@ export default function SeatingBar(p: SeatingBarProps) {
       <button type="button" className={toolButton} disabled={p.busy} onClick={p.onPair}>男女同桌</button>
       <button type="button" className={toolButton} disabled={p.busy || !p.canUndo} onClick={p.onUndo}>撤销</button>
       <button type="button" className={toolButton} disabled={p.busy || !p.dirty} onClick={p.onDiscard}>放弃修改</button>
-      <SizeInput label="排数" value={p.rows} onChange={(r) => p.onResize(r, p.cols)} />
-      <SizeInput label="列数" value={p.cols} onChange={(c) => p.onResize(p.rows, c)} />
+      <SizeInput label="排数" value={p.rows} disabled={p.busy} onChange={(r) => p.onResize(r, p.cols)} />
+      <SizeInput label="列数" value={p.cols} disabled={p.busy} onChange={(c) => p.onResize(p.rows, c)} />
       <button type="button" className={toolButton} disabled={p.busy || !p.selected} onClick={p.onToggleLock}>
         {p.selected?.locked ? '取消固定' : '固定座位'}
       </button>

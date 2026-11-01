@@ -26,7 +26,7 @@ import UnseatedTray from './seating/UnseatedTray'
 import { useSeatingMode } from './seating/useSeatingMode'
 import { buildBoard } from './buildBoard'
 import ModeBar, { modesFor, type ClassroomUiMode } from './ModeBar'
-import Toolbar from './Toolbar'
+import Toolbar, { toolButton } from './Toolbar'
 import { useAttendanceDate } from './useAttendanceDate'
 import { useFullscreen } from './useFullscreen'
 
@@ -165,10 +165,6 @@ function ClassroomView({ cls }: { cls: ClassView }) {
     classId,
     className: cls.name,
     enabled: mode === 'seating',
-    roster: roster.data?.items,
-    rows: cls.seat_rows,
-    cols: cls.seat_cols,
-    seatVersion: summary.data?.seat_version,
   })
   // 离开排座前确认未保存的修改;进入排座时收起点名(聚光灯 / 指向不落在排座地图上)
   const setMode = (next: ClassroomUiMode) => {
@@ -196,6 +192,16 @@ function ClassroomView({ cls }: { cls: ClassView }) {
       seats: seating.seats, rows: seating.rows, cols: seating.cols, views: seating.views,
       onSeatClick: seating.onSeatClick, onEmptySeatClick: seating.onEmptySeatClick, onSeatDrop: seating.onSeatDrop,
       bar: <><SeatingBar {...seating.bar} /><UnseatedTray {...seating.tray} /></>,
+    }
+  } else if (mode === 'seating') {
+    // 草稿就绪前地图只读
+    slot = {
+      bar: seating.failed ? (
+        <div role="alert" className="flex items-center gap-2 text-sm text-red">
+          座位表加载失败
+          <button type="button" className={toolButton} onClick={seating.retry}>重新加载</button>
+        </div>
+      ) : <p className="text-sm text-ink-2">座位表加载中…</p>,
     }
   }
 
