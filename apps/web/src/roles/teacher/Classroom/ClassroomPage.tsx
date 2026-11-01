@@ -106,7 +106,8 @@ function ClassroomView({ cls }: { cls: ClassView }) {
     (s) => navigate('/teacher/students/' + s.student_id),
     [navigate],
   )
-  const slot: ModeSlot = mode === 'daily' ? { onSeatClick: openProfile } : {}
+  // 投屏时只展示姓名:档案抽屉在全屏根元素之外,不能在投屏中打开(退出全屏时会把档案亮在投影上)
+  const slot: ModeSlot = mode === 'daily' ? { onSeatClick: presenting ? undefined : openProfile } : {}
 
   let stage: ReactNode
   if (roster.isError) stage = <div className="p-6">名单加载失败</div>

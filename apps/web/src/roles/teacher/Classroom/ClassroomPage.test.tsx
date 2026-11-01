@@ -16,6 +16,15 @@ vi.mock('@/shared/api/todos')
 vi.mock('@/shared/api/preferences')
 
 const WIDTH = window.innerWidth
+const REQUEST_FULLSCREEN = Element.prototype.requestFullscreen
+
+function stubFullscreen() {
+  Element.prototype.requestFullscreen = vi.fn(function (this: Element) {
+    Object.defineProperty(document, 'fullscreenElement', { value: this, configurable: true })
+    document.dispatchEvent(new Event('fullscreenchange'))
+    return Promise.resolve()
+  })
+}
 
 beforeEach(() => {
   vi.resetAllMocks()
@@ -24,6 +33,7 @@ beforeEach(() => {
 
 afterEach(() => {
   window.innerWidth = WIDTH
+  Element.prototype.requestFullscreen = REQUEST_FULLSCREEN
   delete (document as { fullscreenElement?: Element | null }).fullscreenElement
 })
 
@@ -134,11 +144,7 @@ it('loads weekly stars only for teachers who may read reviews', async () => {
 
 it('shows the rail on wide screens, toggles it, and hides it while presenting', async () => {
   window.innerWidth = 1280
-  Element.prototype.requestFullscreen = vi.fn(function (this: Element) {
-    Object.defineProperty(document, 'fullscreenElement', { value: this, configurable: true })
-    document.dispatchEvent(new Event('fullscreenchange'))
-    return Promise.resolve()
-  })
+  stubFullscreen()
   setup()
   expect(await screen.findByRole('complementary', { name: '班级概况' })).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: '概况栏' }))
@@ -156,4 +162,16 @@ it('keeps the map when the summary fails and says why', async () => {
   expect(await screen.findByText('班级概况加载失败')).toBeInTheDocument()
   expect(screen.getByRole('button', { name: '王小一' })).toBeInTheDocument()
   expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['日常'])
+})
+
+it('does not open a student profile from a seat while presenting', async () => {
+  stubFullscreen()
+  const { container } = setup()
+  await screen.findByRole('button', { name: '王小一' })
+  fireEvent.click(screen.getByRole('button', { name: '全屏' }))
+  expect(await screen.findByRole('button', { name: '退出全屏' })).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '王小一' })).toBeNull()
+  fireEvent.click(container.querySelector('[data-enrollment="e1"]') as Element)
+  expect(screen.queryByTestId('loc')).toBeNull()
+  expect(screen.getByRole('button', { name: '退出全屏' })).toBeInTheDocument()
 })
