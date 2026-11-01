@@ -223,3 +223,47 @@ it('hides the popover and write buttons without review.write', async () => {
   expect(screen.queryByRole('button', { name: '全班 +1' })).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: '王小一' })).not.toBeInTheDocument()
 })
+
+const SUBJECT_TEACHER = ['attendance.read', 'review.read', 'review.write'] as const
+
+it('requires a subject for a multi-subject subject teacher, defaulting to the first and remembering the choice', async () => {
+  setup({ mode: '点评', subjects: ['物理', '化学'], perms: [...SUBJECT_TEACHER] })
+  fireEvent.click(await screen.findByRole('button', { name: '全班 +1' }))
+  await waitFor(() => expect(reviewsApi.create).toHaveBeenCalledWith('c1', expect.objectContaining({
+    category: 'whole_class', subject: '物理' })))
+  await waitFor(() => expect(screen.getByRole('button', { name: '全班 +1' })).toBeEnabled())
+  fireEvent.click(screen.getByRole('button', { name: '王小一' }))
+  const select = await screen.findByLabelText('科目')
+  expect(within(select).queryByRole('option', { name: '不指定' })).toBeNull()
+  expect(select).toHaveValue('物理')
+  fireEvent.change(select, { target: { value: '化学' } })
+  fireEvent.keyDown(window, { key: 'Escape' })
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  fireEvent.click(screen.getByRole('button', { name: '李小二' }))
+  expect(await screen.findByLabelText('科目')).toHaveValue('化学')
+  fireEvent.keyDown(window, { key: 'Escape' })
+  fireEvent.click(screen.getByRole('button', { name: '全班 +1' }))
+  await waitFor(() => expect(reviewsApi.create).toHaveBeenLastCalledWith('c1', expect.objectContaining({
+    category: 'whole_class', subject: '化学' })))
+})
+
+it('lets a homeroom teacher who teaches several subjects leave the subject out', async () => {
+  setup({ mode: '点评', subjects: ['物理', '化学'] })
+  fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
+  const select = await screen.findByLabelText('科目')
+  expect(select).toHaveValue('')
+  expect(within(select).getByRole('option', { name: '不指定' })).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '积极发言 +1' }))
+  await waitFor(() => expect(reviewsApi.create).toHaveBeenCalledTimes(1))
+  expect(vi.mocked(reviewsApi.create).mock.calls[0][1]).not.toHaveProperty('subject')
+})
+
+it('omits the subject when a subject teacher teaches one subject here', async () => {
+  setup({ mode: '点评', subjects: ['物理'], perms: [...SUBJECT_TEACHER] })
+  fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
+  await screen.findByRole('dialog', { name: '点评 王小一' })
+  expect(screen.queryByLabelText('科目')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '积极发言 +1' }))
+  await waitFor(() => expect(reviewsApi.create).toHaveBeenCalledTimes(1))
+  expect(vi.mocked(reviewsApi.create).mock.calls[0][1]).not.toHaveProperty('subject')
+})

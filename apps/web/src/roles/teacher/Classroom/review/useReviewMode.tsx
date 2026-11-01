@@ -1,13 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { newOpId } from '@/shared/api/opId'
-import { ApiError } from '@/shared/api/client'
+import { useQueryClient } from '@tanstack/react-query'
 import { reviewsApi } from '@/shared/api/reviews'
 import { toast } from '@/shared/components/Toast'
 import type { FloatFx, SeatAnchor, SeatView } from '@/shared/components/ClassroomMap/types'
 import * as csv from '@/shared/lib/csv'
 import type { ReviewReason } from '@/shared/types/preferences'
-import type { Review, ReviewCreate, ReviewSummary } from '@/shared/types/review'
+import type { Review, ReviewSummary } from '@/shared/types/review'
 import type { StudentSeat } from '@/shared/types/student'
 import type { RosterRow } from '../attendance/exportMonth'
 import { toolButton } from '../Toolbar'
@@ -15,6 +13,7 @@ import Leaderboard from './Leaderboard'
 import { reviewRows } from './exportReviews'
 import ReviewPopover, { type ReasonPick } from './ReviewPopover'
 import { signed } from './signed'
+import { useReviewSubmit, type ReviewSubject } from './useReviewSubmit'
 
 const FLOAT_MS = 1400
 const UNDO_MS = 8000
@@ -42,7 +41,8 @@ interface Options {
   canRead: boolean
   canWrite: boolean
   reasons: ReviewReason[] | undefined
-  subjects: string[]
+  /** 页面级当前科目(弹层、全班 +1、点名奖励共用) */
+  subject: ReviewSubject
   roster: StudentSeat[]
   timezone: string | undefined
   summary: ReviewSummary | undefined
@@ -61,10 +61,6 @@ export function useReviewMode(o: Options) {
   const [board, setBoard] = useState(false)
   const [floats, setFloats] = useState<FloatFx[]>([])
   const timers = useRef(new Set<ReturnType<typeof setTimeout>>())
-  // 同步守卫:第二次点击发生在 React 重渲染(按钮禁用)之前也不会再发请求
-  const inflight = useRef(false)
-  // 结果不明的失败(网络 / 5xx)后,同样的请求重试沿用同一个 op_id,服务端幂等,已入库的不会重复记分
-  const pending = useRef<{ key: string; opId: string } | null>(null)
 
   useEffect(() => {
     const set = timers.current
@@ -94,41 +90,20 @@ export function useReviewMode(o: Options) {
     timers.current.add(t)
   }
 
-  const post = useMutation({
-    mutationFn: (body: ReviewCreate) => reviewsApi.create(classId, body),
+  const { submit, pending } = useReviewSubmit(classId, o.subject.value)
+  const give = (body: Parameters<typeof submit>[0], summaryText: string) => submit(body, {
+    onSuccess: (items, opId) => {
+      pushFloats(items)
+      setOpen(null)
+      toast(summaryText, { action: { label: '撤销', onClick: () => void revoke(items[0]?.op_id ?? opId) }, ms: UNDO_MS })
+    },
   })
 
-  /** 一次用户操作 = 一个 op_id;进行中的请求期间忽略其余提交。 */
-  const submit = (body: Omit<ReviewCreate, 'op_id'>, summaryText: string) => {
-    if (inflight.current) return
-    inflight.current = true
-    const key = JSON.stringify(body)
-    const op_id = pending.current?.key === key ? pending.current.opId : newOpId()
-    pending.current = null
-    post.mutate({ op_id, ...body }, {
-      onSuccess: (res) => {
-        pending.current = null
-        void qc.invalidateQueries({ queryKey: ['review-summary', classId] })
-        void qc.invalidateQueries({ queryKey: ['reviews', classId] })
-        pushFloats(res.items)
-        setOpen(null)
-        toast(summaryText, { action: { label: '撤销', onClick: () => void revoke(res.items[0]?.op_id ?? op_id) }, ms: UNDO_MS })
-      },
-      onError: (err) => {
-        if (!(err instanceof ApiError) || err.status >= 500) pending.current = { key, opId: op_id }
-        if (err instanceof ApiError && err.code === 'NO_TARGETS') toast('今天全班都请假了')
-        else toast(err.message)
-      },
-      onSettled: () => { inflight.current = false },
-    })
-  }
-
-  const giveSeat = (seat: StudentSeat, p: ReasonPick) => submit({
-    category: 'individual', enrollment_ids: [seat.enrollment_id],
-    reason_text: p.text, score_delta: p.delta, ...(p.subject ? { subject: p.subject } : {}),
+  const giveSeat = (seat: StudentSeat, p: ReasonPick) => give({
+    category: 'individual', enrollment_ids: [seat.enrollment_id], reason_text: p.text, score_delta: p.delta,
   }, `已给 ${seat.name} ${p.text} ${signed(p.delta)}`)
 
-  const giveClass = () => submit(
+  const giveClass = () => give(
     { category: 'whole_class', reason_text: WHOLE_CLASS_REASON, score_delta: 1 },
     `已给全班 ${WHOLE_CLASS_REASON} +1`,
   )
@@ -166,7 +141,7 @@ export function useReviewMode(o: Options) {
   const toolbar: ReactNode = (
     <>
       {canWrite && (
-        <button type="button" className={toolButton} disabled={post.isPending} onClick={giveClass}>全班 +1</button>
+        <button type="button" className={toolButton} disabled={pending} onClick={giveClass}>全班 +1</button>
       )}
       {o.canRead && <button type="button" className={toolButton} onClick={() => setBoard(true)}>积分榜</button>}
       {o.canRead && <button type="button" className={toolButton} onClick={() => void exportAll()}>导出点评</button>}
@@ -181,8 +156,8 @@ export function useReviewMode(o: Options) {
       anchor={open.anchor}
       stage={{ w: stage?.width ?? 0, h: stage?.height ?? 0 }}
       reasons={o.reasons ?? NO_REASONS}
-      subjects={o.subjects}
-      pending={post.isPending}
+      subject={o.subject}
+      pending={pending}
       onSubmit={(p) => giveSeat(open.seat, p)}
       onClose={() => setOpen(null)}
     />

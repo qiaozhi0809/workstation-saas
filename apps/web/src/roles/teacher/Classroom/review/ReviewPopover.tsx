@@ -5,34 +5,34 @@ import { useEscapeLayer } from '@/shared/hooks/useEscapeLayer'
 import type { ReviewReason } from '@/shared/types/preferences'
 import type { StudentSeat } from '@/shared/types/student'
 import { signed } from './signed'
+import type { ReviewSubject } from './useReviewSubmit'
 
 const CARD = { w: 288, h: 380 }
 
-export interface ReasonPick { text: string; delta: number; subject?: string }
+export interface ReasonPick { text: string; delta: number }
 
 const chip =
   'rounded-lg border border-line-2 px-2 py-1 text-sm hover:bg-fill disabled:cursor-not-allowed disabled:opacity-50'
 
 /** 点评弹层:位于座位旁。anchor 是相对舞台的坐标(点击瞬间的快照),stage 是舞台尺寸。 */
-export default function ReviewPopover({ seat, anchor, stage, reasons, subjects, pending, onSubmit, onClose }: {
+export default function ReviewPopover({ seat, anchor, stage, reasons, subject, pending, onSubmit, onClose }: {
   seat: StudentSeat
   anchor: SeatAnchor
   stage: { w: number; h: number }
   reasons: ReviewReason[]
-  subjects: string[]
+  /** 页面级当前科目;在这里改了,下次打开弹层、全班 +1、点名奖励都沿用 */
+  subject: ReviewSubject
   pending: boolean
   onSubmit(pick: ReasonPick): void
   onClose(): void
 }) {
   useEscapeLayer(true, onClose)
-  const [subject, setSubject] = useState('')
   const [text, setText] = useState('')
   const [delta, setDelta] = useState('')
   const ref = useRef<HTMLDivElement>(null)
   const pos = placeCard(anchor, CARD, stage)
 
-  const submit = (p: { text: string; delta: number }) =>
-    onSubmit({ ...p, ...(subject ? { subject } : {}) })
+  const submit = (p: ReasonPick) => onSubmit({ text: p.text, delta: p.delta })
   const customText = text.trim()
   const customDelta = Number(delta)
   const customOk = customText.length >= 1 && customText.length <= 20 && delta.trim() !== ''
@@ -46,13 +46,13 @@ export default function ReviewPopover({ seat, anchor, stage, reasons, subjects, 
         <strong className="text-sm">{seat.name}</strong>
         <button type="button" aria-label="关闭" className="text-ink-2" onClick={onClose}>×</button>
       </div>
-      {subjects.length > 1 && (
+      {subject.subjects.length > 0 && (
         <label className="flex items-center gap-2 text-sm">
           科目
-          <select value={subject} disabled={pending} onChange={(e) => setSubject(e.target.value)}
+          <select value={subject.value} disabled={pending} onChange={(e) => subject.set(e.target.value)}
             className="flex-1 rounded-lg border border-line-2 px-2 py-1">
-            <option value="">不指定</option>
-            {subjects.map((s) => <option key={s} value={s}>{s}</option>)}
+            {!subject.required && <option value="">不指定</option>}
+            {subject.subjects.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
         </label>
       )}

@@ -1,8 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { newOpId } from '@/shared/api/opId'
-import { reviewsApi } from '@/shared/api/reviews'
-import { toast } from '@/shared/components/Toast'
+import { useReviewSubmit } from '../review/useReviewSubmit'
 import { choosePick, spinDelays } from './pickLogic'
 
 export type PickState = 'idle' | 'spinning' | 'picked' | 'empty'
@@ -64,26 +61,12 @@ export function usePick({ pool, rand = Math.random, reducedMotion = prefersReduc
   return { state, spotlightId, pickedId, start, close }
 }
 
-/** "回答得好 +1":一次点击一个 op_id,请求期间忽略重复点击,成功后失效点评缓存并回调。 */
-export function usePickReward(classId: string, onDone: () => void) {
-  const qc = useQueryClient()
-  const inflight = useRef(false)
-  const post = useMutation({
-    mutationFn: (enrollmentId: string) => reviewsApi.create(classId, {
-      op_id: newOpId(), category: 'individual', enrollment_ids: [enrollmentId], reason_text: '回答问题', score_delta: 1,
-    }),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['review-summary', classId] })
-      void qc.invalidateQueries({ queryKey: ['reviews', classId] })
-      onDone()
-    },
-    onError: (err) => toast(err.message),
-    onSettled: () => { inflight.current = false },
-  })
-  const reward = (enrollmentId: string) => {
-    if (inflight.current) return
-    inflight.current = true
-    post.mutate(enrollmentId)
-  }
-  return { reward, pending: post.isPending }
+/** "回答得好 +1":与点评共用提交逻辑(同步守卫、结果不明时重试沿用 op_id、当前科目),成功后回调。 */
+export function usePickReward(classId: string, subject: string, onDone: () => void) {
+  const { submit, pending } = useReviewSubmit(classId, subject)
+  const reward = (enrollmentId: string) => submit(
+    { category: 'individual', enrollment_ids: [enrollmentId], reason_text: '回答问题', score_delta: 1 },
+    { onSuccess: onDone },
+  )
+  return { reward, pending }
 }

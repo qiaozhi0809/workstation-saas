@@ -94,3 +94,32 @@ it('closes the card with Escape', async () => {
   fireEvent.keyDown(window, { key: 'Escape' })
   expect(screen.queryByRole('dialog', { name: '随机点名' })).toBeNull()
 })
+
+it('reuses the op id when a reward is retried after an ambiguous failure', async () => {
+  reduceMotion()
+  vi.mocked(reviewsApi.create).mockRejectedValueOnce(new TypeError('Failed to fetch'))
+  setup()
+  fireEvent.click(await screen.findByRole('button', { name: '随机点名' }))
+  const btn = await screen.findByRole('button', { name: '回答得好 +1' })
+  fireEvent.click(btn)
+  expect(await screen.findByText('Failed to fetch')).toBeInTheDocument()
+  await waitFor(() => expect(btn).toBeEnabled())
+  fireEvent.click(btn)
+  await waitFor(() => expect(reviewsApi.create).toHaveBeenCalledTimes(2))
+  const ids = vi.mocked(reviewsApi.create).mock.calls.map((c) => c[1].op_id)
+  expect(ids[1]).toBe(ids[0])
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: '随机点名' })).toBeNull())
+})
+
+it('rewards in the subject last chosen in the review popover', async () => {
+  setup({ mode: '点评', subjects: ['物理', '化学'], perms: ['attendance.read', 'review.read', 'review.write'] })
+  fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
+  fireEvent.change(await screen.findByLabelText('科目'), { target: { value: '化学' } })
+  fireEvent.keyDown(window, { key: 'Escape' })
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  reduceMotion()
+  fireEvent.click(screen.getByRole('button', { name: '随机点名' }))
+  fireEvent.click(await screen.findByRole('button', { name: '回答得好 +1' }))
+  await waitFor(() => expect(reviewsApi.create).toHaveBeenCalledWith('c1', expect.objectContaining({
+    reason_text: '回答问题', subject: '化学' })))
+})

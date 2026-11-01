@@ -21,6 +21,7 @@ import { usePick, usePickReward } from './pick/usePick'
 import { attendanceApi } from '@/shared/api/attendance'
 import { useAttendanceMode } from './attendance/useAttendanceMode'
 import { useReviewMode } from './review/useReviewMode'
+import { useReviewSubject } from './review/useReviewSubmit'
 import BoardEditor from './BoardEditor'
 import SeatingBar from './seating/SeatingBar'
 import UnseatedTray from './seating/UnseatedTray'
@@ -34,6 +35,7 @@ import { useAttendanceDate } from './useAttendanceDate'
 import { useFullscreen } from './useFullscreen'
 
 const NO_PERMS: ClassPerm[] = []
+const NO_SUBJECTS: string[] = []
 const RAIL_MIN_WIDTH = 1100
 const REDUCED_MOTION = '(prefers-reduced-motion: reduce)'
 
@@ -153,6 +155,8 @@ function ClassroomView({ cls }: { cls: ClassView }) {
     onFollowToday: attDate.followToday,
   })
   const stageRef = useRef<HTMLDivElement>(null)
+  // 当前科目在页面级:点评弹层、全班 +1、点名"回答得好 +1"共用
+  const subject = useReviewSubject(perms, summary.data?.my_subjects ?? NO_SUBJECTS)
   const review = useReviewMode({
     classId,
     className: cls.name,
@@ -160,7 +164,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
     canRead: perms.includes('review.read'),
     canWrite: perms.includes('review.write'),
     reasons: preferences.data?.review_reasons,
-    subjects: summary.data?.my_subjects ?? [],
+    subject,
     roster: roster.data?.items ?? [],
     timezone: summary.data?.timezone,
     summary: reviewSummary.data,
@@ -189,7 +193,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
     if (next === 'seating') pick.close()
     setParams(next === 'daily' ? {} : { mode: next }, { replace: true })
   }
-  const pickReward = usePickReward(classId, pick.close)
+  const pickReward = usePickReward(classId, subject.value, pick.close)
   const pickedSeat = roster.data?.items.find((s) => s.enrollment_id === pick.pickedId) ?? null
   const cardOpen = pick.state === 'picked' || pick.state === 'empty'
   // 点名进行中(转动或结果卡打开):Task 21 据此暂停空闲动画
