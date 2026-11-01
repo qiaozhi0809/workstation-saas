@@ -54,3 +54,13 @@ it('creates distinct op ids', () => {
   expect(newOpId()).toMatch(/^[0-9a-f-]{36}$/)
   expect(newOpId()).not.toBe(newOpId())
 })
+
+it('builds RFC 4122 v4 op ids without crypto.randomUUID (plain-HTTP intranet)', () => {
+  const v4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+  vi.stubGlobal('crypto', { getRandomValues: crypto.getRandomValues.bind(crypto) })
+  try {
+    const ids = Array.from({ length: 50 }, () => newOpId())
+    for (const id of ids) expect(id).toMatch(v4)
+    expect(new Set(ids).size).toBe(ids.length)
+  } finally { vi.unstubAllGlobals() }
+})
