@@ -47,7 +47,7 @@ export default function TeacherLayout() {
         </div>
       </header>
       <main className="overflow-auto"><Outlet /></main>
-      {studentMatch?.params.id && <StudentProfileDrawer studentId={studentMatch.params.id} />}
+      {studentMatch?.params.id && <StudentProfileDrawer key={studentMatch.params.id} studentId={studentMatch.params.id} />}
     </div>
   )
 }

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { Link, MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, vi } from 'vitest'
 import { authApi } from '@/shared/api/auth'
 import { classesApi } from '@/shared/api/classes'
@@ -114,4 +114,27 @@ it('mounts the student profile drawer at /teacher/students/:id', async () => {
   expect(studentsApi.detail).toHaveBeenCalledWith('s1')
   expect(screen.getByText('教室页')).toBeInTheDocument()
   await screen.findByText('三年二班')
+})
+
+it('resets the drawer tab when switching to another student', async () => {
+  vi.mocked(classesApi.mine).mockResolvedValue({ items: [cls('a', '三年二班', 'homeroom_teacher')] })
+  vi.mocked(studentsApi.detail).mockImplementation(async (id: string) =>
+    ({ id, mk: 'M' + id, name: id === 's1' ? '王小一' : '李小二', class_id: 'a' }))
+  render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <MemoryRouter initialEntries={['/teacher/students/s1']}>
+        <Routes>
+          <Route element={<TeacherLayout />}>
+            <Route path="/teacher/students/:id" element={<Link to="/teacher/students/s2">去二号</Link>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  )
+  await screen.findByRole('dialog', { name: '王小一' })
+  fireEvent.click(screen.getByRole('tab', { name: '档案' }))
+  expect(screen.getByRole('tab', { name: '档案' })).toHaveAttribute('aria-selected', 'true')
+  fireEvent.click(screen.getByText('去二号'))
+  await screen.findByRole('dialog', { name: '李小二' })
+  expect(screen.getByRole('tab', { name: '概览' })).toHaveAttribute('aria-selected', 'true')
 })

@@ -30,6 +30,8 @@ export default function StudentSeat({ seat, x, y, scale, onClick, onHover }: Pro
     <g
       onMouseEnter={() => onHover?.(seat)}
       onMouseLeave={() => onHover?.(null)}
+      onFocus={() => onHover?.(seat)}
+      onBlur={() => onHover?.(null)}
       onClick={() => onClick?.(seat)}
       className={clickable ? 'cursor-pointer' : undefined}
       {...(clickable

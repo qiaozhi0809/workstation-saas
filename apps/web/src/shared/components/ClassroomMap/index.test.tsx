@@ -55,3 +55,12 @@ it('triggers onSeatClick with Enter on a focused seat', () => {
   fireEvent.keyDown(screen.getByRole('button', { name: '王小一' }), { key: 'Enter' })
   expect(onClick).toHaveBeenCalledTimes(1)
 })
+
+it('shows the hover card on keyboard focus and hides it on blur', () => {
+  render(<ClassroomMap rows={2} cols={2} seats={[seat({})]} onSeatClick={vi.fn()} />)
+  const btn = screen.getByRole('button', { name: '王小一' })
+  fireEvent.focus(btn)
+  expect(screen.getByText('编号 S0001')).toBeInTheDocument()
+  fireEvent.blur(btn)
+  expect(screen.queryByText('编号 S0001')).toBeNull()
+})

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
 import { beforeEach, vi } from 'vitest'
 import { ApiError } from '@/shared/api/client'
 import { studentsApi } from '@/shared/api/students'
@@ -87,4 +87,26 @@ it('shows M2 启用 on a later-milestone tab', async () => {
   await screen.findByRole('heading', { name: '王小一' })
   fireEvent.click(screen.getByRole('tab', { name: '成绩' }))
   expect(screen.getByText('M2 启用')).toBeInTheDocument()
+})
+
+it('replaces history on close so Back does not reopen the drawer', async () => {
+  function Back() {
+    const navigate = useNavigate()
+    return <button type="button" onClick={() => navigate(-1)}>返回</button>
+  }
+  render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <MemoryRouter initialEntries={['/teacher/classroom', '/teacher/students/s1']} initialIndex={1}>
+        <Routes>
+          <Route path="/teacher/students/:id" element={<StudentProfileDrawer studentId="s1" />} />
+          <Route path="/teacher/classroom" element={<><div>教室页</div><Back /></>} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  )
+  await screen.findByRole('heading', { name: '王小一' })
+  fireEvent.click(screen.getByRole('button', { name: '关闭' }))
+  fireEvent.click(await screen.findByRole('button', { name: '返回' }))
+  expect(await screen.findByText('教室页')).toBeInTheDocument()
+  expect(screen.queryByRole('dialog')).toBeNull()
 })

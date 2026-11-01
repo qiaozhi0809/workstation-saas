@@ -25,13 +25,13 @@ export default function StudentProfileDrawer({ studentId }: { studentId: string 
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') navigate('/teacher/classroom')
+      if (e.key === 'Escape') navigate('/teacher/classroom', { replace: true })
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [navigate])
 
-  const close = () => navigate('/teacher/classroom')
+  const close = () => navigate('/teacher/classroom', { replace: true })
 
   return (
     <div className="fixed inset-0 bg-black/30 z-50 flex justify-end" onClick={close}>
