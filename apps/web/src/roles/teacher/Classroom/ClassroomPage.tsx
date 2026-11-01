@@ -169,7 +169,9 @@ function ClassroomView({ cls }: { cls: ClassView }) {
     roster: roster.data?.items ?? [],
     timezone: summary.data?.timezone,
     summary: reviewSummary.data,
-    overlay: attendance.views,
+    // 投屏时不把考勤投到屏幕上
+    overlay: presenting ? undefined : attendance.views,
+    presenting,
     stageRef,
   })
   // 点名候选池固定用学校"今天"的考勤(与考勤模式正在看的日期无关,缓存键相同所以共用),且只含已排座的同学
@@ -202,12 +204,14 @@ function ClassroomView({ cls }: { cls: ClassView }) {
   const canPick = mode !== 'seating' && !!todayAttendance.data && !!roster.data
   const overlay = mode === 'seating' ? undefined : attendance.views
   let slot: ModeSlot = {}
-  if (mode === 'daily') slot = { views: overlay, onSeatClick: presenting ? undefined : openProfile }
+  // 日常 / 点评模式投屏时不叠加考勤(请假等不上投影);考勤模式是老师主动进入的,照常显示
+  if (mode === 'daily') slot = { views: presenting ? undefined : overlay, onSeatClick: presenting ? undefined : openProfile }
   else if (mode === 'attendance') slot = { views: overlay, onSeatClick: attendance.onSeatClick, bar: attendance.bar }
   else if (mode === 'review') {
     slot = {
       views: review.views, effects: { floats: review.floats }, toolbar: review.toolbar,
-      onSeatClick: presenting ? undefined : review.onSeatClick,
+      // 投屏时也能点评:飘字本来就是给投影看的
+      onSeatClick: review.onSeatClick,
     }
   } else if (mode === 'seating' && seating.ready) {
     slot = {
@@ -313,6 +317,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
           {cardOpen && (
             <PickCard
               seat={pick.state === 'picked' ? pickedSeat : null}
+              presenting={presenting}
               canReward={perms.includes('review.write')}
               rewarding={pickReward.pending}
               onReward={() => pick.pickedId && pickReward.reward(pick.pickedId)}

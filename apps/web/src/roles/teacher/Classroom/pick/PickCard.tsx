@@ -9,8 +9,10 @@ const btn =
   'rounded-lg border border-line-2 px-3 py-1 text-sm hover:bg-fill disabled:cursor-not-allowed disabled:opacity-50'
 
 /** 点名结果卡:屏幕上方居中浮层。seat 为空表示今天没有可点名的同学。 */
-export default function PickCard({ seat, canReward, rewarding, onReward, onAgain, onClose }: {
+export default function PickCard({ seat, presenting = false, canReward, rewarding, onReward, onAgain, onClose }: {
   seat: StudentSeat | null
+  /** 投屏时只显示姓名(不投学号、职务) */
+  presenting?: boolean
   canReward: boolean
   rewarding: boolean
   onReward(): void
@@ -28,8 +30,8 @@ export default function PickCard({ seat, canReward, rewarding, onReward, onAgain
               color={groupColor(groupOf(seat.seat_col ?? 1))} size={56} title={seat.name} />
             <div className="flex flex-col leading-6">
               <span className="text-xl font-semibold">{seat.name}</span>
-              {seat.student_no && <span className="text-sm text-ink-2">{`学号 ${seat.student_no}`}</span>}
-              {seat.class_role && <span className="text-sm text-ink-2">{seat.class_role}</span>}
+              {!presenting && seat.student_no && <span className="text-sm text-ink-2">{`学号 ${seat.student_no}`}</span>}
+              {!presenting && seat.class_role && <span className="text-sm text-ink-2">{seat.class_role}</span>}
             </div>
           </div>
           <div className="flex gap-2">

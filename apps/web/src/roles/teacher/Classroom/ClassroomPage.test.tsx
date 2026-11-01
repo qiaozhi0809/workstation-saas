@@ -18,10 +18,16 @@ vi.mock('@/shared/api/preferences')
 
 const WIDTH = window.innerWidth
 const REQUEST_FULLSCREEN = Element.prototype.requestFullscreen
+const EXIT_FULLSCREEN = document.exitFullscreen
 
 function stubFullscreen() {
   Element.prototype.requestFullscreen = vi.fn(function (this: Element) {
     Object.defineProperty(document, 'fullscreenElement', { value: this, configurable: true })
+    document.dispatchEvent(new Event('fullscreenchange'))
+    return Promise.resolve()
+  })
+  document.exitFullscreen = vi.fn(() => {
+    Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true })
     document.dispatchEvent(new Event('fullscreenchange'))
     return Promise.resolve()
   })
@@ -35,6 +41,7 @@ beforeEach(() => {
 afterEach(() => {
   window.innerWidth = WIDTH
   Element.prototype.requestFullscreen = REQUEST_FULLSCREEN
+  document.exitFullscreen = EXIT_FULLSCREEN
   delete (document as { fullscreenElement?: Element | null }).fullscreenElement
 })
 
@@ -210,4 +217,41 @@ it('keeps the loaded page when background refetches of classes, roster or attend
   expect(screen.getByRole('heading', { name: '三年二班' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: '王小一' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: '随机点名' })).toBeEnabled()
+})
+
+const leaveE1 = () => vi.mocked(attendanceApi.day).mockImplementation(async (_c, date) => ({ date, confirmed_at: null,
+  items: [{ enrollment_id: 'e1', status: 'leave' as const, reason: null, marked_at: '2026-11-02T01:00:00Z' }] }))
+
+it('does not project attendance in daily or review mode while presenting', async () => {
+  leaveE1()
+  stubFullscreen()
+  setup()
+  expect(await screen.findByText('请假')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '全屏' }))
+  expect(await screen.findByRole('button', { name: '退出全屏' })).toBeInTheDocument()
+  expect(screen.queryByText('请假')).toBeNull()
+  fireEvent.click(screen.getByRole('tab', { name: '点评' }))
+  await screen.findByRole('button', { name: '全班 +1' })
+  expect(screen.queryByText('请假')).toBeNull()
+  // 考勤模式是老师主动选的,投屏时照样显示
+  fireEvent.click(screen.getByRole('tab', { name: '考勤' }))
+  expect(await screen.findByText('请假')).toBeInTheDocument()
+})
+
+it('lets the teacher review while presenting and closes the popover when presenting toggles', async () => {
+  stubFullscreen()
+  setup({ mode: '点评' })
+  await screen.findByRole('button', { name: '王小一' })
+  fireEvent.click(screen.getByRole('button', { name: '全屏' }))
+  expect(await screen.findByRole('button', { name: '退出全屏' })).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '王小一' }))
+  expect(await screen.findByRole('dialog', { name: '点评 王小一' })).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '退出全屏' }))
+  expect(await screen.findByRole('button', { name: '全屏' })).toBeInTheDocument()
+  expect(screen.queryByRole('dialog', { name: '点评 王小一' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '李小二' }))
+  expect(await screen.findByRole('dialog', { name: '点评 李小二' })).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '全屏' }))
+  expect(await screen.findByRole('button', { name: '退出全屏' })).toBeInTheDocument()
+  expect(screen.queryByRole('dialog', { name: '点评 李小二' })).toBeNull()
 })

@@ -48,6 +48,8 @@ interface Options {
   summary: ReviewSummary | undefined
   /** 点评模式下叠在下面的外观(当天考勤) */
   overlay: Record<string, SeatView> | undefined
+  /** 投屏状态:切换时关掉弹层(锚点随布局变了) */
+  presenting: boolean
   /** 地图舞台容器:弹层相对它定位 */
   stageRef: RefObject<HTMLElement>
 }
@@ -67,6 +69,7 @@ export function useReviewMode(o: Options) {
     return () => { set.forEach(clearTimeout); set.clear() }
   }, [])
   useEffect(() => { if (!enabled) { setOpen(null); setBoard(false) } }, [enabled])
+  useEffect(() => { setOpen(null) }, [o.presenting])
 
   const revoke = async (opId: string) => {
     try {

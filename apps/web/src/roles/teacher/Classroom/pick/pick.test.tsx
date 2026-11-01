@@ -2,7 +2,7 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { attendanceApi } from '@/shared/api/attendance'
 import { reviewsApi } from '@/shared/api/reviews'
-import { defaultApiMocks, setup } from '../pageTestUtils'
+import { defaultApiMocks, rosterFixture, setup } from '../pageTestUtils'
 import { spinDelays } from './pickLogic'
 
 vi.mock('@/shared/api/classes')
@@ -122,4 +122,30 @@ it('rewards in the subject last chosen in the review popover', async () => {
   fireEvent.click(await screen.findByRole('button', { name: '回答得好 +1' }))
   await waitFor(() => expect(reviewsApi.create).toHaveBeenCalledWith('c1', expect.objectContaining({
     reason_text: '回答问题', subject: '化学' })))
+})
+
+it('shows only the name on the card while presenting', async () => {
+  // 减少动态时不转动,不需要假时钟(全屏切换后地图的适应缩放走真实定时器)
+  vi.useRealTimers()
+  reduceMotion()
+  const request = Element.prototype.requestFullscreen
+  Element.prototype.requestFullscreen = vi.fn(function (this: Element) {
+    Object.defineProperty(document, 'fullscreenElement', { value: this, configurable: true })
+    document.dispatchEvent(new Event('fullscreenchange'))
+    return Promise.resolve()
+  })
+  try {
+    vi.spyOn(Math, 'random').mockReturnValue(0)
+    setup({ roster: rosterFixture.map((s) => (s.enrollment_id === 'e1' ? { ...s, class_role: '班长' } : s)) })
+    fireEvent.click(await screen.findByRole('button', { name: '全屏' }))
+    await screen.findByRole('button', { name: '退出全屏' })
+    fireEvent.click(await screen.findByRole('button', { name: '随机点名' }))
+    const card = await screen.findByRole('dialog', { name: '随机点名' })
+    expect(within(card).getByText('王小一')).toBeInTheDocument()
+    expect(within(card).queryByText('学号 2026001')).toBeNull()
+    expect(within(card).queryByText('班长')).toBeNull()
+  } finally {
+    Element.prototype.requestFullscreen = request
+    delete (document as { fullscreenElement?: Element | null }).fullscreenElement
+  }
 })
