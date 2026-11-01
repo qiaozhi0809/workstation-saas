@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -25,6 +25,7 @@ class Binding:
     role: Role
     scope: Scope
     academic_year_id: UUID | None
+    subject: str | None = None
 
 
 def covers(binding_scope: Scope, target: Scope) -> bool:
@@ -57,6 +58,30 @@ def load_bindings(db: Session, user_id: UUID, active_year_id: UUID | None) -> li
         .order_by(RoleBinding.started_at, RoleBinding.id)
     ).all()
     return [
-        Binding(Role(r.role_type), _scope_from_json(r.scope or {}), r.academic_year_id)
+        Binding(
+            Role(r.role_type),
+            _scope_from_json(r.scope or {}),
+            r.academic_year_id,
+            _subject_from_json(r.scope or {}),
+        )
         for r in rows
     ]
+
+
+def _subject_from_json(raw: dict) -> str | None:
+    value = raw.get("subject")
+    return value if isinstance(value, str) and value else None
+
+
+def subjects_in_class(bindings: Sequence[Binding], class_id: UUID) -> list[str]:
+    return sorted(
+        {
+            bd.subject
+            for bd in bindings
+            if bd.role is Role.subject_teacher and bd.scope.class_id == class_id and bd.subject
+        }
+    )
+
+
+def has_role_in_class(bindings: Sequence[Binding], class_id: UUID, roles: Collection[Role]) -> bool:
+    return any(bd.role in roles and bd.scope.class_id == class_id for bd in bindings)

@@ -6,8 +6,9 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.errors import ApiError
 from app.models import Grade, SchoolClass
-from app.rbac.bindings import Binding
+from app.rbac.bindings import Binding, Scope
 from app.rbac.roles import TEACHER_ROLES, Role
 
 TeacherRole = Literal["homeroom_teacher", "subject_teacher", "assistant_teacher"]
@@ -53,3 +54,14 @@ def list_my_classes(db: Session, bindings: Sequence[Binding], year_id: UUID) -> 
         )
         for cls, grade in rows
     ]
+
+
+def get_class_or_404(db: Session, class_id: UUID) -> SchoolClass:
+    cls = db.get(SchoolClass, class_id)
+    if cls is None:
+        raise ApiError(404, "NOT_FOUND", "班级不存在")
+    return cls
+
+
+def class_scope_of(cls: SchoolClass) -> Scope:
+    return Scope(school_id=cls.school_id, grade_id=cls.grade_id, class_id=cls.id)

@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.domain.students.schemas import StudentProfile, StudentSeat
+from app.errors import ApiError
 from app.models import Enrollment, SchoolClass, Student
 from app.rbac.bindings import Binding, Scope, can
 from app.rbac.roles import Perm
@@ -99,3 +100,20 @@ def build_profile(
     if can(bindings, Perm.TEACHER_NOTES, scope) and isinstance(student.teacher_notes, dict):
         data["teacher_notes"] = _clean(student.teacher_notes.get(str(caller_id)))
     return StudentProfile(**data)
+
+
+def require_enrollment(db: Session, class_id: UUID, enrollment_id: UUID) -> Enrollment:
+    enrollment = db.get(Enrollment, enrollment_id)
+    if enrollment is None or enrollment.class_id != class_id or enrollment.status != "active":
+        raise ApiError(404, "NOT_FOUND", "学生不存在")
+    return enrollment
+
+
+def active_enrollments(db: Session, class_id: UUID) -> list[Enrollment]:
+    return list(
+        db.scalars(
+            select(Enrollment)
+            .where(Enrollment.class_id == class_id, Enrollment.status == "active")
+            .order_by(Enrollment.id)
+        ).all()
+    )
