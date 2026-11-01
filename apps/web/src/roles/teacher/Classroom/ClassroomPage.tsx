@@ -77,7 +77,8 @@ export default function ClassroomPage() {
   const classes = useQuery({ queryKey: ['my-classes'], queryFn: classesApi.mine })
 
   if (classes.isLoading) return <div className="p-6">加载中…</div>
-  if (classes.isError) return <div className="p-6">班级加载失败</div>
+  // 只有从没拿到过数据时才显示错误;后台刷新失败时保留已加载的页面(以及排座草稿)
+  if (classes.isError && !classes.data) return <div className="p-6">班级加载失败</div>
   const items = classes.data?.items ?? []
   if (items.length === 0) return <div className="p-6">没有可查看的班级</div>
   const cls = classId ? items.find((c) => c.id === classId) : undefined
@@ -198,7 +199,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
   const cardOpen = pick.state === 'picked' || pick.state === 'empty'
   // 点名进行中(转动或结果卡打开):Task 21 据此暂停空闲动画
   const picking = pick.state === 'spinning' || cardOpen
-  const canPick = mode !== 'seating' && todayAttendance.isSuccess && !!roster.data
+  const canPick = mode !== 'seating' && !!todayAttendance.data && !!roster.data
   const overlay = mode === 'seating' ? undefined : attendance.views
   let slot: ModeSlot = {}
   if (mode === 'daily') slot = { views: overlay, onSeatClick: presenting ? undefined : openProfile }
@@ -245,7 +246,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
   }
 
   let stage: ReactNode
-  if (roster.isError) stage = <div className="p-6">名单加载失败</div>
+  if (roster.isError && !roster.data) stage = <div className="p-6">名单加载失败</div>
   else if (!roster.data || summary.isPending) stage = <div className="p-6">加载中…</div>
   else {
     stage = (

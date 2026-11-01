@@ -37,7 +37,8 @@ function build(form: Form): { error: string } | { value: Preferences } {
 
 export default function PreferencesPage() {
   const query = useQuery({ queryKey: ['preferences'], queryFn: preferencesApi.get })
-  if (query.isError) {
+  // 后台刷新失败时保留正在编辑的表单,只有从没加载成功过才显示错误
+  if (query.isError && !query.data) {
     return (
       <div className="p-6">
         <p>偏好加载失败</p>

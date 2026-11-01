@@ -1,6 +1,7 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { ApiError } from '@/shared/api/client'
+import { classesApi } from '@/shared/api/classes'
 import { classroomApi } from '@/shared/api/classroom'
 import { seatingApi } from '@/shared/api/seating'
 import { studentsApi } from '@/shared/api/students'
@@ -285,4 +286,20 @@ it('focuses 继续编辑 when the conflict dialog opens', async () => {
   fireEvent.click(screen.getByRole('button', { name: '李小二' }))
   fireEvent.click(screen.getByRole('button', { name: '保存座位' }))
   expect(await screen.findByRole('button', { name: '继续编辑' })).toHaveFocus()
+})
+
+it('keeps an unsaved draft when a background refetch of classes or roster fails', async () => {
+  const { client } = setup({ mode: '排座' })
+  fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
+  fireEvent.click(screen.getByRole('button', { name: '李小二' }))
+  expect(screen.getByRole('button', { name: '保存座位' })).toBeEnabled()
+  vi.mocked(classesApi.mine).mockRejectedValue(new Error('500'))
+  vi.mocked(studentsApi.listInClass).mockRejectedValue(new Error('500'))
+  await act(() => client.refetchQueries({ queryKey: ['my-classes'] }))
+  await act(() => client.refetchQueries({ queryKey: ['class-students', 'c1'] }))
+  await waitFor(() => expect(client.getQueryState(['class-students', 'c1'])?.status).toBe('error'))
+  expect(client.getQueryState(['my-classes'])?.status).toBe('error')
+  expect(screen.getByRole('button', { name: '保存座位' })).toBeEnabled()
+  expect(screen.queryByText('班级加载失败')).toBeNull()
+  expect(screen.queryByText('名单加载失败')).toBeNull()
 })

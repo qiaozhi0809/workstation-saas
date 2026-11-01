@@ -1,5 +1,6 @@
-import { fireEvent, screen } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { attendanceApi } from '@/shared/api/attendance'
 import { classesApi } from '@/shared/api/classes'
 import { classroomApi } from '@/shared/api/classroom'
 import { reviewsApi } from '@/shared/api/reviews'
@@ -189,4 +190,24 @@ it('hides 编辑黑板 without board.write', async () => {
   await screen.findByRole('toolbar', { name: '教室工具' })
   await screen.findByText(/第 10 周/)
   expect(screen.queryByRole('button', { name: '编辑黑板' })).toBeNull()
+})
+
+it('keeps the loaded page when background refetches of classes, roster or attendance fail', async () => {
+  const { client } = setup()
+  await screen.findByRole('button', { name: '王小一' })
+  expect(await screen.findByRole('button', { name: '随机点名' })).toBeEnabled()
+  vi.mocked(classesApi.mine).mockRejectedValue(new Error('500'))
+  vi.mocked(studentsApi.listInClass).mockRejectedValue(new Error('500'))
+  vi.mocked(attendanceApi.day).mockRejectedValue(new Error('500'))
+  await act(() => client.refetchQueries())
+  await waitFor(() => {
+    for (const key of [['my-classes'], ['class-students', 'c1'], ['attendance', 'c1', '2026-11-02']]) {
+      expect(client.getQueryState(key)?.status).toBe('error')
+    }
+  })
+  expect(screen.queryByText('班级加载失败')).toBeNull()
+  expect(screen.queryByText('名单加载失败')).toBeNull()
+  expect(screen.getByRole('heading', { name: '三年二班' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '王小一' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '随机点名' })).toBeEnabled()
 })

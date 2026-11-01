@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, expect, it, vi } from 'vitest'
@@ -20,7 +20,7 @@ function renderPage() {
       <MemoryRouter><PreferencesPage /><Toaster /></MemoryRouter>
     </QueryClientProvider>,
   )
-  return { invalidate }
+  return { invalidate, client }
 }
 
 beforeEach(() => {
@@ -102,4 +102,14 @@ it('shows a retry when loading fails', async () => {
   expect(await screen.findByText('偏好加载失败')).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: '重试' }))
   expect(await screen.findByLabelText('女老师')).toBeChecked()
+})
+
+it('keeps the form and its edits when a background refetch fails', async () => {
+  const { client } = renderPage()
+  fireEvent.change(await screen.findByLabelText('理由'), { target: { value: '改过的' } })
+  vi.mocked(preferencesApi.get).mockRejectedValue(new Error('boom'))
+  await act(() => client.refetchQueries({ queryKey: ['preferences'] }))
+  await waitFor(() => expect(client.getQueryState(['preferences'])?.status).toBe('error'))
+  expect(screen.queryByText('偏好加载失败')).toBeNull()
+  expect(screen.getByLabelText('理由')).toHaveValue('改过的')
 })
