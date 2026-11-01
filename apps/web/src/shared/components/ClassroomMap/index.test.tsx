@@ -5,7 +5,8 @@ import ClassroomMap from './index'
 
 const seat = (over: Partial<StudentSeat>): StudentSeat => ({
   enrollment_id: 'e1', student_id: 's1', name: '王小一', mk: 'S0001',
-  seat_row: 1, seat_col: 1, avatar_seed: null, ...over,
+  seat_row: 1, seat_col: 1, avatar_seed: null,
+  gender: null, student_no: null, birthdate: null, class_role: null, seat_locked: false, ...over,
 })
 
 it('renders seated students and skips unseated ones', () => {
@@ -22,7 +23,7 @@ it('calls onSeatClick and shows hover card', () => {
   fireEvent.mouseEnter(screen.getByText('王小一'))
   expect(screen.getByText('编号 S0001')).toBeInTheDocument()
   fireEvent.click(screen.getAllByText('王小一')[0])
-  expect(onClick).toHaveBeenCalledWith(expect.objectContaining({ student_id: 's1' }))
+  expect(onClick).toHaveBeenCalledWith(expect.objectContaining({ student_id: 's1' }), expect.any(Object))
 })
 
 it('hides the hover card on mouseLeave', () => {

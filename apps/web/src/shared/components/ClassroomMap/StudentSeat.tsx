@@ -1,12 +1,13 @@
 import type { KeyboardEvent } from 'react'
 import type { StudentSeat as Seat } from '@/shared/types/student'
+import type { SeatAnchor } from './types'
 
 interface Props {
   seat: Seat | null
   x: number
   y: number
   scale: number
-  onClick?: (seat: Seat) => void
+  onClick?: (seat: Seat, anchor: SeatAnchor) => void
   onHover?: (seat: Seat | null) => void
 }
 
@@ -20,10 +21,14 @@ export default function StudentSeat({ seat, x, y, scale, onClick, onHover }: Pro
     )
   }
   const clickable = !!onClick
+  const fire = (el: SVGGElement) => {
+    const { left, top, width, height } = el.getBoundingClientRect()
+    onClick?.(seat, { left, top, width, height })
+  }
   const onKeyDown = (e: KeyboardEvent<SVGGElement>) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault()
-      onClick?.(seat)
+      fire(e.currentTarget)
     }
   }
   return (
@@ -32,7 +37,7 @@ export default function StudentSeat({ seat, x, y, scale, onClick, onHover }: Pro
       onMouseLeave={() => onHover?.(null)}
       onFocus={() => onHover?.(seat)}
       onBlur={() => onHover?.(null)}
-      onClick={() => onClick?.(seat)}
+      onClick={(e) => fire(e.currentTarget)}
       className={clickable ? 'cursor-pointer' : undefined}
       {...(clickable
         ? { role: 'button', tabIndex: 0, 'aria-label': seat.name, onKeyDown }
