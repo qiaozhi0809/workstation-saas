@@ -34,6 +34,7 @@ def bind(
     grade_id: str | UUID | None = None,
     school_id: str | UUID | None = None,
     student_id: str | UUID | None = None,
+    subject: str | None = None,
     year_id: str | UUID | None = YEAR_ID,
     ended: bool = False,
 ) -> None:
@@ -42,6 +43,7 @@ def bind(
         "grade_id": _uuid_or_none(grade_id),
         "school_id": _uuid_or_none(school_id),
         "student_id": _uuid_or_none(student_id),
+        "subject": subject,
     }
     db.add(
         RoleBinding(

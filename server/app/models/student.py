@@ -44,6 +44,8 @@ class Enrollment(Base):
     )
     seat_row: Mapped[int | None]
     seat_col: Mapped[int | None]
+    class_role: Mapped[str | None] = mapped_column(Text)
+    seat_locked: Mapped[bool] = mapped_column(server_default=text("false"))
     entered_at: Mapped[datetime] = mapped_column(**_NOW)
     left_at: Mapped[datetime | None]
     status: Mapped[str] = mapped_column(Text, server_default=text("'active'"))

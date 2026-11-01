@@ -33,6 +33,11 @@ def test_roster_own_class(client, settings):
         "seat_row",
         "seat_col",
         "avatar_seed",
+        "gender",
+        "student_no",
+        "birthdate",
+        "class_role",
+        "seat_locked",
     }
 
 
