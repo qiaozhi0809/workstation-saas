@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, Outlet, useMatch, useNavigate } from 'react-router-dom'
 import { authApi } from '@/shared/api/auth'
 import { classesApi } from '@/shared/api/classes'
+import { Toaster } from '@/shared/components/Toast'
 import { useAuthStore } from '@/shared/stores/auth'
 import { useTeacherStore } from '@/shared/stores/teacher'
 import StudentProfileDrawer from './StudentProfile/StudentProfileDrawer'
@@ -48,6 +49,7 @@ export default function TeacherLayout() {
       </header>
       <main className="overflow-auto"><Outlet /></main>
       {studentMatch?.params.id && <StudentProfileDrawer key={studentMatch.params.id} studentId={studentMatch.params.id} />}
+      <Toaster />
     </div>
   )
 }
