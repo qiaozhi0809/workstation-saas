@@ -137,6 +137,8 @@
 
 /* 可点的座位:鼠标指针 + 键盘焦点框 */
 .cr-pressable { cursor: pointer; outline: none; }
+/* 人物随姿态(悬停转身 / 聚焦)整块换节点;让按下落在稳定的 .cr-hit 上,否则按下与抬起不是同一节点、click 丢失 */
+.cr-pressable .cr-stu { pointer-events: none; }
 .cr-pressable:focus-visible .cr-hit { stroke: #2b6cb0; stroke-width: 3; vector-effect: non-scaling-stroke; }
 
 /* 老师 / 讲台不挡住第一排座位的点击 */

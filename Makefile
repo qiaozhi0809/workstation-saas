@@ -1,4 +1,4 @@
-.PHONY: dev dev-down backend web migrate seed test
+.PHONY: dev dev-down backend web migrate seed reset-db test
 
 dev:
 	docker compose -f deploy/docker-compose.dev.yml up -d --wait
@@ -17,6 +17,9 @@ migrate:
 
 seed:
 	cd server && uv run python -m app.cli seed-dev
+
+reset-db:
+	cd server && uv run alembic downgrade base && uv run alembic upgrade head && uv run python -m app.cli seed-dev
 
 test:
 	cd server && uv run pytest
