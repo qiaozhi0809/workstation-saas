@@ -22,7 +22,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@v10
+      # setup-uv 不发布 v10 这类浮动大版本 tag,只能钉完整版本
+      - uses: astral-sh/setup-uv@v10.3.3
         with:
           python-version: "3.12"
           working-directory: server
