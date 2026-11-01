@@ -1,0 +1,14 @@
+DROP TABLE IF EXISTS audit_logs;
+DROP TABLE IF EXISTS role_bindings;
+DROP TABLE IF EXISTS parent_links;
+DROP TABLE IF EXISTS parents;
+DROP TABLE IF EXISTS teacher_assignments;
+DROP TABLE IF EXISTS enrollments;
+DROP TABLE IF EXISTS students;
+DROP TABLE IF EXISTS teachers;
+DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS classes;
+DROP TABLE IF EXISTS grades;
+DROP TABLE IF EXISTS academic_years;
+DROP TABLE IF EXISTS schools;
+DROP FUNCTION IF EXISTS trg_touch_updated_at();

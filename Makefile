@@ -1,4 +1,4 @@
-.PHONY: dev dev-down backend web
+.PHONY: dev dev-down backend web migrate seed test
 
 dev:
 	docker compose -f deploy/docker-compose.dev.yml up -d --wait
@@ -11,3 +11,13 @@ backend:
 
 web:
 	cd apps/web && npm run dev
+
+migrate:
+	cd server && uv run alembic upgrade head
+
+seed:
+	cd server && uv run python -m app.cli seed-dev
+
+test:
+	cd server && uv run pytest
+	cd apps/web && npm run test

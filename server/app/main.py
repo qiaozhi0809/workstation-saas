@@ -1,4 +1,6 @@
 from fastapi import APIRouter, FastAPI
+from redis import Redis
+from sqlalchemy import create_engine
 
 from app.config import Settings, get_settings
 from app.errors import install_error_handlers
@@ -10,6 +12,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     configure_logging(settings.log_level)
     app = FastAPI(title="workstation-saas")
     app.state.settings = settings
+    app.state.engine = create_engine(settings.database_url, pool_pre_ping=True)
+    app.state.redis = Redis.from_url(settings.redis_url, decode_responses=True)
     install_error_handlers(app)
 
     router = APIRouter(prefix="/api/v1")
