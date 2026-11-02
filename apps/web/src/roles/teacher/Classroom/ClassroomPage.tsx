@@ -4,6 +4,7 @@ import { Dices, PencilLine, School } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { useStudentDrawer } from '../StudentProfile/useStudentDrawer'
 import { classesApi } from '@/shared/api/classes'
+import { examsApi } from '@/shared/api/exams'
 import { classroomApi } from '@/shared/api/classroom'
 import { preferencesApi } from '@/shared/api/preferences'
 import { reviewsApi } from '@/shared/api/reviews'
@@ -17,6 +18,7 @@ import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { MenuItem } from '@/shared/components/overlay/Menu'
 import { Button } from '@/shared/components/ui/button'
+import { examTable, latestExam } from '@/shared/lib/grades'
 import { useReducedMotion } from '@/shared/hooks/useReducedMotion'
 import { useAuthStore } from '@/shared/stores/auth'
 import { confirmLeaveSeating, useTeacherStore } from '@/shared/stores/teacher'
@@ -28,6 +30,7 @@ import PickCard from './pick/PickCard'
 import { usePick, usePickReward } from './pick/usePick'
 import { attendanceApi } from '@/shared/api/attendance'
 import { useAttendanceMode } from './attendance/useAttendanceMode'
+import { useGradesMode } from './grades/useGradesMode'
 import { useReviewMode } from './review/useReviewMode'
 import { useReviewSubject } from './review/useReviewSubmit'
 import BoardEditor from './BoardEditor'
@@ -40,6 +43,7 @@ import { useIdleActions } from './idle/useIdleActions'
 import SidePanel from '@/shared/components/overlay/SidePanel'
 import TodoSection from './panel/TodoSection'
 import FeedSection from './panel/FeedSection'
+import ExamSection from './panel/ExamSection'
 import { modesFor, type ClassroomUiMode } from './ModeBar'
 import ClassroomDock from './ClassroomDock'
 import { useAttendanceDate } from './useAttendanceDate'
@@ -47,6 +51,7 @@ import { useFullscreen } from './useFullscreen'
 
 const NO_PERMS: ClassPerm[] = []
 const NO_SUBJECTS: string[] = []
+const NO_ROSTER: StudentSeat[] = []
 
 // 讲台姓名牌上的身份:有排座权的是班主任,能记考勤的是副班主任,其余是任课老师
 const roleLabel = (perms: readonly ClassPerm[]) =>
@@ -161,6 +166,13 @@ function ClassroomView({ cls }: { cls: ClassView }) {
     onFollowToday: attDate.followToday,
   })
   const stageRef = useRef<HTMLDivElement>(null)
+  const grades = useGradesMode({
+    classId,
+    enabled: mode === 'grades',
+    presenting,
+    roster: roster.data?.items ?? NO_ROSTER,
+    onOpenScores: (s) => openDrawer(s.student_id, '成绩'),
+  })
   // 当前科目在页面级:点评弹层、全班 +1、点名"回答得好 +1"共用
   const subject = useReviewSubject(perms, summary.data?.my_subjects ?? NO_SUBJECTS)
   const review = useReviewMode({
@@ -212,10 +224,27 @@ function ClassroomView({ cls }: { cls: ClassView }) {
       : undefined
     return <SeatHoverCard seat={s} attendance={status} week={week} />
   }, [todayAttendance.data, reviewSummary.data])
+  // 排座"优带弱"用最近一次考试的名次;与成绩模式、侧边面板共用 ['gradebook', classId]
+  const canReadExams = perms.includes('exam.read')
+  const gradebook = useQuery({
+    queryKey: ['gradebook', classId],
+    queryFn: () => examsApi.gradebook(classId),
+    enabled: canReadExams,
+  })
+  const ranks = useMemo(() => {
+    const latest = canReadExams && gradebook.data ? latestExam(gradebook.data.exams) : null
+    if (!latest || !roster.data) return undefined
+    const out = new Map<string, number>()
+    for (const r of examTable(latest, roster.data.items.map((s) => s.enrollment_id))) {
+      if (r.rank !== null) out.set(r.id, r.rank)
+    }
+    return out
+  }, [canReadExams, gradebook.data, roster.data])
   const seating = useSeatingMode({
     classId,
     className: cls.name,
     enabled: mode === 'seating',
+    ranks,
   })
   // 离开排座前确认未保存的修改;进入排座时收起点名(聚光灯 / 指向不落在排座地图上)
   const setMode = (next: ClassroomUiMode) => {
@@ -224,7 +253,13 @@ function ClassroomView({ cls }: { cls: ClassView }) {
     // 离开考勤模式时考勤日期回到学校今天,日常 / 点评叠加的是今天的考勤
     if (mode === 'attendance' && next !== 'attendance') attDate.followToday()
     // 同步切换:路由默认在 transition 里更新,渲染较慢时模式条和地图会停在旧模式,点击落到旧模式上
-    setParams(next === 'daily' ? {} : { mode: next }, { replace: true, flushSync: true })
+    // 只动 mode,?student= / ?tab= 等其他参数原样保留
+    setParams((prev) => {
+      const out = new URLSearchParams(prev)
+      if (next === 'daily') out.delete('mode')
+      else out.set('mode', next)
+      return out
+    }, { replace: true, flushSync: true })
   }
   const pickReward = usePickReward(classId, subject.value, pick.close)
   const pickedSeat = roster.data?.items.find((s) => s.enrollment_id === pick.pickedId) ?? null
@@ -244,6 +279,9 @@ function ClassroomView({ cls }: { cls: ClassView }) {
       // 投屏时也能点评:飘字本来就是给投影看的
       onSeatClick: review.onSeatClick,
     }
+  } else if (mode === 'grades') {
+    // 成绩模式不叠加考勤外观;投屏时座位不可点(不弹档案)
+    slot = { views: grades.views, onSeatClick: grades.onSeatClick, actions: grades.bar }
   } else if (mode === 'seating' && seating.ready) {
     slot = {
       seats: seating.seats, rows: seating.rows, cols: seating.cols, views: seating.views,
@@ -396,6 +434,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
         <SidePanel open title="待办与点评" onClose={() => setPanelOpen(false)}>
           <div className="flex flex-col gap-3">
             <TodoSection />
+            {perms.includes('exam.read') && <ExamSection classId={classId} roster={roster.data.items} />}
             {perms.includes('review.read') && (
               <FeedSection classId={classId} roster={roster.data.items} timezone={summary.data.timezone} />
             )}

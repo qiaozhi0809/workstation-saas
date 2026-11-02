@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { vi } from 'vitest'
 import type { StudentSeat } from '@/shared/types/student'
+import { GRADE_TINTS, ROOM } from './art/palette'
 import ClassroomMap from './index'
 import { fitName } from './SeatLayer'
 
@@ -97,4 +98,22 @@ it('exposes name, position, chip, badge and lock in the seat accessible name', (
 it('keeps the plain name and position when the seat shows no status', () => {
   render(<ClassroomMap rows={3} cols={3} seats={[seat({ seat_row: 2, seat_col: 3 })]} onSeatClick={vi.fn()} />)
   expect(screen.getByRole('button', { name: '王小一，第2排第3列' })).toBeInTheDocument()
+})
+
+it('paints desk tops by grade tint without touching figures', () => {
+  const two = [seat({}), seat({ enrollment_id: 'e2', student_id: 's2', name: '李小二', seat_col: 2 })]
+  const { container } = render(<ClassroomMap rows={1} cols={3} seats={two} views={{ e1: { tint: 1 }, e2: { tint: 5 } }} />)
+  const tops = Array.from(container.querySelectorAll('.cr-desk')).map((d) => d.querySelector('rect')!.getAttribute('fill'))
+  expect(tops).toEqual([GRADE_TINTS[1], GRADE_TINTS[5], ROOM.desk])
+  // 学生身体与椅子不变色
+  expect(container.querySelector('[data-enrollment="e1"]')!.innerHTML).not.toContain(GRADE_TINTS[1])
+})
+
+it('repaints a memoised seat when only the tint changes, and keeps tint out of the accessible name', () => {
+  const props = { rows: 1, cols: 2, seats: [seat({})], onSeatClick: vi.fn() }
+  const { container, rerender } = render(<ClassroomMap {...props} views={{ e1: { tint: 1 } }} />)
+  expect(container.querySelector('.cr-desk rect')!.getAttribute('fill')).toBe(GRADE_TINTS[1])
+  rerender(<ClassroomMap {...props} views={{ e1: { tint: 4 } }} />)
+  expect(container.querySelector('.cr-desk rect')!.getAttribute('fill')).toBe(GRADE_TINTS[4])
+  expect(screen.getByRole('button', { name: '王小一，第1排第1列' })).toBeInTheDocument()
 })

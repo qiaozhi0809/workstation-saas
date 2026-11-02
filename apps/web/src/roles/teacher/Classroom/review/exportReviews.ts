@@ -14,7 +14,7 @@ export function reviewRows(
       const person = byId.get(it.enrollment_id)
       return [
         formatInTz(it.given_at, timeZone),
-        person?.name ?? '',
+        it.transferred ? `${it.student_name}（已转出）` : (person?.name ?? it.student_name),
         person?.student_no ?? '',
         it.score_delta,
         it.reason_text,

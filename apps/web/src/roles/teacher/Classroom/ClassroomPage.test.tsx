@@ -15,6 +15,7 @@ vi.mock('@/shared/api/reviews')
 vi.mock('@/shared/api/seating')
 vi.mock('@/shared/api/todos')
 vi.mock('@/shared/api/preferences')
+vi.mock('@/shared/api/exams')
 
 const WIDTH = window.innerWidth
 const REQUEST_FULLSCREEN = Element.prototype.requestFullscreen
@@ -347,4 +348,12 @@ it('keeps the dock inside the fullscreen root while presenting', async () => {
   fireEvent.click(await screen.findByRole('button', { name: '全屏' }))
   await screen.findByRole('button', { name: '退出全屏' })
   expect((document.fullscreenElement as Element).contains(screen.getByRole('tablist', { name: '教室模式' }))).toBe(true)
+})
+
+it('keeps other search params when switching modes', async () => {
+  setup({ search: '?foo=1&bar=2' })
+  fireEvent.click(await screen.findByRole('tab', { name: '点评' }))
+  await waitFor(() => expect(screen.getByTestId('url')).toHaveTextContent('/teacher/classroom?foo=1&bar=2&mode=review'))
+  fireEvent.click(screen.getByRole('tab', { name: '日常' }))
+  await waitFor(() => expect(screen.getByTestId('url')).toHaveTextContent(/^\/teacher\/classroom\?foo=1&bar=2$/))
 })

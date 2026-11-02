@@ -16,6 +16,16 @@ export const TONES: Record<Tone, { fg: string; bg: string }> = {
   coral: { fg: '#d1603d', bg: '#fde7df' },
   gray: { fg: '#5c5c5a', bg: '#efefed' },
 }
+// 成绩模式的桌面顶面色:名次前 20% 最深(1),后 20% 最浅(5);只用于桌面
+const GRADE_T = [0.5, 0.38, 0.26, 0.15, 0.06] as const
+export const GRADE_TINTS: Record<1 | 2 | 3 | 4 | 5, string> = {
+  1: mix(ROOM.desk, TONES.blue.fg, GRADE_T[0]),
+  2: mix(ROOM.desk, TONES.blue.fg, GRADE_T[1]),
+  3: mix(ROOM.desk, TONES.blue.fg, GRADE_T[2]),
+  4: mix(ROOM.desk, TONES.blue.fg, GRADE_T[3]),
+  5: mix(ROOM.desk, TONES.blue.fg, GRADE_T[4]),
+}
+
 export const TEACHER_COLORS = { cardigan: '#c9785d', vest: '#5d7c9e' } as const
 
 export const SHADOW_ID = 'crShadow'

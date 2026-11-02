@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { ApiError } from '@/shared/api/client'
 import { classesApi } from '@/shared/api/classes'
 import { classroomApi } from '@/shared/api/classroom'
+import { examsApi } from '@/shared/api/exams'
 import { seatingApi } from '@/shared/api/seating'
 import { studentsApi } from '@/shared/api/students'
 import { useTeacherStore } from '@/shared/stores/teacher'
@@ -18,6 +19,7 @@ vi.mock('@/shared/api/reviews')
 vi.mock('@/shared/api/seating')
 vi.mock('@/shared/api/todos')
 vi.mock('@/shared/api/preferences')
+vi.mock('@/shared/api/exams')
 
 // 裁定 R2:排座用例里张小三未排座
 const roster = rosterFixture.map((s) => (s.enrollment_id === 'e3' ? { ...s, seat_row: null, seat_col: null } : s))
@@ -288,6 +290,8 @@ it('resizes within 1-12 and discards changes', async () => {
   fireEvent.keyDown(rows, { key: 'Enter' })
   expect(rows).toHaveValue(12)
   expect(screen.getByRole('button', { name: '撤销' })).toBeEnabled()
+  expect(screen.getByRole('button', { name: '撤销' })).toHaveAttribute('title', '撤销')
+  expect(screen.getByRole('button', { name: '撤销' }).textContent).toBe('')
   openMore()
   fireEvent.click(menuItem('放弃修改'))
   expect(screen.getByRole('region', { name: '待安排 (1)' })).toBeInTheDocument()
@@ -561,4 +565,26 @@ it('more menu opens inside the fullscreen root while presenting', async () => {
   await screen.findByRole('button', { name: '退出全屏' })
   openMore()
   expect((document.fullscreenElement as Element).contains(screen.getByRole('menu', { name: '更多操作' }))).toBe(true)
+})
+
+it('disables mentor seating without exam scores', async () => {
+  setup({ mode: '排座' })
+  const btn = await screen.findByRole('button', { name: '优带弱' })
+  expect(btn).toBeDisabled()
+  expect(btn).toHaveAttribute('title', '还没有考试成绩')
+})
+
+it('runs mentor seating from the bar', async () => {
+  vi.mocked(examsApi.gradebook).mockResolvedValue({ exams: [{
+    id: 'x1', name: '月考', exam_type: '月考' as const, date: '2026-10-20', subjects: [{ name: '语文', full: 100 }],
+    created_by_me: true, progress: { entered: 3, total: 3 },
+    scores: { e1: { 语文: 90 }, e2: { 语文: 80 }, e3: { 语文: 70 } },
+  }] })
+  setup({ mode: '排座' })
+  const btn = await screen.findByRole('button', { name: '优带弱' })
+  await waitFor(() => expect(btn).toBeEnabled())
+  fireEvent.click(btn)
+  expect(screen.getByRole('region', { name: '待安排 (0)' })).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '撤销' }))
+  expect(screen.getByRole('region', { name: '待安排 (1)' })).toBeInTheDocument()
 })

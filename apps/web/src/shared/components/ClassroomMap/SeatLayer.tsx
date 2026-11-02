@@ -65,7 +65,7 @@ interface CellProps {
 
 // 外观按值比较:父组件每次新建 views 对象、但内容没变时不重画该格
 const sameView = (a: SeatView, b: SeatView) => a === b || (
-  a.ghost === b.ghost && a.selected === b.selected && a.locked === b.locked
+  a.ghost === b.ghost && a.tint === b.tint && a.selected === b.selected && a.locked === b.locked
   && a.chip?.text === b.chip?.text && a.chip?.tone === b.chip?.tone
   && a.badge?.text === b.badge?.text && a.badge?.tone === b.badge?.tone && a.badge?.strong === b.badge?.strong
 )

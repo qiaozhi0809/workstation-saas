@@ -1,5 +1,7 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
+import { examsApi } from '@/shared/api/exams'
+import type { GradebookExam } from '@/shared/types/grades'
 import { reviewsApi } from '@/shared/api/reviews'
 import { todosApi } from '@/shared/api/todos'
 import { defaultApiMocks, review, setup } from '../pageTestUtils'
@@ -12,6 +14,7 @@ vi.mock('@/shared/api/reviews')
 vi.mock('@/shared/api/seating')
 vi.mock('@/shared/api/todos')
 vi.mock('@/shared/api/preferences')
+vi.mock('@/shared/api/exams')
 
 beforeEach(() => {
   vi.resetAllMocks()
@@ -20,7 +23,7 @@ beforeEach(() => {
 
 const openPanel = async () => fireEvent.click(await screen.findByRole('button', { name: '待办与点评' }))
 
-it('opens 待办与点评 as a side panel with only the todo and review sections, and returns focus on close', async () => {
+it('opens 待办与点评 as a side panel with the todo, review and exam sections, and returns focus on close', async () => {
   setup()
   const opener = await screen.findByRole('button', { name: '待办与点评' })
   expect(opener).toHaveAttribute('title', '待办与点评')
@@ -98,4 +101,59 @@ it('marks reviews of students no longer in the class as transferred out', async 
   await openPanel()
   expect(await screen.findByText('陈转出（已转出） 积极发言 +1 · 我 · 10:05')).toBeInTheDocument()
   expect(screen.queryByText(/全班/)).toBeNull()
+})
+
+const exam = (id: string, date: string, scores: Record<string, number>): GradebookExam => ({
+  id, name: `考试${id}`, exam_type: '月考', date, subjects: [{ name: '语文', full: 100 }],
+  created_by_me: true, progress: { entered: 3, total: 3 },
+  scores: Object.fromEntries(Object.entries(scores).map(([e, v]) => [e, { 语文: v }])),
+})
+
+it('shows the latest exam summary in the side panel', async () => {
+  vi.mocked(examsApi.gradebook).mockResolvedValue({ exams: [
+    exam('x1', '2026-09-20', { e1: 50, e2: 60, e3: 70 }),
+    exam('x2', '2026-10-20', { e1: 95, e2: 85, e3: 55 }),
+  ] })
+  setup()
+  await openPanel()
+  const dlg = await screen.findByRole('dialog', { name: '待办与点评' })
+  expect(await within(dlg).findByRole('heading', { name: '最近考试' })).toBeInTheDocument()
+  expect(await within(dlg).findByText('考试x2')).toBeInTheDocument()
+  expect(within(dlg).getByText('平均 78.3/100')).toBeInTheDocument()
+  expect(within(dlg).getByText('及格率 67% · 优秀率 67%')).toBeInTheDocument()
+  expect(within(dlg).getByRole('img', { name: '历次平均得分率' })).toBeInTheDocument()
+  expect(within(dlg).getByRole('link', { name: '查看分析' })).toHaveAttribute('href', '/teacher/analysis?exam=x2')
+})
+
+it('says there are no exam scores yet', async () => {
+  setup()
+  await openPanel()
+  const dlg = await screen.findByRole('dialog', { name: '待办与点评' })
+  expect(await within(dlg).findByText('还没有考试成绩')).toBeInTheDocument()
+})
+
+it('shows the sparkline only with two exams that have stats', async () => {
+  vi.mocked(examsApi.gradebook).mockResolvedValue({ exams: [exam('x1', '2026-09-20', { e1: 50, e2: 60, e3: 70 })] })
+  setup()
+  await openPanel()
+  const dlg = await screen.findByRole('dialog', { name: '待办与点评' })
+  expect(await within(dlg).findByText('考试x1')).toBeInTheDocument()
+  expect(within(dlg).queryByRole('img', { name: '历次平均得分率' })).toBeNull()
+})
+
+it('shows a load error instead of the empty hint when the gradebook fails', async () => {
+  vi.mocked(examsApi.gradebook).mockRejectedValue(new Error('boom'))
+  setup()
+  await openPanel()
+  const dlg = await screen.findByRole('dialog', { name: '待办与点评' })
+  expect(await within(dlg).findByText('成绩加载失败')).toBeInTheDocument()
+  expect(within(dlg).queryByText('还没有考试成绩')).toBeNull()
+})
+
+it('does not render the exam section without exam.read', async () => {
+  setup({ perms: ['attendance.read'] })
+  await openPanel()
+  const dlg = await screen.findByRole('dialog', { name: '待办与点评' })
+  expect(within(dlg).queryByRole('heading', { name: '最近考试' })).toBeNull()
+  expect(examsApi.gradebook).not.toHaveBeenCalled()
 })

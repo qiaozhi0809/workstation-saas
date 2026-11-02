@@ -1,13 +1,13 @@
 import type { ClassPerm } from '@/shared/types/classroom'
 import { SegmentedTabs } from '@/shared/components/ui/segmented-tabs'
 
-export type ClassroomUiMode = 'daily' | 'attendance' | 'review' | 'seating'
+export type ClassroomUiMode = 'daily' | 'attendance' | 'review' | 'grades' | 'seating'
 
-// 成绩模式属于 M2b,这里不出现
 const MODES: { mode: ClassroomUiMode; label: string; perm: ClassPerm | null }[] = [
   { mode: 'daily', label: '日常', perm: null },
   { mode: 'attendance', label: '考勤', perm: 'attendance.read' },
   { mode: 'review', label: '点评', perm: 'review.read' },
+  { mode: 'grades', label: '成绩', perm: 'exam.read' },
   { mode: 'seating', label: '排座', perm: 'seating.write' },
 ]
 

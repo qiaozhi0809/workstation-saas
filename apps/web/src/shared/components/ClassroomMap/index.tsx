@@ -78,7 +78,7 @@ const Scene = memo(function Scene({ L, mini, rows, board, attendanceBoard, figur
           {L.frontWall && <LiveFrontWall rect={L.frontWall} board={board} />}
         </>
       )}
-      <DeskLayer layout={L} cells={seat.cells} />
+      <DeskLayer layout={L} cells={seat.cells} views={seat.views} />
       <SeatLayer layout={L} effects={effects} {...seat} />
       {L.podium && <Podium rect={L.podium} teacher={teacher} action={action} pointAt={picked ?? undefined} />}
       <Spotlight at={spot} />

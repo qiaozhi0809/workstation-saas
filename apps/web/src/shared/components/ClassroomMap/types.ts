@@ -1,7 +1,7 @@
 import type { ReactNode, Ref } from 'react'
 import type { StudentSeat } from '@/shared/types/student'
 
-export type ClassroomMode = 'daily' | 'attendance' | 'review' | 'seating' | 'overview' | 'mini'
+export type ClassroomMode = 'daily' | 'attendance' | 'review' | 'grades' | 'seating' | 'overview' | 'mini'
 export type IdleAction = 'look' | 'raise' | 'doze' | 'stretch'
 export type TeacherAction = 'idle' | 'sip' | 'point'
 export type Tone = 'amber' | 'red' | 'blue' | 'green' | 'coral' | 'gray'
@@ -12,6 +12,8 @@ export interface SeatView {
   chip?: { text: string; tone: Tone }
   badge?: { text: string; tone: Tone; strong?: boolean }
   selected?: boolean
+  /** 成绩名次档(1 = 前 20%):只换桌面顶面色,不进可访问名称 */
+  tint?: 1 | 2 | 3 | 4 | 5
   locked?: boolean
 }
 export interface FloatFx { key: string; enrollmentId: string; text: string; tone: 'plus' | 'minus' }
