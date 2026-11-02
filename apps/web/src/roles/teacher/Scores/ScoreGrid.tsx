@@ -5,6 +5,7 @@ import { parseTable } from '@/shared/lib/table'
 import { cn } from '@/shared/lib/utils'
 import type { Exam, ScoreCell, ScoreSheet, ScoreValue } from '@/shared/types/grades'
 import type { StudentSeat } from '@/shared/types/student'
+import { compareRoster } from './rosterOrder'
 
 const without = <T,>(rec: Record<string, T>, key: string) => {
   const { [key]: dropped, ...rest } = rec
@@ -38,11 +39,6 @@ function interpret(text: string, full: number): { cell: ScoreCell['value'] } | {
   return { cell: p }
 }
 
-function byRoster(a: StudentSeat, b: StudentSeat) {
-  if (!a.student_no !== !b.student_no) return a.student_no ? -1 : 1
-  return (a.student_no ?? '').localeCompare(b.student_no ?? '') || a.name.localeCompare(b.name, 'zh')
-}
-
 export interface ScoreGridProps {
   exam: Exam
   roster: StudentSeat[]
@@ -55,7 +51,7 @@ export interface ScoreGridProps {
 }
 
 export default function ScoreGrid({ exam, roster, sheet, writable, onCells, onDiscard }: ScoreGridProps) {
-  const students = useMemo(() => [...roster].sort(byRoster), [roster])
+  const students = useMemo(() => [...roster].sort(compareRoster), [roster])
   const subjects = exam.subjects
   // 未保存的改动(保存成功并合并进 sheet 后会被清掉);草稿文字只在输入过程中保留,无法保存的文字一直留着
   const [overlay, setOverlay] = useState<Record<string, ScoreCell>>({})
@@ -144,12 +140,14 @@ export default function ScoreGrid({ exam, roster, sheet, writable, onCells, onDi
     e.preventDefault()
     const cells: ScoreCell[] = []
     let rejected = 0
+    let skipped = 0
     parseTable(text, true).forEach((line, dr) => {
       const student = students[r0 + dr]
-      if (!student) return
+      if (!student) { skipped += line.filter((raw) => raw !== '').length; return }
       line.forEach((raw, dc) => {
         const sub = subjects[c0 + dc]
-        if (raw === '' || !sub || !canWrite(sub.name)) return
+        if (raw === '') return
+        if (!sub || !canWrite(sub.name)) { skipped++; return }
         const r = interpret(raw, sub.full)
         if (apply(student.enrollment_id, sub.name, sub.full, raw)) {
           // 粘贴成功的格子不再保留草稿文字
@@ -159,7 +157,7 @@ export default function ScoreGrid({ exam, roster, sheet, writable, onCells, onDi
       })
     })
     onCells(cells)
-    toast(`已粘贴 ${cells.length} 格${rejected ? `;${rejected} 格超出满分或格式不对,未保存` : ''}`)
+    toast(`已粘贴 ${cells.length} 格${skipped ? `,${skipped} 格在表格外或不可编辑,已跳过` : ''}${rejected ? `;${rejected} 格超出满分或格式不对,未保存` : ''}`)
   }
 
   return (

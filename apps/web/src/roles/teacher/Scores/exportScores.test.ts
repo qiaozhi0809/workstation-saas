@@ -56,3 +56,10 @@ it('toasts when export fails', async () => {
   expect(downloadText).not.toHaveBeenCalled()
   expect(toast).toHaveBeenCalledWith('导出失败,请重试')
 })
+
+it('orders students by numeric student number', () => {
+  const r = [seat(1, '王小一', '10'), seat(2, '李小二', '2'), seat(3, '张小三', '1')]
+  const sh: ScoreSheet = { exam, items: [] }
+  const lines = scoresCsv(exam, sh, r).split('\r\n')
+  expect(lines.slice(1).map((l) => l.split(',')[0])).toEqual(['1', '2', '10'])
+})

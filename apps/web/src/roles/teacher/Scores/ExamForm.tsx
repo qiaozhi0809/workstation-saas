@@ -82,6 +82,7 @@ function FormBody(p: Props & { catalog: SubjectFull[] }) {
   const [newFull, setNewFull] = useState('100')
   const [error, setError] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
+  const [dropAck, setDropAck] = useState(false)
 
   const invalidate = () => Promise.all(
     ['exams', 'gradebook', 'score-sheet', 'class-subjects'].map((k) => qc.invalidateQueries({ queryKey: [k] })),
@@ -119,6 +120,9 @@ function FormBody(p: Props & { catalog: SubjectFull[] }) {
     setNewFull('100')
   }
 
+  // 编辑时,原考试里有、现在被取消勾选的科目:保存会连同已录分数一起删除
+  const dropped = p.exam ? p.exam.subjects.map((s) => s.name).filter((n) => !chips.some((c) => c.name === n && c.selected)) : []
+
   const submit = () => {
     const n = name.trim()
     const picked = chips.filter((c) => c.selected)
@@ -128,6 +132,7 @@ function FormBody(p: Props & { catalog: SubjectFull[] }) {
     if (picked.length === 0) { setError('至少选择一个科目'); return }
     if (picked.some((c) => !validFull(Number(c.full)))) { setError(FULL_MSG); return }
     setError(null)
+    if (dropped.length > 0 && !dropAck) { setDropAck(true); return }
     save.mutate({
       name: n, exam_type: type, date,
       subjects: picked.map((c) => ({ name: c.name, full: Number(c.full) })),
@@ -163,7 +168,7 @@ function FormBody(p: Props & { catalog: SubjectFull[] }) {
           {chips.map((c) => (
             <span key={c.name} className="flex items-center gap-1">
               <button type="button" aria-pressed={c.selected}
-                onClick={() => patch(c.name, { selected: !c.selected })}
+                onClick={() => { setDropAck(false); patch(c.name, { selected: !c.selected }) }}
                 className={chipClass(c.selected)}>{c.name}</button>
               <Input type="number" min={1} max={1000} step={1} aria-label={`${c.name} 满分`} className="h-8 w-20"
                 value={c.full} disabled={!c.selected}
@@ -172,7 +177,7 @@ function FormBody(p: Props & { catalog: SubjectFull[] }) {
           ))}
         </div>
         <div className="flex items-center gap-2">
-          <Input aria-label="新科目名称" placeholder="添加科目" className="h-8 w-32" value={newName}
+          <Input aria-label="新科目名称" maxLength={10} placeholder="添加科目" className="h-8 w-32" value={newName}
             onChange={(e) => setNewName(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); addCustom() }
@@ -187,6 +192,12 @@ function FormBody(p: Props & { catalog: SubjectFull[] }) {
       </div>
 
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+
+      {dropAck && dropped.length > 0 && (
+        <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+          去掉「{dropped.join('、')}」会同时删除该科已录的分数
+        </p>
+      )}
 
       {confirming && p.exam && (
         <div className="flex flex-col gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">

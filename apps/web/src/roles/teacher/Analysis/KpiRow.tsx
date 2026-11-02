@@ -5,7 +5,7 @@ import { round1 } from './round1'
 
 function Delta({ diff, cmpName }: { diff: number | null; cmpName: string }) {
   if (diff === null) return <div className="text-xs text-muted-foreground">—</div>
-  if (Math.abs(diff) < 1e-9) return <div className="text-xs text-muted-foreground">与上次持平</div>
+  if (round1(Math.abs(diff)) === 0) return <div className="text-xs text-muted-foreground">与上次持平</div>
   const up = diff > 0
   return (
     <div className={cn('text-xs', up ? 'text-success' : 'text-destructive')}>

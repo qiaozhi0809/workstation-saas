@@ -64,8 +64,8 @@ function AnalysisBody({ classId, chartWidth }: { classId: string; chartWidth?: n
   }, [scored, ids, examParam, cmpParam])
 
   if (book.isLoading || roster.isLoading) return <LoadingState />
-  if (book.isError || roster.isError) {
-    return <ErrorState title="成绩加载失败" onRetry={() => { void book.refetch(); void roster.refetch() }} />
+  if (!book.data || !roster.data) {
+    return <ErrorState title="成绩加载失败" retrying={book.isFetching || roster.isFetching} onRetry={() => { void book.refetch(); void roster.refetch() }} />
   }
   if (!view) {
     return (

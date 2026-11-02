@@ -209,3 +209,23 @@ it('shows the server message for other API errors', async () => {
   fireEvent.click(await screen.findByRole('button', { name: '保存' }))
   expect(await screen.findByText('只能使用你任教的科目')).toBeInTheDocument()
 })
+
+it('warns before removing a subject that already has scores, then submits on confirm', async () => {
+  setup()
+  vi.mocked(examsApi.update).mockResolvedValue(E1)
+  await list()
+  fireEvent.click(screen.getByRole('button', { name: '编辑考试' }))
+  fireEvent.click(await screen.findByRole('button', { name: '数学' }))
+  fireEvent.click(screen.getByRole('button', { name: '保存' }))
+  expect(examsApi.update).not.toHaveBeenCalled()
+  expect(screen.getByText('去掉「数学」会同时删除该科已录的分数')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '保存' }))
+  await waitFor(() => expect(examsApi.update).toHaveBeenCalledTimes(1))
+  expect(vi.mocked(examsApi.update).mock.calls[0][2].subjects).toEqual([{ name: '语文', full: 100 }])
+})
+
+it('limits the new subject name to 10 characters', async () => {
+  setup()
+  fireEvent.click(await screen.findByRole('button', { name: '新建考试' }))
+  expect(await screen.findByLabelText('新科目名称')).toHaveAttribute('maxlength', '10')
+})

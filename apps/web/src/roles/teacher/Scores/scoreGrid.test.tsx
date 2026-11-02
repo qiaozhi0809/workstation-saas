@@ -10,6 +10,7 @@ import { toast } from '@/shared/components/Toast'
 import { useTeacherStore } from '@/shared/stores/teacher'
 import type { ClassView } from '@/shared/types/class'
 import type { Exam, ScoreSheet } from '@/shared/types/grades'
+import type { StudentSeat } from '@/shared/types/student'
 import { ALL_PERMS, classFixture, rosterFixture, summaryFixture } from '../Classroom/pageTestUtils'
 import ScoresPage from './ScoresPage'
 
@@ -33,7 +34,7 @@ const SHEET: ScoreSheet = {
   ],
 }
 
-function setup(opts: { cls?: Partial<ClassView>; subjects?: string[]; sheet?: ScoreSheet } = {}) {
+function setup(opts: { cls?: Partial<ClassView>; subjects?: string[]; sheet?: ScoreSheet; roster?: StudentSeat[] } = {}) {
   vi.mocked(classesApi.mine).mockResolvedValue({ items: [{ ...classFixture, ...opts.cls }] })
   vi.mocked(classroomApi.summary).mockResolvedValue(summaryFixture({
     my_perms: [...ALL_PERMS, 'exam.read', 'exam.write', 'score.write'], my_subjects: opts.subjects ?? [],
@@ -41,14 +42,14 @@ function setup(opts: { cls?: Partial<ClassView>; subjects?: string[]; sheet?: Sc
   vi.mocked(examsApi.list).mockResolvedValue({ items: [EXAM] })
   vi.mocked(examsApi.sheet).mockResolvedValue(opts.sheet ?? SHEET)
   vi.mocked(examsApi.saveScores).mockResolvedValue({ updated: 1 })
-  vi.mocked(studentsApi.listInClass).mockResolvedValue({ items: rosterFixture })
+  vi.mocked(studentsApi.listInClass).mockResolvedValue({ items: opts.roster ?? rosterFixture })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const router = createMemoryRouter([
     { path: '/teacher/scores', element: <><Link to="/teacher/analysis">分析</Link><ScoresPage /></> },
     { path: '/teacher/analysis', element: <p>分析页</p> },
   ], { initialEntries: ['/teacher/scores'] })
-  render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>)
-  return { router }
+  const view = render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>)
+  return { router, unmount: view.unmount }
 }
 
 const cell = async (name: string, subject: string) =>
@@ -126,7 +127,7 @@ it('pastes a block with blanks without shifting and skips cells outside the grid
   expect(await cell('李小二', '语文')).toHaveValue('50')
   expect(await cell('张小三', '语文')).toHaveValue('缺考')
   expect(await cell('张小三', '数学')).toHaveValue('60')
-  expect(toast).toHaveBeenCalledWith('已粘贴 3 格')
+  expect(toast).toHaveBeenCalledWith('已粘贴 3 格,1 格在表格外或不可编辑,已跳过')
   await ms(700)
   expect(sent()).toHaveLength(1)
   expect(sent()[0][2]).toHaveLength(3)
@@ -212,4 +213,40 @@ it('never saves an earlier keystroke when the final text is over-full or invalid
   await ms(1000)
   expect(sent()).toHaveLength(0)
   expect(within(d.closest('tr') as HTMLElement).getByTestId('total')).toHaveTextContent('—')
+})
+
+it('sorts students by numeric student number', async () => {
+  const seat = (n: number, name: string, no: string): StudentSeat => ({
+    ...rosterFixture[0], enrollment_id: `e${n}`, student_id: `s${n}`, name, student_no: no,
+  })
+  setup({ roster: [seat(1, '王小一', '10'), seat(2, '李小二', '2'), seat(3, '张小三', '1')] })
+  await cell('王小一', '语文')
+  const order = screen.getAllByRole('row').slice(1).map((r) => within(r).getAllByRole('cell')[0].textContent)
+  expect(order).toEqual(['1', '2', '10'])
+})
+
+it('sends cells whose save failed when the grid unmounts', async () => {
+  const { unmount } = setup()
+  vi.mocked(examsApi.saveScores).mockRejectedValueOnce(new Error('boom'))
+  type(await cell('王小一', '语文'), '91')
+  await ms(700)
+  expect(await screen.findByText('保存失败')).toBeInTheDocument()
+  expect(sent()).toHaveLength(1)
+  unmount()
+  await waitFor(() => expect(sent()).toHaveLength(2))
+  expect(sent()[1][2]).toEqual([{ enrollment_id: 'e1', subject: '语文', value: 91 }])
+})
+
+it('does not stay stuck on failed when the only in-flight cell was discarded', async () => {
+  setup()
+  let fail: (e: Error) => void = () => {}
+  vi.mocked(examsApi.saveScores).mockImplementationOnce(() => new Promise((_, rej) => { fail = rej }))
+  const a = await cell('王小一', '语文')
+  type(a, '91')
+  await ms(700)
+  expect(sent()).toHaveLength(1)
+  type(a, 'abc')
+  await act(async () => { fail(new Error('boom')) })
+  await ms(10)
+  expect(screen.queryByText('保存失败')).toBeNull()
 })

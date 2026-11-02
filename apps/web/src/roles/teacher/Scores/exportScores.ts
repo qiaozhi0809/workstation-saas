@@ -4,11 +4,7 @@ import { downloadText, toCSV } from '@/shared/lib/csv'
 import { examTable } from '@/shared/lib/grades'
 import type { Exam, GradebookExam, ScoreSheet, ScoreValue } from '@/shared/types/grades'
 import type { StudentSeat } from '@/shared/types/student'
-
-const byNoThenName = (a: StudentSeat, b: StudentSeat) => {
-  if (!a.student_no !== !b.student_no) return a.student_no ? -1 : 1
-  return (a.student_no ?? '').localeCompare(b.student_no ?? '') || a.name.localeCompare(b.name, 'zh')
-}
+import { compareRoster } from './rosterOrder'
 
 const show = (v: ScoreValue | undefined) => (v === undefined ? '' : v === null ? '缺考' : v)
 
@@ -16,7 +12,7 @@ export function scoresCsv(exam: Exam, sheet: ScoreSheet, roster: StudentSeat[]):
   const scores: GradebookExam['scores'] = {}
   for (const item of sheet.items) scores[item.enrollment_id] = item.scores
   const book: GradebookExam = { ...exam, scores }
-  const seats = [...roster].sort(byNoThenName)
+  const seats = [...roster].sort(compareRoster)
   const byId = new Map(seats.map((s) => [s.enrollment_id, s]))
   // examTable 的排序是稳定的:先按学号、姓名排好,同分与无名次的人就保持这个顺序
   const rows = examTable(book, seats.map((s) => s.enrollment_id))

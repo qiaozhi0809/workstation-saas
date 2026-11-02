@@ -42,7 +42,12 @@ export function useScoreAutosave({ classId, examId }: { classId: string; examId:
   const flush = useCallback(async () => {
     clearTimeout(timer.current)
     timer.current = undefined
-    if (sending.current || pending.current.size === 0) return
+    if (sending.current) return
+    if (pending.current.size === 0) {
+      setStatus('idle')
+      setDirty(false)
+      return
+    }
     sending.current = true
     setStatus('saving')
     const sheetKey = ['score-sheet', classId, examId]
@@ -56,7 +61,7 @@ export function useScoreAutosave({ classId, examId }: { classId: string; examId:
       }
     } catch {
       sending.current = false
-      setStatus('error')
+      if (pending.current.size === 0) { setStatus('idle'); setDirty(false) } else setStatus('error')
       return
     }
     sending.current = false
@@ -94,7 +99,7 @@ export function useScoreAutosave({ classId, examId }: { classId: string; examId:
 
   // 卸载时还没发出去的改动立刻发送,不丢
   useEffect(() => () => {
-    if (timer.current) void flush()
+    if (pending.current.size > 0) void flush()
   }, [flush])
 
   useEffect(() => {

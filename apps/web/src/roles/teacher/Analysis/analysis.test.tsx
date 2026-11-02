@@ -41,7 +41,7 @@ function setup(book: GradebookExam[], entry = '/teacher/analysis') {
   vi.mocked(examsApi.gradebook).mockResolvedValue({ exams: book })
   act(() => { useTeacherStore.setState({ classId: 'c1' }) })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(
+  return { client, ...render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[entry]}>
         <Routes>
@@ -50,7 +50,7 @@ function setup(book: GradebookExam[], entry = '/teacher/analysis') {
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
-  )
+  ) }
 }
 
 beforeEach(() => {
@@ -80,6 +80,25 @@ describe('AnalysisPage', () => {
     fireEvent.change(screen.getByLabelText('对比'), { target: { value: 'none' } })
     expect(screen.getByTestId('url')).toHaveTextContent('cmp=none')
     expect(within(await avgCard()).getByText('—')).toBeInTheDocument()
+  })
+
+  it('says flat instead of an arrow with zero points for sub-rounding differences', async () => {
+    const tiny = exam('x2', '期中考试', '2026-10-20', {
+      e1: { 语文: 70.01, 数学: 70 }, e2: { 语文: 60, 数学: 60 }, e3: { 语文: 50, 数学: 50 },
+    })
+    setup([first, tiny])
+    const card = await avgCard()
+    expect(within(card).getByText('与上次持平')).toBeInTheDocument()
+    expect(screen.queryByText(/[↑↓] 0 个百分点/)).toBeNull()
+  })
+
+  it('keeps the page when a background refetch fails', async () => {
+    const { client } = setup([first, second])
+    await avgCard()
+    vi.mocked(examsApi.gradebook).mockRejectedValue(new Error('boom'))
+    await act(async () => { await client.refetchQueries({ queryKey: ['gradebook', 'c1'] }) })
+    expect(screen.queryByText('成绩加载失败')).toBeNull()
+    expect(await avgCard()).toBeInTheDocument()
   })
 
   it('names every top scorer', async () => {
