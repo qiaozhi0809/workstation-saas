@@ -122,3 +122,45 @@ export async function putScores(
   })
   expect(res.ok()).toBeTruthy()
 }
+
+/** 删除在籍学生里姓名以 测试 开头的人(用例自建学生的兜底清理;失败中途退出也不留脏数据)。 */
+export async function deleteTestStudents(request: APIRequestContext, token: string, classId: string): Promise<void> {
+  const headers = authHeaders(token)
+  const res = await request.get(`${API}/classes/${classId}/students`, { headers })
+  expect(res.ok()).toBeTruthy()
+  const { items } = (await res.json()) as { items: { enrollment_id: string; name: string }[] }
+  for (const s of items.filter((x) => x.name.startsWith('测试'))) {
+    const del = await request.delete(`${API}/classes/${classId}/students/${s.enrollment_id}`, { headers })
+    expect(del.ok()).toBeTruthy()
+  }
+}
+
+/** 清空当前账号对某学生的个人笔记(PUT 空文本即删除本人笔记)。 */
+export async function clearMyNote(request: APIRequestContext, token: string, studentId: string): Promise<void> {
+  const res = await request.put(`${API}/students/${studentId}/my-notes`, { headers: authHeaders(token), data: { text: '' } })
+  expect(res.ok()).toBeTruthy()
+}
+
+/** 在籍学生记录(含 student_id、生日等),按姓名取一人。 */
+export async function studentRecord(
+  request: APIRequestContext,
+  token: string,
+  classId: string,
+  name: string,
+): Promise<{ student_id: string; enrollment_id: string; birthdate: string | null }> {
+  const res = await request.get(`${API}/classes/${classId}/students/records`, { headers: authHeaders(token) })
+  expect(res.ok()).toBeTruthy()
+  const { items } = (await res.json()) as {
+    items: { name: string; student_id: string; enrollment_id: string; birthdate: string | null }[]
+  }
+  const found = items.find((s) => s.name === name)
+  expect(found).toBeTruthy()
+  return found!
+}
+
+/** 学校时区的"今天"(来自教室概况)。 */
+export async function schoolToday(request: APIRequestContext, token: string, classId: string): Promise<string> {
+  const res = await request.get(`${API}/classes/${classId}/classroom`, { headers: authHeaders(token) })
+  expect(res.ok()).toBeTruthy()
+  return ((await res.json()) as { today: string }).today
+}
