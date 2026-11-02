@@ -10,7 +10,7 @@ import { studentsApi } from '@/shared/api/students'
 import { toast } from '@/shared/components/Toast'
 import { useTeacherStore } from '@/shared/stores/teacher'
 import type { Exam } from '@/shared/types/grades'
-import { ALL_PERMS, classFixture, rosterFixture, summaryFixture } from '../Classroom/pageTestUtils'
+import { classFixture, rosterFixture, summaryFixture } from '../Classroom/pageTestUtils'
 import HeaderImport from './HeaderImport'
 import ScoresPage from './ScoresPage'
 
@@ -145,7 +145,7 @@ function setupPage(perms: string[]) {
   useTeacherStore.setState({ classId: 'c1' })
   vi.mocked(classesApi.mine).mockResolvedValue({ items: [classFixture] })
   vi.mocked(classroomApi.summary).mockResolvedValue(summaryFixture({
-    my_perms: [...ALL_PERMS, 'exam.read', ...perms] as never, my_subjects: [],
+    my_perms: ['exam.read', ...perms] as never, my_subjects: [],
   }))
   vi.mocked(examsApi.list).mockResolvedValue({ items: [EXAM] })
   vi.mocked(examsApi.sheet).mockResolvedValue({ exam: EXAM, items: [] })
