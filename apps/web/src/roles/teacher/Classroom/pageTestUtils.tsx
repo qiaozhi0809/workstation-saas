@@ -155,6 +155,8 @@ export interface SetupOptions {
   roster?: StudentSeat[]
   /** 教师端当前班级(默认 'c1';M1 用例用 null / 失效 id 测加载态)。 */
   classId?: string | null
+  /** 打开时地址里附带的其他参数,如 '?student=s1&tab=成绩'(与 mode 合并,mode 在前)。 */
+  search?: string
 }
 
 function Loc() {
@@ -168,7 +170,7 @@ function Url() {
 }
 
 /** 渲染教室页(QueryClient 关重试 + 内存 data router + Toaster),返回 render 结果、QueryClient 与 router。 */
-export function setup({ mode, perms, subjects, roster, classId = 'c1' }: SetupOptions = {}) {
+export function setup({ mode, perms, subjects, roster, classId = 'c1', search }: SetupOptions = {}) {
   if (roster) vi.mocked(studentsApi.listInClass).mockResolvedValue({ items: roster })
   if (perms || subjects) {
     vi.mocked(classroomApi.summary).mockResolvedValue(summaryFixture({
@@ -182,7 +184,9 @@ export function setup({ mode, perms, subjects, roster, classId = 'c1' }: SetupOp
   })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const ui = mode && mode !== '日常' ? MODE_OF[mode] : null
-  const entry = ui ? `/teacher/classroom?mode=${ui}` : '/teacher/classroom'
+  const extra = search?.replace(/^\?/, '') ?? ''
+  const query = [ui ? `mode=${ui}` : '', extra].filter(Boolean).join('&')
+  const entry = query ? `/teacher/classroom?${query}` : '/teacher/classroom'
   // data router:页面里的 useBlocker 只能在它下面用
   const router = createMemoryRouter([
     { path: '/teacher/classroom', element: <><ClassroomPage /><Url /></> },

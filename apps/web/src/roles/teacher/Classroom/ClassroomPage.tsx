@@ -253,7 +253,13 @@ function ClassroomView({ cls }: { cls: ClassView }) {
     // 离开考勤模式时考勤日期回到学校今天,日常 / 点评叠加的是今天的考勤
     if (mode === 'attendance' && next !== 'attendance') attDate.followToday()
     // 同步切换:路由默认在 transition 里更新,渲染较慢时模式条和地图会停在旧模式,点击落到旧模式上
-    setParams(next === 'daily' ? {} : { mode: next }, { replace: true, flushSync: true })
+    // 只动 mode,?student= / ?tab= 等其他参数原样保留
+    setParams((prev) => {
+      const out = new URLSearchParams(prev)
+      if (next === 'daily') out.delete('mode')
+      else out.set('mode', next)
+      return out
+    }, { replace: true, flushSync: true })
   }
   const pickReward = usePickReward(classId, subject.value, pick.close)
   const pickedSeat = roster.data?.items.find((s) => s.enrollment_id === pick.pickedId) ?? null
