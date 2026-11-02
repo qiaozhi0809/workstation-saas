@@ -144,10 +144,10 @@ export function useReviewMode(o: Options) {
   const toolbar: ReactNode = (
     <>
       {canWrite && (
-        <Button type="button" variant="outline" size="sm" disabled={pending} onClick={giveClass}>全班 +1</Button>
+        <Button type="button" variant="outline" disabled={pending} onClick={giveClass}>全班 +1</Button>
       )}
-      {o.canRead && <Button type="button" variant="outline" size="sm" onClick={() => setBoard(true)}>积分榜</Button>}
-      {o.canRead && <Button type="button" variant="outline" size="sm" onClick={() => void exportAll()}>导出点评</Button>}
+      {o.canRead && <Button type="button" variant="outline" onClick={() => setBoard(true)}>积分榜</Button>}
+      {o.canRead && <Button type="button" variant="outline" onClick={() => void exportAll()}>导出点评</Button>}
     </>
   )
 

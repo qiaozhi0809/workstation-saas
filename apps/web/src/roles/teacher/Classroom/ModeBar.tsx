@@ -25,8 +25,6 @@ export default function ModeBar({ mode, perms, onChange }: {
   const allowed = modesFor(perms)
   const items = MODES.filter((m) => allowed.includes(m.mode)).map((m) => ({ value: m.mode, label: m.label }))
   return (
-    <div className="flex justify-center">
-      <SegmentedTabs label="教室模式" variant="pill" items={items} value={mode} onChange={onChange} />
-    </div>
+    <SegmentedTabs label="教室模式" variant="pill" items={items} value={mode} onChange={onChange} />
   )
 }

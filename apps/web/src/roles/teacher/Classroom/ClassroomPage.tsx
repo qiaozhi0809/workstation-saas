@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { PencilLine, School } from 'lucide-react'
+import { Dices, PencilLine, School } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { classesApi } from '@/shared/api/classes'
 import { classroomApi } from '@/shared/api/classroom'
@@ -37,8 +37,8 @@ import { useSeatingMode } from './seating/useSeatingMode'
 import { buildBoard } from './buildBoard'
 import { useIdleActions } from './idle/useIdleActions'
 import OverviewRail from './rail/OverviewRail'
-import ModeBar, { modesFor, type ClassroomUiMode } from './ModeBar'
-import Toolbar from './Toolbar'
+import { modesFor, type ClassroomUiMode } from './ModeBar'
+import ClassroomDock from './ClassroomDock'
 import { useAttendanceDate } from './useAttendanceDate'
 import { useFullscreen } from './useFullscreen'
 
@@ -61,10 +61,10 @@ interface ModeSlot {
   onSeatClick?: ClassroomMapProps['onSeatClick']
   onEmptySeatClick?: ClassroomMapProps['onEmptySeatClick']
   onSeatDrop?: ClassroomMapProps['onSeatDrop']
-  /** 工具栏里的模式附加按钮 */
-  toolbar?: ReactNode
-  /** 工具栏下方、地图上方的模式操作条 */
-  bar?: ReactNode
+  /** 操作台里的当前模式操作 */
+  actions?: ReactNode
+  /** 舞台下方、操作台上方的托盘(排座:未入座同学) */
+  tray?: ReactNode
 }
 
 export default function ClassroomPage() {
@@ -94,7 +94,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
   const displayName = useAuthStore((s) => s.user?.display_name)
 
   const rootRef = useRef<HTMLDivElement>(null)
-  const viewport = useRef<ClassroomViewportHandle>(null)
+  const viewportRef = useRef<ClassroomViewportHandle>(null)
   const { active: presenting, toggle: togglePresent } = useFullscreen(rootRef)
   const [editingBoard, setEditingBoard] = useState(false)
   const width = useWindowWidth()
@@ -222,10 +222,10 @@ function ClassroomView({ cls }: { cls: ClassView }) {
   let slot: ModeSlot = {}
   // 日常 / 点评模式投屏时不叠加考勤(请假等不上投影);考勤模式是老师主动进入的,照常显示
   if (mode === 'daily') slot = { views: presenting ? undefined : overlay, onSeatClick: presenting ? undefined : openProfile }
-  else if (mode === 'attendance') slot = { views: overlay, onSeatClick: attendance.onSeatClick, bar: attendance.bar }
+  else if (mode === 'attendance') slot = { views: overlay, onSeatClick: attendance.onSeatClick, actions: attendance.bar }
   else if (mode === 'review') {
     slot = {
-      views: review.views, effects: { floats: review.floats }, toolbar: review.toolbar,
+      views: review.views, effects: { floats: review.floats }, actions: review.toolbar,
       // 投屏时也能点评:飘字本来就是给投影看的
       onSeatClick: review.onSeatClick,
     }
@@ -233,15 +233,16 @@ function ClassroomView({ cls }: { cls: ClassView }) {
     slot = {
       seats: seating.seats, rows: seating.rows, cols: seating.cols, views: seating.views,
       onSeatClick: seating.onSeatClick, onEmptySeatClick: seating.onEmptySeatClick, onSeatDrop: seating.onSeatDrop,
-      bar: <><SeatingBar {...seating.bar} /><UnseatedTray {...seating.tray} /></>,
+      actions: <SeatingBar {...seating.bar} />,
+      tray: <UnseatedTray {...seating.tray} />,
     }
   } else if (mode === 'seating' && seating.failed) {
     // 草稿加载失败:地图只读,给出重试
     slot = {
-      bar: (
+      actions: (
         <div role="alert" className="flex items-center gap-2 text-sm text-destructive">
           座位表加载失败
-          <Button variant="outline" size="sm" onClick={seating.retry}>重新加载</Button>
+          <Button variant="outline" onClick={seating.retry}>重新加载</Button>
         </div>
       ),
     }
@@ -286,7 +287,8 @@ function ClassroomView({ cls }: { cls: ClassView }) {
         onSeatClick={slot.onSeatClick}
         onEmptySeatClick={slot.onEmptySeatClick}
         onSeatDrop={slot.onSeatDrop}
-        viewportRef={viewport}
+        viewportRef={viewportRef}
+        zoomControls
       />
     )
   }
@@ -297,38 +299,10 @@ function ClassroomView({ cls }: { cls: ClassView }) {
     // 高度跟着窗口走:1024×768 的投影下各模式都不用滚动页面,舞台吃掉剩余高度(排座的操作条多,舞台就矮一些)
     <div ref={rootRef} className="relative flex h-full gap-4 bg-background p-3 lg:p-4 [background-image:linear-gradient(hsl(var(--muted)/0.4),hsl(var(--muted)/0.4))]">
       <section className="flex min-w-0 flex-1 flex-col gap-3">
-        {!presenting && (
-          <header>
-            <h2 className="text-xl font-semibold tracking-tight">{cls.name}</h2>
-            {summary.data ? (
-              <p className="text-sm text-muted-foreground">{`${cls.grade_name} · ${summary.data.year.name} 第 ${summary.data.week_no} 周`}</p>
-            ) : summary.isError ? (
-              <p role="alert" className="text-sm text-destructive">班级概况加载失败</p>
-            ) : (
-              <p className="text-sm text-muted-foreground">{cls.grade_name}</p>
-            )}
-          </header>
+        {!presenting && <h2 className="sr-only">{cls.name}</h2>}
+        {!presenting && summary.isError && !summary.data && (
+          <p role="alert" className="text-sm text-destructive">班级概况加载失败</p>
         )}
-        <Toolbar
-          onPick={canPick ? pick.start : undefined}
-          picking={picking}
-          viewport={viewport}
-          presenting={presenting}
-          onTogglePresent={togglePresent}
-          railOpen={railOpen}
-          onToggleRail={() => setRailOpen((o) => !o)}
-          railButtonRef={railButtonRef}
-          extra={<>
-            {perms.includes('board.write') && !presenting && summary.data && (
-              <Button variant="outline" size="sm" onClick={() => setEditingBoard(true)}>
-                <PencilLine aria-hidden="true" />编辑黑板
-              </Button>
-            )}
-            {slot.toolbar}
-          </>}
-          status={seatingPending === 'saving' ? '保存中…' : seatingPending === 'loading' ? '加载中…' : undefined}
-        />
-        {slot.bar}
         {/* 弹层锚点是点击瞬间的快照:在舞台上按下或滚轮平移 / 缩放时先关掉弹层 */}
         <div
           ref={stageRef}
@@ -362,8 +336,34 @@ function ClassroomView({ cls }: { cls: ClassView }) {
             />
           )}
         </div>
+        {slot.tray}
         {review.leaderboard}
-        <ModeBar mode={mode} perms={perms} onChange={setMode} />
+        <ClassroomDock
+          mode={mode}
+          perms={perms}
+          onModeChange={setMode}
+          actions={slot.actions}
+          common={canPick || (perms.includes('board.write') && !presenting && summary.data) ? (
+            <>
+              {canPick && (
+                <Button onClick={pick.start} disabled={picking}>
+                  <Dices aria-hidden />随机点名
+                </Button>
+              )}
+              {perms.includes('board.write') && !presenting && summary.data && (
+                <Button variant="outline" onClick={() => setEditingBoard(true)}>
+                  <PencilLine aria-hidden="true" />编辑黑板
+                </Button>
+              )}
+            </>
+          ) : undefined}
+          status={seatingPending === 'saving' ? '保存中…' : seatingPending === 'loading' ? '加载中…' : undefined}
+          presenting={presenting}
+          onTogglePresent={togglePresent}
+          railOpen={railOpen}
+          onToggleRail={() => setRailOpen((o) => !o)}
+          railButtonRef={railButtonRef}
+        />
       </section>
       {editingBoard && summary.data && (
         <BoardEditor classId={classId} board={summary.data.board} onClose={() => setEditingBoard(false)} />
