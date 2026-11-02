@@ -181,6 +181,23 @@ describe('scoreBands / trendDomain / rankTint', () => {
     expect(b[9]).toMatchObject({ lo: 270, hi: 300, count: 1, tone: 'good' })
     expect(scoreBands([], 100)).toEqual([])
   })
+  it('bins non-round full marks exactly (full=112, total 67.2 is 60% => mid band)', () => {
+    const b = scoreBands([67.2], 112)
+    expect(b).toHaveLength(4)
+    expect(b[0]).toMatchObject({ lo: 67.2, hi: 78.4, count: 1, tone: 'mid' })
+  })
+  it('bins full=93 total 55.8 into the 60% band', () => {
+    const b = scoreBands([55.8], 93)
+    expect(b[0]).toMatchObject({ lo: 55.8, count: 1 })
+  })
+  it('keeps lo/hi to at most one decimal', () => {
+    for (const full of [93, 112, 120, 150, 7, 33]) {
+      for (const band of scoreBands([0, full / 3, full], full)) {
+        for (const v of [band.lo, band.hi]) expect(Math.round(v * 10) / 10).toBe(v)
+      }
+    }
+  })
+  it('returns no bands for a non-positive full mark', () => { expect(scoreBands([5], 0)).toEqual([]) })
   it('pads and rounds the trend domain to fives within 0–100', () => {
     expect(trendDomain([62, 91])).toEqual([55, 95]); expect(trendDomain([2, 99])).toEqual([0, 100])
   })

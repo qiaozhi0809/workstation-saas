@@ -27,12 +27,14 @@ export function cellState(v: ScoreValue | undefined, full: number): CellState {
   return 'ok'
 }
 
+/** id 均为 enrollment_id */
 export interface Row { id: string; total: number | null; rank: number | null; subs: Record<string, ScoreValue | undefined> }
 
 function examFull(exam: GradebookExam): number {
   return exam.subjects.reduce((sum, s) => sum + s.full, 0)
 }
 
+/** ids:enrollment_id 列表 */
 export function examTable(exam: GradebookExam, ids: string[]): Row[] {
   const rows: Row[] = ids.map((id) => {
     const rec = exam.scores[id]
@@ -63,12 +65,18 @@ export function examTable(exam: GradebookExam, ids: string[]): Row[] {
 
 export interface SubjectStats {
   name: string; full: number; n: number; avg: number
-  /** percent 0-100: avg / full x 100 */
-  rate: number; max: number; min: number
-  /** fractions 0-1 */
-  passRate: number; goodRate: number; low: number
+  /** 得分率,百分数 0-100(avg / full x 100) */
+  rate: number
+  max: number; min: number
+  /** 及格率,小数 0-1 */
+  passRate: number
+  /** 优秀率,小数 0-1 */
+  goodRate: number
+  /** 低分人数:低于满分 60% 的学生数(计数,不是比例) */
+  low: number
 }
 
+/** ids:enrollment_id 列表 */
 export function subjectStats(exam: GradebookExam, subject: string, ids: string[]): SubjectStats | null {
   const sub = exam.subjects.find((s) => s.name === subject)
   if (!sub) return null
@@ -93,12 +101,22 @@ export function subjectStats(exam: GradebookExam, subject: string, ids: string[]
 
 export interface ExamStats {
   full: number; n: number; avg: number
-  /** percent 0-100: avg / full x 100 */
-  rate: number; max: number; maxIds: string[]; min: number
-  /** fractions 0-1; sd is the population standard deviation */
-  passRate: number; goodRate: number; sd: number; table: Row[]; subjects: SubjectStats[]
+  /** 得分率,百分数 0-100(avg / full x 100) */
+  rate: number
+  max: number
+  /** 最高分对应的 enrollment_id 列表 */
+  maxIds: string[]
+  min: number
+  /** 及格率,小数 0-1 */
+  passRate: number
+  /** 优秀率,小数 0-1 */
+  goodRate: number
+  /** 总分的总体标准差(除以 n) */
+  sd: number
+  table: Row[]; subjects: SubjectStats[]
 }
 
+/** ids:enrollment_id 列表 */
 export function examStats(exam: GradebookExam, ids: string[]): ExamStats | null {
   const table = examTable(exam, ids)
   const totals = table.flatMap((r) => (r.total === null ? [] : [r.total]))
@@ -127,17 +145,20 @@ export function examStats(exam: GradebookExam, ids: string[]): ExamStats | null 
 export interface Band { lo: number; hi: number; count: number; tone: 'low' | 'mid' | 'good' }
 
 export function scoreBands(totals: number[], full: number): Band[] {
-  const w = full / 10
+  if (!(full > 0)) return []
+  const r1 = (x: number) => Math.round(x * 10) / 10
+  const fullTenths = Math.round(full * 10)
   const counts = new Array<number>(10).fill(0)
-  for (const t of totals) counts[Math.min(9, Math.max(0, Math.floor(t / w)))] += 1
+  // 分数与满分都按"十分位整数"分档,避免 full/10 的浮点误差
+  for (const t of totals) counts[Math.min(9, Math.max(0, Math.floor((Math.round(t * 10) * 10) / fullTenths)))] += 1
   const first = counts.findIndex((c) => c > 0)
   if (first < 0) return []
   const bands: Band[] = []
   for (let i = first; i < 10; i++) {
-    const lo = i * w
+    // 十等分:lo = i/10 满分;< 60% 为 low,>= 85%(即最后一档)为 good
     bands.push({
-      lo, hi: (i + 1) * w, count: counts[i],
-      tone: lo < full * PASS_RATIO ? 'low' : lo >= full * GOOD_RATIO ? 'good' : 'mid',
+      lo: r1((i * full) / 10), hi: r1(((i + 1) * full) / 10), count: counts[i],
+      tone: i < 6 ? 'low' : i >= 9 ? 'good' : 'mid',
     })
   }
   return bands
@@ -205,6 +226,7 @@ export function attention(exam: GradebookExam, cur: Row[], changes: Map<string, 
 /** rate: percent 0-100 (total / full x 100), same unit as SubjectStats.rate and ExamStats.rate */
 export interface TrendPoint { examId: string; name: string; total: number | null; rank: number | null; n: number; rate: number | null }
 
+/** id 与 ids 都是 enrollment_id(不是 student_id) */
 export function studentTrend(book: GradebookExam[], id: string, ids: string[]): TrendPoint[] {
   return book.map((exam) => {
     const table = examTable(exam, ids)
