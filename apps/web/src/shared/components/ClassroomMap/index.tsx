@@ -151,7 +151,12 @@ export default function ClassroomMap({
     onPointerMove: (e: PointerEvent) => { dh.onPointerMove(e); ph.onPointerMove(e) },
     onPointerUp: (e: PointerEvent) => { dh.onPointerUp(e); ph.onPointerUp(e) },
     onPointerCancel: (e: PointerEvent) => { dh.onPointerCancel(e); ph.onPointerCancel(e) },
-    onClickCapture: (e: MouseEvent) => { dh.onClickCapture(e); ph.onClickCapture(e) },
+    // 缩放悬浮钮上的点击不经过两道点击防护:在它上面按下已复位防护,而拖座位 / 平移没收尾时键盘 Enter 不能被吞
+    onClickCapture: (e: MouseEvent) => {
+      if ((e.target as Element).closest?.('[data-zoom-controls]')) return
+      dh.onClickCapture(e)
+      ph.onClickCapture(e)
+    },
     // 舞台自己永不滚动(否则悬停卡 / 缩放中心 / 影子全部错位);聚焦到视口外的座位时改为平移视图
     onScroll: (e: UIEvent<HTMLDivElement>) => { e.currentTarget.scrollTop = 0; e.currentTarget.scrollLeft = 0 },
     onFocus: (e: FocusEvent) => {

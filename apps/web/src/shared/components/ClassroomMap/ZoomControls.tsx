@@ -20,7 +20,7 @@ export default function ZoomControls({ canZoomIn, canZoomOut, onZoomIn, onZoomOu
     </Button>
   )
   return (
-    <div role="group" aria-label="缩放" className="absolute bottom-3 right-3 z-10 flex gap-1 rounded-lg border bg-background/90 p-1 shadow-sm"
+    <div role="group" aria-label="缩放" data-zoom-controls="" className="absolute bottom-3 right-3 z-10 flex gap-1 rounded-lg border bg-background/90 p-1 shadow-sm"
       onPointerDown={(e) => e.stopPropagation()}>
       {item('缩小', ZoomOut, onZoomOut, canZoomOut)}
       {item('适应', Scan, onFit)}

@@ -288,6 +288,19 @@ describe('viewport lock at fit', () => {
     expect(scaleOf(container)).toBe(fitScale)
   })
 
+  it('lets a keyboard click reach the zoom controls after a seat drag that ended without a click', () => {
+    const onDrop = vi.fn()
+    const { container } = render(<ClassroomMap rows={6} cols={4} seats={seats} mode="seating" onSeatDrop={onDrop} zoomControls />)
+    const fitScale = scaleOf(container)
+    // 触控拖座位:松手后没有 click 到达舞台,拖拽的点击防护仍处于待命
+    fireEvent.pointerDown(cell(container, '1-1'), { clientX: 0, clientY: 0, pointerId: 1, button: 0 })
+    fireEvent.pointerMove(cell(container, '1-1'), { clientX: 20, clientY: 0, pointerId: 1 })
+    fireEvent.pointerUp(cell(container, '1-2'), { clientX: 120, clientY: 0, pointerId: 1 })
+    expect(onDrop).toHaveBeenCalledWith({ row: 1, col: 1 }, { row: 1, col: 2 })
+    fireEvent.click(within(screen.getByRole('group', { name: '缩放' })).getByRole('button', { name: '放大' }), { detail: 0 })
+    expect(scaleOf(container)).toBeGreaterThan(fitScale)
+  })
+
   it('still swallows the mouse click that ends a pan', () => {
     const onClick = vi.fn(), ref = createRef<ClassroomViewportHandle>()
     const { container } = render(<ClassroomMap rows={6} cols={4} seats={seats} onSeatClick={onClick} viewportRef={ref} />)
