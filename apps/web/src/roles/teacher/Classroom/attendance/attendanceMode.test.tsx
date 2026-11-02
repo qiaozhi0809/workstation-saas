@@ -89,6 +89,16 @@ it('shows the stats line', async () => {
   expect(screen.getByText('迟到 1')).toBeInTheDocument()
 })
 
+it('colours the leave, absent and late counts with status tones', async () => {
+  vi.mocked(attendanceApi.day).mockResolvedValue({ date: '2026-11-02', confirmed_at: null, items: [
+    { enrollment_id: 'e1', status: 'leave', reason: null, marked_at: '2026-11-02T01:00:00Z' },
+  ] })
+  setup({ mode: '考勤' })
+  expect(await screen.findByText(/^请假 \d+$/)).toHaveClass('text-warning')
+  expect(screen.getByText(/^缺勤 \d+$/)).toHaveClass('text-destructive')
+  expect(screen.getByText(/^迟到 \d+$/)).toHaveClass('text-info')
+})
+
 it('overlays attendance in daily mode but not in seating mode', async () => {
   vi.mocked(attendanceApi.day).mockResolvedValue({ date: '2026-11-02', confirmed_at: null, items: [
     { enrollment_id: 'e1', status: 'absent', reason: null, marked_at: '2026-11-02T01:00:00Z' },

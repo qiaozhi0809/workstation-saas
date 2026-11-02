@@ -2,13 +2,13 @@ import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } 
 import { useQueryClient } from '@tanstack/react-query'
 import { reviewsApi } from '@/shared/api/reviews'
 import { toast } from '@/shared/components/Toast'
+import { Button } from '@/shared/components/ui/button'
 import type { FloatFx, SeatAnchor, SeatView } from '@/shared/components/ClassroomMap/types'
 import * as csv from '@/shared/lib/csv'
 import type { ReviewReason } from '@/shared/types/preferences'
 import type { Review, ReviewSummary } from '@/shared/types/review'
 import type { StudentSeat } from '@/shared/types/student'
 import type { RosterRow } from '../attendance/exportMonth'
-import { toolButton } from '../Toolbar'
 import Leaderboard from './Leaderboard'
 import { reviewRows } from './exportReviews'
 import ReviewPopover, { type ReasonPick } from './ReviewPopover'
@@ -144,10 +144,10 @@ export function useReviewMode(o: Options) {
   const toolbar: ReactNode = (
     <>
       {canWrite && (
-        <button type="button" className={toolButton} disabled={pending} onClick={giveClass}>全班 +1</button>
+        <Button type="button" variant="outline" size="sm" disabled={pending} onClick={giveClass}>全班 +1</Button>
       )}
-      {o.canRead && <button type="button" className={toolButton} onClick={() => setBoard(true)}>积分榜</button>}
-      {o.canRead && <button type="button" className={toolButton} onClick={() => void exportAll()}>导出点评</button>}
+      {o.canRead && <Button type="button" variant="outline" size="sm" onClick={() => setBoard(true)}>积分榜</Button>}
+      {o.canRead && <Button type="button" variant="outline" size="sm" onClick={() => void exportAll()}>导出点评</Button>}
     </>
   )
 

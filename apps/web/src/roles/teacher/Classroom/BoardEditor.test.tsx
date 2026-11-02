@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, expect, it, vi } from 'vitest'
@@ -6,6 +6,7 @@ import { ApiError } from '@/shared/api/client'
 import { classroomApi } from '@/shared/api/classroom'
 import { Toaster } from '@/shared/components/Toast'
 import type { Board } from '@/shared/types/classroom'
+import { findLegacyStyles } from '@/test/legacyStyles'
 import BoardEditor from './BoardEditor'
 
 vi.mock('@/shared/api/classroom', () => ({ classroomApi: { saveBoard: vi.fn() } }))
@@ -100,4 +101,17 @@ it('closes on Escape and on 取消', () => {
   expect(onClose).toHaveBeenCalledTimes(1)
   fireEvent.click(screen.getByRole('button', { name: '取消' }))
   expect(onClose).toHaveBeenCalledTimes(2)
+})
+
+it('stays open on an outside click so typed text is not lost', async () => {
+  renderEditor()
+  await act(() => new Promise((r) => setTimeout(r, 0)))
+  fireEvent.pointerDown(document.body)
+  expect(screen.getByRole('dialog', { name: '编辑黑板' })).toBeInTheDocument()
+  expect(onClose).not.toHaveBeenCalled()
+})
+
+it('uses design tokens only', () => {
+  const files = import.meta.glob('./BoardEditor.tsx', { query: '?raw', import: 'default', eager: true })
+  expect(findLegacyStyles(files as Record<string, string>)).toEqual([])
 })
