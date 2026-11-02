@@ -64,6 +64,7 @@ export async function revokeReviewsSince(
 ): Promise<void> {
   for (const op of await activeReviewOps(request, token, classId)) {
     if (before.has(op)) continue
-    await request.post(`${API}/classes/${classId}/reviews/${op}/revoke`, { headers: authHeaders(token) })
+    const res = await request.post(`${API}/classes/${classId}/reviews/${op}/revoke`, { headers: authHeaders(token) })
+    expect(res.ok()).toBeTruthy()
   }
 }

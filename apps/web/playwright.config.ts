@@ -7,9 +7,11 @@ const MUTATING = 'classroom.spec.ts'
 
 export default defineConfig({
   testDir: './e2e',
+  forbidOnly: !!process.env.CI,
   // 刷新后整张教室地图要重新取数渲染;CI 小核数 / 负载高时默认 5s 不够(负载下复现过),放宽断言等待而非重试
   expect: { timeout: 10_000 },
   use: { baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:5173' },
+  // 注意:只跑单个只读 spec(如 npx playwright test e2e/short.spec.ts)也会先跑 mutating project;加 --no-deps 可跳过
   projects: [
     { name: 'mutating', testMatch: MUTATING },
     { name: 'readonly', testIgnore: MUTATING, dependencies: ['mutating'] },
