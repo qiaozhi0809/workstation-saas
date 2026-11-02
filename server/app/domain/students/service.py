@@ -2,10 +2,13 @@ from collections.abc import Sequence
 from typing import Any
 from uuid import UUID
 
+from fastapi import Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.domain.students.schemas import StudentProfile, StudentSeat
+from app import clock
+from app.audit.service import record
+from app.domain.students.schemas import StudentProfile, StudentSeat, TeacherNote
 from app.errors import ApiError
 from app.models import Enrollment, SchoolClass, Student
 from app.rbac.bindings import Binding, Scope, can
@@ -133,3 +136,27 @@ def active_enrollments(db: Session, class_id: UUID) -> list[Enrollment]:
             .order_by(Enrollment.id)
         ).all()
     )
+
+
+def save_my_notes(
+    db: Session, student: Student, user_id: UUID, text: str, request: Request | None
+) -> TeacherNote:
+    now = clock.utc_now()
+    notes = dict(student.teacher_notes) if isinstance(student.teacher_notes, dict) else {}
+    text = text.strip()
+    if text:
+        notes[str(user_id)] = {"text": text, "updated_at": now.isoformat()}
+    else:
+        notes.pop(str(user_id), None)
+    student.teacher_notes = notes
+    record(
+        db,
+        user_id=user_id,
+        action="student.write_notes",
+        success=True,
+        object_type="student",
+        object_id=str(student.id),
+        request=request,
+    )
+    db.commit()
+    return TeacherNote(text=text, updated_at=now)

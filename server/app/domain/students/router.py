@@ -2,26 +2,33 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.audit.service import deny, record
 from app.auth.deps import get_current_user
 from app.db import get_db
 from app.domain.schools.service import active_academic_year
-from app.domain.students.schemas import StudentProfile, StudentSeat
+from app.domain.students.schemas import StudentProfile, StudentSeat, TeacherNote
 from app.domain.students.service import (
     build_profile,
     class_scope,
     find_enrolled_student,
     list_roster,
+    save_my_notes,
 )
 from app.errors import ApiError
 from app.models import User
 from app.rbac.bindings import Binding, can
 from app.rbac.deps import get_bindings
+from app.rbac.guard import ensure
 from app.rbac.roles import Perm
 
 router = APIRouter(tags=["students"])
+
+
+class MyNotesInput(BaseModel):
+    text: str = Field(max_length=2000)
 
 
 @router.get("/classes/{class_id}/students")
@@ -84,3 +91,30 @@ def student_profile(
     )
     db.commit()
     return profile
+
+
+@router.put("/students/{student_id}/my-notes")
+def put_my_notes(
+    student_id: UUID,
+    data: MyNotesInput,
+    request: Request,
+    user: Annotated[User, Depends(get_current_user)],
+    bindings: Annotated[list[Binding], Depends(get_bindings)],
+    db: Annotated[Session, Depends(get_db)],
+) -> TeacherNote:
+    year = active_academic_year(db, user.school_id)
+    found = find_enrolled_student(db, student_id, year.id) if year is not None else None
+    if found is None:
+        raise ApiError(404, "NOT_FOUND", "学生不存在")
+    student, scope, _ = found
+    ensure(
+        db,
+        request,
+        user.id,
+        bindings,
+        Perm.TEACHER_NOTES,
+        scope,
+        object_id=str(student_id),
+        object_type="student",
+    )
+    return save_my_notes(db, student, user.id, data.text, request)

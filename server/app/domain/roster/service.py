@@ -10,8 +10,15 @@ from sqlalchemy.orm import Session
 from app import clock
 from app.audit.service import record
 from app.domain.classes.service import class_scope_of
-from app.domain.roster.schemas import StudentInput, StudentRecord
-from app.domain.roster.seats import place_student, plan_placement
+from app.domain.roster.schemas import (
+    SkippedRow,
+    StudentImport,
+    StudentImported,
+    StudentImportRow,
+    StudentInput,
+    StudentRecord,
+)
+from app.domain.roster.seats import first_empty_seat, place_student, plan_placement
 from app.domain.schools.service import require_active_year
 from app.errors import ApiError
 from app.models import Enrollment, SchoolClass, Student
@@ -105,7 +112,7 @@ def _new_mk(db: Session, school_id: UUID) -> str:
             return mk
 
 
-def _apply_fields(student: Student, data: StudentInput) -> None:
+def _apply_fields(student: Student, data: StudentImportRow) -> None:
     student.name = data.name
     student.gender = data.gender
     student.student_no = data.student_no
@@ -220,3 +227,90 @@ def remove_student(
         request=request,
     )
     db.commit()
+
+
+def import_students(
+    db: Session,
+    cls: SchoolClass,
+    data: StudentImport,
+    user_id: UUID,
+    request: Request | None,
+) -> StudentImported:
+    year = require_active_year(db, cls.school_id)
+    existing = db.execute(
+        select(Student.name, Student.student_no, Enrollment.seat_row, Enrollment.seat_col)
+        .join(Enrollment, Enrollment.student_id == Student.id)
+        .where(Enrollment.class_id == cls.id, Enrollment.status == "active")
+    ).all()
+    known: list[tuple[str, str | None]] = [(r.name, r.student_no) for r in existing]
+    occupied = {(r.seat_row, r.seat_col) for r in existing if r.seat_row is not None}
+    skipped: list[SkippedRow] = []
+    created = 0
+    placed = 0
+    for index, row in enumerate(data.rows):
+        if any(
+            name == row.name and (row.student_no is None or no == row.student_no)
+            for name, no in known
+        ):
+            skipped.append(SkippedRow(index=index, reason="duplicate"))
+            continue
+        if row.student_no is not None and any(no == row.student_no for _, no in known):
+            skipped.append(SkippedRow(index=index, reason="student_no_taken"))
+            continue
+        mk = _new_mk(db, cls.school_id)
+        student = Student(school_id=cls.school_id, mk=mk, avatar_seed=mk, name=row.name)
+        _apply_fields(student, row)
+        db.add(student)
+        db.flush()
+        enrollment = Enrollment(
+            student_id=student.id,
+            class_id=cls.id,
+            academic_year_id=year.id,
+            class_role=row.class_role,
+            status="active",
+        )
+        if data.auto_seat:
+            seat = first_empty_seat(occupied, cls.seat_rows, cls.seat_cols)
+            if seat is not None:
+                enrollment.seat_row, enrollment.seat_col = seat
+                occupied.add(seat)
+                placed += 1
+        db.add(enrollment)
+        known.append((row.name, row.student_no))
+        created += 1
+    if placed:
+        cls.seat_version = SchoolClass.seat_version + 1
+    record(
+        db,
+        user_id=user_id,
+        action="student.import",
+        success=True,
+        object_type="class",
+        object_id=str(cls.id),
+        request=request,
+        extra={"created": created, "skipped": len(skipped)},
+    )
+    db.commit()
+    return StudentImported(created=created, skipped=skipped)
+
+
+def export_records(
+    db: Session,
+    cls: SchoolClass,
+    year_id: UUID,
+    bindings: Sequence[Binding],
+    user_id: UUID,
+    request: Request | None,
+) -> list[StudentRecord]:
+    items = student_records(db, cls, year_id, bindings)
+    record(
+        db,
+        user_id=user_id,
+        action="student.export",
+        success=True,
+        object_type="class",
+        object_id=str(cls.id),
+        request=request,
+    )
+    db.commit()
+    return items

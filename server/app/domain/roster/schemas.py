@@ -5,7 +5,16 @@ from pydantic import BaseModel, Field, StringConstraints, field_validator
 
 from app.domain.students.schemas import Contact, StudentSeat, TeacherNote
 
-__all__ = ["Contact", "SeatPos", "StudentInput", "StudentRecord", "TeacherNote"]
+__all__ = [
+    "Contact",
+    "SeatPos",
+    "StudentImport",
+    "StudentImportRow",
+    "StudentImported",
+    "StudentInput",
+    "StudentRecord",
+    "TeacherNote",
+]
 
 
 def _nullable(value: str | None, limit: int, label: str) -> str | None:
@@ -24,7 +33,7 @@ class SeatPos(BaseModel):
     col: int = Field(ge=1)
 
 
-class StudentInput(BaseModel):
+class StudentImportRow(BaseModel):
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=20)]
     gender: Literal["男", "女"] | None
     student_no: str | None
@@ -39,7 +48,6 @@ class StudentInput(BaseModel):
     note: str | None
     health_notes: str | None
     contacts: Annotated[list[Contact], Field(max_length=2)]
-    seat: SeatPos | None
 
     @field_validator("student_no")
     @classmethod
@@ -78,6 +86,25 @@ class StudentInput(BaseModel):
         if len(seen) > 12:
             raise ValueError("标签最多 12 个")
         return list(seen)
+
+
+class StudentInput(StudentImportRow):
+    seat: SeatPos | None
+
+
+class StudentImport(BaseModel):
+    rows: Annotated[list[StudentImportRow], Field(min_length=1, max_length=200)]
+    auto_seat: bool
+
+
+class SkippedRow(BaseModel):
+    index: int
+    reason: Literal["duplicate", "student_no_taken"]
+
+
+class StudentImported(BaseModel):
+    created: int
+    skipped: list[SkippedRow]
 
 
 class StudentRecord(StudentSeat):
