@@ -9,7 +9,7 @@ import { reviewsApi } from '@/shared/api/reviews'
 import { studentsApi } from '@/shared/api/students'
 import ClassroomMap from '@/shared/components/ClassroomMap'
 import type {
-  ClassroomEffects, ClassroomMapProps, ClassroomViewportHandle, SeatView,
+  AttendanceBoardData, ClassroomEffects, ClassroomMapProps, ClassroomViewportHandle, SeatView,
 } from '@/shared/components/ClassroomMap/types'
 import { EmptyState } from '@/shared/components/feedback/EmptyState'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
@@ -145,6 +145,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
   // 投屏时只展示姓名:档案抽屉在全屏根元素之外,不能在投屏中打开(退出全屏时会把档案亮在投影上)
   // 考勤日期跟随服务端的学校"今天",不用浏览器时钟;日常/考勤/点评叠加当天考勤外观,排座不叠加
   const attDate = useAttendanceDate(today)
+  const [boardVisible, setBoardVisible] = useState(false)
   const attendance = useAttendanceMode({
     classId,
     className: cls.name,
@@ -155,6 +156,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
     yearStart: summary.data?.year.start_date,
     timezone: summary.data?.timezone,
     roster: roster.data?.items ?? [],
+    boardVisible,
     onPickDate: attDate.pick,
     onFollowToday: attDate.followToday,
   })
@@ -183,6 +185,18 @@ function ClassroomView({ cls }: { cls: ClassView }) {
     queryFn: () => attendanceApi.day(classId, today!),
     enabled: !!today,
   })
+  // 左翼的出勤小牌:考勤模式是正在查看的日期,其余模式是学校"今天";只有汇总数,没加载好就不画
+  const boardDay = mode === 'attendance' ? attendance.day : todayAttendance.data
+  const boardDate = mode === 'attendance' ? attDate.date : today
+  const attendanceBoard = useMemo<AttendanceBoardData | undefined>(() => {
+    if (!boardDay || !roster.data || !boardDate || !today) return undefined
+    const n = (s: string) => boardDay.items.filter((i) => i.status === s).length
+    const total = roster.data.items.length, leave = n('leave'), absent = n('absent')
+    return {
+      title: boardDate === today ? '今日出勤' : `${boardDate.slice(5, 7)}/${boardDate.slice(8, 10)} 出勤`,
+      present: total - leave - absent, total, leave, absent, late: n('late'),
+    }
+  }, [boardDay, boardDate, today, roster.data])
   const pool = useMemo(() => {
     const status = new Map((todayAttendance.data?.items ?? []).map((i) => [i.enrollment_id, i.status]))
     return pickPool(roster.data?.items ?? [], (id) => status.get(id))
@@ -281,6 +295,8 @@ function ClassroomView({ cls }: { cls: ClassView }) {
         mode={mode}
         teacher={teacher}
         board={board}
+        attendanceBoard={attendanceBoard}
+        onAttendanceBoardVisibleChange={setBoardVisible}
         views={slot.views}
         effects={pickEffects}
         presenting={presenting}

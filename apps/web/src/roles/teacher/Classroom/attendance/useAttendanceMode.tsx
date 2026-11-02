@@ -32,6 +32,8 @@ interface Options {
   yearStart: string | undefined
   timezone: string | undefined
   roster: StudentSeat[]
+  /** 出勤小牌在场景里看得到(ClassroomMap 回报);决定操作台显示数字还是徽章 */
+  boardVisible?: boolean
   onPickDate(d: string): void
   onFollowToday(): void
 }
@@ -118,6 +120,7 @@ export function useAttendanceMode(o: Options) {
         absent={count('absent')}
         late={count('late')}
         confirmedAt={day.data?.confirmed_at ? formatInTz(day.data.confirmed_at, o.timezone).slice(11) : null}
+        boardVisible={o.boardVisible}
         canWrite={canWrite}
         busy={confirm.isPending}
         onPickDate={o.onPickDate}
@@ -134,5 +137,5 @@ export function useAttendanceMode(o: Options) {
       />
     )
   }
-  return { views, onSeatClick, bar }
+  return { views, onSeatClick, bar, day: day.data }
 }

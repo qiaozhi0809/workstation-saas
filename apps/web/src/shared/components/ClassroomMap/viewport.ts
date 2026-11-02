@@ -25,3 +25,13 @@ export function clampView(view: View, content: Size, stage: Size): View {
 }
 
 export const wheelZoomFactor = (deltaY: number) => Math.exp(-deltaY * 0.0018)
+
+// 场景里的矩形在适应(锁定)视图下是否完整落在舞台内;舞台尺寸未知(0)时算看不到
+export function rectFullyShownInFit(
+  content: Size, stage: Size, safeW: number, r: { x: number; y: number; w: number; h: number },
+): boolean {
+  if (stage.w <= 0 || stage.h <= 0) return false
+  const v = fitView(content, stage, safeW), e = 0.5
+  return v.x + r.x * v.s >= -e && v.y + r.y * v.s >= -e
+    && v.x + (r.x + r.w) * v.s <= stage.w + e && v.y + (r.y + r.h) * v.s <= stage.h + e
+}

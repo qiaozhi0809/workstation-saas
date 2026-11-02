@@ -29,6 +29,12 @@ export interface BoardData {
   stars: { name: string; points: number }[]       // 最多显示 3 个
   birthdays: { name: string; date: string }[]      // 'MM-DD',最多显示 3 个
 }
+// 左翼前墙上"出勤"小牌的数据(只有汇总数,没有人名);present = 名单人数 - 请假 - 缺勤
+export interface AttendanceBoardData {
+  title: string
+  present: number; total: number
+  leave: number; absent: number; late: number
+}
 export interface ClassroomViewportHandle { zoomIn(): void; zoomOut(): void; fit(): void }
 export interface ClassroomMapProps {
   rows: number
@@ -37,6 +43,8 @@ export interface ClassroomMapProps {
   mode?: ClassroomMode
   teacher?: { figure: 'female' | 'male'; label: string }
   board?: BoardData
+  attendanceBoard?: AttendanceBoardData   // 给了就把左翼最靠近中央的一扇窗换成出勤小牌;mini / 不给时窗户照旧
+  onAttendanceBoardVisibleChange?: (visible: boolean) => void   // 小牌在适应(锁定)视图下是否完整落在舞台内
   views?: Record<string, SeatView>       // enrollment_id → 外观
   effects?: ClassroomEffects
   presenting?: boolean

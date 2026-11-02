@@ -1,4 +1,4 @@
-import { clampView, fitView, wheelZoomFactor, zoomAt } from './viewport'
+import { clampView, fitView, rectFullyShownInFit, wheelZoomFactor, zoomAt } from './viewport'
 
 it('fits and centers the classroom', () => {
   const v = fitView({ w: 2000, h: 1000 }, { w: 1000, h: 800 })
@@ -39,4 +39,16 @@ it('fits by the safe width so the core keeps its size and only the wings are cro
   expect(wide.s).toBe(fitView({ w: 960, h: 1292 }, stage).s)
   expect(wide.x).toBeCloseTo((1000 - 2298 * wide.s) / 2)
   expect(wide.x + (669 + 960 / 2) * wide.s).toBeCloseTo(500)
+})
+
+it('judges whether a rect is fully inside the stage in the fit view', () => {
+  const content = { w: 2298, h: 1292 }
+  // 宽 1000 的舞台:适应比例由安全区 960 决定,两翼对称被裁
+  const stage = { w: 1000, h: 1292 }
+  expect(rectFullyShownInFit(content, stage, 960, { x: 100, y: 40, w: 120, h: 146 })).toBe(false)
+  expect(rectFullyShownInFit(content, stage, 960, { x: 700, y: 40, w: 120, h: 146 })).toBe(true)
+  // 舞台尺寸未知(0)时不算看得到
+  expect(rectFullyShownInFit(content, { w: 0, h: 0 }, 960, { x: 700, y: 40, w: 120, h: 146 })).toBe(false)
+  // 不加宽时整个场景都在舞台内
+  expect(rectFullyShownInFit({ w: 960, h: 1292 }, { w: 960, h: 1292 }, 960, { x: 0, y: 0, w: 960, h: 1292 })).toBe(true)
 })
