@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useMemo, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
 /** 档案抽屉的页签,顺序即显示顺序;StudentProfileDrawer 用同一份列表。 */
@@ -32,7 +32,8 @@ export function useStudentDrawer(): {
 
   // 始终读最新地址,而不是闭包里的渲染时参数,这样 open / close 不必随地址重建
   const searchRef = useRef(search)
-  useEffect(() => { searchRef.current = search }, [search])
+  // 渲染期同步:子组件的 effect 先于父组件的 effect 运行,用 effect 同步会读到旧地址
+  searchRef.current = search
 
   const write = useCallback((edit: (p: URLSearchParams) => void) => {
     const p = new URLSearchParams(searchRef.current)

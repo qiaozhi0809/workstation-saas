@@ -1,5 +1,6 @@
+import { useEffect } from 'react'
 import { act, render } from '@testing-library/react'
-import { createMemoryRouter, RouterProvider, useLocation } from 'react-router-dom'
+import { createMemoryRouter, RouterProvider, useLocation, useSearchParams } from 'react-router-dom'
 import { useStudentDrawer } from './useStudentDrawer'
 
 function setup(entry: string) {
@@ -41,5 +42,24 @@ describe('useStudentDrawer stability', () => {
     act(() => { last().drawer.close() })
     expect(router.state.location.search).toBe('')
     expect(router.state.location.pathname).toBe('/teacher/classroom')
+  })
+})
+
+describe('useStudentDrawer in child effects', () => {
+  it('uses the latest search when a child effect calls close() in the same commit as a navigation', () => {
+    function Child({ exam, close }: { exam: string | null; close: () => void }) {
+      useEffect(() => { if (exam === 'B') close() }, [exam, close])
+      return null
+    }
+    function Parent() {
+      const { close } = useStudentDrawer()
+      const [params] = useSearchParams()
+      return <Child exam={params.get('exam')} close={close} />
+    }
+    const router = createMemoryRouter([{ path: '/teacher/classroom', element: <Parent /> }],
+      { initialEntries: ['/teacher/classroom?exam=A&student=s'] })
+    render(<RouterProvider router={router} />)
+    act(() => { void router.navigate('/teacher/classroom?exam=B&student=s') })
+    expect(router.state.location.search).toBe('?exam=B')
   })
 })
