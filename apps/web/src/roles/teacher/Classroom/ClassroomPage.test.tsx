@@ -75,14 +75,14 @@ it('shows loading when classId is stale and not among my classes', async () => {
 it('renders class title and seated students for the selected class', async () => {
   setup()
   expect(await screen.findByRole('heading', { name: '三年二班' })).toBeInTheDocument()
-  expect(await screen.findByRole('button', { name: '王小一' })).toBeInTheDocument()
+  expect(await screen.findByRole('button', { name: /^王小一，/ })).toBeInTheDocument()
   expect(studentsApi.listInClass).toHaveBeenCalledWith('c1')
   expect(classroomApi.summary).toHaveBeenCalledWith('c1')
 })
 
 it('navigates to the student page when a seat is clicked', async () => {
   setup()
-  fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
+  fireEvent.click(await screen.findByRole('button', { name: /^王小一，/ }))
   expect(await screen.findByTestId('loc')).toHaveTextContent('/teacher/students/s1')
 })
 
@@ -155,7 +155,7 @@ it('falls back to daily when the requested mode is not permitted', async () => {
 
 it('loads weekly stars only for teachers who may read reviews', async () => {
   setup({ perms: ['attendance.read'] })
-  await screen.findByRole('button', { name: '王小一' })
+  await screen.findByRole('button', { name: /^王小一，/ })
   expect(reviewsApi.summary).not.toHaveBeenCalled()
 })
 
@@ -183,17 +183,17 @@ it('keeps the map when the summary fails and says why', async () => {
   vi.mocked(classroomApi.summary).mockRejectedValue(new Error('409'))
   setup()
   expect(await screen.findByText('班级概况加载失败')).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: '王小一' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /^王小一，/ })).toBeInTheDocument()
   expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['日常'])
 })
 
 it('does not open a student profile from a seat while presenting', async () => {
   stubFullscreen()
   const { container } = setup()
-  await screen.findByRole('button', { name: '王小一' })
+  await screen.findByRole('button', { name: /^王小一，/ })
   fireEvent.click(screen.getByRole('button', { name: '全屏' }))
   expect(await screen.findByRole('button', { name: '退出全屏' })).toBeInTheDocument()
-  expect(screen.queryByRole('button', { name: '王小一' })).toBeNull()
+  expect(screen.queryByRole('button', { name: /^王小一，/ })).toBeNull()
   fireEvent.click(container.querySelector('[data-enrollment="e1"]') as Element)
   expect(screen.queryByTestId('loc')).toBeNull()
   expect(screen.getByRole('button', { name: '退出全屏' })).toBeInTheDocument()
@@ -217,7 +217,7 @@ it('hides 编辑黑板 without board.write', async () => {
 
 it('keeps the loaded page when background refetches of classes, roster or attendance fail', async () => {
   const { client } = setup()
-  await screen.findByRole('button', { name: '王小一' })
+  await screen.findByRole('button', { name: /^王小一，/ })
   expect(await screen.findByRole('button', { name: '随机点名' })).toBeEnabled()
   vi.mocked(classesApi.mine).mockRejectedValue(new Error('500'))
   vi.mocked(studentsApi.listInClass).mockRejectedValue(new Error('500'))
@@ -231,7 +231,7 @@ it('keeps the loaded page when background refetches of classes, roster or attend
   expect(screen.queryByText('班级加载失败')).toBeNull()
   expect(screen.queryByText('名单加载失败')).toBeNull()
   expect(screen.getByRole('heading', { name: '三年二班' })).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: '王小一' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /^王小一，/ })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: '随机点名' })).toBeEnabled()
 })
 
@@ -257,15 +257,15 @@ it('does not project attendance in daily or review mode while presenting', async
 it('lets the teacher review while presenting and closes the popover when presenting toggles', async () => {
   stubFullscreen()
   setup({ mode: '点评' })
-  await screen.findByRole('button', { name: '王小一' })
+  await screen.findByRole('button', { name: /^王小一，/ })
   fireEvent.click(screen.getByRole('button', { name: '全屏' }))
   expect(await screen.findByRole('button', { name: '退出全屏' })).toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: '王小一' }))
+  fireEvent.click(screen.getByRole('button', { name: /^王小一，/ }))
   expect(await screen.findByRole('dialog', { name: '点评 王小一' })).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: '退出全屏' }))
   expect(await screen.findByRole('button', { name: '全屏' })).toBeInTheDocument()
   expect(screen.queryByRole('dialog', { name: '点评 王小一' })).toBeNull()
-  fireEvent.click(screen.getByRole('button', { name: '李小二' }))
+  fireEvent.click(screen.getByRole('button', { name: /^李小二，/ }))
   expect(await screen.findByRole('dialog', { name: '点评 李小二' })).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: '全屏' }))
   expect(await screen.findByRole('button', { name: '退出全屏' })).toBeInTheDocument()
@@ -302,7 +302,7 @@ it('shows number, role, today\'s attendance and this week\'s points in the hover
 
 it('leaves weekly points out of the hover card without review.read', async () => {
   const { container } = setup({ perms: ['attendance.read'] })
-  await screen.findByRole('button', { name: '王小一' })
+  await screen.findByRole('button', { name: /^王小一，/ })
   await waitFor(() => expect(attendanceApi.day).toHaveBeenCalled())
   const card = await hoverCard(container, '1-1')
   expect(await within(card).findByText('今日考勤 出勤')).toBeInTheDocument()

@@ -15,6 +15,8 @@ class ReviewOut(BaseModel):
     subject: str | None
     given_at: datetime
     given_by_me: bool
+    student_name: str
+    transferred: bool
 
 
 class ReviewCreate(BaseModel):

@@ -22,7 +22,7 @@ beforeEach(() => {
 
 it('posts an individual review with a fresh op id', async () => {
   setup({ mode: '点评' })
-  fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
+  fireEvent.click(await screen.findByRole('button', { name: /^王小一，/ }))
   fireEvent.click(await screen.findByRole('button', { name: '积极发言 +1' }))
   await waitFor(() => expect(reviewsApi.create).toHaveBeenCalledWith('c1', {
     op_id: expect.stringMatching(/^[0-9a-f-]{36}$/), category: 'individual',
@@ -35,7 +35,7 @@ it('posts once when a reason is double-clicked', async () => {
   let resolve!: (v: { items: Review[] }) => void
   vi.mocked(reviewsApi.create).mockReturnValue(new Promise((r) => { resolve = r }))
   setup({ mode: '点评' })
-  fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
+  fireEvent.click(await screen.findByRole('button', { name: /^王小一，/ }))
   const btn = await screen.findByRole('button', { name: '积极发言 +1' })
   // 同一批里连点两次:此时按钮还没来得及被禁用,只有同步守卫能拦住第二次
   act(() => { btn.click(); btn.click() })
@@ -76,7 +76,7 @@ it('gives the whole class +1 and explains an empty class', async () => {
 it('reuses the op id when retrying after an ambiguous failure', async () => {
   vi.mocked(reviewsApi.create).mockRejectedValueOnce(new TypeError('Failed to fetch'))
   setup({ mode: '点评' })
-  fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
+  fireEvent.click(await screen.findByRole('button', { name: /^王小一，/ }))
   fireEvent.click(await screen.findByRole('button', { name: '积极发言 +1' }))
   await screen.findByText('Failed to fetch')
   await waitFor(() => expect(screen.getByRole('button', { name: '积极发言 +1' })).toBeEnabled())
@@ -85,7 +85,7 @@ it('reuses the op id when retrying after an ambiguous failure', async () => {
   const ids = vi.mocked(reviewsApi.create).mock.calls.map((c) => c[1].op_id)
   expect(ids[1]).toBe(ids[0])
   // 成功后清除:再点同一条理由是新的一次点评
-  fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
+  fireEvent.click(await screen.findByRole('button', { name: /^王小一，/ }))
   fireEvent.click(await screen.findByRole('button', { name: '积极发言 +1' }))
   await waitFor(() => expect(reviewsApi.create).toHaveBeenCalledTimes(3))
   expect(vi.mocked(reviewsApi.create).mock.calls[2][1].op_id).not.toBe(ids[0])
@@ -96,7 +96,7 @@ it('uses a fresh op id for a different payload or after a 4xx', async () => {
     .mockRejectedValueOnce(new TypeError('Failed to fetch'))
     .mockRejectedValueOnce(new ApiError(400, 'BAD', 'bad request'))
   setup({ mode: '点评' })
-  fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
+  fireEvent.click(await screen.findByRole('button', { name: /^王小一，/ }))
   fireEvent.click(await screen.findByRole('button', { name: '积极发言 +1' }))
   await screen.findByText('Failed to fetch')
   await waitFor(() => expect(screen.getByRole('button', { name: '作业优秀 +1' })).toBeEnabled())
@@ -111,17 +111,17 @@ it('uses a fresh op id for a different payload or after a 4xx', async () => {
 
 it('closes the popover on stage pointerdown but not inside it', async () => {
   setup({ mode: '点评' })
-  fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
+  fireEvent.click(await screen.findByRole('button', { name: /^王小一，/ }))
   const dialog = await screen.findByRole('dialog', { name: '点评 王小一' })
   fireEvent.pointerDown(within(dialog).getByLabelText('理由'))
   expect(screen.getByRole('dialog', { name: '点评 王小一' })).toBeInTheDocument()
-  fireEvent.pointerDown(screen.getByRole('button', { name: '李小二' }))
+  fireEvent.pointerDown(screen.getByRole('button', { name: /^李小二，/ }))
   await waitFor(() => expect(screen.queryByRole('dialog', { name: '点评 王小一' })).not.toBeInTheDocument())
 })
 
 it('removes the float after 1400ms', async () => {
   setup({ mode: '点评' })
-  fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
+  fireEvent.click(await screen.findByRole('button', { name: /^王小一，/ }))
   // 记录 1400ms 的定时器,手动触发,避免假时钟卡住 waitFor
   const real = globalThis.setTimeout
   const floatTimers: (() => void)[] = []
@@ -141,7 +141,7 @@ it('removes the float after 1400ms', async () => {
 it('revokes from the undo toast', async () => {
   vi.mocked(reviewsApi.create).mockResolvedValue({ items: [review({ op_id: 'op1' })] })
   setup({ mode: '点评' })
-  fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
+  fireEvent.click(await screen.findByRole('button', { name: /^王小一，/ }))
   fireEvent.click(await screen.findByRole('button', { name: '积极发言 +1' }))
   fireEvent.click(await screen.findByRole('button', { name: '撤销' }))
   await waitFor(() => expect(reviewsApi.revoke).toHaveBeenCalledWith('c1', 'op1'))
@@ -149,7 +149,7 @@ it('revokes from the undo toast', async () => {
 
 it('asks for a subject when the teacher teaches several here', async () => {
   setup({ mode: '点评', subjects: ['物理', '化学'], perms: ['attendance.read', 'review.read', 'review.write'] })
-  fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
+  fireEvent.click(await screen.findByRole('button', { name: /^王小一，/ }))
   fireEvent.change(await screen.findByLabelText('科目'), { target: { value: '化学' } })
   fireEvent.click(screen.getByRole('button', { name: '积极发言 +1' }))
   await waitFor(() => expect(reviewsApi.create).toHaveBeenCalledWith('c1', expect.objectContaining({ subject: '化学' })))
@@ -180,7 +180,7 @@ it('shows the leaderboard as a modal and closes it with the dialog close button'
 
 it('submits a custom reason and closes on Escape', async () => {
   setup({ mode: '点评' })
-  fireEvent.click(await screen.findByRole('button', { name: '李小二' }))
+  fireEvent.click(await screen.findByRole('button', { name: /^李小二，/ }))
   const ok = await screen.findByRole('button', { name: '确定' })
   expect(ok).toBeDisabled()
   fireEvent.change(screen.getByLabelText('理由'), { target: { value: '帮同学' } })
@@ -190,11 +190,11 @@ it('submits a custom reason and closes on Escape', async () => {
   fireEvent.click(ok)
   await waitFor(() => expect(reviewsApi.create).toHaveBeenCalledWith('c1', expect.objectContaining({
     enrollment_ids: ['e2'], reason_text: '帮同学', score_delta: -3 })))
-  fireEvent.click(await screen.findByRole('button', { name: '张小三' }))
+  fireEvent.click(await screen.findByRole('button', { name: /^张小三，/ }))
   fireEvent.click(await screen.findByRole('button', { name: '+1' }))
   await waitFor(() => expect(reviewsApi.create).toHaveBeenLastCalledWith('c1', expect.objectContaining({
     enrollment_ids: ['e3'], reason_text: '表现好', score_delta: 1 })))
-  fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
+  fireEvent.click(await screen.findByRole('button', { name: /^王小一，/ }))
   await screen.findByRole('button', { name: '确定' })
   fireEvent.keyDown(window, { key: 'Escape' })
   await waitFor(() => expect(screen.queryByRole('button', { name: '确定' })).not.toBeInTheDocument())
@@ -230,7 +230,7 @@ it('hides the popover and write buttons without review.write', async () => {
   expect(await screen.findByRole('button', { name: '积分榜' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: '导出点评' })).toBeInTheDocument()
   expect(screen.queryByRole('button', { name: '全班 +1' })).not.toBeInTheDocument()
-  expect(screen.queryByRole('button', { name: '王小一' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /^王小一，/ })).not.toBeInTheDocument()
 })
 
 const SUBJECT_TEACHER = ['attendance.read', 'review.read', 'review.write'] as const
@@ -241,14 +241,14 @@ it('requires a subject for a multi-subject subject teacher, defaulting to the fi
   await waitFor(() => expect(reviewsApi.create).toHaveBeenCalledWith('c1', expect.objectContaining({
     category: 'whole_class', subject: '物理' })))
   await waitFor(() => expect(screen.getByRole('button', { name: '全班 +1' })).toBeEnabled())
-  fireEvent.click(screen.getByRole('button', { name: '王小一' }))
+  fireEvent.click(screen.getByRole('button', { name: /^王小一，/ }))
   const select = await screen.findByLabelText('科目')
   expect(within(select).queryByRole('option', { name: '不指定' })).toBeNull()
   expect(select).toHaveValue('物理')
   fireEvent.change(select, { target: { value: '化学' } })
   fireEvent.keyDown(window, { key: 'Escape' })
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-  fireEvent.click(screen.getByRole('button', { name: '李小二' }))
+  fireEvent.click(screen.getByRole('button', { name: /^李小二，/ }))
   expect(await screen.findByLabelText('科目')).toHaveValue('化学')
   fireEvent.keyDown(window, { key: 'Escape' })
   fireEvent.click(screen.getByRole('button', { name: '全班 +1' }))
@@ -258,7 +258,7 @@ it('requires a subject for a multi-subject subject teacher, defaulting to the fi
 
 it('lets a homeroom teacher who teaches several subjects leave the subject out', async () => {
   setup({ mode: '点评', subjects: ['物理', '化学'] })
-  fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
+  fireEvent.click(await screen.findByRole('button', { name: /^王小一，/ }))
   const select = await screen.findByLabelText('科目')
   expect(select).toHaveValue('')
   expect(within(select).getByRole('option', { name: '不指定' })).toBeInTheDocument()
@@ -269,7 +269,7 @@ it('lets a homeroom teacher who teaches several subjects leave the subject out',
 
 it('omits the subject when a subject teacher teaches one subject here', async () => {
   setup({ mode: '点评', subjects: ['物理'], perms: [...SUBJECT_TEACHER] })
-  fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
+  fireEvent.click(await screen.findByRole('button', { name: /^王小一，/ }))
   await screen.findByRole('dialog', { name: '点评 王小一' })
   expect(screen.queryByLabelText('科目')).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: '积极发言 +1' }))

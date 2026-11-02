@@ -70,4 +70,115 @@ jobs:
       - name: Vitest
         run: npm run test
 
-  # Playwright e2e 冒烟(npm run e2e)需要先起数据库、后端和前端,M2a 段 D 完成后再加一个 job。
+  # Playwright e2e 冒烟:真实 Postgres/Redis + 后端 + Vite dev server(/api 代理到 8080)
+  e2e:
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: workstation
+          POSTGRES_PASSWORD: workstation
+          POSTGRES_DB: workstation
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U workstation -d workstation"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    env:
+      # 与 deploy/docker-compose.dev.yml 和 server/app/config.py 的开发默认值一致
+      WS_DATABASE_URL: postgresql+psycopg://workstation:workstation@localhost:5432/workstation
+      WS_REDIS_URL: redis://localhost:6379/0
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          python-version: "3.12"
+          working-directory: server
+          enable-cache: true
+          cache-dependency-glob: server/uv.lock
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: server
+        run: uv sync --locked
+
+      - name: Migrate and seed
+        working-directory: server
+        run: uv run alembic upgrade head && uv run python -m app.cli seed-dev
+
+      - name: Start backend
+        working-directory: server
+        run: |
+          nohup uv run uvicorn --factory app.main:create_app --port 8080 > "$RUNNER_TEMP/backend.log" 2>&1 &
+
+      - name: Install frontend dependencies
+        working-directory: apps/web
+        run: npm ci
+
+      - name: Install Playwright browser
+        working-directory: apps/web
+        run: npx playwright install --with-deps chromium
+
+      - name: Start frontend
+        working-directory: apps/web
+        run: |
+          nohup npm run dev > "$RUNNER_TEMP/frontend.log" 2>&1 &
+
+      - name: Wait for services
+        run: |
+          wait_for() {
+            for _ in $(seq 1 60); do
+              if curl -sf -o /dev/null "$1"; then
+                echo "$1 is up"
+                return 0
+              fi
+              sleep 2
+            done
+            echo "Timed out waiting for $1"
+            echo "--- backend.log ---"; cat "$RUNNER_TEMP/backend.log" || true
+            echo "--- frontend.log ---"; cat "$RUNNER_TEMP/frontend.log" || true
+            return 1
+          }
+          wait_for http://localhost:8080/api/v1/healthz
+          wait_for http://localhost:5173/
+          wait_for http://localhost:5173/api/v1/healthz
+
+      - name: Playwright e2e
+        working-directory: apps/web
+        run: npm run e2e -- --trace retain-on-failure
+
+      - name: Show service logs
+        if: failure()
+        run: |
+          echo "--- backend.log ---"; cat "$RUNNER_TEMP/backend.log" || true
+          echo "--- frontend.log ---"; cat "$RUNNER_TEMP/frontend.log" || true
+
+      - name: Upload Playwright artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts
+          path: |
+            apps/web/test-results/
+            apps/web/playwright-report/
+          if-no-files-found: ignore

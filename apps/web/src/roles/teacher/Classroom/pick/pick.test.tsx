@@ -113,7 +113,7 @@ it('reuses the op id when a reward is retried after an ambiguous failure', async
 
 it('rewards in the subject last chosen in the review popover', async () => {
   setup({ mode: '点评', subjects: ['物理', '化学'], perms: ['attendance.read', 'review.read', 'review.write'] })
-  fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
+  fireEvent.click(await screen.findByRole('button', { name: /^王小一，/ }))
   fireEvent.change(await screen.findByLabelText('科目'), { target: { value: '化学' } })
   fireEvent.keyDown(window, { key: 'Escape' })
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())

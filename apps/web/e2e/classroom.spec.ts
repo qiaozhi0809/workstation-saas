@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { login, restoreSeedSeating } from './helpers/api'
+import { activeReviewOps, login, restoreSeedAttendance, restoreSeedSeating, revokeReviewsSince } from './helpers/api'
 
 const CLASS_ID = '44444444-4444-4444-4444-444444444444'
 
@@ -18,23 +18,39 @@ async function switchMode(page: Page, name: string) {
   await expect(tab).toHaveAttribute('aria-selected', 'true')
 }
 
+// 本文件的用例会改共享种子数据(考勤、点评、座位)。每个用例前后都还原,失败也不留脏状态;
+// 与其他 spec 的隔离由 playwright.config.ts 的 project 依赖保证(本文件先于只读 spec 跑完)。
+let reviewsBefore = new Set<string>()
+test.beforeEach(async ({ request }) => {
+  const token = await login(request, 'teacher01')
+  await restoreSeedAttendance(request, token, CLASS_ID)
+  await restoreSeedSeating(request, token, CLASS_ID)
+  reviewsBefore = await activeReviewOps(request, token, CLASS_ID)
+})
+test.afterEach(async ({ request }) => {
+  const token = await login(request, 'teacher01')
+  await restoreSeedAttendance(request, token, CLASS_ID)
+  await restoreSeedSeating(request, token, CLASS_ID)
+  await revokeReviewsSince(request, token, CLASS_ID, reviewsBefore)
+})
+
 test('attendance cycles and persists', async ({ page }) => {
   await signIn(page)
   await switchMode(page, '考勤')
-  const wang = page.getByRole('button', { name: '王小一' })
+  const wang = page.getByRole('button', { name: /^王小一，/ })
   await wang.click()
   await expect(page.locator('[data-enrollment]', { hasText: '王小一' })).toContainText('请假')
   await page.reload()
   await switchMode(page, '考勤')
   await expect(page.getByRole('toolbar', { name: '教室工具' }).getByText(/请假 1/)).toBeVisible()
-  for (let i = 0; i < 3; i++) await page.getByRole('button', { name: '王小一' }).click()
+  for (let i = 0; i < 3; i++) await page.getByRole('button', { name: /^王小一，/ }).click()
   await expect(page.getByRole('toolbar', { name: '教室工具' }).getByText(/请假 0/)).toBeVisible()
 })
 
 test('review with undo', async ({ page }) => {
   await signIn(page)
   await switchMode(page, '点评')
-  await page.getByRole('button', { name: '李小二' }).click()
+  await page.getByRole('button', { name: /^李小二，/ }).click()
   await page.getByRole('button', { name: '积极发言 +1' }).click()
   await expect(page.getByText('已给 李小二 积极发言 +1')).toBeVisible()
   const li = page.locator('[data-enrollment]', { hasText: '李小二' })
@@ -61,8 +77,8 @@ test('seating swap is saved and restored', async ({ page, request }) => {
     await switchMode(page, '排座')
     // 排座草稿取到最新数据之前地图只读
     await expect(page.getByRole('button', { name: '随机打乱' })).toBeEnabled()
-    await page.getByRole('button', { name: '王小一' }).click()
-    await page.getByRole('button', { name: '李小二' }).click()
+    await page.getByRole('button', { name: /^王小一，/ }).click()
+    await page.getByRole('button', { name: /^李小二，/ }).click()
     await page.getByRole('button', { name: '保存座位' }).click()
     await expect(page.getByText('座位已保存')).toBeVisible()
     await page.reload()
@@ -76,7 +92,7 @@ test('subject teacher cannot mark attendance or arrange seats', async ({ page })
   await signIn(page, 'teacher03')
   await expect(page.getByRole('tab', { name: '排座' })).toHaveCount(0)
   await switchMode(page, '考勤')
-  await page.getByRole('button', { name: '王小一' }).click()
+  await page.getByRole('button', { name: /^王小一，/ }).click()
   await expect(page.getByText('只有班主任和副班主任可以记考勤')).toBeVisible()
 })
 
@@ -122,8 +138,8 @@ test('asks before leaving unsaved seating through a link or logout', async ({ pa
   await switchMode(page, '排座')
   await expect(page.getByRole('button', { name: '随机打乱' })).toBeEnabled()
   // 只改草稿不保存,用例结束不留数据
-  await page.getByRole('button', { name: '王小一' }).click()
-  await page.getByRole('button', { name: '李小二' }).click()
+  await page.getByRole('button', { name: /^王小一，/ }).click()
+  await page.getByRole('button', { name: /^李小二，/ }).click()
   const dialogs: string[] = []
   page.on('dialog', (d) => { dialogs.push(d.message()); void d.dismiss() })
   await page.getByRole('button', { name: '账号菜单' }).click()

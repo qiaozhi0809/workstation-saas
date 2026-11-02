@@ -1,9 +1,13 @@
 import warnings
+from datetime import datetime, timedelta
 from uuid import UUID
 
+import jwt
 from jwt.warnings import InsecureKeyLengthWarning
 
 from app.auth.tokens import decode_access_token, issue_access_token
+from app.models import User
+from tests.helpers import freeze
 from tests.seed_ids import SCHOOL_ID, TEACHER_USER_ID
 
 
@@ -112,3 +116,23 @@ def test_test_settings_sign_tokens_without_key_length_warning(settings):
         warnings.simplefilter("error", InsecureKeyLengthWarning)
         token, _ = issue_access_token(UUID(TEACHER_USER_ID), settings)
         decode_access_token(token, settings)
+
+
+FROZEN = "2030-01-02T03:04:05+00:00"
+
+
+def test_issue_access_token_uses_clock(monkeypatch, settings):
+    freeze(monkeypatch, FROZEN)
+    now = datetime.fromisoformat(FROZEN)
+    token, expires_at = issue_access_token(UUID(TEACHER_USER_ID), settings)
+    assert expires_at == now + timedelta(seconds=settings.access_ttl_seconds)
+    claims = jwt.decode(token, options={"verify_signature": False})
+    assert claims["iat"] == int(now.timestamp())
+
+
+def test_login_sets_last_login_at_from_clock(client, db, monkeypatch):
+    freeze(monkeypatch, FROZEN)
+    assert login(client).status_code == 200
+    user = db.get(User, UUID(TEACHER_USER_ID))
+    db.refresh(user)
+    assert user.last_login_at == datetime.fromisoformat(FROZEN)
