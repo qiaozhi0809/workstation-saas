@@ -71,6 +71,7 @@ export function review(over: Partial<Review> = {}): Review {
     id: 'r1', op_id: 'op1', enrollment_id: 'e1', category: 'individual',
     reason_text: '积极发言', score_delta: 1, subject: null,
     given_at: '2026-11-02T01:00:00Z', given_by_me: true,
+    student_name: '王小一', transferred: false,
     ...over,
   }
 }

@@ -8,6 +8,8 @@ export interface Review {
   subject: string | null
   given_at: string
   given_by_me: boolean
+  student_name: string
+  transferred: boolean
 }
 
 export interface ReviewCreate {

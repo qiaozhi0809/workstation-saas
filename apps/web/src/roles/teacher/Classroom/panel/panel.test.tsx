@@ -90,12 +90,12 @@ it('shows recent reviews without naming other teachers', async () => {
 })
 
 it('marks reviews of students no longer in the class as transferred out', async () => {
-  // 名单只含在读学生;转出学生的点评记录还在,后端 feed 只给 enrollment_id
+  // 名单只含在读学生;转出学生的点评记录还在,后端 feed 带 student_name / transferred
   vi.mocked(reviewsApi.list).mockResolvedValue({ next_cursor: null, items: [
-    review({ id: 'r9', enrollment_id: 'e9', given_at: '2026-11-02T02:05:00Z' }),
+    review({ id: 'r9', enrollment_id: 'e9', student_name: '陈转出', transferred: true, given_at: '2026-11-02T02:05:00Z' }),
   ] })
   setup()
   await openPanel()
-  expect(await screen.findByText('（已转出） 积极发言 +1 · 我 · 10:05')).toBeInTheDocument()
+  expect(await screen.findByText('陈转出（已转出） 积极发言 +1 · 我 · 10:05')).toBeInTheDocument()
   expect(screen.queryByText(/全班/)).toBeNull()
 })

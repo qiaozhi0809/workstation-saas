@@ -1,4 +1,5 @@
 import base64
+from collections.abc import Sequence
 from datetime import date, datetime
 from uuid import UUID
 
@@ -20,23 +21,42 @@ from app.domain.reviews.schemas import (
 )
 from app.domain.students.service import active_enrollments
 from app.errors import ApiError
-from app.models import Review, SchoolClass
+from app.models import Enrollment, Review, SchoolClass, Student
 from app.rbac.bindings import Binding, has_role_in_class, subjects_in_class
 from app.rbac.roles import Role
 
 
-def _out(row: Review, user_id: UUID) -> ReviewOut:
-    return ReviewOut(
-        id=row.id,
-        op_id=row.op_id,
-        enrollment_id=row.enrollment_id,
-        category=row.category,  # type: ignore[arg-type]
-        reason_text=row.reason_text,
-        score_delta=row.score_delta,
-        subject=row.subject,
-        given_at=row.given_at,
-        given_by_me=row.given_by_user_id == user_id,
+def _outs(db: Session, rows: Sequence[Review], user_id: UUID) -> list[ReviewOut]:
+    """批量补全学生姓名与在读状态(一次查询,不逐行查)。"""
+    ids = {r.enrollment_id for r in rows}
+    info = (
+        {
+            eid: (name, status)
+            for eid, name, status in db.execute(
+                select(Enrollment.id, Student.name, Enrollment.status)
+                .join(Student, Student.id == Enrollment.student_id)
+                .where(Enrollment.id.in_(ids))
+            )
+        }
+        if ids
+        else {}
     )
+    return [
+        ReviewOut(
+            id=r.id,
+            op_id=r.op_id,
+            enrollment_id=r.enrollment_id,
+            category=r.category,  # type: ignore[arg-type]
+            reason_text=r.reason_text,
+            score_delta=r.score_delta,
+            subject=r.subject,
+            given_at=r.given_at,
+            given_by_me=r.given_by_user_id == user_id,
+            student_name=info[r.enrollment_id][0],
+            transferred=info[r.enrollment_id][1] != "active",
+        )
+        for r in rows
+    ]
 
 
 def _existing(db: Session, cls: SchoolClass, user_id: UUID, op_id: UUID) -> list[ReviewOut] | None:
@@ -47,7 +67,7 @@ def _existing(db: Session, cls: SchoolClass, user_id: UUID, op_id: UUID) -> list
         return None
     if any(r.given_by_user_id != user_id or r.class_id != cls.id for r in rows):
         raise ApiError(409, "OP_ID_CONFLICT", "该操作编号已被使用")
-    return [_out(r, user_id) for r in rows if r.revoked_at is None]
+    return _outs(db, [r for r in rows if r.revoked_at is None], user_id)
 
 
 def _resolve_subject(bindings: list[Binding], class_id: UUID, requested: str | None) -> str | None:
@@ -123,7 +143,7 @@ def create_reviews(
     rows = db.scalars(
         select(Review).where(Review.op_id == body.op_id).order_by(Review.enrollment_id)
     ).all()
-    return [_out(r, user_id) for r in rows], True
+    return _outs(db, rows, user_id), True
 
 
 def _encode_cursor(row: Review) -> str:
@@ -157,7 +177,7 @@ def list_reviews(
     rows = list(db.scalars(stmt).all())
     page = rows[:limit]
     next_cursor = _encode_cursor(page[-1]) if len(rows) > limit else None
-    return ReviewPage(items=[_out(r, user_id) for r in page], next_cursor=next_cursor)
+    return ReviewPage(items=_outs(db, page, user_id), next_cursor=next_cursor)
 
 
 def summarize(

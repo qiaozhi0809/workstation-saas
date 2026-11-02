@@ -26,8 +26,8 @@ export default function FeedSection({ classId, roster, timezone }: {
         <ul className="mt-1 flex flex-col gap-1 text-xs">
           {items.map((r) => (
             <li key={r.id}>
-              {/* 每条点评都对应一名学生(全班点评也按人记);名单只含在读学生,找不到的是已转出的 */}
-              {`${names.get(r.enrollment_id) ?? '（已转出）'} ${r.reason_text} ${signed(r.score_delta)} · ${r.given_by_me ? '我' : '老师'} · ${formatInTz(r.given_at, timezone).slice(11)}`}
+              {/* 每条点评都对应一名学生(全班点评也按人记);已转出的学生不在名单里,用后端返回的姓名 */}
+              {`${r.transferred ? `${r.student_name}（已转出）` : (names.get(r.enrollment_id) ?? r.student_name)} ${r.reason_text} ${signed(r.score_delta)} · ${r.given_by_me ? '我' : '老师'} · ${formatInTz(r.given_at, timezone).slice(11)}`}
             </li>
           ))}
         </ul>

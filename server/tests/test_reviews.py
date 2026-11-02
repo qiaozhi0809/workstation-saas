@@ -3,7 +3,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import func, select
 
-from app.models import Attendance, Review
+from app.models import Attendance, Enrollment, Review, Student
 from app.rbac.roles import Role
 from tests.factories import bind, make_user
 from tests.helpers import audit_rows, auth, enrollment_of, freeze
@@ -58,6 +58,8 @@ def test_create_individual_review(client, db, settings):
     assert item["category"] == "individual"
     assert (item["given_by_me"], item["subject"]) == (True, None)
     assert "given_by_user_id" not in item
+    name = db.scalar(select(Student.name).where(Student.id == UUID(STUDENT_IDS[0])))
+    assert (item["student_name"], item["transferred"]) == (name, False)
 
 
 def test_replayed_op_id_returns_existing_rows(client, db, settings):
@@ -134,6 +136,25 @@ def test_list_hides_givers_and_revoked(client, db, settings):
     client.post(f"{BASE}/{mine}/revoke", headers=auth(settings))
     items = client.get(BASE, headers=auth(settings)).json()["items"]
     assert [(i["op_id"], i["given_by_me"]) for i in items] == [(str(theirs), False)]
+
+
+def test_list_marks_transferred_student_with_name(client, db, settings):
+    e0, e1 = enrollment_of(db, STUDENT_IDS[0]), enrollment_of(db, STUDENT_IDS[1])
+    client.post(BASE, json=individual([e0, e1]), headers=auth(settings))
+    db.execute(
+        Enrollment.__table__.update().where(Enrollment.id == e1).values(status="transferred")
+    )
+    db.flush()
+    items = client.get(BASE, headers=auth(settings)).json()["items"]
+    by_enrollment = {i["enrollment_id"]: i for i in items}
+    names = {
+        s.id: s.name
+        for s in db.scalars(select(Student).where(Student.id.in_(map(UUID, STUDENT_IDS[:2]))))
+    }
+    assert by_enrollment[str(e0)]["student_name"] == names[UUID(STUDENT_IDS[0])]
+    assert by_enrollment[str(e0)]["transferred"] is False
+    assert by_enrollment[str(e1)]["student_name"] == names[UUID(STUDENT_IDS[1])]
+    assert by_enrollment[str(e1)]["transferred"] is True
 
 
 def test_list_paginates_without_overlap(client, db, settings):
