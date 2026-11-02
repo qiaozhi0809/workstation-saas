@@ -1,6 +1,6 @@
-import { ChevronDown, Ellipsis } from 'lucide-react'
+import { ChevronDown } from 'lucide-react'
 import { useState } from 'react'
-import Menu, { MenuItem } from '@/shared/components/overlay/Menu'
+import { MenuItem } from '@/shared/components/overlay/Menu'
 import Modal from '@/shared/components/overlay/Modal'
 import Popover from '@/shared/components/overlay/Popover'
 import { Button } from '@/shared/components/ui/button'
@@ -92,7 +92,20 @@ function ConflictDialog({ onReload, onKeepEditing }: Pick<SeatingBarProps, 'onRe
   )
 }
 
-/** 排座操作条:常用操作直接可见,行列收进弹层,放弃修改 / 固定 / 打印收进"更多操作"。 */
+/** "更多操作"菜单里排座自己的项(菜单本身由操作台渲染,与随机点名 / 编辑黑板共用一个)。 */
+export function SeatingMenuItems(p: Pick<SeatingBarProps, 'busy' | 'dirty' | 'selected' | 'onDiscard' | 'onToggleLock' | 'onPrint'>) {
+  return (
+    <>
+      <MenuItem disabled={p.busy || !p.dirty} onSelect={p.onDiscard}>放弃修改</MenuItem>
+      <MenuItem disabled={p.busy || !p.selected} onSelect={p.onToggleLock}>
+        {p.selected?.locked ? '取消固定' : '固定座位'}
+      </MenuItem>
+      <MenuItem onSelect={p.onPrint}>打印</MenuItem>
+    </>
+  )
+}
+
+/** 排座操作条:常用操作直接可见,行列收进弹层;放弃修改 / 固定 / 打印在操作台的"更多操作"里(SeatingMenuItems)。 */
 export default function SeatingBar(p: SeatingBarProps) {
   return (
     <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -107,14 +120,6 @@ export default function SeatingBar(p: SeatingBarProps) {
         </div>
       </Popover>
       <Button type="button" disabled={p.busy || !p.dirty} onClick={p.onSave}>保存座位</Button>
-      <Menu label="更多操作" side="top" align="end" trigger={<Ellipsis aria-hidden />}
-        triggerProps={{ variant: 'outline', size: 'icon', 'aria-label': '更多操作', title: '更多操作' }}>
-        <MenuItem disabled={p.busy || !p.dirty} onSelect={p.onDiscard}>放弃修改</MenuItem>
-        <MenuItem disabled={p.busy || !p.selected} onSelect={p.onToggleLock}>
-          {p.selected?.locked ? '取消固定' : '固定座位'}
-        </MenuItem>
-        <MenuItem onSelect={p.onPrint}>打印</MenuItem>
-      </Menu>
       {p.conflict && <ConflictDialog onReload={p.onReload} onKeepEditing={p.onKeepEditing} />}
     </div>
   )

@@ -1,6 +1,7 @@
 import { useMemo, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { attendanceApi } from '@/shared/api/attendance'
+import { MenuItem } from '@/shared/components/overlay/Menu'
 import { toast } from '@/shared/components/Toast'
 import type { SeatView } from '@/shared/components/ClassroomMap/types'
 import * as csv from '@/shared/lib/csv'
@@ -32,6 +33,8 @@ interface Options {
   yearStart: string | undefined
   timezone: string | undefined
   roster: StudentSeat[]
+  /** 出勤小牌在场景里看得到(ClassroomMap 回报);决定操作台显示数字还是徽章 */
+  boardVisible?: boolean
   onPickDate(d: string): void
   onFollowToday(): void
 }
@@ -118,6 +121,7 @@ export function useAttendanceMode(o: Options) {
         absent={count('absent')}
         late={count('late')}
         confirmedAt={day.data?.confirmed_at ? formatInTz(day.data.confirmed_at, o.timezone).slice(11) : null}
+        boardVisible={o.boardVisible}
         canWrite={canWrite}
         busy={confirm.isPending}
         onPickDate={o.onPickDate}
@@ -130,9 +134,10 @@ export function useAttendanceMode(o: Options) {
           )) return
           confirm.mutate(true)
         }}
-        onExport={() => void exportMonth()}
       />
     )
   }
-  return { views, onSeatClick, bar }
+  // 导出本月在操作台的"更多操作"菜单里(考勤自己的项,排在随机点名 / 编辑黑板之前)
+  const menu: ReactNode = bar ? <MenuItem onSelect={() => void exportMonth()}>导出本月</MenuItem> : null
+  return { views, onSeatClick, bar, menu, day: day.data }
 }

@@ -26,9 +26,9 @@ test('attendance cycles and persists', async ({ page }) => {
   await expect(page.locator('[data-enrollment]', { hasText: '王小一' })).toContainText('请假')
   await page.reload()
   await switchMode(page, '考勤')
-  await expect(page.getByRole('complementary', { name: '班级概况' }).getByText(/请假 1/)).toBeVisible()
+  await expect(page.getByRole('toolbar', { name: '教室工具' }).getByText(/请假 1/)).toBeVisible()
   for (let i = 0; i < 3; i++) await page.getByRole('button', { name: '王小一' }).click()
-  await expect(page.getByRole('complementary', { name: '班级概况' }).getByText(/请假 0/)).toBeVisible()
+  await expect(page.getByRole('toolbar', { name: '教室工具' }).getByText(/请假 0/)).toBeVisible()
 })
 
 test('review with undo', async ({ page }) => {
@@ -98,17 +98,22 @@ test('fits a 1024×768 projector without page scrolling in every mode', async ({
   }
 })
 
-// 窗口较矮时进入排座:舞台随之变矮并重新适应,整间教室都在窗口内,不被裁掉
-test('keeps the whole classroom in view after entering seating in a short window', async ({ page }) => {
+// 窗口较矮时进入排座:舞台随之变矮并重新适应,教室核心(前墙 + 全部座位)都在窗口内,不被裁掉
+// (扁舞台的适应按核心放大,核心之外的后部地板可以被裁,见设计稿 §6;所以量核心而不是整幅场景)
+test('keeps the classroom core in view after entering seating in a short window', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 640 })
   await signIn(page)
   await switchMode(page, '排座')
   await expect(page.getByRole('button', { name: '随机打乱' })).toBeEnabled()
+  const within = (a: { x: number; y: number; width: number; height: number }, b: typeof a) =>
+    a.x >= b.x - 1 && a.y >= b.y - 1 && a.x + a.width <= b.x + b.width + 1 && a.y + a.height <= b.y + b.height + 1
   await expect(async () => {
-    const room = await page.locator('.cr-canvas > *').first().boundingBox()
-    const stage = await page.getByTestId('classroom-stage').boundingBox()
-    expect(room!.y + room!.height).toBeLessThanOrEqual(stage!.y + stage!.height + 1)
-    expect(stage!.y + stage!.height).toBeLessThanOrEqual(640)
+    const stage = (await page.getByTestId('classroom-stage').boundingBox())!
+    expect(within((await page.locator('.cr-front-wall').boundingBox())!, stage), '前墙在舞台内').toBe(true)
+    const seats = await page.locator('[data-seat]').all()
+    expect(seats).toHaveLength(24)
+    for (const seat of seats) expect(within((await seat.boundingBox())!, stage), '座位在舞台内').toBe(true)
+    expect(stage.y + stage.height).toBeLessThanOrEqual(640)
   }).toPass()
 })
 

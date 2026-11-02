@@ -9,7 +9,7 @@ interface State { view: View; fitted: boolean }
 // 舞台视口,两种状态:
 // 适应(锁定):挂载 / 点"适应" / 缩小到适应比例时进入;舞台尺寸变化时重新适应;拖动、普通滚轮、键盘聚焦都不动视图
 // 放大(可拖):从适应放大后进入;平移与缩放都夹在场景边界内;舞台变化后若比例已 ≤ 新的适应比例则回到适应
-export function useViewport(stageRef: RefObject<HTMLElement>, content: Size & { safeW?: number }, enabled = true) {
+export function useViewport(stageRef: RefObject<HTMLElement>, content: Size & { safeW?: number; core?: { y: number; h: number } }, enabled = true) {
   const [st, setSt] = useState<State>({ view: { s: 1, x: 0, y: 0 }, fitted: true })
   const [panning, setPanning] = useState(false)
   const contentRef = useRef(content), fittedRef = useRef(st.fitted)
@@ -24,7 +24,7 @@ export function useViewport(stageRef: RefObject<HTMLElement>, content: Size & { 
   }, [stageRef])
   const fitOf = useCallback(() => {
     const c = contentRef.current
-    return fitView(c, stage(), c.safeW ?? c.w)
+    return fitView(c, stage(), c.safeW ?? c.w, c.core)
   }, [stage])
   const fit = useCallback(() => setSt({ view: fitOf(), fitted: true }), [fitOf])
   // 比例已不大于适应比例就回到适应(锁定),否则只做边界夹取
@@ -53,7 +53,7 @@ export function useViewport(stageRef: RefObject<HTMLElement>, content: Size & { 
     setSt((cur) => (cur.fitted ? { view: f, fitted: true } : settle(cur.view, f)))
   }, [fitOf, settle])
 
-  // 键盘聚焦到视口外的座位:放大状态下平移到可见;适应状态下整间教室本就在舞台内,不动;rect 为视口坐标
+  // 键盘聚焦到视口外的座位:放大状态下平移到可见;适应状态下核心(含全部座位)本就完整在舞台内,不动;rect 为视口坐标
   const ensureVisible = useCallback((r: { left: number; top: number; width: number; height: number }) => {
     const el = stageRef.current, { w, h } = stage()
     if (!el || !w || !h || fittedRef.current) return
@@ -68,8 +68,8 @@ export function useViewport(stageRef: RefObject<HTMLElement>, content: Size & { 
     if (dx || dy) panBy(dx, dy)
   }, [panBy, stage, stageRef])
 
-  const { w, h, safeW } = content
-  useLayoutEffect(() => refit(), [w, h, safeW, refit])
+  const { w, h, safeW } = content, coreY = content.core?.y, coreH = content.core?.h
+  useLayoutEffect(() => refit(), [w, h, safeW, coreY, coreH, refit])
   useEffect(() => {
     const el = stageRef.current
     if (!el) return

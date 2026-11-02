@@ -1,3 +1,6 @@
+import { useRef } from 'react'
+import { ChevronDown } from 'lucide-react'
+import Popover from '@/shared/components/overlay/Popover'
 import { Button } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
 import { ATTENDANCE_TONE, TONE_TEXT } from '@/shared/lib/tone'
@@ -12,34 +15,58 @@ export interface AttendanceBarProps {
   late: number
   /** 已确认的时刻(已按学校时区格式化成 HH:mm);未确认为 null */
   confirmedAt: string | null
+  /** 出勤小牌在场景里看得到时,可见的数字退到牌子上;看不到时显示紧凑徽章 */
+  boardVisible?: boolean
   canWrite: boolean
   busy: boolean
   onPickDate(d: string): void
   onFollowToday(): void
   onConfirm(): void
   onAllPresent(): void
-  onExport(): void
 }
 
 export default function AttendanceBar(p: AttendanceBarProps) {
+  const dateRef = useRef<HTMLInputElement>(null)
+  const arrived = p.enrolled - p.leave - p.absent
+  const dateText = p.date === p.today ? '今天' : `${p.date.slice(5, 7)}/${p.date.slice(8, 10)}`
   return (
     <div className="flex flex-wrap items-center gap-2 text-sm">
-      <Input
-        type="date"
-        aria-label="考勤日期"
-        className="h-9 w-auto"
-        value={p.date}
-        min={p.yearStart}
-        max={p.today}
-        onChange={(e) => { if (e.target.value) p.onPickDate(e.target.value) }}
-      />
-      {p.date !== p.today && (
-        <Button type="button" variant="outline" onClick={p.onFollowToday}>回到今天</Button>
+      {/* 日期收成紧凑按钮(今天 / MM/DD),点开弹层再选;弹层里仍是原生日期框 */}
+      <Popover label="选择考勤日期" side="top"
+        triggerProps={{ variant: 'outline', 'aria-label': `考勤日期 ${dateText}` }}
+        trigger={<>{dateText}<ChevronDown aria-hidden /></>}>
+        <div className="flex items-center gap-2">
+          <Input
+            type="date"
+            aria-label="考勤日期"
+            className="h-9 w-auto"
+            ref={dateRef}
+            data-autofocus=""
+            value={p.date}
+            min={p.yearStart}
+            max={p.today}
+            onChange={(e) => { if (e.target.value) p.onPickDate(e.target.value) }}
+          />
+          {p.date !== p.today && (
+            <Button type="button" variant="outline" onClick={() => {
+              // 回到今天后这个按钮会卸载(焦点会掉到 body),先把焦点交给日期框
+              dateRef.current?.focus()
+              p.onFollowToday()
+            }}>回到今天</Button>
+          )}
+        </div>
+      </Popover>
+      {/* 数字的读屏文字始终在;可见的部分:牌子看得到时由场景承担,看不到时是紧凑徽章 */}
+      <span className="sr-only">{`实到 ${arrived}/${p.enrolled}`}</span>
+      <span className={`sr-only ${TONE_TEXT[ATTENDANCE_TONE.leave]}`}>{`请假 ${p.leave}`}</span>
+      <span className={`sr-only ${TONE_TEXT[ATTENDANCE_TONE.absent]}`}>{`缺勤 ${p.absent}`}</span>
+      <span className={`sr-only ${TONE_TEXT[ATTENDANCE_TONE.late]}`}>{`迟到 ${p.late}`}</span>
+      {!p.boardVisible && (
+        <span aria-hidden="true" title={`实到 ${arrived}/${p.enrolled} · 请假 ${p.leave} · 缺勤 ${p.absent} · 迟到 ${p.late}`}
+          className="rounded-full border bg-muted px-2 py-0.5 text-xs font-semibold tabular-nums">
+          {`${arrived}/${p.enrolled}`}
+        </span>
       )}
-      <span className="font-semibold tabular-nums">{`实到 ${p.enrolled - p.leave - p.absent}/${p.enrolled}`}</span>
-      <span className={TONE_TEXT[ATTENDANCE_TONE.leave]}>{`请假 ${p.leave}`}</span>
-      <span className={TONE_TEXT[ATTENDANCE_TONE.absent]}>{`缺勤 ${p.absent}`}</span>
-      <span className={TONE_TEXT[ATTENDANCE_TONE.late]}>{`迟到 ${p.late}`}</span>
       {p.confirmedAt && <span className="text-muted-foreground">{`已确认 ${p.confirmedAt}`}</span>}
       {p.canWrite && (
         <>
@@ -47,7 +74,6 @@ export default function AttendanceBar(p: AttendanceBarProps) {
           <Button type="button" variant="outline" disabled={p.busy} onClick={p.onAllPresent}>全部出勤</Button>
         </>
       )}
-      <Button type="button" variant="outline" onClick={p.onExport}>导出本月</Button>
     </div>
   )
 }

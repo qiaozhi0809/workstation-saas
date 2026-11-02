@@ -9,13 +9,13 @@ import { reviewsApi } from '@/shared/api/reviews'
 import { studentsApi } from '@/shared/api/students'
 import ClassroomMap from '@/shared/components/ClassroomMap'
 import type {
-  ClassroomEffects, ClassroomMapProps, ClassroomViewportHandle, SeatView,
+  AttendanceBoardData, ClassroomEffects, ClassroomMapProps, ClassroomViewportHandle, SeatView,
 } from '@/shared/components/ClassroomMap/types'
 import { EmptyState } from '@/shared/components/feedback/EmptyState'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
+import { MenuItem } from '@/shared/components/overlay/Menu'
 import { Button } from '@/shared/components/ui/button'
-import { useWindowWidth } from '@/shared/hooks/useWindowWidth'
 import { useReducedMotion } from '@/shared/hooks/useReducedMotion'
 import { useAuthStore } from '@/shared/stores/auth'
 import { confirmLeaveSeating, useTeacherStore } from '@/shared/stores/teacher'
@@ -31,12 +31,14 @@ import { useReviewMode } from './review/useReviewMode'
 import { useReviewSubject } from './review/useReviewSubmit'
 import BoardEditor from './BoardEditor'
 import SeatHoverCard from './SeatHoverCard'
-import SeatingBar from './seating/SeatingBar'
+import SeatingBar, { SeatingMenuItems } from './seating/SeatingBar'
 import UnseatedTray from './seating/UnseatedTray'
 import { useSeatingMode } from './seating/useSeatingMode'
 import { buildBoard } from './buildBoard'
 import { useIdleActions } from './idle/useIdleActions'
-import OverviewRail from './rail/OverviewRail'
+import SidePanel from '@/shared/components/overlay/SidePanel'
+import TodoSection from './panel/TodoSection'
+import FeedSection from './panel/FeedSection'
 import { modesFor, type ClassroomUiMode } from './ModeBar'
 import ClassroomDock from './ClassroomDock'
 import { useAttendanceDate } from './useAttendanceDate'
@@ -44,7 +46,6 @@ import { useFullscreen } from './useFullscreen'
 
 const NO_PERMS: ClassPerm[] = []
 const NO_SUBJECTS: string[] = []
-const RAIL_MIN_WIDTH = 1100
 
 // 讲台姓名牌上的身份:有排座权的是班主任,能记考勤的是副班主任,其余是任课老师
 const roleLabel = (perms: readonly ClassPerm[]) =>
@@ -63,6 +64,8 @@ interface ModeSlot {
   onSeatDrop?: ClassroomMapProps['onSeatDrop']
   /** 操作台里的当前模式操作 */
   actions?: ReactNode
+  /** 操作台"更多操作"菜单里模式自己的项(在随机点名 / 编辑黑板之前) */
+  menu?: ReactNode
   /** 舞台下方、操作台上方的托盘(排座:未入座同学) */
   tray?: ReactNode
 }
@@ -83,7 +86,7 @@ export default function ClassroomPage() {
   const cls = classId ? items.find((c) => c.id === classId) : undefined
   if (!cls) return <LoadingState />
 
-  // 换班级时整页重建:模式、考勤日期、概况栏开关等按班级重新开始
+  // 换班级时整页重建:模式、考勤日期、抽屉开关等按班级重新开始
   return <ClassroomView key={cls.id} cls={cls} />
 }
 
@@ -97,11 +100,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
   const viewportRef = useRef<ClassroomViewportHandle>(null)
   const { active: presenting, toggle: togglePresent } = useFullscreen(rootRef)
   const [editingBoard, setEditingBoard] = useState(false)
-  const width = useWindowWidth()
-  const [railOpen, setRailOpen] = useState(() => window.innerWidth >= RAIL_MIN_WIDTH)
-  const railButtonRef = useRef<HTMLButtonElement>(null)
-  const overlayRail = width < RAIL_MIN_WIDTH
-  const closeRail = () => { setRailOpen(false); railButtonRef.current?.focus() }
+  const [panelOpen, setPanelOpen] = useState(false)
 
   const roster = useQuery({
     queryKey: ['class-students', classId],
@@ -145,6 +144,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
   // 投屏时只展示姓名:档案抽屉在全屏根元素之外,不能在投屏中打开(退出全屏时会把档案亮在投影上)
   // 考勤日期跟随服务端的学校"今天",不用浏览器时钟;日常/考勤/点评叠加当天考勤外观,排座不叠加
   const attDate = useAttendanceDate(today)
+  const [boardVisible, setBoardVisible] = useState(false)
   const attendance = useAttendanceMode({
     classId,
     className: cls.name,
@@ -155,6 +155,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
     yearStart: summary.data?.year.start_date,
     timezone: summary.data?.timezone,
     roster: roster.data?.items ?? [],
+    boardVisible,
     onPickDate: attDate.pick,
     onFollowToday: attDate.followToday,
   })
@@ -183,6 +184,18 @@ function ClassroomView({ cls }: { cls: ClassView }) {
     queryFn: () => attendanceApi.day(classId, today!),
     enabled: !!today,
   })
+  // 左翼的出勤小牌:考勤模式是正在查看的日期,其余模式是学校"今天";只有汇总数,没加载好就不画
+  const boardDay = mode === 'attendance' ? attendance.day : todayAttendance.data
+  const boardDate = mode === 'attendance' ? attDate.date : today
+  const attendanceBoard = useMemo<AttendanceBoardData | undefined>(() => {
+    if (!boardDay || !roster.data || !boardDate || !today) return undefined
+    const n = (s: string) => boardDay.items.filter((i) => i.status === s).length
+    const total = roster.data.items.length, leave = n('leave'), absent = n('absent')
+    return {
+      title: boardDate === today ? '今日出勤' : `${boardDate.slice(5, 7)}/${boardDate.slice(8, 10)} 出勤`,
+      present: total - leave - absent, total, leave, absent, late: n('late'),
+    }
+  }, [boardDay, boardDate, today, roster.data])
   const pool = useMemo(() => {
     const status = new Map((todayAttendance.data?.items ?? []).map((i) => [i.enrollment_id, i.status]))
     return pickPool(roster.data?.items ?? [], (id) => status.get(id))
@@ -223,7 +236,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
   let slot: ModeSlot = {}
   // 日常 / 点评模式投屏时不叠加考勤(请假等不上投影);考勤模式是老师主动进入的,照常显示
   if (mode === 'daily') slot = { views: presenting ? undefined : overlay, onSeatClick: presenting ? undefined : openProfile }
-  else if (mode === 'attendance') slot = { views: overlay, onSeatClick: attendance.onSeatClick, actions: attendance.bar }
+  else if (mode === 'attendance') slot = { views: overlay, onSeatClick: attendance.onSeatClick, actions: attendance.bar, menu: attendance.menu }
   else if (mode === 'review') {
     slot = {
       views: review.views, effects: { floats: review.floats }, actions: review.toolbar,
@@ -235,6 +248,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
       seats: seating.seats, rows: seating.rows, cols: seating.cols, views: seating.views,
       onSeatClick: seating.onSeatClick, onEmptySeatClick: seating.onEmptySeatClick, onSeatDrop: seating.onSeatDrop,
       actions: <SeatingBar {...seating.bar} />,
+      menu: <SeatingMenuItems {...seating.bar} />,
       tray: <UnseatedTray {...seating.tray} />,
     }
   } else if (mode === 'seating' && seating.failed) {
@@ -281,6 +295,8 @@ function ClassroomView({ cls }: { cls: ClassView }) {
         mode={mode}
         teacher={teacher}
         board={board}
+        attendanceBoard={attendanceBoard}
+        onAttendanceBoardVisibleChange={setBoardVisible}
         views={slot.views}
         effects={pickEffects}
         presenting={presenting}
@@ -344,7 +360,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
           perms={perms}
           onModeChange={setMode}
           actions={slot.actions}
-          common={canPick || canEditBoard ? (
+          common={mode === 'daily' && (canPick || canEditBoard) ? (
             <>
               {canPick && (
                 <Button onClick={pick.start} disabled={picking}>
@@ -358,32 +374,31 @@ function ClassroomView({ cls }: { cls: ClassView }) {
               )}
             </>
           ) : undefined}
+          menu={slot.menu || (mode !== 'daily' && (canPick || canEditBoard)) ? (
+            <>
+              {slot.menu}
+              {mode !== 'daily' && canPick && <MenuItem disabled={picking} onSelect={pick.start}>随机点名</MenuItem>}
+              {mode !== 'daily' && canEditBoard && <MenuItem onSelect={() => setEditingBoard(true)}>编辑黑板</MenuItem>}
+            </>
+          ) : undefined}
           status={seatingPending === 'saving' ? '保存中…' : seatingPending === 'loading' ? '加载中…' : undefined}
           presenting={presenting}
           onTogglePresent={togglePresent}
-          railOpen={railOpen}
-          onToggleRail={() => setRailOpen((o) => !o)}
-          railButtonRef={railButtonRef}
+          onOpenPanel={() => setPanelOpen(true)}
         />
       </section>
       {editingBoard && summary.data && (
         <BoardEditor classId={classId} board={summary.data.board} onClose={() => setEditingBoard(false)} />
       )}
-      {railOpen && !presenting && summary.data && roster.data && (
-        <OverviewRail
-          classId={classId}
-          summary={summary.data}
-          roster={roster.data?.items ?? []}
-          perms={perms}
-          todayAttendance={todayAttendance.data}
-          variant={overlayRail ? 'overlay' : 'inline'}
-          onClose={closeRail}
-          onRollCall={() => {
-            if (mode !== 'attendance') setMode('attendance')
-            // 窄屏浮层会盖住座位图,点名要点座位,所以一并收起
-            if (overlayRail) closeRail()
-          }}
-        />
+      {panelOpen && !presenting && summary.data && roster.data && (
+        <SidePanel open title="待办与点评" onClose={() => setPanelOpen(false)}>
+          <div className="flex flex-col gap-3">
+            <TodoSection />
+            {perms.includes('review.read') && (
+              <FeedSection classId={classId} roster={roster.data.items} timezone={summary.data.timezone} />
+            )}
+          </div>
+        </SidePanel>
       )}
     </div>
   )

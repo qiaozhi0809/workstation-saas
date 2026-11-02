@@ -131,7 +131,7 @@ it('refits when the stage resizes, but keeps a zoom the teacher chose until 适�
     const ref = createRef<ClassroomViewportHandle>()
     const { container } = render(<ClassroomMap rows={6} cols={4} seats={seats} viewportRef={ref} />)
     const tall = scaleOf(container)
-    // 进入排座多出操作条,舞台变矮:整间教室重新放进舞台
+    // 进入排座多出操作条,舞台变矮:重新适应,核心重新放进舞台
     resize(400)
     const short = scaleOf(container)
     expect(short).toBeLessThan(tall)
@@ -319,5 +319,31 @@ describe('viewport lock at fit', () => {
     fireEvent.pointerMove(cell(container, '1-1'), { clientX: 20, clientY: 0, pointerId: 1 })
     fireEvent.pointerUp(cell(container, '1-2'), { clientX: 120, clientY: 0, pointerId: 1 })
     expect(onDrop).toHaveBeenCalledWith({ row: 1, col: 1 }, { row: 1, col: 2 })
+  })
+})
+
+describe('fit on a wide short stage', () => {
+  afterEach(() => vi.restoreAllMocks())
+  const stageAt = (w: number, h: number) => {
+    vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(w)
+    vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(h)
+  }
+
+  it('grows until the core just fits, with the core top at the stage top', () => {
+    // 1920 × 1080 窗口下的舞台:高度适应只铺 87% 宽;按核心适应后铺满 ≥ 99%
+    stageAt(1888, 930)
+    const { container } = render(<ClassroomMap rows={6} cols={4} seats={seats} />)
+    const s = scaleOf(container), [x, y] = shiftOf(container)
+    expect(s).toBeCloseTo(930 / SCENE.core.h, 6)
+    expect(s).toBeGreaterThan(930 / SCENE.height)
+    expect(y + SCENE.core.y * s).toBeGreaterThanOrEqual(-1e-6)
+    expect(y + (SCENE.core.y + SCENE.core.h) * s).toBeLessThanOrEqual(930 + 1e-6)
+    expect(Math.min(1888, x + SCENE.width * s) - Math.max(0, x)).toBeGreaterThanOrEqual(1888 * 0.99)
+  })
+
+  it('keeps the old height-bound scale where the height fit already fills the width', () => {
+    stageAt(992, 618)
+    const { container } = render(<ClassroomMap rows={6} cols={4} seats={seats} />)
+    expect(scaleOf(container)).toBeCloseTo(618 / SCENE.height, 6)
   })
 })
