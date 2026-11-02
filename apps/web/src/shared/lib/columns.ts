@@ -1,7 +1,7 @@
 import type { Contact, StudentImport, StudentSeat } from '@/shared/types/student'
 
 export function cleanHeader(h: string): string {
-  return h.replace(/\([^)]*\)|（[^）]*）/g, '').replace(/[\s*:：]/g, '')
+  return h.replace(/[(（][^)）]*[)）]/g, '').replace(/[\s*:：]/g, '')
 }
 
 type Spec<K extends string> = readonly (readonly [K, readonly string[]])[]
@@ -98,7 +98,8 @@ export function toImportRows(table: string[][]): { rows: StudentImport['rows']; 
       personality: orNull('personality'),
       note: orNull('note'),
       health_notes: orNull('health'),
-      contacts: contact.name || contact.relation || contact.phone ? [contact] : [],
+      // 服务端要求联系人姓名与电话不能同时为空,只填了关系的整行会让整批导入 400
+      contacts: contact.name || contact.phone ? [contact] : [],
     })
   }
   return { rows, columns, missingName: false }

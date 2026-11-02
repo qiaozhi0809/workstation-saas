@@ -118,6 +118,10 @@ describe('toImportRows', () => {
     expect(rows[1].class_role).toBeNull()
     expect(rows[1].contacts).toEqual([])
   })
+  it('drops a contact that has only a relation (server needs name or phone)', () => {
+    const { rows } = toImportRows([['姓名', '关系'], ['甲', '父亲']])
+    expect(rows[0].contacts).toEqual([])
+  })
   it('round-trips the template through parseTable', () => {
     const { rows, missingName, columns } = toImportRows(parseTable(STUDENT_TEMPLATE_CSV))
     expect(missingName).toBe(false)
@@ -143,6 +147,11 @@ describe('matchScoreColumns', () => {
   it('matches score columns only by exact subject name', () => {
     expect(matchScoreColumns(['学号', '名字', '语文', '数学(满分)', '英语成绩'], ['语文', '数学', '英语']))
       .toEqual({ no: 0, name: 1, subjects: { 语文: 2, 数学: 3 } })
+  })
+  it('strips mixed ASCII/full-width brackets from headers', () => {
+    expect(cleanHeader('数学(满分）')).toBe('数学')
+    expect(cleanHeader('数学（满分)')).toBe('数学')
+    expect(matchScoreColumns(['姓名', '数学(满分）'], ['数学'])).toEqual({ name: 0, subjects: { 数学: 1 } })
   })
   it('returns empty subjects when nothing matches', () => {
     expect(matchScoreColumns(['x'], ['语文'])).toEqual({ subjects: {} })
