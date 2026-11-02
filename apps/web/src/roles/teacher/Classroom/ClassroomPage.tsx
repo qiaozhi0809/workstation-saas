@@ -14,6 +14,7 @@ import type {
 import { EmptyState } from '@/shared/components/feedback/EmptyState'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
+import { MenuItem } from '@/shared/components/overlay/Menu'
 import { Button } from '@/shared/components/ui/button'
 import { useWindowWidth } from '@/shared/hooks/useWindowWidth'
 import { useReducedMotion } from '@/shared/hooks/useReducedMotion'
@@ -31,7 +32,7 @@ import { useReviewMode } from './review/useReviewMode'
 import { useReviewSubject } from './review/useReviewSubmit'
 import BoardEditor from './BoardEditor'
 import SeatHoverCard from './SeatHoverCard'
-import SeatingBar from './seating/SeatingBar'
+import SeatingBar, { SeatingMenuItems } from './seating/SeatingBar'
 import UnseatedTray from './seating/UnseatedTray'
 import { useSeatingMode } from './seating/useSeatingMode'
 import { buildBoard } from './buildBoard'
@@ -63,6 +64,8 @@ interface ModeSlot {
   onSeatDrop?: ClassroomMapProps['onSeatDrop']
   /** 操作台里的当前模式操作 */
   actions?: ReactNode
+  /** 操作台"更多操作"菜单里模式自己的项(在随机点名 / 编辑黑板之前) */
+  menu?: ReactNode
   /** 舞台下方、操作台上方的托盘(排座:未入座同学) */
   tray?: ReactNode
 }
@@ -237,7 +240,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
   let slot: ModeSlot = {}
   // 日常 / 点评模式投屏时不叠加考勤(请假等不上投影);考勤模式是老师主动进入的,照常显示
   if (mode === 'daily') slot = { views: presenting ? undefined : overlay, onSeatClick: presenting ? undefined : openProfile }
-  else if (mode === 'attendance') slot = { views: overlay, onSeatClick: attendance.onSeatClick, actions: attendance.bar }
+  else if (mode === 'attendance') slot = { views: overlay, onSeatClick: attendance.onSeatClick, actions: attendance.bar, menu: attendance.menu }
   else if (mode === 'review') {
     slot = {
       views: review.views, effects: { floats: review.floats }, actions: review.toolbar,
@@ -249,6 +252,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
       seats: seating.seats, rows: seating.rows, cols: seating.cols, views: seating.views,
       onSeatClick: seating.onSeatClick, onEmptySeatClick: seating.onEmptySeatClick, onSeatDrop: seating.onSeatDrop,
       actions: <SeatingBar {...seating.bar} />,
+      menu: <SeatingMenuItems {...seating.bar} />,
       tray: <UnseatedTray {...seating.tray} />,
     }
   } else if (mode === 'seating' && seating.failed) {
@@ -360,7 +364,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
           perms={perms}
           onModeChange={setMode}
           actions={slot.actions}
-          common={canPick || canEditBoard ? (
+          common={mode === 'daily' && (canPick || canEditBoard) ? (
             <>
               {canPick && (
                 <Button onClick={pick.start} disabled={picking}>
@@ -372,6 +376,13 @@ function ClassroomView({ cls }: { cls: ClassView }) {
                   <PencilLine aria-hidden="true" />编辑黑板
                 </Button>
               )}
+            </>
+          ) : undefined}
+          menu={slot.menu || (mode !== 'daily' && (canPick || canEditBoard)) ? (
+            <>
+              {slot.menu}
+              {mode !== 'daily' && canPick && <MenuItem disabled={picking} onSelect={pick.start}>随机点名</MenuItem>}
+              {mode !== 'daily' && canEditBoard && <MenuItem onSelect={() => setEditingBoard(true)}>编辑黑板</MenuItem>}
             </>
           ) : undefined}
           status={seatingPending === 'saving' ? '保存中…' : seatingPending === 'loading' ? '加载中…' : undefined}

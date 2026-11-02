@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { expect, it, vi } from 'vitest'
+import { MenuItem } from '@/shared/components/overlay/Menu'
 import ClassroomDock, { type ClassroomDockProps } from './ClassroomDock'
 import ModeBar from './ModeBar'
 
@@ -26,7 +27,7 @@ const dock = (over: Partial<ClassroomDockProps> = {}) => render(
 it('puts tabs, mode actions, common actions, status and fullscreen / rail into one toolbar in that order', () => {
   dock()
   const bar = screen.getByRole('toolbar', { name: '教室工具' })
-  const order = [...bar.querySelectorAll('[role="tab"], button, [role="status"]')].map((el) => el.textContent)
+  const order = [...bar.querySelectorAll('[role="tab"], button, [role="status"]')].map((el) => el.getAttribute('aria-label') ?? el.textContent)
   expect(order).toEqual(['日常', '甲', '乙', '保存中…', '全屏', '概况栏'])
   expect(within(bar).getByRole('button', { name: '概况栏' })).toHaveAttribute('aria-pressed', 'true')
 })
@@ -50,4 +51,32 @@ it('draws a separator only before a non-empty actions or common zone', () => {
   b.unmount()
   dock({ actions: undefined, common: undefined })
   expect(seps()).toBe(0)
+})
+
+it('shows 全屏 and 概况栏 as icon-only buttons that keep their names and carry a title', () => {
+  dock()
+  for (const name of ['全屏', '概况栏']) {
+    const b = screen.getByRole('button', { name })
+    expect(b).toHaveAttribute('title', name)
+    expect(b.textContent).toBe('')
+  }
+  dock({ presenting: true })
+  const exit = screen.getByRole('button', { name: '退出全屏' })
+  expect(exit).toHaveAttribute('title', '退出全屏')
+  expect(exit.textContent).toBe('')
+})
+
+it('renders one 更多操作 menu from the menu items, after the common zone, and none without items', () => {
+  const { unmount } = dock({ menu: <><MenuItem onSelect={vi.fn()}>丙</MenuItem><MenuItem onSelect={vi.fn()}>丁</MenuItem></> })
+  const bar = screen.getByRole('toolbar', { name: '教室工具' })
+  const more = within(bar).getByRole('button', { name: '更多操作' })
+  expect(more).toHaveAttribute('title', '更多操作')
+  expect(within(bar).getAllByRole('button', { name: '更多操作' })).toHaveLength(1)
+  expect([...bar.querySelectorAll('[role="tab"], button, [role="status"]')].map((el) => el.getAttribute('aria-label') ?? el.textContent))
+    .toEqual(['日常', '甲', '乙', '更多操作', '保存中…', '全屏', '概况栏'])
+  fireEvent.click(more)
+  expect(within(screen.getByRole('menu', { name: '更多操作' })).getAllByRole('menuitem').map((i) => i.textContent)).toEqual(['丙', '丁'])
+  unmount()
+  dock()
+  expect(screen.queryByRole('button', { name: '更多操作' })).toBeNull()
 })

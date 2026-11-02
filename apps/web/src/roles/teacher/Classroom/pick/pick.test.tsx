@@ -118,7 +118,9 @@ it('rewards in the subject last chosen in the review popover', async () => {
   fireEvent.keyDown(window, { key: 'Escape' })
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   reduceMotion()
-  fireEvent.click(screen.getByRole('button', { name: '随机点名' }))
+  // 点评模式下随机点名收在 更多操作 菜单里
+  fireEvent.click(screen.getByRole('button', { name: '更多操作' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: '随机点名' }))
   fireEvent.click(await screen.findByRole('button', { name: '回答得好 +1' }))
   await waitFor(() => expect(reviewsApi.create).toHaveBeenCalledWith('c1', expect.objectContaining({
     reason_text: '回答问题', subject: '化学' })))
@@ -148,4 +150,15 @@ it('shows only the name on the card while presenting', async () => {
     Element.prototype.requestFullscreen = request
     delete (document as { fullscreenElement?: Element | null }).fullscreenElement
   }
+})
+
+it('keeps 随机点名 and 编辑黑板 as plain buttons in daily mode and moves them into 更多操作 elsewhere', async () => {
+  setup()
+  await screen.findByRole('button', { name: '随机点名' })
+  expect(screen.getByRole('button', { name: '编辑黑板' })).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '更多操作' })).toBeNull()
+  fireEvent.click(screen.getByRole('tab', { name: '考勤' }))
+  await screen.findByRole('button', { name: '更多操作' })
+  expect(screen.queryByRole('button', { name: '随机点名' })).toBeNull()
+  expect(screen.queryByRole('button', { name: '编辑黑板' })).toBeNull()
 })

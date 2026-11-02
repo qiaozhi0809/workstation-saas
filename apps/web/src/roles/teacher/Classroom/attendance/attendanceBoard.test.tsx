@@ -78,6 +78,7 @@ it('titles the board with the viewed date when it is not today', async () => {
   setup({ mode: '考勤' })
   await waitFor(() => expect(board()).not.toBeNull())
   expect(within(board() as unknown as HTMLElement).getByText('今日出勤')).toBeInTheDocument()
+  fireEvent.click(await screen.findByRole('button', { name: /^考勤日期/ }))
   fireEvent.change(await screen.findByLabelText('考勤日期'), { target: { value: '2026-10-30' } })
   await waitFor(() => expect(within(board() as unknown as HTMLElement).getByText('10/30 出勤')).toBeInTheDocument())
 })

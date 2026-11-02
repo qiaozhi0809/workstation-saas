@@ -1,6 +1,7 @@
 import { useMemo, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { attendanceApi } from '@/shared/api/attendance'
+import { MenuItem } from '@/shared/components/overlay/Menu'
 import { toast } from '@/shared/components/Toast'
 import type { SeatView } from '@/shared/components/ClassroomMap/types'
 import * as csv from '@/shared/lib/csv'
@@ -133,9 +134,10 @@ export function useAttendanceMode(o: Options) {
           )) return
           confirm.mutate(true)
         }}
-        onExport={() => void exportMonth()}
       />
     )
   }
-  return { views, onSeatClick, bar, day: day.data }
+  // 导出本月在操作台的"更多操作"菜单里(考勤自己的项,排在随机点名 / 编辑黑板之前)
+  const menu: ReactNode = bar ? <MenuItem onSelect={() => void exportMonth()}>导出本月</MenuItem> : null
+  return { views, onSeatClick, bar, menu, day: day.data }
 }

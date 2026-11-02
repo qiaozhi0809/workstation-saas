@@ -1,4 +1,4 @@
-import { act, fireEvent, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { attendanceApi } from '@/shared/api/attendance'
 import type { AttendanceUpdated } from '@/shared/types/attendance'
@@ -14,6 +14,13 @@ vi.mock('@/shared/api/reviews')
 vi.mock('@/shared/api/seating')
 vi.mock('@/shared/api/todos')
 vi.mock('@/shared/api/preferences')
+
+// 日期收在紧凑按钮的弹层里:先点开再操作里面的原生日期框
+const openDate = async () => {
+  fireEvent.click(await screen.findByRole('button', { name: /^考勤日期/ }))
+  return screen.findByLabelText('考勤日期')
+}
+const openMore = async () => fireEvent.click(await screen.findByRole('button', { name: '更多操作' }))
 
 beforeEach(() => {
   vi.resetAllMocks()
@@ -63,14 +70,14 @@ it('confirms keeping the exceptions', async () => {
 
 it('caps the date picker between the year start and today', async () => {
   setup({ mode: '考勤' })
-  const input = await screen.findByLabelText('考勤日期')
+  const input = await openDate()
   expect(input).toHaveAttribute('max', '2026-11-02')
   expect(input).toHaveAttribute('min', '2026-09-01')
 })
 
 it('picks another date, then returns to today', async () => {
   setup({ mode: '考勤' })
-  fireEvent.change(await screen.findByLabelText('考勤日期'), { target: { value: '2026-10-30' } })
+  fireEvent.change(await openDate(), { target: { value: '2026-10-30' } })
   await waitFor(() => expect(attendanceApi.day).toHaveBeenCalledWith('c1', '2026-10-30'))
   fireEvent.click(await screen.findByRole('button', { name: '回到今天' }))
   expect(await screen.findByLabelText('考勤日期')).toHaveValue('2026-11-02')
@@ -124,7 +131,8 @@ it('exports the month as CSV', async () => {
   vi.mocked(attendanceApi.month).mockResolvedValue({ month: '2026-11',
     items: [{ enrollment_id: 'e1', date: '2026-11-02', status: 'leave' }] })
   setup({ mode: '考勤' })
-  fireEvent.click(await screen.findByRole('button', { name: '导出本月' }))
+  await openMore()
+  fireEvent.click(screen.getByRole('menuitem', { name: '导出本月' }))
   await waitFor(() => expect(spy).toHaveBeenCalledWith('三年二班-考勤-2026-11.csv', expect.stringContaining('请假')))
 })
 
@@ -154,7 +162,7 @@ it('says 这一天 when clearing a past day and does not ask for an empty day', 
   await waitFor(() => expect(attendanceApi.confirm).toHaveBeenCalledTimes(1))
   expect(ask).not.toHaveBeenCalled()
   twoExceptions()
-  fireEvent.change(screen.getByLabelText('考勤日期'), { target: { value: '2026-10-30' } })
+  fireEvent.change(await openDate(), { target: { value: '2026-10-30' } })
   await screen.findByText('请假 1')
   fireEvent.click(screen.getByRole('button', { name: '全部出勤' }))
   expect(ask).toHaveBeenCalledWith('将清除这一天已记的 2 条请假/缺勤/迟到,确定全部出勤吗?')
@@ -166,10 +174,34 @@ it('goes back to the school today when leaving attendance mode', async () => {
   vi.mocked(attendanceApi.day).mockImplementation(async (_c, date) => ({ date, confirmed_at: null,
     items: date === '2026-10-30' ? [{ enrollment_id: 'e1', status: 'absent' as const, reason: null, marked_at: '' }] : [] }))
   setup({ mode: '考勤' })
-  fireEvent.change(await screen.findByLabelText('考勤日期'), { target: { value: '2026-10-30' } })
+  fireEvent.change(await openDate(), { target: { value: '2026-10-30' } })
   expect(await screen.findByText('缺勤')).toBeInTheDocument()
   fireEvent.click(screen.getByRole('tab', { name: '日常' }))
   await waitFor(() => expect(screen.queryByText('缺勤')).toBeNull())
   fireEvent.click(screen.getByRole('tab', { name: '考勤' }))
-  expect(await screen.findByLabelText('考勤日期')).toHaveValue('2026-11-02')
+  expect(await openDate()).toHaveValue('2026-11-02')
+})
+
+it('shows the date as a compact button: 今天, or MM/DD for another day', async () => {
+  setup({ mode: '考勤' })
+  const trigger = await screen.findByRole('button', { name: '考勤日期 今天' })
+  expect(trigger).toHaveTextContent('今天')
+  expect(screen.queryByLabelText('考勤日期')).toBeNull()
+  expect(screen.queryByRole('button', { name: '回到今天' })).toBeNull()
+  fireEvent.click(trigger)
+  expect(screen.getByRole('dialog', { name: '选择考勤日期' })).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '回到今天' })).toBeNull()
+  fireEvent.change(screen.getByLabelText('考勤日期'), { target: { value: '2026-10-30' } })
+  expect(await screen.findByRole('button', { name: '考勤日期 10/30' })).toHaveTextContent('10/30')
+  expect(screen.getByRole('button', { name: '回到今天' })).toBeInTheDocument()
+})
+
+it('puts 导出本月 in the 更多操作 menu, not on the bar', async () => {
+  setup({ mode: '考勤' })
+  await screen.findByRole('button', { name: /^考勤日期/ })
+  await screen.findByText('王老师 · 班主任')
+  await openMore()
+  expect(screen.queryByRole('button', { name: '导出本月' })).toBeNull()
+  await waitFor(() => expect(within(screen.getByRole('menu', { name: '更多操作' })).getAllByRole('menuitem').map((i) => i.textContent))
+    .toEqual(['导出本月', '随机点名', '编辑黑板']))
 })
