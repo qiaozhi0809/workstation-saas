@@ -94,7 +94,7 @@ export default function ClassroomPage() {
 function ClassroomView({ cls }: { cls: ClassView }) {
   const classId = cls.id
   const [params, setParams] = useSearchParams()
-  const drawer = useStudentDrawer()
+  const { open: openDrawer } = useStudentDrawer()
   const displayName = useAuthStore((s) => s.user?.display_name)
 
   const rootRef = useRef<HTMLDivElement>(null)
@@ -139,8 +139,8 @@ function ClassroomView({ cls }: { cls: ClassView }) {
   const teacher = useMemo(() => ({ figure, label }), [figure, label])
 
   const openProfile = useCallback<NonNullable<ModeSlot['onSeatClick']>>(
-    (s) => drawer.open(s.student_id),
-    [drawer],
+    (s) => openDrawer(s.student_id),
+    [openDrawer],
   )
   // 投屏时只展示姓名:档案抽屉在全屏根元素之外,不能在投屏中打开(退出全屏时会把档案亮在投影上)
   // 考勤日期跟随服务端的学校"今天",不用浏览器时钟;日常/考勤/点评叠加当天考勤外观,排座不叠加
