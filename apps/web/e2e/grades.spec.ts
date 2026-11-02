@@ -151,6 +151,8 @@ test('projection hides grade tints, badges and legend', async ({ page, request }
     await page.getByRole('button', { name: '全屏' }).click()
     await expect(page.getByRole('button', { name: '退出全屏' })).toBeVisible()
   }
+  // 非全屏日常基线:与非全屏成绩模式同条件对比,正向对照才有区分力
+  const dailyWindowed = await fills()
   await present()
   const baseline = await fills()
   await page.getByRole('button', { name: '退出全屏' }).click()
@@ -165,7 +167,7 @@ test('projection hides grade tints, badges and legend', async ({ page, request }
   await expect(seats.filter({ hasText: /↑/ })).toHaveCount(1)
   await expect(seats.filter({ hasText: /↓/ })).toHaveCount(1)
   const tinted = await fills()
-  expect(tinted.filter((f) => !baseline.includes(f)).length, '成绩模式有着色').toBeGreaterThan(0)
+  expect(tinted.filter((f) => !dailyWindowed.includes(f)).length, '成绩模式有着色(对比非全屏日常)').toBeGreaterThan(0)
 
   await present()
   // 投屏时座位不可点,没有读屏名称:改看座位里的文字

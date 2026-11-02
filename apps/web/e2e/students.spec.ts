@@ -70,9 +70,11 @@ test('imports two students and exports the roster', async ({ page }) => {
   await dialog.getByLabel('粘贴名单').fill('姓名\t学号\n测试导入甲\t9\n测试导入乙\t10')
   await expect(dialog.getByText('识别到 2 人')).toBeVisible()
   await dialog.getByRole('checkbox', { name: '自动安排到空座位' }).uncheck()
+  // toast 只停留 3 秒(Toast 默认 ms=3000):先建立断言再点导入,不等弹窗关闭之后才去找它
+  const imported = expect(page.getByText('导入 2 人,跳过重复 0 人')).toBeVisible()
   await dialog.getByRole('button', { name: '导入', exact: true }).click()
+  await imported
   await expect(dialog).toBeHidden()
-  await expect(page.getByText('导入 2 人,跳过重复 0 人')).toBeVisible()
   await expect(rowOf(page, '测试导入甲')).toBeVisible()
   await expect(rowOf(page, '测试导入乙')).toBeVisible()
 
@@ -89,7 +91,7 @@ test('imports two students and exports the roster', async ({ page }) => {
   const nos = lines.slice(1).map((l) => l.split(',')[noCol])
   // 数字顺序:9、10 排在 2026001… 前面(而不是文本顺序 10、2026001…、9)
   expect(nos.slice(0, 2)).toEqual(['9', '10'])
-  expect(nos[2]).toBe('2026001')
+  expect(nos.slice(2)).toEqual(Array.from({ length: 10 }, (_, i) => String(2026001 + i)))
   expect(nos).toHaveLength(12)
 })
 
@@ -107,6 +109,13 @@ test('writes a personal note', async ({ page }) => {
   await page.reload()
   await page.getByRole('tab', { name: '档案' }).click()
   await expect(page.getByRole('textbox', { name: '我的笔记' })).toHaveValue('E2E 笔记:课上很专注')
+
+  // 关闭抽屉 → 重新点开王小一,笔记仍在
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('textbox', { name: '我的笔记' })).toBeHidden()
+  await page.getByRole('button', { name: '王小一', exact: true }).click()
+  await page.getByRole('tab', { name: '档案' }).click()
+  await expect(page.getByRole('textbox', { name: '我的笔记' })).toHaveValue('E2E 笔记:课上很专注')
 })
 
 test('profile overview shows points, attendance and birthday KPIs', async ({ page, request }) => {
@@ -122,11 +131,9 @@ test('profile overview shows points, attendance and birthday KPIs', async ({ pag
   await expect(kpis.getByText('本月考勤', { exact: true })).toBeVisible()
   await expect(kpis.getByText('生日', { exact: true })).toBeVisible()
 
-  if (!birthdate) {
-    await expect(kpis.getByText('未填', { exact: true })).toBeVisible()
-    return
-  }
-  const [, m, d] = birthdate.split('-').map(Number)
+  // 种子里王小一有生日;种子漂移(没填)时让测试失败,而不是悄悄早退
+  expect(birthdate, '种子里王小一应有生日').toBeTruthy()
+  const [, m, d] = birthdate!.split('-').map(Number)
   await expect(kpis.getByText(`${m}月${d}日`, { exact: true })).toBeVisible()
   // 按学校时区的 today 算距离下一个生日的天数
   const [ty, tm, td] = today.split('-').map(Number)
