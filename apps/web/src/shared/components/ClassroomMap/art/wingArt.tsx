@@ -98,7 +98,7 @@ function AttendanceBoard({ data, h }: { data: AttendanceBoardData; h: number }) 
       </text>
       {cols.map((c, i) => (
         <g key={i}>
-          <rect x={8 + i * cw + 2} y={numY - 20} width={cw - 4} height={h - numY + 26} rx={3} fill={c.tone.bg} />
+          <rect data-board-cell="" x={8 + i * cw + 2} y={numY - 20} width={cw - 4} height={h - 8 - (numY - 20)} rx={3} fill={c.tone.bg} />
           <text x={8 + (i + 0.5) * cw} y={numY} textAnchor="middle" fontSize={16} fontWeight={800} fill={c.tone.fg}>{c.n}</text>
         </g>
       ))}

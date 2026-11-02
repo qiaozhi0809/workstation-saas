@@ -95,3 +95,20 @@ it('puts the board in the rightmost window slot and has none when there is no sl
   const { container } = render(<svg><Wings layout={computeLayout(4, 9, { aspect: SCENE_ASPECT })} attendanceBoard={BOARD} /></svg>)
   expect(container.querySelector('[data-wing-board]')).toBeNull()
 })
+
+it('keeps the tone cells inside the board paper', () => {
+  const L = computeLayout(6, 4, { aspect: SCENE_ASPECT })
+  const { container } = render(<svg><Wings layout={L} attendanceBoard={BOARD} /></svg>)
+  const board = container.querySelector('[data-wing-board]')!
+  const paper = board.querySelector('rect')!
+  const cells = board.querySelectorAll('[data-board-cell]')
+  expect(cells).toHaveLength(3)
+  const [pw, ph] = [Number(paper.getAttribute('width')), Number(paper.getAttribute('height'))]
+  for (const c of cells) {
+    const [x, y, w, h] = ['x', 'y', 'width', 'height'].map((a) => Number(c.getAttribute(a)))
+    expect(x).toBeGreaterThanOrEqual(0)
+    expect(x + w).toBeLessThanOrEqual(pw)
+    expect(y).toBeGreaterThanOrEqual(0)
+    expect(y + h).toBeLessThanOrEqual(ph - 6)
+  }
+})
