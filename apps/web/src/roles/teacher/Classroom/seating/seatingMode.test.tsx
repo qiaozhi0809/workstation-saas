@@ -23,6 +23,26 @@ vi.mock('@/shared/api/preferences')
 const roster = rosterFixture.map((s) => (s.enrollment_id === 'e3' ? { ...s, seat_row: null, seat_col: null } : s))
 
 const originalMatchMedia = window.matchMedia
+const REQUEST_FULLSCREEN = Element.prototype.requestFullscreen
+const EXIT_FULLSCREEN = document.exitFullscreen
+
+function stubFullscreen() {
+  Element.prototype.requestFullscreen = vi.fn(function (this: Element) {
+    Object.defineProperty(document, 'fullscreenElement', { value: this, configurable: true })
+    document.dispatchEvent(new Event('fullscreenchange'))
+    return Promise.resolve()
+  })
+  document.exitFullscreen = vi.fn(() => {
+    Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true })
+    document.dispatchEvent(new Event('fullscreenchange'))
+    return Promise.resolve()
+  })
+}
+
+const SIZE_BUTTON = /排 × .* 列/
+const openSize = () => fireEvent.click(screen.getByRole('button', { name: SIZE_BUTTON }))
+const openMore = () => fireEvent.click(screen.getByRole('button', { name: '更多操作' }))
+const menuItem = (name: string) => screen.getByRole('menuitem', { name })
 
 beforeEach(() => {
   vi.resetAllMocks()
@@ -32,6 +52,9 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks()
   window.matchMedia = originalMatchMedia
+  Element.prototype.requestFullscreen = REQUEST_FULLSCREEN
+  document.exitFullscreen = EXIT_FULLSCREEN
+  Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true })
 })
 
 it('swaps two students by clicking and saves with the base version', async () => {
@@ -164,7 +187,9 @@ it('prints the seating chart', async () => {
   const win = { document: { write: vi.fn(), close: vi.fn() }, focus: vi.fn(), print: vi.fn() }
   vi.spyOn(window, 'open').mockReturnValue(win as unknown as Window)
   setup({ mode: '排座' })
-  fireEvent.click(await screen.findByRole('button', { name: '打印' }))
+  await screen.findByRole('button', { name: '更多操作' })
+  openMore()
+  fireEvent.click(menuItem('打印'))
   expect(win.document.write).toHaveBeenCalledWith(expect.stringContaining('三年二班'))
 })
 
@@ -204,7 +229,7 @@ it('saves once when the save button is double-clicked', async () => {
   // 保存中草稿不可编辑:地图座位不可点、行列与托盘禁用
   expect(screen.queryByRole('button', { name: '王小一' })).toBeNull()
   expect(screen.queryByRole('button', { name: '空座 2排1列' })).toBeNull()
-  expect(screen.getByRole('spinbutton', { name: '排数' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: SIZE_BUTTON })).toBeDisabled()
   expect(within(screen.getByRole('region', { name: '待安排 (1)' })).getByRole('button', { name: '张小三' })).toBeDisabled()
   await act(async () => { resolve({ version: 5, rows: 3, cols: 4 }) })
   expect(await screen.findByText('座位已保存')).toBeInTheDocument()
@@ -226,13 +251,17 @@ it('keeps the draft across a background refetch', async () => {
 
 it('locks a student and moves another one to the tray', async () => {
   setup({ mode: '排座' })
-  expect(await screen.findByRole('button', { name: '固定座位' })).toBeDisabled()
+  await screen.findByRole('button', { name: '更多操作' })
+  openMore()
+  expect(menuItem('固定座位')).toHaveAttribute('aria-disabled', 'true')
   fireEvent.click(screen.getByRole('button', { name: '王小一' }))
-  fireEvent.click(screen.getByRole('button', { name: '固定座位' }))
+  openMore()
+  fireEvent.click(menuItem('固定座位'))
   // 固定的同学不能被换走:点了李小二再点王小一,只是改选王小一
   fireEvent.click(screen.getByRole('button', { name: '李小二' }))
   fireEvent.click(screen.getByRole('button', { name: '王小一' }))
-  expect(screen.getByRole('button', { name: '取消固定' })).toBeEnabled()
+  openMore()
+  expect(menuItem('取消固定')).not.toHaveAttribute('aria-disabled')
   fireEvent.click(screen.getByRole('button', { name: '李小二' }))
   fireEvent.click(screen.getByRole('button', { name: '移到待安排' }))
   expect(screen.getByRole('region', { name: '待安排 (2)' })).toBeInTheDocument()
@@ -244,7 +273,9 @@ it('locks a student and moves another one to the tray', async () => {
 
 it('resizes within 1-12 and discards changes', async () => {
   setup({ mode: '排座' })
-  const cols = await screen.findByRole('spinbutton', { name: '列数' })
+  await screen.findByRole('button', { name: SIZE_BUTTON })
+  openSize()
+  const cols = screen.getByRole('spinbutton', { name: '列数' })
   fireEvent.change(cols, { target: { value: '1' } })
   fireEvent.blur(cols)
   expect(screen.getByRole('region', { name: '待安排 (2)' })).toBeInTheDocument()
@@ -254,8 +285,10 @@ it('resizes within 1-12 and discards changes', async () => {
   fireEvent.keyDown(rows, { key: 'Enter' })
   expect(rows).toHaveValue(12)
   expect(screen.getByRole('button', { name: '撤销' })).toBeEnabled()
-  fireEvent.click(screen.getByRole('button', { name: '放弃修改' }))
+  openMore()
+  fireEvent.click(menuItem('放弃修改'))
   expect(screen.getByRole('region', { name: '待安排 (1)' })).toBeInTheDocument()
+  openSize()
   expect(screen.getByRole('spinbutton', { name: '列数' })).toHaveValue(4)
   expect(screen.getByRole('button', { name: '保存座位' })).toBeDisabled()
   expect(screen.getByRole('button', { name: '撤销' })).toBeDisabled()
@@ -267,7 +300,9 @@ it('applies a typed row count only when committed, keeping every seat', async ()
   const spread = roster.map((s) => (s.enrollment_id === 'e2' ? { ...s, seat_row: 6, seat_col: 2 } : s))
   vi.mocked(studentsApi.listInClass).mockResolvedValue({ items: spread })
   setup({ mode: '排座', roster: spread })
-  const rows = await screen.findByRole('spinbutton', { name: '排数' })
+  await screen.findByRole('button', { name: SIZE_BUTTON })
+  openSize()
+  const rows = screen.getByRole('spinbutton', { name: '排数' })
   expect(rows).toHaveValue(6)
   // 逐键输入 "1" → "10":中途不调整网格,没有学生被挤进待安排
   fireEvent.change(rows, { target: { value: '1' } })
@@ -285,7 +320,9 @@ it('applies a typed row count only when committed, keeping every seat', async ()
 
 it('steps the size with the buttons and ignores invalid typing', async () => {
   setup({ mode: '排座' })
-  const rows = await screen.findByRole('spinbutton', { name: '排数' })
+  await screen.findByRole('button', { name: SIZE_BUTTON })
+  openSize()
+  const rows = screen.getByRole('spinbutton', { name: '排数' })
   fireEvent.click(screen.getByRole('button', { name: '增加排数' }))
   expect(rows).toHaveValue(4)
   fireEvent.click(screen.getByRole('button', { name: '减少排数' }))
@@ -304,7 +341,8 @@ it('marks the class switcher as guarded while the draft is dirty', async () => {
   expect(useTeacherStore.getState().seatingDirty).toBe(false)
   fireEvent.click(screen.getByRole('button', { name: '李小二' }))
   expect(useTeacherStore.getState().seatingDirty).toBe(true)
-  fireEvent.click(screen.getByRole('button', { name: '放弃修改' }))
+  openMore()
+  fireEvent.click(menuItem('放弃修改'))
   expect(useTeacherStore.getState().seatingDirty).toBe(false)
 })
 
@@ -452,11 +490,72 @@ it('guards page unload only while the draft has unsaved changes', async () => {
   fireEvent.click(screen.getByRole('button', { name: '李小二' }))
   expect(add).toHaveBeenCalledWith('beforeunload', expect.any(Function))
   expect(unload()).toBe(true)
-  fireEvent.click(screen.getByRole('button', { name: '放弃修改' }))
+  openMore()
+  fireEvent.click(menuItem('放弃修改'))
   expect(unload()).toBe(false)
   fireEvent.click(screen.getByRole('button', { name: '王小一' }))
   fireEvent.click(screen.getByRole('button', { name: '李小二' }))
   expect(unload()).toBe(true)
   unmount()
   expect(unload()).toBe(false)
+})
+
+it('shows the common seating actions directly and the rest under 更多操作', async () => {
+  setup({ mode: '排座' })
+  await screen.findByRole('button', { name: '王小一' })
+  for (const name of ['随机打乱', '男女同桌', '撤销', '3 排 × 4 列', '保存座位', '更多操作'])
+    expect(screen.getByRole('button', { name })).toBeInTheDocument()
+  for (const name of ['放弃修改', '固定座位', '打印']) expect(screen.queryByRole('button', { name })).toBeNull()
+  openMore()
+  expect(within(screen.getByRole('menu', { name: '更多操作' })).getAllByRole('menuitem').map((i) => i.textContent))
+    .toEqual(['放弃修改', '固定座位', '打印'])
+})
+
+it('typing a row count then leaving the popover applies it', async () => {
+  setup({ mode: '排座' })
+  await screen.findByRole('button', { name: '王小一' })
+  openSize()
+  const rows = screen.getByRole('spinbutton', { name: '排数' })
+  fireEvent.change(rows, { target: { value: '5' } })
+  act(() => rows.blur())
+  fireEvent.click(document.body)
+  expect(screen.queryByRole('dialog', { name: '座位行列' })).toBeNull()
+  expect(screen.getByRole('button', { name: '5 排 × 4 列' })).toBeInTheDocument()
+})
+
+it('Escape closes the size popover without applying typed text', async () => {
+  setup({ mode: '排座' })
+  await screen.findByRole('button', { name: '王小一' })
+  openSize()
+  const rows = screen.getByRole('spinbutton', { name: '排数' })
+  fireEvent.change(rows, { target: { value: '5' } })
+  fireEvent.keyDown(rows, { key: 'Escape' })
+  expect(screen.queryByRole('dialog', { name: '座位行列' })).toBeNull()
+  const trigger = screen.getByRole('button', { name: '3 排 × 4 列' })
+  expect(trigger).toHaveFocus()
+})
+
+it('focuses and selects the row count when the size popover opens', async () => {
+  const select = vi.spyOn(HTMLInputElement.prototype, 'select')
+  setup({ mode: '排座' })
+  await screen.findByRole('button', { name: '王小一' })
+  openSize()
+  const rows = screen.getByRole('spinbutton', { name: '排数' })
+  expect(rows).toHaveFocus()
+  expect(select).toHaveBeenCalled()
+  expect(select.mock.contexts.at(-1)).toBe(rows)
+  select.mockClear()
+  fireEvent.focus(screen.getByRole('spinbutton', { name: '列数' }))
+  expect(select).toHaveBeenCalledTimes(1)
+  select.mockRestore()
+})
+
+it('more menu opens inside the fullscreen root while presenting', async () => {
+  stubFullscreen()
+  setup({ mode: '排座' })
+  await screen.findByRole('button', { name: '王小一' })
+  fireEvent.click(screen.getByRole('button', { name: '全屏' }))
+  await screen.findByRole('button', { name: '退出全屏' })
+  openMore()
+  expect((document.fullscreenElement as Element).contains(screen.getByRole('menu', { name: '更多操作' }))).toBe(true)
 })

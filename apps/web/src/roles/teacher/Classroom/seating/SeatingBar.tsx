@@ -1,5 +1,8 @@
+import { ChevronDown, Ellipsis } from 'lucide-react'
 import { useState } from 'react'
+import Menu, { MenuItem } from '@/shared/components/overlay/Menu'
 import Modal from '@/shared/components/overlay/Modal'
+import Popover from '@/shared/components/overlay/Popover'
 import { Button } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
 import type { DraftStudent } from './draft'
@@ -38,7 +41,7 @@ const clamp = (n: number) => Math.min(MAX_SIZE, Math.max(MIN_SIZE, Math.round(n)
 
 // 输入过程中只改输入框里的文字;失焦、按 Enter 或点步进按钮才调整网格,
 // 否则从 6 排改成 10 排时会先变成 1 排,把后排学生挤进待安排
-function SizeInput({ label, value, disabled, onChange }: { label: string; value: number; disabled: boolean; onChange(n: number): void }) {
+function SizeInput({ label, value, disabled, autoFocus, onChange }: { label: string; value: number; disabled: boolean; autoFocus?: boolean; onChange(n: number): void }) {
   const [text, setText] = useState<string | null>(null)
   const typed = text === null ? value : Number(text)
   const invalid = text !== null && !(text.trim() !== '' && Number.isInteger(typed) && typed >= MIN_SIZE && typed <= MAX_SIZE)
@@ -60,6 +63,8 @@ function SizeInput({ label, value, disabled, onChange }: { label: string; value:
       <Input id={`seat-size-${label}`} type="number" className={sizeInput} min={MIN_SIZE} max={MAX_SIZE}
         value={text ?? value} disabled={disabled} aria-invalid={invalid || undefined}
         onChange={(e) => setText(e.target.value)}
+        data-autofocus={autoFocus ? '' : undefined}
+        onFocus={(e) => e.currentTarget.select()}
         onBlur={commit}
         onKeyDown={(e) => {
           if (e.key === 'Enter') commit()
@@ -87,23 +92,29 @@ function ConflictDialog({ onReload, onKeepEditing }: Pick<SeatingBarProps, 'onRe
   )
 }
 
-/** 排座操作条:整体编排、撤销 / 放弃、行列、固定、打印、保存。 */
+/** 排座操作条:常用操作直接可见,行列收进弹层,放弃修改 / 固定 / 打印收进"更多操作"。 */
 export default function SeatingBar(p: SeatingBarProps) {
   return (
     <div className="flex flex-wrap items-center gap-2 text-sm">
-      <Button type="button" variant="outline" size="sm" disabled={p.busy} onClick={p.onShuffle}>随机打乱</Button>
-      <Button type="button" variant="outline" size="sm" disabled={p.busy} onClick={p.onPair}>男女同桌</Button>
-      <Button type="button" variant="outline" size="sm" disabled={p.busy || !p.canUndo} onClick={p.onUndo}>撤销</Button>
-      <Button type="button" variant="outline" size="sm" disabled={p.busy || !p.dirty} onClick={p.onDiscard}>放弃修改</Button>
-      <SizeInput label="排数" value={p.rows} disabled={p.busy} onChange={(r) => p.onResize(r, p.cols)} />
-      <SizeInput label="列数" value={p.cols} disabled={p.busy} onChange={(c) => p.onResize(p.rows, c)} />
-      <Button type="button" variant="outline" size="sm" disabled={p.busy || !p.selected} onClick={p.onToggleLock}>
-        {p.selected?.locked ? '取消固定' : '固定座位'}
-      </Button>
-      <div className="ml-auto flex items-center gap-2">
-        <Button type="button" variant="outline" size="sm" onClick={p.onPrint}>打印</Button>
-        <Button type="button" size="sm" disabled={p.busy || !p.dirty} onClick={p.onSave}>保存座位</Button>
-      </div>
+      <Button type="button" variant="outline" disabled={p.busy} onClick={p.onShuffle}>随机打乱</Button>
+      <Button type="button" variant="outline" disabled={p.busy} onClick={p.onPair}>男女同桌</Button>
+      <Button type="button" variant="outline" disabled={p.busy || !p.canUndo} onClick={p.onUndo}>撤销</Button>
+      <Popover label="座位行列" side="top" triggerProps={{ variant: 'outline', disabled: p.busy }}
+        trigger={<>{`${p.rows} 排 × ${p.cols} 列`}<ChevronDown aria-hidden /></>}>
+        <div className="flex flex-col gap-2">
+          <SizeInput label="排数" value={p.rows} disabled={p.busy} autoFocus onChange={(r) => p.onResize(r, p.cols)} />
+          <SizeInput label="列数" value={p.cols} disabled={p.busy} onChange={(c) => p.onResize(p.rows, c)} />
+        </div>
+      </Popover>
+      <Button type="button" disabled={p.busy || !p.dirty} onClick={p.onSave}>保存座位</Button>
+      <Menu label="更多操作" side="top" align="end" trigger={<Ellipsis aria-hidden />}
+        triggerProps={{ variant: 'outline', size: 'icon', 'aria-label': '更多操作', title: '更多操作' }}>
+        <MenuItem disabled={p.busy || !p.dirty} onSelect={p.onDiscard}>放弃修改</MenuItem>
+        <MenuItem disabled={p.busy || !p.selected} onSelect={p.onToggleLock}>
+          {p.selected?.locked ? '取消固定' : '固定座位'}
+        </MenuItem>
+        <MenuItem onSelect={p.onPrint}>打印</MenuItem>
+      </Menu>
       {p.conflict && <ConflictDialog onReload={p.onReload} onKeepEditing={p.onKeepEditing} />}
     </div>
   )
