@@ -5,6 +5,7 @@ import { authApi } from '@/shared/api/auth'
 import { ApiError } from '@/shared/api/client'
 import type { LoginResponse } from '@/shared/types/api'
 import { useAuthStore } from '@/shared/stores/auth'
+import { findLegacyStyles } from '@/test/legacyStyles'
 import LoginPage from './LoginPage'
 
 vi.mock('@/shared/api/auth', () => ({ authApi: { login: vi.fn() } }))
@@ -97,4 +98,18 @@ it('disables the button while pending and clears the error on resubmit', async (
   expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   resolve({ access_token: 'a', refresh_token: 'r', expires_at: 'x', user: { id: 'u', display_name: 't' } })
   await waitFor(() => expect(useAuthStore.getState().accessToken).toBe('a'))
+})
+
+it('marks the submit button busy while signing in', async () => {
+  vi.mocked(authApi.login).mockReturnValue(new Promise(() => {}))
+  render(<MemoryRouter><LoginPage /></MemoryRouter>)
+  fill('teacher01', 'dev123')
+  const busy = await screen.findByRole('button', { name: '登录中…' })
+  expect(busy).toBeDisabled()
+  expect(busy).toHaveAttribute('aria-busy', 'true')
+})
+
+it('uses design tokens only', () => {
+  const files = import.meta.glob(['./*.tsx', '!./*.test.tsx'], { query: '?raw', import: 'default', eager: true })
+  expect(findLegacyStyles(files as Record<string, string>)).toEqual([])
 })

@@ -1,8 +1,14 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { AlertCircle, GraduationCap, Loader2 } from 'lucide-react'
 import { authApi } from '@/shared/api/auth'
 import { ApiError } from '@/shared/api/client'
 import { useAuthStore } from '@/shared/stores/auth'
+import { Button } from '@/shared/components/ui/button'
+import { Card, CardContent, CardDescription, CardFooter, CardHeader } from '@/shared/components/ui/card'
+import { Input } from '@/shared/components/ui/input'
+import { Label } from '@/shared/components/ui/label'
+import ThemeToggle from '@/theme/ThemeToggle'
 
 const MESSAGES: Record<string, string> = {
   INVALID_CREDENTIALS: '登录名或密码不正确',
@@ -34,35 +40,52 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-full grid place-items-center bg-fill">
-      <form onSubmit={onSubmit} className="bg-panel p-8 rounded-xl shadow-md w-80 space-y-4">
-        <h1 className="text-lg font-semibold">班级工作台 · 登录</h1>
-        <label className="block text-sm">
-          登录名
-          <input
-            className="mt-1 w-full rounded border border-line-2 px-3 py-2"
-            value={loginName}
-            onChange={(e) => setLoginName(e.target.value)}
-            autoComplete="username"
-            required
-          />
-        </label>
-        <label className="block text-sm">
-          密码
-          <input
-            type="password"
-            className="mt-1 w-full rounded border border-line-2 px-3 py-2"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="current-password"
-            required
-          />
-        </label>
-        {error && <p role="alert" className="text-sm text-red">{error}</p>}
-        <button type="submit" disabled={pending} className="w-full rounded bg-blue text-white py-2 disabled:opacity-60">
-          {pending ? '登录中…' : '登录'}
-        </button>
-      </form>
+    <div className="relative grid min-h-full place-items-center bg-muted/40 px-4 py-8">
+      <ThemeToggle className="absolute right-4 top-4" />
+      <Card className="w-full max-w-sm">
+        <form onSubmit={onSubmit}>
+          <CardHeader>
+            <GraduationCap className="h-8 w-8 text-primary" aria-hidden="true" />
+            <h1 className="text-xl font-semibold tracking-tight">班级工作台</h1>
+            <CardDescription>使用学校分配的账号登录</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="login-name">登录名</Label>
+              <Input
+                id="login-name"
+                value={loginName}
+                onChange={(e) => setLoginName(e.target.value)}
+                autoComplete="username"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="login-password">密码</Label>
+              <Input
+                id="login-password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+                required
+              />
+            </div>
+            {error && (
+              <p role="alert" className="flex items-center gap-1.5 text-sm text-destructive">
+                <AlertCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
+                {error}
+              </p>
+            )}
+          </CardContent>
+          <CardFooter>
+            <Button type="submit" className="w-full" disabled={pending} aria-busy={pending}>
+              {pending && <Loader2 className="h-4 w-4 motion-safe:animate-spin" aria-hidden="true" />}
+              {pending ? '登录中…' : '登录'}
+            </Button>
+          </CardFooter>
+        </form>
+      </Card>
     </div>
   )
 }
