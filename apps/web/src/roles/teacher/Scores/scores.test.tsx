@@ -11,7 +11,7 @@ import { useTeacherStore } from '@/shared/stores/teacher'
 import type { ClassView } from '@/shared/types/class'
 import type { ClassPerm } from '@/shared/types/classroom'
 import type { Exam } from '@/shared/types/grades'
-import { ALL_PERMS, classFixture, summaryFixture } from '../Classroom/pageTestUtils'
+import { classFixture, summaryFixture } from '../Classroom/pageTestUtils'
 import ScoresPage from './ScoresPage'
 
 vi.mock('@/shared/api/classes', () => ({ classesApi: { mine: vi.fn() } }))
@@ -39,7 +39,7 @@ function setup(opts: {
 } = {}) {
   vi.mocked(classesApi.mine).mockResolvedValue({ items: [{ ...classFixture, ...opts.cls }] })
   vi.mocked(classroomApi.summary).mockResolvedValue(summaryFixture({
-    my_perms: opts.perms ?? [...ALL_PERMS, 'exam.read', 'exam.write'], my_subjects: opts.subjects ?? [],
+    my_perms: opts.perms ?? ['exam.read', 'exam.write'], my_subjects: opts.subjects ?? [],
   }))
   vi.mocked(examsApi.list).mockResolvedValue({ items: opts.exams ?? [E1, E2] })
   vi.mocked(examsApi.subjects).mockResolvedValue({ items: SUBJECTS })

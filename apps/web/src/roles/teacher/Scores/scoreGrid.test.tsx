@@ -11,7 +11,7 @@ import { useTeacherStore } from '@/shared/stores/teacher'
 import type { ClassView } from '@/shared/types/class'
 import type { Exam, ScoreSheet } from '@/shared/types/grades'
 import type { StudentSeat } from '@/shared/types/student'
-import { ALL_PERMS, classFixture, rosterFixture, summaryFixture } from '../Classroom/pageTestUtils'
+import { classFixture, rosterFixture, summaryFixture } from '../Classroom/pageTestUtils'
 import ScoresPage from './ScoresPage'
 
 vi.mock('@/shared/api/classes', () => ({ classesApi: { mine: vi.fn() } }))
@@ -37,7 +37,7 @@ const SHEET: ScoreSheet = {
 function setup(opts: { cls?: Partial<ClassView>; subjects?: string[]; sheet?: ScoreSheet; roster?: StudentSeat[] } = {}) {
   vi.mocked(classesApi.mine).mockResolvedValue({ items: [{ ...classFixture, ...opts.cls }] })
   vi.mocked(classroomApi.summary).mockResolvedValue(summaryFixture({
-    my_perms: [...ALL_PERMS, 'exam.read', 'exam.write', 'score.write'], my_subjects: opts.subjects ?? [],
+    my_perms: ['exam.read', 'exam.write', 'score.write'], my_subjects: opts.subjects ?? [],
   }))
   vi.mocked(examsApi.list).mockResolvedValue({ items: [EXAM] })
   vi.mocked(examsApi.sheet).mockResolvedValue(opts.sheet ?? SHEET)
