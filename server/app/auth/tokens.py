@@ -1,8 +1,9 @@
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from uuid import UUID
 
 import jwt
 
+from app import clock
 from app.config import Settings
 
 
@@ -15,7 +16,7 @@ class TokenInvalid(Exception):
 
 
 def issue_access_token(user_id: UUID, settings: Settings) -> tuple[str, datetime]:
-    now = datetime.now(UTC)
+    now = clock.utc_now()
     expires_at = now + timedelta(seconds=settings.access_ttl_seconds)
     token = jwt.encode(
         {"sub": str(user_id), "iat": now, "exp": expires_at},

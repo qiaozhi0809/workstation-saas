@@ -1,12 +1,13 @@
 import secrets
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from uuid import UUID
 
 from redis import Redis
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app import clock
 from app.auth.passwords import verify_password
 from app.auth.tokens import issue_access_token
 from app.config import Settings
@@ -58,7 +59,7 @@ def login(
         raise ApiError(401, "INVALID_CREDENTIALS", "登录名或密码不正确")
 
     redis.delete(fail_key)
-    user.last_login_at = datetime.now(UTC)
+    user.last_login_at = clock.utc_now()
     db.commit()
     access_token, expires_at = issue_access_token(user.id, settings)
     refresh_token = secrets.token_urlsafe(32)
