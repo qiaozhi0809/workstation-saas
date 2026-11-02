@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { login, restoreSeedSeating } from './helpers/api'
+import { activeReviewOps, login, restoreSeedAttendance, restoreSeedSeating, revokeReviewsSince } from './helpers/api'
 
 const CLASS_ID = '44444444-4444-4444-4444-444444444444'
 
@@ -17,6 +17,22 @@ async function switchMode(page: Page, name: string) {
   await tab.click()
   await expect(tab).toHaveAttribute('aria-selected', 'true')
 }
+
+// 本文件的用例会改共享种子数据(考勤、点评、座位)。每个用例前后都还原,失败也不留脏状态;
+// 与其他 spec 的隔离由 playwright.config.ts 的 project 依赖保证(本文件先于只读 spec 跑完)。
+let reviewsBefore = new Set<string>()
+test.beforeEach(async ({ request }) => {
+  const token = await login(request, 'teacher01')
+  await restoreSeedAttendance(request, token, CLASS_ID)
+  await restoreSeedSeating(request, token, CLASS_ID)
+  reviewsBefore = await activeReviewOps(request, token, CLASS_ID)
+})
+test.afterEach(async ({ request }) => {
+  const token = await login(request, 'teacher01')
+  await restoreSeedAttendance(request, token, CLASS_ID)
+  await restoreSeedSeating(request, token, CLASS_ID)
+  await revokeReviewsSince(request, token, CLASS_ID, reviewsBefore)
+})
 
 test('attendance cycles and persists', async ({ page }) => {
   await signIn(page)

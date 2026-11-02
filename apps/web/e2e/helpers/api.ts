@@ -26,3 +26,44 @@ export async function restoreSeedSeating(request: APIRequestContext, token: stri
   })
   expect(saved.ok()).toBeTruthy()
 }
+
+const authHeaders = (token: string) => ({ Authorization: `Bearer ${token}` })
+
+/** 把 王小一 今天的考勤改回"出勤"(种子初始态);用例失败留下脏状态时也能恢复。 */
+export async function restoreSeedAttendance(request: APIRequestContext, token: string, classId: string): Promise<void> {
+  const headers = authHeaders(token)
+  const summary = await request.get(`${API}/classes/${classId}/classroom`, { headers })
+  expect(summary.ok()).toBeTruthy()
+  const { today } = (await summary.json()) as { today: string }
+  const roster = await request.get(`${API}/classes/${classId}/students`, { headers })
+  expect(roster.ok()).toBeTruthy()
+  const { items } = (await roster.json()) as { items: { enrollment_id: string; name: string }[] }
+  const wang = items.find((s) => s.name === '王小一')
+  expect(wang).toBeTruthy()
+  const res = await request.put(`${API}/classes/${classId}/attendance/${today}/${wang!.enrollment_id}`, {
+    headers,
+    data: { status: 'present' },
+  })
+  expect(res.ok()).toBeTruthy()
+}
+
+/** 当前未撤销的点评 op_id 集合,用来在用例前后做差。 */
+export async function activeReviewOps(request: APIRequestContext, token: string, classId: string): Promise<Set<string>> {
+  const res = await request.get(`${API}/classes/${classId}/reviews?limit=200`, { headers: authHeaders(token) })
+  expect(res.ok()).toBeTruthy()
+  const { items } = (await res.json()) as { items: { op_id: string }[] }
+  return new Set(items.map((r) => r.op_id))
+}
+
+/** 撤销 before 之后新增的点评(自己给的),把点评数据还原到用例开始前。 */
+export async function revokeReviewsSince(
+  request: APIRequestContext,
+  token: string,
+  classId: string,
+  before: Set<string>,
+): Promise<void> {
+  for (const op of await activeReviewOps(request, token, classId)) {
+    if (before.has(op)) continue
+    await request.post(`${API}/classes/${classId}/reviews/${op}/revoke`, { headers: authHeaders(token) })
+  }
+}
