@@ -68,7 +68,8 @@ test('the map cannot be dragged at fit and never leaves the stage after zooming'
   await signIn(page)
   await mapReady(page)
   // 等适应稳定:间隔后再读一次,两次相同才算
-  let fitTransform = await canvasTransform(page)
+  // (首次探测一定不通过,所以被接受的两次读数至少相隔一个重试间隔)
+  let fitTransform: string | null = null
   await expect(async () => {
     const now = await canvasTransform(page)
     const same = now === fitTransform
@@ -76,6 +77,9 @@ test('the map cannot be dragged at fit and never leaves the stage after zooming'
     expect(same).toBe(true)
   }).toPass({ intervals: [200, 300, 500] })
   const stage = await stageBox(page)
+  // 前提:地图比舞台宽出一截,拖动才有可动的余地;否则"拖不动"的断言什么也证明不了
+  const fitSvg = (await page.locator('.cr-canvas > svg').boundingBox())!
+  expect(fitSvg.width, '地图比舞台宽出至少 20px,保证拖动锁定的断言有意义').toBeGreaterThan(stage.width + 20)
 
   const drag = async (dx: number, dy: number) => {
     // 舞台左上角空白处,避开右下角的缩放悬浮钮

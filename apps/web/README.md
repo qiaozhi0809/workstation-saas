@@ -39,7 +39,7 @@
 - 新模式的操作放进 `ModeSlot.actions`(`ClassroomPage.tsx`),常驻操作放 `ClassroomDock` 的 `common`(随机点名、编辑黑板);不再在舞台上方加工具条。
 - `actions` 的子节点要保持在同一树位置:`Popover` 没有受控 `open`,重挂载会丢掉打开状态和已输入的数字。
 - 缩放悬浮钮由 `ClassroomMap` 的 `zoomControls` 提供(舞台右下角);到缩放上下限时按钮用 `aria-disabled` 而不是 `disabled`,键盘焦点留在原处。
-- 两翼:场景按 16:9(`SCENE_ASPECT`,`computeLayout` 的 `aspect` 选项)加宽,两翼(`art/Wings.tsx`、`art/wingArt.tsx`)是纯装饰、带 `aria-hidden`;"适应"比例只按中央安全区宽度计算,窄屏只裁掉两翼。
+- 两翼:场景按 16:9(`SCENE_ASPECT`,`computeLayout` 的 `aspect` 选项)加宽,两翼(`art/Wings.tsx`、`art/wingArt.tsx`)是纯装饰、带 `aria-hidden`;"适应"比例横向只按中央安全区宽度计算(纵向按整幅高度),窄屏只裁掉两翼。
 
 ### 新增 shadcn 组件
 
