@@ -184,6 +184,8 @@ def update_student(
 ) -> StudentRecord:
     lock_class(db, cls)
     db.refresh(enrollment)  # seat state may have moved before we got the lock
+    if enrollment.status != "active":
+        raise ApiError(404, "NOT_FOUND", "学生不存在")
     student = db.get(Student, enrollment.student_id)
     assert student is not None
     check_student_no(db, cls, data.student_no, enrollment.id)
@@ -215,6 +217,8 @@ def remove_student(
 ) -> None:
     lock_class(db, cls)
     db.refresh(enrollment)
+    if enrollment.status != "active":
+        raise ApiError(404, "NOT_FOUND", "学生不存在")
     enrollment.status = "removed"
     enrollment.left_at = clock.utc_now()
     enrollment.seat_locked = False

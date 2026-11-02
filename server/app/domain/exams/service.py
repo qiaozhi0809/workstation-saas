@@ -259,6 +259,8 @@ def update_exam(
     ]
     present = {e["name"] for e in existing}
     new_subjects += [v for n, v in requested.items() if n not in present]
+    if writable is None:
+        new_subjects = [s.model_dump() for s in data.subjects]
     removed = [
         e["name"]
         for e in existing

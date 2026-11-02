@@ -271,3 +271,15 @@ def test_subject_teacher_can_delete_own_only_exam(client, settings, db):
     assert r.status_code == 204
     db.expire_all()
     assert _scores(db, exam["id"]) == []
+
+
+def test_homeroom_update_keeps_requested_subject_order(client, settings):
+    exam = _create(
+        client, settings, _body([{"name": "数学", "full": 100}, {"name": "语文", "full": 100}])
+    )
+    swapped = _body([{"name": "语文", "full": 100}, {"name": "数学", "full": 100}])
+    r = client.put(f"{EXAMS}/{exam['id']}", json=swapped, headers=auth(settings))
+    assert r.status_code == 200
+    got = client.get(EXAMS, headers=auth(settings)).json()["items"]
+    mine = next(e for e in got if e["id"] == exam["id"])
+    assert [s["name"] for s in mine["subjects"]] == ["语文", "数学"]
