@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { PencilLine, School } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { classesApi } from '@/shared/api/classes'
 import { classroomApi } from '@/shared/api/classroom'
@@ -10,6 +11,11 @@ import ClassroomMap from '@/shared/components/ClassroomMap'
 import type {
   ClassroomEffects, ClassroomMapProps, ClassroomViewportHandle, SeatView,
 } from '@/shared/components/ClassroomMap/types'
+import { EmptyState } from '@/shared/components/feedback/EmptyState'
+import { ErrorState } from '@/shared/components/feedback/ErrorState'
+import { LoadingState } from '@/shared/components/feedback/LoadingState'
+import { Button } from '@/shared/components/ui/button'
+import { useWindowWidth } from '@/shared/hooks/useWindowWidth'
 import { useReducedMotion } from '@/shared/hooks/useReducedMotion'
 import { useAuthStore } from '@/shared/stores/auth'
 import { confirmLeaveSeating, useTeacherStore } from '@/shared/stores/teacher'
@@ -32,7 +38,7 @@ import { buildBoard } from './buildBoard'
 import { useIdleActions } from './idle/useIdleActions'
 import OverviewRail from './rail/OverviewRail'
 import ModeBar, { modesFor, type ClassroomUiMode } from './ModeBar'
-import Toolbar, { toolButton } from './Toolbar'
+import Toolbar from './Toolbar'
 import { useAttendanceDate } from './useAttendanceDate'
 import { useFullscreen } from './useFullscreen'
 
@@ -65,13 +71,17 @@ export default function ClassroomPage() {
   const classId = useTeacherStore((s) => s.classId)
   const classes = useQuery({ queryKey: ['my-classes'], queryFn: classesApi.mine })
 
-  if (classes.isLoading) return <div className="p-6">加载中…</div>
+  if (classes.isLoading) return <LoadingState />
   // 只有从没拿到过数据时才显示错误;后台刷新失败时保留已加载的页面(以及排座草稿)
-  if (classes.isError && !classes.data) return <div className="p-6">班级加载失败</div>
+  if (classes.isError && !classes.data) {
+    return <ErrorState title="班级加载失败" onRetry={() => void classes.refetch()} retrying={classes.isFetching} />
+  }
   const items = classes.data?.items ?? []
-  if (items.length === 0) return <div className="p-6">没有可查看的班级</div>
+  if (items.length === 0) {
+    return <EmptyState icon={School} title="没有可查看的班级" description="请联系学校管理员为你分配班级" />
+  }
   const cls = classId ? items.find((c) => c.id === classId) : undefined
-  if (!cls) return <div className="p-6">加载中…</div>
+  if (!cls) return <LoadingState />
 
   // 换班级时整页重建:模式、考勤日期、概况栏开关等按班级重新开始
   return <ClassroomView key={cls.id} cls={cls} />
@@ -87,7 +97,11 @@ function ClassroomView({ cls }: { cls: ClassView }) {
   const viewport = useRef<ClassroomViewportHandle>(null)
   const { active: presenting, toggle: togglePresent } = useFullscreen(rootRef)
   const [editingBoard, setEditingBoard] = useState(false)
+  const width = useWindowWidth()
   const [railOpen, setRailOpen] = useState(() => window.innerWidth >= RAIL_MIN_WIDTH)
+  const railButtonRef = useRef<HTMLButtonElement>(null)
+  const overlayRail = width < RAIL_MIN_WIDTH
+  const closeRail = () => { setRailOpen(false); railButtonRef.current?.focus() }
 
   const roster = useQuery({
     queryKey: ['class-students', classId],
@@ -225,9 +239,9 @@ function ClassroomView({ cls }: { cls: ClassView }) {
     // 草稿加载失败:地图只读,给出重试
     slot = {
       bar: (
-        <div role="alert" className="flex items-center gap-2 text-sm text-red">
+        <div role="alert" className="flex items-center gap-2 text-sm text-destructive">
           座位表加载失败
-          <button type="button" className={toolButton} onClick={seating.retry}>重新加载</button>
+          <Button variant="outline" size="sm" onClick={seating.retry}>重新加载</Button>
         </div>
       ),
     }
@@ -254,8 +268,8 @@ function ClassroomView({ cls }: { cls: ClassView }) {
   }
 
   let stage: ReactNode
-  if (roster.isError && !roster.data) stage = <div className="p-6">名单加载失败</div>
-  else if (!roster.data || summary.isPending) stage = <div className="p-6">加载中…</div>
+  if (roster.isError && !roster.data) stage = <ErrorState title="名单加载失败" onRetry={() => void roster.refetch()} retrying={roster.isFetching} />
+  else if (!roster.data || summary.isPending) stage = <LoadingState />
   else {
     stage = (
       <ClassroomMap
@@ -279,17 +293,17 @@ function ClassroomView({ cls }: { cls: ClassView }) {
 
   return (
     // 高度跟着窗口走:1024×768 的投影下各模式都不用滚动页面,舞台吃掉剩余高度(排座的操作条多,舞台就矮一些)
-    <div ref={rootRef} className="flex h-full gap-4 bg-[#f5f5f4] p-4">
+    <div ref={rootRef} className="relative flex h-full gap-4 bg-muted/40 p-3 lg:p-4">
       <section className="flex min-w-0 flex-1 flex-col gap-3">
         {!presenting && (
           <header>
-            <h2 className="text-xl font-semibold">{cls.name}</h2>
+            <h2 className="text-xl font-semibold tracking-tight">{cls.name}</h2>
             {summary.data ? (
-              <p className="text-sm text-ink-2">{`${cls.grade_name} · ${summary.data.year.name} 第 ${summary.data.week_no} 周`}</p>
+              <p className="text-sm text-muted-foreground">{`${cls.grade_name} · ${summary.data.year.name} 第 ${summary.data.week_no} 周`}</p>
             ) : summary.isError ? (
-              <p role="alert" className="text-sm text-red">班级概况加载失败</p>
+              <p role="alert" className="text-sm text-destructive">班级概况加载失败</p>
             ) : (
-              <p className="text-sm text-ink-2">{cls.grade_name}</p>
+              <p className="text-sm text-muted-foreground">{cls.grade_name}</p>
             )}
           </header>
         )}
@@ -301,9 +315,12 @@ function ClassroomView({ cls }: { cls: ClassView }) {
           onTogglePresent={togglePresent}
           railOpen={railOpen}
           onToggleRail={() => setRailOpen((o) => !o)}
+          railButtonRef={railButtonRef}
           extra={<>
             {perms.includes('board.write') && !presenting && summary.data && (
-              <button type="button" className={toolButton} onClick={() => setEditingBoard(true)}>编辑黑板</button>
+              <Button variant="outline" size="sm" onClick={() => setEditingBoard(true)}>
+                <PencilLine aria-hidden="true" />编辑黑板
+              </Button>
             )}
             {slot.toolbar}
           </>}
@@ -315,7 +332,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
           ref={stageRef}
           data-testid="classroom-stage"
           aria-busy={seatingPending ? true : undefined}
-          className={`relative min-h-[240px] flex-1 overflow-hidden rounded-2xl border border-line bg-panel ${
+          className={`relative min-h-[240px] flex-1 overflow-hidden rounded-xl border bg-card ${
             seatingPending ? 'cursor-progress' : ''}`}
           onPointerDownCapture={(e) => {
             if (!(e.target instanceof Element && e.target.closest('[role="dialog"]'))) review.closePopover()
@@ -326,7 +343,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
           {seatingPending && (
             // 工具栏的 status 已经朗读,这里只做可见提示
             <p aria-hidden="true"
-              className="pointer-events-none absolute left-1/2 top-3 z-10 -translate-x-1/2 rounded-full bg-ink/80 px-3 py-1 text-sm text-white">
+              className="pointer-events-none absolute left-1/2 top-3 z-10 -translate-x-1/2 rounded-full bg-foreground/80 px-3 py-1 text-sm text-background">
               {seatingPending === 'saving' ? '正在保存,暂时不能调整座位' : '座位表加载中,暂时不能调整座位'}
             </p>
           )}
@@ -356,7 +373,13 @@ function ClassroomView({ cls }: { cls: ClassView }) {
           roster={roster.data?.items ?? []}
           perms={perms}
           todayAttendance={todayAttendance.data}
-          onRollCall={() => { if (mode !== 'attendance') setMode('attendance') }}
+          variant={overlayRail ? 'overlay' : 'inline'}
+          onClose={closeRail}
+          onRollCall={() => {
+            if (mode !== 'attendance') setMode('attendance')
+            // 窄屏浮层会盖住座位图,点名要点座位,所以一并收起
+            if (overlayRail) closeRail()
+          }}
         />
       )}
     </div>

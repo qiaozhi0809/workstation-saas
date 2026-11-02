@@ -5,7 +5,7 @@ import { classesApi } from '@/shared/api/classes'
 import { classroomApi } from '@/shared/api/classroom'
 import { reviewsApi } from '@/shared/api/reviews'
 import { studentsApi } from '@/shared/api/students'
-import { defaultApiMocks, rosterFixture, setup } from './pageTestUtils'
+import { classFixture, defaultApiMocks, rosterFixture, setup } from './pageTestUtils'
 
 vi.mock('@/shared/api/classes')
 vi.mock('@/shared/api/students')
@@ -291,4 +291,26 @@ it('leaves weekly points out of the hover card without review.read', async () =>
   const card = await hoverCard(container, '1-1')
   expect(await within(card).findByText('今日考勤 出勤')).toBeInTheDocument()
   expect(within(card).queryByText(/本周积分/)).toBeNull()
+})
+
+it('retries loading the class list', async () => {
+  vi.mocked(classesApi.mine).mockRejectedValueOnce(new Error('boom')).mockResolvedValue({ items: [classFixture] })
+  setup()
+  fireEvent.click(await screen.findByRole('button', { name: '重试' }))
+  expect(await screen.findByRole('heading', { name: classFixture.name })).toBeInTheDocument()
+})
+
+it('retries loading the roster', async () => {
+  vi.mocked(studentsApi.listInClass)
+    .mockRejectedValueOnce(new Error('boom'))
+    .mockResolvedValue({ items: rosterFixture })
+  setup()
+  fireEvent.click(await screen.findByRole('button', { name: '重试' }))
+  expect(await screen.findByLabelText('教室座位图')).toBeInTheDocument()
+})
+
+it('explains what to do when there are no classes', async () => {
+  vi.mocked(classesApi.mine).mockResolvedValue({ items: [] })
+  setup()
+  expect(await screen.findByText('请联系学校管理员为你分配班级')).toBeInTheDocument()
 })
