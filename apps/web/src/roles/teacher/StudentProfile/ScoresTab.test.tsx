@@ -66,7 +66,7 @@ it('draws the rank curve reversed', async () => {
   expect(props.labels).toEqual(['九月月考', '十月月考'])
   expect(props.series[0].values).toEqual([2, 3])
   expect(props.format(3)).toBe('第 3 名')
-  expect(props.yAxisWidth).toBe(56) // 放得下“第 NN 名”
+  expect(props.yAxisWidth).toBe(64) // 放得下“第 NN 名”(两位数名次不折行)
 })
 
 it('says there is no score permission on 403', async () => {
