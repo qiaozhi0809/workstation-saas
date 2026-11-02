@@ -12,7 +12,7 @@
     "e2e": "playwright test"
   },
   "dependencies": {
-    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-dialog": "1.1.15",
     "@radix-ui/react-label": "^2.1.17",
     "@radix-ui/react-separator": "^1.2.0",
     "@radix-ui/react-slot": "^1.5.0",
