@@ -37,4 +37,11 @@ describe('theme', () => {
     expect(document.documentElement).toHaveClass('dark')
     expect(localStorage.getItem(THEME_KEY)).toBe('dark')
   })
+
+  it('can show its label as visible text without changing the accessible name', () => {
+    const { rerender } = render(<ThemeToggle />)
+    expect(screen.getByRole('button', { name: '主题:跟随系统' })).toHaveTextContent('')
+    rerender(<ThemeToggle showLabel />)
+    expect(screen.getByRole('button', { name: '主题:跟随系统' })).toHaveTextContent('主题:跟随系统')
+  })
 })

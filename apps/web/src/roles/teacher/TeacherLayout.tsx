@@ -36,12 +36,12 @@ export default function TeacherLayout() {
 
   const context = (
     <>
-      {isError && <span className="text-sm text-destructive">班级加载失败</span>}
+      {isError && <span className="shrink-0 text-sm text-destructive">班级加载失败</span>}
       {classes.length === 1 && <span className="truncate font-medium">{classes[0].name}</span>}
       {classes.length > 1 && (
         <NativeSelect
           aria-label="切换班级"
-          className="max-w-[50vw] md:max-w-xs"
+          className="min-w-0 max-w-[40vw] md:max-w-xs"
           value={classId ?? ''}
           onChange={(e) => { if (confirmLeaveSeating()) setClass(e.target.value) }}
         >
@@ -59,7 +59,7 @@ export default function TeacherLayout() {
         <Button variant="ghost" size="sm" className={item} asChild>
           <Link to="/teacher/preferences">我的偏好</Link>
         </Button>
-        <ThemeToggle className={layout === 'menu' ? 'w-full justify-start px-3' : undefined} />
+        <ThemeToggle className={item} showLabel={layout === 'menu'} />
         <span className={layout === 'menu' ? 'px-3 py-1.5 text-sm text-muted-foreground' : 'px-2 text-sm text-muted-foreground'}>
           {user?.display_name}
         </span>
