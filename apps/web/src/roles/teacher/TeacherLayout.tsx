@@ -8,7 +8,7 @@ import { Toaster } from '@/shared/components/Toast'
 import AppShell from '@/shared/components/layout/AppShell'
 import { NativeSelect } from '@/shared/components/ui/native-select'
 import { useAuthStore } from '@/shared/stores/auth'
-import { confirmLeaveSeating, useTeacherStore } from '@/shared/stores/teacher'
+import { confirmLeave, useTeacherStore } from '@/shared/stores/teacher'
 import ThemeToggle from '@/theme/ThemeToggle'
 import AccountMenu from './AccountMenu'
 import StudentProfileDrawer from './StudentProfile/StudentProfileDrawer'
@@ -32,7 +32,7 @@ export default function TeacherLayout() {
   }, [user, classes, classId, setClass])
 
   const logout = () => {
-    if (!confirmLeaveSeating()) return
+    if (!confirmLeave()) return
     const refreshToken = useAuthStore.getState().refreshToken
     if (refreshToken) authApi.logout(refreshToken).catch(() => {})
     useAuthStore.getState().logout()
@@ -49,7 +49,7 @@ export default function TeacherLayout() {
           aria-label="切换班级"
           className="min-w-0 max-w-[40vw] md:max-w-xs"
           value={classId ?? ''}
-          onChange={(e) => { if (confirmLeaveSeating()) setClass(e.target.value) }}
+          onChange={(e) => { if (confirmLeave()) setClass(e.target.value) }}
         >
           {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </NativeSelect>

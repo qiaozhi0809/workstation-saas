@@ -6,7 +6,7 @@ import { seatingApi } from '@/shared/api/seating'
 import { genderOf } from '@/shared/components/ClassroomMap/art/StudentFigure'
 import type { Cell, SeatView } from '@/shared/components/ClassroomMap/types'
 import { toast } from '@/shared/components/Toast'
-import { confirmLeaveSeating, useTeacherStore } from '@/shared/stores/teacher'
+import { confirmLeave, useTeacherStore } from '@/shared/stores/teacher'
 import type { ClassView } from '@/shared/types/class'
 import type { ClassroomSummary } from '@/shared/types/classroom'
 import type { StudentSeat } from '@/shared/types/student'
@@ -121,9 +121,9 @@ export function useSeatingMode(o: Options) {
   const pending = status === 'loading' ? 'loading' as const : saving ? 'saving' as const : null
   const busy = pending !== null
 
-  const setSeatingDirty = useTeacherStore((s) => s.setSeatingDirty)
-  useEffect(() => { setSeatingDirty(dirty) }, [dirty, setSeatingDirty])
-  useEffect(() => () => setSeatingDirty(false), [setSeatingDirty])
+  const setUnsaved = useTeacherStore((s) => s.setUnsaved)
+  useEffect(() => { setUnsaved('seating', dirty) }, [dirty, setUnsaved])
+  useEffect(() => () => setUnsaved('seating', false), [setUnsaved])
   // 有未保存的修改时,关闭 / 刷新页面前让浏览器提示
   useEffect(() => {
     if (!dirty) return
@@ -134,10 +134,10 @@ export function useSeatingMode(o: Options) {
   // 站内跳转(链接、浏览器后退、程序导航)同样先确认;读 store 里的标记,
   // 已经在切模式 / 换班级 / 退出登录时确认过的(标记已清)不再拦
   const blocker = useBlocker(({ currentLocation, nextLocation }) =>
-    useTeacherStore.getState().seatingDirty && leavesSeating(currentLocation, nextLocation))
+    useTeacherStore.getState().unsaved.seating && leavesSeating(currentLocation, nextLocation))
   useEffect(() => {
     if (blocker.state !== 'blocked') return
-    if (confirmLeaveSeating()) blocker.proceed()
+    if (confirmLeave(['seating'])) blocker.proceed()
     else blocker.reset()
   }, [blocker])
 

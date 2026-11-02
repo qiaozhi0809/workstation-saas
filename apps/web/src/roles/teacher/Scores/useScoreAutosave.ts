@@ -2,11 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useBlocker } from 'react-router-dom'
 import { examsApi } from '@/shared/api/exams'
+import { confirmLeave, useTeacherStore } from '@/shared/stores/teacher'
 import type { ScoreCell, ScoreSheet } from '@/shared/types/grades'
 
 export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
 
-export const LEAVE_CONFIRM = '还有成绩没保存,确定离开?'
 const DEBOUNCE_MS = 600
 const BATCH = 2000
 
@@ -33,11 +33,8 @@ export function useScoreAutosave({ classId, examId }: { classId: string; examId:
   const pending = useRef(new Map<string, ScoreCell>())
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const sending = useRef(false)
-  const dirtyRef = useRef(false)
   const [status, setStatus] = useState<SaveStatus>('idle')
-  const [dirty, setDirtyState] = useState(false)
-
-  const setDirty = (v: boolean) => { dirtyRef.current = v; setDirtyState(v) }
+  const [dirty, setDirty] = useState(false)
 
   const flush = useCallback(async () => {
     clearTimeout(timer.current)
@@ -102,6 +99,11 @@ export function useScoreAutosave({ classId, examId }: { classId: string; examId:
     if (pending.current.size > 0) void flush()
   }, [flush])
 
+  // 顶栏换班 / 退出登录不走路由,靠 store 里的标记拦截
+  const setUnsaved = useTeacherStore((s) => s.setUnsaved)
+  useEffect(() => { setUnsaved('scores', dirty) }, [dirty, setUnsaved])
+  useEffect(() => () => setUnsaved('scores', false), [setUnsaved])
+
   useEffect(() => {
     if (!dirty) return
     const guard = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
@@ -111,13 +113,13 @@ export function useScoreAutosave({ classId, examId }: { classId: string; examId:
 
   // 换页面或换考试(?exam= 变化)都算离开
   const blocker = useBlocker(({ currentLocation, nextLocation }) =>
-    dirtyRef.current && (
+    useTeacherStore.getState().unsaved.scores && (
       nextLocation.pathname !== currentLocation.pathname
       || new URLSearchParams(nextLocation.search).get('exam') !== new URLSearchParams(currentLocation.search).get('exam')
     ))
   useEffect(() => {
     if (blocker.state !== 'blocked') return
-    if (window.confirm(LEAVE_CONFIRM)) blocker.proceed()
+    if (confirmLeave(['scores'])) blocker.proceed()
     else blocker.reset()
   }, [blocker])
 
