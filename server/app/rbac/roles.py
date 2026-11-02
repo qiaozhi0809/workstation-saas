@@ -31,6 +31,12 @@ class Perm(StrEnum):
     SEATING_WRITE = "seating.write"
     BOARD_WRITE = "board.write"
     STUDENT_BASIC_WRITE = "student.write_basic"
+    EXAM_READ = "exam.read"
+    EXAM_WRITE = "exam.write"
+    SCORE_WRITE = "score.write"
+    SCORE_EXPORT = "score.export"
+    STUDENT_MANAGE = "student.manage"
+    STUDENT_EXPORT = "student.export"
 
 
 # Order matches ClassroomSummary.my_perms.
@@ -42,6 +48,12 @@ CLASSROOM_PERMS: tuple[Perm, ...] = (
     Perm.SEATING_WRITE,
     Perm.BOARD_WRITE,
     Perm.STUDENT_BASIC_WRITE,
+    Perm.EXAM_READ,
+    Perm.EXAM_WRITE,
+    Perm.SCORE_WRITE,
+    Perm.SCORE_EXPORT,
+    Perm.STUDENT_MANAGE,
+    Perm.STUDENT_EXPORT,
 )
 
 
@@ -55,6 +67,9 @@ _LEADERS = frozenset(
         Perm.STUDENT_PROFILE,
         Perm.ATTENDANCE_READ,
         Perm.REVIEW_READ,
+        Perm.EXAM_READ,
+        Perm.SCORE_EXPORT,
+        Perm.STUDENT_EXPORT,
     }
 )
 _PARENT = frozenset(
@@ -82,6 +97,12 @@ ROLE_PERMS: dict[Role, frozenset[Perm]] = {
             Perm.SEATING_WRITE,
             Perm.BOARD_WRITE,
             Perm.STUDENT_BASIC_WRITE,
+            Perm.EXAM_READ,
+            Perm.EXAM_WRITE,
+            Perm.SCORE_WRITE,
+            Perm.SCORE_EXPORT,
+            Perm.STUDENT_MANAGE,
+            Perm.STUDENT_EXPORT,
         }
     ),
     Role.subject_teacher: frozenset(
@@ -94,6 +115,9 @@ ROLE_PERMS: dict[Role, frozenset[Perm]] = {
             Perm.ATTENDANCE_READ,
             Perm.REVIEW_READ,
             Perm.REVIEW_WRITE,
+            Perm.EXAM_READ,
+            Perm.EXAM_WRITE,
+            Perm.SCORE_WRITE,
         }
     ),
     Role.assistant_teacher: frozenset(

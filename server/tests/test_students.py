@@ -89,13 +89,25 @@ def test_teacher_notes_only_own(client, db, settings):
         {
             "id": WANG,
             "n": (
-                f'{{"{TEACHER_USER_ID}": {{"text": "我的笔记"}}, '
+                f'{{"{TEACHER_USER_ID}": '
+                '{"text": "我的笔记", "updated_at": "2026-11-01T08:00:00Z"}, '
                 '"someone-else": {"text": "别人"}}'
             ),
         },
     )
     body = client.get(f"/api/v1/students/{WANG}", headers=auth(settings)).json()
-    assert body["teacher_notes"] == {"text": "我的笔记"}
+    assert set(body["teacher_notes"]) == {"text", "updated_at"}
+    assert body["teacher_notes"]["text"] == "我的笔记"
+
+
+def test_teacher_notes_legacy_shape_filled_from_updated_at(client, db, settings):
+    db.execute(
+        text("UPDATE students SET teacher_notes = CAST(:n AS jsonb) WHERE id = :id"),
+        {"id": WANG, "n": f'{{"{TEACHER_USER_ID}": {{"text": "旧笔记"}}}}'},
+    )
+    note = client.get(f"/api/v1/students/{WANG}", headers=auth(settings)).json()["teacher_notes"]
+    assert note["text"] == "旧笔记"
+    assert note["updated_at"]
 
 
 def test_subject_teacher_field_level(client, db, settings):

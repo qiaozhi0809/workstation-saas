@@ -1,8 +1,9 @@
 import uuid
 from datetime import date, datetime
+from typing import Any
 
 from sqlalchemy import ForeignKey, Text, text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -66,5 +67,6 @@ class SchoolClass(Base):
     seat_version: Mapped[int] = mapped_column(server_default=text("0"))
     homeroom_teacher_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     active: Mapped[bool] = mapped_column(server_default=text("true"))
+    subjects: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(**_NOW)
     updated_at: Mapped[datetime] = mapped_column(**_NOW)

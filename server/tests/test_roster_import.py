@@ -1,0 +1,179 @@
+from uuid import UUID
+
+from sqlalchemy import select
+
+from app.models import Enrollment, SchoolClass, Student
+from app.rbac.roles import Role
+from tests.factories import bind, make_user
+from tests.helpers import audit_rows, auth
+from tests.seed_ids import CLASS_ID, STUDENT_IDS, SUBJECT_USER_ID
+
+BASE = f"/api/v1/classes/{CLASS_ID}"
+IMPORT = f"{BASE}/students/import"
+EXPORT = f"{BASE}/students/export"
+
+
+def _row(name, student_no=None, **over):
+    body = {
+        "name": name,
+        "gender": None,
+        "student_no": student_no,
+        "birthdate": None,
+        "class_role": None,
+        "tags": [],
+        "boarding": False,
+        "family_structure": None,
+        "family_note": None,
+        "learning_summary": None,
+        "personality": None,
+        "note": None,
+        "health_notes": None,
+        "contacts": [],
+    }
+    body.update(over)
+    return body
+
+
+def _version(db):
+    db.expire_all()
+    return db.get(SchoolClass, UUID(CLASS_ID)).seat_version
+
+
+def _by_name(db, name):
+    db.expire_all()
+    student = db.scalars(select(Student).where(Student.name == name)).one()
+    enrollment = db.scalars(
+        select(Enrollment).where(Enrollment.student_id == student.id, Enrollment.status == "active")
+    ).one()
+    return student, enrollment
+
+
+def test_import_creates_and_auto_seats(client, settings, db):
+    before = _version(db)
+    body = {
+        "rows": [_row("孙一", "2026101", class_role="学习委员"), _row("孙二")],
+        "auto_seat": True,
+    }
+    r = client.post(IMPORT, json=body, headers=auth(settings))
+    assert r.status_code == 201
+    assert r.json() == {"created": 2, "skipped": []}
+    s1, e1 = _by_name(db, "孙一")
+    _, e2 = _by_name(db, "孙二")
+    assert (e1.seat_row, e1.seat_col) == (3, 3)
+    assert (e2.seat_row, e2.seat_col) == (3, 4)
+    assert e1.class_role == "学习委员"
+    assert s1.mk.startswith("S")
+    assert _version(db) == before + 1
+    rows = audit_rows(db, CLASS_ID)
+    imp = [a for a in rows if a.action == "student.import"]
+    assert len(imp) == 1 and imp[0].extra == {"created": 2, "skipped": 0}
+
+
+def test_import_without_auto_seat_leaves_unseated(client, settings, db):
+    before = _version(db)
+    r = client.post(
+        IMPORT, json={"rows": [_row("周一")], "auto_seat": False}, headers=auth(settings)
+    )
+    assert r.status_code == 201
+    _, e = _by_name(db, "周一")
+    assert e.seat_row is None
+    assert _version(db) == before
+
+
+def test_import_skips_duplicates_and_taken_numbers(client, settings, db):
+    rows = [
+        _row("王小一", "2026001"),
+        _row("王小一"),
+        _row("新名字", "2026002"),
+        _row("孙三", "2026102"),
+        _row("孙三", "2026102"),
+    ]
+    r = client.post(IMPORT, json={"rows": rows, "auto_seat": False}, headers=auth(settings))
+    assert r.status_code == 201
+    assert r.json() == {
+        "created": 1,
+        "skipped": [
+            {"index": 0, "reason": "duplicate"},
+            {"index": 1, "reason": "duplicate"},
+            {"index": 2, "reason": "student_no_taken"},
+            {"index": 4, "reason": "duplicate"},
+        ],
+    }
+    db.expire_all()
+    assert db.get(Student, UUID(STUDENT_IDS[1])).name == "李小二"
+    assert db.get(Student, UUID(STUDENT_IDS[1])).student_no == "2026002"
+    imp = [a for a in audit_rows(db, CLASS_ID) if a.action == "student.import"]
+    assert imp[0].extra == {"created": 1, "skipped": 4}
+
+
+def test_import_limits(client, settings):
+    h = auth(settings)
+    assert client.post(IMPORT, json={"rows": [], "auto_seat": False}, headers=h).status_code == 400
+    rows = [_row(f"学生{i}") for i in range(201)]
+    r = client.post(IMPORT, json={"rows": rows, "auto_seat": False}, headers=h)
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "BAD_REQUEST"
+
+
+def test_import_forbidden_for_subject_teacher(client, settings, db):
+    r = client.post(
+        IMPORT,
+        json={"rows": [_row("孙四")], "auto_seat": False},
+        headers=auth(settings, SUBJECT_USER_ID),
+    )
+    assert r.status_code == 403
+
+
+def test_export_records_audited_and_forbidden_for_subject_teacher(client, settings, db):
+    r = client.get(EXPORT, headers=auth(settings))
+    assert r.status_code == 200
+    items = r.json()["items"]
+    assert len(items) == 10
+    assert items[0]["name"] == "王小一"
+    acts = [a for a in audit_rows(db, CLASS_ID) if a.action == "student.export"]
+    assert len(acts) == 1 and acts[0].success is True and acts[0].object_type == "class"
+    r = client.get(EXPORT, headers=auth(settings, SUBJECT_USER_ID))
+    assert r.status_code == 403
+
+
+def _notes_url(sid):
+    return f"/api/v1/students/{sid}/my-notes"
+
+
+def test_my_notes_roundtrip_and_privacy(client, settings, db):
+    sid = STUDENT_IDS[0]
+    h = auth(settings)
+    r = client.put(_notes_url(sid), json={"text": " 家访记录 "}, headers=h)
+    assert r.status_code == 200
+    assert r.json()["text"] == "家访记录"
+    assert r.json()["updated_at"]
+    prof = client.get(f"/api/v1/students/{sid}", headers=h).json()
+    assert prof["teacher_notes"]["text"] == "家访记录"
+
+    other = make_user(db, "homeroom2")
+    bind(db, other.id, Role.homeroom_teacher, class_id=UUID(CLASS_ID))
+    db.commit()
+    oh = auth(settings, other.id)
+    assert "teacher_notes" not in client.get(f"/api/v1/students/{sid}", headers=oh).json()
+    assert client.put(_notes_url(sid), json={"text": "另一条"}, headers=oh).status_code == 200
+    assert client.get(f"/api/v1/students/{sid}", headers=h).json()["teacher_notes"]["text"] == (
+        "家访记录"
+    )
+
+    r = client.put(_notes_url(sid), json={"text": "  "}, headers=h)
+    assert r.status_code == 200 and r.json()["text"] == ""
+    assert "teacher_notes" not in client.get(f"/api/v1/students/{sid}", headers=h).json()
+    assert client.get(f"/api/v1/students/{sid}", headers=oh).json()["teacher_notes"]["text"] == (
+        "另一条"
+    )
+    assert any(a.action == "student.write_notes" for a in audit_rows(db, sid))
+
+    r = client.put(_notes_url(sid), json={"text": "x"}, headers=auth(settings, SUBJECT_USER_ID))
+    assert r.status_code == 403
+    assert any(a.action == "student.teacher_notes" for a in audit_rows(db, sid))
+    r = client.put(_notes_url(sid), json={"text": "字" * 2001}, headers=h)
+    assert r.status_code == 400
+    r = client.put(
+        _notes_url("a0000099-0000-0000-0000-000000000099"), json={"text": "x"}, headers=h
+    )
+    assert r.status_code == 404

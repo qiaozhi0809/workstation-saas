@@ -165,7 +165,12 @@ def list_reviews(
 ) -> ReviewPage:
     stmt = (
         select(Review)
-        .where(Review.class_id == class_id, Review.revoked_at.is_(None))
+        .join(Enrollment, Enrollment.id == Review.enrollment_id)
+        .where(
+            Review.class_id == class_id,
+            Review.revoked_at.is_(None),
+            Enrollment.status != "removed",
+        )
         .order_by(Review.given_at.desc(), Review.id.desc())
         .limit(limit + 1)
     )

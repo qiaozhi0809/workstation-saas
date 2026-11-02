@@ -85,3 +85,25 @@ def subjects_in_class(bindings: Sequence[Binding], class_id: UUID) -> list[str]:
 
 def has_role_in_class(bindings: Sequence[Binding], class_id: UUID, roles: Collection[Role]) -> bool:
     return any(bd.role in roles and bd.scope.class_id == class_id for bd in bindings)
+
+
+def _subjects_for(bindings: Sequence[Binding], scope: Scope, perm: Perm) -> frozenset[str] | None:
+    if any(
+        bd.role is not Role.subject_teacher
+        and perm in ROLE_PERMS[bd.role]
+        and covers(bd.scope, scope)
+        for bd in bindings
+    ):
+        return None
+    if scope.class_id is None:
+        return frozenset()
+    return frozenset(subjects_in_class(bindings, scope.class_id))
+
+
+def visible_subjects(bindings: Sequence[Binding], scope: Scope) -> frozenset[str] | None:
+    """None = every subject; otherwise only the caller's own subjects."""
+    return _subjects_for(bindings, scope, Perm.EXAM_READ)
+
+
+def writable_subjects(bindings: Sequence[Binding], scope: Scope) -> frozenset[str] | None:
+    return _subjects_for(bindings, scope, Perm.SCORE_WRITE)

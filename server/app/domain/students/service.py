@@ -2,10 +2,14 @@ from collections.abc import Sequence
 from typing import Any
 from uuid import UUID
 
+from fastapi import Request
 from sqlalchemy import select
+from sqlalchemy import text as sql
 from sqlalchemy.orm import Session
 
-from app.domain.students.schemas import StudentProfile, StudentSeat
+from app import clock
+from app.audit.service import record
+from app.domain.students.schemas import StudentProfile, StudentSeat, TeacherNote
 from app.errors import ApiError
 from app.models import Enrollment, SchoolClass, Student
 from app.rbac.bindings import Binding, Scope, can
@@ -99,17 +103,22 @@ def build_profile(
         "class_id": scope.class_id,
     }
     groups: dict[Perm, tuple[str, ...]] = {
-        Perm.STUDENT_BASIC: ("gender", "student_no", "birthdate", "avatar_seed"),
-        Perm.STUDENT_FAMILY: ("family_structure",),
+        Perm.STUDENT_BASIC: ("gender", "student_no", "birthdate", "avatar_seed", "boarding"),
+        Perm.STUDENT_FAMILY: ("family_structure", "family_note", "contacts"),
         Perm.STUDENT_LEARNING: ("learning_summary",),
-        Perm.STUDENT_PROFILE: ("personality", "health_notes", "tags"),
+        Perm.STUDENT_PROFILE: ("personality", "health_notes", "tags", "note"),
     }
     for perm, fields in groups.items():
         if can(bindings, perm, scope):
             for f in fields:
                 data[f] = _clean(getattr(student, f))
     if can(bindings, Perm.TEACHER_NOTES, scope) and isinstance(student.teacher_notes, dict):
-        data["teacher_notes"] = _clean(student.teacher_notes.get(str(caller_id)))
+        mine = student.teacher_notes.get(str(caller_id))
+        if isinstance(mine, dict) and isinstance(mine.get("text"), str):
+            data["teacher_notes"] = {
+                "text": mine["text"],
+                "updated_at": mine.get("updated_at") or student.updated_at,
+            }
     return StudentProfile(**data)
 
 
@@ -128,3 +137,40 @@ def active_enrollments(db: Session, class_id: UUID) -> list[Enrollment]:
             .order_by(Enrollment.id)
         ).all()
     )
+
+
+def save_my_notes(
+    db: Session, student: Student, user_id: UUID, text: str, request: Request | None
+) -> TeacherNote:
+    now = clock.utc_now()
+    text = text.strip()
+    # 原子更新单个作者的键,并发的其他老师的笔记不会被整体覆盖
+    if text:
+        db.execute(
+            sql(
+                "UPDATE students SET teacher_notes = coalesce(teacher_notes, '{}'::jsonb) || "
+                "jsonb_build_object(CAST(:uid AS text), jsonb_build_object("
+                "'text', CAST(:text AS text), 'updated_at', CAST(:ts AS text))) WHERE id = :sid"
+            ),
+            {"uid": str(user_id), "text": text, "ts": now.isoformat(), "sid": student.id},
+        )
+    else:
+        db.execute(
+            sql(
+                "UPDATE students SET teacher_notes = "
+                "coalesce(teacher_notes, '{}'::jsonb) - CAST(:uid AS text) WHERE id = :sid"
+            ),
+            {"uid": str(user_id), "sid": student.id},
+        )
+    db.expire(student, ["teacher_notes"])
+    record(
+        db,
+        user_id=user_id,
+        action="student.write_notes",
+        success=True,
+        object_type="student",
+        object_id=str(student.id),
+        request=request,
+    )
+    db.commit()
+    return TeacherNote(text=text, updated_at=now)
