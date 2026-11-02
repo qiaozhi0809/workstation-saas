@@ -30,8 +30,12 @@ function errorText(e: unknown): string {
     const subject = (e.details as { subject?: string } | undefined)?.subject ?? ''
     return `${subject} 的满分低于已录入的最高分`
   }
+  if (e instanceof ApiError && e.message) return e.message
   return '保存失败,请重试'
 }
+
+const FULL_MSG = '满分须为 1–1000 的整数'
+const validFull = (n: number) => Number.isInteger(n) && n >= 1 && n <= 1000
 
 export default function ExamForm(props: Props) {
   const subjects = useQuery({
@@ -87,12 +91,12 @@ function FormBody(p: Props & { catalog: SubjectFull[] }) {
     mutationFn: (input: ExamInput) => p.exam
       ? examsApi.update(p.classId, p.exam.id, input)
       : examsApi.create(p.classId, input),
-    onSuccess: async (saved) => { await invalidate(); p.onSaved(saved) },
+    onSuccess: (saved) => { p.onSaved(saved); void invalidate() },
     onError: (e) => setError(errorText(e)),
   })
   const remove = useMutation({
     mutationFn: () => examsApi.remove(p.classId, p.exam!.id),
-    onSuccess: async () => { await invalidate(); p.onDeleted?.() },
+    onSuccess: () => { p.onDeleted?.(); void invalidate() },
     onError: (e) => {
       setConfirming(false)
       setError(e instanceof ApiError && (e.status === 403 || e.code === 'FORBIDDEN') ? DELETE_FORBIDDEN : '删除失败,请重试')
@@ -106,7 +110,7 @@ function FormBody(p: Props & { catalog: SubjectFull[] }) {
     const n = newName.trim()
     const full = Number(newFull)
     if (!n) return
-    if (!Number.isFinite(full) || full <= 0) { setError('请填写大于 0 的满分'); return }
+    if (!validFull(full)) { setError(FULL_MSG); return }
     if (!p.canAllSubjects && !p.mySubjects.includes(n)) { setError('只能添加你任教的科目'); return }
     setError(null)
     if (chips.some((c) => c.name === n)) patch(n, { selected: true, full: String(full) })
@@ -122,8 +126,7 @@ function FormBody(p: Props & { catalog: SubjectFull[] }) {
     if (n.length > NAME_MAX) { setError(`考试名称不能超过 ${NAME_MAX} 个字`); return }
     if (!date) { setError('请选择日期'); return }
     if (picked.length === 0) { setError('至少选择一个科目'); return }
-    const bad = picked.find((c) => !(Number(c.full) > 0))
-    if (bad) { setError(`${bad.name} 的满分要大于 0`); return }
+    if (picked.some((c) => !validFull(Number(c.full)))) { setError(FULL_MSG); return }
     setError(null)
     save.mutate({
       name: n, exam_type: type, date,
@@ -134,7 +137,7 @@ function FormBody(p: Props & { catalog: SubjectFull[] }) {
   const busy = save.isPending || remove.isPending
 
   return (
-    <form className="flex flex-col gap-4" onSubmit={(e) => { e.preventDefault(); submit() }}>
+    <form noValidate className="flex flex-col gap-4" onSubmit={(e) => { e.preventDefault(); submit() }}>
       <label className="flex flex-col gap-1 text-sm">
         <span className="font-medium">考试名称</span>
         <Input value={name} maxLength={NAME_MAX} onChange={(e) => setName(e.target.value)} />
@@ -162,7 +165,7 @@ function FormBody(p: Props & { catalog: SubjectFull[] }) {
               <button type="button" aria-pressed={c.selected}
                 onClick={() => patch(c.name, { selected: !c.selected })}
                 className={chipClass(c.selected)}>{c.name}</button>
-              <Input type="number" min={1} aria-label={`${c.name} 满分`} className="h-8 w-20"
+              <Input type="number" min={1} max={1000} step={1} aria-label={`${c.name} 满分`} className="h-8 w-20"
                 value={c.full} disabled={!c.selected}
                 onChange={(e) => patch(c.name, { full: e.target.value })} />
             </span>
@@ -174,7 +177,7 @@ function FormBody(p: Props & { catalog: SubjectFull[] }) {
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); addCustom() }
             }} />
-          <Input type="number" min={1} aria-label="新科目满分" className="h-8 w-20" value={newFull}
+          <Input type="number" min={1} max={1000} step={1} aria-label="新科目满分" className="h-8 w-20" value={newFull}
             onChange={(e) => setNewFull(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); addCustom() }

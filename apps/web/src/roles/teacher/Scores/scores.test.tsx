@@ -177,3 +177,31 @@ it('shows an empty state with a create action when there are no exams', async ()
   expect(await screen.findByText('还没有考试')).toBeInTheDocument()
   expect(screen.getAllByRole('button', { name: '新建考试' }).length).toBeGreaterThan(0)
 })
+
+it('rejects a full score that is not an integer within 1-1000 without calling the API', async () => {
+  setup()
+  fireEvent.click(await screen.findByRole('button', { name: '新建考试' }))
+  await fillName('新考试')
+  const full = await screen.findByLabelText('语文 满分')
+  for (const bad of ['100.5', '5000']) {
+    fireEvent.change(full, { target: { value: bad } })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    expect(await screen.findByText('满分须为 1–1000 的整数')).toBeInTheDocument()
+    expect(examsApi.create).not.toHaveBeenCalled()
+  }
+  fireEvent.change(full, { target: { value: '100' } })
+  fireEvent.change(screen.getByLabelText('新科目名称'), { target: { value: '书法' } })
+  fireEvent.change(screen.getByLabelText('新科目满分'), { target: { value: '1001' } })
+  fireEvent.keyDown(screen.getByLabelText('新科目满分'), { key: 'Enter' })
+  expect(screen.getByText('满分须为 1–1000 的整数')).toBeInTheDocument()
+  expect(screen.queryByLabelText('书法 满分')).toBeNull()
+})
+
+it('shows the server message for other API errors', async () => {
+  setup()
+  vi.mocked(examsApi.create).mockRejectedValue(new ApiError(400, 'SUBJECT_NOT_ALLOWED', '只能使用你任教的科目'))
+  fireEvent.click(await screen.findByRole('button', { name: '新建考试' }))
+  await fillName('新考试')
+  fireEvent.click(await screen.findByRole('button', { name: '保存' }))
+  expect(await screen.findByText('只能使用你任教的科目')).toBeInTheDocument()
+})
