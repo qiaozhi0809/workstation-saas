@@ -54,6 +54,18 @@ describe('charts', () => {
     expect(tickX(40)).toBe(tickX())
   })
 
+  it('keeps the first x label clear of the y axis and off the axis line', () => {
+    const { container } = render(
+      <TrendLine label="趋势" width={400} labels={['a', 'b']} series={[{ key: 'me', label: '我', values: [80, 70] }]} />,
+    )
+    const plotLeft = 40 // 默认 yAxisWidth,left margin 0
+    const dot = container.querySelector('.recharts-line-dot')!
+    expect(Number(dot.getAttribute('cx'))).toBeGreaterThanOrEqual(plotLeft + 16)
+    const tick = container.querySelector('.recharts-xAxis .recharts-cartesian-axis-tick-value')!
+    // 轴顶 = 220 - 30;刻度线长 6 + tickMargin 8
+    expect(Number(tick.getAttribute('y'))).toBeGreaterThanOrEqual(220 - 30 + 6 + 8)
+  })
+
   it('uses integer y ticks for count data', () => {
     const { container } = render(
       <ScoreBars label="分数段" width={400} data={[{ label: 'a', value: 1 }, { label: 'b', value: 2 }, { label: 'c', value: 3 }]} />,
