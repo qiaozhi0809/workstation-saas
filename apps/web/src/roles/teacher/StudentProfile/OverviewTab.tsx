@@ -95,7 +95,7 @@ function ScoreBlocks({ student }: { student: StudentProfile }) {
       <section>
         <h3 className="mb-1 text-sm font-medium">总分得分率</h3>
         <TrendLine label="总分得分率" labels={trend.map((p) => p.name)} domain={[40, 100]} endLabel
-          format={(v) => `${v}%`}
+          format={(v) => `${Math.round(v)}%`}
           series={[
             { key: 'avg', label: '班级平均', values: classRate, muted: true },
             { key: 'me', label: student.name, values: trend.map((p) => p.rate) },

@@ -107,6 +107,7 @@ it('shows the latest total, rank change, rate curve and subject radar in the ove
   expect(rate.domain).toEqual([40, 100])
   expect(rate.endLabel).toBe(true)
   expect(rate.format(70)).toBe('70%')
+  expect(rate.format(66.66666666666667)).toBe('67%')
   const me = rate.series.find((x: { key: string }) => x.key === 'me')
   const avg = rate.series.find((x: { key: string }) => x.key === 'avg')
   expect(me.values).toEqual([75, 70])

@@ -5,8 +5,14 @@ import { ApiError } from '@/shared/api/client'
 import { examsApi } from '@/shared/api/exams'
 import type { Gradebook } from '@/shared/types/grades'
 import type { StudentProfile } from '@/shared/types/student'
+import { MemoryRouter } from 'react-router-dom'
+import { studentsApi } from '@/shared/api/students'
 import ScoresTab from './ScoresTab'
+import StudentProfileDrawer from './StudentProfileDrawer'
 
+vi.mock('@/shared/api/students', () => ({ studentsApi: { detail: vi.fn() } }))
+vi.mock('@/shared/api/classroom', () => ({ classroomApi: { summary: vi.fn().mockResolvedValue({ my_perms: [] }) } }))
+vi.mock('@/shared/api/classes', () => ({ classesApi: { mine: vi.fn().mockResolvedValue({ items: [] }) } }))
 vi.mock('@/shared/api/exams', () => ({ examsApi: { gradebook: vi.fn() } }))
 const trendLine = vi.hoisted(() => vi.fn())
 vi.mock('@/shared/components/charts/TrendLine', () => ({
@@ -80,4 +86,17 @@ it('shows an error state with retry on other failures', async () => {
   const retry = await screen.findByRole('button', { name: '重试' })
   retry.click()
   expect(await screen.findByText('十月月考')).toBeInTheDocument()
+})
+
+it('is mounted in the real drawer on the 成绩 tab instead of the 暂未开放 placeholder', async () => {
+  vi.mocked(studentsApi.detail).mockResolvedValue(profile)
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={['/x?student=s1&tab=成绩']}><StudentProfileDrawer studentId="s1" /></MemoryRouter>
+    </QueryClientProvider>,
+  )
+  expect(await screen.findByText('红色为不及格(低于满分的 60%)')).toBeInTheDocument()
+  expect(screen.getByText('十月月考')).toBeInTheDocument()
+  expect(screen.queryByText('暂未开放')).toBeNull()
 })
