@@ -145,8 +145,14 @@ test('projection hides grade tints, badges and legend', async ({ page, request }
   await seedMovers(request)
   await signIn(page)
   // 桌面着色用 rect 的 fill 判断;"投屏"本身可能换底色,所以以"日常模式 + 投屏"的填充色集合为基线
-  const fills = () => page.evaluate(() =>
+  const rawFills = () => page.evaluate(() =>
     [...new Set(Array.from(document.querySelectorAll('.cr-canvas svg rect')).map((r) => r.getAttribute('fill')))].sort())
+  // 先等 10 个座位渲染出来,并等填充色集合非空:基线取空会让后面的"有新颜色"恒真
+  const fills = async () => {
+    await expect(page.locator('[data-seat][data-enrollment]')).toHaveCount(10)
+    await expect.poll(async () => (await rawFills()).length, '座位画布已渲染').toBeGreaterThan(0)
+    return rawFills()
+  }
   const present = async () => {
     await page.getByRole('button', { name: '全屏' }).click()
     await expect(page.getByRole('button', { name: '退出全屏' })).toBeVisible()

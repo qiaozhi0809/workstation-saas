@@ -72,8 +72,7 @@ test('imports two students and exports the roster', async ({ page }) => {
   await dialog.getByRole('checkbox', { name: '自动安排到空座位' }).uncheck()
   // toast 只停留 3 秒(Toast 默认 ms=3000):先建立断言再点导入,不等弹窗关闭之后才去找它
   const imported = expect(page.getByText('导入 2 人,跳过重复 0 人')).toBeVisible()
-  await dialog.getByRole('button', { name: '导入', exact: true }).click()
-  await imported
+  await Promise.all([imported, dialog.getByRole('button', { name: '导入', exact: true }).click()])
   await expect(dialog).toBeHidden()
   await expect(rowOf(page, '测试导入甲')).toBeVisible()
   await expect(rowOf(page, '测试导入乙')).toBeVisible()
