@@ -112,16 +112,12 @@ it('enters presenting mode on fullscreen and hides the rail', async () => {
 })
 
 it('uses an opaque background on the root while presenting, so the black backdrop never shows through', async () => {
-  Element.prototype.requestFullscreen = vi.fn(function (this: Element) {
-    Object.defineProperty(document, 'fullscreenElement', { value: this, configurable: true })
-    document.dispatchEvent(new Event('fullscreenchange'))
-    return Promise.resolve()
-  })
+  stubFullscreen()
   setup()
   fireEvent.click(await screen.findByRole('button', { name: '全屏' }))
   await screen.findByRole('button', { name: '退出全屏' })
   const classes = (document.fullscreenElement as Element).className.split(/\s+/)
-  expect(classes).toContain('bg-muted')
+  expect(classes).toContain('bg-background')
   expect(classes.filter((c) => c.startsWith('bg-') && c.includes('/'))).toEqual([])
 })
 

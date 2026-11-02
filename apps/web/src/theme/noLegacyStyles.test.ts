@@ -1,7 +1,8 @@
 import { findLegacyStyles } from '@/test/legacyStyles'
 
-it('no TSX file uses legacy colour names, palette colours, white/black or hex classes', () => {
-  const files = import.meta.glob(['/src/**/*.tsx', '!/src/**/*.test.tsx'], { query: '?raw', import: 'default', eager: true })
+it('no non-test TS/TSX file uses legacy colour names, palette colours, white/black or hex classes', () => {
+  const files = import.meta.glob(['/src/**/*.{ts,tsx}', '!/src/**/*.test.{ts,tsx}'], { query: '?raw', import: 'default', eager: true })
+  expect(Object.keys(files).length).toBeGreaterThan(0)
   expect(findLegacyStyles(files as Record<string, string>)).toEqual([])
 })
 

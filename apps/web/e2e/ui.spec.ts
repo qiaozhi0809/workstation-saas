@@ -45,6 +45,7 @@ for (const path of ['/login', '/teacher/classroom', '/teacher/preferences']) {
     await page.setViewportSize({ width: 375, height: 812 })
     if (path !== '/login') await signIn(page)
     await page.goto(path)
+    await expect(page).toHaveURL(new RegExp(path.replace(/\//g, '\\/')))
     await page.waitForLoadState('networkidle')
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
     expect(overflow).toBeLessThanOrEqual(0)

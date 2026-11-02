@@ -2,7 +2,7 @@
 
 ## UI 约定
 
-颜色一律用语义令牌(定义在 `src/theme/index.css`,映射在 `tailwind.config.ts`),不写原始色板(`bg-blue-500`)、`white` / `black` 或十六进制类。这条由 `src/theme/noLegacyStyles.test.ts` 在全仓库强制检查;深色模式随令牌自动切换。
+颜色一律用语义令牌(定义在 `src/theme/index.css`,映射在 `tailwind.config.ts`),不写原始色板(`bg-blue-500`)、`white` / `black` 或十六进制类。这条由 `src/theme/noLegacyStyles.test.ts` 对 `src` 下所有非测试的 TS/TSX 文件强制检查;深色模式随令牌自动切换。
 
 | 令牌 | 用途 |
 |---|---|

@@ -292,9 +292,10 @@ function ClassroomView({ cls }: { cls: ClassView }) {
   }
 
   return (
-    // 全屏时根节点就是全屏元素,半透明底会透出浏览器的黑色 ::backdrop,所以投屏时换成不透明的 bg-muted
+    // 全屏时根节点就是全屏元素,半透明底会透出浏览器的黑色 ::backdrop,所以底色必须不透明:
+    // bg-background 打底、再叠一层 muted/40 的渐变,外观与窗口态(原 bg-muted/40)在浅/深色下一致
     // 高度跟着窗口走:1024×768 的投影下各模式都不用滚动页面,舞台吃掉剩余高度(排座的操作条多,舞台就矮一些)
-    <div ref={rootRef} className={`relative flex h-full gap-4 p-3 lg:p-4 ${presenting ? 'bg-muted' : 'bg-muted/40'}`}>
+    <div ref={rootRef} className="relative flex h-full gap-4 bg-background p-3 lg:p-4 [background-image:linear-gradient(hsl(var(--muted)/0.4),hsl(var(--muted)/0.4))]">
       <section className="flex min-w-0 flex-1 flex-col gap-3">
         {!presenting && (
           <header>
