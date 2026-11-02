@@ -111,3 +111,21 @@ test('keeps the whole classroom in view after entering seating in a short window
     expect(stage!.y + stage!.height).toBeLessThanOrEqual(640)
   }).toPass()
 })
+
+test('asks before leaving unsaved seating through a link or logout', async ({ page }) => {
+  await signIn(page)
+  await switchMode(page, '排座')
+  await expect(page.getByRole('button', { name: '随机打乱' })).toBeEnabled()
+  // 只改草稿不保存,用例结束不留数据
+  await page.getByRole('button', { name: '王小一' }).click()
+  await page.getByRole('button', { name: '李小二' }).click()
+  const dialogs: string[] = []
+  page.on('dialog', (d) => { dialogs.push(d.message()); void d.dismiss() })
+  await page.getByRole('link', { name: '我的偏好' }).click()
+  await page.getByRole('button', { name: '退出登录' }).click()
+  await page.getByRole('link', { name: '班级工作台' }).click()
+  await expect.poll(() => dialogs.length).toBe(3)
+  expect(new Set(dialogs)).toEqual(new Set(['有未保存的座位修改,确定离开吗?']))
+  await expect(page).toHaveURL(/\/teacher\/classroom\?mode=seating$/)
+  await expect(page.getByRole('button', { name: '保存座位' })).toBeEnabled()
+})
