@@ -53,7 +53,7 @@ export function useViewport(stageRef: RefObject<HTMLElement>, content: Size & { 
     setSt((cur) => (cur.fitted ? { view: f, fitted: true } : settle(cur.view, f)))
   }, [fitOf, settle])
 
-  // 键盘聚焦到视口外的座位:放大状态下平移到可见;适应状态下整间教室本就在舞台内,不动;rect 为视口坐标
+  // 键盘聚焦到视口外的座位:放大状态下平移到可见;适应状态下核心(含全部座位)本就完整在舞台内,不动;rect 为视口坐标
   const ensureVisible = useCallback((r: { left: number; top: number; width: number; height: number }) => {
     const el = stageRef.current, { w, h } = stage()
     if (!el || !w || !h || fittedRef.current) return

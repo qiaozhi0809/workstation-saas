@@ -60,19 +60,7 @@ test('16:9 fills the stage with the wings', async ({ page }) => {
     expect(visibleWidth, '地图在舞台内的可见宽度').toBeGreaterThanOrEqual(stage.width * 0.9)
     const wing = (await page.locator('[data-wing="left"]').boundingBox())!
     expect(intersects(wing, stage), '左侧窗户与舞台相交').toBe(true)
-  }).toPass()
-})
-
-// 适应按核心放大:1920 × 1080 铺满 ≥ 90% 舞台宽,核心(前墙 + 24 个座位)仍完整在舞台内
-test('16:9 fills the stage width without cropping the core', async ({ page }) => {
-  await page.setViewportSize({ width: 1920, height: 1080 })
-  await signIn(page)
-  await mapReady(page)
-  await expect(async () => {
-    const stage = await stageBox(page)
-    const svg = (await page.locator('.cr-canvas > svg').boundingBox())!
-    const visibleWidth = Math.min(svg.x + svg.width, stage.x + stage.width) - Math.max(svg.x, stage.x)
-    expect(visibleWidth / stage.width, '地图在舞台内的可见宽度占比').toBeGreaterThanOrEqual(0.9)
+    // 适应按核心放大(设计稿 §6):铺满宽度的同时核心(前墙 + 24 个座位)仍完整在舞台内
     expect(inside((await page.locator('.cr-front-wall').boundingBox())!, stage), '讲台墙在舞台内').toBe(true)
     const seats = await page.locator('[data-seat]').all()
     expect(seats).toHaveLength(24)
@@ -114,14 +102,15 @@ test('the map cannot be dragged at fit and never leaves the stage after zooming'
   }).toPass({ intervals: [200, 300, 500] })
   const stage = await stageBox(page)
   // 前提:地图比舞台高出一截,拖动才有可动的余地;否则"拖不动"的断言什么也证明不了
-  // (适应按核心放大后 1280 × 720 横向不再溢出,上下的顶墙边距 / 后部地板被裁,所以看纵向)
+  // (适应按核心放大后 1280 × 720 横向不再溢出;纵向上方只裁约 8px 顶墙边距、下方裁约 69px 后部地板,
+  //  所以锁定检查要往上拖:锁定失效时场景能往上移 69px)
   const fitSvg = (await page.locator('.cr-canvas > svg').boundingBox())!
   expect(fitSvg.height, '地图比舞台高出至少 20px,保证拖动锁定的断言有意义').toBeGreaterThan(stage.height + 20)
 
-  const drag = async (dx: number, dy: number) => {
-    // 舞台左上角空白处,避开右下角的缩放悬浮钮
+  // 默认从舞台左上角空白处起拖;fromBottom 时从左下角起拖(往上拖时指针不离开舞台);都避开右下角的缩放悬浮钮
+  const drag = async (dx: number, dy: number, fromBottom = false) => {
     const sx = stage.x + 8
-    const sy = stage.y + 8
+    const sy = fromBottom ? stage.y + stage.height - 8 : stage.y + 8
     await page.mouse.move(sx, sy)
     await page.mouse.down()
     await page.mouse.move(sx + dx / 2, sy + dy / 2, { steps: 5 })
@@ -130,7 +119,9 @@ test('the map cannot be dragged at fit and never leaves the stage after zooming'
   }
 
   await drag(300, 200)
-  expect(await canvasTransform(page), '适应时拖不动').toBe(fitTransform)
+  expect(await canvasTransform(page), '适应时拖不动(往下)').toBe(fitTransform)
+  await drag(300, -200, true)
+  expect(await canvasTransform(page), '适应时拖不动(往上,下方有约 69px 可动余地)').toBe(fitTransform)
 
   const zoomIn = page.getByRole('group', { name: '缩放' }).getByRole('button', { name: '放大' })
   for (let i = 0; i < 3; i++) await zoomIn.click()

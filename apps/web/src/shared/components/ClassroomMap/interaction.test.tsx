@@ -131,7 +131,7 @@ it('refits when the stage resizes, but keeps a zoom the teacher chose until 适�
     const ref = createRef<ClassroomViewportHandle>()
     const { container } = render(<ClassroomMap rows={6} cols={4} seats={seats} viewportRef={ref} />)
     const tall = scaleOf(container)
-    // 进入排座多出操作条,舞台变矮:整间教室重新放进舞台
+    // 进入排座多出操作条,舞台变矮:重新适应,核心重新放进舞台
     resize(400)
     const short = scaleOf(container)
     expect(short).toBeLessThan(tall)

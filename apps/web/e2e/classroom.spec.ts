@@ -100,7 +100,7 @@ test('fits a 1024×768 projector without page scrolling in every mode', async ({
 
 // 窗口较矮时进入排座:舞台随之变矮并重新适应,教室核心(前墙 + 全部座位)都在窗口内,不被裁掉
 // (扁舞台的适应按核心放大,核心之外的后部地板可以被裁,见设计稿 §6;所以量核心而不是整幅场景)
-test('keeps the whole classroom in view after entering seating in a short window', async ({ page }) => {
+test('keeps the classroom core in view after entering seating in a short window', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 640 })
   await signIn(page)
   await switchMode(page, '排座')

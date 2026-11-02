@@ -3,7 +3,8 @@ export const M = {
   BACK: 120, SIDE: 260, SIDE_BARE: 48, HEAD_R: 17, FIGURE_BOTTOM: 52, ZONE_GAP: 16,
   // 一个座位画到的最低处(相对座位左上角):整格热区 / 选中框下沿,椅背与人物都在它以上
   SEAT_BOTTOM: 102,
-  // 核心下沿在最后一排座位下面再留的余量
+  // 核心下沿在最后一排座位下面再留的余量;它同时要盖住点名聚光灯的光斑(以头心为原点,椭圆下沿到座位 +122,
+  // 即 SEAT_BOTTOM + 20),所以不能小于约 20
   CORE_PAD: 24,
 } as const
 
