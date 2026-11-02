@@ -15,6 +15,7 @@ vi.mock('@/shared/api/reviews')
 vi.mock('@/shared/api/seating')
 vi.mock('@/shared/api/todos')
 vi.mock('@/shared/api/preferences')
+vi.mock('@/shared/api/exams')
 
 const WIDTH = window.innerWidth
 const REQUEST_FULLSCREEN = Element.prototype.requestFullscreen

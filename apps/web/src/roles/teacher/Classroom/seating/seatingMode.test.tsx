@@ -18,6 +18,7 @@ vi.mock('@/shared/api/reviews')
 vi.mock('@/shared/api/seating')
 vi.mock('@/shared/api/todos')
 vi.mock('@/shared/api/preferences')
+vi.mock('@/shared/api/exams')
 
 // 裁定 R2:排座用例里张小三未排座
 const roster = rosterFixture.map((s) => (s.enrollment_id === 'e3' ? { ...s, seat_row: null, seat_col: null } : s))

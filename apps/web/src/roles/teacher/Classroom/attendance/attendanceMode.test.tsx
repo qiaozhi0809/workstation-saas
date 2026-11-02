@@ -14,6 +14,7 @@ vi.mock('@/shared/api/reviews')
 vi.mock('@/shared/api/seating')
 vi.mock('@/shared/api/todos')
 vi.mock('@/shared/api/preferences')
+vi.mock('@/shared/api/exams')
 
 // 日期收在紧凑按钮的弹层里:先点开再操作里面的原生日期框
 const openDate = async () => {

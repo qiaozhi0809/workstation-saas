@@ -14,6 +14,7 @@ vi.mock('@/shared/api/reviews')
 vi.mock('@/shared/api/seating')
 vi.mock('@/shared/api/todos')
 vi.mock('@/shared/api/preferences')
+vi.mock('@/shared/api/exams')
 
 beforeEach(() => {
   vi.resetAllMocks()

@@ -28,6 +28,7 @@ import PickCard from './pick/PickCard'
 import { usePick, usePickReward } from './pick/usePick'
 import { attendanceApi } from '@/shared/api/attendance'
 import { useAttendanceMode } from './attendance/useAttendanceMode'
+import { useGradesMode } from './grades/useGradesMode'
 import { useReviewMode } from './review/useReviewMode'
 import { useReviewSubject } from './review/useReviewSubmit'
 import BoardEditor from './BoardEditor'
@@ -47,6 +48,7 @@ import { useFullscreen } from './useFullscreen'
 
 const NO_PERMS: ClassPerm[] = []
 const NO_SUBJECTS: string[] = []
+const NO_ROSTER: StudentSeat[] = []
 
 // 讲台姓名牌上的身份:有排座权的是班主任,能记考勤的是副班主任,其余是任课老师
 const roleLabel = (perms: readonly ClassPerm[]) =>
@@ -161,6 +163,13 @@ function ClassroomView({ cls }: { cls: ClassView }) {
     onFollowToday: attDate.followToday,
   })
   const stageRef = useRef<HTMLDivElement>(null)
+  const grades = useGradesMode({
+    classId,
+    enabled: mode === 'grades',
+    presenting,
+    roster: roster.data?.items ?? NO_ROSTER,
+    onOpenScores: (s) => openDrawer(s.student_id, '成绩'),
+  })
   // 当前科目在页面级:点评弹层、全班 +1、点名"回答得好 +1"共用
   const subject = useReviewSubject(perms, summary.data?.my_subjects ?? NO_SUBJECTS)
   const review = useReviewMode({
@@ -244,6 +253,9 @@ function ClassroomView({ cls }: { cls: ClassView }) {
       // 投屏时也能点评:飘字本来就是给投影看的
       onSeatClick: review.onSeatClick,
     }
+  } else if (mode === 'grades') {
+    // 成绩模式不叠加考勤外观;投屏时座位不可点(不弹档案)
+    slot = { views: grades.views, onSeatClick: grades.onSeatClick, actions: grades.bar }
   } else if (mode === 'seating' && seating.ready) {
     slot = {
       seats: seating.seats, rows: seating.rows, cols: seating.cols, views: seating.views,

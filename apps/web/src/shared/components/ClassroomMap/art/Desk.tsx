@@ -74,11 +74,11 @@ function DeskProp({ kind, dx, dy, color }: Prop) {
 }
 
 // x,y = 座位左上角(即桌面左上角);桌面 84×40,下沿 6px 是朝向学生的桌边。
-// 不传 seed = 空桌(无道具)。投影由外层整组桌椅统一加 SHADOW。
-export default function Desk({ x, y, seed }: { x: number; y: number; seed?: string }) {
+// 不传 seed = 空桌(无道具);top 覆盖桌面顶面色(成绩模式)。投影由外层整组桌椅统一加 SHADOW。
+export default function Desk({ x, y, seed, top = ROOM.desk }: { x: number; y: number; seed?: string; top?: string }) {
   return (
     <g className="cr-desk" transform={`translate(${x} ${y})`}>
-      <rect x={1} y={1} width={W - 2} height={D - 2} rx={3} fill={ROOM.desk} {...edge} />
+      <rect x={1} y={1} width={W - 2} height={D - 2} rx={3} fill={top} {...edge} />
       <rect x={1} y={D - 7} width={W - 2} height={6} rx={2} fill={ROOM.deskEdge} />
       {seed && deskProps(seed).map((p, i) => <DeskProp key={i} {...p} />)}
     </g>

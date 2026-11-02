@@ -1,9 +1,9 @@
 /* eslint-disable react-refresh/only-export-components -- 测试辅助模块,不参与热更新 */
 // 教室页测试的共用夹具与渲染辅助(只给 *.test.tsx 用)。
-// vi.mock 按测试文件提升,所以每个页面测试文件自己写下面 8 行(自动 mock,函数全部变成 vi.fn()):
+// vi.mock 按测试文件提升,所以每个页面测试文件自己写下面 9 行(自动 mock,函数全部变成 vi.fn()):
 //   vi.mock('@/shared/api/classes'); vi.mock('@/shared/api/students'); vi.mock('@/shared/api/classroom')
 //   vi.mock('@/shared/api/attendance'); vi.mock('@/shared/api/reviews'); vi.mock('@/shared/api/seating')
-//   vi.mock('@/shared/api/todos'); vi.mock('@/shared/api/preferences')
+//   vi.mock('@/shared/api/todos'); vi.mock('@/shared/api/preferences'); vi.mock('@/shared/api/exams')
 // 然后在 beforeEach 里 `vi.resetAllMocks(); defaultApiMocks()`,用例里按需覆盖某个 mock 后再 setup()。
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, render } from '@testing-library/react'
@@ -12,6 +12,7 @@ import { vi } from 'vitest'
 import { attendanceApi } from '@/shared/api/attendance'
 import { classesApi } from '@/shared/api/classes'
 import { classroomApi } from '@/shared/api/classroom'
+import { examsApi } from '@/shared/api/exams'
 import { preferencesApi } from '@/shared/api/preferences'
 import { reviewsApi } from '@/shared/api/reviews'
 import { seatingApi } from '@/shared/api/seating'
@@ -31,6 +32,7 @@ import type { ClassroomUiMode } from './ModeBar'
 export const ALL_PERMS: ClassPerm[] = [
   'attendance.read', 'attendance.write', 'review.read', 'review.write',
   'seating.write', 'board.write', 'student.write_basic',
+  'exam.read', 'exam.write', 'score.write', 'score.export', 'student.manage', 'student.export',
 ]
 
 export const classFixture: ClassView = {
@@ -92,7 +94,7 @@ export const reviewSummaryFixture: ReviewSummary = {
   items: rosterFixture.map((s) => ({ enrollment_id: s.enrollment_id, total: 0, week: 0, plus_count: 0, minus_count: 0 })),
 }
 
-/** 给 8 个 API 模块的每个函数设好默认返回值(写操作回显请求)。 */
+/** 给 9 个 API 模块的每个函数设好默认返回值(写操作回显请求)。 */
 export function defaultApiMocks() {
   vi.mocked(classesApi.mine).mockResolvedValue({ items: [classFixture] })
 
@@ -132,18 +134,20 @@ export function defaultApiMocks() {
     ({ id, content: patch.content ?? '', done: patch.done ?? false, created_at: '2026-11-02T01:00:00Z' }))
   vi.mocked(todosApi.remove).mockResolvedValue(undefined)
 
+  vi.mocked(examsApi.gradebook).mockResolvedValue({ exams: [] })
+
   vi.mocked(preferencesApi.get).mockResolvedValue(preferencesFixture)
   vi.mocked(preferencesApi.save).mockImplementation(async (prefs) => prefs)
 }
 
-const MODE_OF: Record<'日常' | '考勤' | '点评' | '排座', ClassroomUiMode> = {
-  日常: 'daily', 考勤: 'attendance', 点评: 'review', 排座: 'seating',
+const MODE_OF: Record<'日常' | '考勤' | '点评' | '成绩' | '排座', ClassroomUiMode> = {
+  日常: 'daily', 考勤: 'attendance', 点评: 'review', 成绩: 'grades', 排座: 'seating',
 }
 
 export interface SetupOptions {
   /** 页面打开时所在的模式(等同于点了对应标签;同步生效,首次出现座位时已是该模式)。 */
   mode?: keyof typeof MODE_OF
-  /** 覆盖 summary 的 my_perms(默认班主任全部 7 项)。 */
+  /** 覆盖 summary 的 my_perms(默认班主任全部 13 项)。 */
   perms?: ClassPerm[]
   /** 覆盖 summary 的 my_subjects(默认 [])。 */
   subjects?: string[]
