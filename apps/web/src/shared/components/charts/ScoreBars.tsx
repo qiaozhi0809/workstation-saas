@@ -17,7 +17,7 @@ export function ScoreBars({ label, width, height = 220, className, data, max, fo
   const chart = (
     <BarChart data={data} width={width} height={height} margin={{ top: 24, right: refLine ? 36 : 8, bottom: 0, left: 0 }}>
       <XAxis dataKey="label" tickLine={false} axisLine={false} />
-      <YAxis domain={[0, top]} allowDecimals={false} tickFormatter={fmt} tickLine={false} axisLine={false} width={36} />
+      <YAxis domain={[0, top]} allowDecimals={false} tickFormatter={fmt} tickLine={false} axisLine={false} width={44} />
       <Tooltip
         cursor={false}
         content={({ active, payload }) => {

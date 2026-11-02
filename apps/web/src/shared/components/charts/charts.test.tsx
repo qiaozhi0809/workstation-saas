@@ -66,6 +66,18 @@ describe('charts', () => {
     expect(Number(tick.getAttribute('y'))).toBeGreaterThanOrEqual(220 - 30 + 6 + 8)
   })
 
+  it('gives the score bars y axis 44px so 100% is not clipped', () => {
+    const tickX = (w: number) => {
+      const { container, unmount } = render(
+        <ScoreBars label="x" width={w} data={[{ label: 'a', value: 100 }]} format={(v) => `${v}%`} />,
+      )
+      const x = Number(container.querySelector('.recharts-yAxis .recharts-cartesian-axis-tick-value')!.getAttribute('x'))
+      unmount()
+      return x
+    }
+    expect(tickX(400)).toBe(36) // 刻度右对齐到轴右缘内 8px:宽度 44 - 8
+  })
+
   it('uses integer y ticks for count data', () => {
     const { container } = render(
       <ScoreBars label="分数段" width={400} data={[{ label: 'a', value: 1 }, { label: 'b', value: 2 }, { label: 'c', value: 3 }]} />,
