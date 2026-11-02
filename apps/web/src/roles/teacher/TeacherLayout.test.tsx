@@ -179,15 +179,3 @@ it('links to my preferences', async () => {
   renderLayout()
   expect(await screen.findByRole('link', { name: '我的偏好' })).toHaveAttribute('href', '/teacher/preferences')
 })
-
-it('lists every action with a visible label in the narrow-screen menu', async () => {
-  vi.mocked(classesApi.mine).mockResolvedValue({ items: [cls('a', '三年二班', 'homeroom_teacher')] })
-  renderLayout()
-  await screen.findByText('三年二班')
-  fireEvent.click(screen.getByRole('button', { name: '打开菜单' }))
-  const menu = await screen.findByRole('dialog', { name: '菜单' })
-  expect(within(menu).getByRole('link', { name: '我的偏好' })).toHaveAttribute('href', '/teacher/preferences')
-  expect(within(menu).getByRole('button', { name: '主题:跟随系统' })).toHaveTextContent('主题:跟随系统')
-  expect(within(menu).getByText('王老师')).toBeInTheDocument()
-  expect(within(menu).getByRole('button', { name: '退出登录' })).toBeInTheDocument()
-})

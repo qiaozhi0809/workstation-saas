@@ -4,7 +4,7 @@ import { Link, Outlet, useMatch, useNavigate } from 'react-router-dom'
 import { authApi } from '@/shared/api/auth'
 import { classesApi } from '@/shared/api/classes'
 import { Toaster } from '@/shared/components/Toast'
-import AppShell, { type ShellLayout } from '@/shared/components/layout/AppShell'
+import AppShell from '@/shared/components/layout/AppShell'
 import { Button } from '@/shared/components/ui/button'
 import { NativeSelect } from '@/shared/components/ui/native-select'
 import { useAuthStore } from '@/shared/stores/auth'
@@ -51,22 +51,17 @@ export default function TeacherLayout() {
     </>
   )
 
-  const actions = (layout: ShellLayout) => {
-    const item = layout === 'menu' ? 'w-full justify-start' : undefined
-    return (
-      <>
-        {/* 排座有未保存修改时,站内跳转由教室页的路由守卫确认 */}
-        <Button variant="ghost" size="sm" className={item} asChild>
-          <Link to="/teacher/preferences">我的偏好</Link>
-        </Button>
-        <ThemeToggle className={item} showLabel={layout === 'menu'} />
-        <span className={layout === 'menu' ? 'truncate px-3 py-1.5 text-sm text-muted-foreground' : 'max-w-[10rem] truncate px-2 text-sm text-muted-foreground'}>
-          {user?.display_name}
-        </span>
-        <Button variant="ghost" size="sm" className={item} onClick={logout}>退出登录</Button>
-      </>
-    )
-  }
+  const actions = (
+    <>
+      {/* 排座有未保存修改时,站内跳转由教室页的路由守卫确认 */}
+      <Button variant="ghost" size="sm" asChild>
+        <Link to="/teacher/preferences">我的偏好</Link>
+      </Button>
+      <ThemeToggle />
+      <span className="max-w-[10rem] truncate px-2 text-sm text-muted-foreground">{user?.display_name}</span>
+      <Button variant="ghost" size="sm" onClick={logout}>退出登录</Button>
+    </>
+  )
 
   return (
     <AppShell
