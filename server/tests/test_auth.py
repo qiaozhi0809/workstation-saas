@@ -1,6 +1,9 @@
+import warnings
 from uuid import UUID
 
-from app.auth.tokens import issue_access_token
+from jwt.warnings import InsecureKeyLengthWarning
+
+from app.auth.tokens import decode_access_token, issue_access_token
 from tests.seed_ids import SCHOOL_ID, TEACHER_USER_ID
 
 
@@ -102,3 +105,10 @@ def test_lockout_lasts_full_window_after_final_failure(client, settings, redis_c
     for _ in range(4):
         login(client, pw="wrong")
     assert redis_client.ttl(key) > settings.login_lock_seconds - 5
+
+
+def test_test_settings_sign_tokens_without_key_length_warning(settings):
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", InsecureKeyLengthWarning)
+        token, _ = issue_access_token(UUID(TEACHER_USER_ID), settings)
+        decode_access_token(token, settings)

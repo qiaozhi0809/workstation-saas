@@ -17,6 +17,8 @@ from app.main import create_app
 from app.redis import get_redis
 
 SERVER_DIR = Path(__file__).resolve().parent.parent
+# HS256 建议密钥至少 32 字节;开发默认密钥较短,每次签发都会报 InsecureKeyLengthWarning
+TEST_JWT_SECRET = "test-jwt-secret-for-pytest-only-0123456789"
 
 
 @pytest.fixture(scope="session")
@@ -71,7 +73,9 @@ def db(engine: Engine) -> Iterator[Session]:
 
 @pytest.fixture
 def settings(pg_url: str, redis_url: str) -> Settings:
-    return Settings(_env_file=None, database_url=pg_url, redis_url=redis_url)
+    return Settings(
+        _env_file=None, database_url=pg_url, redis_url=redis_url, jwt_secret=TEST_JWT_SECRET
+    )
 
 
 @pytest.fixture
