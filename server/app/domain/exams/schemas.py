@@ -39,3 +39,38 @@ class ExamOut(BaseModel):
     subjects: list[SubjectFull]
     created_by_me: bool
     progress: Progress
+
+
+ScoreValue = float | None
+
+
+class ScoreSheetItem(BaseModel):
+    enrollment_id: UUID
+    scores: dict[str, ScoreValue]
+
+
+class ScoreSheet(BaseModel):
+    exam: ExamOut
+    items: list[ScoreSheetItem]
+
+
+class ScoreCellIn(BaseModel):
+    enrollment_id: UUID
+    subject: str
+    value: float | Literal["absent"] | None
+
+
+class ScoresSave(BaseModel):
+    cells: Annotated[list[ScoreCellIn], Field(min_length=1, max_length=2000)]
+
+
+class ScoresSaved(BaseModel):
+    updated: int
+
+
+class GradebookExam(ExamOut):
+    scores: dict[str, dict[str, ScoreValue]]
+
+
+class Gradebook(BaseModel):
+    exams: list[GradebookExam]

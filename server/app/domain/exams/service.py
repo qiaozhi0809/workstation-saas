@@ -3,13 +3,26 @@ from uuid import UUID
 
 from fastapi import Request
 from sqlalchemy import delete, func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
+from app import clock
 from app.audit.service import deny, record
 from app.domain.classes.service import class_scope_of
-from app.domain.exams.schemas import ExamInput, ExamOut, Progress, SubjectFull
+from app.domain.exams.schemas import (
+    ExamInput,
+    ExamOut,
+    Gradebook,
+    GradebookExam,
+    Progress,
+    ScoreCellIn,
+    ScoreSheet,
+    ScoreSheetItem,
+    SubjectFull,
+)
 from app.domain.exams.subjects import merge_subjects
 from app.domain.schools.service import require_active_year
+from app.domain.students.service import active_enrollments
 from app.errors import ApiError
 from app.models import Enrollment, Exam, SchoolClass, Score
 from app.rbac.bindings import Binding, visible_subjects, writable_subjects
@@ -239,3 +252,175 @@ def delete_exam(
         request=request,
     )
     db.commit()
+
+
+def _scores_by_enrollment(
+    db: Session,
+    exam_ids: Sequence[UUID],
+    enrollment_ids: set[UUID],
+    allowed: dict[UUID, set[str]],
+) -> dict[UUID, dict[UUID, dict[str, float | None]]]:
+    """exam_id -> enrollment_id -> subject -> value (active enrollments, allowed subjects)."""
+    out: dict[UUID, dict[UUID, dict[str, float | None]]] = {e: {} for e in exam_ids}
+    if not exam_ids or not enrollment_ids:
+        return out
+    rows = db.execute(
+        select(Score.exam_id, Score.enrollment_id, Score.subject, Score.value).where(
+            Score.exam_id.in_(exam_ids), Score.enrollment_id.in_(enrollment_ids)
+        )
+    )
+    for exam_id, enrollment_id, subject, value in rows:
+        if subject in allowed[exam_id]:
+            out[exam_id].setdefault(enrollment_id, {})[subject] = value
+    return out
+
+
+def _allowed_names(exam: Exam, visible: frozenset[str] | None) -> set[str]:
+    return {s.name for s in _visible_of(exam, visible)}
+
+
+def score_sheet(
+    db: Session,
+    cls: SchoolClass,
+    exam: Exam,
+    visible: frozenset[str] | None,
+    user_id: UUID,
+) -> ScoreSheet:
+    enrollments = active_enrollments(db, cls.id)
+    scores = _scores_by_enrollment(
+        db, [exam.id], {e.id for e in enrollments}, {exam.id: _allowed_names(exam, visible)}
+    )[exam.id]
+    return ScoreSheet(
+        exam=exam_out(db, exam, visible, user_id),
+        items=[
+            ScoreSheetItem(enrollment_id=e.id, scores=scores.get(e.id, {})) for e in enrollments
+        ],
+    )
+
+
+def export_scores(
+    db: Session, cls: SchoolClass, exam: Exam, user_id: UUID, request: Request | None
+) -> ScoreSheet:
+    sheet = score_sheet(db, cls, exam, None, user_id)
+    record(
+        db,
+        user_id=user_id,
+        action="score.export",
+        success=True,
+        object_type="exam",
+        object_id=str(exam.id),
+        request=request,
+    )
+    db.commit()
+    return sheet
+
+
+def _validate_cell(cell: ScoreCellIn, exam: Exam, active: set[UUID], writable) -> None:
+    if cell.enrollment_id not in active:
+        raise ApiError(400, "UNKNOWN_ENROLLMENT", "学生不在本班")
+    full = {s["name"]: s["full"] for s in exam.subjects}
+    if cell.subject not in full:
+        raise ApiError(400, "UNKNOWN_SUBJECT", "考试没有这个科目", {"subject": cell.subject})
+    if writable is not None and cell.subject not in writable:
+        raise ApiError(
+            400, "SUBJECT_NOT_ALLOWED", "只能操作自己任教的科目", {"subject": cell.subject}
+        )
+    v = cell.value
+    if isinstance(v, float) and not (0 <= v <= full[cell.subject] and round(v, 1) == v):
+        raise ApiError(
+            400,
+            "SCORE_INVALID",
+            "分数不合法",
+            {"enrollment_id": str(cell.enrollment_id), "subject": cell.subject},
+        )
+
+
+def save_scores(
+    db: Session,
+    cls: SchoolClass,
+    exam: Exam,
+    cells: Sequence[ScoreCellIn],
+    user_id: UUID,
+    bindings: Sequence[Binding],
+    request: Request | None,
+) -> int:
+    active = {e.id for e in active_enrollments(db, cls.id)}
+    writable = writable_subjects(bindings, class_scope_of(cls))
+    for cell in cells:
+        _validate_cell(cell, exam, active, writable)
+    final = {(c.enrollment_id, c.subject): c.value for c in cells}  # last one wins
+    now = clock.utc_now()
+    clears = [k for k, v in final.items() if v is None]
+    for enrollment_id, subject in clears:
+        db.execute(
+            delete(Score).where(
+                Score.exam_id == exam.id,
+                Score.enrollment_id == enrollment_id,
+                Score.subject == subject,
+            )
+        )
+    upserts = [
+        {
+            "exam_id": exam.id,
+            "enrollment_id": k[0],
+            "subject": k[1],
+            "value": None if v == "absent" else v,
+            "entered_by_user_id": user_id,
+            "entered_at": now,
+        }
+        for k, v in final.items()
+        if v is not None
+    ]
+    if upserts:
+        stmt = pg_insert(Score).values(upserts)
+        db.execute(
+            stmt.on_conflict_do_update(
+                index_elements=["exam_id", "enrollment_id", "subject"],
+                set_={
+                    "value": stmt.excluded.value,
+                    "entered_by_user_id": stmt.excluded.entered_by_user_id,
+                    "entered_at": stmt.excluded.entered_at,
+                },
+            )
+        )
+    record(
+        db,
+        user_id=user_id,
+        action="score.write",
+        success=True,
+        object_type="exam",
+        object_id=str(exam.id),
+        request=request,
+        extra={"cells": len(final)},
+    )
+    db.commit()
+    return len(final)
+
+
+def gradebook(
+    db: Session, cls: SchoolClass, bindings: Sequence[Binding], user_id: UUID
+) -> Gradebook:
+    visible = visible_subjects(bindings, class_scope_of(cls))
+    exams = list(
+        db.scalars(
+            select(Exam)
+            .where(Exam.class_id == cls.id)
+            .order_by(Exam.date, Exam.created_at, Exam.id)
+        ).all()
+    )
+    if visible is not None:
+        exams = [e for e in exams if any(s["name"] in visible for s in e.subjects)]
+    enrollment_ids = {e.id for e in active_enrollments(db, cls.id)}
+    scores = _scores_by_enrollment(
+        db, [e.id for e in exams], enrollment_ids, {e.id: _allowed_names(e, visible) for e in exams}
+    )
+    outs = _outs(db, cls, exams, visible, user_id)
+    return Gradebook(
+        exams=[
+            GradebookExam(
+                **out.model_dump(),
+                scores={str(k): v for k, v in scores[e.id].items()},
+            )
+            for e, out in zip(exams, outs, strict=True)
+        ]
+    )
