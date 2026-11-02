@@ -1,8 +1,9 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
 import { beforeEach, vi } from 'vitest'
 import { ApiError } from '@/shared/api/client'
+import { classroomApi } from '@/shared/api/classroom'
 import { studentsApi } from '@/shared/api/students'
 import { findLegacyStyles } from '@/test/legacyStyles'
 import StudentProfileDrawer from './StudentProfileDrawer'
@@ -25,6 +26,9 @@ const renderDrawer = () => render(
 
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.mocked(studentsApi.detail).mockReset()
+  vi.mocked(classroomApi.summary).mockReset()
+  vi.mocked(classroomApi.summary).mockResolvedValue({ my_perms: [] } as never)
   vi.mocked(studentsApi.detail).mockResolvedValue(student)
 })
 
@@ -118,6 +122,23 @@ it('retries a failed load', async () => {
   vi.mocked(studentsApi.detail).mockRejectedValueOnce(new Error('boom')).mockResolvedValueOnce(student)
   renderDrawer()
   fireEvent.click(await screen.findByRole('button', { name: '重试' }))
+  expect(await screen.findByRole('dialog', { name: '王小一' })).toBeInTheDocument()
+})
+
+it('gives no clickable 重试 while the refetch is in flight', async () => {
+  let resolve!: (v: typeof student) => void
+  vi.mocked(studentsApi.detail)
+    .mockRejectedValueOnce(new Error('boom'))
+    .mockImplementationOnce(() => new Promise((r) => { resolve = r }))
+  renderDrawer()
+  const retry = await screen.findByRole('button', { name: '重试' })
+  expect(retry).toBeEnabled()
+  fireEvent.click(retry)
+  await waitFor(() => {
+    const btn = screen.queryByRole('button', { name: '重试' })
+    expect(btn === null || (btn as HTMLButtonElement).disabled).toBe(true)
+  })
+  await act(async () => { resolve(student) })
   expect(await screen.findByRole('dialog', { name: '王小一' })).toBeInTheDocument()
 })
 

@@ -11,7 +11,7 @@ export interface AppShellProps {
   home: string
   /** 品牌右侧的上下文:班级名 / 切换班级;过长时截断(外层给 min-w-0,内容自己带 truncate / max-w,免得裁掉焦点环) */
   context?: ReactNode
-  /** 右侧操作。'bar':顶栏横排(≥768px 显示);'menu':窄屏菜单抽屉里竖排 */
+  /** 右侧操作。AppShell 自身不渲染 ThemeToggle,各 shell 须在此放入(menu 布局用 showLabel)。'bar':顶栏横排(≥768px 显示);'menu':窄屏菜单抽屉里竖排 */
   actions(layout: ShellLayout): ReactNode
   /** 放在 <main> 之外的东西(抽屉、Toaster) */
   overlays?: ReactNode

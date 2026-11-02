@@ -25,7 +25,7 @@ const errorText = (error: unknown) => {
 export default function StudentProfileDrawer({ studentId }: { studentId: string }) {
   const navigate = useNavigate()
   const [tab, setTab] = useState<Tab>('概览')
-  const { data, error, refetch } = useQuery({
+  const { data, error, refetch, isFetching } = useQuery({
     queryKey: ['student', studentId],
     queryFn: () => studentsApi.detail(studentId),
   })
@@ -35,7 +35,7 @@ export default function StudentProfileDrawer({ studentId }: { studentId: string 
 
   return (
     <SidePanel open onClose={close} title={data ? data.name : error ? '学生档案' : '加载中…'} className="w-full sm:max-w-[480px]">
-      {error && <ErrorState title={errorText(error)} onRetry={retryable ? () => void refetch() : undefined} />}
+      {error && <ErrorState title={errorText(error)} onRetry={retryable ? () => void refetch() : undefined} retrying={isFetching} />}
       {!data && !error && <LoadingState />}
       {data && (
         <>

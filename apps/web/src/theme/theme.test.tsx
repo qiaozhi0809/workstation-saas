@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import {
   THEME_KEY, nextThemeMode, readThemeMode, resolveTheme, useThemeStore, type ThemeMode,
 } from './theme'
@@ -18,8 +18,11 @@ describe('theme', () => {
     localStorage.setItem(THEME_KEY, 'purple')
     expect(readThemeMode()).toBe('system')
     const spy = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('blocked') })
-    expect(readThemeMode()).toBe('system')
-    spy.mockRestore()
+    try {
+      expect(readThemeMode()).toBe('system')
+    } finally {
+      spy.mockRestore()
+    }
   })
 
   it('resolves and cycles modes', () => {
@@ -36,6 +39,32 @@ describe('theme', () => {
     expect(screen.getByRole('button', { name: '主题:深色' })).toBeInTheDocument()
     expect(document.documentElement).toHaveClass('dark')
     expect(localStorage.getItem(THEME_KEY)).toBe('dark')
+  })
+
+  it('follows OS changes in system mode and drops .dark in light mode', () => {
+    const original = window.matchMedia
+    const listeners: Array<() => void> = []
+    const mql = {
+      matches: false,
+      addEventListener: (_: string, fn: () => void) => { listeners.push(fn) },
+      removeEventListener: (_: string, fn: () => void) => { listeners.splice(listeners.indexOf(fn), 1) },
+    }
+    window.matchMedia = (() => mql) as unknown as typeof window.matchMedia
+    try {
+      function Root() { useApplyTheme(); return null }
+      render(<Root />)
+      expect(document.documentElement).not.toHaveClass('dark')
+      act(() => { mql.matches = true; listeners.forEach((fn) => fn()) })
+      expect(document.documentElement).toHaveClass('dark')
+      act(() => { mql.matches = false; listeners.forEach((fn) => fn()) })
+      expect(document.documentElement).not.toHaveClass('dark')
+      act(() => { mql.matches = true; listeners.forEach((fn) => fn()) })
+      expect(document.documentElement).toHaveClass('dark')
+      act(() => { useThemeStore.setState({ mode: 'light' }) })
+      expect(document.documentElement).not.toHaveClass('dark')
+    } finally {
+      window.matchMedia = original
+    }
   })
 
   it('can show its label as visible text without changing the accessible name', () => {

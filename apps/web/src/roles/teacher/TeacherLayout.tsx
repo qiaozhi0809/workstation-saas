@@ -60,7 +60,7 @@ export default function TeacherLayout() {
           <Link to="/teacher/preferences">我的偏好</Link>
         </Button>
         <ThemeToggle className={item} showLabel={layout === 'menu'} />
-        <span className={layout === 'menu' ? 'px-3 py-1.5 text-sm text-muted-foreground' : 'px-2 text-sm text-muted-foreground'}>
+        <span className={layout === 'menu' ? 'truncate px-3 py-1.5 text-sm text-muted-foreground' : 'max-w-[10rem] truncate px-2 text-sm text-muted-foreground'}>
           {user?.display_name}
         </span>
         <Button variant="ghost" size="sm" className={item} onClick={logout}>退出登录</Button>

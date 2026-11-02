@@ -40,7 +40,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="relative grid min-h-full place-items-center bg-muted/40 px-4 py-8">
+    <div className="relative grid min-h-full place-items-center bg-muted/40 px-4 pb-8 pt-16">
       <ThemeToggle className="absolute right-4 top-4" />
       <Card className="w-full max-w-sm">
         <form onSubmit={onSubmit}>
