@@ -1,0 +1,215 @@
+import type { GradebookExam, ScoreValue } from '../types/grades'
+
+export const PASS_RATIO = 0.6
+export const GOOD_RATIO = 0.85
+
+export type Parsed = number | 'absent' | 'clear' | 'invalid'
+
+export function parseScore(text: string): Parsed {
+  const s = text
+    .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+    .replace(/[．。]/g, '.')
+    .replace(/－/g, '-')
+    .replace(/\s+/g, '')
+  if (s === '') return 'clear'
+  if (/^(缺|缺考|-|—|\/|x|X)$/.test(s)) return 'absent'
+  if (!/^-?\d+(\.\d)?$/.test(s)) return 'invalid'
+  return Number(s)
+}
+
+export type CellState = 'empty' | 'absent' | 'over' | 'low' | 'ok'
+
+export function cellState(v: ScoreValue | undefined, full: number): CellState {
+  if (v === undefined) return 'empty'
+  if (v === null) return 'absent'
+  if (v < 0 || v > full) return 'over'
+  if (v < full * PASS_RATIO) return 'low'
+  return 'ok'
+}
+
+export interface Row { id: string; total: number | null; rank: number | null; subs: Record<string, ScoreValue | undefined> }
+
+function examFull(exam: GradebookExam): number {
+  return exam.subjects.reduce((sum, s) => sum + s.full, 0)
+}
+
+export function examTable(exam: GradebookExam, ids: string[]): Row[] {
+  const rows: Row[] = ids.map((id) => {
+    const rec = exam.scores[id]
+    const subs: Record<string, ScoreValue | undefined> = {}
+    let total: number | null = null
+    for (const { name } of exam.subjects) {
+      const v = rec?.[name]
+      subs[name] = v
+      if (typeof v === 'number') total = (total ?? 0) + v
+    }
+    return { id, total, rank: null, subs }
+  })
+  rows.sort((a, b) => {
+    if (a.total === null && b.total === null) return 0
+    if (a.total === null) return 1
+    if (b.total === null) return -1
+    return b.total - a.total
+  })
+  let prev: number | null = null
+  let prevRank = 0
+  rows.forEach((r, i) => {
+    if (r.total === null) return
+    if (r.total !== prev) { prevRank = i + 1; prev = r.total }
+    r.rank = prevRank
+  })
+  return rows
+}
+
+export interface SubjectStats {
+  name: string; full: number; n: number; avg: number; rate: number; max: number; min: number
+  passRate: number; goodRate: number; low: number
+}
+
+export function subjectStats(exam: GradebookExam, subject: string, ids: string[]): SubjectStats | null {
+  const sub = exam.subjects.find((s) => s.name === subject)
+  if (!sub) return null
+  const vals: number[] = []
+  for (const id of ids) {
+    const v = exam.scores[id]?.[subject]
+    if (typeof v === 'number') vals.push(v)
+  }
+  const n = vals.length
+  if (n === 0) return null
+  const avg = vals.reduce((a, b) => a + b, 0) / n
+  const pass = sub.full * PASS_RATIO
+  const good = sub.full * GOOD_RATIO
+  return {
+    name: sub.name, full: sub.full, n, avg, rate: (avg / sub.full) * 100,
+    max: Math.max(...vals), min: Math.min(...vals),
+    passRate: vals.filter((v) => v >= pass).length / n,
+    goodRate: vals.filter((v) => v >= good).length / n,
+    low: vals.filter((v) => v < pass).length,
+  }
+}
+
+export interface ExamStats {
+  full: number; n: number; avg: number; rate: number; max: number; maxIds: string[]; min: number
+  passRate: number; goodRate: number; sd: number; table: Row[]; subjects: SubjectStats[]
+}
+
+export function examStats(exam: GradebookExam, ids: string[]): ExamStats | null {
+  const table = examTable(exam, ids)
+  const totals = table.flatMap((r) => (r.total === null ? [] : [r.total]))
+  const n = totals.length
+  if (n === 0) return null
+  const full = examFull(exam)
+  const avg = totals.reduce((a, b) => a + b, 0) / n
+  const max = Math.max(...totals)
+  const pass = full * PASS_RATIO
+  const good = full * GOOD_RATIO
+  const subjects = exam.subjects.flatMap((s) => {
+    const st = subjectStats(exam, s.name, ids)
+    return st ? [st] : []
+  })
+  return {
+    full, n, avg, rate: (avg / full) * 100, max,
+    maxIds: table.filter((r) => r.total === max).map((r) => r.id),
+    min: Math.min(...totals),
+    passRate: totals.filter((t) => t >= pass).length / n,
+    goodRate: totals.filter((t) => t >= good).length / n,
+    sd: Math.sqrt(totals.reduce((a, t) => a + (t - avg) ** 2, 0) / n),
+    table, subjects,
+  }
+}
+
+export interface Band { lo: number; hi: number; count: number; tone: 'low' | 'mid' | 'good' }
+
+export function scoreBands(totals: number[], full: number): Band[] {
+  const w = full / 10
+  const counts = new Array<number>(10).fill(0)
+  for (const t of totals) counts[Math.min(9, Math.max(0, Math.floor(t / w)))] += 1
+  const first = counts.findIndex((c) => c > 0)
+  if (first < 0) return []
+  const bands: Band[] = []
+  for (let i = first; i < 10; i++) {
+    const lo = i * w
+    bands.push({
+      lo, hi: (i + 1) * w, count: counts[i],
+      tone: lo < full * PASS_RATIO ? 'low' : lo >= full * GOOD_RATIO ? 'good' : 'mid',
+    })
+  }
+  return bands
+}
+
+export function trendDomain(values: number[]): [number, number] {
+  const lo = Math.min(...values)
+  const hi = Math.max(...values)
+  return [Math.max(0, Math.floor((lo - 4) / 5) * 5), Math.min(100, Math.ceil((hi + 4) / 5) * 5)]
+}
+
+function hasScore(exam: GradebookExam): boolean {
+  return Object.values(exam.scores).some((rec) => Object.values(rec).some((v) => typeof v === 'number'))
+}
+
+export function latestExam(book: GradebookExam[]): GradebookExam | null {
+  for (let i = book.length - 1; i >= 0; i--) if (hasScore(book[i])) return book[i]
+  return null
+}
+
+export function previousExam(book: GradebookExam[], examId: string): GradebookExam | null {
+  const at = book.findIndex((e) => e.id === examId)
+  if (at < 0) return null
+  for (let i = at - 1; i >= 0; i--) if (hasScore(book[i])) return book[i]
+  return null
+}
+
+export function rankChanges(cur: Row[], prev: Row[] | null): Map<string, number> {
+  const out = new Map<string, number>()
+  if (!prev) return out
+  const before = new Map(prev.map((r) => [r.id, r.rank]))
+  for (const r of cur) {
+    const p = before.get(r.id)
+    if (r.rank !== null && p !== null && p !== undefined) out.set(r.id, p - r.rank)
+  }
+  return out
+}
+
+export interface Attention {
+  risers: { id: string; change: number }[]
+  fallers: { id: string; change: number }[]
+  failing: { id: string; count: number }[]
+}
+
+export function attention(exam: GradebookExam, cur: Row[], changes: Map<string, number>): Attention {
+  const entries = [...changes].map(([id, change]) => ({ id, change }))
+  const risers = entries.filter((e) => e.change > 0).sort((a, b) => b.change - a.change).slice(0, 5)
+  const fallers = entries.filter((e) => e.change <= -5).sort((a, b) => a.change - b.change).slice(0, 6)
+  const failing = cur
+    .map((r) => ({
+      id: r.id,
+      count: exam.subjects.filter((s) => {
+        const v = r.subs[s.name]
+        return typeof v === 'number' && v < s.full * PASS_RATIO
+      }).length,
+    }))
+    .filter((f) => f.count >= 2)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8)
+  return { risers, fallers, failing }
+}
+
+export interface TrendPoint { examId: string; name: string; total: number | null; rank: number | null; n: number; rate: number | null }
+
+export function studentTrend(book: GradebookExam[], id: string, ids: string[]): TrendPoint[] {
+  return book.map((exam) => {
+    const table = examTable(exam, ids)
+    const row = table.find((r) => r.id === id)
+    const total = row?.total ?? null
+    const full = examFull(exam)
+    return {
+      examId: exam.id, name: exam.name, total, rank: row?.rank ?? null,
+      n: table.filter((r) => r.total !== null).length,
+      rate: total === null || full === 0 ? null : (total / full) * 100,
+    }
+  })
+}
+
+export function rankTint(rank: number, n: number): 1 | 2 | 3 | 4 | 5 {
+  return Math.min(5, Math.floor(((rank - 1) / n) * 5) + 1) as 1 | 2 | 3 | 4 | 5
+}
