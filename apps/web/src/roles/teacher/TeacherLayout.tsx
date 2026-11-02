@@ -1,15 +1,16 @@
 import { useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link, Outlet, useMatch, useNavigate } from 'react-router-dom'
+import { Outlet, useMatch, useNavigate } from 'react-router-dom'
 import { authApi } from '@/shared/api/auth'
 import { classesApi } from '@/shared/api/classes'
+import { classroomApi } from '@/shared/api/classroom'
 import { Toaster } from '@/shared/components/Toast'
-import AppShell, { type ShellLayout } from '@/shared/components/layout/AppShell'
-import { Button } from '@/shared/components/ui/button'
+import AppShell from '@/shared/components/layout/AppShell'
 import { NativeSelect } from '@/shared/components/ui/native-select'
 import { useAuthStore } from '@/shared/stores/auth'
 import { confirmLeaveSeating, useTeacherStore } from '@/shared/stores/teacher'
 import ThemeToggle from '@/theme/ThemeToggle'
+import AccountMenu from './AccountMenu'
 import StudentProfileDrawer from './StudentProfile/StudentProfileDrawer'
 
 export default function TeacherLayout() {
@@ -20,6 +21,9 @@ export default function TeacherLayout() {
   const setClass = useTeacherStore((s) => s.setClass)
   const { data, isError } = useQuery({ queryKey: ['my-classes'], queryFn: classesApi.mine })
   const classes = useMemo(() => data?.items ?? [], [data])
+  const cls = classes.find((c) => c.id === classId)
+  // 与教室页同一个 key,共用缓存;这里不轮询
+  const summary = useQuery({ queryKey: ['classroom', classId], queryFn: () => classroomApi.summary(classId!), enabled: !!classId })
 
   useEffect(() => {
     if (user && classes.length > 0 && !classes.some((c) => c.id === classId)) setClass(classes[0].id)
@@ -48,25 +52,20 @@ export default function TeacherLayout() {
           {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </NativeSelect>
       )}
+      {cls && summary.data && (
+        <span className="hidden truncate text-sm text-muted-foreground sm:inline">
+          {`${cls.grade_name} · ${summary.data.year.name} 第 ${summary.data.week_no} 周`}
+        </span>
+      )}
     </>
   )
 
-  const actions = (layout: ShellLayout) => {
-    const item = layout === 'menu' ? 'w-full justify-start' : undefined
-    return (
-      <>
-        {/* 排座有未保存修改时,站内跳转由教室页的路由守卫确认 */}
-        <Button variant="ghost" size="sm" className={item} asChild>
-          <Link to="/teacher/preferences">我的偏好</Link>
-        </Button>
-        <ThemeToggle className={item} showLabel={layout === 'menu'} />
-        <span className={layout === 'menu' ? 'truncate px-3 py-1.5 text-sm text-muted-foreground' : 'max-w-[10rem] truncate px-2 text-sm text-muted-foreground'}>
-          {user?.display_name}
-        </span>
-        <Button variant="ghost" size="sm" className={item} onClick={logout}>退出登录</Button>
-      </>
-    )
-  }
+  const actions = (
+    <>
+      <ThemeToggle />
+      <AccountMenu name={user?.display_name} onLogout={logout} />
+    </>
+  )
 
   return (
     <AppShell

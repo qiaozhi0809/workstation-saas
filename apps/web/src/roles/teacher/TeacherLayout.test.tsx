@@ -4,15 +4,17 @@ import { Link, MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, vi } from 'vitest'
 import { authApi } from '@/shared/api/auth'
 import { classesApi } from '@/shared/api/classes'
+import { classroomApi } from '@/shared/api/classroom'
 import { studentsApi } from '@/shared/api/students'
 import { useAuthStore } from '@/shared/stores/auth'
 import { useTeacherStore } from '@/shared/stores/teacher'
 import type { ClassView } from '@/shared/types/class'
+import { summaryFixture } from './Classroom/pageTestUtils'
 import TeacherLayout from './TeacherLayout'
 
 vi.mock('@/shared/api/classes', () => ({ classesApi: { mine: vi.fn() } }))
 vi.mock('@/shared/api/auth', () => ({ authApi: { logout: vi.fn() } }))
-vi.mock('@/shared/api/classroom', () => ({ classroomApi: { summary: vi.fn().mockResolvedValue({ my_perms: [] }) } }))
+vi.mock('@/shared/api/classroom', () => ({ classroomApi: { summary: vi.fn() } }))
 vi.mock('@/shared/api/students', () => ({ studentsApi: { detail: vi.fn() } }))
 
 const cls = (id: string, name: string, role: ClassView['role']): ClassView =>
@@ -24,8 +26,11 @@ const renderLayout = () => render(
   </QueryClientProvider>,
 )
 
+const openAccount = () => fireEvent.click(screen.getByRole('button', { name: '账号菜单' }))
+
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.mocked(classroomApi.summary).mockResolvedValue(summaryFixture())
   useTeacherStore.setState({ classId: null, seatingDirty: false })
   useAuthStore.setState({
     accessToken: 'at', refreshToken: 'rt', user: { id: 'u1', display_name: '王老师' },
@@ -105,9 +110,10 @@ it('logs out: calls the API, clears state and lands on /login', async () => {
       </MemoryRouter>
     </QueryClientProvider>,
   )
-  expect(screen.getByText('王老师')).toBeInTheDocument()
   await screen.findByText('三年二班')
-  fireEvent.click(screen.getByRole('button', { name: '退出登录' }))
+  openAccount()
+  expect(within(screen.getByRole('menu', { name: '账号菜单' })).getByText('王老师')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('menuitem', { name: '退出登录' }))
   expect(authApi.logout).toHaveBeenCalledWith('rt')
   expect(useAuthStore.getState().accessToken).toBeNull()
   expect(useAuthStore.getState().user).toBeNull()
@@ -121,12 +127,14 @@ it('asks before logging out with unsaved seating changes', async () => {
   renderLayout()
   await screen.findByText('三年二班')
   useTeacherStore.setState({ seatingDirty: true })
-  fireEvent.click(screen.getByRole('button', { name: '退出登录' }))
+  openAccount()
+  fireEvent.click(screen.getByRole('menuitem', { name: '退出登录' }))
   expect(confirmSpy).toHaveBeenCalledWith('有未保存的座位修改,确定离开吗?')
   expect(authApi.logout).not.toHaveBeenCalled()
   expect(useAuthStore.getState().refreshToken).toBe('rt')
   confirmSpy.mockReturnValue(true)
-  fireEvent.click(screen.getByRole('button', { name: '退出登录' }))
+  openAccount()
+  fireEvent.click(screen.getByRole('menuitem', { name: '退出登录' }))
   expect(authApi.logout).toHaveBeenCalledWith('rt')
   confirmSpy.mockRestore()
 })
@@ -177,17 +185,28 @@ it('resets the drawer tab when switching to another student', async () => {
 it('links to my preferences', async () => {
   vi.mocked(classesApi.mine).mockResolvedValue({ items: [cls('a', '三年二班', 'homeroom_teacher')] })
   renderLayout()
-  expect(await screen.findByRole('link', { name: '我的偏好' })).toHaveAttribute('href', '/teacher/preferences')
+  await screen.findByText('三年二班')
+  openAccount()
+  expect(screen.getByRole('menuitem', { name: '我的偏好' })).toHaveAttribute('href', '/teacher/preferences')
 })
 
-it('lists every action with a visible label in the narrow-screen menu', async () => {
+it('shows grade, school year and week next to the class name', async () => {
   vi.mocked(classesApi.mine).mockResolvedValue({ items: [cls('a', '三年二班', 'homeroom_teacher')] })
   renderLayout()
-  await screen.findByText('三年二班')
-  fireEvent.click(screen.getByRole('button', { name: '打开菜单' }))
-  const menu = await screen.findByRole('dialog', { name: '菜单' })
-  expect(within(menu).getByRole('link', { name: '我的偏好' })).toHaveAttribute('href', '/teacher/preferences')
-  expect(within(menu).getByRole('button', { name: '主题:跟随系统' })).toHaveTextContent('主题:跟随系统')
+  const f = summaryFixture()
+  expect(await screen.findByText(`三年级 · ${f.year.name} 第 ${f.week_no} 周`)).toBeInTheDocument()
+})
+
+it('keeps 我的偏好 and 退出登录 in the account menu under my initial', async () => {
+  vi.mocked(classesApi.mine).mockResolvedValue({ items: [cls('a', '三年二班', 'homeroom_teacher')] })
+  renderLayout()
+  const trigger = await screen.findByRole('button', { name: '账号菜单' })
+  expect(trigger).toHaveTextContent('王')
+  expect(trigger).toHaveAttribute('title', '王老师')
+  expect(screen.queryByRole('button', { name: '退出登录' })).toBeNull()
+  openAccount()
+  const menu = screen.getByRole('menu', { name: '账号菜单' })
   expect(within(menu).getByText('王老师')).toBeInTheDocument()
-  expect(within(menu).getByRole('button', { name: '退出登录' })).toBeInTheDocument()
+  expect(within(menu).getByRole('menuitem', { name: '我的偏好' })).toHaveAttribute('href', '/teacher/preferences')
+  expect(within(menu).getByRole('menuitem', { name: '退出登录' })).toBeInTheDocument()
 })
