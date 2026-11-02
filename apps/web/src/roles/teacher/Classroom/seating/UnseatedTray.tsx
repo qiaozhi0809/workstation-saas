@@ -20,7 +20,7 @@ export interface UnseatedTrayProps {
 export default function UnseatedTray({ students, selectedId, canUnseat, busy, seedOf, onSelect, onUnseat }: UnseatedTrayProps) {
   const title = `待安排 (${students.length})`
   return (
-    <section aria-label={title} className="flex flex-wrap items-center gap-2 rounded-xl bg-panel px-3 py-2 text-sm">
+    <section aria-label={title} className="flex max-h-24 flex-wrap items-center gap-2 overflow-y-auto rounded-xl bg-panel px-3 py-2 text-sm">
       <h3 className="font-semibold">{title}</h3>
       {students.length === 0 && <span className="text-ink-2">全部已安排</span>}
       {students.map((s) => (

@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient, type QueryKey } from '@tanstack/react-query'
+import { useBlocker, type Location } from 'react-router-dom'
 import { ApiError } from '@/shared/api/client'
 import { seatingApi } from '@/shared/api/seating'
 import { genderOf } from '@/shared/components/ClassroomMap/art/StudentFigure'
 import type { Cell, SeatView } from '@/shared/components/ClassroomMap/types'
 import { toast } from '@/shared/components/Toast'
-import { useTeacherStore } from '@/shared/stores/teacher'
+import { confirmLeaveSeating, useTeacherStore } from '@/shared/stores/teacher'
 import type { ClassView } from '@/shared/types/class'
 import type { ClassroomSummary } from '@/shared/types/classroom'
 import type { StudentSeat } from '@/shared/types/student'
@@ -27,6 +28,10 @@ interface Drafts { draft: SeatDraft; original: SeatDraft; roster: StudentSeat[] 
 type Status = 'idle' | 'loading' | 'failed'
 
 const LOAD_FAILED = '座位表加载失败,请重试'
+
+/** 换页面,或同一页面换到别的模式(例如点顶栏回到不带 mode 的教室页) */
+const leavesSeating = (from: Location, to: Location) =>
+  to.pathname !== from.pathname || new URLSearchParams(to.search).get('mode') !== 'seating'
 
 /** 用名单 + 行列 + 版本建草稿;不在格内的座位视为未排座。 */
 function buildDraft(roster: StudentSeat[], rows: number, cols: number, baseVersion: number): SeatDraft {
@@ -109,8 +114,10 @@ export function useSeatingMode(o: Options) {
 
   const draft = drafts?.draft ?? null
   const dirty = !!drafts && isDirty(drafts.draft, drafts.original)
-  // 保存或加载进行中:草稿不可编辑(否则改动会被随后的重建悄悄丢掉)
-  const busy = saving || status === 'loading'
+  // 保存或加载进行中:草稿不可编辑(否则改动会被随后的重建悄悄丢掉);页面据 pending 给出可见提示。
+  // 保存成功后紧接着重新加载,这时已经保存完了,报“加载中”
+  const pending = status === 'loading' ? 'loading' as const : saving ? 'saving' as const : null
+  const busy = pending !== null
 
   const setSeatingDirty = useTeacherStore((s) => s.setSeatingDirty)
   useEffect(() => { setSeatingDirty(dirty) }, [dirty, setSeatingDirty])
@@ -122,6 +129,15 @@ export function useSeatingMode(o: Options) {
     window.addEventListener('beforeunload', guard)
     return () => window.removeEventListener('beforeunload', guard)
   }, [dirty])
+  // 站内跳转(链接、浏览器后退、程序导航)同样先确认;读 store 里的标记,
+  // 已经在切模式 / 换班级 / 退出登录时确认过的(标记已清)不再拦
+  const blocker = useBlocker(({ currentLocation, nextLocation }) =>
+    useTeacherStore.getState().seatingDirty && leavesSeating(currentLocation, nextLocation))
+  useEffect(() => {
+    if (blocker.state !== 'blocked') return
+    if (confirmLeaveSeating()) blocker.proceed()
+    else blocker.reset()
+  }, [blocker])
 
   const update = useCallback((f: (d: SeatDraft) => SeatDraft) => setDrafts((cur) => {
     if (!cur) return cur
@@ -188,7 +204,7 @@ export function useSeatingMode(o: Options) {
   }, [draft])
 
   if (!enabled || !drafts || !draft) {
-    return { ready: false as const, dirty, failed: status === 'failed', retry: () => void load() }
+    return { ready: false as const, dirty, pending, failed: status === 'failed', retry: () => void load() }
   }
 
   const selected = draft.students.find((s) => s.enrollmentId === draft.selected) ?? null
@@ -229,6 +245,7 @@ export function useSeatingMode(o: Options) {
   return {
     ready: true as const,
     dirty,
+    pending,
     seats: seats ?? [],
     rows: draft.rows,
     cols: draft.cols,

@@ -115,6 +115,22 @@ it('logs out: calls the API, clears state and lands on /login', async () => {
   expect(await screen.findByText('登录页')).toBeInTheDocument()
 })
 
+it('asks before logging out with unsaved seating changes', async () => {
+  vi.mocked(classesApi.mine).mockResolvedValue({ items: [cls('a', '三年二班', 'homeroom_teacher')] })
+  const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+  renderLayout()
+  await screen.findByText('三年二班')
+  useTeacherStore.setState({ seatingDirty: true })
+  fireEvent.click(screen.getByRole('button', { name: '退出登录' }))
+  expect(confirmSpy).toHaveBeenCalledWith('有未保存的座位修改,确定离开吗?')
+  expect(authApi.logout).not.toHaveBeenCalled()
+  expect(useAuthStore.getState().refreshToken).toBe('rt')
+  confirmSpy.mockReturnValue(true)
+  fireEvent.click(screen.getByRole('button', { name: '退出登录' }))
+  expect(authApi.logout).toHaveBeenCalledWith('rt')
+  confirmSpy.mockRestore()
+})
+
 it('mounts the student profile drawer at /teacher/students/:id', async () => {
   vi.mocked(classesApi.mine).mockResolvedValue({ items: [cls('a', '三年二班', 'homeroom_teacher')] })
   vi.mocked(studentsApi.detail).mockResolvedValue({ id: 's1', enrollment_id: 'e1', mk: 'S0001', name: '王小一', class_id: 'a' })

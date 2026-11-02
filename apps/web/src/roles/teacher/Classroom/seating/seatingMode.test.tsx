@@ -115,6 +115,50 @@ it('asks before leaving with unsaved changes', async () => {
   expect(screen.getByRole('tab', { name: '排座' })).toHaveAttribute('aria-selected', 'true')
 })
 
+it('asks once when leaving seating through the tab bar', async () => {
+  const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+  setup({ mode: '排座' })
+  fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
+  fireEvent.click(screen.getByRole('button', { name: '李小二' }))
+  fireEvent.click(screen.getByRole('tab', { name: '日常' }))
+  await waitFor(() => expect(screen.getByRole('tab', { name: '日常' })).toHaveAttribute('aria-selected', 'true'))
+  expect(confirmSpy).toHaveBeenCalledTimes(1)
+})
+
+it('asks before a route change with unsaved changes and stays when declined', async () => {
+  const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+  const { router } = setup({ mode: '排座' })
+  fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
+  fireEvent.click(screen.getByRole('button', { name: '李小二' }))
+  await act(() => router.navigate('/teacher/preferences'))
+  expect(confirmSpy).toHaveBeenCalledWith('有未保存的座位修改,确定离开吗?')
+  expect(router.state.location.pathname).toBe('/teacher/classroom')
+  expect(screen.getByRole('button', { name: '保存座位' })).toBeEnabled()
+  confirmSpy.mockReturnValue(true)
+  await act(() => router.navigate('/teacher/preferences'))
+  expect(confirmSpy).toHaveBeenCalledTimes(2)
+  expect(await screen.findByTestId('loc')).toHaveTextContent('/teacher/preferences')
+})
+
+it('guards a link back to the plain classroom page, which would leave seating mode', async () => {
+  const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+  const { router } = setup({ mode: '排座' })
+  fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
+  fireEvent.click(screen.getByRole('button', { name: '李小二' }))
+  await act(() => router.navigate('/teacher/classroom'))
+  expect(confirmSpy).toHaveBeenCalledTimes(1)
+  expect(screen.getByRole('tab', { name: '排座' })).toHaveAttribute('aria-selected', 'true')
+})
+
+it('does not ask before a route change when nothing is unsaved', async () => {
+  const confirmSpy = vi.spyOn(window, 'confirm')
+  const { router } = setup({ mode: '排座' })
+  await screen.findByRole('button', { name: '王小一' })
+  await act(() => router.navigate('/teacher/preferences'))
+  expect(confirmSpy).not.toHaveBeenCalled()
+  expect(await screen.findByTestId('loc')).toHaveTextContent('/teacher/preferences')
+})
+
 it('prints the seating chart', async () => {
   const win = { document: { write: vi.fn(), close: vi.fn() }, focus: vi.fn(), print: vi.fn() }
   vi.spyOn(window, 'open').mockReturnValue(win as unknown as Window)
@@ -283,7 +327,7 @@ it('builds the draft from data fetched summary-first when entering seating mode'
   const summaryBefore = vi.mocked(classroomApi.summary).mock.calls.length
   const rosterBefore = vi.mocked(studentsApi.listInClass).mock.calls.length
   fireEvent.click(screen.getByRole('tab', { name: '排座' }))
-  expect(screen.getByText('座位表加载中…')).toBeInTheDocument()
+  expect(screen.getByText('座位表加载中,暂时不能调整座位')).toBeInTheDocument()
   expect(screen.queryByRole('button', { name: '保存座位' })).toBeNull()
   expect(screen.queryByRole('button', { name: '王小一' })).toBeNull()
   await waitFor(() => expect(vi.mocked(studentsApi.listInClass).mock.calls.length).toBeGreaterThan(rosterBefore))
@@ -303,6 +347,42 @@ it('builds the draft from data fetched summary-first when entering seating mode'
   await waitFor(() => expect(seatingApi.save).toHaveBeenCalledWith('c1', { base_version: 5, rows: 3, cols: 4,
     seats: [{ enrollment_id: 'e1', row: 1, col: 2, locked: false }, { enrollment_id: 'e2', row: 2, col: 1, locked: false }] }))
   await waitFor(() => expect(screen.getByRole('button', { name: '随机打乱' })).toBeEnabled())
+})
+
+it('says the map is loading instead of silently ignoring clicks while the draft loads', async () => {
+  setup()
+  await screen.findByRole('button', { name: '王小一' })
+  let resolveRoster!: (v: { items: StudentSeat[] }) => void
+  vi.mocked(studentsApi.listInClass).mockReturnValue(new Promise((r) => { resolveRoster = r }))
+  fireEvent.click(screen.getByRole('tab', { name: '排座' }))
+  const toolbar = screen.getByRole('toolbar', { name: '教室工具' })
+  expect(within(toolbar).getByRole('status')).toHaveTextContent('加载中…')
+  expect(screen.getByText('座位表加载中,暂时不能调整座位')).toBeVisible()
+  expect(screen.getByTestId('classroom-stage')).toHaveAttribute('aria-busy', 'true')
+  await act(async () => { resolveRoster({ items: roster }) })
+  await waitFor(() => expect(screen.getByRole('button', { name: '随机打乱' })).toBeEnabled())
+  expect(within(toolbar).queryByRole('status')).toBeNull()
+  expect(screen.queryByText('座位表加载中,暂时不能调整座位')).toBeNull()
+  expect(screen.getByTestId('classroom-stage')).not.toHaveAttribute('aria-busy')
+})
+
+it('says saving, then loading, while the saved layout is reloaded', async () => {
+  let resolveSave!: (v: SeatingSaved) => void
+  vi.mocked(seatingApi.save).mockReturnValue(new Promise((r) => { resolveSave = r }))
+  setup({ mode: '排座' })
+  fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
+  fireEvent.click(screen.getByRole('button', { name: '李小二' }))
+  fireEvent.click(screen.getByRole('button', { name: '保存座位' }))
+  const toolbar = screen.getByRole('toolbar', { name: '教室工具' })
+  expect(within(toolbar).getByRole('status')).toHaveTextContent('保存中…')
+  expect(screen.getByText('正在保存,暂时不能调整座位')).toBeVisible()
+  let resolveRoster!: (v: { items: StudentSeat[] }) => void
+  vi.mocked(studentsApi.listInClass).mockReturnValue(new Promise((r) => { resolveRoster = r }))
+  await act(async () => { resolveSave({ version: 5, rows: 3, cols: 4 }) })
+  await waitFor(() => expect(within(toolbar).getByRole('status')).toHaveTextContent('加载中…'))
+  expect(screen.getByText('座位表加载中,暂时不能调整座位')).toBeVisible()
+  await act(async () => { resolveRoster({ items: roster }) })
+  await waitFor(() => expect(within(toolbar).queryByRole('status')).toBeNull())
 })
 
 it('stays read-only with a retry when fresh data cannot be loaded after saving', async () => {

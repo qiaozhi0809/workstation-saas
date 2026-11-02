@@ -79,3 +79,53 @@ test('subject teacher cannot mark attendance or arrange seats', async ({ page })
   await page.getByRole('button', { name: '王小一' }).click()
   await expect(page.getByText('只有班主任和副班主任可以记考勤')).toBeVisible()
 })
+
+// 1024×768 是常见的教室投影分辨率:各模式都不需要滚动页面,模式条完整落在首屏
+test('fits a 1024×768 projector without page scrolling in every mode', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 })
+  await signIn(page)
+  for (const mode of ['日常', '考勤', '点评', '排座']) {
+    await switchMode(page, mode)
+    if (mode === '排座') await expect(page.getByRole('button', { name: '随机打乱' })).toBeEnabled()
+    // e2e 的 tsconfig 不带 DOM 类型,只声明用到的两个属性
+    const overflow = await page.locator('main').evaluate((m) => {
+      const el = m as unknown as { scrollHeight: number; clientHeight: number }
+      return el.scrollHeight - el.clientHeight
+    })
+    expect(overflow, `${mode}模式页面不应滚动`).toBeLessThanOrEqual(0)
+    const bar = await page.getByRole('tablist', { name: '教室模式' }).boundingBox()
+    expect(bar!.y + bar!.height, `${mode}模式的模式条应在首屏内`).toBeLessThanOrEqual(768)
+  }
+})
+
+// 窗口较矮时进入排座:舞台随之变矮并重新适应,整间教室都在窗口内,不被裁掉
+test('keeps the whole classroom in view after entering seating in a short window', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 640 })
+  await signIn(page)
+  await switchMode(page, '排座')
+  await expect(page.getByRole('button', { name: '随机打乱' })).toBeEnabled()
+  await expect(async () => {
+    const room = await page.locator('.cr-canvas > *').first().boundingBox()
+    const stage = await page.getByTestId('classroom-stage').boundingBox()
+    expect(room!.y + room!.height).toBeLessThanOrEqual(stage!.y + stage!.height + 1)
+    expect(stage!.y + stage!.height).toBeLessThanOrEqual(640)
+  }).toPass()
+})
+
+test('asks before leaving unsaved seating through a link or logout', async ({ page }) => {
+  await signIn(page)
+  await switchMode(page, '排座')
+  await expect(page.getByRole('button', { name: '随机打乱' })).toBeEnabled()
+  // 只改草稿不保存,用例结束不留数据
+  await page.getByRole('button', { name: '王小一' }).click()
+  await page.getByRole('button', { name: '李小二' }).click()
+  const dialogs: string[] = []
+  page.on('dialog', (d) => { dialogs.push(d.message()); void d.dismiss() })
+  await page.getByRole('link', { name: '我的偏好' }).click()
+  await page.getByRole('button', { name: '退出登录' }).click()
+  await page.getByRole('link', { name: '班级工作台' }).click()
+  await expect.poll(() => dialogs.length).toBe(3)
+  expect(new Set(dialogs)).toEqual(new Set(['有未保存的座位修改,确定离开吗?']))
+  await expect(page).toHaveURL(/\/teacher\/classroom\?mode=seating$/)
+  await expect(page.getByRole('button', { name: '保存座位' })).toBeEnabled()
+})

@@ -195,7 +195,8 @@ function ClassroomView({ cls }: { cls: ClassView }) {
     if (next === 'seating') pick.close()
     // 离开考勤模式时考勤日期回到学校今天,日常 / 点评叠加的是今天的考勤
     if (mode === 'attendance' && next !== 'attendance') attDate.followToday()
-    setParams(next === 'daily' ? {} : { mode: next }, { replace: true })
+    // 同步切换:路由默认在 transition 里更新,渲染较慢时模式条和地图会停在旧模式,点击落到旧模式上
+    setParams(next === 'daily' ? {} : { mode: next }, { replace: true, flushSync: true })
   }
   const pickReward = usePickReward(classId, subject.value, pick.close)
   const pickedSeat = roster.data?.items.find((s) => s.enrollment_id === pick.pickedId) ?? null
@@ -220,17 +221,19 @@ function ClassroomView({ cls }: { cls: ClassView }) {
       onSeatClick: seating.onSeatClick, onEmptySeatClick: seating.onEmptySeatClick, onSeatDrop: seating.onSeatDrop,
       bar: <><SeatingBar {...seating.bar} /><UnseatedTray {...seating.tray} /></>,
     }
-  } else if (mode === 'seating') {
-    // 草稿就绪前地图只读
+  } else if (mode === 'seating' && seating.failed) {
+    // 草稿加载失败:地图只读,给出重试
     slot = {
-      bar: seating.failed ? (
+      bar: (
         <div role="alert" className="flex items-center gap-2 text-sm text-red">
           座位表加载失败
           <button type="button" className={toolButton} onClick={seating.retry}>重新加载</button>
         </div>
-      ) : <p className="text-sm text-ink-2">座位表加载中…</p>,
+      ),
     }
   }
+  // 排座草稿加载 / 保存中地图只读:工具栏显示状态,舞台上提示为什么点不动
+  const seatingPending = mode === 'seating' && !seating.failed ? seating.pending ?? (seating.ready ? null : 'loading') : null
 
   const reducedMotion = useReducedMotion()
   const seatedIds = useMemo(
@@ -275,7 +278,8 @@ function ClassroomView({ cls }: { cls: ClassView }) {
   }
 
   return (
-    <div ref={rootRef} className="flex h-full min-h-[640px] gap-4 bg-[#f5f5f4] p-4">
+    // 高度跟着窗口走:1024×768 的投影下各模式都不用滚动页面,舞台吃掉剩余高度(排座的操作条多,舞台就矮一些)
+    <div ref={rootRef} className="flex h-full gap-4 bg-[#f5f5f4] p-4">
       <section className="flex min-w-0 flex-1 flex-col gap-3">
         {!presenting && (
           <header>
@@ -303,18 +307,29 @@ function ClassroomView({ cls }: { cls: ClassView }) {
             )}
             {slot.toolbar}
           </>}
+          status={seatingPending === 'saving' ? '保存中…' : seatingPending === 'loading' ? '加载中…' : undefined}
         />
         {slot.bar}
         {/* 弹层锚点是点击瞬间的快照:在舞台上按下或滚轮平移 / 缩放时先关掉弹层 */}
         <div
           ref={stageRef}
-          className="relative min-h-[480px] flex-1 overflow-hidden rounded-2xl border border-line bg-panel"
+          data-testid="classroom-stage"
+          aria-busy={seatingPending ? true : undefined}
+          className={`relative min-h-[240px] flex-1 overflow-hidden rounded-2xl border border-line bg-panel ${
+            seatingPending ? 'cursor-progress' : ''}`}
           onPointerDownCapture={(e) => {
             if (!(e.target instanceof Element && e.target.closest('[role="dialog"]'))) review.closePopover()
           }}
           onWheel={review.closePopover}
         >
           {stage}
+          {seatingPending && (
+            // 工具栏的 status 已经朗读,这里只做可见提示
+            <p aria-hidden="true"
+              className="pointer-events-none absolute left-1/2 top-3 z-10 -translate-x-1/2 rounded-full bg-ink/80 px-3 py-1 text-sm text-white">
+              {seatingPending === 'saving' ? '正在保存,暂时不能调整座位' : '座位表加载中,暂时不能调整座位'}
+            </p>
+          )}
           {review.popover}
           {cardOpen && (
             <PickCard

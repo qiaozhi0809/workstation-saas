@@ -17,7 +17,14 @@ export const useTeacherStore = create<TeacherState>()((set) => ({
 
 export const SEATING_LEAVE_CONFIRM = '有未保存的座位修改,确定离开吗?'
 
-/** 没有未保存的座位修改,或老师确认放弃时返回 true。 */
+/**
+ * 没有未保存的座位修改,或老师确认放弃时返回 true。
+ * 确认放弃后清掉标记:调用方随后就离开排座,教室页的路由守卫不会再问第二次。
+ */
 export function confirmLeaveSeating(): boolean {
-  return !useTeacherStore.getState().seatingDirty || window.confirm(SEATING_LEAVE_CONFIRM)
+  const { seatingDirty, setSeatingDirty } = useTeacherStore.getState()
+  if (!seatingDirty) return true
+  if (!window.confirm(SEATING_LEAVE_CONFIRM)) return false
+  setSeatingDirty(false)
+  return true
 }
