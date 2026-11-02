@@ -114,8 +114,10 @@ export function useSeatingMode(o: Options) {
 
   const draft = drafts?.draft ?? null
   const dirty = !!drafts && isDirty(drafts.draft, drafts.original)
-  // 保存或加载进行中:草稿不可编辑(否则改动会被随后的重建悄悄丢掉)
-  const busy = saving || status === 'loading'
+  // 保存或加载进行中:草稿不可编辑(否则改动会被随后的重建悄悄丢掉);页面据 pending 给出可见提示。
+  // 保存成功后紧接着重新加载,这时已经保存完了,报“加载中”
+  const pending = status === 'loading' ? 'loading' as const : saving ? 'saving' as const : null
+  const busy = pending !== null
 
   const setSeatingDirty = useTeacherStore((s) => s.setSeatingDirty)
   useEffect(() => { setSeatingDirty(dirty) }, [dirty, setSeatingDirty])
@@ -202,7 +204,7 @@ export function useSeatingMode(o: Options) {
   }, [draft])
 
   if (!enabled || !drafts || !draft) {
-    return { ready: false as const, dirty, failed: status === 'failed', retry: () => void load() }
+    return { ready: false as const, dirty, pending, failed: status === 'failed', retry: () => void load() }
   }
 
   const selected = draft.students.find((s) => s.enrollmentId === draft.selected) ?? null
@@ -243,6 +245,7 @@ export function useSeatingMode(o: Options) {
   return {
     ready: true as const,
     dirty,
+    pending,
     seats: seats ?? [],
     rows: draft.rows,
     cols: draft.cols,
