@@ -263,3 +263,26 @@ def test_assistant_cannot_read(client, settings, path):
 
     r = client.get(f"{BASE}/{path}", headers=auth(settings, ASSISTANT_USER_ID))
     assert r.status_code == 403
+
+
+def test_value_types_are_strict(client, settings, db):
+    exam_id = _chinese_exam(client, settings)
+    for bad in ("88", True, False):
+        r = _put(client, settings, exam_id, [_cell(db, 0, "语文", bad)])
+        assert r.status_code == 400 and r.json()["error"]["code"] == "BAD_REQUEST", bad
+    assert _rows(db, exam_id) == []
+    cells = [
+        _cell(db, 0, "语文", 70),
+        _cell(db, 1, "语文", 99.9),
+        _cell(db, 2, "语文", 100),
+        _cell(db, 3, "语文", "absent"),
+        _cell(db, 4, "语文", None),
+    ]
+    r = _put(client, settings, exam_id, cells)
+    assert r.status_code == 200 and r.json() == {"updated": 5}
+    assert sorted((s.value for s in _rows(db, exam_id)), key=lambda v: (v is None, v)) == [
+        70,
+        99.9,
+        100,
+        None,
+    ]

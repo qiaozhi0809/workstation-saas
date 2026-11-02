@@ -57,7 +57,7 @@ class ScoreSheet(BaseModel):
 class ScoreCellIn(BaseModel):
     enrollment_id: UUID
     subject: str
-    value: float | Literal["absent"] | None
+    value: Annotated[float, Field(strict=True)] | Literal["absent"] | None
 
 
 class ScoresSave(BaseModel):
