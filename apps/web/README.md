@@ -34,6 +34,15 @@
 - 锚定小浮层只用 `Popover` / `Menu`。它们渲染在自己的包裹元素里、不走 portal:投屏全屏时只有教室页根节点子树可见,portal 到 `body` 的浮层既看不见还会抢焦点。
 - `Popover` 打开时聚焦内容里带 `data-autofocus` 的元素,没有则聚焦第一个可聚焦元素;第一个可聚焦元素不适合直接回车时(例如行列弹层里的"减少排数"),把 `data-autofocus` 标在合适的输入框上。
 
+### 图表、页面与数据约定
+
+- 图表只用 `shared/components/charts/*`(`ScoreBars` / `TrendLine` / `ScoreRadar` / `Sparkline`),测试里一律传 `width`。`TrendLine` 有 `yAxisWidth`(默认 40),刻度文字长(如“第 N 名”)时传宽一些(档案排名曲线传 56)。
+- 新页面用 `ClassGate`(`roles/teacher/ClassGate.tsx`),由它负责加载 / 出错 / 无班级 / 缺权限。
+- 档案抽屉用 `useStudentDrawer`(`?student=<student_id>&tab=`,任何页面都能开);不再有 `/teacher/students/:id` 路由,旧地址跳转到教室页。
+- 名单顺序统一用 `shared/lib/rosterOrder.ts` 的 `compareRoster`(学号按数字比较,空学号在后,再按姓名)。服务端名单是学号文本顺序,前端展示和导出前都要再排。
+- 有未保存修改的页面用 teacher store(`shared/stores/teacher.ts`)的 `setUnsaved(key, dirty)` 登记(`key` 为 `UnsavedKey`:`'seating'` | `'scores'`),顶栏换班 / 退出登录用 `confirmLeave()` 统一确认;站内跳转仍由页面自己的 `useBlocker` 拦。
+- 投屏:成绩模式在投屏时不着色、不显示角标和图例(用户决定:投屏不公开排名)。
+
 ### 教室操作台
 
 - 新模式的操作放进 `ModeSlot.actions`(`ClassroomPage.tsx`);次要操作放进 `ModeSlot.menu`(用 `MenuItem`),由 `ClassroomDock` 渲染成唯一的"更多操作"菜单;不再在舞台上方加工具条。
