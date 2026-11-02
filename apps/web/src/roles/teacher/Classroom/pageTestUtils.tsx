@@ -7,7 +7,7 @@
 // 然后在 beforeEach 里 `vi.resetAllMocks(); defaultApiMocks()`,用例里按需覆盖某个 mock 后再 setup()。
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, render } from '@testing-library/react'
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
+import { createMemoryRouter, RouterProvider, useLocation } from 'react-router-dom'
 import { vi } from 'vitest'
 import { attendanceApi } from '@/shared/api/attendance'
 import { classesApi } from '@/shared/api/classes'
@@ -156,7 +156,7 @@ function Loc() {
   return <div data-testid="loc">{useLocation().pathname}</div>
 }
 
-/** 渲染教室页(QueryClient 关重试 + MemoryRouter + Toaster),返回 render 结果与 QueryClient。 */
+/** 渲染教室页(QueryClient 关重试 + 内存 data router + Toaster),返回 render 结果、QueryClient 与 router。 */
 export function setup({ mode, perms, subjects, roster, classId = 'c1' }: SetupOptions = {}) {
   if (roster) vi.mocked(studentsApi.listInClass).mockResolvedValue({ items: roster })
   if (perms || subjects) {
@@ -172,16 +172,17 @@ export function setup({ mode, perms, subjects, roster, classId = 'c1' }: SetupOp
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const ui = mode && mode !== '日常' ? MODE_OF[mode] : null
   const entry = ui ? `/teacher/classroom?mode=${ui}` : '/teacher/classroom'
+  // data router:页面里的 useBlocker 只能在它下面用
+  const router = createMemoryRouter([
+    { path: '/teacher/classroom', element: <ClassroomPage /> },
+    { path: '/teacher/students/:id', element: <Loc /> },
+    { path: '/teacher/preferences', element: <Loc /> },
+  ], { initialEntries: [entry] })
   const result = render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={[entry]}>
-        <Routes>
-          <Route path="/teacher/classroom" element={<ClassroomPage />} />
-          <Route path="/teacher/students/:id" element={<Loc />} />
-        </Routes>
-      </MemoryRouter>
+      <RouterProvider router={router} />
       <Toaster />
     </QueryClientProvider>,
   )
-  return { ...result, client }
+  return { ...result, client, router }
 }

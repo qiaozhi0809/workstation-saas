@@ -115,6 +115,50 @@ it('asks before leaving with unsaved changes', async () => {
   expect(screen.getByRole('tab', { name: '排座' })).toHaveAttribute('aria-selected', 'true')
 })
 
+it('asks once when leaving seating through the tab bar', async () => {
+  const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+  setup({ mode: '排座' })
+  fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
+  fireEvent.click(screen.getByRole('button', { name: '李小二' }))
+  fireEvent.click(screen.getByRole('tab', { name: '日常' }))
+  await waitFor(() => expect(screen.getByRole('tab', { name: '日常' })).toHaveAttribute('aria-selected', 'true'))
+  expect(confirmSpy).toHaveBeenCalledTimes(1)
+})
+
+it('asks before a route change with unsaved changes and stays when declined', async () => {
+  const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+  const { router } = setup({ mode: '排座' })
+  fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
+  fireEvent.click(screen.getByRole('button', { name: '李小二' }))
+  await act(() => router.navigate('/teacher/preferences'))
+  expect(confirmSpy).toHaveBeenCalledWith('有未保存的座位修改,确定离开吗?')
+  expect(router.state.location.pathname).toBe('/teacher/classroom')
+  expect(screen.getByRole('button', { name: '保存座位' })).toBeEnabled()
+  confirmSpy.mockReturnValue(true)
+  await act(() => router.navigate('/teacher/preferences'))
+  expect(confirmSpy).toHaveBeenCalledTimes(2)
+  expect(await screen.findByTestId('loc')).toHaveTextContent('/teacher/preferences')
+})
+
+it('guards a link back to the plain classroom page, which would leave seating mode', async () => {
+  const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+  const { router } = setup({ mode: '排座' })
+  fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
+  fireEvent.click(screen.getByRole('button', { name: '李小二' }))
+  await act(() => router.navigate('/teacher/classroom'))
+  expect(confirmSpy).toHaveBeenCalledTimes(1)
+  expect(screen.getByRole('tab', { name: '排座' })).toHaveAttribute('aria-selected', 'true')
+})
+
+it('does not ask before a route change when nothing is unsaved', async () => {
+  const confirmSpy = vi.spyOn(window, 'confirm')
+  const { router } = setup({ mode: '排座' })
+  await screen.findByRole('button', { name: '王小一' })
+  await act(() => router.navigate('/teacher/preferences'))
+  expect(confirmSpy).not.toHaveBeenCalled()
+  expect(await screen.findByTestId('loc')).toHaveTextContent('/teacher/preferences')
+})
+
 it('prints the seating chart', async () => {
   const win = { document: { write: vi.fn(), close: vi.fn() }, focus: vi.fn(), print: vi.fn() }
   vi.spyOn(window, 'open').mockReturnValue(win as unknown as Window)

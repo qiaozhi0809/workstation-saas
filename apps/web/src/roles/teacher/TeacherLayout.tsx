@@ -22,6 +22,7 @@ export default function TeacherLayout() {
   }, [user, classes, classId, setClass])
 
   const logout = () => {
+    if (!confirmLeaveSeating()) return
     const refreshToken = useAuthStore.getState().refreshToken
     if (refreshToken) authApi.logout(refreshToken).catch(() => {})
     useAuthStore.getState().logout()
@@ -43,8 +44,8 @@ export default function TeacherLayout() {
           )}
         </div>
         <div className="flex items-center gap-4">
-          <Link to="/teacher/preferences"
-            onClick={(e) => { if (!confirmLeaveSeating()) e.preventDefault() }}>我的偏好</Link>
+          {/* 排座有未保存修改时,站内跳转由教室页的路由守卫确认 */}
+          <Link to="/teacher/preferences">我的偏好</Link>
           <span>{user?.display_name}</span>
           <button type="button" onClick={logout}>退出登录</button>
         </div>
