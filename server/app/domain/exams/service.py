@@ -113,9 +113,18 @@ def list_exams(
 
 
 def get_visible_exam(
-    db: Session, cls: SchoolClass, exam_id: UUID, bindings: Sequence[Binding]
+    db: Session,
+    cls: SchoolClass,
+    exam_id: UUID,
+    bindings: Sequence[Binding],
+    *,
+    lock: bool = False,
 ) -> Exam:
-    exam = db.get(Exam, exam_id)
+    """``lock`` takes the row FOR UPDATE: score writes / exam edits / deletes serialise per exam."""
+    if lock:
+        exam = db.get(Exam, exam_id, with_for_update=True, populate_existing=True)
+    else:
+        exam = db.get(Exam, exam_id)
     if exam is None or exam.class_id != cls.id:
         raise ApiError(404, "NOT_FOUND", "考试不存在")
     visible = visible_subjects(bindings, class_scope_of(cls))
@@ -136,6 +145,29 @@ def ensure_exam_owner(
     if writable_subjects(bindings, class_scope_of(cls)) is None:
         return
     if exam.created_by_user_id != user_id:
+        deny(
+            db,
+            user_id=user_id,
+            action="exam.write",
+            object_type="exam",
+            object_id=str(exam.id),
+            request=request,
+        )
+
+
+def ensure_exam_deletable(
+    db: Session,
+    request: Request | None,
+    user_id: UUID,
+    bindings: Sequence[Binding],
+    cls: SchoolClass,
+    exam: Exam,
+) -> None:
+    """A subject teacher may not delete an exam that holds subjects they cannot write."""
+    writable = writable_subjects(bindings, class_scope_of(cls))
+    if writable is None:
+        return
+    if any(s["name"] not in writable for s in exam.subjects):
         deny(
             db,
             user_id=user_id,
@@ -202,22 +234,42 @@ def update_exam(
     request: Request | None,
 ) -> ExamOut:
     _check_subjects_allowed(cls, data, bindings)
+    writable = writable_subjects(bindings, class_scope_of(cls))
     for s in data.subjects:
         top = db.scalar(
-            select(func.max(Score.value)).where(Score.exam_id == exam.id, Score.subject == s.name)
+            select(func.max(Score.value))
+            .join(Enrollment, Enrollment.id == Score.enrollment_id)
+            .where(
+                Score.exam_id == exam.id,
+                Score.subject == s.name,
+                Enrollment.status == "active",
+            )
         )
         if top is not None and s.full < top:
             raise ApiError(
                 400, "FULL_BELOW_SCORES", "满分不能低于已录入的最高分", {"subject": s.name}
             )
-    kept = {s.name for s in data.subjects}
-    removed = [s["name"] for s in exam.subjects if s["name"] not in kept]
+    requested = {s.name: s.model_dump() for s in data.subjects}
+    existing = list(exam.subjects)
+    # 只有可写科目参与增删;不可写(看不见)的科目原样保留在原位置
+    new_subjects = [
+        e if (writable is not None and e["name"] not in writable) else requested[e["name"]]
+        for e in existing
+        if (writable is not None and e["name"] not in writable) or e["name"] in requested
+    ]
+    present = {e["name"] for e in existing}
+    new_subjects += [v for n, v in requested.items() if n not in present]
+    removed = [
+        e["name"]
+        for e in existing
+        if (writable is None or e["name"] in writable) and e["name"] not in requested
+    ]
     if removed:
         db.execute(delete(Score).where(Score.exam_id == exam.id, Score.subject.in_(removed)))
     exam.name = data.name
     exam.exam_type = data.exam_type
     exam.date = data.date
-    exam.subjects = [s.model_dump() for s in data.subjects]
+    exam.subjects = new_subjects
     merge_subjects(db, cls, data.subjects)
     record(
         db,

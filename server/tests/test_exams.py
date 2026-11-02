@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import select
 
 from app.domain.exams.subjects import stage_of
-from app.models import Score
+from app.models import Enrollment, Score
 from tests.helpers import audit_rows, auth, enrollment_of
 from tests.seed_ids import (
     ASSISTANT_USER_ID,
@@ -197,3 +197,77 @@ def test_delete_exam_cascades_and_audits(client, settings, db):
 def test_assistant_cannot_create_exam(client, settings):
     r = client.post(EXAMS, json=_body(), headers=auth(settings, ASSISTANT_USER_ID))
     assert r.status_code == 403
+
+
+def _mixed_exam(client, settings, db):
+    """Math teacher's 数学 exam, which the homeroom teacher extends with 语文 (+ a score each)."""
+    exam = _create(client, settings, _body([{"name": "数学", "full": 100}]), SUBJECT_USER_ID)
+    both = _body([{"name": "数学", "full": 100}, {"name": "语文", "full": 100}])
+    r = client.put(f"{EXAMS}/{exam['id']}", json=both, headers=auth(settings))
+    assert r.status_code == 200
+    _put_score(db, exam["id"], "语文", 77)
+    _put_score(db, exam["id"], "数学", 66)
+    return exam
+
+
+def test_subject_teacher_update_keeps_hidden_subjects(client, settings, db):
+    exam = _mixed_exam(client, settings, db)
+    teacher = auth(settings, SUBJECT_USER_ID)
+    r = client.put(
+        f"{EXAMS}/{exam['id']}",
+        json=_body([{"name": "数学", "full": 120}], name="改名后"),
+        headers=teacher,
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["name"] == "改名后" and r.json()["subjects"] == [{"name": "数学", "full": 120}]
+    db.expire_all()
+    assert sorted(s.subject for s in _scores(db, exam["id"])) == ["数学", "语文"]
+    got = client.get(EXAMS, headers=auth(settings)).json()["items"]
+    mine = next(e for e in got if e["id"] == exam["id"])
+    assert mine["name"] == "改名后"
+    assert mine["subjects"] == [{"name": "数学", "full": 120}, {"name": "语文", "full": 100}]
+
+
+def test_subject_teacher_removing_own_subject_keeps_hidden_ones(client, settings, db):
+    exam = _mixed_exam(client, settings, db)
+    r = client.put(
+        f"{EXAMS}/{exam['id']}",
+        json=_body([{"name": "数学", "full": 100}]),
+        headers=auth(settings, SUBJECT_USER_ID),
+    )
+    assert r.status_code == 200
+    # 语文 位置不变,新增的可写科目追加在末尾
+    got = client.get(EXAMS, headers=auth(settings)).json()["items"]
+    mine = next(e for e in got if e["id"] == exam["id"])
+    assert [s["name"] for s in mine["subjects"]] == ["数学", "语文"]
+
+
+def test_full_below_ignores_removed_students_scores(client, settings, db):
+    exam = _create(client, settings)
+    _put_score(db, exam["id"], "科学", 45, student_idx=5)
+    _put_score(db, exam["id"], "科学", 20, student_idx=0)
+    body = _body([{"name": "科学", "full": 30}, {"name": "书法", "full": 20}])
+    assert client.put(f"{EXAMS}/{exam['id']}", json=body, headers=auth(settings)).status_code == 400
+    db.get(Enrollment, enrollment_of(db, STUDENT_IDS[5])).status = "removed"
+    db.flush()
+    r = client.put(f"{EXAMS}/{exam['id']}", json=body, headers=auth(settings))
+    assert r.status_code == 200, r.text
+
+
+def test_subject_teacher_cannot_delete_exam_with_foreign_subjects(client, settings, db):
+    exam = _mixed_exam(client, settings, db)
+    r = client.delete(f"{EXAMS}/{exam['id']}", headers=auth(settings, SUBJECT_USER_ID))
+    assert r.status_code == 403 and r.json()["error"]["code"] == "FORBIDDEN"
+    db.expire_all()
+    assert sorted(s.subject for s in _scores(db, exam["id"])) == ["数学", "语文"]
+    denied = [a for a in audit_rows(db, exam["id"]) if not a.success]
+    assert [(a.action, a.object_type) for a in denied] == [("exam.write", "exam")]
+
+
+def test_subject_teacher_can_delete_own_only_exam(client, settings, db):
+    exam = _create(client, settings, _body([{"name": "数学", "full": 100}]), SUBJECT_USER_ID)
+    _put_score(db, exam["id"], "数学", 66)
+    r = client.delete(f"{EXAMS}/{exam['id']}", headers=auth(settings, SUBJECT_USER_ID))
+    assert r.status_code == 204
+    db.expire_all()
+    assert _scores(db, exam["id"]) == []

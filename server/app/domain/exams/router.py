@@ -112,7 +112,7 @@ def update_exam(
         class_scope_of(cls),
         object_id=str(class_id),
     )
-    exam = service.get_visible_exam(db, cls, exam_id, bindings)
+    exam = service.get_visible_exam(db, cls, exam_id, bindings, lock=True)
     service.ensure_exam_owner(db, request, user.id, bindings, cls, exam)
     return service.update_exam(db, cls, exam, data, user.id, bindings, request)
 
@@ -136,8 +136,9 @@ def delete_exam(
         class_scope_of(cls),
         object_id=str(class_id),
     )
-    exam = service.get_visible_exam(db, cls, exam_id, bindings)
+    exam = service.get_visible_exam(db, cls, exam_id, bindings, lock=True)
     service.ensure_exam_owner(db, request, user.id, bindings, cls, exam)
+    service.ensure_exam_deletable(db, request, user.id, bindings, cls, exam)
     service.delete_exam(db, cls, exam, user.id, bindings, request)
     return Response(status_code=204)
 
@@ -178,7 +179,7 @@ def put_scores(
         class_scope_of(cls),
         object_id=str(class_id),
     )
-    exam = service.get_visible_exam(db, cls, exam_id, bindings)
+    exam = service.get_visible_exam(db, cls, exam_id, bindings, lock=True)
     n = service.save_scores(db, cls, exam, data.cells, user.id, bindings, request)
     return ScoresSaved(updated=n)
 
