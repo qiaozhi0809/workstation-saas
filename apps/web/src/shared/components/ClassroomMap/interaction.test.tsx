@@ -108,6 +108,41 @@ it('pans a focused off-screen seat into view', () => {
   }
 })
 
+it('refits when the stage resizes, but keeps a zoom the teacher chose until 适应', () => {
+  const observers: (() => void)[] = []
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(cb: () => void) { observers.push(cb) }
+    observe() {}
+    disconnect() {}
+  })
+  let height = 600
+  vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(800)
+  vi.spyOn(Element.prototype, 'clientHeight', 'get').mockImplementation(() => height)
+  const resize = (h: number) => { height = h; act(() => observers.forEach((cb) => cb())) }
+  try {
+    const ref = createRef<ClassroomViewportHandle>()
+    const { container } = render(<ClassroomMap rows={6} cols={4} seats={seats} viewportRef={ref} />)
+    const tall = scaleOf(container)
+    // 进入排座多出操作条,舞台变矮:整间教室重新放进舞台
+    resize(400)
+    const short = scaleOf(container)
+    expect(short).toBeLessThan(tall)
+    // 老师手动放大后,舞台尺寸再变也不覆盖
+    act(() => ref.current!.zoomIn())
+    const zoomed = scaleOf(container)
+    resize(600)
+    expect(scaleOf(container)).toBe(zoomed)
+    // 点“适应”后恢复自动适应
+    act(() => ref.current!.fit())
+    expect(scaleOf(container)).toBe(tall)
+    resize(400)
+    expect(scaleOf(container)).toBe(short)
+  } finally {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  }
+})
+
 it('never drops onto a locked seat', () => {
   const onDrop = vi.fn()
   const locked = [seat('1', '王小一', 1, { seat_locked: true }), seat('2', '李小二', 2)]

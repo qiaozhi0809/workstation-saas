@@ -97,3 +97,17 @@ test('fits a 1024×768 projector without page scrolling in every mode', async ({
     expect(bar!.y + bar!.height, `${mode}模式的模式条应在首屏内`).toBeLessThanOrEqual(768)
   }
 })
+
+// 窗口较矮时进入排座:舞台随之变矮并重新适应,整间教室都在窗口内,不被裁掉
+test('keeps the whole classroom in view after entering seating in a short window', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 640 })
+  await signIn(page)
+  await switchMode(page, '排座')
+  await expect(page.getByRole('button', { name: '随机打乱' })).toBeEnabled()
+  await expect(async () => {
+    const room = await page.locator('.cr-canvas > *').first().boundingBox()
+    const stage = await page.getByTestId('classroom-stage').boundingBox()
+    expect(room!.y + room!.height).toBeLessThanOrEqual(stage!.y + stage!.height + 1)
+    expect(stage!.y + stage!.height).toBeLessThanOrEqual(640)
+  }).toPass()
+})
