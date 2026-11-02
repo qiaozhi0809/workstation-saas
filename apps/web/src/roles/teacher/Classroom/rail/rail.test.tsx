@@ -117,6 +117,43 @@ it('renders the rail as an overlay below 1100px and closes it with Escape', asyn
   expect(screen.queryByRole('complementary', { name: '班级概况' })).not.toBeInTheDocument()
 })
 
+it('moves focus into the overlay rail and returns it to the opener on close', async () => {
+  window.innerWidth = 1024
+  setup()
+  const opener = await screen.findByRole('button', { name: '概况栏' })
+  fireEvent.click(opener)
+  const close = await screen.findByRole('button', { name: '收起概况栏' })
+  expect(close).toHaveFocus()
+  fireEvent.click(close)
+  expect(screen.queryByRole('complementary', { name: '班级概况' })).not.toBeInTheDocument()
+  expect(opener).toHaveFocus()
+  expect(opener).toHaveAttribute('aria-pressed', 'false')
+  fireEvent.click(opener)
+  await screen.findByRole('complementary', { name: '班级概况' })
+  fireEvent.keyDown(document, { key: 'Escape' })
+  expect(screen.queryByRole('complementary', { name: '班级概况' })).not.toBeInTheDocument()
+  expect(opener).toHaveFocus()
+})
+
+it('closes the overlay rail when going to roll call', async () => {
+  window.innerWidth = 1024
+  setup()
+  fireEvent.click(await screen.findByRole('button', { name: '概况栏' }))
+  const rail = await screen.findByRole('complementary', { name: '班级概况' })
+  fireEvent.click(await within(rail).findByRole('button', { name: '去点名' }))
+  expect(screen.getByRole('tab', { name: '考勤' })).toHaveAttribute('aria-selected', 'true')
+  expect(screen.queryByRole('complementary', { name: '班级概况' })).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '概况栏' })).toHaveFocus()
+})
+
+it('does not close the inline rail on Escape', async () => {
+  window.innerWidth = 1280
+  setup()
+  await screen.findByRole('complementary', { name: '班级概况' })
+  fireEvent.keyDown(document, { key: 'Escape' })
+  expect(screen.getByRole('complementary', { name: '班级概况' })).toBeInTheDocument()
+})
+
 it('keeps the inline rail without a close button at 1280px', async () => {
   window.innerWidth = 1280
   setup()

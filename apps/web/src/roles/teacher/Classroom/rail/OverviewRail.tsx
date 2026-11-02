@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { X } from 'lucide-react'
 import { Button } from '@/shared/components/ui/button'
 import { useEscapeLayer } from '@/shared/hooks/useEscapeLayer'
@@ -25,6 +26,9 @@ export default function OverviewRail({ classId, summary, roster, perms, todayAtt
 }) {
   const overlay = variant === 'overlay'
   useEscapeLayer(overlay, onClose)
+  const closeRef = useRef<HTMLButtonElement>(null)
+  // 窄屏浮层打开时把焦点移进来;只在挂载时,跨断点切换形态不抢焦点
+  useEffect(() => { if (overlay) closeRef.current?.focus() }, []) // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <aside aria-label="班级概况" className={cn(
       'flex flex-col gap-3 overflow-y-auto',
@@ -35,7 +39,7 @@ export default function OverviewRail({ classId, summary, roster, perms, todayAtt
       {overlay && (
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold">班级概况</h2>
-          <Button type="button" variant="ghost" size="icon" className="h-7 w-7" aria-label="收起概况栏" onClick={onClose}>
+          <Button ref={closeRef} type="button" variant="ghost" size="icon" className="h-7 w-7" aria-label="收起概况栏" onClick={onClose}>
             <X aria-hidden />
           </Button>
         </div>

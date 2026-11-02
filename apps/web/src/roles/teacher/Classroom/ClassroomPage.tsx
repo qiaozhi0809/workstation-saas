@@ -74,7 +74,7 @@ export default function ClassroomPage() {
   if (classes.isLoading) return <LoadingState />
   // 只有从没拿到过数据时才显示错误;后台刷新失败时保留已加载的页面(以及排座草稿)
   if (classes.isError && !classes.data) {
-    return <ErrorState title="班级加载失败" onRetry={() => void classes.refetch()} />
+    return <ErrorState title="班级加载失败" onRetry={() => void classes.refetch()} retrying={classes.isFetching} />
   }
   const items = classes.data?.items ?? []
   if (items.length === 0) {
@@ -99,6 +99,9 @@ function ClassroomView({ cls }: { cls: ClassView }) {
   const [editingBoard, setEditingBoard] = useState(false)
   const width = useWindowWidth()
   const [railOpen, setRailOpen] = useState(() => window.innerWidth >= RAIL_MIN_WIDTH)
+  const railButtonRef = useRef<HTMLButtonElement>(null)
+  const overlayRail = width < RAIL_MIN_WIDTH
+  const closeRail = () => { setRailOpen(false); railButtonRef.current?.focus() }
 
   const roster = useQuery({
     queryKey: ['class-students', classId],
@@ -265,7 +268,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
   }
 
   let stage: ReactNode
-  if (roster.isError && !roster.data) stage = <ErrorState title="名单加载失败" onRetry={() => void roster.refetch()} />
+  if (roster.isError && !roster.data) stage = <ErrorState title="名单加载失败" onRetry={() => void roster.refetch()} retrying={roster.isFetching} />
   else if (!roster.data || summary.isPending) stage = <LoadingState />
   else {
     stage = (
@@ -312,6 +315,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
           onTogglePresent={togglePresent}
           railOpen={railOpen}
           onToggleRail={() => setRailOpen((o) => !o)}
+          railButtonRef={railButtonRef}
           extra={<>
             {perms.includes('board.write') && !presenting && summary.data && (
               <Button variant="outline" size="sm" onClick={() => setEditingBoard(true)}>
@@ -369,9 +373,13 @@ function ClassroomView({ cls }: { cls: ClassView }) {
           roster={roster.data?.items ?? []}
           perms={perms}
           todayAttendance={todayAttendance.data}
-          variant={width >= RAIL_MIN_WIDTH ? 'inline' : 'overlay'}
-          onClose={() => setRailOpen(false)}
-          onRollCall={() => { if (mode !== 'attendance') setMode('attendance') }}
+          variant={overlayRail ? 'overlay' : 'inline'}
+          onClose={closeRail}
+          onRollCall={() => {
+            if (mode !== 'attendance') setMode('attendance')
+            // 窄屏浮层会盖住座位图,点名要点座位,所以一并收起
+            if (overlayRail) closeRail()
+          }}
         />
       )}
     </div>

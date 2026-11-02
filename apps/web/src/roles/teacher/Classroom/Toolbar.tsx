@@ -12,7 +12,7 @@ export const toolButton = buttonVariants({ variant: 'outline', size: 'sm' })
  * → 缩小 / 适应 / 放大 → 全屏 → 概况栏(投屏时不显示)。
  */
 export default function Toolbar({
-  onPick, picking = false, viewport, presenting, onTogglePresent, railOpen, onToggleRail, extra, status,
+  onPick, picking = false, viewport, presenting, onTogglePresent, railOpen, onToggleRail, railButtonRef, extra, status,
 }: {
   onPick?: () => void
   picking?: boolean
@@ -21,6 +21,8 @@ export default function Toolbar({
   onTogglePresent(): void
   railOpen: boolean
   onToggleRail(): void
+  /** 概况栏按钮,浮层关闭后把焦点还给它 */
+  railButtonRef?: RefObject<HTMLButtonElement>
   extra?: ReactNode
   /** 进行中的操作(如“加载中…”),给出时显示并朗读 */
   status?: string
@@ -51,7 +53,7 @@ export default function Toolbar({
           {presenting ? '退出全屏' : '全屏'}
         </Button>
         {!presenting && (
-          <Button variant="outline" size="sm" aria-pressed={railOpen} onClick={onToggleRail}>
+          <Button ref={railButtonRef} variant="outline" size="sm" aria-pressed={railOpen} onClick={onToggleRail}>
             <PanelRight aria-hidden />概况栏
           </Button>
         )}
