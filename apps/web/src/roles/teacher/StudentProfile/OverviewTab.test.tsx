@@ -4,7 +4,9 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { ApiError } from '@/shared/api/client'
 import { classroomApi } from '@/shared/api/classroom'
+import { attendanceApi } from '@/shared/api/attendance'
 import { examsApi } from '@/shared/api/exams'
+import { reviewsApi } from '@/shared/api/reviews'
 import { studentsApi } from '@/shared/api/students'
 import { Toaster } from '@/shared/components/Toast'
 import type { Gradebook } from '@/shared/types/grades'
@@ -15,6 +17,8 @@ import OverviewTab, { CLASS_ROLE_PRESETS } from './OverviewTab'
 vi.mock('@/shared/api/classroom', () => ({ classroomApi: { summary: vi.fn() } }))
 vi.mock('@/shared/api/students', () => ({ studentsApi: { setClassRole: vi.fn() } }))
 vi.mock('@/shared/api/exams', () => ({ examsApi: { gradebook: vi.fn() } }))
+vi.mock('@/shared/api/reviews', () => ({ reviewsApi: { summary: vi.fn() } }))
+vi.mock('@/shared/api/attendance', () => ({ attendanceApi: { month: vi.fn() } }))
 const trendLine = vi.hoisted(() => vi.fn())
 const scoreRadar = vi.hoisted(() => vi.fn())
 vi.mock('@/shared/components/charts/TrendLine', () => ({
@@ -37,8 +41,8 @@ const book: Gradebook = {
 
 const profile: StudentProfile = { id: 's1', mk: 'S0001', name: '王小一', class_id: 'c1', enrollment_id: 'e1' }
 
-function renderTab({ perms, student }: { perms: ClassPerm[]; student: StudentProfile }) {
-  vi.mocked(classroomApi.summary).mockResolvedValue({ my_perms: perms } as never)
+function renderTab({ perms, student, today = '2026-11-02' }: { perms: ClassPerm[]; student: StudentProfile; today?: string }) {
+  vi.mocked(classroomApi.summary).mockResolvedValue({ my_perms: perms, today } as never)
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const invalidate = vi.spyOn(client, 'invalidateQueries')
   render(
@@ -53,6 +57,8 @@ beforeEach(() => {
   vi.resetAllMocks()
   vi.mocked(studentsApi.setClassRole).mockResolvedValue({ enrollment_id: 'e1', class_role: null })
   vi.mocked(examsApi.gradebook).mockResolvedValue({ exams: [] })
+  vi.mocked(reviewsApi.summary).mockResolvedValue({ week_start: '2026-10-26', items: [] })
+  vi.mocked(attendanceApi.month).mockResolvedValue({ month: '2026-11', items: [] })
 })
 
 it('lets the homeroom teacher set a class role', async () => {
@@ -167,4 +173,95 @@ it('renders no score blocks when the gradebook is forbidden', async () => {
   await waitFor(() => expect(examsApi.gradebook).toHaveBeenCalled())
   expect(screen.queryByRole('img')).toBeNull()
   expect(screen.queryByRole('alert')).toBeNull()
+})
+
+const kpi = (name: string) => within(screen.getByRole('group', { name: '概况指标' })).getByText(name).parentElement!
+
+it('shows total points and review count with review.read', async () => {
+  vi.mocked(reviewsApi.summary).mockResolvedValue({ week_start: '2026-10-26', items: [
+    { enrollment_id: 'e2', total: 99, week: 1, plus_count: 9, minus_count: 0 },
+    { enrollment_id: 'e1', total: -3, week: 0, plus_count: 2, minus_count: 3 },
+  ] })
+  renderTab({ perms: ['review.read'], student: profile })
+  await screen.findByText('点评 5 次')
+  expect(reviewsApi.summary).toHaveBeenCalledWith('c1')
+  expect(kpi('累计积分')).toHaveTextContent('-3')
+})
+
+it('shows 0 points and 0 reviews when the student is not in the summary', async () => {
+  renderTab({ perms: ['review.read'], student: profile })
+  await screen.findByText('点评 0 次')
+  expect(kpi('累计积分')).toHaveTextContent('0')
+})
+
+it('hides the points card and skips the request without review.read', async () => {
+  renderTab({ perms: ['attendance.read'], student: profile })
+  await screen.findByText('本月考勤')
+  expect(screen.queryByText('累计积分')).toBeNull()
+  expect(reviewsApi.summary).not.toHaveBeenCalled()
+})
+
+it('shows 全勤 when the month has no exceptions', async () => {
+  renderTab({ perms: ['attendance.read'], student: profile })
+  expect(await screen.findByText('全勤')).toBeInTheDocument()
+  expect(screen.getByText('11月无请假缺勤迟到')).toBeInTheDocument()
+})
+
+it('counts distinct absent days and per-status records for this student only', async () => {
+  vi.mocked(attendanceApi.month).mockResolvedValue({ month: '2026-11', items: [
+    { enrollment_id: 'e1', date: '2026-11-01', status: 'leave' },
+    { enrollment_id: 'e1', date: '2026-11-02', status: 'absent' },
+    { enrollment_id: 'e1', date: '2026-11-03', status: 'late' },
+    { enrollment_id: 'e1', date: '2026-11-04', status: 'late' },
+    { enrollment_id: 'e2', date: '2026-11-05', status: 'absent' },
+  ] })
+  renderTab({ perms: ['attendance.read'], student: profile })
+  expect(await screen.findByText('2 天未到')).toBeInTheDocument()
+  expect(screen.getByText('请假 1 · 缺勤 1 · 迟到 2')).toBeInTheDocument()
+})
+
+it('shows 0 天未到 when there are only late records', async () => {
+  vi.mocked(attendanceApi.month).mockResolvedValue({ month: '2026-11', items: [
+    { enrollment_id: 'e1', date: '2026-11-03', status: 'late' },
+  ] })
+  renderTab({ perms: ['attendance.read'], student: profile })
+  expect(await screen.findByText('0 天未到')).toBeInTheDocument()
+  expect(screen.getByText('请假 0 · 缺勤 0 · 迟到 1')).toBeInTheDocument()
+  expect(screen.queryByText('全勤')).toBeNull()
+})
+
+it('queries the month of summary.today and hides the card without attendance.read', async () => {
+  renderTab({ perms: ['attendance.read'], student: profile, today: '1999-03-31' })
+  await waitFor(() => expect(attendanceApi.month).toHaveBeenCalledWith('c1', '1999-03'))
+  expect(await screen.findByText('3月无请假缺勤迟到')).toBeInTheDocument()
+})
+
+it('does not show the attendance card without attendance.read', async () => {
+  renderTab({ perms: ['review.read'], student: profile })
+  await screen.findByText('累计积分')
+  expect(screen.queryByText('本月考勤')).toBeNull()
+  expect(attendanceApi.month).not.toHaveBeenCalled()
+})
+
+it.each([
+  ['2026-03-05', '2026-03-05', '就是今天'],
+  ['2010-03-08', '2026-03-05', '3 天后'],
+  ['2010-01-02', '2026-12-30', '3 天后'],
+])('shows birthday %s on %s as %s', async (birthdate, today, hint) => {
+  renderTab({ perms: [], student: { ...profile, birthdate }, today })
+  expect(await screen.findByText(hint)).toBeInTheDocument()
+  const [, m, d] = birthdate.split('-').map(Number)
+  expect(kpi('生日')).toHaveTextContent(`${m}月${d}日`)
+})
+
+it('shows 未填 without a birthday', async () => {
+  renderTab({ perms: [], student: profile })
+  expect(await screen.findByText('未填')).toBeInTheDocument()
+})
+
+it('shows — while a card is loading or failed, without blocking the others', async () => {
+  vi.mocked(reviewsApi.summary).mockRejectedValue(new ApiError(500, 'X', 'no'))
+  renderTab({ perms: ['review.read', 'attendance.read'], student: profile })
+  expect(await screen.findByText('全勤')).toBeInTheDocument()
+  await waitFor(() => expect(kpi('累计积分')).toHaveTextContent('—'))
 })
