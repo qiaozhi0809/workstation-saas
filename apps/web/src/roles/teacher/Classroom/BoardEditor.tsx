@@ -1,19 +1,19 @@
-import { useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ApiError } from '@/shared/api/client'
 import { classroomApi } from '@/shared/api/classroom'
+import Modal from '@/shared/components/overlay/Modal'
 import { toast } from '@/shared/components/Toast'
-import { useEscapeLayer } from '@/shared/hooks/useEscapeLayer'
+import { Button } from '@/shared/components/ui/button'
+import { Input } from '@/shared/components/ui/input'
+import { Label } from '@/shared/components/ui/label'
+import { Textarea } from '@/shared/components/ui/textarea'
 import type { Board } from '@/shared/types/classroom'
-import { toolButton } from './Toolbar'
 
 const MAX_TITLE = 10
 const MAX_TEXT = 120
 const MAX_LINES = 4
 const MAX_LABEL = 12
-const primaryButton =
-  'rounded-lg bg-ink px-3 py-1 text-sm text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50'
-const inputClass = 'rounded-lg border border-line-2 bg-panel px-2 py-1 text-sm'
 
 const len = (s: string) => Array.from(s).length
 
@@ -48,7 +48,7 @@ export default function BoardEditor({ classId, board, onClose }: { classId: stri
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const inFlight = useRef(false)
-  useEscapeLayer(true, onClose)
+  const id = useId()
 
   const set = (key: keyof Form) => (e: { target: { value: string } }) =>
     setForm((f) => ({ ...f, [key]: e.target.value }))
@@ -79,40 +79,38 @@ export default function BoardEditor({ classId, board, onClose }: { classId: stri
   }
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/30">
-      <form role="dialog" aria-modal="true" aria-labelledby="board-editor-title" onSubmit={submit}
-        className="flex max-h-[92vh] w-[560px] max-w-[92vw] flex-col gap-3 overflow-auto rounded-2xl bg-panel p-5 shadow-xl">
-        <h3 id="board-editor-title" className="text-lg font-semibold">编辑黑板</h3>
-        <div className="grid grid-cols-2 gap-4">
+    <Modal open onClose={onClose} title="编辑黑板" dismissOnOutside={false} className="sm:max-w-[560px]">
+      <form onSubmit={submit} className="flex flex-col gap-4">
+        <div className="grid gap-4 sm:grid-cols-2">
           {([['left', '左'], ['right', '右']] as const).map(([side, name]) => (
-            <div key={side} className="flex flex-col gap-2">
-              <label className="flex flex-col gap-1 text-sm">
-                {name}黑板标题
-                <input className={inputClass} value={form[`${side}_title`]} onChange={set(`${side}_title`)} />
-              </label>
-              <label className="flex flex-col gap-1 text-sm">
-                {name}黑板内容
-                <textarea rows={4} className={inputClass} value={form[`${side}_text`]} onChange={set(`${side}_text`)} />
-              </label>
+            <div key={side} className="flex flex-col gap-3">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor={`${id}-${side}-title`}>{`${name}黑板标题`}</Label>
+                <Input id={`${id}-${side}-title`} value={form[`${side}_title`]} onChange={set(`${side}_title`)} />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor={`${id}-${side}-text`}>{`${name}黑板内容`}</Label>
+                <Textarea id={`${id}-${side}-text`} rows={4} value={form[`${side}_text`]} onChange={set(`${side}_text`)} />
+              </div>
             </div>
           ))}
         </div>
-        <div className="grid grid-cols-2 gap-4">
-          <label className="flex flex-col gap-1 text-sm">
-            倒计时名称
-            <input className={inputClass} value={form.countdown_label} onChange={set('countdown_label')} />
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
-            倒计时日期
-            <input type="date" className={inputClass} value={form.countdown_date} onChange={set('countdown_date')} />
-          </label>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor={`${id}-countdown-label`}>倒计时名称</Label>
+            <Input id={`${id}-countdown-label`} value={form.countdown_label} onChange={set('countdown_label')} />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor={`${id}-countdown-date`}>倒计时日期</Label>
+            <Input id={`${id}-countdown-date`} type="date" value={form.countdown_date} onChange={set('countdown_date')} />
+          </div>
         </div>
-        {error && <p role="alert" className="text-sm text-red">{error}</p>}
+        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
         <div className="flex justify-end gap-2">
-          <button type="button" className={toolButton} onClick={onClose}>取消</button>
-          <button type="submit" className={primaryButton} disabled={saving}>保存</button>
+          <Button type="button" variant="outline" onClick={onClose}>取消</Button>
+          <Button type="submit" disabled={saving}>保存</Button>
         </div>
       </form>
-    </div>
+    </Modal>
   )
 }
