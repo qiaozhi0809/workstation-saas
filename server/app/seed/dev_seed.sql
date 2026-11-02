@@ -93,3 +93,31 @@ INSERT INTO role_bindings (user_id, role_type, scope, academic_year_id) VALUES
   ('88888888-8888-8888-8888-888888888888', 'subject_teacher',
    '{"class_id":"44444444-4444-4444-4444-444444444444","subject":"数学"}'::jsonb,
    '22222222-2222-2222-2222-222222222222');
+
+-- M2b:两场考试(语文/数学/英语各 100)与分数;classes.subjects 保持 NULL 以测学段预设
+INSERT INTO exams (id, class_id, academic_year_id, name, exam_type, date, subjects, created_by_user_id) VALUES
+  ('e0000001-0000-0000-0000-000000000001', '44444444-4444-4444-4444-444444444444',
+   '22222222-2222-2222-2222-222222222222', '第一次月考', '月考', '2026-10-09',
+   '[{"name":"语文","full":100},{"name":"数学","full":100},{"name":"英语","full":100}]'::jsonb,
+   '55555555-5555-5555-5555-555555555555'),
+  ('e0000002-0000-0000-0000-000000000002', '44444444-4444-4444-4444-444444444444',
+   '22222222-2222-2222-2222-222222222222', '期中考试', '期中', '2026-10-30',
+   '[{"name":"语文","full":100},{"name":"数学","full":100},{"name":"英语","full":100}]'::jsonb,
+   '55555555-5555-5555-5555-555555555555');
+
+INSERT INTO scores (exam_id, enrollment_id, subject, value, entered_by_user_id)
+SELECT v.exam_id::uuid, e.id, v.subject, v.value, '55555555-5555-5555-5555-555555555555'
+FROM (
+  SELECT x.exam_id, x.subject, (t.ord - 1) AS idx, t.val::numeric AS value
+  FROM (VALUES
+    ('e0000001-0000-0000-0000-000000000001', '语文', ARRAY[95,88,76,92,58,81,70,99,64,85]::numeric[]),
+    ('e0000001-0000-0000-0000-000000000001', '数学', ARRAY[90,92,81,77,49,85,66,100,72,80]::numeric[]),
+    ('e0000001-0000-0000-0000-000000000001', '英语', ARRAY[88,95,70,85,60,79,73,96,55,90]::numeric[]),
+    ('e0000002-0000-0000-0000-000000000002', '语文', ARRAY[93,90,80,89,62,84,69,97,71,83]::numeric[]),
+    ('e0000002-0000-0000-0000-000000000002', '数学', ARRAY[95,88,85,70,55,90,60,98,78,82]::numeric[]),
+    ('e0000002-0000-0000-0000-000000000002', '英语', ARRAY[90,92,74,88,NULL,81,70,94,62,91]::numeric[])
+  ) AS x(exam_id, subject, vals)
+  CROSS JOIN LATERAL unnest(x.vals) WITH ORDINALITY AS t(val, ord)
+) v
+JOIN students s ON s.mk = 'S' || lpad((v.idx + 1)::text, 4, '0')
+JOIN enrollments e ON e.student_id = s.id AND e.status = 'active';

@@ -29,6 +29,10 @@ class Student(Base):
     health_notes: Mapped[str | None] = mapped_column(Text)
     tags: Mapped[list[str]] = mapped_column(ARRAY(Text), server_default=text("'{}'"))
     teacher_notes: Mapped[Any | None] = mapped_column(JSONB)
+    boarding: Mapped[bool] = mapped_column(server_default=text("false"))
+    family_note: Mapped[str | None] = mapped_column(Text)
+    note: Mapped[str | None] = mapped_column(Text)
+    contacts: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, server_default=text("'[]'"))
     created_at: Mapped[datetime] = mapped_column(**_NOW)
     updated_at: Mapped[datetime] = mapped_column(**_NOW)
 

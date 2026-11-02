@@ -9,6 +9,7 @@ from app.models.classroom import (
     Todo,
     UserPreference,
 )
+from app.models.grades import Exam, Score
 from app.models.rbac import RoleBinding
 from app.models.school import AcademicYear, Grade, School, SchoolClass
 from app.models.student import Enrollment, Student
@@ -22,11 +23,13 @@ __all__ = [
     "Base",
     "ClassBoard",
     "Enrollment",
+    "Exam",
     "Grade",
     "Review",
     "RoleBinding",
     "School",
     "SchoolClass",
+    "Score",
     "SeatArrangement",
     "Student",
     "Todo",

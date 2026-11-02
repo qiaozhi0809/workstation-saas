@@ -12,6 +12,12 @@ ALL_PERMS = [
     "seating.write",
     "board.write",
     "student.write_basic",
+    "exam.read",
+    "exam.write",
+    "score.write",
+    "score.export",
+    "student.manage",
+    "student.export",
 ]
 A_BOARD = {
     "left_title": "今日课程",
@@ -44,7 +50,14 @@ def test_summary_for_homeroom(client, settings, monkeypatch):
 
 def test_summary_for_subject_teacher(client, settings):
     body = client.get(SUMMARY, headers=auth(settings, SUBJECT_USER_ID)).json()
-    assert body["my_perms"] == ["attendance.read", "review.read", "review.write"]
+    assert body["my_perms"] == [
+        "attendance.read",
+        "review.read",
+        "review.write",
+        "exam.read",
+        "exam.write",
+        "score.write",
+    ]
     assert body["my_subjects"] == ["数学"]
 
 

@@ -3,7 +3,16 @@ from uuid import UUID, uuid4
 import pytest
 
 from app.errors import ApiError
-from app.rbac.bindings import Binding, Scope, can, covers, load_bindings, subjects_in_class
+from app.rbac.bindings import (
+    Binding,
+    Scope,
+    can,
+    covers,
+    load_bindings,
+    subjects_in_class,
+    visible_subjects,
+    writable_subjects,
+)
 from app.rbac.guard import ensure
 from app.rbac.roles import ROLE_PERMS, Perm, Role
 from tests.factories import bind, make_class, make_user
@@ -92,7 +101,13 @@ READ_STUDENTS = {
 
 
 def test_role_perms_full_matrix():
-    leaders = READ_STUDENTS | {Perm.ATTENDANCE_READ, Perm.REVIEW_READ}
+    leaders = READ_STUDENTS | {
+        Perm.ATTENDANCE_READ,
+        Perm.REVIEW_READ,
+        Perm.EXAM_READ,
+        Perm.SCORE_EXPORT,
+        Perm.STUDENT_EXPORT,
+    }
     parent = {Perm.STUDENT_BASIC, Perm.STUDENT_FAMILY, Perm.STUDENT_LEARNING, Perm.STUDENT_PROFILE}
     expected = {
         Role.principal: leaders,
@@ -109,6 +124,12 @@ def test_role_perms_full_matrix():
             Perm.SEATING_WRITE,
             Perm.BOARD_WRITE,
             Perm.STUDENT_BASIC_WRITE,
+            Perm.EXAM_READ,
+            Perm.EXAM_WRITE,
+            Perm.SCORE_WRITE,
+            Perm.SCORE_EXPORT,
+            Perm.STUDENT_MANAGE,
+            Perm.STUDENT_EXPORT,
         },
         Role.subject_teacher: {
             Perm.CLASS_READ,
@@ -119,6 +140,9 @@ def test_role_perms_full_matrix():
             Perm.ATTENDANCE_READ,
             Perm.REVIEW_READ,
             Perm.REVIEW_WRITE,
+            Perm.EXAM_READ,
+            Perm.EXAM_WRITE,
+            Perm.SCORE_WRITE,
         },
         Role.assistant_teacher: {
             Perm.CLASS_READ,
@@ -171,3 +195,18 @@ def test_ensure_denies_with_perm_as_action(db):
     assert exc.value.code == "FORBIDDEN"
     rows = audit_rows(db, CLASS_ID)
     assert [(r.action, r.success, r.user_id) for r in rows] == [("seating.write", False, u.id)]
+
+
+def test_visible_subjects():
+    c = uuid4()
+    scope = Scope(class_id=c)
+    math = Binding(Role.subject_teacher, Scope(class_id=c), None, "数学")
+    assert visible_subjects([b(Role.homeroom_teacher, class_id=c)], scope) is None
+    assert visible_subjects([math], scope) == frozenset({"数学"})
+    sid = uuid4()
+    school_scope = Scope(school_id=sid, class_id=c)
+    assert visible_subjects([b(Role.principal, school_id=sid)], school_scope) is None
+    other = Binding(Role.subject_teacher, Scope(class_id=uuid4()), None, "数学")
+    assert visible_subjects([other], scope) == frozenset()
+    assert writable_subjects([math], scope) == frozenset({"数学"})
+    assert writable_subjects([b(Role.homeroom_teacher, class_id=c)], scope) is None
