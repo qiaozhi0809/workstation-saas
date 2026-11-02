@@ -1,6 +1,10 @@
 export const M = {
   WALL: 16, FRONT: 220, PODIUM: 128, TOP_PAD: 24, DESK_W: 84, DESK_D: 40, AISLE: 72, ROW: 128,
   BACK: 120, SIDE: 260, SIDE_BARE: 48, HEAD_R: 17, FIGURE_BOTTOM: 52, ZONE_GAP: 16,
+  // 一个座位画到的最低处(相对座位左上角):整格热区 / 选中框下沿,椅背与人物都在它以上
+  SEAT_BOTTOM: 102,
+  // 核心下沿在最后一排座位下面再留的余量
+  CORE_PAD: 24,
 } as const
 
 export interface Rect { x: number; y: number; w: number; h: number }
@@ -14,6 +18,8 @@ export interface Wing { wall: Rect; floor: Rect }
 export interface Layout {
   width: number; height: number; grid: Rect
   safe: Rect; wings: { left: Wing; right: Wing } | null
+  // 核心:前墙顶到最后一排座位下沿 + 余量,横向 = 安全区。适应视图永远完整显示它,只有它上下之外(顶墙边距、后部地板)可被裁
+  core: Rect
   frontWall: Rect | null; podium: Rect | null
   zones: { id: ZoneId; rect: Rect }[]
   seat(row: number, col: number): Pt
@@ -89,6 +95,9 @@ export function computeLayout(
   return {
     width, height, grid, zones, wings,
     safe: { x: dx, y: 0, w: coreW, h: height },
+    core: frontWall
+      ? { x: dx, y: M.WALL, w: coreW, h: grid.y + (rows - 1) * M.ROW + M.SEAT_BOTTOM + M.CORE_PAD - M.WALL }
+      : { x: dx, y: 0, w: coreW, h: height },
     frontWall: frontWall ? { x: M.WALL + dx, y: M.WALL, w: coreW - 2 * M.WALL, h: M.FRONT } : null,
     podium: frontWall ? { x: (width - PODIUM_W) / 2, y: M.WALL + M.FRONT, w: PODIUM_W, h: M.PODIUM } : null,
     seat,

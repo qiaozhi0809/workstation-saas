@@ -1,4 +1,5 @@
 import { SCENE_ASPECT, computeLayout, groupOf, M } from './layout'
+import { CELL } from './seatParts'
 
 it('keeps a fixed row pitch for 9 rows so names never overlap the row above', () => {
   const L = computeLayout(9, 6)
@@ -74,4 +75,24 @@ it('treats the whole room as safe without an aspect, and never widens the mini m
   const L = computeLayout(6, 4)
   expect(L.safe).toEqual({ x: 0, y: 0, w: L.width, h: L.height })
   expect(L.wings).toBeNull()
+})
+
+it('marks the core: front wall top to just below the last row of seats, across the safe area', () => {
+  const L = computeLayout(6, 4, { aspect: SCENE_ASPECT })
+  const bottom = L.seat(6, 1).y + M.SEAT_BOTTOM + M.CORE_PAD
+  expect(L.core).toEqual({ x: L.safe.x, y: M.WALL, w: L.safe.w, h: bottom - M.WALL })
+  expect(L.core.h).toBe(1138)
+  // 核心包住前墙、讲台和最后一排(整格热区、人物、椅背)
+  expect(L.core.y).toBeLessThanOrEqual(L.frontWall!.y)
+  expect(L.core.y + L.core.h).toBeGreaterThan(L.podium!.y + L.podium!.h)
+  expect(CELL.y + CELL.h).toBe(M.SEAT_BOTTOM)
+  expect(L.head(6, 1).y - L.seat(6, 1).y + M.FIGURE_BOTTOM).toBeLessThanOrEqual(M.SEAT_BOTTOM)
+  expect(L.core.y + L.core.h).toBeLessThan(L.height - M.WALL)
+  // 后部地板与储物柜在核心之外
+  expect(L.height - (L.core.y + L.core.h)).toBeGreaterThan(M.BACK)
+})
+
+it('treats the whole scene as core when there is no front wall (mini map)', () => {
+  const L = computeLayout(2, 4, { decor: false, frontWall: false })
+  expect(L.core).toEqual({ x: 0, y: 0, w: L.width, h: L.height })
 })

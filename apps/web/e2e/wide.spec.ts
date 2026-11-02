@@ -63,6 +63,42 @@ test('16:9 fills the stage with the wings', async ({ page }) => {
   }).toPass()
 })
 
+// 适应按核心放大:1920 × 1080 铺满 ≥ 90% 舞台宽,核心(前墙 + 24 个座位)仍完整在舞台内
+test('16:9 fills the stage width without cropping the core', async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 1080 })
+  await signIn(page)
+  await mapReady(page)
+  await expect(async () => {
+    const stage = await stageBox(page)
+    const svg = (await page.locator('.cr-canvas > svg').boundingBox())!
+    const visibleWidth = Math.min(svg.x + svg.width, stage.x + stage.width) - Math.max(svg.x, stage.x)
+    expect(visibleWidth / stage.width, '地图在舞台内的可见宽度占比').toBeGreaterThanOrEqual(0.9)
+    expect(inside((await page.locator('.cr-front-wall').boundingBox())!, stage), '讲台墙在舞台内').toBe(true)
+    const seats = await page.locator('[data-seat]').all()
+    expect(seats).toHaveLength(24)
+    for (const seat of seats) expect(inside((await seat.boundingBox())!, stage), '座位在舞台内').toBe(true)
+  }).toPass()
+})
+
+// 1024 × 768 本来就按高度适应、横向铺满:比例仍是 舞台高 / 场景高,座位屏上大小与改动前相同
+test('the 1024×768 core keeps its height-bound size', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 })
+  await signIn(page)
+  await mapReady(page)
+  await expect(async () => {
+    const m = await page.evaluate(() => {
+      const stage = document.querySelector('.cr-stage') as HTMLElement
+      const svg = document.querySelector('.cr-canvas > svg') as SVGSVGElement
+      const seat = document.querySelector('[data-seat]')!.getBoundingClientRect()
+      const vb = svg.viewBox.baseVal
+      return { s: svg.getBoundingClientRect().width / vb.width, expected: stage.clientHeight / vb.height, seatW: seat.width }
+    })
+    expect(m.s, '适应比例 = 舞台高 / 场景高').toBeCloseTo(m.expected, 4)
+    // 座位整格宽 84(场景坐标)
+    expect(m.seatW, '座位屏上宽度').toBeCloseTo(84 * m.expected, 1)
+  }).toPass()
+})
+
 test('the map cannot be dragged at fit and never leaves the stage after zooming', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 })
   await signIn(page)
@@ -77,9 +113,10 @@ test('the map cannot be dragged at fit and never leaves the stage after zooming'
     expect(same).toBe(true)
   }).toPass({ intervals: [200, 300, 500] })
   const stage = await stageBox(page)
-  // 前提:地图比舞台宽出一截,拖动才有可动的余地;否则"拖不动"的断言什么也证明不了
+  // 前提:地图比舞台高出一截,拖动才有可动的余地;否则"拖不动"的断言什么也证明不了
+  // (适应按核心放大后 1280 × 720 横向不再溢出,上下的顶墙边距 / 后部地板被裁,所以看纵向)
   const fitSvg = (await page.locator('.cr-canvas > svg').boundingBox())!
-  expect(fitSvg.width, '地图比舞台宽出至少 20px,保证拖动锁定的断言有意义').toBeGreaterThan(stage.width + 20)
+  expect(fitSvg.height, '地图比舞台高出至少 20px,保证拖动锁定的断言有意义').toBeGreaterThan(stage.height + 20)
 
   const drag = async (dx: number, dy: number) => {
     // 舞台左上角空白处,避开右下角的缩放悬浮钮

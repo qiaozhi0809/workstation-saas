@@ -102,7 +102,7 @@ export default function ClassroomMap({
   const cells = useMemo(() => buildCells(rows, cols, seats), [rows, cols, seats])
   const cellMap = useMemo(() => new Map(cells.map((c) => [`${c.row}-${c.col}`, c])), [cells])
   const placed = useMemo(() => cells.flatMap((c) => (c.seat ? [c.seat] : [])), [cells])
-  const content = useMemo(() => ({ w: L.width, h: L.height, safeW: L.safe.w }), [L])
+  const content = useMemo(() => ({ w: L.width, h: L.height, safeW: L.safe.w, core: L.core }), [L])
 
   const vp = useViewport(stageRef, content, !mini)
   const { zoomIn, zoomOut, fit } = vp
@@ -120,7 +120,7 @@ export default function ClassroomMap({
     return () => ro.disconnect()
   }, [mini])
   const boardRect = useMemo(() => (mini || !attendanceBoard ? null : attendanceBoardRect(L)), [L, mini, attendanceBoard])
-  const boardVisible = !!boardRect && rectFullyShownInFit(content, stageSize, L.safe.w, boardRect)
+  const boardVisible = !!boardRect && rectFullyShownInFit(content, stageSize, L.safe.w, boardRect, L.core)
   const onBoardVisible = useRef(onAttendanceBoardVisibleChange)
   onBoardVisible.current = onAttendanceBoardVisibleChange
   useLayoutEffect(() => { onBoardVisible.current?.(boardVisible) }, [boardVisible])

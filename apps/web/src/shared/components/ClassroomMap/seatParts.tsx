@@ -61,7 +61,7 @@ export function Ribbon({ text }: { text: string }) {
 
 // 整格热区 / 选中框的范围:名字(桌上方)到椅背下沿
 // eslint-disable-next-line react-refresh/only-export-components
-export const CELL = { x: 0, y: -20, w: W, h: 122 }
+export const CELL = { x: 0, y: -20, w: W, h: M.SEAT_BOTTOM + 20 }
 export function Selected() {
   return <rect className="cr-selected" x={CELL.x + 2} y={CELL.y} width={CELL.w - 4} height={CELL.h} rx={8} />
 }
