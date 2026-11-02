@@ -31,7 +31,7 @@ it('cycles status with absolute PUTs', async () => {
   let resolve!: (v: AttendanceUpdated) => void
   vi.mocked(attendanceApi.set).mockReturnValue(new Promise((r) => { resolve = r }))
   setup({ mode: '考勤' })
-  fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
+  fireEvent.click(await screen.findByRole('button', { name: /^王小一，/ }))
   await waitFor(() => expect(attendanceApi.set).toHaveBeenCalledWith('c1', '2026-11-02', 'e1', { status: 'leave' }))
   expect(await screen.findByText('请假')).toBeInTheDocument()
   vi.mocked(attendanceApi.day).mockResolvedValue({ date: '2026-11-02', confirmed_at: null,
@@ -39,7 +39,7 @@ it('cycles status with absolute PUTs', async () => {
   await act(async () => { resolve({ enrollment_id: 'e1', status: 'leave', reason: null }) })
   await screen.findByText('请假')
   vi.mocked(attendanceApi.set).mockReturnValue(new Promise(() => {}))
-  fireEvent.click(screen.getByRole('button', { name: '王小一' }))
+  fireEvent.click(screen.getByRole('button', { name: /^王小一，/ }))
   await waitFor(() => expect(attendanceApi.set).toHaveBeenLastCalledWith('c1', '2026-11-02', 'e1', { status: 'absent' }))
 })
 
@@ -47,7 +47,7 @@ it('shows the chip optimistically and rolls back on error', async () => {
   let reject!: (e: Error) => void
   vi.mocked(attendanceApi.set).mockReturnValue(new Promise((_, rej) => { reject = rej }))
   setup({ mode: '考勤' })
-  fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
+  fireEvent.click(await screen.findByRole('button', { name: /^王小一，/ }))
   expect(await screen.findByText('请假')).toBeInTheDocument()
   await act(async () => { reject(new ApiError(400, 'DATE_OUT_OF_RANGE', '只能记录本学年内、不晚于今天的考勤')) })
   expect(await screen.findByText('只能记录本学年内、不晚于今天的考勤')).toBeInTheDocument()
@@ -130,7 +130,7 @@ it('overlays attendance in daily mode but not in seating mode', async () => {
 
 it('lets a subject teacher look but not mark', async () => {
   setup({ mode: '考勤', perms: ['attendance.read', 'review.read', 'review.write'] })
-  fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
+  fireEvent.click(await screen.findByRole('button', { name: /^王小一，/ }))
   expect(await screen.findByText('只有班主任和副班主任可以记考勤')).toBeInTheDocument()
   expect(attendanceApi.set).not.toHaveBeenCalled()
   expect(screen.queryByRole('button', { name: '全部出勤' })).toBeNull()

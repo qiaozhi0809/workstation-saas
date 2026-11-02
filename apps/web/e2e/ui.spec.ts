@@ -54,7 +54,7 @@ for (const path of ['/login', '/teacher/classroom', '/teacher/preferences']) {
 
 test('profile drawer traps focus and closes with Escape', async ({ page }) => {
   await signIn(page)
-  await page.getByRole('button', { name: '王小一' }).click()
+  await page.getByRole('button', { name: /^王小一，/ }).click()
   const drawer = page.getByRole('dialog', { name: '王小一' })
   await expect(drawer).toBeVisible()
   for (let i = 0; i < 12; i++) await page.keyboard.press('Tab')

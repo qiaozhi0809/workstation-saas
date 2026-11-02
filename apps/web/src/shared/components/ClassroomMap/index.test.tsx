@@ -35,7 +35,7 @@ it('marks every empty cell and makes them clickable only with a handler', () => 
 it('reports clicks with an anchor and supports Enter', () => {
   const onClick = vi.fn()
   render(<ClassroomMap rows={2} cols={2} seats={[seat({})]} onSeatClick={onClick} />)
-  const btn = screen.getByRole('button', { name: '王小一' })
+  const btn = screen.getByRole('button', { name: /^王小一，/ })
   fireEvent.click(btn)
   fireEvent.keyDown(btn, { key: 'Enter' })
   expect(onClick).toHaveBeenCalledTimes(2)
@@ -80,10 +80,21 @@ it('keeps the mini map bare and the overview map read-only', () => {
   expect(q(container, '[data-zone]')).toBeNull()
   expect(screen.queryByText('本周之星')).toBeNull()
   rerender(<ClassroomMap rows={2} cols={2} seats={[seat({})]} mode="overview" onSeatClick={vi.fn()} />)
-  expect(screen.queryByRole('button', { name: '王小一' })).toBeNull()
+  expect(screen.queryByRole('button', { name: /^王小一，/ })).toBeNull()
 })
 
 it('truncates long names', () => {
   expect(fitName('欧阳纳兰容若')).toBe('欧阳纳兰容…')
   expect(fitName('王小一')).toBe('王小一')
+})
+
+it('exposes name, position, chip, badge and lock in the seat accessible name', () => {
+  const views = { e1: { chip: { text: '请假', tone: 'amber' as const }, badge: { text: '+3', tone: 'green' as const }, locked: true } }
+  render(<ClassroomMap rows={3} cols={3} seats={[seat({ seat_row: 2, seat_col: 3 })]} views={views} onSeatClick={vi.fn()} />)
+  expect(screen.getByRole('button', { name: '王小一，第2排第3列，请假，+3，已锁定' })).toBeInTheDocument()
+})
+
+it('keeps the plain name and position when the seat shows no status', () => {
+  render(<ClassroomMap rows={3} cols={3} seats={[seat({ seat_row: 2, seat_col: 3 })]} onSeatClick={vi.fn()} />)
+  expect(screen.getByRole('button', { name: '王小一，第2排第3列' })).toBeInTheDocument()
 })

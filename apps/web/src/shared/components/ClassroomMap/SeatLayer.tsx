@@ -45,6 +45,16 @@ function pressable(label: string, mark: DragMark, fire: (el: Element) => void) {
   }
 }
 
+// 座位按钮的可访问名称:姓名,位置,再依次追加座位上显示的标签 / 徽章 / 锁定状态
+// eslint-disable-next-line react-refresh/only-export-components
+export function seatLabel(seat: Seat, row: number, col: number, view: SeatView): string {
+  const parts = [seat.name, `第${row}排第${col}列`]
+  if (view.chip?.text) parts.push(view.chip.text)
+  if (view.badge?.text) parts.push(view.badge.text)
+  if (seat.seat_locked || view.locked) parts.push('已锁定')
+  return parts.join('，')
+}
+
 const HitArea = () => <rect className="cr-hit" x={CELL.x} y={CELL.y} width={CELL.w} height={CELL.h} rx={8} fill="transparent" />
 
 interface CellProps {
@@ -72,7 +82,7 @@ const OccupiedSeat = memo(function OccupiedSeat({ row, col, seat, layout, pose, 
     onMouseEnter: () => onHover('mouse', id, key, true), onMouseLeave: () => onHover('mouse', id, key, false),
     onFocus: () => onHover('focus', id, key, true), onBlur: () => onHover('focus', id, key, false),
   }
-  const act = onSeatClick ? pressable(seat.name, mark, (el) => onSeatClick(seat, anchorOf(el))) : { className: seatClass(mark) }
+  const act = onSeatClick ? pressable(seatLabel(seat, row, col, view), mark, (el) => onSeatClick(seat, anchorOf(el))) : { className: seatClass(mark) }
   return (
     <g data-seat={key} data-enrollment={id} data-ghost={view.ghost ? 'true' : undefined} {...hover} {...act}>
       <g transform={`translate(${s.x} ${s.y})`}><HitArea /></g>
