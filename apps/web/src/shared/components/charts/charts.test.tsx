@@ -39,6 +39,54 @@ describe('charts', () => {
     }
   })
 
+  it('widens the y axis with yAxisWidth', () => {
+    const tickX = (w?: number) => {
+      const { container, unmount } = render(
+        <TrendLine label="名次" width={400} reversed yAxisWidth={w} labels={['a', 'b']}
+          series={[{ key: 'me', label: '我', values: [1, 2] }]} />,
+      )
+      const x = Number(container.querySelector('.recharts-yAxis .recharts-cartesian-axis-tick-value')!.getAttribute('x'))
+      unmount()
+      return x
+    }
+    // 刻度右对齐到 Y 轴右缘,宽度加 16 则刻度整体右移 16;默认仍是 40
+    expect(tickX(56) - tickX()).toBe(16)
+    expect(tickX(40)).toBe(tickX())
+  })
+
+  it('uses integer y ticks for count data', () => {
+    const { container } = render(
+      <ScoreBars label="分数段" width={400} data={[{ label: 'a', value: 1 }, { label: 'b', value: 2 }, { label: 'c', value: 3 }]} />,
+    )
+    const ticks = Array.from(container.querySelectorAll('.recharts-yAxis .recharts-cartesian-axis-tick-value'), (t) => t.textContent ?? '')
+    expect(ticks.length).toBeGreaterThan(0)
+    for (const t of ticks) expect(Number.isInteger(Number(t))).toBe(true)
+  })
+
+  it('puts the reference line label right of the last bar', () => {
+    const { container } = render(
+      <ScoreBars label="各科得分率" width={400} max={100} data={[{ label: '语文', value: 80 }, { label: '数学', value: 55 }]}
+        refLine={{ value: 60, label: '及格' }} />,
+    )
+    const bars = container.querySelectorAll('.recharts-bar-rectangle path')
+    const last = bars[bars.length - 1]
+    const barRight = Number(last.getAttribute('x')) + Number(last.getAttribute('width'))
+    const label = screen.getByText('及格').closest('text')!
+    // 左对齐地从绘图区右缘外开始写,不会盖在柱子上
+    expect(label.getAttribute('text-anchor')).toBe('start')
+    expect(Number(label.getAttribute('x'))).toBeGreaterThanOrEqual(barRight)
+    // 右边距够放下两个 12px 的字(24px)
+    expect(Number(label.getAttribute('x')) + 24).toBeLessThanOrEqual(400)
+  })
+
+  it('keeps the top y tick from being clipped', () => {
+    const { container } = render(
+      <ScoreBars label="各科得分率" width={400} max={100} data={[{ label: '语文', value: 80 }]} refLine={{ value: 60, label: '及格' }} />,
+    )
+    const ys = Array.from(container.querySelectorAll('.recharts-yAxis .recharts-cartesian-axis-tick-value'), (t) => Number(t.getAttribute('y')))
+    expect(Math.min(...ys)).toBeGreaterThanOrEqual(24) // margin.top=24,留足半行文字
+  })
+
   it('shows the end label of the main series', () => {
     const { container } = render(
       <TrendLine label="趋势" width={400} labels={['a', 'b', 'c']} endLabel format={(v) => `${v}%`}

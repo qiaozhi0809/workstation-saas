@@ -16,7 +16,7 @@ vi.mock('@/shared/api/classes', () => ({ classesApi: { mine: vi.fn().mockResolve
 vi.mock('@/shared/api/exams', () => ({ examsApi: { gradebook: vi.fn() } }))
 const trendLine = vi.hoisted(() => vi.fn())
 vi.mock('@/shared/components/charts/TrendLine', () => ({
-  TrendLine: (props: { label: string }) => { trendLine(props); return <div role="img" aria-label={props.label} /> },
+  TrendLine: (props: { label: string; yAxisWidth?: number }) => { trendLine(props); return <div role="img" aria-label={props.label} /> },
 }))
 
 const profile: StudentProfile = { id: 's1', mk: 'S0001', name: '王小一', class_id: 'c1', enrollment_id: 'e1' }
@@ -66,6 +66,7 @@ it('draws the rank curve reversed', async () => {
   expect(props.labels).toEqual(['九月月考', '十月月考'])
   expect(props.series[0].values).toEqual([2, 3])
   expect(props.format(3)).toBe('第 3 名')
+  expect(props.yAxisWidth).toBe(56) // 放得下“第 NN 名”
 })
 
 it('says there is no score permission on 403', async () => {

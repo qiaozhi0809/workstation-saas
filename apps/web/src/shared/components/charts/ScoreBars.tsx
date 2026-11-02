@@ -15,9 +15,9 @@ export function ScoreBars({ label, width, height = 220, className, data, max, fo
   const fmt = format ?? ((v: number) => String(v))
   const top = max ?? Math.max(1, refLine?.value ?? 0, ...data.map((d) => d.value))
   const chart = (
-    <BarChart data={data} width={width} height={height} margin={{ top: 16, right: 8, bottom: 0, left: 0 }}>
+    <BarChart data={data} width={width} height={height} margin={{ top: 24, right: refLine ? 36 : 8, bottom: 0, left: 0 }}>
       <XAxis dataKey="label" tickLine={false} axisLine={false} />
-      <YAxis domain={[0, top]} tickFormatter={fmt} tickLine={false} axisLine={false} width={36} />
+      <YAxis domain={[0, top]} allowDecimals={false} tickFormatter={fmt} tickLine={false} axisLine={false} width={36} />
       <Tooltip
         cursor={false}
         content={({ active, payload }) => {
@@ -37,7 +37,7 @@ export function ScoreBars({ label, width, height = 220, className, data, max, fo
       </Bar>
       {refLine && (
         <ReferenceLine y={refLine.value} stroke="hsl(var(--chart-5))" strokeDasharray="4 4"
-          label={{ value: refLine.label, position: 'insideTopRight', fill: 'hsl(var(--chart-5))', fontSize: 12 }} />
+          label={{ value: refLine.label, position: 'right', fill: 'hsl(var(--chart-5))', fontSize: 12 }} />
       )}
     </BarChart>
   )
