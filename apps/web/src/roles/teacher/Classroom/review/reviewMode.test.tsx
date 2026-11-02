@@ -169,6 +169,15 @@ it('ranks students and groups on the leaderboard', async () => {
   expect(screen.getByText('10')).toBeInTheDocument()
 })
 
+it('shows the leaderboard as a modal and closes it with the dialog close button', async () => {
+  setup({ mode: '点评' })
+  fireEvent.click(await screen.findByRole('button', { name: '积分榜' }))
+  const dialog = await screen.findByRole('dialog', { name: '积分榜' })
+  expect(dialog).toHaveAttribute('aria-modal', 'true')
+  fireEvent.click(within(dialog).getByRole('button', { name: '关闭' }))
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: '积分榜' })).not.toBeInTheDocument())
+})
+
 it('submits a custom reason and closes on Escape', async () => {
   setup({ mode: '点评' })
   fireEvent.click(await screen.findByRole('button', { name: '李小二' }))

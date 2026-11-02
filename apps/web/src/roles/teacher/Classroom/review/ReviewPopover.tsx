@@ -1,7 +1,12 @@
 import { useRef, useState } from 'react'
+import { X } from 'lucide-react'
 import { placeCard } from '@/shared/components/ClassroomMap/placeCard'
 import type { SeatAnchor } from '@/shared/components/ClassroomMap/types'
+import { Button } from '@/shared/components/ui/button'
+import { Input } from '@/shared/components/ui/input'
+import { NativeSelect } from '@/shared/components/ui/native-select'
 import { useEscapeLayer } from '@/shared/hooks/useEscapeLayer'
+import { scoreTone, TONE_TEXT } from '@/shared/lib/tone'
 import type { ReviewReason } from '@/shared/types/preferences'
 import type { StudentSeat } from '@/shared/types/student'
 import { signed } from './signed'
@@ -10,9 +15,6 @@ import type { ReviewSubject } from './useReviewSubmit'
 const CARD = { w: 288, h: 380 }
 
 export interface ReasonPick { text: string; delta: number }
-
-const chip =
-  'rounded-lg border border-line-2 px-2 py-1 text-sm hover:bg-fill disabled:cursor-not-allowed disabled:opacity-50'
 
 /** 点评弹层:位于座位旁。anchor 是相对舞台的坐标(点击瞬间的快照),stage 是舞台尺寸。 */
 export default function ReviewPopover({ seat, anchor, stage, reasons, subject, pending, onSubmit, onClose }: {
@@ -41,41 +43,43 @@ export default function ReviewPopover({ seat, anchor, stage, reasons, subject, p
   return (
     <div ref={ref} role="dialog" aria-label={`点评 ${seat.name}`}
       style={{ left: pos.left, top: pos.top, width: CARD.w }}
-      className="absolute z-20 flex flex-col gap-2 rounded-xl border border-line bg-panel p-3 shadow-lg">
+      className="absolute z-20 flex flex-col gap-2 rounded-lg border bg-popover p-3 text-popover-foreground shadow-lg">
       <div className="flex items-center justify-between">
         <strong className="text-sm">{seat.name}</strong>
-        <button type="button" aria-label="关闭" className="text-ink-2" onClick={onClose}>×</button>
+        <Button type="button" variant="ghost" size="icon" aria-label="关闭" className="h-7 w-7" onClick={onClose}>
+          <X />
+        </Button>
       </div>
       {subject.subjects.length > 0 && (
         <label className="flex items-center gap-2 text-sm">
           科目
-          <select value={subject.value} disabled={pending} onChange={(e) => subject.set(e.target.value)}
-            className="flex-1 rounded-lg border border-line-2 px-2 py-1">
+          <NativeSelect value={subject.value} disabled={pending} onChange={(e) => subject.set(e.target.value)}
+            className="h-8 flex-1">
             {!subject.required && <option value="">不指定</option>}
             {subject.subjects.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
+          </NativeSelect>
         </label>
       )}
       <div className="flex gap-2">
-        <button type="button" className={chip} disabled={pending} onClick={() => submit({ text: '表现好', delta: 1 })}>+1</button>
-        <button type="button" className={chip} disabled={pending} onClick={() => submit({ text: '需改进', delta: -1 })}>-1</button>
+        <Button type="button" variant="outline" size="sm" disabled={pending} onClick={() => submit({ text: '表现好', delta: 1 })}>+1</Button>
+        <Button type="button" variant="outline" size="sm" disabled={pending} onClick={() => submit({ text: '需改进', delta: -1 })}>-1</Button>
       </div>
       <div className="flex flex-wrap gap-1.5">
         {reasons.map((r) => (
-          <button key={`${r.text}${r.delta}`} type="button" disabled={pending}
-            className={`${chip} ${r.delta > 0 ? 'text-green' : 'text-red'}`}
+          <Button key={`${r.text}${r.delta}`} type="button" variant="outline" size="sm" disabled={pending}
+            className={TONE_TEXT[scoreTone(r.delta)]}
             onClick={() => submit(r)}>
             {`${r.text} ${signed(r.delta)}`}
-          </button>
+          </Button>
         ))}
       </div>
       <form className="flex items-center gap-1.5"
         onSubmit={(e) => { e.preventDefault(); if (customOk && !pending) submit({ text: customText, delta: customDelta }) }}>
-        <input aria-label="理由" value={text} maxLength={20} disabled={pending} placeholder="理由"
-          onChange={(e) => setText(e.target.value)} className="min-w-0 flex-1 rounded-lg border border-line-2 px-2 py-1 text-sm" />
-        <input aria-label="分值" type="number" min={-10} max={10} value={delta} disabled={pending} placeholder="分值"
-          onChange={(e) => setDelta(e.target.value)} className="w-16 rounded-lg border border-line-2 px-2 py-1 text-sm" />
-        <button type="submit" className={chip} disabled={pending || !customOk}>确定</button>
+        <Input aria-label="理由" value={text} maxLength={20} disabled={pending} placeholder="理由"
+          onChange={(e) => setText(e.target.value)} className="h-8 min-w-0 flex-1" />
+        <Input aria-label="分值" type="number" min={-10} max={10} value={delta} disabled={pending} placeholder="分值"
+          onChange={(e) => setDelta(e.target.value)} className="h-8 w-16" />
+        <Button type="submit" size="sm" disabled={pending || !customOk}>确定</Button>
       </form>
     </div>
   )

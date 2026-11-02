@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { groupOf } from '@/shared/components/ClassroomMap/layout'
-import { useEscapeLayer } from '@/shared/hooks/useEscapeLayer'
+import Modal from '@/shared/components/overlay/Modal'
 import type { ReviewSummary } from '@/shared/types/review'
 import type { StudentSeat } from '@/shared/types/student'
 
@@ -10,7 +10,6 @@ export default function Leaderboard({ roster, summary, onClose }: {
   summary: ReviewSummary | undefined
   onClose(): void
 }) {
-  useEscapeLayer(true, onClose)
   const { groups, rows } = useMemo(() => {
     const totals = new Map((summary?.items ?? []).map((t) => [t.enrollment_id, t]))
     const people = roster.map((s) => {
@@ -33,37 +32,38 @@ export default function Leaderboard({ roster, summary, onClose }: {
   const ranked = rows.map((r) => { last = r.rank || last; return { ...r, rank: last } })
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/30" onClick={onClose}>
-      <div role="dialog" aria-label="积分榜" onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[80vh] w-[480px] max-w-[92vw] flex-col gap-3 overflow-hidden rounded-2xl bg-panel p-5 shadow-xl">
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold">积分榜</h3>
-          <button type="button" aria-label="关闭" className="text-ink-2" onClick={onClose}>×</button>
-        </div>
-        {groups.length > 0 && (
-          <ul className="flex flex-wrap gap-2">
-            {groups.map(({ g, total }) => (
-              <li key={g} className="flex items-center gap-2 rounded-lg bg-fill px-3 py-1 text-sm">
-                <span>{`第 ${g + 1} 组`}</span><strong>{total}</strong>
-              </li>
+    <Modal open onClose={onClose} title="积分榜" className="sm:max-w-[480px]">
+      {groups.length > 0 && (
+        <ul className="flex flex-wrap gap-2">
+          {groups.map(({ g, total }) => (
+            <li key={g} className="flex items-center gap-2 rounded-md bg-muted px-3 py-1 text-sm">
+              <span>{`第 ${g + 1} 组`}</span><strong className="tabular-nums">{total}</strong>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="max-h-[60vh] overflow-y-auto">
+        <table className="w-full text-sm">
+          <thead className="sticky top-0 bg-background text-left font-medium text-muted-foreground">
+            <tr>
+              <th className="py-1.5 font-medium">名次</th><th className="py-1.5 font-medium">姓名</th>
+              <th className="py-1.5 text-right font-medium">积分</th>
+              <th className="py-1.5 text-right font-medium">加分次数</th>
+              <th className="py-1.5 text-right font-medium">扣分次数</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ranked.map((r) => (
+              <tr key={r.seat.enrollment_id} className="border-t">
+                <td className="py-1.5 tabular-nums">{r.rank}</td><td className="py-1.5">{r.seat.name}</td>
+                <td className="py-1.5 text-right tabular-nums">{r.total}</td>
+                <td className="py-1.5 text-right tabular-nums">{r.plus}</td>
+                <td className="py-1.5 text-right tabular-nums">{r.minus}</td>
+              </tr>
             ))}
-          </ul>
-        )}
-        <div className="overflow-y-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="text-ink-2">
-              <tr><th>名次</th><th>姓名</th><th>积分</th><th>加分次数</th><th>扣分次数</th></tr>
-            </thead>
-            <tbody>
-              {ranked.map((r) => (
-                <tr key={r.seat.enrollment_id} className="border-t border-line">
-                  <td>{r.rank}</td><td>{r.seat.name}</td><td>{r.total}</td><td>{r.plus}</td><td>{r.minus}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+          </tbody>
+        </table>
       </div>
-    </div>
+    </Modal>
   )
 }
