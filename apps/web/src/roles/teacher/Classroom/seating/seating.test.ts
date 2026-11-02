@@ -1,4 +1,4 @@
-import { genderPairSeats, shuffleSeats } from './algorithms'
+import { genderPairSeats, mentorSeats, shuffleSeats } from './algorithms'
 import { draftReducer, initDraft, isDirty, occupantAt, toSavePayload, type DraftStudent } from './draft'
 import { seatingPrintHtml } from './printSeating'
 
@@ -121,5 +121,41 @@ describe('print', () => {
   it('inserts two aisles per row for five columns', () => {
     const html = seatingPrintHtml({ className: 'c', rows: 1, cols: 5, students: [] })
     expect(html.match(/class="gap"/g)).toHaveLength(2)
+  })
+})
+
+describe('mentorSeats', () => {
+  const at = (out: DraftStudent[], id: string) => out.find((x) => x.enrollmentId === id)!
+
+  it('pairs the top with the bottom and keeps locked seats', () => {
+    const students = [
+      st('a', null, null, null), st('b', null, null, null), st('c', null, null, null), st('d', null, null, null),
+    ]
+    const ranks = new Map([['a', 1], ['b', 2], ['c', 3], ['d', 4]])
+    const out = mentorSeats(students, 2, 2, ranks, lcg(5))
+    const desk = (id: string) => out.filter((x) => x.row === at(out, id).row).map((x) => x.enrollmentId).sort()
+    expect(desk('a')).toEqual(['a', 'd'])
+    expect(desk('b')).toEqual(['b', 'c'])
+
+    const locked = [st('a', null, 1, 1, true), ...students.slice(1)]
+    const out2 = mentorSeats(locked, 2, 2, ranks, lcg(5))
+    expect(at(out2, 'a')).toMatchObject({ row: 1, col: 1 })
+    expect(out2.every((x) => x.row !== null)).toBe(true)
+    const cells = new Set(out2.map((x) => `${x.row},${x.col}`))
+    expect(cells.size).toBe(4)
+  })
+
+  it('places students without a rank after the pairs', () => {
+    const students = [
+      st('a', null, null, null), st('b', null, null, null), st('c', null, null, null), st('x', null, null, null),
+    ]
+    const ranks = new Map([['a', 1], ['b', 2], ['c', 3]])
+    const out = mentorSeats(students, 1, 4, ranks, lcg(2))
+    // 1 排 4 列 = 2 张桌:a 与 c 同桌;b(中间一人)与无名次的 x 单独
+    const pos = (id: string) => at(out, id).col!
+    expect(Math.abs(pos('a') - pos('c'))).toBe(1)
+    expect(Math.ceil(pos('a') / 2)).toBe(Math.ceil(pos('c') / 2))
+    expect(out.every((s) => s.row === 1)).toBe(true)
+    expect(new Set(out.map((s) => s.col)).size).toBe(4)
   })
 })

@@ -27,6 +27,9 @@ export interface SeatingBarProps {
   conflict: boolean
   onShuffle(): void
   onPair(): void
+  onMentor(): void
+  /** 有考试名次可用 */
+  canMentor: boolean
   onUndo(): void
   onDiscard(): void
   onResize(rows: number, cols: number): void
@@ -111,6 +114,8 @@ export default function SeatingBar(p: SeatingBarProps) {
     <div className="flex flex-wrap items-center gap-2 text-sm">
       <Button type="button" variant="outline" disabled={p.busy} onClick={p.onShuffle}>随机打乱</Button>
       <Button type="button" variant="outline" disabled={p.busy} onClick={p.onPair}>男女同桌</Button>
+      <Button type="button" variant="outline" disabled={p.busy || !p.canMentor} title={p.canMentor ? undefined : '还没有考试成绩'}
+        onClick={p.onMentor}>优带弱</Button>
       <Button type="button" variant="outline" disabled={p.busy || !p.canUndo} onClick={p.onUndo}>撤销</Button>
       <Popover label="座位行列" side="top" triggerProps={{ variant: 'outline', disabled: p.busy }}
         trigger={<>{`${p.rows} 排 × ${p.cols} 列`}<ChevronDown aria-hidden /></>}>

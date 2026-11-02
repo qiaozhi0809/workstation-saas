@@ -4,6 +4,7 @@ import { Dices, PencilLine, School } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { useStudentDrawer } from '../StudentProfile/useStudentDrawer'
 import { classesApi } from '@/shared/api/classes'
+import { examsApi } from '@/shared/api/exams'
 import { classroomApi } from '@/shared/api/classroom'
 import { preferencesApi } from '@/shared/api/preferences'
 import { reviewsApi } from '@/shared/api/reviews'
@@ -17,6 +18,7 @@ import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { MenuItem } from '@/shared/components/overlay/Menu'
 import { Button } from '@/shared/components/ui/button'
+import { examTable, latestExam } from '@/shared/lib/grades'
 import { useReducedMotion } from '@/shared/hooks/useReducedMotion'
 import { useAuthStore } from '@/shared/stores/auth'
 import { confirmLeaveSeating, useTeacherStore } from '@/shared/stores/teacher'
@@ -41,6 +43,7 @@ import { useIdleActions } from './idle/useIdleActions'
 import SidePanel from '@/shared/components/overlay/SidePanel'
 import TodoSection from './panel/TodoSection'
 import FeedSection from './panel/FeedSection'
+import ExamSection from './panel/ExamSection'
 import { modesFor, type ClassroomUiMode } from './ModeBar'
 import ClassroomDock from './ClassroomDock'
 import { useAttendanceDate } from './useAttendanceDate'
@@ -221,10 +224,27 @@ function ClassroomView({ cls }: { cls: ClassView }) {
       : undefined
     return <SeatHoverCard seat={s} attendance={status} week={week} />
   }, [todayAttendance.data, reviewSummary.data])
+  // 排座"优带弱"用最近一次考试的名次;与成绩模式、侧边面板共用 ['gradebook', classId]
+  const canReadExams = perms.includes('exam.read')
+  const gradebook = useQuery({
+    queryKey: ['gradebook', classId],
+    queryFn: () => examsApi.gradebook(classId),
+    enabled: canReadExams,
+  })
+  const ranks = useMemo(() => {
+    const latest = canReadExams && gradebook.data ? latestExam(gradebook.data.exams) : null
+    if (!latest || !roster.data) return undefined
+    const out = new Map<string, number>()
+    for (const r of examTable(latest, roster.data.items.map((s) => s.enrollment_id))) {
+      if (r.rank !== null) out.set(r.id, r.rank)
+    }
+    return out
+  }, [canReadExams, gradebook.data, roster.data])
   const seating = useSeatingMode({
     classId,
     className: cls.name,
     enabled: mode === 'seating',
+    ranks,
   })
   // 离开排座前确认未保存的修改;进入排座时收起点名(聚光灯 / 指向不落在排座地图上)
   const setMode = (next: ClassroomUiMode) => {
@@ -408,6 +428,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
         <SidePanel open title="待办与点评" onClose={() => setPanelOpen(false)}>
           <div className="flex flex-col gap-3">
             <TodoSection />
+            {perms.includes('exam.read') && <ExamSection classId={classId} roster={roster.data.items} />}
             {perms.includes('review.read') && (
               <FeedSection classId={classId} roster={roster.data.items} timezone={summary.data.timezone} />
             )}

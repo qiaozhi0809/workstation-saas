@@ -50,6 +50,29 @@ export function genderPairSeats(
   cols: number,
   rand: () => number,
 ): DraftStudent[] {
+  const loose = students.filter((s) => !s.locked)
+  const males = shuffled(loose.filter((s) => s.gender === 'male'), rand)
+  const females = shuffled(loose.filter((s) => s.gender === 'female'), rand)
+  const pairs: DraftStudent[][] = []
+  while (males.length > 0 && females.length > 0) pairs.push([males.pop()!, females.pop()!])
+  const rest = shuffled([...males, ...females, ...loose.filter((s) => s.gender === null)], rand)
+  const alone: DraftStudent[] = []
+  for (let i = 0; i < rest.length; i += 2) {
+    if (i + 1 < rest.length) pairs.push([rest[i], rest[i + 1]])
+    else alone.push(rest[i])
+  }
+  return placePairs(students, rows, cols, pairs, alone, rand)
+}
+
+/** 把成好的同桌对放进空桌(桌序打乱、左右随机),落单的和放不下的补进单座 / 剩余座位。 */
+function placePairs(
+  students: DraftStudent[],
+  rows: number,
+  cols: number,
+  pairs: DraftStudent[][],
+  alone: DraftStudent[],
+  rand: () => number,
+): DraftStudent[] {
   const desks: [Cell, Cell][] = []
   const singles: Cell[] = []
   for (const line of freeCells(students, rows, cols)) {
@@ -61,18 +84,6 @@ export function genderPairSeats(
         singles.push(cell)
       }
     }
-  }
-
-  const loose = students.filter((s) => !s.locked)
-  const males = shuffled(loose.filter((s) => s.gender === 'male'), rand)
-  const females = shuffled(loose.filter((s) => s.gender === 'female'), rand)
-  const pairs: DraftStudent[][] = []
-  while (males.length > 0 && females.length > 0) pairs.push([males.pop()!, females.pop()!])
-  const rest = shuffled([...males, ...females, ...loose.filter((s) => s.gender === null)], rand)
-  const alone: DraftStudent[] = []
-  for (let i = 0; i < rest.length; i += 2) {
-    if (i + 1 < rest.length) pairs.push([rest[i], rest[i + 1]])
-    else alone.push(rest[i])
   }
 
   const placed = new Map<string, Cell>()
@@ -95,4 +106,24 @@ export function genderPairSeats(
     if (i < seats.length) placed.set(s.enrollmentId, seats[i])
   })
   return assign(students, placed)
+}
+
+/** 优带弱:未固定且有名次的按名次升序,第 i 名配倒数第 i 名;奇数时中间一人、以及没有名次的同学单独。 */
+export function mentorSeats(
+  students: DraftStudent[],
+  rows: number,
+  cols: number,
+  ranks: Map<string, number>,
+  rand: () => number,
+): DraftStudent[] {
+  const loose = students.filter((s) => !s.locked)
+  const ranked = loose
+    .filter((s) => ranks.has(s.enrollmentId))
+    .sort((a, b) => ranks.get(a.enrollmentId)! - ranks.get(b.enrollmentId)!)
+  const alone = loose.filter((s) => !ranks.has(s.enrollmentId))
+  const pairs: DraftStudent[][] = []
+  const n = ranked.length
+  for (let i = 0; i < Math.floor(n / 2); i++) pairs.push([ranked[i], ranked[n - 1 - i]])
+  if (n % 2 === 1) alone.unshift(ranked[(n - 1) / 2])
+  return placePairs(students, rows, cols, pairs, alone, rand)
 }

@@ -10,7 +10,7 @@ import { confirmLeaveSeating, useTeacherStore } from '@/shared/stores/teacher'
 import type { ClassView } from '@/shared/types/class'
 import type { ClassroomSummary } from '@/shared/types/classroom'
 import type { StudentSeat } from '@/shared/types/student'
-import { genderPairSeats, shuffleSeats } from './algorithms'
+import { genderPairSeats, mentorSeats, shuffleSeats } from './algorithms'
 import { draftReducer, initDraft, isDirty, toSavePayload, type DraftAction, type SeatDraft } from './draft'
 import { printSeating, seatingPrintHtml } from './printSeating'
 import type { SeatingBarProps } from './SeatingBar'
@@ -20,6 +20,8 @@ interface Options {
   classId: string
   className: string
   enabled: boolean
+  /** enrollment_id → 最近一次考试的名次 */
+  ranks?: Map<string, number>
 }
 
 /** 草稿、它的起点,以及建草稿时用的名单(地图上的学生信息取自它,和草稿始终一致) */
@@ -220,6 +222,8 @@ export function useSeatingMode(o: Options) {
     conflict,
     onShuffle: () => dispatch({ type: 'apply', students: shuffleSeats(draft.students, draft.rows, draft.cols, Math.random) }),
     onPair: () => dispatch({ type: 'apply', students: genderPairSeats(draft.students, draft.rows, draft.cols, Math.random) }),
+    canMentor: !!o.ranks && o.ranks.size > 0,
+    onMentor: () => { if (o.ranks) dispatch({ type: 'apply', students: mentorSeats(draft.students, draft.rows, draft.cols, o.ranks, Math.random) }) },
     onUndo: () => dispatch({ type: 'undo' }),
     onDiscard: () => dispatch({ type: 'reset', draft: drafts.original }),
     onResize: (r, c) => dispatch({ type: 'resize', rows: r, cols: c }),
