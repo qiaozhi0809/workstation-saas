@@ -320,12 +320,13 @@ function ClassroomView({ cls }: { cls: ClassView }) {
         {!presenting && summary.isError && !summary.data && (
           <p role="alert" className="text-sm text-destructive">班级概况加载失败</p>
         )}
+        {/* 舞台下限:窗口矮于 560px 时放宽到 120px,让排座托盘 + 操作台也装得下而不整页滚动(适应缩放随舞台缩小) */}
         {/* 弹层锚点是点击瞬间的快照:在舞台上按下或滚轮平移 / 缩放时先关掉弹层 */}
         <div
           ref={stageRef}
           data-testid="classroom-stage"
           aria-busy={seatingPending ? true : undefined}
-          className={`relative min-h-[240px] flex-1 overflow-hidden rounded-xl border bg-card ${
+          className={`relative min-h-[120px] flex-1 overflow-hidden [@media(min-height:560px)]:min-h-[240px] rounded-xl border bg-card ${
             seatingPending ? 'cursor-progress' : ''}`}
           onPointerDownCapture={(e) => {
             if (!(e.target instanceof Element && e.target.closest('[role="dialog"]'))) review.closePopover()

@@ -186,7 +186,7 @@ export default function ClassroomMap({
   }
   const { s, x, y } = vp.view
   // 抓手光标(data-pan)只在可拖动的放大状态出现
-  const stageCls = `cr-stage cr-anim relative h-full w-full ${mini ? 'min-h-[160px]' : 'min-h-[240px] touch-none select-none'}`
+  const stageCls = `cr-stage cr-anim relative h-full w-full ${mini ? 'min-h-[160px]' : 'min-h-[120px] [@media(min-height:560px)]:min-h-[240px] touch-none select-none'}`
 
   return (
     <div ref={stageRef} className={`${stageCls}${busy ? ' cr-grabbing' : ''}`} data-pan={mini || vp.fitted ? undefined : ''} {...stageHandlers}>
