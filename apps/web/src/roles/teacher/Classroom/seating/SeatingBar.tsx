@@ -1,4 +1,4 @@
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, Undo2 } from 'lucide-react'
 import { useState } from 'react'
 import { MenuItem } from '@/shared/components/overlay/Menu'
 import Modal from '@/shared/components/overlay/Modal'
@@ -111,12 +111,13 @@ export function SeatingMenuItems(p: Pick<SeatingBarProps, 'busy' | 'dirty' | 'se
 /** 排座操作条:常用操作直接可见,行列收进弹层;放弃修改 / 固定 / 打印在操作台的"更多操作"里(SeatingMenuItems)。 */
 export default function SeatingBar(p: SeatingBarProps) {
   return (
-    <div className="flex flex-wrap items-center gap-2 text-sm">
+    <div className="flex flex-wrap items-center gap-1.5 text-sm">
       <Button type="button" variant="outline" disabled={p.busy} onClick={p.onShuffle}>随机打乱</Button>
       <Button type="button" variant="outline" disabled={p.busy} onClick={p.onPair}>男女同桌</Button>
       <Button type="button" variant="outline" disabled={p.busy || !p.canMentor} title={p.canMentor ? undefined : '还没有考试成绩'}
         onClick={p.onMentor}>优带弱</Button>
-      <Button type="button" variant="outline" disabled={p.busy || !p.canUndo} onClick={p.onUndo}>撤销</Button>
+      <Button type="button" variant="outline" disabled={p.busy || !p.canUndo} onClick={p.onUndo}
+        aria-label="撤销" title="撤销" size="icon"><Undo2 aria-hidden /></Button>
       <Popover label="座位行列" side="top" triggerProps={{ variant: 'outline', disabled: p.busy }}
         trigger={<>{`${p.rows} 排 × ${p.cols} 列`}<ChevronDown aria-hidden /></>}>
         <div className="flex flex-col gap-2">

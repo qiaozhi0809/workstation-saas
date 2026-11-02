@@ -33,18 +33,18 @@ export default function GradesBar({ exams, value, onChange, analysisHref, showLe
         {exams.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
       </NativeSelect>
       {showLegend && (
-      <ul aria-label="名次图例" className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+      <div role="group" aria-label="名次色阶" className="flex items-center gap-1 text-xs text-muted-foreground">
+        <span aria-hidden>前</span>
         {LEGEND.map((l) => (
-          <li key={l.tint} className="flex items-center gap-1">
-            <span aria-hidden className="inline-block h-3 w-4 rounded-sm border" style={{ background: GRADE_TINTS[l.tint] }} />
-            {l.label}
-          </li>
+          <span key={l.tint} title={l.label} className="inline-block h-3 w-4 rounded-sm border"
+            style={{ background: GRADE_TINTS[l.tint] }}>
+            <span className="sr-only">{l.label}</span>
+          </span>
         ))}
-        <li className="flex items-center gap-1">
-          <span aria-hidden className="inline-block h-3 w-4 rounded-sm border bg-muted opacity-40" />
-          无成绩
-        </li>
-      </ul>
+        <span aria-hidden>后</span>
+        <span aria-hidden className="ml-1 inline-block h-3 w-4 rounded-sm border bg-muted opacity-40" />
+        <span>无成绩</span>
+      </div>
       )}
       <Button asChild variant="outline"><Link to={analysisHref}>完整分析</Link></Button>
     </div>

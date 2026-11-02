@@ -290,6 +290,8 @@ it('resizes within 1-12 and discards changes', async () => {
   fireEvent.keyDown(rows, { key: 'Enter' })
   expect(rows).toHaveValue(12)
   expect(screen.getByRole('button', { name: '撤销' })).toBeEnabled()
+  expect(screen.getByRole('button', { name: '撤销' })).toHaveAttribute('title', '撤销')
+  expect(screen.getByRole('button', { name: '撤销' }).textContent).toBe('')
   openMore()
   fireEvent.click(menuItem('放弃修改'))
   expect(screen.getByRole('region', { name: '待安排 (1)' })).toBeInTheDocument()

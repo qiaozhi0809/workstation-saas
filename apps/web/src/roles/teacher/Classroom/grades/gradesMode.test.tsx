@@ -75,6 +75,13 @@ it('tints seats by rank fifths and badges big moves', async () => {
   byRank.forEach((id, i) => expect(filled[cellOf(id)]).toBe(expected[i]))
   expect(screen.getByText('前 20%')).toBeInTheDocument()
   expect(screen.getByText('后 20%')).toBeInTheDocument()
+  // 紧凑图例:每个色块保留区间文字(sr-only + title),整体有分组名
+  const legend = screen.getByRole('group', { name: '名次色阶' })
+  expect(within(legend).getByText('无成绩')).toBeInTheDocument()
+  for (const t of ['前 20%', '20–40%', '40–60%', '60–80%', '后 20%']) {
+    expect(within(legend).getByText(t)).toHaveClass('sr-only')
+    expect(legend.querySelector(`[title="${t}"]`)).not.toBeNull()
+  }
 })
 
 it('dims students without scores', async () => {
