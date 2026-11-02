@@ -14,6 +14,7 @@ export default {
         background: token('background'), foreground: token('foreground'),
         primary: pair('primary'), secondary: pair('secondary'), muted: pair('muted'), accent: pair('accent'),
         popover: pair('popover'), card: pair('card'),
+        chart: { 1: token('chart-1'), 2: token('chart-2'), 3: token('chart-3'), 4: token('chart-4'), 5: token('chart-5') },
         destructive: pair('destructive'), success: pair('success'), warning: pair('warning'), info: pair('info'),
       },
       borderRadius: { lg: 'var(--radius)', md: 'calc(var(--radius) - 2px)', sm: 'calc(var(--radius) - 4px)' },
