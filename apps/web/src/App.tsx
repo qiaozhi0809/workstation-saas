@@ -1,7 +1,8 @@
 import { lazy, Suspense, useState } from 'react'
 import {
-  createBrowserRouter, createRoutesFromElements, Navigate, Route, RouterProvider,
+  createBrowserRouter, createRoutesFromElements, Link, Navigate, Route, RouterProvider,
 } from 'react-router-dom'
+import { FileQuestion } from 'lucide-react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClient } from '@/shared/api/queryClient'
 import LoginPage from '@/auth/LoginPage'
@@ -9,6 +10,9 @@ import TeacherLayout from '@/roles/teacher/TeacherLayout'
 import ClassroomPage from '@/roles/teacher/Classroom/ClassroomPage'
 import PreferencesPage from '@/roles/teacher/Preferences/PreferencesPage'
 import ProtectedRoute from '@/shared/components/ProtectedRoute'
+import { EmptyState } from '@/shared/components/feedback/EmptyState'
+import { Button } from '@/shared/components/ui/button'
+import { useApplyTheme } from '@/theme/useTheme'
 
 const ClassroomPlayground = import.meta.env.DEV ? lazy(() => import('@/dev/ClassroomPlayground')) : null
 
@@ -25,14 +29,25 @@ const routes = createRoutesFromElements(
     {ClassroomPlayground && (
       <Route path="/dev/classroom" element={<Suspense fallback={null}><ClassroomPlayground /></Suspense>} />
     )}
-    <Route path="/admin" element={<div className="p-6">管理端(M3)</div>} />
-    <Route path="/parent" element={<div className="p-6">家长端(M4)</div>} />
+    <Route path="/admin" element={<EmptyState title="管理端(M3)" className="h-full justify-center p-6" />} />
+    <Route path="/parent" element={<EmptyState title="家长端(M4)" className="h-full justify-center p-6" />} />
     <Route path="/" element={<Navigate to="/login" replace />} />
-    <Route path="*" element={<div className="p-6">404</div>} />
+    <Route
+      path="*"
+      element={(
+        <EmptyState
+          icon={FileQuestion}
+          title="页面不存在"
+          action={<Button asChild className="mt-2"><Link to="/">回到首页</Link></Button>}
+          className="h-full justify-center p-6"
+        />
+      )}
+    />
   </>,
 )
 
 export default function App() {
+  useApplyTheme()
   // 挂载时才建 router,它从当时的地址栏开始
   const [router] = useState(() => createBrowserRouter(routes))
   return (

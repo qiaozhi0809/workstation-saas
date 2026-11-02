@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ApiError } from '@/shared/api/client'
 import { classroomApi } from '@/shared/api/classroom'
 import { studentsApi } from '@/shared/api/students'
+import { NativeSelect } from '@/shared/components/ui/native-select'
 import { toast } from '@/shared/components/Toast'
 import type { StudentProfile } from '@/shared/types/student'
 import Field from './Field'
@@ -38,13 +39,13 @@ function ClassRoleRow({ student }: { student: StudentProfile }) {
 
   return (
     <div className="flex gap-3 py-1">
-      <dt className="w-20 shrink-0 text-ink-2">职务</dt>
+      <dt className="w-20 shrink-0 text-muted-foreground">职务</dt>
       <dd>
-        <select aria-label="职务" value={value}
+        <NativeSelect aria-label="职务" className="h-8" value={value}
           onChange={(e) => { setValue(e.target.value); save.mutate(e.target.value) }}>
           <option value="">无</option>
           {options.map((o) => <option key={o} value={o}>{o}</option>)}
-        </select>
+        </NativeSelect>
       </dd>
     </div>
   )
