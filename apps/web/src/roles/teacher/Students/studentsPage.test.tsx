@@ -102,6 +102,20 @@ it('shows contacts, tag overflow, rank with change arrows and points', async () 
   expect(row1.querySelector('[data-birthday-today]')).not.toBeNull()
 })
 
+it('keeps cells and headers on one line and the filter tabs unsqueezed on narrow screens', async () => {
+  setup(ALL)
+  renderPage()
+  await screen.findByText('张三')
+  for (const h of screen.getAllByRole('columnheader')) expect(h).toHaveClass('whitespace-nowrap')
+  const row1 = screen.getByText('张三').closest('tr')!
+  // 标签列允许换行但保底宽度,其余单元格不换行
+  const cells = within(row1).getAllByRole('cell')
+  const tagCell = within(row1).getByText('+2').closest('td')!
+  expect(tagCell).toHaveClass('min-w-[8rem]')
+  for (const c of cells) if (c !== tagCell) expect(c).toHaveClass('whitespace-nowrap')
+  expect(screen.getByRole('tablist', { name: '筛选' }).parentElement).toHaveClass('w-max', 'whitespace-nowrap')
+})
+
 it('filters by search and chips', async () => {
   setup(ALL)
   renderPage()
