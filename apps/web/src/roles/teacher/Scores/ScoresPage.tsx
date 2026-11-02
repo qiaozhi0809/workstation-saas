@@ -74,7 +74,7 @@ function ScoresBody({ ctx }: { ctx: ClassContext }) {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 p-4">
       {canWrite && (
         <div className="flex justify-end">
           <Button onClick={() => setForm('new')}>新建考试</Button>

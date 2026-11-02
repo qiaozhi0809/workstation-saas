@@ -176,6 +176,12 @@ it('switches exams by url', async () => {
   expect(l.getByRole('button', { name: /九月月考/ })).toHaveAttribute('aria-current', 'true')
 })
 
+it('pads the page like the other teacher pages', async () => {
+  setup()
+  const nav = await screen.findByRole('navigation', { name: '考试列表' })
+  expect(nav.closest('.flex.flex-col.gap-4')).toHaveClass('p-4')
+})
+
 it('shows an empty state with a create action when there are no exams', async () => {
   setup({ exams: [] })
   expect(await screen.findByText('还没有考试')).toBeInTheDocument()
