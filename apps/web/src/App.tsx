@@ -9,6 +9,7 @@ import TeacherLayout from '@/roles/teacher/TeacherLayout'
 import ClassroomPage from '@/roles/teacher/Classroom/ClassroomPage'
 import PreferencesPage from '@/roles/teacher/Preferences/PreferencesPage'
 import ProtectedRoute from '@/shared/components/ProtectedRoute'
+import { useApplyTheme } from '@/theme/useTheme'
 
 const ClassroomPlayground = import.meta.env.DEV ? lazy(() => import('@/dev/ClassroomPlayground')) : null
 
@@ -33,6 +34,7 @@ const routes = createRoutesFromElements(
 )
 
 export default function App() {
+  useApplyTheme()
   // 挂载时才建 router,它从当时的地址栏开始
   const [router] = useState(() => createBrowserRouter(routes))
   return (
