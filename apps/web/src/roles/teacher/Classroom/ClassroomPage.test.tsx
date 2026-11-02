@@ -159,7 +159,7 @@ it('loads weekly stars only for teachers who may read reviews', async () => {
   expect(reviewsApi.summary).not.toHaveBeenCalled()
 })
 
-it('has no overview rail at any width; 待办与点评 opens a drawer that closes when presenting starts', async () => {
+it('has no overview rail at any width; 待办与点评 opens a drawer that is hidden while presenting', async () => {
   for (const w of [1280, 1024]) {
     window.innerWidth = w
     const { unmount } = setup()

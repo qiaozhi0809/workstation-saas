@@ -36,7 +36,9 @@
 
 ### 教室操作台
 
-- 新模式的操作放进 `ModeSlot.actions`(`ClassroomPage.tsx`),常驻操作放 `ClassroomDock` 的 `common`(随机点名、编辑黑板);不再在舞台上方加工具条。
+- 新模式的操作放进 `ModeSlot.actions`(`ClassroomPage.tsx`);次要操作放进 `ModeSlot.menu`(用 `MenuItem`),由 `ClassroomDock` 渲染成唯一的"更多操作"菜单;不再在舞台上方加工具条。
+- `ClassroomDock` 的 `common`(随机点名、编辑黑板)只在日常模式显示;其他模式由页面把这两项追加到"更多操作"菜单末尾。
+- 待办与最近点评放在操作台最右端的"待办与点评"抽屉(`SidePanel`),投屏全屏时不显示。
 - `actions` 的子节点要保持在同一树位置:`Popover` 没有受控 `open`,重挂载会丢掉打开状态和已输入的数字。
 - 缩放悬浮钮由 `ClassroomMap` 的 `zoomControls` 提供(舞台右下角);到缩放上下限时按钮用 `aria-disabled` 而不是 `disabled`,键盘焦点留在原处。
 - 两翼:场景按 16:9(`SCENE_ASPECT`,`computeLayout` 的 `aspect` 选项)加宽,两翼(`art/Wings.tsx`、`art/wingArt.tsx`)是纯装饰、带 `aria-hidden`;"适应"比例横向只按中央安全区宽度计算(纵向按整幅高度),窄屏只裁掉两翼。
