@@ -22,6 +22,7 @@ import type { ClassroomMapProps } from './types'
 import { useNow } from './useNow'
 import { useSeatDrag } from './useSeatDrag'
 import { useViewport } from './useViewport'
+import ZoomControls from './ZoomControls'
 import './classroom.css'
 
 const DEFAULT_TEACHER = { figure: 'female', label: '' } as const
@@ -91,7 +92,7 @@ const NO_HOVER: HoverState = { mouse: null, focus: null, last: 'mouse' }
 // 纯展示:props 进、回调出。舞台(滚轮 / 平移)→ 变换画布 → svg;悬停卡与拖拽影子是舞台内的 HTML
 export default function ClassroomMap({
   rows, cols, seats, mode = 'daily', teacher = DEFAULT_TEACHER, board, views, effects, presenting,
-  renderHoverCard, onSeatClick, onEmptySeatClick, onSeatDrop, viewportRef,
+  renderHoverCard, onSeatClick, onEmptySeatClick, onSeatDrop, viewportRef, zoomControls = false,
 }: ClassroomMapProps) {
   const mini = mode === 'mini'
   const stageRef = useRef<HTMLDivElement>(null)
@@ -159,10 +160,11 @@ export default function ClassroomMap({
     },
   }
   const { s, x, y } = vp.view
+  // 抓手光标(data-pan)只在可拖动的放大状态出现
   const stageCls = `cr-stage cr-anim relative h-full w-full ${mini ? 'min-h-[160px]' : 'min-h-[240px] touch-none select-none'}`
 
   return (
-    <div ref={stageRef} className={`${stageCls}${busy ? ' cr-grabbing' : ''}`} data-pan={mini ? undefined : ''} {...stageHandlers}>
+    <div ref={stageRef} className={`${stageCls}${busy ? ' cr-grabbing' : ''}`} data-pan={mini || vp.fitted ? undefined : ''} {...stageHandlers}>
       <div className="cr-canvas absolute left-0 top-0" style={{ transform: `translate(${x}px, ${y}px) scale(${s})`, transformOrigin: '0 0' }}>
         <Scene L={L} mini={mini} rows={rows} board={board} figure={teacher.figure} label={teacher.label}
           views={views} effects={effects} interactive={mode !== 'overview'} cells={cells} placed={placed}
@@ -180,6 +182,9 @@ export default function ClassroomMap({
           <Avatar gender={genderOf(drag.from.seat.gender)} seed={drag.from.seat.avatar_seed ?? drag.from.seat.student_id}
             color={groupColor(groupOf(drag.from.col))} size={48} title={drag.from.seat.name} />
         </div>
+      )}
+      {zoomControls && !mini && (
+        <ZoomControls canZoomIn={vp.canZoomIn} canZoomOut={!vp.fitted} onZoomIn={zoomIn} onZoomOut={zoomOut} onFit={fit} />
       )}
     </div>
   )

@@ -9,10 +9,10 @@ it('fits and centers the classroom', () => {
 })
 
 it('zooms around the pointer and respects bounds', () => {
-  const v = zoomAt({ s: 1, x: 0, y: 0 }, 2, { x: 100, y: 50 })
+  const v = zoomAt({ s: 1, x: 0, y: 0 }, 2, { x: 100, y: 50 }, 0.1)
   expect(v).toEqual({ s: 2, x: -100, y: -50 })
-  expect(zoomAt({ s: 2.4, x: 0, y: 0 }, 2, { x: 0, y: 0 }).s).toBe(2.5)
-  expect(zoomAt({ s: 0.31, x: 0, y: 0 }, 0.5, { x: 0, y: 0 }).s).toBe(0.3)
+  expect(zoomAt({ s: 2.4, x: 0, y: 0 }, 2, { x: 0, y: 0 }, 0.1).s).toBe(2.5)
+  expect(zoomAt({ s: 0.5, x: 0, y: 0 }, 0.5, { x: 0, y: 0 }, 0.45).s).toBe(0.45)
 })
 
 it('fits the whole classroom into a short stage, below the manual zoom-out limit', () => {
@@ -22,16 +22,10 @@ it('fits the whole classroom into a short stage, below the manual zoom-out limit
   expect(v.y).toBeGreaterThanOrEqual(0)
 })
 
-it('does not jump when zooming from a fit below the manual zoom-out limit', () => {
-  const fitted = { s: 0.2, x: 0, y: 0 }
-  expect(zoomAt(fitted, 0.5, { x: 0, y: 0 }).s).toBe(0.2)
-  expect(zoomAt(fitted, 1.2, { x: 0, y: 0 }).s).toBeCloseTo(0.24)
-})
-
-it('keeps at least 140px of the classroom on screen', () => {
-  const v = clampView({ s: 1, x: -5000, y: 5000 }, { w: 1000, h: 800 }, { w: 800, h: 600 })
-  expect(v.x).toBe(140 - 1000)
-  expect(v.y).toBe(600 - 140)
+it('clampView keeps a zoomed axis covering the stage and centres a short one', () => {
+  const content = { w: 2000, h: 500 }, stage = { w: 800, h: 600 }
+  expect(clampView({ s: 1, x: 50, y: -5000 }, content, stage)).toEqual({ s: 1, x: 0, y: 50 })
+  expect(clampView({ s: 1, x: -5000, y: 0 }, content, stage).x).toBe(800 - 2000)
 })
 
 it('turns wheel delta into a zoom factor', () => {

@@ -45,4 +45,5 @@ export interface ClassroomMapProps {
   onEmptySeatClick?: (cell: Cell) => void
   onSeatDrop?: (from: Cell, to: Cell) => void
   viewportRef?: Ref<ClassroomViewportHandle>
+  zoomControls?: boolean                // 舞台右下角显示缩放悬浮钮(缩小 / 适应 / 放大);mini 模式不显示
 }
