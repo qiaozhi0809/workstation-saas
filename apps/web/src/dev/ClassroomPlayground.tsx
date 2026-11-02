@@ -115,7 +115,7 @@ export default function ClassroomPlayground() {
         <button type="button" className={btn} onClick={() => viewport.current?.zoomIn()}>放大</button>
         <button type="button" className={btn} onClick={() => viewport.current?.zoomOut()}>缩小</button>
         <button type="button" className={btn} onClick={() => viewport.current?.fit()}>适应</button>
-        {last && <span className="text-sm text-ink-2">{last}</span>}
+        {last && <span className="text-sm text-muted-foreground">{last}</span>}
       </div>
       <div className="h-[70vh] overflow-clip rounded-lg border">
         <ClassroomMap

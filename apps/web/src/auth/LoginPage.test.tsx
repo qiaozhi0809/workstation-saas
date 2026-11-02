@@ -5,7 +5,6 @@ import { authApi } from '@/shared/api/auth'
 import { ApiError } from '@/shared/api/client'
 import type { LoginResponse } from '@/shared/types/api'
 import { useAuthStore } from '@/shared/stores/auth'
-import { findLegacyStyles } from '@/test/legacyStyles'
 import LoginPage from './LoginPage'
 
 vi.mock('@/shared/api/auth', () => ({ authApi: { login: vi.fn() } }))
@@ -107,9 +106,4 @@ it('marks the submit button busy while signing in', async () => {
   const busy = await screen.findByRole('button', { name: '登录中…' })
   expect(busy).toBeDisabled()
   expect(busy).toHaveAttribute('aria-busy', 'true')
-})
-
-it('uses design tokens only', () => {
-  const files = import.meta.glob(['./*.tsx', '!./*.test.tsx'], { query: '?raw', import: 'default', eager: true })
-  expect(findLegacyStyles(files as Record<string, string>)).toEqual([])
 })

@@ -64,6 +64,7 @@
 | **M0 考古** | ✅ 已完成 | [`reference-html/features-extracted.md`](reference-html/features-extracted.md)(1771 行,PRD 级) |
 | **M1 骨架 + 教师角色底座** | ✅ 已完成(`v0.1.0-m1-foundation`) | 17 task,文件:[`docs/superpowers/plans/2026-11-01-M1-骨架与教师角色底座.md`](docs/superpowers/plans/2026-11-01-M1-骨架与教师角色底座.md) |
 | **M2a 教室交互** | ✅ 已完成(`v0.2.0-m2a-classroom`) | 23 task,文件:[`docs/superpowers/plans/2026-11-01-M2a-教室交互.md`](docs/superpowers/plans/2026-11-01-M2a-教室交互.md) |
+| **M2a.5 UI 基础与打磨** | ✅ 已完成(`v0.2.5-m2a5-ui`) | 17 task,文件:[`docs/superpowers/plans/2026-11-01-M2a5-UI基础与打磨.md`](docs/superpowers/plans/2026-11-01-M2a5-UI基础与打磨.md) |
 | M2b 成绩 / M2c AI 与学年 | ⏳ 未开始 | plan 待写 |
 | M3 管理角色 | ⏳ 未开始 | plan 待写 |
 | M4 家长角色 | ⏳ 未开始 | plan 待写 |
@@ -140,6 +141,8 @@ Step N+(1-k): Commit          → git add && git commit
 | TypeScript | 5 |
 | Vite | 5 |
 | Tailwind | 3 |
+| shadcn CLI | 2.3.0(最后支持 Tailwind 3) |
+| tailwind-merge | 2.x(3.x 只支持 Tailwind 4) |
 | Docker Compose | v2 |
 
 **不要擅自升级这些版本**。版本升级要征求用户同意。

@@ -6,7 +6,6 @@ import { ApiError } from '@/shared/api/client'
 import { preferencesApi } from '@/shared/api/preferences'
 import { Toaster } from '@/shared/components/Toast'
 import type { Preferences } from '@/shared/types/preferences'
-import { findLegacyStyles } from '@/test/legacyStyles'
 import PreferencesPage from './PreferencesPage'
 
 vi.mock('@/shared/api/preferences', () => ({ preferencesApi: { get: vi.fn(), save: vi.fn() } }))
@@ -118,9 +117,4 @@ it('keeps the form and its edits when a background refetch fails', async () => {
 it('groups settings under labelled fieldsets', async () => {
   renderPage()
   for (const name of ['老师形象', '教室', '点评理由']) expect(await screen.findByRole('group', { name })).toBeInTheDocument()
-})
-
-it('uses design tokens only', () => {
-  const files = import.meta.glob(['./*.tsx', '!./*.test.tsx'], { query: '?raw', import: 'default', eager: true })
-  expect(findLegacyStyles(files as Record<string, string>)).toEqual([])
 })

@@ -111,6 +111,16 @@ it('enters presenting mode on fullscreen and hides the rail', async () => {
   expect(screen.queryByRole('complementary', { name: '班级概况' })).toBeNull()
 })
 
+it('uses an opaque background on the root while presenting, so the black backdrop never shows through', async () => {
+  stubFullscreen()
+  setup()
+  fireEvent.click(await screen.findByRole('button', { name: '全屏' }))
+  await screen.findByRole('button', { name: '退出全屏' })
+  const classes = (document.fullscreenElement as Element).className.split(/\s+/)
+  expect(classes).toContain('bg-background')
+  expect(classes.filter((c) => c.startsWith('bg-') && c.includes('/'))).toEqual([])
+})
+
 it('shows grade, school year and week, and the teacher name plate', async () => {
   setup()
   expect(await screen.findByText('三年级 · 2026-2027 第 10 周')).toBeInTheDocument()

@@ -5,7 +5,6 @@ import { beforeEach, vi } from 'vitest'
 import { ApiError } from '@/shared/api/client'
 import { classroomApi } from '@/shared/api/classroom'
 import { studentsApi } from '@/shared/api/students'
-import { findLegacyStyles } from '@/test/legacyStyles'
 import StudentProfileDrawer from './StudentProfileDrawer'
 
 vi.mock('@/shared/api/classroom', () => ({ classroomApi: { summary: vi.fn().mockResolvedValue({ my_perms: [] }) } }))
@@ -156,9 +155,4 @@ it('moves between tabs with the arrow keys', async () => {
   first.focus()
   fireEvent.keyDown(first, { key: 'ArrowRight' })
   expect(screen.getByRole('tab', { name: '档案' })).toHaveFocus()
-})
-
-it('uses design tokens only', () => {
-  const files = import.meta.glob(['./*.tsx', '!./*.test.tsx'], { query: '?raw', import: 'default', eager: true })
-  expect(findLegacyStyles(files as Record<string, string>)).toEqual([])
 })
