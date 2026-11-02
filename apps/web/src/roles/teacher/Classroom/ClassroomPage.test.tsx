@@ -204,6 +204,7 @@ it('shows 编辑黑板 only with board.write and opens the editor', async () => 
 it('hides 编辑黑板 without board.write', async () => {
   setup({ perms: ['review.write'] })
   await screen.findByRole('toolbar', { name: '教室工具' })
+  // 名牌只有在概况(summary)加载后才带身份后缀(label 依赖 summary.data / my_perms),所以它出现即权限已到
   await screen.findByText('王老师 · 任课老师')
   expect(screen.queryByRole('button', { name: '编辑黑板' })).toBeNull()
 })

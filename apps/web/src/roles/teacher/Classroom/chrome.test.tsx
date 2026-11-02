@@ -36,3 +36,18 @@ it('shows 退出全屏 and hides 概况栏 while presenting', () => {
   expect(screen.getByRole('button', { name: '退出全屏' })).toBeInTheDocument()
   expect(screen.queryByRole('button', { name: '概况栏' })).toBeNull()
 })
+
+it('draws a separator only before a non-empty actions or common zone', () => {
+  const seps = () => screen.getByRole('toolbar', { name: '教室工具' }).querySelectorAll('[data-orientation="vertical"]').length
+  const { unmount } = dock()
+  expect(seps()).toBe(2)
+  unmount()
+  const a = dock({ actions: undefined })
+  expect(seps()).toBe(1)
+  a.unmount()
+  const b = dock({ common: undefined })
+  expect(seps()).toBe(1)
+  b.unmount()
+  dock({ actions: undefined, common: undefined })
+  expect(seps()).toBe(0)
+})

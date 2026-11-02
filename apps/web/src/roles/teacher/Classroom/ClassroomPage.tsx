@@ -217,6 +217,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
   const cardOpen = pick.state === 'picked' || pick.state === 'empty'
   // 点名进行中(转动或结果卡打开):Task 21 据此暂停空闲动画
   const picking = pick.state === 'spinning' || cardOpen
+  const canEditBoard = perms.includes('board.write') && !presenting && !!summary.data
   const canPick = mode !== 'seating' && !!todayAttendance.data && !!roster.data
   const overlay = mode === 'seating' ? undefined : attendance.views
   let slot: ModeSlot = {}
@@ -343,14 +344,14 @@ function ClassroomView({ cls }: { cls: ClassView }) {
           perms={perms}
           onModeChange={setMode}
           actions={slot.actions}
-          common={canPick || (perms.includes('board.write') && !presenting && summary.data) ? (
+          common={canPick || canEditBoard ? (
             <>
               {canPick && (
                 <Button onClick={pick.start} disabled={picking}>
                   <Dices aria-hidden />随机点名
                 </Button>
               )}
-              {perms.includes('board.write') && !presenting && summary.data && (
+              {canEditBoard && (
                 <Button variant="outline" onClick={() => setEditingBoard(true)}>
                   <PencilLine aria-hidden="true" />编辑黑板
                 </Button>
