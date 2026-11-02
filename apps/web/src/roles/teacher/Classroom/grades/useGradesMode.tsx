@@ -34,7 +34,8 @@ export function useGradesMode({ classId, enabled, presenting, roster, onOpenScor
   const selected = (picked && exams?.find((e) => e.id === picked)) || latest
 
   const views = useMemo(() => {
-    if (!exams || !selected) return NO_VIEWS
+    // 页面在有 exam.read 时总会取成绩册,但只有成绩模式才用得上外观
+    if (!enabled || !exams || !selected) return NO_VIEWS
     const ids = roster.map((s) => s.enrollment_id)
     const cur = examTable(selected, ids)
     const before = previousExam(exams, selected.id)
@@ -50,7 +51,7 @@ export function useGradesMode({ classId, enabled, presenting, roster, onOpenScor
       out[r.id] = view
     }
     return out
-  }, [exams, selected, roster])
+  }, [enabled, exams, selected, roster])
 
   let bar: ReactNode = null
   if (gradebook.isError && !gradebook.data) bar = <p role="alert" className="text-sm text-destructive">成绩加载失败</p>

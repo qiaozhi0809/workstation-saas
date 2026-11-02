@@ -1,10 +1,13 @@
-import { fireEvent, screen, within } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { fireEvent, renderHook, screen, within } from '@testing-library/react'
+import type { ReactNode } from 'react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { examsApi } from '@/shared/api/exams'
 import { GRADE_TINTS } from '@/shared/components/ClassroomMap/art/palette'
 import type { GradebookExam } from '@/shared/types/grades'
 import type { StudentSeat } from '@/shared/types/student'
 import { defaultApiMocks, setup } from '../pageTestUtils'
+import { useGradesMode } from './useGradesMode'
 
 vi.mock('@/shared/api/classes')
 vi.mock('@/shared/api/students')
@@ -138,4 +141,17 @@ it('shows the empty hint when no exam has a score yet', async () => {
   vi.mocked(examsApi.gradebook).mockResolvedValue({ exams: [exam('e1', '2026-09-20', null)] })
   setup({ mode: '成绩', roster })
   expect(await screen.findByText('还没有考试成绩')).toBeInTheDocument()
+})
+
+it('computes no seat views outside grades mode even when the gradebook is cached', () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  client.setQueryData(['gradebook', 'c1'], book())
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  )
+  const args = { classId: 'c1', presenting: false, roster, onOpenScores: vi.fn() }
+  const off = renderHook(() => useGradesMode({ ...args, enabled: false }), { wrapper })
+  expect(off.result.current.views).toEqual({})
+  const on = renderHook(() => useGradesMode({ ...args, enabled: true }), { wrapper })
+  expect(Object.keys(on.result.current.views)).toHaveLength(10)
 })
