@@ -60,7 +60,9 @@ beforeEach(() => {
   vi.mocked(studentsApi.listInClass).mockResolvedValue({ items: rosterFixture })
 })
 
-const avgCard = async () => (await screen.findByText('平均分')).closest('div[data-kpi]') as HTMLElement
+// 各科明细表头也有「平均分」,所以只取 KPI 卡片里的那个
+const avgCard = async () =>
+  (await screen.findAllByText('平均分')).map((el) => el.closest('div[data-kpi]')).find(Boolean) as HTMLElement
 
 describe('AnalysisPage', () => {
   it('defaults to the latest exam compared with the previous one', async () => {
