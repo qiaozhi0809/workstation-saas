@@ -22,7 +22,7 @@
 ### 可用组件
 
 - `src/shared/components/ui/`:shadcn 生成的 `button`、`input`、`textarea`、`label`、`card`、`badge`、`separator`、`dialog`、`sheet`;项目自写的 `native-select`(`NativeSelect`)、`segmented-tabs`(`SegmentedTabs`)。
-- `overlay/`:`Modal`、`SidePanel`。
+- `overlay/`:`Modal`、`SidePanel`;`Popover`(非模态锚定小浮层,`role="dialog"`)、`Menu`(锚定菜单,配套 `MenuItem` / `MenuLinkItem` / `MenuLabel`)。两者都有 `side`(`'top'` | `'bottom'`,默认 `'bottom'`;底部操作台用 `'top'`)和 `align`(`'start'` | `'end'`,默认 `'start'`)。
 - `feedback/`:`LoadingState`、`ErrorState`、`EmptyState`。
 - `layout/`:`AppShell`。
 - `src/theme/`:`ThemeToggle`。
@@ -31,6 +31,15 @@
 
 - 弹层只用 `Modal` / `SidePanel`,不要直接用 `ui/dialog` 或 `ui/sheet`。
 - 舞台内的浮层卡片(`PickCard`、`ReviewPopover`、`HoverCard`)保持在舞台内绝对定位,不走 portal。
+- 锚定小浮层只用 `Popover` / `Menu`。它们渲染在自己的包裹元素里、不走 portal:投屏全屏时只有教室页根节点子树可见,portal 到 `body` 的浮层既看不见还会抢焦点。
+- `Popover` 打开时聚焦内容里带 `data-autofocus` 的元素,没有则聚焦第一个可聚焦元素;第一个可聚焦元素不适合直接回车时(例如行列弹层里的"减少排数"),把 `data-autofocus` 标在合适的输入框上。
+
+### 教室操作台
+
+- 新模式的操作放进 `ModeSlot.actions`(`ClassroomPage.tsx`),常驻操作放 `ClassroomDock` 的 `common`(随机点名、编辑黑板);不再在舞台上方加工具条。
+- `actions` 的子节点要保持在同一树位置:`Popover` 没有受控 `open`,重挂载会丢掉打开状态和已输入的数字。
+- 缩放悬浮钮由 `ClassroomMap` 的 `zoomControls` 提供(舞台右下角);到缩放上下限时按钮用 `aria-disabled` 而不是 `disabled`,键盘焦点留在原处。
+- 两翼:场景按 16:9(`SCENE_ASPECT`,`computeLayout` 的 `aspect` 选项)加宽,两翼(`art/Wings.tsx`、`art/wingArt.tsx`)是纯装饰、带 `aria-hidden`;"适应"比例只按中央安全区宽度计算,窄屏只裁掉两翼。
 
 ### 新增 shadcn 组件
 
