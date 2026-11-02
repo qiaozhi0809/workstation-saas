@@ -1,9 +1,11 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { createRef } from 'react'
 import { vi } from 'vitest'
 import type { StudentSeat } from '@/shared/types/student'
 import ClassroomMap from './index'
+import { SCENE_ASPECT, computeLayout } from './layout'
 import type { ClassroomViewportHandle } from './types'
+import { MAX_S } from './viewport'
 
 const seat = (id: string, name: string, col: number, over: Partial<StudentSeat> = {}): StudentSeat => ({
   enrollment_id: id, student_id: 's' + id, name, mk: 'S' + id, seat_row: 1, seat_col: col,
@@ -79,7 +81,7 @@ it('treats a tiny move as a click and never drags a locked student', () => {
 
 const stageOf = (c: HTMLElement) => c.querySelector('.cr-stage') as HTMLElement
 const shiftOf = (c: HTMLElement) =>
-  /translate\(([-\d.]+)px, ([-\d.]+)px\)/.exec((c.querySelector('.cr-canvas') as HTMLElement).style.transform)!.slice(1).map(Number)
+  /translate\(([-\d.e]+)px, ([-\d.e]+)px\)/.exec((c.querySelector('.cr-canvas') as HTMLElement).style.transform)!.slice(1).map(Number)
 
 it('never lets the stage itself scroll', () => {
   const { container } = render(<ClassroomMap rows={1} cols={2} seats={seats} onSeatClick={vi.fn()} />)
@@ -95,10 +97,16 @@ it('pans a focused off-screen seat into view', () => {
   vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(800)
   vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(600)
   try {
-    const { container } = render(<ClassroomMap rows={1} cols={2} seats={seats} onSeatClick={vi.fn()} />)
-    const [x0, y0] = shiftOf(container)
+    const ref = createRef<ClassroomViewportHandle>()
+    const { container } = render(<ClassroomMap rows={1} cols={2} seats={seats} onSeatClick={vi.fn()} viewportRef={ref} />)
     const el = cell(container, '1-2')
     el.getBoundingClientRect = () => ({ left: 900, top: 100, width: 40, height: 50, right: 940, bottom: 150, x: 900, y: 100, toJSON() {} })
+    // 适应(锁定)状态下聚焦不平移
+    const fitted = shiftOf(container)
+    fireEvent.focus(el)
+    expect(shiftOf(container)).toEqual(fitted)
+    act(() => ref.current!.zoomIn())
+    const [x0, y0] = shiftOf(container)
     fireEvent.focus(el)
     const [x1, y1] = shiftOf(container)
     expect(x1).toBeLessThan(x0)
@@ -127,8 +135,14 @@ it('refits when the stage resizes, but keeps a zoom the teacher chose until 适�
     resize(400)
     const short = scaleOf(container)
     expect(short).toBeLessThan(tall)
-    // 老师手动放大后,舞台尺寸再变也不覆盖
+    // 只放大一点:舞台变高后放大比例已不到新的适应比例,回到适应
     act(() => ref.current!.zoomIn())
+    resize(600)
+    expect(scaleOf(container)).toBe(tall)
+    resize(400)
+    expect(scaleOf(container)).toBe(short)
+    // 老师放大得更多,舞台尺寸再变也不覆盖
+    act(() => { ref.current!.zoomIn(); ref.current!.zoomIn(); ref.current!.zoomIn() })
     const zoomed = scaleOf(container)
     resize(600)
     expect(scaleOf(container)).toBe(zoomed)
@@ -162,4 +176,148 @@ it('ignores key auto-repeat on a seat', () => {
   fireEvent.keyDown(cell(container, '1-1'), { key: 'Enter', repeat: true })
   fireEvent.keyDown(cell(container, '1-1'), { key: ' ', repeat: true })
   expect(onClick).toHaveBeenCalledTimes(1)
+})
+
+// 800 × 600 的舞台,6 × 4 的教室(场景含两翼 2298 × 1292)
+function mockStage() {
+  vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(800)
+  vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(600)
+}
+const SCENE = computeLayout(6, 4, { decor: true, frontWall: true, aspect: SCENE_ASPECT })
+const press = (el: Element, from: [number, number], to: [number, number]) => {
+  fireEvent.pointerDown(el, { clientX: from[0], clientY: from[1], pointerId: 1, button: 0 })
+  fireEvent.pointerMove(el, { clientX: to[0], clientY: to[1], pointerId: 1 })
+  fireEvent.pointerUp(el, { clientX: to[0], clientY: to[1], pointerId: 1 })
+}
+
+describe('viewport lock at fit', () => {
+  beforeEach(mockStage)
+  afterEach(() => vi.restoreAllMocks())
+
+  it('does not pan at fit, by drag or by plain wheel', () => {
+    const { container } = render(<ClassroomMap rows={6} cols={4} seats={seats} />)
+    const stage = stageOf(container), before = shiftOf(container)
+    press(stage, [400, 300], [700, 300])
+    expect(shiftOf(container)).toEqual(before)
+    fireEvent.wheel(stage, { deltaY: 300 })
+    expect(shiftOf(container)).toEqual(before)
+    expect(stage).not.toHaveAttribute('data-pan')
+  })
+
+  it('pans after zooming in but never drags the scene off the stage', () => {
+    const ref = createRef<ClassroomViewportHandle>()
+    const { container } = render(<ClassroomMap rows={6} cols={4} seats={seats} viewportRef={ref} />)
+    const stage = stageOf(container)
+    act(() => { ref.current!.zoomIn(); ref.current!.zoomIn(); ref.current!.zoomIn() })
+    expect(stage).toHaveAttribute('data-pan')
+    const s = scaleOf(container), w = SCENE.width * s, h = SCENE.height * s
+    expect(w).toBeGreaterThan(800)
+    expect(h).toBeGreaterThan(600)
+    press(stage, [100, 100], [5100, 5100])
+    let [x, y] = shiftOf(container)
+    expect(x).toBeLessThanOrEqual(0)
+    expect(y).toBeLessThanOrEqual(0)
+    press(stage, [5100, 5100], [100, 100])
+    ;[x, y] = shiftOf(container)
+    expect(x + w).toBeGreaterThanOrEqual(800 - 1e-6)
+    expect(y + h).toBeGreaterThanOrEqual(600 - 1e-6)
+    expect(x).toBeLessThan(0)
+  })
+
+  it('zooming out to the fit scale locks the view again', () => {
+    const ref = createRef<ClassroomViewportHandle>()
+    const { container } = render(<ClassroomMap rows={6} cols={4} seats={seats} viewportRef={ref} />)
+    const fitScale = scaleOf(container), fitShift = shiftOf(container)
+    act(() => ref.current!.zoomIn())
+    act(() => ref.current!.zoomOut())
+    expect(scaleOf(container)).toBe(fitScale)
+    expect(shiftOf(container)).toEqual(fitShift)
+    expect(stageOf(container)).not.toHaveAttribute('data-pan')
+  })
+
+  it('zoom controls stay focusable at their limits and do nothing there', () => {
+    const { container, unmount } = render(<ClassroomMap rows={6} cols={4} seats={seats} zoomControls />)
+    const group = screen.getByRole('group', { name: '缩放' })
+    const out = within(group).getByRole('button', { name: '缩小' })
+    const fitBtn = within(group).getByRole('button', { name: '适应' })
+    const zin = within(group).getByRole('button', { name: '放大' })
+    for (const b of [out, fitBtn, zin]) {
+      expect(b).toHaveAttribute('title', b.getAttribute('aria-label'))
+      expect(b).not.toHaveAttribute('disabled')
+    }
+    const fitScale = scaleOf(container)
+    out.focus()
+    fireEvent.click(out)
+    expect(out).toHaveAttribute('aria-disabled', 'true')
+    expect(out).toHaveFocus()
+    expect(scaleOf(container)).toBe(fitScale)
+    expect(fitBtn).not.toHaveAttribute('aria-disabled')
+    // 按在悬浮钮上不会开始平移
+    fireEvent.pointerDown(zin, { clientX: 760, clientY: 560, pointerId: 1, button: 0 })
+    fireEvent.pointerMove(zin, { clientX: 700, clientY: 500, pointerId: 1 })
+    fireEvent.pointerUp(zin, { clientX: 700, clientY: 500, pointerId: 1 })
+    expect(container.querySelector('.cr-grabbing')).toBeNull()
+    for (let i = 0; i < 30 && zin.getAttribute('aria-disabled') !== 'true'; i++) fireEvent.click(zin)
+    expect(zin).toHaveAttribute('aria-disabled', 'true')
+    expect(scaleOf(container)).toBe(MAX_S)
+    expect(out).not.toHaveAttribute('aria-disabled')
+    expect(fitBtn).not.toHaveAttribute('aria-disabled')
+    zin.focus()
+    fireEvent.click(zin)
+    expect(zin).toHaveFocus()
+    expect(scaleOf(container)).toBe(MAX_S)
+    fireEvent.click(fitBtn)
+    expect(scaleOf(container)).toBe(fitScale)
+    expect(out).toHaveAttribute('aria-disabled', 'true')
+    unmount()
+    render(<ClassroomMap rows={6} cols={4} seats={seats} />)
+    expect(screen.queryByRole('group', { name: '缩放' })).toBeNull()
+    render(<ClassroomMap rows={6} cols={4} seats={seats} mode="mini" zoomControls />)
+    expect(screen.queryByRole('group', { name: '缩放' })).toBeNull()
+  })
+
+  it('lets a keyboard click reach the zoom controls after a pan that ended without a click', () => {
+    const { container } = render(<ClassroomMap rows={6} cols={4} seats={seats} zoomControls />)
+    const group = screen.getByRole('group', { name: '缩放' })
+    const fitScale = scaleOf(container)
+    fireEvent.click(within(group).getByRole('button', { name: '放大' }))
+    expect(scaleOf(container)).toBeGreaterThan(fitScale)
+    // 平移结束后没有 click 到达舞台(如触控 pointercancel):点击防护仍处于待命
+    press(stageOf(container), [400, 300], [300, 200])
+    fireEvent.click(within(group).getByRole('button', { name: '适应' }), { detail: 0 })
+    expect(scaleOf(container)).toBe(fitScale)
+  })
+
+  it('lets a keyboard click reach the zoom controls after a seat drag that ended without a click', () => {
+    const onDrop = vi.fn()
+    const { container } = render(<ClassroomMap rows={6} cols={4} seats={seats} mode="seating" onSeatDrop={onDrop} zoomControls />)
+    const fitScale = scaleOf(container)
+    // 触控拖座位:松手后没有 click 到达舞台,拖拽的点击防护仍处于待命
+    fireEvent.pointerDown(cell(container, '1-1'), { clientX: 0, clientY: 0, pointerId: 1, button: 0 })
+    fireEvent.pointerMove(cell(container, '1-1'), { clientX: 20, clientY: 0, pointerId: 1 })
+    fireEvent.pointerUp(cell(container, '1-2'), { clientX: 120, clientY: 0, pointerId: 1 })
+    expect(onDrop).toHaveBeenCalledWith({ row: 1, col: 1 }, { row: 1, col: 2 })
+    fireEvent.click(within(screen.getByRole('group', { name: '缩放' })).getByRole('button', { name: '放大' }), { detail: 0 })
+    expect(scaleOf(container)).toBeGreaterThan(fitScale)
+  })
+
+  it('still swallows the mouse click that ends a pan', () => {
+    const onClick = vi.fn(), ref = createRef<ClassroomViewportHandle>()
+    const { container } = render(<ClassroomMap rows={6} cols={4} seats={seats} onSeatClick={onClick} viewportRef={ref} />)
+    act(() => ref.current!.zoomIn())
+    const seatEl = cell(container, '1-1')
+    press(seatEl, [400, 300], [300, 200])
+    fireEvent.click(seatEl, { detail: 1 })
+    expect(onClick).not.toHaveBeenCalled()
+  })
+
+  it('still drags a student onto another seat at fit', () => {
+    const onDrop = vi.fn()
+    const { container } = render(<ClassroomMap rows={1} cols={2} seats={seats} mode="seating" onSeatDrop={onDrop} />)
+    expect(stageOf(container)).not.toHaveAttribute('data-pan')
+    fireEvent.pointerDown(cell(container, '1-1'), { clientX: 0, clientY: 0, pointerId: 1, button: 0 })
+    fireEvent.pointerMove(cell(container, '1-1'), { clientX: 20, clientY: 0, pointerId: 1 })
+    fireEvent.pointerUp(cell(container, '1-2'), { clientX: 120, clientY: 0, pointerId: 1 })
+    expect(onDrop).toHaveBeenCalledWith({ row: 1, col: 1 }, { row: 1, col: 2 })
+  })
 })
