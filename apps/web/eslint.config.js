@@ -26,5 +26,9 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    files: ['src/shared/components/ui/**'],
+    rules: { 'react-refresh/only-export-components': 'off' },
+  },
   prettier,
 )

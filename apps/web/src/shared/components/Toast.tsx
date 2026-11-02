@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { create } from 'zustand'
+import { useFullscreenHost } from '@/shared/hooks/useFullscreenHost'
 
 interface ToastAction { label: string; onClick(): void }
 interface ToastItem { id: number; text: string; action?: ToastAction; ms: number }
@@ -23,10 +24,10 @@ function ToastRow({ item }: { item: ToastItem }) {
     return () => clearTimeout(t)
   }, [id, ms])
   return (
-    <div className="pointer-events-auto flex items-center gap-3 rounded-lg bg-ink px-4 py-2 text-sm text-white shadow-lg">
+    <div className="pointer-events-auto flex items-center gap-3 rounded-md bg-foreground px-4 py-2 text-sm text-background shadow-lg">
       <span>{item.text}</span>
       {item.action && (
-        <button type="button" className="font-semibold text-amber"
+        <button type="button" className="font-semibold underline underline-offset-2"
           onClick={() => { dismiss(id); item.action!.onClick() }}>
           {item.action.label}
         </button>
@@ -35,20 +36,9 @@ function ToastRow({ item }: { item: ToastItem }) {
   )
 }
 
-// 全屏时只有全屏元素的子树可见:提示条跟着挂进全屏元素
-function useHost(): Element {
-  const [fs, setFs] = useState<Element | null>(() => document.fullscreenElement ?? null)
-  useEffect(() => {
-    const sync = () => setFs(document.fullscreenElement ?? null)
-    document.addEventListener('fullscreenchange', sync)
-    return () => document.removeEventListener('fullscreenchange', sync)
-  }, [])
-  return fs?.isConnected ? fs : document.body
-}
-
 export function Toaster() {
   const items = useToasts((s) => s.items)
-  const host = useHost()
+  const host = useFullscreenHost()
   // 卸载时清空,未显示的提示不会留给下一次挂载
   useEffect(() => () => useToasts.setState({ items: [] }), [])
   return createPortal(
