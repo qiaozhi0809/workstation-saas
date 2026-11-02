@@ -18,7 +18,7 @@ export function EmptyState({
   return (
     <div className={cn('flex flex-col items-center gap-2 py-8 text-center', className)}>
       {Icon && <Icon aria-hidden="true" className="h-8 w-8 text-muted-foreground" />}
-      <p className="text-sm font-medium text-foreground">{title}</p>
+      <h2 className="text-sm font-medium text-foreground">{title}</h2>
       {description && <p className="text-sm text-muted-foreground">{description}</p>}
       {action}
     </div>

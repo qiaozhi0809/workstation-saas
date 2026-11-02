@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { useEscapeLayer } from '@/shared/hooks/useEscapeLayer'
 import { useFullscreenHost } from '@/shared/hooks/useFullscreenHost'
+import { cn } from '@/shared/lib/utils'
 import { useRestoreFocus } from './useRestoreFocus'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/shared/components/ui/dialog'
 
@@ -27,13 +28,13 @@ export default function Modal({
       <DialogContent
         container={host}
         aria-modal="true"
-        className={className}
+        className={cn('max-h-[calc(100dvh-2rem)] overflow-y-auto', className)}
         {...(description ? {} : { 'aria-describedby': undefined })}
         onCloseAutoFocus={restoreFocus}
         onEscapeKeyDown={(e) => e.preventDefault()}
         onInteractOutside={dismissOnOutside ? undefined : (e) => e.preventDefault()}
       >
-        <DialogHeader>
+        <DialogHeader className="pr-6">
           <DialogTitle>{title}</DialogTitle>
           {description && <DialogDescription>{description}</DialogDescription>}
         </DialogHeader>

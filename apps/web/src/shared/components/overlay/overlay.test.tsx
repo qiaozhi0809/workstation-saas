@@ -78,3 +78,22 @@ it('SidePanel restores focus to the opener on close', async () => {
   await tick()
   expect(opener).toHaveFocus()
 })
+
+it('Modal restores focus to the opener even when content autofocuses', async () => {
+  function Harness() {
+    const [open, setOpen] = useState(false)
+    return <>
+      <button type="button" onClick={() => setOpen(true)}>打开冲突</button>
+      {open && <Modal open onClose={() => setOpen(false)} title="冲突"><button type="button" autoFocus>继续编辑</button></Modal>}
+    </>
+  }
+  render(<Harness />)
+  const opener = screen.getByRole('button', { name: '打开冲突' })
+  opener.focus()
+  fireEvent.click(opener)
+  await tick()
+  expect(screen.getByRole('dialog', { name: '冲突' })).toContainElement(document.activeElement as HTMLElement)
+  fireEvent.keyDown(document, { key: 'Escape' })
+  await tick()
+  expect(opener).toHaveFocus()
+})

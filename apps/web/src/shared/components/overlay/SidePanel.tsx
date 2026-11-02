@@ -23,7 +23,7 @@ export default function SidePanel({
         onInteractOutside={dismissOnOutside ? undefined : (e) => e.preventDefault()}
       >
         <div className="flex h-full flex-col gap-4 overflow-y-auto">
-          <SheetHeader>
+          <SheetHeader className="pr-6">
             <SheetTitle>{title}</SheetTitle>
             {description && <SheetDescription>{description}</SheetDescription>}
           </SheetHeader>

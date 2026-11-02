@@ -66,7 +66,7 @@
   body { @apply bg-background text-foreground antialiased; font-family: theme('fontFamily.sans'); }
   /* 原生元素与自写按钮的键盘焦点环;shadcn 组件自带 ring 并关掉 outline */
   :focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
-  input[type='checkbox'], input[type='radio'] { accent-color: hsl(var(--primary)); width: 1rem; height: 1rem; }
+  :where(input[type='checkbox'], input[type='radio']) { accent-color: hsl(var(--primary)); width: 1rem; height: 1rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {

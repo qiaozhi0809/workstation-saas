@@ -20,6 +20,7 @@ export function SegmentedTabs<T extends string>({
   variant = "pill",
   className,
 }: SegmentedTabsProps<T>) {
+  const hasSelection = items.some((item) => item.value === value)
   const refs = useRef<(HTMLButtonElement | null)[]>([])
 
   const focusAt = (index: number) => {
@@ -67,7 +68,7 @@ export function SegmentedTabs<T extends string>({
             type="button"
             role="tab"
             aria-selected={selected}
-            tabIndex={selected ? 0 : -1}
+            tabIndex={selected || (!hasSelection && index === 0) ? 0 : -1}
             onClick={() => {
               if (!selected) onChange(item.value)
             }}
@@ -76,7 +77,7 @@ export function SegmentedTabs<T extends string>({
               "text-sm text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
               variant === "pill"
                 ? cn("rounded-md px-3 py-1", selected && "bg-background text-foreground shadow-sm")
-                : cn("-mb-px px-1 pb-2", selected && "border-b-2 border-primary font-medium text-foreground")
+                : cn("-mb-px border-b-2 border-transparent px-1 pb-2", selected && "border-primary font-medium text-foreground")
             )}
           >
             {item.label}
