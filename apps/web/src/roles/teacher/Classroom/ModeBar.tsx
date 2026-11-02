@@ -1,4 +1,5 @@
 import type { ClassPerm } from '@/shared/types/classroom'
+import { SegmentedTabs } from '@/shared/components/ui/segmented-tabs'
 
 export type ClassroomUiMode = 'daily' | 'attendance' | 'review' | 'seating'
 
@@ -21,16 +22,10 @@ export default function ModeBar({ mode, perms, onChange }: {
   perms: readonly ClassPerm[]
   onChange(mode: ClassroomUiMode): void
 }) {
-  const allowed = modesFor(perms)
+  const items = MODES.filter((m) => modesFor(perms).includes(m.mode)).map((m) => ({ value: m.mode, label: m.label }))
   return (
-    <div role="tablist" aria-label="教室模式" className="flex justify-center gap-1 rounded-xl bg-panel p-1 shadow-sm">
-      {MODES.filter((m) => allowed.includes(m.mode)).map((m) => (
-        <button key={m.mode} type="button" role="tab" aria-selected={mode === m.mode}
-          onClick={() => { if (m.mode !== mode) onChange(m.mode) }}
-          className={`rounded-lg px-5 py-1.5 text-sm ${mode === m.mode ? 'bg-ink text-white' : 'text-ink-2 hover:bg-fill'}`}>
-          {m.label}
-        </button>
-      ))}
+    <div className="flex justify-center">
+      <SegmentedTabs label="教室模式" variant="pill" items={items} value={mode} onChange={onChange} />
     </div>
   )
 }
