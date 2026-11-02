@@ -157,6 +157,39 @@ def test_list_marks_transferred_student_with_name(client, db, settings):
     assert by_enrollment[str(e1)]["transferred"] is True
 
 
+def test_list_hides_removed_student_keeps_transferred(client, db, settings):
+    e0, e1, e2 = (enrollment_of(db, STUDENT_IDS[i]) for i in range(3))
+    for e in (e0, e1, e2):
+        client.post(BASE, json=individual([e]), headers=auth(settings))
+    db.execute(
+        Enrollment.__table__.update().where(Enrollment.id == e1).values(status="transferred")
+    )
+    db.flush()
+    res = client.delete(f"/api/v1/classes/{CLASS_ID}/students/{e2}", headers=auth(settings))
+    assert res.status_code == 204
+    items = client.get(BASE, headers=auth(settings)).json()["items"]
+    by_enrollment = {i["enrollment_id"]: i for i in items}
+    assert set(by_enrollment) == {str(e0), str(e1)}
+    assert by_enrollment[str(e1)]["transferred"] is True
+    assert by_enrollment[str(e1)]["student_name"]
+    assert by_enrollment[str(e0)]["transferred"] is False
+
+
+def test_list_pages_stay_full_when_removed_rows_interleave(client, db, settings):
+    keep, gone = enrollment_of(db, STUDENT_IDS[0]), enrollment_of(db, STUDENT_IDS[1])
+    for e in (keep, gone, keep, gone, keep):
+        client.post(BASE, json=individual([e]), headers=auth(settings))
+    res = client.delete(f"/api/v1/classes/{CLASS_ID}/students/{gone}", headers=auth(settings))
+    assert res.status_code == 204
+    page1 = client.get(BASE, params={"limit": 2}, headers=auth(settings)).json()
+    assert len(page1["items"]) == 2 and page1["next_cursor"]
+    page2 = client.get(
+        BASE, params={"limit": 2, "cursor": page1["next_cursor"]}, headers=auth(settings)
+    ).json()
+    assert len(page2["items"]) == 1 and page2["next_cursor"] is None
+    assert {i["enrollment_id"] for i in page1["items"] + page2["items"]} == {str(keep)}
+
+
 def test_list_paginates_without_overlap(client, db, settings):
     e = enrollment_of(db, STUDENT_IDS[0])
     for _ in range(3):

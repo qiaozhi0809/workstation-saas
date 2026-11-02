@@ -107,3 +107,20 @@ def test_month_lists_exceptions_by_date(client, db, settings, monkeypatch):
         ("2026-10-29", "late"),
         ("2026-10-30", "absent"),
     ]
+
+
+def test_removed_student_rows_hidden_from_day_and_month_views(client, db, settings, monkeypatch):
+    freeze(monkeypatch, NOW)
+    keep, gone = enrollment_of(db, STUDENT_IDS[0]), enrollment_of(db, STUDENT_IDS[1])
+    put(client, settings, "2026-11-02", keep, "leave")
+    put(client, settings, "2026-11-02", gone, "absent")
+    put(client, settings, "2026-10-30", keep, "late")
+    put(client, settings, "2026-10-30", gone, "absent")
+    res = client.delete(f"/api/v1/classes/{CLASS_ID}/students/{gone}", headers=auth(settings))
+    assert res.status_code == 204
+    day = day_view(client, settings).json()["items"]
+    assert [(i["enrollment_id"], i["status"]) for i in day] == [(str(keep), "leave")]
+    month = client.get(f"{BASE}/month", params={"month": "2026-10"}, headers=auth(settings))
+    assert [(i["enrollment_id"], i["status"]) for i in month.json()["items"]] == [
+        (str(keep), "late")
+    ]

@@ -21,7 +21,12 @@ from app.models import AttendanceDay as AttendanceDayRow
 def day_view(db: Session, class_id: UUID, day: date) -> AttendanceDay:
     rows = db.scalars(
         select(Attendance)
-        .where(Attendance.class_id == class_id, Attendance.date == day)
+        .join(Enrollment, Enrollment.id == Attendance.enrollment_id)
+        .where(
+            Attendance.class_id == class_id,
+            Attendance.date == day,
+            Enrollment.status != "removed",
+        )
         .order_by(Attendance.enrollment_id)
     ).all()
     confirmed_at = db.scalars(
@@ -113,7 +118,13 @@ def month_view(db: Session, class_id: UUID, month: str) -> AttendanceMonth:
     nxt = date(year + (mon == 12), mon % 12 + 1, 1)
     rows = db.execute(
         select(Attendance.enrollment_id, Attendance.date, Attendance.status)
-        .where(Attendance.class_id == class_id, Attendance.date >= first, Attendance.date < nxt)
+        .join(Enrollment, Enrollment.id == Attendance.enrollment_id)
+        .where(
+            Attendance.class_id == class_id,
+            Attendance.date >= first,
+            Attendance.date < nxt,
+            Enrollment.status != "removed",
+        )
         .order_by(Attendance.date, Attendance.enrollment_id)
     ).all()
     return AttendanceMonth(
