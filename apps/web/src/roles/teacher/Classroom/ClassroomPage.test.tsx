@@ -121,9 +121,8 @@ it('uses an opaque background on the root while presenting, so the black backdro
   expect(classes.filter((c) => c.startsWith('bg-') && c.includes('/'))).toEqual([])
 })
 
-it('shows grade, school year and week, and the teacher name plate', async () => {
+it('shows the teacher name plate and the class and date line', async () => {
   setup()
-  expect(await screen.findByText('三年级 · 2026-2027 第 10 周')).toBeInTheDocument()
   expect(await screen.findByText('王老师 · 班主任')).toBeInTheDocument()
   expect(await screen.findByText('三年二班 · 11月2日 星期一')).toBeInTheDocument()
 })
@@ -205,7 +204,8 @@ it('shows 编辑黑板 only with board.write and opens the editor', async () => 
 it('hides 编辑黑板 without board.write', async () => {
   setup({ perms: ['review.write'] })
   await screen.findByRole('toolbar', { name: '教室工具' })
-  await screen.findByText(/第 10 周/)
+  // 名牌只有在概况(summary)加载后才带身份后缀(label 依赖 summary.data / my_perms),所以它出现即权限已到
+  await screen.findByText('王老师 · 任课老师')
   expect(screen.queryByRole('button', { name: '编辑黑板' })).toBeNull()
 })
 
@@ -323,4 +323,22 @@ it('explains what to do when there are no classes', async () => {
   vi.mocked(classesApi.mine).mockResolvedValue({ items: [] })
   setup()
   expect(await screen.findByText('请联系学校管理员为你分配班级')).toBeInTheDocument()
+})
+
+it('puts the dock below the stage and the zoom controls on the stage', async () => {
+  setup()
+  const stage = await screen.findByTestId('classroom-stage')
+  const bar = screen.getByRole('toolbar', { name: '教室工具' })
+  expect(stage.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(within(bar).getByRole('tablist', { name: '教室模式' })).toBeInTheDocument()
+  expect(await within(stage).findByRole('group', { name: '缩放' })).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: '三年二班' })).toHaveClass('sr-only')
+})
+
+it('keeps the dock inside the fullscreen root while presenting', async () => {
+  stubFullscreen()
+  setup()
+  fireEvent.click(await screen.findByRole('button', { name: '全屏' }))
+  await screen.findByRole('button', { name: '退出全屏' })
+  expect((document.fullscreenElement as Element).contains(screen.getByRole('tablist', { name: '教室模式' }))).toBe(true)
 })

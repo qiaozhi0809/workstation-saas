@@ -27,29 +27,27 @@ export default function AttendanceBar(p: AttendanceBarProps) {
       <Input
         type="date"
         aria-label="考勤日期"
-        className="h-8 w-auto"
+        className="h-9 w-auto"
         value={p.date}
         min={p.yearStart}
         max={p.today}
         onChange={(e) => { if (e.target.value) p.onPickDate(e.target.value) }}
       />
       {p.date !== p.today && (
-        <Button type="button" variant="outline" size="sm" onClick={p.onFollowToday}>回到今天</Button>
+        <Button type="button" variant="outline" onClick={p.onFollowToday}>回到今天</Button>
       )}
       <span className="font-semibold tabular-nums">{`实到 ${p.enrolled - p.leave - p.absent}/${p.enrolled}`}</span>
       <span className={TONE_TEXT[ATTENDANCE_TONE.leave]}>{`请假 ${p.leave}`}</span>
       <span className={TONE_TEXT[ATTENDANCE_TONE.absent]}>{`缺勤 ${p.absent}`}</span>
       <span className={TONE_TEXT[ATTENDANCE_TONE.late]}>{`迟到 ${p.late}`}</span>
       {p.confirmedAt && <span className="text-muted-foreground">{`已确认 ${p.confirmedAt}`}</span>}
-      <div className="ml-auto flex items-center gap-2">
-        {p.canWrite && (
-          <>
-            <Button type="button" variant="outline" size="sm" disabled={p.busy} onClick={p.onConfirm}>确认考勤</Button>
-            <Button type="button" variant="outline" size="sm" disabled={p.busy} onClick={p.onAllPresent}>全部出勤</Button>
-          </>
-        )}
-        <Button type="button" variant="outline" size="sm" onClick={p.onExport}>导出本月</Button>
-      </div>
+      {p.canWrite && (
+        <>
+          <Button type="button" variant="outline" disabled={p.busy} onClick={p.onConfirm}>确认考勤</Button>
+          <Button type="button" variant="outline" disabled={p.busy} onClick={p.onAllPresent}>全部出勤</Button>
+        </>
+      )}
+      <Button type="button" variant="outline" onClick={p.onExport}>导出本月</Button>
     </div>
   )
 }

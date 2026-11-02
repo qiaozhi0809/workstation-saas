@@ -1,20 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { expect, it, vi } from 'vitest'
-import Toolbar from './Toolbar'
+import ClassroomDock, { type ClassroomDockProps } from './ClassroomDock'
 import ModeBar from './ModeBar'
-
-it('zoom controls are labelled icon buttons in a group', () => {
-  const viewport = { current: { zoomIn: vi.fn(), zoomOut: vi.fn(), fit: vi.fn() } }
-  render(<Toolbar viewport={viewport as never} presenting={false} onTogglePresent={() => {}} railOpen onToggleRail={() => {}} />)
-  const group = screen.getByRole('group', { name: '缩放' })
-  for (const name of ['缩小', '适应', '放大']) {
-    const b = within(group).getByRole('button', { name })
-    expect(b).toHaveAttribute('title', name)
-    expect(b.querySelector('svg')).not.toBeNull()
-  }
-  fireEvent.click(within(group).getByRole('button', { name: '适应' }))
-  expect(viewport.current.fit).toHaveBeenCalled()
-})
 
 it('mode bar moves focus with arrow keys and switches on click only', () => {
   const onChange = vi.fn()
@@ -28,4 +15,39 @@ it('mode bar moves focus with arrow keys and switches on click only', () => {
   expect(onChange).not.toHaveBeenCalled()
   fireEvent.click(screen.getByRole('tab', { name: '考勤' }))
   expect(onChange).toHaveBeenCalledWith('attendance')
+})
+
+const dock = (over: Partial<ClassroomDockProps> = {}) => render(
+  <ClassroomDock mode="daily" perms={[]} onModeChange={vi.fn()} actions={<button>甲</button>}
+    common={<button>乙</button>} status="保存中…" presenting={false} onTogglePresent={vi.fn()}
+    railOpen onToggleRail={vi.fn()} {...over} />,
+)
+
+it('puts tabs, mode actions, common actions, status and fullscreen / rail into one toolbar in that order', () => {
+  dock()
+  const bar = screen.getByRole('toolbar', { name: '教室工具' })
+  const order = [...bar.querySelectorAll('[role="tab"], button, [role="status"]')].map((el) => el.textContent)
+  expect(order).toEqual(['日常', '甲', '乙', '保存中…', '全屏', '概况栏'])
+  expect(within(bar).getByRole('button', { name: '概况栏' })).toHaveAttribute('aria-pressed', 'true')
+})
+
+it('shows 退出全屏 and hides 概况栏 while presenting', () => {
+  dock({ presenting: true })
+  expect(screen.getByRole('button', { name: '退出全屏' })).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '概况栏' })).toBeNull()
+})
+
+it('draws a separator only before a non-empty actions or common zone', () => {
+  const seps = () => screen.getByRole('toolbar', { name: '教室工具' }).querySelectorAll('[data-orientation="vertical"]').length
+  const { unmount } = dock()
+  expect(seps()).toBe(2)
+  unmount()
+  const a = dock({ actions: undefined })
+  expect(seps()).toBe(1)
+  a.unmount()
+  const b = dock({ common: undefined })
+  expect(seps()).toBe(1)
+  b.unmount()
+  dock({ actions: undefined, common: undefined })
+  expect(seps()).toBe(0)
 })
