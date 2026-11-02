@@ -1,11 +1,14 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ApiError } from '@/shared/api/client'
+import { attendanceApi } from '@/shared/api/attendance'
 import { classroomApi } from '@/shared/api/classroom'
 import { examsApi } from '@/shared/api/exams'
+import { reviewsApi } from '@/shared/api/reviews'
 import { studentsApi } from '@/shared/api/students'
 import { ScoreRadar } from '@/shared/components/charts/ScoreRadar'
 import { TrendLine } from '@/shared/components/charts/TrendLine'
+import { daysUntilBirthday, formatMonthDay } from '@/shared/lib/date'
 import { examStats, examTable, latestExam, previousExam, rankChanges, studentTrend, subjectStats } from '@/shared/lib/grades'
 import { NativeSelect } from '@/shared/components/ui/native-select'
 import { toast } from '@/shared/components/Toast'
@@ -54,6 +57,49 @@ function ClassRoleRow({ student }: { student: StudentProfile }) {
       </dd>
     </div>
   )
+}
+
+function KpiCard({ title, value, hint }: { title: string; value: string; hint?: string }) {
+  return (
+    <div className="rounded-lg border bg-card p-3 text-card-foreground">
+      <div className="text-xs text-muted-foreground">{title}</div>
+      <div className="text-lg font-semibold">{value}</div>
+      {hint && <div className="text-xs text-muted-foreground">{hint}</div>}
+    </div>
+  )
+}
+
+function PointsCard({ student }: { student: StudentProfile }) {
+  const { data } = useQuery({
+    queryKey: ['review-summary', student.class_id],
+    queryFn: () => reviewsApi.summary(student.class_id),
+  })
+  if (!data) return <KpiCard title="累计积分" value="—" />
+  const mine = data.items.find((r) => r.enrollment_id === student.enrollment_id)
+  return <KpiCard title="累计积分" value={String(mine?.total ?? 0)}
+    hint={`点评 ${(mine?.plus_count ?? 0) + (mine?.minus_count ?? 0)} 次`} />
+}
+
+function AttendanceCard({ student, today }: { student: StudentProfile; today: string }) {
+  const month = today.slice(0, 7)
+  const { data } = useQuery({
+    queryKey: ['attendance-month', student.class_id, month],
+    queryFn: () => attendanceApi.month(student.class_id, month),
+    staleTime: 0, // 考勤随时会改，抽屉每次打开都要重新取
+  })
+  if (!data) return <KpiCard title="本月考勤" value="—" />
+  const mine = data.items.filter((r) => r.enrollment_id === student.enrollment_id)
+  if (mine.length === 0) return <KpiCard title="本月考勤" value="全勤" hint={`${Number(month.slice(5))}月无请假缺勤迟到`} />
+  const count = (status: string) => mine.filter((r) => r.status === status).length
+  const days = new Set(mine.filter((r) => r.status !== 'late').map((r) => r.date)).size
+  return <KpiCard title="本月考勤" value={`${days} 天未到`}
+    hint={`请假 ${count('leave')} · 缺勤 ${count('absent')} · 迟到 ${count('late')}`} />
+}
+
+function BirthdayCard({ birthdate, today }: { birthdate: string | null | undefined; today: string }) {
+  if (!birthdate) return <KpiCard title="生日" value="未填" />
+  const days = daysUntilBirthday(birthdate, today)
+  return <KpiCard title="生日" value={formatMonthDay(birthdate)} hint={days === 0 ? '就是今天' : `${days} 天后`} />
 }
 
 const roundOrNull = (v: number | null) => (v === null ? null : Math.round(v))
@@ -133,6 +179,13 @@ export default function OverviewTab({ student }: { student: StudentProfile }) {
         <Field label="性别" value={student.gender} />
         {canEdit ? <ClassRoleRow student={student} /> : <Field label="职务" value={student.class_role} />}
       </dl>
+      {summary.data && (
+        <div role="group" aria-label="概况指标" className="mt-4 grid grid-cols-3 gap-2">
+          {summary.data.my_perms.includes('review.read') && <PointsCard student={student} />}
+          {summary.data.my_perms.includes('attendance.read') && <AttendanceCard student={student} today={summary.data.today} />}
+          <BirthdayCard birthdate={student.birthdate} today={summary.data.today} />
+        </div>
+      )}
       <ScoreBlocks student={student} enabled={summary.data?.my_perms.includes('exam.read') ?? false} />
     </>
   )

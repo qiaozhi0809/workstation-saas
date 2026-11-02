@@ -9,9 +9,9 @@ const COLORS = ['hsl(var(--chart-1))', 'hsl(var(--chart-3))', 'hsl(var(--chart-4
 const MUTED = 'hsl(var(--chart-2))'
 
 // 折线:null 断开;endLabel 在主系列(第一个非 muted)最后一个非空点上方显示 format(值)
-export function TrendLine({ label, width, height = 220, className, labels, series, domain, reversed, format, endLabel }: ChartBase & {
+export function TrendLine({ label, width, height = 220, className, labels, series, domain, reversed, format, endLabel, yAxisWidth = 40 }: ChartBase & {
   labels: string[]; series: LineSeries[]; domain?: [number, number]; reversed?: boolean
-  format?: (v: number) => string; endLabel?: boolean
+  format?: (v: number) => string; endLabel?: boolean; yAxisWidth?: number
 }) {
   const fmt = format ?? ((v: number) => String(v))
   const data = labels.map((x, i) => ({ x, ...Object.fromEntries(series.map((s) => [s.key, s.values[i] ?? null])) }))
@@ -24,8 +24,8 @@ export function TrendLine({ label, width, height = 220, className, labels, serie
   const chart = (
     <LineChart data={data} width={width} height={height} margin={{ top: 20, right: 16, bottom: 0, left: 0 }}>
       <CartesianGrid vertical={false} strokeDasharray="3 3" />
-      <XAxis dataKey="x" tickLine={false} axisLine={false} />
-      <YAxis domain={domain ?? (reversed ? [1, 'dataMax'] : ['auto', 'auto'])} allowDecimals={false} reversed={reversed} tickFormatter={fmt} tickLine={false} axisLine={false} width={40} />
+      <XAxis dataKey="x" tickLine={false} axisLine={false} padding={{ left: 16, right: 16 }} tickMargin={8} />
+      <YAxis domain={domain ?? (reversed ? [1, 'dataMax'] : ['auto', 'auto'])} allowDecimals={false} reversed={reversed} tickFormatter={fmt} tickLine={false} axisLine={false} width={yAxisWidth} />
       <Tooltip
         formatter={(v, name) => [typeof v === 'number' ? fmt(v) : v, config[String(name)]?.label ?? name]}
         contentStyle={{ background: 'hsl(var(--popover))', color: 'hsl(var(--popover-foreground))', border: '1px solid hsl(var(--border))', borderRadius: 6, fontSize: 12 }}

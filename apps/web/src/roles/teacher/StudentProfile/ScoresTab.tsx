@@ -73,7 +73,7 @@ export default function ScoresTab({ profile }: { profile: StudentProfile }) {
         <h3 className="mb-1 text-sm font-medium">排名变化</h3>
         <TrendLine label="排名变化" reversed labels={trend.map((p) => p.name)}
           series={[{ key: 'rank', label: '排名', values: trend.map((p) => p.rank) }]}
-          format={(v) => `第 ${v} 名`} />
+          format={(v) => `第 ${v} 名`} yAxisWidth={64} />
       </section>
     </div>
   )

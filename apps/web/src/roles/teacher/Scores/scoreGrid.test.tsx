@@ -7,7 +7,7 @@ import { classroomApi } from '@/shared/api/classroom'
 import { examsApi } from '@/shared/api/exams'
 import { studentsApi } from '@/shared/api/students'
 import { toast } from '@/shared/components/Toast'
-import { useTeacherStore } from '@/shared/stores/teacher'
+import { confirmLeave, useTeacherStore } from '@/shared/stores/teacher'
 import type { ClassView } from '@/shared/types/class'
 import type { Exam, ScoreSheet } from '@/shared/types/grades'
 import type { StudentSeat } from '@/shared/types/student'
@@ -61,7 +61,7 @@ const ms = (n: number) => act(async () => { await vi.advanceTimersByTimeAsync(n)
 beforeEach(() => {
   vi.resetAllMocks()
   vi.useFakeTimers({ shouldAdvanceTime: true })
-  useTeacherStore.setState({ classId: 'c1' })
+  useTeacherStore.setState({ classId: 'c1', unsaved: { seating: false, scores: false } })
 })
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
 
@@ -174,6 +174,45 @@ it('blocks navigation while changes are unsaved', async () => {
   await waitFor(() => expect(router.state.location.pathname).toBe('/teacher/analysis'))
   // 离开时没发出去的改动立即发送
   await waitFor(() => expect(sent()).toHaveLength(1))
+})
+
+it('mirrors unsaved edits into the teacher store and clears it when saved', async () => {
+  setup()
+  expect(useTeacherStore.getState().unsaved.scores).toBe(false)
+  type(await cell('王小一', '语文'), '91')
+  expect(useTeacherStore.getState().unsaved.scores).toBe(true)
+  await ms(700)
+  expect(await screen.findByText('已保存')).toBeInTheDocument()
+  expect(useTeacherStore.getState().unsaved.scores).toBe(false)
+})
+
+it('clears the store flag when the grid unmounts', async () => {
+  const { unmount } = setup()
+  type(await cell('王小一', '语文'), '91')
+  expect(useTeacherStore.getState().unsaved.scores).toBe(true)
+  unmount()
+  expect(useTeacherStore.getState().unsaved.scores).toBe(false)
+})
+
+it('asks only once when a header confirm is followed by navigation', async () => {
+  const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+  const { router } = setup()
+  type(await cell('王小一', '语文'), '91')
+  // 顶栏退出登录:先 confirmLeave(),再 navigate('/login')
+  expect(confirmLeave()).toBe(true)
+  await act(async () => { await router.navigate('/teacher/analysis') })
+  expect(router.state.location.pathname).toBe('/teacher/analysis')
+  expect(confirmSpy).toHaveBeenCalledTimes(1)
+})
+
+it('keeps headers and identity cells on one line so narrow screens scroll instead of squeezing', async () => {
+  setup()
+  const c = await cell('王小一', '语文')
+  const tr = c.closest('tr') as HTMLElement
+  for (const h of screen.getAllByRole('columnheader')) expect(h).toHaveClass('whitespace-nowrap')
+  const cells = within(tr)
+  for (const el of [cells.getByText('王小一'), cells.getByTestId('total'), cells.getByTestId('rank')]) expect(el).toHaveClass('whitespace-nowrap')
+  expect(tr.querySelector('td')).toHaveClass('whitespace-nowrap')
 })
 
 it('updates totals and ranks as you type', async () => {

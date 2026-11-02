@@ -5,7 +5,7 @@ import { parseTable } from '@/shared/lib/table'
 import { cn } from '@/shared/lib/utils'
 import type { Exam, ScoreCell, ScoreSheet, ScoreValue } from '@/shared/types/grades'
 import type { StudentSeat } from '@/shared/types/student'
-import { compareRoster } from './rosterOrder'
+import { compareRoster } from '@/shared/lib/rosterOrder'
 
 const without = <T,>(rec: Record<string, T>, key: string) => {
   const { [key]: dropped, ...rest } = rec
@@ -165,13 +165,13 @@ export default function ScoreGrid({ exam, roster, sheet, writable, onCells, onDi
       <table className="w-full border-collapse text-sm">
         <thead className="bg-muted text-left text-muted-foreground">
           <tr>
-            <th scope="col" className="px-3 py-2 font-medium">学号</th>
-            <th scope="col" className="px-3 py-2 font-medium">姓名</th>
+            <th scope="col" className="whitespace-nowrap px-3 py-2 font-medium">学号</th>
+            <th scope="col" className="whitespace-nowrap px-3 py-2 font-medium">姓名</th>
             {subjects.map((s) => (
-              <th key={s.name} scope="col" className="px-3 py-2 font-medium">{s.name} /{s.full}</th>
+              <th key={s.name} scope="col" className="whitespace-nowrap px-3 py-2 font-medium">{s.name} /{s.full}</th>
             ))}
-            <th scope="col" className="px-3 py-2 font-medium">总分</th>
-            <th scope="col" className="px-3 py-2 font-medium">排名</th>
+            <th scope="col" className="whitespace-nowrap px-3 py-2 font-medium">总分</th>
+            <th scope="col" className="whitespace-nowrap px-3 py-2 font-medium">排名</th>
           </tr>
         </thead>
         <tbody>
@@ -179,8 +179,8 @@ export default function ScoreGrid({ exam, roster, sheet, writable, onCells, onDi
             const row = table.get(s.enrollment_id)
             return (
               <tr key={s.enrollment_id} className="border-t border-border">
-                <td className="px-3 py-1 text-muted-foreground">{s.student_no ?? ''}</td>
-                <td className="px-3 py-1">{s.name}</td>
+                <td className="whitespace-nowrap px-3 py-1 text-muted-foreground">{s.student_no ?? ''}</td>
+                <td className="whitespace-nowrap px-3 py-1">{s.name}</td>
                 {subjects.map((sub, c) => {
                   const key = keyOf(s.enrollment_id, sub.name)
                   const draft = drafts[key]
@@ -211,8 +211,8 @@ export default function ScoreGrid({ exam, roster, sheet, writable, onCells, onDi
                     </td>
                   )
                 })}
-                <td data-testid="total" className="px-3 py-1 tabular-nums">{row?.total ?? '—'}</td>
-                <td data-testid="rank" className="px-3 py-1 tabular-nums">{row?.rank ?? '—'}</td>
+                <td data-testid="total" className="whitespace-nowrap px-3 py-1 tabular-nums">{row?.total ?? '—'}</td>
+                <td data-testid="rank" className="whitespace-nowrap px-3 py-1 tabular-nums">{row?.rank ?? '—'}</td>
               </tr>
             )
           })}

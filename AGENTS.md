@@ -66,7 +66,7 @@
 | **M2a 教室交互** | ✅ 已完成(`v0.2.0-m2a-classroom`) | 23 task,文件:[`docs/superpowers/plans/2026-11-01-M2a-教室交互.md`](docs/superpowers/plans/2026-11-01-M2a-教室交互.md) |
 | **M2a.5 UI 基础与打磨** | ✅ 已完成(`v0.2.5-m2a5-ui`) | 17 task,文件:[`docs/superpowers/plans/2026-11-01-M2a5-UI基础与打磨.md`](docs/superpowers/plans/2026-11-01-M2a5-UI基础与打磨.md) |
 | **M2a.6 宽屏教室与操作台** | ✅ 已完成(`v0.2.6-wide-classroom`) | 10 task,文件:[`docs/superpowers/plans/2026-11-02-宽屏教室与操作台.md`](docs/superpowers/plans/2026-11-02-宽屏教室与操作台.md) |
-| M2b 成绩 | 📝 计划已写 | 21 task,文件:[`docs/superpowers/plans/2026-11-02-M2b-成绩.md`](docs/superpowers/plans/2026-11-02-M2b-成绩.md)、[范围清单](docs/superpowers/plans/2026-11-02-M2b-范围清单.md) |
+| M2b 成绩 | ✅ 已完成(tag `v0.3.0-m2b-grades`,合并后由协调会话打) | 21 task,文件:[`docs/superpowers/plans/2026-11-02-M2b-成绩.md`](docs/superpowers/plans/2026-11-02-M2b-成绩.md)、[范围清单](docs/superpowers/plans/2026-11-02-M2b-范围清单.md) |
 | M2c AI 与学年 | ⏳ 未开始 | plan 待写 |
 | M3 管理角色 | ⏳ 未开始 | plan 待写 |
 | M4 家长角色 | ⏳ 未开始 | plan 待写 |

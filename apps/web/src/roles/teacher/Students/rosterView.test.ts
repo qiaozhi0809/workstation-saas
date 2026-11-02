@@ -43,6 +43,17 @@ it('sorts student numbers naturally with blanks last and reverses on demand', ()
   expect(names(sortRows(rows, 'no', 'desc'))).toEqual(['李四', '王五', '张三', '赵六'])
 })
 
+it('keeps blank student numbers last and ordered by name ascending in both directions', () => {
+  const list = buildRows([
+    rec({ enrollment_id: 'b1', name: '王五', student_no: null }),
+    rec({ enrollment_id: 'b2', name: '李四', student_no: '' }),
+    rec({ enrollment_id: 'b3', name: '赵六', student_no: '3' }),
+    rec({ enrollment_id: 'b4', name: '张三', student_no: '1' }),
+  ], none, null, TODAY)
+  expect(names(sortRows(list, 'no', 'asc'))).toEqual(['张三', '赵六', '李四', '王五'])
+  expect(names(sortRows(list, 'no', 'desc'))).toEqual(['赵六', '张三', '李四', '王五'])
+})
+
 it('sorts by rank and birthday with blanks last', () => {
   const built = buildRows(records, new Map([['e1', { rank: 2, change: null }], ['e2', { rank: 1, change: null }]]), null, TODAY)
   expect(names(sortRows(built, 'rank', 'asc'))).toEqual(['李四', '张三', '王五', '赵六'])

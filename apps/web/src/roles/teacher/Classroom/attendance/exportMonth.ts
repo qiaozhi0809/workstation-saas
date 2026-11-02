@@ -1,4 +1,5 @@
 import { daysInMonth } from '@/shared/lib/date'
+import { compareRoster } from '@/shared/lib/rosterOrder'
 import type { AttendanceMonth, AttendanceStatus } from '@/shared/types/attendance'
 import { ATTENDANCE_LABEL } from './cycle'
 
@@ -6,16 +7,6 @@ export interface RosterRow {
   enrollment_id: string
   name: string
   student_no: string | null
-}
-
-export function compareRoster(a: RosterRow, b: RosterRow): number {
-  if (a.student_no !== b.student_no) {
-    if (a.student_no === null) return 1
-    if (b.student_no === null) return -1
-    const byNo = a.student_no.localeCompare(b.student_no, undefined, { numeric: true })
-    if (byNo !== 0) return byNo
-  }
-  return a.name.localeCompare(b.name)
 }
 
 export function attendanceMonthRows(

@@ -68,3 +68,100 @@ export async function revokeReviewsSince(
     expect(res.ok()).toBeTruthy()
   }
 }
+
+interface ExamSummary { id: string; name: string }
+
+/** 删除名字以 E2E 开头的考试(用例自建数据的兜底清理;失败中途退出也不留脏数据)。 */
+export async function deleteE2eExams(request: APIRequestContext, token: string, classId: string): Promise<void> {
+  const headers = authHeaders(token)
+  const res = await request.get(`${API}/classes/${classId}/exams`, { headers })
+  expect(res.ok()).toBeTruthy()
+  const { items } = (await res.json()) as { items: ExamSummary[] }
+  for (const exam of items.filter((x) => x.name.startsWith('E2E'))) {
+    const del = await request.delete(`${API}/classes/${classId}/exams/${exam.id}`, { headers })
+    expect(del.ok()).toBeTruthy()
+  }
+}
+
+/** 用 API 建一场考试(科目只用小学预设里已有的),返回考试 id。 */
+export async function createExam(
+  request: APIRequestContext,
+  token: string,
+  classId: string,
+  exam: { name: string; date: string; subjects: { name: string; full: number }[] },
+): Promise<string> {
+  const res = await request.post(`${API}/classes/${classId}/exams`, {
+    headers: authHeaders(token),
+    data: { ...exam, exam_type: '月考' },
+  })
+  expect(res.ok()).toBeTruthy()
+  return ((await res.json()) as { id: string }).id
+}
+
+/** 在籍学生按学号排序的 enrollment_id(与种子座位顺序一致,第 0 位是 王小一)。 */
+export async function rosterEnrollmentIds(request: APIRequestContext, token: string, classId: string): Promise<string[]> {
+  const res = await request.get(`${API}/classes/${classId}/students`, { headers: authHeaders(token) })
+  expect(res.ok()).toBeTruthy()
+  const { items } = (await res.json()) as { items: { enrollment_id: string; student_no: string | null }[] }
+  // 依赖种子学号等长(7 位),文本序即数字序
+  return [...items].sort((a, b) => (a.student_no ?? '').localeCompare(b.student_no ?? '')).map((s) => s.enrollment_id)
+}
+
+/** 给一场考试的单科批量写分数:scores[i] 对应 enrollmentIds[i]。 */
+export async function putScores(
+  request: APIRequestContext,
+  token: string,
+  classId: string,
+  examId: string,
+  subject: string,
+  enrollmentIds: string[],
+  scores: number[],
+): Promise<void> {
+  const res = await request.put(`${API}/classes/${classId}/exams/${examId}/scores`, {
+    headers: authHeaders(token),
+    data: { cells: enrollmentIds.map((id, i) => ({ enrollment_id: id, subject, value: scores[i] })) },
+  })
+  expect(res.ok()).toBeTruthy()
+}
+
+/** 删除在籍学生里姓名以 测试 开头的人(用例自建学生的兜底清理;失败中途退出也不留脏数据)。 */
+export async function deleteTestStudents(request: APIRequestContext, token: string, classId: string): Promise<void> {
+  const headers = authHeaders(token)
+  const res = await request.get(`${API}/classes/${classId}/students`, { headers })
+  expect(res.ok()).toBeTruthy()
+  const { items } = (await res.json()) as { items: { enrollment_id: string; name: string }[] }
+  for (const s of items.filter((x) => x.name.startsWith('测试'))) {
+    const del = await request.delete(`${API}/classes/${classId}/students/${s.enrollment_id}`, { headers })
+    expect(del.ok()).toBeTruthy()
+  }
+}
+
+/** 清空当前账号对某学生的个人笔记(PUT 空文本即删除本人笔记)。 */
+export async function clearMyNote(request: APIRequestContext, token: string, studentId: string): Promise<void> {
+  const res = await request.put(`${API}/students/${studentId}/my-notes`, { headers: authHeaders(token), data: { text: '' } })
+  expect(res.ok()).toBeTruthy()
+}
+
+/** 在籍学生记录(含 student_id、生日等),按姓名取一人。 */
+export async function studentRecord(
+  request: APIRequestContext,
+  token: string,
+  classId: string,
+  name: string,
+): Promise<{ student_id: string; enrollment_id: string; birthdate: string | null }> {
+  const res = await request.get(`${API}/classes/${classId}/students/records`, { headers: authHeaders(token) })
+  expect(res.ok()).toBeTruthy()
+  const { items } = (await res.json()) as {
+    items: { name: string; student_id: string; enrollment_id: string; birthdate: string | null }[]
+  }
+  const found = items.find((s) => s.name === name)
+  expect(found).toBeTruthy()
+  return found!
+}
+
+/** 学校时区的"今天"(来自教室概况)。 */
+export async function schoolToday(request: APIRequestContext, token: string, classId: string): Promise<string> {
+  const res = await request.get(`${API}/classes/${classId}/classroom`, { headers: authHeaders(token) })
+  expect(res.ok()).toBeTruthy()
+  return ((await res.json()) as { today: string }).today
+}

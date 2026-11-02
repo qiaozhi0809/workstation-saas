@@ -1,4 +1,5 @@
 import { toCSV } from '@/shared/lib/csv'
+import { compareRoster } from '@/shared/lib/rosterOrder'
 import type { StudentRecord } from '@/shared/types/student'
 
 export const ROSTER_HEADER = [
@@ -10,7 +11,7 @@ export const ROSTER_HEADER = [
 export function rosterCsv(rows: StudentRecord[], points: Map<string, number> | null): string {
   return toCSV([
     ROSTER_HEADER,
-    ...rows.map((r) => {
+    ...[...rows].sort(compareRoster).map((r) => {
       const c = r.contacts?.[0]
       return [
         r.student_no, r.name, r.gender, r.birthdate, r.class_role,

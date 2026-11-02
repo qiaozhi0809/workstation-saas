@@ -345,12 +345,12 @@ it('steps the size with the buttons and ignores invalid typing', async () => {
 it('marks the class switcher as guarded while the draft is dirty', async () => {
   setup({ mode: '排座' })
   fireEvent.click(await screen.findByRole('button', { name: /^王小一，/ }))
-  expect(useTeacherStore.getState().seatingDirty).toBe(false)
+  expect(useTeacherStore.getState().unsaved.seating).toBe(false)
   fireEvent.click(screen.getByRole('button', { name: /^李小二，/ }))
-  expect(useTeacherStore.getState().seatingDirty).toBe(true)
+  expect(useTeacherStore.getState().unsaved.seating).toBe(true)
   openMore()
   fireEvent.click(menuItem('放弃修改'))
-  expect(useTeacherStore.getState().seatingDirty).toBe(false)
+  expect(useTeacherStore.getState().unsaved.seating).toBe(false)
 })
 
 it('closes the pick card when entering seating mode', async () => {

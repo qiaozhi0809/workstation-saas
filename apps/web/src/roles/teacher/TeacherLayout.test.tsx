@@ -49,7 +49,7 @@ const openAccount = () => fireEvent.click(screen.getByRole('button', { name: '�
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(classroomApi.summary).mockResolvedValue(summaryFixture())
-  useTeacherStore.setState({ classId: null, seatingDirty: false })
+  useTeacherStore.setState({ classId: null, unsaved: { seating: false, scores: false } })
   useAuthStore.setState({
     accessToken: 'at', refreshToken: 'rt', user: { id: 'u1', display_name: '王老师' },
   })
@@ -98,7 +98,7 @@ it('asks before switching classes with unsaved seating changes', async () => {
   const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
   renderLayout()
   const select = await screen.findByRole('combobox', { name: '切换班级' })
-  useTeacherStore.setState({ seatingDirty: true })
+  useTeacherStore.getState().setUnsaved('seating', true)
   fireEvent.change(select, { target: { value: 'b' } })
   expect(confirmSpy).toHaveBeenCalledWith('有未保存的座位修改,确定离开吗?')
   expect(useTeacherStore.getState().classId).toBe('a')
@@ -144,7 +144,7 @@ it('asks before logging out with unsaved seating changes', async () => {
   const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
   renderLayout()
   await screen.findByText('三年二班')
-  useTeacherStore.setState({ seatingDirty: true })
+  useTeacherStore.getState().setUnsaved('seating', true)
   openAccount()
   fireEvent.click(screen.getByRole('menuitem', { name: '退出登录' }))
   expect(confirmSpy).toHaveBeenCalledWith('有未保存的座位修改,确定离开吗?')
@@ -154,6 +154,28 @@ it('asks before logging out with unsaved seating changes', async () => {
   openAccount()
   fireEvent.click(screen.getByRole('menuitem', { name: '退出登录' }))
   expect(authApi.logout).toHaveBeenCalledWith('rt')
+  confirmSpy.mockRestore()
+})
+
+it('asks before switching classes or logging out with unsaved scores', async () => {
+  vi.mocked(classesApi.mine).mockResolvedValue({ items: [
+    cls('a', '三年二班', 'homeroom_teacher'), cls('b', '三年三班', 'subject_teacher'),
+  ] })
+  const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+  renderLayout()
+  const select = await screen.findByRole('combobox', { name: '切换班级' })
+  useTeacherStore.getState().setUnsaved('scores', true)
+  fireEvent.change(select, { target: { value: 'b' } })
+  expect(confirmSpy).toHaveBeenCalledWith('还有成绩没保存,确定离开?')
+  expect(useTeacherStore.getState().classId).toBe('a')
+  openAccount()
+  fireEvent.click(screen.getByRole('menuitem', { name: '退出登录' }))
+  expect(confirmSpy).toHaveBeenCalledTimes(2)
+  expect(authApi.logout).not.toHaveBeenCalled()
+  expect(useAuthStore.getState().refreshToken).toBe('rt')
+  confirmSpy.mockReturnValue(true)
+  fireEvent.change(select, { target: { value: 'b' } })
+  expect(useTeacherStore.getState().classId).toBe('b')
   confirmSpy.mockRestore()
 })
 

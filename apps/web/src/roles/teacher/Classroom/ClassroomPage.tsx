@@ -21,7 +21,7 @@ import { Button } from '@/shared/components/ui/button'
 import { examTable, latestExam } from '@/shared/lib/grades'
 import { useReducedMotion } from '@/shared/hooks/useReducedMotion'
 import { useAuthStore } from '@/shared/stores/auth'
-import { confirmLeaveSeating, useTeacherStore } from '@/shared/stores/teacher'
+import { confirmLeave, useTeacherStore } from '@/shared/stores/teacher'
 import type { ClassView } from '@/shared/types/class'
 import type { ClassPerm } from '@/shared/types/classroom'
 import type { StudentSeat } from '@/shared/types/student'
@@ -248,7 +248,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
   })
   // 离开排座前确认未保存的修改;进入排座时收起点名(聚光灯 / 指向不落在排座地图上)
   const setMode = (next: ClassroomUiMode) => {
-    if (mode === 'seating' && !confirmLeaveSeating()) return
+    if (mode === 'seating' && !confirmLeave(['seating'])) return
     if (next === 'seating') pick.close()
     // 离开考勤模式时考勤日期回到学校今天,日常 / 点评叠加的是今天的考勤
     if (mode === 'attendance' && next !== 'attendance') attDate.followToday()

@@ -159,7 +159,9 @@ function Roster({ ctx: { cls, summary, perms } }: { ctx: ClassContext }) {
         </div>
       </div>
       <div className="overflow-x-auto">
-        <SegmentedTabs<RosterFilter> label="筛选" items={FILTERS} value={filter} onChange={setFilter} />
+        <div className="w-max whitespace-nowrap">
+          <SegmentedTabs<RosterFilter> label="筛选" items={FILTERS} value={filter} onChange={setFilter} />
+        </div>
       </div>
       {visible.length === 0 ? (
         <EmptyState title="没有符合条件的学生" />
@@ -178,7 +180,7 @@ function Roster({ ctx: { cls, summary, perms } }: { ctx: ClassContext }) {
                 <Head>标签</Head>
                 {canExam && <SortHead by="rank" {...sortProps}>排名</SortHead>}
                 {canReview && <SortHead by="points" {...sortProps}>积分</SortHead>}
-                {canManage && <th scope="col" className="px-3 py-2"><span className="sr-only">操作</span></th>}
+                {canManage && <th scope="col" className="whitespace-nowrap px-3 py-2"><span className="sr-only">操作</span></th>}
               </tr>
             </thead>
             <tbody>
@@ -201,7 +203,7 @@ function SortHead({ by, sort, dir, onSort, children }: {
   by: RosterSort; sort: RosterSort; dir: 'asc' | 'desc'; onSort(by: RosterSort): void; children: string
 }) {
   return (
-    <th scope="col" aria-sort={sort === by ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'} className="px-3 py-2 text-left font-medium">
+    <th scope="col" aria-sort={sort === by ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'} className="whitespace-nowrap px-3 py-2 text-left font-medium">
       <button type="button" onClick={() => onSort(by)} className="inline-flex items-center gap-1 hover:text-foreground">
         {children}
         {sort === by && (dir === 'asc' ? <ArrowUp aria-hidden="true" className="h-3 w-3" /> : <ArrowDown aria-hidden="true" className="h-3 w-3" />)}
@@ -211,7 +213,7 @@ function SortHead({ by, sort, dir, onSort, children }: {
 }
 
 function Head({ children }: { children: string }) {
-  return <th scope="col" className="px-3 py-2 text-left font-medium">{children}</th>
+  return <th scope="col" className="whitespace-nowrap px-3 py-2 text-left font-medium">{children}</th>
 }
 
 function seatText(r: StudentRecord): string {
@@ -226,29 +228,29 @@ function StudentRow({ row: r, showContacts, canExam, canReview, canManage, onOpe
   const tags = r.tags ?? []
   return (
     <tr className="cursor-pointer border-t hover:bg-muted/50" onClick={onOpen}>
-      <td className="px-3 py-2">{r.student_no ?? '—'}</td>
-      <td className="px-3 py-2 font-medium">
+      <td className="whitespace-nowrap px-3 py-2">{r.student_no ?? '—'}</td>
+      <td className="whitespace-nowrap px-3 py-2 font-medium">
         <button type="button" className="text-left hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" onClick={(e) => { e.stopPropagation(); onOpen() }}>{r.name}</button>
       </td>
-      <td className="px-3 py-2">{r.gender ?? '—'}</td>
-      <td className="px-3 py-2">{seatText(r)}</td>
-      <td className="px-3 py-2">{r.class_role ?? '—'}</td>
-      <td className="px-3 py-2">
+      <td className="whitespace-nowrap px-3 py-2">{r.gender ?? '—'}</td>
+      <td className="whitespace-nowrap px-3 py-2">{seatText(r)}</td>
+      <td className="whitespace-nowrap px-3 py-2">{r.class_role ?? '—'}</td>
+      <td className="whitespace-nowrap px-3 py-2">
         {r.birthdate ? (
           <span {...(r.daysToBirthday === 0 ? { 'data-birthday-today': true } : {})} className={cn(r.daysToBirthday === 0 && 'font-medium text-destructive')}>
             {r.birthdate}{r.daysToBirthday === 0 && ' 今天生日'}
           </span>
         ) : '—'}
       </td>
-      {showContacts && <td className="px-3 py-2">{contact ? `${contact.name} ${contact.phone}` : '—'}</td>}
-      <td className="px-3 py-2">
+      {showContacts && <td className="whitespace-nowrap px-3 py-2">{contact ? `${contact.name} ${contact.phone}` : '—'}</td>}
+      <td className="min-w-[8rem] px-3 py-2">
         <div className="flex flex-wrap gap-1">
           {tags.slice(0, MAX_TAGS).map((t) => <Badge key={t} variant="neutral">{t}</Badge>)}
           {tags.length > MAX_TAGS && <Badge variant="outline">{`+${tags.length - MAX_TAGS}`}</Badge>}
         </div>
       </td>
       {canExam && (
-        <td className="px-3 py-2">
+        <td className="whitespace-nowrap px-3 py-2">
           {r.rank === null ? '—' : (
             <span className="inline-flex items-center gap-1">
               <span data-testid="rank">{r.rank}</span>
@@ -261,9 +263,9 @@ function StudentRow({ row: r, showContacts, canExam, canReview, canManage, onOpe
           )}
         </td>
       )}
-      {canReview && <td className="px-3 py-2">{r.points ?? '—'}</td>}
+      {canReview && <td className="whitespace-nowrap px-3 py-2">{r.points ?? '—'}</td>}
       {canManage && (
-        <td className="px-3 py-2">
+        <td className="whitespace-nowrap px-3 py-2">
           <Button type="button" variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onEdit() }}>编辑</Button>
         </td>
       )}
