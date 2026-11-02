@@ -14,6 +14,12 @@ import type { ReviewSubject } from './useReviewSubmit'
 
 const CARD = { w: 288, h: 380 }
 
+// outline 按钮悬停时会换成 accent 文字色,这里让理由按钮悬停时仍保持加分 / 扣分色
+const HOVER_TONE: Partial<Record<ReturnType<typeof scoreTone>, string>> = {
+  success: 'hover:text-success',
+  danger: 'hover:text-destructive',
+}
+
 export interface ReasonPick { text: string; delta: number }
 
 /** 点评弹层:位于座位旁。anchor 是相对舞台的坐标(点击瞬间的快照),stage 是舞台尺寸。 */
@@ -67,7 +73,7 @@ export default function ReviewPopover({ seat, anchor, stage, reasons, subject, p
       <div className="flex flex-wrap gap-1.5">
         {reasons.map((r) => (
           <Button key={`${r.text}${r.delta}`} type="button" variant="outline" size="sm" disabled={pending}
-            className={TONE_TEXT[scoreTone(r.delta)]}
+            className={`${TONE_TEXT[scoreTone(r.delta)]} ${HOVER_TONE[scoreTone(r.delta)] ?? ''}`}
             onClick={() => submit(r)}>
             {`${r.text} ${signed(r.delta)}`}
           </Button>
@@ -78,7 +84,7 @@ export default function ReviewPopover({ seat, anchor, stage, reasons, subject, p
         <Input aria-label="理由" value={text} maxLength={20} disabled={pending} placeholder="理由"
           onChange={(e) => setText(e.target.value)} className="h-8 min-w-0 flex-1" />
         <Input aria-label="分值" type="number" min={-10} max={10} value={delta} disabled={pending} placeholder="分值"
-          onChange={(e) => setDelta(e.target.value)} className="h-8 w-16" />
+          onChange={(e) => setDelta(e.target.value)} className="h-8 w-16 px-2" />
         <Button type="submit" size="sm" disabled={pending || !customOk}>确定</Button>
       </form>
     </div>
