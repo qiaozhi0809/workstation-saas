@@ -65,6 +65,7 @@
 | **M1 骨架 + 教师角色底座** | ✅ 已完成(`v0.1.0-m1-foundation`) | 17 task,文件:[`docs/superpowers/plans/2026-11-01-M1-骨架与教师角色底座.md`](docs/superpowers/plans/2026-11-01-M1-骨架与教师角色底座.md) |
 | **M2a 教室交互** | ✅ 已完成(`v0.2.0-m2a-classroom`) | 23 task,文件:[`docs/superpowers/plans/2026-11-01-M2a-教室交互.md`](docs/superpowers/plans/2026-11-01-M2a-教室交互.md) |
 | **M2a.5 UI 基础与打磨** | ✅ 已完成(`v0.2.5-m2a5-ui`) | 17 task,文件:[`docs/superpowers/plans/2026-11-01-M2a5-UI基础与打磨.md`](docs/superpowers/plans/2026-11-01-M2a5-UI基础与打磨.md) |
+| **M2a.6 宽屏教室与操作台** | ⏳ 计划已写 | 10 task,文件:[`docs/superpowers/plans/2026-11-02-宽屏教室与操作台.md`](docs/superpowers/plans/2026-11-02-宽屏教室与操作台.md) |
 | M2b 成绩 / M2c AI 与学年 | ⏳ 未开始 | plan 待写 |
 | M3 管理角色 | ⏳ 未开始 | plan 待写 |
 | M4 家长角色 | ⏳ 未开始 | plan 待写 |

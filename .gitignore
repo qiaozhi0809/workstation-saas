@@ -41,3 +41,6 @@ logs/
 *.pem
 *.key
 .secrets/
+
+# ---- Brainstorm mockups (local only) ----
+.superpowers/
