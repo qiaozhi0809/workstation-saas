@@ -25,7 +25,7 @@ export function TrendLine({ label, width, height = 220, className, labels, serie
     <LineChart data={data} width={width} height={height} margin={{ top: 20, right: 16, bottom: 0, left: 0 }}>
       <CartesianGrid vertical={false} strokeDasharray="3 3" />
       <XAxis dataKey="x" tickLine={false} axisLine={false} />
-      <YAxis domain={domain ?? ['auto', 'auto']} reversed={reversed} tickFormatter={fmt} tickLine={false} axisLine={false} width={40} />
+      <YAxis domain={domain ?? (reversed ? [1, 'dataMax'] : ['auto', 'auto'])} allowDecimals={false} reversed={reversed} tickFormatter={fmt} tickLine={false} axisLine={false} width={40} />
       <Tooltip
         formatter={(v, name) => [typeof v === 'number' ? fmt(v) : v, config[String(name)]?.label ?? name]}
         contentStyle={{ background: 'hsl(var(--popover))', color: 'hsl(var(--popover-foreground))', border: '1px solid hsl(var(--border))', borderRadius: 6, fontSize: 12 }}

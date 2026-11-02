@@ -25,6 +25,20 @@ describe('charts', () => {
     expect((path!.getAttribute('d') ?? '').match(/M/g)).toHaveLength(2)
   })
 
+  it('uses only integer ticks (>= 1) for a reversed rank series', () => {
+    const { container } = render(
+      <TrendLine label="名次" width={400} reversed format={(v) => `第 ${v} 名`} labels={['a', 'b']}
+        series={[{ key: 'me', label: '我', values: [1, 2] }]} />,
+    )
+    const ticks = Array.from(container.querySelectorAll('.recharts-yAxis .recharts-cartesian-axis-tick-value'), (t) => t.textContent ?? '')
+    expect(ticks.length).toBeGreaterThan(0)
+    for (const t of ticks) {
+      const n = Number(/\d+(\.\d+)?/.exec(t)?.[0])
+      expect(Number.isInteger(n)).toBe(true)
+      expect(n).toBeGreaterThanOrEqual(1)
+    }
+  })
+
   it('shows the end label of the main series', () => {
     const { container } = render(
       <TrendLine label="趋势" width={400} labels={['a', 'b', 'c']} endLabel format={(v) => `${v}%`}
