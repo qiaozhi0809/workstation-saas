@@ -39,7 +39,7 @@
 - 图表只用 `shared/components/charts/*`(`ScoreBars` / `TrendLine` / `ScoreRadar` / `Sparkline`),测试里一律传 `width`。`TrendLine` 有 `yAxisWidth`(默认 40),刻度文字长(如“第 N 名”)时传宽一些(档案排名曲线传 56)。
 - 新页面用 `ClassGate`(`roles/teacher/ClassGate.tsx`),由它负责加载 / 出错 / 无班级 / 缺权限。
 - 档案抽屉用 `useStudentDrawer`(`?student=<student_id>&tab=`,任何页面都能开);不再有 `/teacher/students/:id` 路由,旧地址跳转到教室页。
-- 名单顺序统一用 `shared/lib/rosterOrder.ts` 的 `compareRoster`(学号按数字比较,空学号在后,再按姓名)。服务端名单是学号文本顺序,前端展示和导出前都要再排。
+- 名单顺序统一用 `shared/lib/rosterOrder.ts` 的 `compareRoster`(学号按数字比较,空学号在后,再按姓名)。服务端名单是学号文本顺序,前端展示和导出前都要再排。例外:教室黑板“本周之星 / 本月寿星”的同分次序仍由 `Classroom/buildBoard.ts` 自己的比较函数决定(不在本次范围)。
 - 有未保存修改的页面用 teacher store(`shared/stores/teacher.ts`)的 `setUnsaved(key, dirty)` 登记(`key` 为 `UnsavedKey`:`'seating'` | `'scores'`),顶栏换班 / 退出登录用 `confirmLeave()` 统一确认;站内跳转仍由页面自己的 `useBlocker` 拦。
 - 投屏:成绩模式在投屏时不着色、不显示角标和图例(用户决定:投屏不公开排名)。
 

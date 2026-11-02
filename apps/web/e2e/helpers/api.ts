@@ -103,6 +103,7 @@ export async function rosterEnrollmentIds(request: APIRequestContext, token: str
   const res = await request.get(`${API}/classes/${classId}/students`, { headers: authHeaders(token) })
   expect(res.ok()).toBeTruthy()
   const { items } = (await res.json()) as { items: { enrollment_id: string; student_no: string | null }[] }
+  // 依赖种子学号等长(7 位),文本序即数字序
   return [...items].sort((a, b) => (a.student_no ?? '').localeCompare(b.student_no ?? '')).map((s) => s.enrollment_id)
 }
 
