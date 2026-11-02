@@ -1,17 +1,15 @@
 import { useState } from 'react'
-import { useEscapeLayer } from '@/shared/hooks/useEscapeLayer'
-import { toolButton } from '../Toolbar'
+import Modal from '@/shared/components/overlay/Modal'
+import { Button } from '@/shared/components/ui/button'
+import { Input } from '@/shared/components/ui/input'
 import type { DraftStudent } from './draft'
 
 const MIN_SIZE = 1
 const MAX_SIZE = 12
-const primaryButton =
-  'rounded-lg bg-ink px-3 py-1 text-sm text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50'
 // 隐藏浏览器自带的上下箭头:它们逐次触发 change,改由两侧的步进按钮提交
-const sizeInput = 'w-12 rounded-lg border border-line-2 bg-panel px-2 py-1 text-center [appearance:textfield] '
+const sizeInput = 'h-8 w-12 px-1 text-center [appearance:textfield] '
   + '[&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none '
-  + 'aria-[invalid=true]:border-red'
-const stepButton = 'h-7 w-7 rounded-lg border border-line-2 text-sm disabled:cursor-not-allowed disabled:opacity-40'
+  + 'aria-[invalid=true]:border-destructive'
 
 export interface SeatingBarProps {
   rows: number
@@ -57,9 +55,9 @@ function SizeInput({ label, value, disabled, onChange }: { label: string; value:
   return (
     <div className="flex items-center gap-1">
       <label htmlFor={`seat-size-${label}`}>{label}</label>
-      <button type="button" className={stepButton} aria-label={`减少${label}`} disabled={disabled || value <= MIN_SIZE}
-        onClick={() => apply(value - 1)}>−</button>
-      <input id={`seat-size-${label}`} type="number" className={sizeInput} min={MIN_SIZE} max={MAX_SIZE}
+      <Button type="button" variant="outline" size="icon" className="h-7 w-7" aria-label={`减少${label}`}
+        disabled={disabled || value <= MIN_SIZE} onClick={() => apply(value - 1)}>−</Button>
+      <Input id={`seat-size-${label}`} type="number" className={sizeInput} min={MIN_SIZE} max={MAX_SIZE}
         value={text ?? value} disabled={disabled} aria-invalid={invalid || undefined}
         onChange={(e) => setText(e.target.value)}
         onBlur={commit}
@@ -70,27 +68,22 @@ function SizeInput({ label, value, disabled, onChange }: { label: string; value:
             apply(value + (e.key === 'ArrowUp' ? 1 : -1))
           }
         }} />
-      <button type="button" className={stepButton} aria-label={`增加${label}`} disabled={disabled || value >= MAX_SIZE}
-        onClick={() => apply(value + 1)}>+</button>
+      <Button type="button" variant="outline" size="icon" className="h-7 w-7" aria-label={`增加${label}`}
+        disabled={disabled || value >= MAX_SIZE} onClick={() => apply(value + 1)}>+</Button>
     </div>
   )
 }
 
 function ConflictDialog({ onReload, onKeepEditing }: Pick<SeatingBarProps, 'onReload' | 'onKeepEditing'>) {
-  useEscapeLayer(true, onKeepEditing)
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/30">
-      <div role="dialog" aria-modal="true" aria-labelledby="seating-conflict-title"
-        className="flex w-[400px] max-w-[92vw] flex-col gap-3 rounded-2xl bg-panel p-5 shadow-xl">
-        <h3 id="seating-conflict-title" className="text-lg font-semibold">座位表已被其他人修改</h3>
-        <p className="text-sm text-ink-2">你的修改还没有保存。可以放弃修改并载入最新的座位表,也可以继续编辑。</p>
-        <div className="flex justify-end gap-2">
-          <button type="button" className={toolButton} onClick={onReload}>放弃我的修改并重新加载</button>
-          {/* 对话框打开时焦点落在不丢数据的选项上 */}
-          <button type="button" className={primaryButton} autoFocus onClick={onKeepEditing}>继续编辑</button>
-        </div>
+    <Modal open onClose={onKeepEditing} title="座位表已被其他人修改"
+      description="你的修改还没有保存。可以放弃修改并载入最新的座位表,也可以继续编辑。" dismissOnOutside={false}>
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button type="button" variant="outline" onClick={onReload}>放弃我的修改并重新加载</Button>
+        {/* 对话框打开时焦点落在不丢数据的选项上 */}
+        <Button type="button" autoFocus onClick={onKeepEditing}>继续编辑</Button>
       </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -98,18 +91,18 @@ function ConflictDialog({ onReload, onKeepEditing }: Pick<SeatingBarProps, 'onRe
 export default function SeatingBar(p: SeatingBarProps) {
   return (
     <div className="flex flex-wrap items-center gap-2 text-sm">
-      <button type="button" className={toolButton} disabled={p.busy} onClick={p.onShuffle}>随机打乱</button>
-      <button type="button" className={toolButton} disabled={p.busy} onClick={p.onPair}>男女同桌</button>
-      <button type="button" className={toolButton} disabled={p.busy || !p.canUndo} onClick={p.onUndo}>撤销</button>
-      <button type="button" className={toolButton} disabled={p.busy || !p.dirty} onClick={p.onDiscard}>放弃修改</button>
+      <Button type="button" variant="outline" size="sm" disabled={p.busy} onClick={p.onShuffle}>随机打乱</Button>
+      <Button type="button" variant="outline" size="sm" disabled={p.busy} onClick={p.onPair}>男女同桌</Button>
+      <Button type="button" variant="outline" size="sm" disabled={p.busy || !p.canUndo} onClick={p.onUndo}>撤销</Button>
+      <Button type="button" variant="outline" size="sm" disabled={p.busy || !p.dirty} onClick={p.onDiscard}>放弃修改</Button>
       <SizeInput label="排数" value={p.rows} disabled={p.busy} onChange={(r) => p.onResize(r, p.cols)} />
       <SizeInput label="列数" value={p.cols} disabled={p.busy} onChange={(c) => p.onResize(p.rows, c)} />
-      <button type="button" className={toolButton} disabled={p.busy || !p.selected} onClick={p.onToggleLock}>
+      <Button type="button" variant="outline" size="sm" disabled={p.busy || !p.selected} onClick={p.onToggleLock}>
         {p.selected?.locked ? '取消固定' : '固定座位'}
-      </button>
+      </Button>
       <div className="ml-auto flex items-center gap-2">
-        <button type="button" className={toolButton} onClick={p.onPrint}>打印</button>
-        <button type="button" className={primaryButton} disabled={p.busy || !p.dirty} onClick={p.onSave}>保存座位</button>
+        <Button type="button" variant="outline" size="sm" onClick={p.onPrint}>打印</Button>
+        <Button type="button" size="sm" disabled={p.busy || !p.dirty} onClick={p.onSave}>保存座位</Button>
       </div>
       {p.conflict && <ConflictDialog onReload={p.onReload} onKeepEditing={p.onKeepEditing} />}
     </div>

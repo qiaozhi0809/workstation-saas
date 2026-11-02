@@ -49,6 +49,7 @@ it('places a tray student into an empty seat', async () => {
   fireEvent.click(within(await screen.findByRole('region', { name: '待安排 (1)' })).getByRole('button', { name: '张小三' }))
   fireEvent.click(screen.getByRole('button', { name: '空座 2排1列' }))
   expect(screen.getByRole('region', { name: '待安排 (0)' })).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: '待安排 (0)' })).toBeInTheDocument()
 })
 
 it('keeps the draft and offers reload on version conflict', async () => {
@@ -407,6 +408,19 @@ it('focuses 继续编辑 when the conflict dialog opens', async () => {
   fireEvent.click(screen.getByRole('button', { name: '李小二' }))
   fireEvent.click(screen.getByRole('button', { name: '保存座位' }))
   expect(await screen.findByRole('button', { name: '继续编辑' })).toHaveFocus()
+})
+
+it('keeps the conflict dialog open on an outside click', async () => {
+  vi.mocked(seatingApi.save).mockRejectedValue(new ApiError(409, 'SEAT_VERSION_CONFLICT', 'x', { current_version: 5 }))
+  setup({ mode: '排座' })
+  fireEvent.click(await screen.findByRole('button', { name: '王小一' }))
+  fireEvent.click(screen.getByRole('button', { name: '李小二' }))
+  fireEvent.click(screen.getByRole('button', { name: '保存座位' }))
+  const dialog = await screen.findByRole('dialog', { name: '座位表已被其他人修改' })
+  expect(within(dialog).getByRole('button', { name: '继续编辑' })).toHaveFocus()
+  await act(() => new Promise((r) => setTimeout(r, 0)))
+  fireEvent.pointerDown(document.body)
+  expect(screen.getByRole('dialog', { name: '座位表已被其他人修改' })).toBeInTheDocument()
 })
 
 it('keeps an unsaved draft when a background refetch of classes or roster fails', async () => {
