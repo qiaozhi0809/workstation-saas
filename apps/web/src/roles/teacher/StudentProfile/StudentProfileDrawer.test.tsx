@@ -1,9 +1,10 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
 import { beforeEach, vi } from 'vitest'
 import { ApiError } from '@/shared/api/client'
 import { studentsApi } from '@/shared/api/students'
+import { findLegacyStyles } from '@/test/legacyStyles'
 import StudentProfileDrawer from './StudentProfileDrawer'
 
 vi.mock('@/shared/api/classroom', () => ({ classroomApi: { summary: vi.fn().mockResolvedValue({ my_perms: [] }) } }))
@@ -62,9 +63,10 @@ it('closes to the classroom via the 关闭 button', async () => {
 it('closes on overlay click but not on a click inside the panel', async () => {
   renderDrawer()
   const dialog = await screen.findByRole('dialog')
-  fireEvent.click(dialog)
+  await act(() => new Promise((r) => setTimeout(r, 0)))
+  fireEvent.pointerDown(dialog)
   expect(screen.queryByText('教室页')).toBeNull()
-  fireEvent.click(dialog.parentElement as HTMLElement)
+  fireEvent.pointerDown(document.body)
   expect(await screen.findByText('教室页')).toBeInTheDocument()
 })
 
@@ -83,11 +85,11 @@ it('switches to the archive tab', async () => {
   expect(screen.getByText('双亲家庭')).toBeInTheDocument()
 })
 
-it('shows M2 启用 on a later-milestone tab', async () => {
+it('shows a not-yet-available state on later tabs', async () => {
   renderDrawer()
   await screen.findByRole('heading', { name: '王小一' })
   fireEvent.click(screen.getByRole('tab', { name: '成绩' }))
-  expect(screen.getByText('M2 启用')).toBeInTheDocument()
+  expect(screen.getByText('暂未开放')).toBeInTheDocument()
 })
 
 it('replaces history on close so Back does not reopen the drawer', async () => {
@@ -110,4 +112,32 @@ it('replaces history on close so Back does not reopen the drawer', async () => {
   fireEvent.click(await screen.findByRole('button', { name: '返回' }))
   expect(await screen.findByText('教室页')).toBeInTheDocument()
   expect(screen.queryByRole('dialog')).toBeNull()
+})
+
+it('retries a failed load', async () => {
+  vi.mocked(studentsApi.detail).mockRejectedValueOnce(new Error('boom')).mockResolvedValueOnce(student)
+  renderDrawer()
+  fireEvent.click(await screen.findByRole('button', { name: '重试' }))
+  expect(await screen.findByRole('dialog', { name: '王小一' })).toBeInTheDocument()
+})
+
+it('offers no retry on 403 or 404', async () => {
+  vi.mocked(studentsApi.detail).mockRejectedValue(new ApiError(403, 'FORBIDDEN', 'no'))
+  renderDrawer()
+  await screen.findByText('没有权限查看该学生')
+  expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+})
+
+it('moves between tabs with the arrow keys', async () => {
+  renderDrawer()
+  await screen.findByRole('heading', { name: '王小一' })
+  const first = screen.getByRole('tab', { name: '概览' })
+  first.focus()
+  fireEvent.keyDown(first, { key: 'ArrowRight' })
+  expect(screen.getByRole('tab', { name: '档案' })).toHaveFocus()
+})
+
+it('uses design tokens only', () => {
+  const files = import.meta.glob(['./*.tsx', '!./*.test.tsx'], { query: '?raw', import: 'default', eager: true })
+  expect(findLegacyStyles(files as Record<string, string>)).toEqual([])
 })
