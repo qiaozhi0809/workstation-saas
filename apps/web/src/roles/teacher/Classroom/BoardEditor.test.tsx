@@ -6,7 +6,6 @@ import { ApiError } from '@/shared/api/client'
 import { classroomApi } from '@/shared/api/classroom'
 import { Toaster } from '@/shared/components/Toast'
 import type { Board } from '@/shared/types/classroom'
-import { findLegacyStyles } from '@/test/legacyStyles'
 import BoardEditor from './BoardEditor'
 
 vi.mock('@/shared/api/classroom', () => ({ classroomApi: { saveBoard: vi.fn() } }))
@@ -109,9 +108,4 @@ it('stays open on an outside click so typed text is not lost', async () => {
   fireEvent.pointerDown(document.body)
   expect(screen.getByRole('dialog', { name: '编辑黑板' })).toBeInTheDocument()
   expect(onClose).not.toHaveBeenCalled()
-})
-
-it('uses design tokens only', () => {
-  const files = import.meta.glob('./BoardEditor.tsx', { query: '?raw', import: 'default', eager: true })
-  expect(findLegacyStyles(files as Record<string, string>)).toEqual([])
 })

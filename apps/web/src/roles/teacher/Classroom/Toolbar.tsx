@@ -1,11 +1,7 @@
 import type { ReactNode, RefObject } from 'react'
 import { Dices, Maximize2, Minimize2, PanelRight, Scan, ZoomIn, ZoomOut } from 'lucide-react'
 import type { ClassroomViewportHandle } from '@/shared/components/ClassroomMap/types'
-import { Button, buttonVariants } from '@/shared/components/ui/button'
-
-// 其他段尚未迁移的按钮仍引用它,统一换成 outline 小按钮
-// eslint-disable-next-line react-refresh/only-export-components
-export const toolButton = buttonVariants({ variant: 'outline', size: 'sm' })
+import { Button } from '@/shared/components/ui/button'
 
 /**
  * 教室工具栏。顺序:随机点名(传了 onPick 才显示)→ 各模式附加按钮(extra)→ 进行中状态(status)

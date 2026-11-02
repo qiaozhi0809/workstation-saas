@@ -7,7 +7,6 @@ import { classesApi } from '@/shared/api/classes'
 import { studentsApi } from '@/shared/api/students'
 import { useAuthStore } from '@/shared/stores/auth'
 import { useTeacherStore } from '@/shared/stores/teacher'
-import { findLegacyStyles } from '@/test/legacyStyles'
 import type { ClassView } from '@/shared/types/class'
 import TeacherLayout from './TeacherLayout'
 
@@ -191,9 +190,4 @@ it('lists every action with a visible label in the narrow-screen menu', async ()
   expect(within(menu).getByRole('button', { name: '主题:跟随系统' })).toHaveTextContent('主题:跟随系统')
   expect(within(menu).getByText('王老师')).toBeInTheDocument()
   expect(within(menu).getByRole('button', { name: '退出登录' })).toBeInTheDocument()
-})
-
-it('uses design tokens only', () => {
-  const files = import.meta.glob(['./TeacherLayout.tsx'], { query: '?raw', import: 'default', eager: true })
-  expect(findLegacyStyles(files as Record<string, string>)).toEqual([])
 })

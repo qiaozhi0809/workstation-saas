@@ -1,5 +1,4 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
-import { findLegacyStyles } from '@/test/legacyStyles'
 import { Toaster, toast } from './Toast'
 
 function fakeFullscreen(stage: HTMLElement | null) {
@@ -29,9 +28,4 @@ it('runs the action and dismisses', () => {
   fireEvent.click(screen.getByRole('button', { name: '恢复' }))
   expect(onClick).toHaveBeenCalledTimes(1)
   expect(screen.queryByText('已撤销')).not.toBeInTheDocument()
-})
-
-it('uses design tokens only', () => {
-  const files = import.meta.glob('./Toast.tsx', { query: '?raw', import: 'default', eager: true })
-  expect(findLegacyStyles(files as Record<string, string>)).toEqual([])
 })

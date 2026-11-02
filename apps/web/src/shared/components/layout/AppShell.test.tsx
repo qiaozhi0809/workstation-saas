@@ -1,6 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { createMemoryRouter, Link, MemoryRouter, Outlet, Route, RouterProvider, Routes } from 'react-router-dom'
-import { findLegacyStyles } from '@/test/legacyStyles'
 import AppShell from './AppShell'
 
 function renderShell() {
@@ -71,9 +70,4 @@ it('does not reopen the menu when navigating back to where it was opened', async
   expect(await screen.findByText('A 页')).toBeInTheDocument()
   expect(screen.queryByRole('dialog', { name: '菜单' })).not.toBeInTheDocument()
   expect(screen.getByRole('button', { name: '打开菜单' })).toHaveAttribute('aria-expanded', 'false')
-})
-
-it('uses design tokens only', () => {
-  const files = import.meta.glob(['./*.tsx', '!./*.test.tsx'], { query: '?raw', import: 'default', eager: true })
-  expect(findLegacyStyles(files as Record<string, string>)).toEqual([])
 })

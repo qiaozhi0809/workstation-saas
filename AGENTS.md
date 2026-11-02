@@ -140,6 +140,8 @@ Step N+(1-k): Commit          → git add && git commit
 | TypeScript | 5 |
 | Vite | 5 |
 | Tailwind | 3 |
+| shadcn CLI | 2.3.0(最后支持 Tailwind 3) |
+| tailwind-merge | 2.x(3.x 只支持 Tailwind 4) |
 | Docker Compose | v2 |
 
 **不要擅自升级这些版本**。版本升级要征求用户同意。

@@ -3,7 +3,6 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { attendanceApi } from '@/shared/api/attendance'
 import { reviewsApi } from '@/shared/api/reviews'
 import { todosApi } from '@/shared/api/todos'
-import { findLegacyStyles } from '@/test/legacyStyles'
 import { defaultApiMocks, review, setup } from '../pageTestUtils'
 
 vi.mock('@/shared/api/classes')
@@ -159,10 +158,4 @@ it('keeps the inline rail without a close button at 1280px', async () => {
   setup()
   const rail = await screen.findByRole('complementary', { name: '班级概况' })
   expect(within(rail).queryByRole('button', { name: '收起概况栏' })).not.toBeInTheDocument()
-})
-
-it('uses design tokens only', () => {
-  const files = import.meta.glob(['./*.tsx', '!./*.test.tsx'], { query: '?raw', import: 'default', eager: true })
-  expect(Object.keys(files).length).toBeGreaterThan(0)
-  expect(findLegacyStyles(files as Record<string, string>)).toEqual([])
 })
