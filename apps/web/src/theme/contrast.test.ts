@@ -66,6 +66,9 @@ for (const theme of ['light', 'dark'] as const) {
       expect(ratio(toRgb(t[s]), tint(t[s], t.background, 0.1))).toBeGreaterThanOrEqual(4.5)
       expect(ratio(toRgb(t[s]), tint(t[s], t.muted, 0.1))).toBeGreaterThanOrEqual(4.5)
     })
+    it('chart-4 (lightest series colour) on background is at least 3:1', () => {
+      expect(contrast(t['chart-4'], t.background)).toBeGreaterThanOrEqual(3)
+    })
     it('ring on background is at least 3:1', () => {
       expect(contrast(t.ring, t.background)).toBeGreaterThanOrEqual(3)
     })
