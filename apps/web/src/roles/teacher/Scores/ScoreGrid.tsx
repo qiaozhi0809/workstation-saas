@@ -50,9 +50,11 @@ export interface ScoreGridProps {
   /** 可写科目名;null = 全部可写 */
   writable: string[] | null
   onCells(cells: ScoreCell[]): void
+  /** 这些格子(key = `${enrollment_id}|${subject}`)的文字被拒绝,撤回尚未发出的改动 */
+  onDiscard(keys: string[]): void
 }
 
-export default function ScoreGrid({ exam, roster, sheet, writable, onCells }: ScoreGridProps) {
+export default function ScoreGrid({ exam, roster, sheet, writable, onCells, onDiscard }: ScoreGridProps) {
   const students = useMemo(() => [...roster].sort(byRoster), [roster])
   const subjects = exam.subjects
   // 未保存的改动(保存成功并合并进 sheet 后会被清掉);草稿文字只在输入过程中保留,无法保存的文字一直留着
@@ -101,6 +103,8 @@ export default function ScoreGrid({ exam, roster, sheet, writable, onCells }: Sc
     const r = interpret(text, full)
     if ('problem' in r) {
       setDrafts((d) => ({ ...d, [key]: text }))
+      setOverlay((o) => without(o, key))
+      onDiscard([key])
       return false
     }
     const cell: ScoreCell = { enrollment_id: id, subject, value: r.cell }

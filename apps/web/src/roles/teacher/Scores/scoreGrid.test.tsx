@@ -196,3 +196,20 @@ it('makes other subjects read-only for a subject teacher', async () => {
   await ms(1000)
   expect(sent()).toHaveLength(0)
 })
+
+it('never saves an earlier keystroke when the final text is over-full or invalid', async () => {
+  setup()
+  const c = await cell('张小三', '语文')
+  const d = await cell('张小三', '数学')
+  for (const v of ['1', '10', '105']) type(c, v)
+  expect(c.className).toContain('bg-destructive')
+  expect(within(c.closest('tr') as HTMLElement).getByTestId('total')).toHaveTextContent('—')
+  await ms(1000)
+  expect(sent()).toHaveLength(0)
+  // 粘贴走同一条路径:先入队合法值,再被超分值覆盖
+  type(d, '60')
+  fireEvent.paste(d, { clipboardData: { getData: () => '500\n' } })
+  await ms(1000)
+  expect(sent()).toHaveLength(0)
+  expect(within(d.closest('tr') as HTMLElement).getByTestId('total')).toHaveTextContent('—')
+})

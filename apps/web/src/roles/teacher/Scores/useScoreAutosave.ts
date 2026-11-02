@@ -79,6 +79,17 @@ export function useScoreAutosave({ classId, examId }: { classId: string; examId:
     timer.current = setTimeout(() => void flush(), DEBOUNCE_MS)
   }, [flush])
 
+  /** 撤回还没发出去的格子(文字被拒绝后不能留着前一次按键的值) */
+  const discard = useCallback((keys: string[]) => {
+    for (const k of keys) pending.current.delete(k)
+    if (pending.current.size === 0 && !sending.current) {
+      clearTimeout(timer.current)
+      timer.current = undefined
+      setDirty(false)
+      setStatus((s) => (s === 'error' ? 'idle' : s))
+    }
+  }, [])
+
   const retry = useCallback(() => { void flush() }, [flush])
 
   // 卸载时还没发出去的改动立刻发送,不丢
@@ -105,5 +116,5 @@ export function useScoreAutosave({ classId, examId }: { classId: string; examId:
     else blocker.reset()
   }, [blocker])
 
-  return { status, dirty, queue, retry }
+  return { status, dirty, queue, discard, retry }
 }

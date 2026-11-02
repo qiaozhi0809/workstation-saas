@@ -110,7 +110,7 @@ function ExamSection({ ctx, exam, onEdit }: { ctx: ClassContext; exam: Exam; onE
   } else {
     body = (
       <ScoreGrid exam={sheet.data.exam} roster={roster.data.items} sheet={sheet.data}
-        writable={writable} onCells={save.queue} />
+        writable={writable} onCells={save.queue} onDiscard={save.discard} />
     )
   }
 
