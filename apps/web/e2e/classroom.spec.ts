@@ -26,9 +26,9 @@ test('attendance cycles and persists', async ({ page }) => {
   await expect(page.locator('[data-enrollment]', { hasText: '王小一' })).toContainText('请假')
   await page.reload()
   await switchMode(page, '考勤')
-  await expect(page.getByRole('complementary', { name: '班级概况' }).getByText(/请假 1/)).toBeVisible()
+  await expect(page.getByRole('toolbar', { name: '教室工具' }).getByText(/请假 1/)).toBeVisible()
   for (let i = 0; i < 3; i++) await page.getByRole('button', { name: '王小一' }).click()
-  await expect(page.getByRole('complementary', { name: '班级概况' }).getByText(/请假 0/)).toBeVisible()
+  await expect(page.getByRole('toolbar', { name: '教室工具' }).getByText(/请假 0/)).toBeVisible()
 })
 
 test('review with undo', async ({ page }) => {

@@ -1,5 +1,5 @@
-import type { ReactNode, RefObject } from 'react'
-import { Ellipsis, Maximize2, Minimize2, PanelRight } from 'lucide-react'
+import type { ReactNode } from 'react'
+import { Ellipsis, Maximize2, Minimize2, ListTodo } from 'lucide-react'
 import Menu from '@/shared/components/overlay/Menu'
 import { Button } from '@/shared/components/ui/button'
 import { Separator } from '@/shared/components/ui/separator'
@@ -20,15 +20,13 @@ export interface ClassroomDockProps {
   status?: string
   presenting: boolean
   onTogglePresent(): void
-  railOpen: boolean
-  onToggleRail(): void
-  /** 概况栏按钮,浮层关闭后把焦点还给它 */
-  railButtonRef?: RefObject<HTMLButtonElement>
+  /** 打开右侧"待办与点评"抽屉(抽屉自己在关闭后把焦点还给这个按钮) */
+  onOpenPanel(): void
 }
 
-/** 舞台下方的操作台:模式 → 模式操作 → 常用操作 → 更多操作 → 状态 → 全屏 / 概况栏。 */
+/** 舞台下方的操作台:模式 → 模式操作 → 常用操作 → 更多操作 → 状态 → 全屏 / 待办与点评。 */
 export default function ClassroomDock({
-  mode, perms, onModeChange, actions, common, menu, status, presenting, onTogglePresent, railOpen, onToggleRail, railButtonRef,
+  mode, perms, onModeChange, actions, common, menu, status, presenting, onTogglePresent, onOpenPanel,
 }: ClassroomDockProps) {
   return (
     <div role="toolbar" aria-label="教室工具" className="flex flex-wrap items-center gap-2 rounded-xl border bg-card px-2 py-1.5 shadow-sm">
@@ -51,9 +49,9 @@ export default function ClassroomDock({
           {presenting ? <Minimize2 aria-hidden /> : <Maximize2 aria-hidden />}
         </Button>
         {!presenting && (
-          <Button ref={railButtonRef} variant="outline" size="icon" aria-label="概况栏" title="概况栏"
-            aria-pressed={railOpen} onClick={onToggleRail}>
-            <PanelRight aria-hidden />
+          <Button variant="outline" size="icon" aria-label="待办与点评" title="待办与点评"
+            aria-haspopup="dialog" onClick={onOpenPanel}>
+            <ListTodo aria-hidden />
           </Button>
         )}
       </div>

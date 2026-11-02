@@ -99,7 +99,7 @@ it('shows an error when the roster request fails', async () => {
   expect(await screen.findByText('名单加载失败')).toBeInTheDocument()
 })
 
-it('enters presenting mode on fullscreen and hides the rail', async () => {
+it('enters presenting mode on fullscreen and hides 待办与点评', async () => {
   Element.prototype.requestFullscreen = vi.fn(function (this: Element) {
     Object.defineProperty(document, 'fullscreenElement', { value: this, configurable: true })
     document.dispatchEvent(new Event('fullscreenchange'))
@@ -108,7 +108,7 @@ it('enters presenting mode on fullscreen and hides the rail', async () => {
   setup()
   fireEvent.click(await screen.findByRole('button', { name: '全屏' }))
   expect(await screen.findByRole('button', { name: '退出全屏' })).toBeInTheDocument()
-  expect(screen.queryByRole('complementary', { name: '班级概况' })).toBeNull()
+  expect(screen.queryByRole('button', { name: '待办与点评' })).toBeNull()
 })
 
 it('uses an opaque background on the root while presenting, so the black backdrop never shows through', async () => {
@@ -159,18 +159,24 @@ it('loads weekly stars only for teachers who may read reviews', async () => {
   expect(reviewsApi.summary).not.toHaveBeenCalled()
 })
 
-it('shows the rail on wide screens, toggles it, and hides it while presenting', async () => {
+it('has no overview rail at any width; 待办与点评 opens a drawer that closes when presenting starts', async () => {
+  for (const w of [1280, 1024]) {
+    window.innerWidth = w
+    const { unmount } = setup()
+    await screen.findByRole('button', { name: '待办与点评' })
+    expect(screen.queryByRole('complementary')).toBeNull()
+    unmount()
+  }
   window.innerWidth = 1280
   stubFullscreen()
   setup()
-  expect(await screen.findByRole('complementary', { name: '班级概况' })).toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: '概况栏' }))
-  expect(screen.queryByRole('complementary', { name: '班级概况' })).toBeNull()
-  fireEvent.click(screen.getByRole('button', { name: '概况栏' }))
-  expect(screen.getByRole('complementary', { name: '班级概况' })).toBeInTheDocument()
+  fireEvent.click(await screen.findByRole('button', { name: '待办与点评' }))
+  expect(await screen.findByRole('dialog', { name: '待办与点评' })).toBeInTheDocument()
+  fireEvent.keyDown(document, { key: 'Escape' })
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: '待办与点评' })).toBeNull())
   fireEvent.click(screen.getByRole('button', { name: '全屏' }))
   expect(await screen.findByRole('button', { name: '退出全屏' })).toBeInTheDocument()
-  expect(screen.queryByRole('complementary', { name: '班级概况' })).toBeNull()
+  expect(screen.queryByRole('button', { name: '待办与点评' })).toBeNull()
 })
 
 it('keeps the map when the summary fails and says why', async () => {

@@ -16,7 +16,6 @@ import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { MenuItem } from '@/shared/components/overlay/Menu'
 import { Button } from '@/shared/components/ui/button'
-import { useWindowWidth } from '@/shared/hooks/useWindowWidth'
 import { useReducedMotion } from '@/shared/hooks/useReducedMotion'
 import { useAuthStore } from '@/shared/stores/auth'
 import { confirmLeaveSeating, useTeacherStore } from '@/shared/stores/teacher'
@@ -37,7 +36,9 @@ import UnseatedTray from './seating/UnseatedTray'
 import { useSeatingMode } from './seating/useSeatingMode'
 import { buildBoard } from './buildBoard'
 import { useIdleActions } from './idle/useIdleActions'
-import OverviewRail from './rail/OverviewRail'
+import SidePanel from '@/shared/components/overlay/SidePanel'
+import TodoSection from './panel/TodoSection'
+import FeedSection from './panel/FeedSection'
 import { modesFor, type ClassroomUiMode } from './ModeBar'
 import ClassroomDock from './ClassroomDock'
 import { useAttendanceDate } from './useAttendanceDate'
@@ -45,7 +46,6 @@ import { useFullscreen } from './useFullscreen'
 
 const NO_PERMS: ClassPerm[] = []
 const NO_SUBJECTS: string[] = []
-const RAIL_MIN_WIDTH = 1100
 
 // 讲台姓名牌上的身份:有排座权的是班主任,能记考勤的是副班主任,其余是任课老师
 const roleLabel = (perms: readonly ClassPerm[]) =>
@@ -86,7 +86,7 @@ export default function ClassroomPage() {
   const cls = classId ? items.find((c) => c.id === classId) : undefined
   if (!cls) return <LoadingState />
 
-  // 换班级时整页重建:模式、考勤日期、概况栏开关等按班级重新开始
+  // 换班级时整页重建:模式、考勤日期、抽屉开关等按班级重新开始
   return <ClassroomView key={cls.id} cls={cls} />
 }
 
@@ -100,11 +100,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
   const viewportRef = useRef<ClassroomViewportHandle>(null)
   const { active: presenting, toggle: togglePresent } = useFullscreen(rootRef)
   const [editingBoard, setEditingBoard] = useState(false)
-  const width = useWindowWidth()
-  const [railOpen, setRailOpen] = useState(() => window.innerWidth >= RAIL_MIN_WIDTH)
-  const railButtonRef = useRef<HTMLButtonElement>(null)
-  const overlayRail = width < RAIL_MIN_WIDTH
-  const closeRail = () => { setRailOpen(false); railButtonRef.current?.focus() }
+  const [panelOpen, setPanelOpen] = useState(false)
 
   const roster = useQuery({
     queryKey: ['class-students', classId],
@@ -388,29 +384,21 @@ function ClassroomView({ cls }: { cls: ClassView }) {
           status={seatingPending === 'saving' ? '保存中…' : seatingPending === 'loading' ? '加载中…' : undefined}
           presenting={presenting}
           onTogglePresent={togglePresent}
-          railOpen={railOpen}
-          onToggleRail={() => setRailOpen((o) => !o)}
-          railButtonRef={railButtonRef}
+          onOpenPanel={() => setPanelOpen(true)}
         />
       </section>
       {editingBoard && summary.data && (
         <BoardEditor classId={classId} board={summary.data.board} onClose={() => setEditingBoard(false)} />
       )}
-      {railOpen && !presenting && summary.data && roster.data && (
-        <OverviewRail
-          classId={classId}
-          summary={summary.data}
-          roster={roster.data?.items ?? []}
-          perms={perms}
-          todayAttendance={todayAttendance.data}
-          variant={overlayRail ? 'overlay' : 'inline'}
-          onClose={closeRail}
-          onRollCall={() => {
-            if (mode !== 'attendance') setMode('attendance')
-            // 窄屏浮层会盖住座位图,点名要点座位,所以一并收起
-            if (overlayRail) closeRail()
-          }}
-        />
+      {panelOpen && !presenting && summary.data && roster.data && (
+        <SidePanel open title="待办与点评" onClose={() => setPanelOpen(false)}>
+          <div className="flex flex-col gap-3">
+            <TodoSection />
+            {perms.includes('review.read') && (
+              <FeedSection classId={classId} roster={roster.data.items} timezone={summary.data.timezone} />
+            )}
+          </div>
+        </SidePanel>
       )}
     </div>
   )

@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { ChevronDown } from 'lucide-react'
 import Popover from '@/shared/components/overlay/Popover'
 import { Button } from '@/shared/components/ui/button'
@@ -25,6 +26,7 @@ export interface AttendanceBarProps {
 }
 
 export default function AttendanceBar(p: AttendanceBarProps) {
+  const dateRef = useRef<HTMLInputElement>(null)
   const arrived = p.enrolled - p.leave - p.absent
   const dateText = p.date === p.today ? '今天' : `${p.date.slice(5, 7)}/${p.date.slice(8, 10)}`
   return (
@@ -38,6 +40,7 @@ export default function AttendanceBar(p: AttendanceBarProps) {
             type="date"
             aria-label="考勤日期"
             className="h-9 w-auto"
+            ref={dateRef}
             data-autofocus=""
             value={p.date}
             min={p.yearStart}
@@ -45,7 +48,11 @@ export default function AttendanceBar(p: AttendanceBarProps) {
             onChange={(e) => { if (e.target.value) p.onPickDate(e.target.value) }}
           />
           {p.date !== p.today && (
-            <Button type="button" variant="outline" onClick={p.onFollowToday}>回到今天</Button>
+            <Button type="button" variant="outline" onClick={() => {
+              // 回到今天后这个按钮会卸载(焦点会掉到 body),先把焦点交给日期框
+              dateRef.current?.focus()
+              p.onFollowToday()
+            }}>回到今天</Button>
           )}
         </div>
       </Popover>

@@ -21,21 +21,28 @@ it('mode bar moves focus with arrow keys and switches on click only', () => {
 const dock = (over: Partial<ClassroomDockProps> = {}) => render(
   <ClassroomDock mode="daily" perms={[]} onModeChange={vi.fn()} actions={<button>甲</button>}
     common={<button>乙</button>} status="保存中…" presenting={false} onTogglePresent={vi.fn()}
-    railOpen onToggleRail={vi.fn()} {...over} />,
+    onOpenPanel={vi.fn()} {...over} />,
 )
 
-it('puts tabs, mode actions, common actions, status and fullscreen / rail into one toolbar in that order', () => {
+it('puts tabs, mode actions, common actions, status and fullscreen / 待办与点评 into one toolbar in that order', () => {
   dock()
   const bar = screen.getByRole('toolbar', { name: '教室工具' })
   const order = [...bar.querySelectorAll('[role="tab"], button, [role="status"]')].map((el) => el.getAttribute('aria-label') ?? el.textContent)
-  expect(order).toEqual(['日常', '甲', '乙', '保存中…', '全屏', '概况栏'])
-  expect(within(bar).getByRole('button', { name: '概况栏' })).toHaveAttribute('aria-pressed', 'true')
+  expect(order).toEqual(['日常', '甲', '乙', '保存中…', '全屏', '待办与点评'])
+  expect(within(bar).getByRole('button', { name: '待办与点评' })).toHaveAttribute('aria-haspopup', 'dialog')
 })
 
-it('shows 退出全屏 and hides 概况栏 while presenting', () => {
+it('calls onOpenPanel from the 待办与点评 button', () => {
+  const onOpenPanel = vi.fn()
+  dock({ onOpenPanel })
+  fireEvent.click(screen.getByRole('button', { name: '待办与点评' }))
+  expect(onOpenPanel).toHaveBeenCalledTimes(1)
+})
+
+it('shows 退出全屏 and hides 待办与点评 while presenting', () => {
   dock({ presenting: true })
   expect(screen.getByRole('button', { name: '退出全屏' })).toBeInTheDocument()
-  expect(screen.queryByRole('button', { name: '概况栏' })).toBeNull()
+  expect(screen.queryByRole('button', { name: '待办与点评' })).toBeNull()
 })
 
 it('draws a separator only before a non-empty actions or common zone', () => {
@@ -53,9 +60,9 @@ it('draws a separator only before a non-empty actions or common zone', () => {
   expect(seps()).toBe(0)
 })
 
-it('shows 全屏 and 概况栏 as icon-only buttons that keep their names and carry a title', () => {
+it('shows 全屏 and 待办与点评 as icon-only buttons that keep their names and carry a title', () => {
   dock()
-  for (const name of ['全屏', '概况栏']) {
+  for (const name of ['全屏', '待办与点评']) {
     const b = screen.getByRole('button', { name })
     expect(b).toHaveAttribute('title', name)
     expect(b.textContent).toBe('')
@@ -73,7 +80,7 @@ it('renders one 更多操作 menu from the menu items, after the common zone, an
   expect(more).toHaveAttribute('title', '更多操作')
   expect(within(bar).getAllByRole('button', { name: '更多操作' })).toHaveLength(1)
   expect([...bar.querySelectorAll('[role="tab"], button, [role="status"]')].map((el) => el.getAttribute('aria-label') ?? el.textContent))
-    .toEqual(['日常', '甲', '乙', '更多操作', '保存中…', '全屏', '概况栏'])
+    .toEqual(['日常', '甲', '乙', '更多操作', '保存中…', '全屏', '待办与点评'])
   fireEvent.click(more)
   expect(within(screen.getByRole('menu', { name: '更多操作' })).getAllByRole('menuitem').map((i) => i.textContent)).toEqual(['丙', '丁'])
   unmount()

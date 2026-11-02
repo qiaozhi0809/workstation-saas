@@ -84,6 +84,16 @@ it('picks another date, then returns to today', async () => {
   expect(screen.queryByRole('button', { name: '回到今天' })).toBeNull()
 })
 
+it('moves focus to the date input after 回到今天 unmounts', async () => {
+  setup({ mode: '考勤' })
+  fireEvent.change(await openDate(), { target: { value: '2026-10-30' } })
+  const back = await screen.findByRole('button', { name: '回到今天' })
+  back.focus()
+  fireEvent.click(back)
+  await waitFor(() => expect(screen.queryByRole('button', { name: '回到今天' })).toBeNull())
+  expect(screen.getByLabelText('考勤日期')).toHaveFocus()
+})
+
 it('shows the stats line', async () => {
   vi.mocked(attendanceApi.day).mockResolvedValue({ date: '2026-11-02', confirmed_at: null, items: [
     { enrollment_id: 'e1', status: 'leave', reason: null, marked_at: '2026-11-02T01:00:00Z' },

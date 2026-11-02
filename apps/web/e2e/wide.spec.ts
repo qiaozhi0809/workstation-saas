@@ -144,32 +144,28 @@ test('account menu works from the keyboard', async ({ page }) => {
   await expect(trigger).toBeFocused()
 })
 
-// 操作台:≥ 1024 宽所有模式、概况栏开 / 关都是一行;窄屏允许换行但页面不滚动
+// 操作台:≥ 1024 宽所有模式都是一行(无概况栏);窄屏允许换行但页面不滚动
 const DOCK_MODES = ['日常', '考勤', '点评', '排座']
 for (const [w, h] of [[1024, 768], [1280, 720], [1920, 1080]]) {
-  for (const rail of [true, false]) {
-    test(`dock fits on one row at ${w}×${h} with the rail ${rail ? 'open' : 'closed'}`, async ({ page }) => {
-      await page.setViewportSize({ width: w, height: h })
-      await signIn(page)
-      await mapReady(page)
-      const railButton = page.getByRole('button', { name: '概况栏' })
-      if ((await railButton.getAttribute('aria-pressed') === 'true') !== rail) await railButton.click()
-      for (const mode of DOCK_MODES) {
-        await switchMode(page, mode)
-        await expect(async () => {
-          const items = await page.getByRole('toolbar', { name: '教室工具' }).locator('button, [role="tab"]').all()
-          const tops: number[] = []
-          for (const it of items) {
-            const box = await it.boundingBox()
-            if (box) tops.push(box.y)
-          }
-          expect(tops.length).toBeGreaterThan(4)
-          const groups = tops.sort((a, b) => a - b).reduce<number[]>((g, t) => (g.length && t - g[g.length - 1] <= 10 ? g : [...g, t]), [])
-          expect(groups, `${mode} 的按钮行数(top 分组 ${tops.join(',')})`).toHaveLength(1)
-        }).toPass()
-      }
-    })
-  }
+  test(`dock fits on one row at ${w}×${h}`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h })
+    await signIn(page)
+    await mapReady(page)
+    for (const mode of DOCK_MODES) {
+      await switchMode(page, mode)
+      await expect(async () => {
+        const items = await page.getByRole('toolbar', { name: '教室工具' }).locator('button, [role="tab"]').all()
+        const tops: number[] = []
+        for (const it of items) {
+          const box = await it.boundingBox()
+          if (box) tops.push(box.y)
+        }
+        expect(tops.length).toBeGreaterThan(4)
+        const groups = tops.sort((a, b) => a - b).reduce<number[]>((g, t) => (g.length && t - g[g.length - 1] <= 10 ? g : [...g, t]), [])
+        expect(groups, `${mode} 的按钮行数(top 分组 ${tops.join(',')})`).toHaveLength(1)
+      }).toPass()
+    }
+  })
 }
 
 for (const [w, h] of [[768, 1024], [375, 812]]) {
