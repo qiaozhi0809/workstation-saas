@@ -81,6 +81,16 @@ it('shows recent reviews without naming other teachers', async () => {
   expect(reviewsApi.list).toHaveBeenCalledWith('c1', { limit: 6 })
 })
 
+it('marks reviews of students no longer in the class as transferred out', async () => {
+  // 名单只含在读学生;转出学生的点评记录还在,后端 feed 只给 enrollment_id
+  vi.mocked(reviewsApi.list).mockResolvedValue({ next_cursor: null, items: [
+    review({ id: 'r9', enrollment_id: 'e9', given_at: '2026-11-02T02:05:00Z' }),
+  ] })
+  setup()
+  expect(await screen.findByText('（已转出） 积极发言 +1 · 我 · 10:05')).toBeInTheDocument()
+  expect(screen.queryByText(/全班/)).toBeNull()
+})
+
 it('colours the attendance bar like the map chips', async () => {
   vi.mocked(attendanceApi.day).mockResolvedValue({ date: '2026-11-02', confirmed_at: null, items: [
     { enrollment_id: 'e1', status: 'leave', reason: null, marked_at: '' },
