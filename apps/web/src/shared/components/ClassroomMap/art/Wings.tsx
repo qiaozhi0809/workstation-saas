@@ -32,7 +32,7 @@ function WingView({ side, wing, id, board }: { side: 'left' | 'right'; wing: Win
       </g>
       <g clipPath={`url(#${id}-floor)`}>
         {side === 'left' && (
-          <g transform={`translate(${floor.x} ${floor.y})`}><WindowLight w={floor.w} h={floor.h} board={!!board} /></g>
+          <g transform={`translate(${floor.x} ${floor.y})`}><WindowLight w={floor.w} h={floor.h} wallH={wall.h} board={!!board} /></g>
         )}
         {corner && (
           <g transform={`translate(${floor.x + floor.w - CORNER_PAD - CORNER.w} ${floor.y + floor.h - CORNER_PAD - CORNER.h})`}>

@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import { SCENE_ASPECT, computeLayout, type Layout } from '../layout'
 import Wings from './Wings'
-import { attendanceBoardRect, windowCount } from './wingArt'
+import { ATT_BOARD_MIN_H, ATT_BOARD_W, attendanceBoardRect, boardSlot, windowCount } from './wingArt'
 
 it('paints both wing walls inside clip paths and nothing when the room is not widened', () => {
   const L = computeLayout(6, 4, { aspect: SCENE_ASPECT })
@@ -58,12 +58,19 @@ it('keeps the cleaning corner in the core while the wing is under WING_MIN, even
 
 const BOARD = { title: '今日出勤', present: 8, total: 10, leave: 1, absent: 1, late: 2 }
 
-it('swaps the window nearest the centre for the attendance board and drops its light patch', () => {
+it('puts the attendance board at the centre end of the window row; the other windows share the rest, one light patch each', () => {
   const L = computeLayout(6, 4, { aspect: SCENE_ASPECT })
   const { container } = render(<svg><Wings layout={L} attendanceBoard={BOARD} /></svg>)
   const left = container.querySelector('[data-wing="left"]')!
-  expect(left.querySelectorAll('.cr-wing-window')).toHaveLength(windowCount(669) - 1)
-  expect(left.querySelectorAll('.cr-wing-light path')).toHaveLength(windowCount(669) - 1)
+  // 669 宽的墙:192 的牌子 + 3 扇窗(均分剩余 429,每扇 127)
+  expect(left.querySelectorAll('.cr-wing-window')).toHaveLength(3)
+  expect(left.querySelectorAll('.cr-wing-light path')).toHaveLength(3)
+  const xs = [...left.querySelectorAll('.cr-wing-window')].map((g) => Number(/translate\(([\d.]+)/.exec(g.getAttribute('transform')!)![1]))
+  const bx = boardSlot(669, 220)!.x
+  expect(xs).toEqual([12, 12 + 151, 12 + 302])
+  expect(bx).toBe(12 + 453)
+  expect(xs[2] + 127 + 24).toBeCloseTo(bx, 5)
+  for (const g of left.querySelectorAll('.cr-wing-window > g > rect:first-child')) expect(Number(g.getAttribute('width'))).toBeCloseTo(127, 5)
   const board = left.querySelectorAll('[data-wing-board]')
   expect(board).toHaveLength(1)
   expect(container.querySelector('.cr-wings')!.contains(board[0])).toBe(true)
@@ -73,6 +80,7 @@ it('swaps the window nearest the centre for the attendance board and drops its l
   const r = attendanceBoardRect(L)!
   const t = board[0].getAttribute('transform')!
   expect(t).toContain(`translate(${r.x - L.wings!.left.wall.x} ${r.y - L.wings!.left.wall.y})`)
+  expect(r.w).toBe(ATT_BOARD_W)
 })
 
 it('draws windows exactly as before when no board is given', () => {
@@ -82,18 +90,37 @@ it('draws windows exactly as before when no board is given', () => {
   expect(left.querySelectorAll('.cr-wing-window')).toHaveLength(4)
   expect(left.querySelectorAll('.cr-wing-light path')).toHaveLength(4)
   expect(container.querySelector('[data-wing-board]')).toBeNull()
+  const w0 = left.querySelector('.cr-wing-window > g > rect')!
+  expect(w0.getAttribute('width')).toBe('120')
 })
 
-it('puts the board in the rightmost window slot and has none when there is no slot', () => {
+it('is one and a half window slots wide and has thresholds on wall width and height', () => {
+  expect(ATT_BOARD_W).toBe(1.5 * (120 + 24) - 24)
   const L = computeLayout(6, 4, { aspect: SCENE_ASPECT })
-  expect(attendanceBoardRect(L)).toEqual({ x: 16 + 490.5, y: 16 + 22, w: 120, h: 146 })
-  // 4 × 8:左翼只放得下一扇窗,牌子占了它;4 × 9 与不加宽:没有窗位就没有牌子
-  const one = attendanceBoardRect(computeLayout(4, 8, { aspect: SCENE_ASPECT }))!
-  expect(one.w).toBe(120)
+  expect(attendanceBoardRect(L)).toEqual({ x: 16 + 465, y: 16 + 22, w: 192, h: 146 })
+  // 宽度门槛:墙宽 − 24 ≥ 192
+  expect(boardSlot(215, 220)).toBeNull()
+  expect(boardSlot(216, 220)).toMatchObject({ w: 192 })
+  // 高度门槛:牌高(= 窗高 = 墙高 − 67)≥ ATT_BOARD_MIN_H
+  expect(boardSlot(669, 67 + ATT_BOARD_MIN_H - 1)).toBeNull()
+  expect(boardSlot(669, 67 + ATT_BOARD_MIN_H)).toMatchObject({ h: ATT_BOARD_MIN_H })
+  // 4 × 8 左翼约 201 宽放不下;4 × 9 与不加宽:没有牌子
+  expect(computeLayout(4, 8, { aspect: SCENE_ASPECT }).wings!.left.wall.w).toBeLessThan(216)
+  expect(attendanceBoardRect(computeLayout(4, 8, { aspect: SCENE_ASPECT }))).toBeNull()
   expect(attendanceBoardRect(computeLayout(4, 9, { aspect: SCENE_ASPECT }))).toBeNull()
   expect(attendanceBoardRect(computeLayout(6, 4))).toBeNull()
-  const { container } = render(<svg><Wings layout={computeLayout(4, 9, { aspect: SCENE_ASPECT })} attendanceBoard={BOARD} /></svg>)
-  expect(container.querySelector('[data-wing-board]')).toBeNull()
+})
+
+it('draws plain windows (no board) when the wing cannot fit the board', () => {
+  for (const [r, c] of [[4, 8], [4, 9]] as const) {
+    const { container } = render(<svg><Wings layout={computeLayout(r, c, { aspect: SCENE_ASPECT })} attendanceBoard={BOARD} /></svg>)
+    expect(container.querySelector('[data-wing-board]')).toBeNull()
+    const left = container.querySelector('[data-wing="left"]')!
+    expect(left.querySelectorAll('.cr-wing-light path')).toHaveLength(left.querySelectorAll('.cr-wing-window').length)
+    cleanup()
+  }
+  const { container } = render(<svg><Wings layout={computeLayout(4, 8, { aspect: SCENE_ASPECT })} attendanceBoard={BOARD} /></svg>)
+  expect(container.querySelectorAll('[data-wing="left"] .cr-wing-window')).toHaveLength(1)
 })
 
 it('keeps the tone cells inside the board paper', () => {
@@ -109,6 +136,6 @@ it('keeps the tone cells inside the board paper', () => {
     expect(x).toBeGreaterThanOrEqual(0)
     expect(x + w).toBeLessThanOrEqual(pw)
     expect(y).toBeGreaterThanOrEqual(0)
-    expect(y + h).toBeLessThanOrEqual(ph - 6)
+    expect(y + h).toBeLessThanOrEqual(ph - 8)
   }
 })

@@ -35,14 +35,14 @@ function Crown({ cx, base, r, fill }: { cx: number; base: number; r: number; fil
 }
 
 // 正面看的一扇窗:木框 + 天色 + 窗外树冠 + 十字窗棂 + 窗台;flip 让相邻窗的树左右错开;树冠和枝条剪在玻璃里
-function Window({ hgt, flip }: { hgt: number; flip: boolean }) {
-  const gw = WIN_W - 2 * PANE, gb = hgt - PANE, mid = WIN_W / 2
+function Window({ hgt, flip, ww = WIN_W }: { hgt: number; flip: boolean; ww?: number }) {
+  const gw = ww - 2 * PANE, gb = hgt - PANE, mid = ww / 2
   const glass = `cr-glass-${useId().replace(/:/g, '')}`
   const tx = PANE + (hgt - 2 * PANE) * 0.38
-  const fx = (x: number) => (flip ? WIN_W - x : x)
+  const fx = (x: number) => (flip ? ww - x : x)
   return (
     <g>
-      <rect width={WIN_W} height={hgt} rx={4} fill={WOOD} {...edge} filter={SHADOW} />
+      <rect width={ww} height={hgt} rx={4} fill={WOOD} {...edge} filter={SHADOW} />
       <rect x={PANE} y={PANE} width={gw} height={hgt - 2 * PANE} fill={ROOM.window} />
       <clipPath id={glass}><rect x={PANE} y={PANE} width={gw} height={hgt - 2 * PANE} /></clipPath>
       <g clipPath={`url(#${glass})`}>
@@ -52,11 +52,11 @@ function Window({ hgt, flip }: { hgt: number; flip: boolean }) {
           stroke={INK.outline} strokeWidth={3} strokeLinecap="round" opacity={0.7} />
       </g>
       <g strokeLinecap="butt">
-        <path d={`M ${mid} ${PANE} L ${mid} ${gb} M ${PANE} ${tx} L ${WIN_W - PANE} ${tx}`} stroke={WOOD_DARK} strokeWidth={5} />
-        <path d={`M ${mid} ${PANE} L ${mid} ${gb} M ${PANE} ${tx} L ${WIN_W - PANE} ${tx}`} stroke={ROOM.desk} strokeWidth={1.5} />
+        <path d={`M ${mid} ${PANE} L ${mid} ${gb} M ${PANE} ${tx} L ${ww - PANE} ${tx}`} stroke={WOOD_DARK} strokeWidth={5} />
+        <path d={`M ${mid} ${PANE} L ${mid} ${gb} M ${PANE} ${tx} L ${ww - PANE} ${tx}`} stroke={ROOM.desk} strokeWidth={1.5} />
       </g>
       <circle cx={mid} cy={tx} r={3} fill={ROOM.gold} stroke={INK.outline} strokeWidth={1} />
-      <rect x={-6} y={hgt - 3} width={WIN_W + 12} height={8} rx={2} fill={WOOD_DARK} {...thin} filter={SHADOW} />
+      <rect x={-6} y={hgt - 3} width={ww + 12} height={8} rx={2} fill={WOOD_DARK} {...thin} filter={SHADOW} />
     </g>
   )
 }
@@ -64,13 +64,35 @@ function Window({ hgt, flip }: { hgt: number; flip: boolean }) {
 // 窗高跟着墙高走,窗台(下沿 +5)离踢脚线至少留 14
 const windowHeight = (h: number) => Math.min(146, h - SKIRT - WIN_Y - 19)
 
-// 出勤小牌占的窗位:最靠近中央(左翼窗户行最右)的那扇窗,本地坐标;一扇窗都没有就没有牌子
-function boardSlot(w: number, h: number): Rect | null {
-  const xs = windowXs(w, windowCount(w)), hgt = windowHeight(h)
-  return xs.length && hgt > 2 * PANE ? { x: xs[xs.length - 1], y: WIN_Y, w: WIN_W, h: hgt } : null
+// 出勤小牌:一个半窗位宽 = 1.5 × (窗宽 + 窗间距) − 窗间距;牌高 = 窗高,低于 ATT_BOARD_MIN_H 内容挤不下
+export const ATT_BOARD_W = 1.5 * (WIN_W + WIN_GAP) - WIN_GAP
+export const ATT_BOARD_MIN_H = 138
+const WIN_MAX = 144
+
+// 左翼窗户行(本地坐标)。给了牌子且放得下(可用宽 w − 24 ≥ ATT_BOARD_W、牌高 ≥ ATT_BOARD_MIN_H)时:
+// 牌子在最靠近中央的最右端,其余窗户均分剩余宽度(窗宽在 [WIN_W, WIN_MAX] 内,窗数由剩余宽度算),整行水平居中;
+// 否则退回今天的窗户行(窗宽 WIN_W、无牌子)。窗户和地面光斑共用
+function wingRow(w: number, h: number, withBoard: boolean): { xs: number[]; ww: number; board: Rect | null } {
+  const hgt = windowHeight(h)
+  if (withBoard && w - 24 >= ATT_BOARD_W && hgt >= ATT_BOARD_MIN_H) {
+    const rest = w - 24 - ATT_BOARD_W - WIN_GAP
+    const n = Math.max(0, Math.floor((rest + WIN_GAP) / (WIN_W + WIN_GAP)))
+    const ww = n ? Math.min(WIN_MAX, (rest - (n - 1) * WIN_GAP) / n) : WIN_W
+    const total = n * (ww + WIN_GAP) + ATT_BOARD_W
+    const x0 = (w - total) / 2
+    return {
+      xs: Array.from({ length: n }, (_, i) => x0 + i * (ww + WIN_GAP)), ww,
+      board: { x: x0 + n * (ww + WIN_GAP), y: WIN_Y, w: ATT_BOARD_W, h: hgt },
+    }
+  }
+  return { xs: windowXs(w, windowCount(w)), ww: WIN_W, board: null }
 }
 
-// 出勤小牌在场景里的矩形(场景坐标);不加宽 / 左翼放不下一扇窗时为 null。可见性计算与测试共用
+// 出勤小牌占的位置(本地坐标);放不下为 null
+// eslint-disable-next-line react-refresh/only-export-components
+export const boardSlot = (w: number, h: number): Rect | null => wingRow(w, h, true).board
+
+// 出勤小牌在场景里的矩形(场景坐标);不加宽 / 左翼放不下牌子时为 null。可见性计算与测试共用
 // eslint-disable-next-line react-refresh/only-export-components
 export function attendanceBoardRect(layout: Layout): Rect | null {
   const wall = layout.wings?.left.wall
@@ -80,32 +102,33 @@ export function attendanceBoardRect(layout: Layout): Rect | null {
 
 // 贴在墙上的出勤小牌(纸片 + 胶带):标题纸条、大号"实到"、一行请假 / 缺勤 / 迟到;只画汇总数
 function AttendanceBoard({ data, h }: { data: AttendanceBoardData; h: number }) {
-  const W = WIN_W
-  const big = [38, 32, 26, 22].find((fs) => textW(String(data.present), fs) + textW(`/${data.total}`, 16) <= W - 20) ?? 22
+  const W = ATT_BOARD_W
+  const big = [32, 28, 24, 20].find((fs) => textW(String(data.present), fs) + textW(`/${data.total}`, 18) <= W - 20 - 44) ?? 20
   const cols = [
     { n: data.leave, tone: TONES.amber }, { n: data.absent, tone: TONES.red }, { n: data.late, tone: TONES.blue },
   ]
   const cw = (W - 16) / 3
-  const numY = h - 30, labY = h - 14
+  const cellTop = h - 66, numY = cellTop + 26, labY = cellTop + 53, bigY = cellTop - 7
+  const lab = '请假缺勤迟到'
   return (
     <g transform={`rotate(-1.2 ${W / 2} ${h / 2})`}>
       <rect width={W} height={h} rx={3} fill={ROOM.desk} {...thin} filter={SHADOW} />
-      <rect x={8} y={14} width={W - 16} height={22} rx={2} fill={tint(G[3], 0.55)} />
-      <text x={W / 2} y={30} textAnchor="middle" fontSize={13} fontWeight={700} fill={INK.hair}>{data.title}</text>
-      <text x={W / 2} y={54} textAnchor="middle" fontSize={11} fontWeight={600} letterSpacing={2} fill={MUTED}>实到</text>
-      <text x={W / 2} y={54 + big * 0.95} textAnchor="middle" fontSize={big} fontWeight={800} fill={INK.hair}>
-        {data.present}<tspan fontSize={16} fontWeight={600} fill={MUTED}>{`/${data.total}`}</tspan>
+      <rect x={8} y={12} width={W - 16} height={26} rx={2} fill={tint(G[3], 0.55)} />
+      <text x={W / 2} y={31} textAnchor="middle" fontSize={17} fontWeight={700} fill={INK.hair}>{data.title}</text>
+      <text x={20} y={bigY} fontSize={14} fontWeight={600} letterSpacing={2} fill={MUTED}>实到</text>
+      <text x={W / 2 + 22} y={bigY} textAnchor="middle" fontSize={big} fontWeight={800} fill={INK.hair}>
+        {data.present}<tspan fontSize={18} fontWeight={600} fill={MUTED}>{`/${data.total}`}</tspan>
       </text>
       {cols.map((c, i) => (
         <g key={i}>
-          <rect data-board-cell="" x={8 + i * cw + 2} y={numY - 20} width={cw - 4} height={h - 8 - (numY - 20)} rx={3} fill={c.tone.bg} />
-          <text x={8 + (i + 0.5) * cw} y={numY} textAnchor="middle" fontSize={16} fontWeight={800} fill={c.tone.fg}>{c.n}</text>
+          <rect data-board-cell="" x={8 + i * cw + 2} y={cellTop} width={cw - 4} height={h - 8 - cellTop} rx={3} fill={c.tone.bg} />
+          <text x={8 + (i + 0.5) * cw} y={numY} textAnchor="middle" fontSize={26} fontWeight={800} fill={c.tone.fg}>{c.n}</text>
         </g>
       ))}
-      <text x={cols.map((_, i) => 8 + (i + 0.5) * cw - 11).flatMap((x) => [x, x + 11]).join(' ')} y={labY}
-        fontSize={11} fontWeight={600} fill={shade(MUTED, 0.2)}>请假缺勤迟到</text>
+      <text x={cols.map((_, i) => 8 + (i + 0.5) * cw - 21).flatMap((x) => [x, x + 21]).join(' ')} y={labY}
+        fontSize={21} fontWeight={600} fill={shade(MUTED, 0.2)}>{lab}</text>
       <g filter={SHADOW}>
-        <rect x={W / 2 - 22} y={-6} width={44} height={14} rx={2} fill={tint(G[1], 0.4)} opacity={0.9} transform={`rotate(2.5 ${W / 2} 1)`} {...thin} strokeWidth={1} />
+        <rect x={W / 2 - 26} y={-6} width={52} height={15} rx={2} fill={tint(G[1], 0.4)} opacity={0.9} transform={`rotate(2.5 ${W / 2} 1)`} {...thin} strokeWidth={1} />
       </g>
     </g>
   )
@@ -113,32 +136,32 @@ function AttendanceBoard({ data, h }: { data: AttendanceBoardData; h: number }) 
 
 export function WindowRow({ w, h, board }: { w: number; h: number; board?: AttendanceBoardData }): ReactElement {
   const hgt = windowHeight(h)
-  const slot = board ? boardSlot(w, h) : null
-  const xs = windowXs(w, windowCount(w))
+  const row = wingRow(w, h, !!board)
   return (
     <g className="cr-wing-windows">
-      {hgt > 2 * PANE && xs.slice(0, slot ? -1 : undefined).map((x, i) => (
+      {hgt > 2 * PANE && row.xs.map((x, i) => (
         <g key={i} className="cr-wing-window" transform={`translate(${x} ${WIN_Y})`}>
-          <Window hgt={hgt} flip={i % 2 === 1} />
+          <Window hgt={hgt} flip={i % 2 === 1} ww={row.ww} />
         </g>
       ))}
-      {board && slot && (
-        <g data-wing-board="" transform={`translate(${slot.x} ${slot.y})`}><AttendanceBoard data={board} h={slot.h} /></g>
+      {board && row.board && (
+        <g data-wing-board="" transform={`translate(${row.board.x} ${row.board.y})`}><AttendanceBoard data={board} h={row.board.h} /></g>
       )}
     </g>
   )
 }
 
 // 每扇窗在地板上投一块向左下斜的浅色光斑(同 Room 右墙窗的光斑画法),夹在地板内、避开左墙门口
-// w 是两翼宽度(墙面与地板同宽),窗数和窗位都由它算,和 WindowRow 对齐
-export function WindowLight({ w, h, board = false }: { w: number; h: number; board?: boolean }): ReactElement {
+// w 是两翼宽度(墙面与地板同宽),wallH 是墙高(窗高 / 牌子门槛由它算),窗数和窗位和 WindowRow 一致
+export function WindowLight({ w, h, wallH, board = false }: { w: number; h: number; wallH: number; board?: boolean }): ReactElement {
   const depth = Math.min(h * 0.28, 300), skew = depth * 0.3
   const cx = (x: number) => Math.min(w, Math.max(DOOR_CLEAR, x))
+  const { xs, ww } = wingRow(w, wallH, board)
   return (
     <g className="cr-wing-light" fill={INK.outline} opacity={0.35}>
-      {windowXs(w, windowCount(w)).slice(0, board && boardSlot(w, h) ? -1 : undefined).map((x, i) => (
+      {xs.map((x, i) => (
         <path key={i}
-          d={`M ${cx(x)} 0 L ${cx(x + WIN_W)} 0 L ${cx(x + WIN_W - skew)} ${depth} L ${cx(x - skew)} ${depth} Z`} />
+          d={`M ${cx(x)} 0 L ${cx(x + ww)} 0 L ${cx(x + ww - skew)} ${depth} L ${cx(x - skew)} ${depth} Z`} />
       ))}
     </g>
   )
