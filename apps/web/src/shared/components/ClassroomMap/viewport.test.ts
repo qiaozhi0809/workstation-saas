@@ -15,8 +15,8 @@ it('zooms around the pointer and respects bounds', () => {
   expect(zoomAt({ s: 0.5, x: 0, y: 0 }, 0.5, { x: 0, y: 0 }, 0.45).s).toBe(0.45)
 })
 
-it('fits the whole classroom into a short stage, below the manual zoom-out limit', () => {
-  // 矮窗口里进入排座:舞台 314px 高,1292px 高的教室要缩到 0.3 以下才放得下
+it('fits the whole classroom into a very short stage', () => {
+  // 矮窗口里进入排座:舞台 314px 高,1292px 高的教室要缩到 0.3 以下才放得下;这就是适应比例,也是缩小下限
   const v = fitView({ w: 960, h: 1292 }, { w: 960, h: 314 })
   expect(v.s * 1292).toBeLessThanOrEqual(314)
   expect(v.y).toBeGreaterThanOrEqual(0)

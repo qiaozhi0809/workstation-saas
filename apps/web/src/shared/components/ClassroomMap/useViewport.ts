@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent, type RefObject } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type PointerEvent, type RefObject } from 'react'
 import { capture, moved, useClickGuard } from './pointer'
 import { MAX_S, clampView, fitView, wheelZoomFactor, zoomAt, type Size, type View } from './viewport'
 
@@ -129,7 +129,8 @@ export function useViewport(stageRef: RefObject<HTMLElement>, content: Size & { 
     },
     onPointerUp: end,
     onPointerCancel: end,
-    onClickCapture: guard.onClickCapture,
+    // 只吞平移后的那次鼠标点击;键盘触发的点击(detail 为 0)放行,否则平移没收尾时舞台里的缩放钮按 Enter 会失灵
+    onClickCapture: (e: MouseEvent) => { if (e.detail !== 0) guard.onClickCapture(e) },
   }
 
   const { view, fitted } = st
