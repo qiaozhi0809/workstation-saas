@@ -53,9 +53,16 @@ const collator = new Intl.Collator('zh-CN', { numeric: true })
 /** 空值始终排在最后,不随方向翻转。 */
 export function sortRows(rows: RosterRow[], sort: RosterSort, dir: 'asc' | 'desc'): RosterRow[] {
   const sign = dir === 'asc' ? 1 : -1
+  if (sort === 'no') {
+    // 学号走 compareRoster;空学号在最后,且彼此固定按姓名升序(不随方向翻转)
+    return [...rows].sort((a, b) => {
+      if (!a.student_no !== !b.student_no) return a.student_no ? -1 : 1
+      if (!a.student_no) return collator.compare(a.name, b.name)
+      return compareRoster(a, b) * sign
+    })
+  }
   const key = (r: RosterRow): string | number | null => {
     switch (sort) {
-      case 'no': return null // 学号走 compareRoster,见下
       case 'name': return r.name
       case 'rank': return r.rank
       case 'points': return r.points
@@ -63,10 +70,6 @@ export function sortRows(rows: RosterRow[], sort: RosterSort, dir: 'asc' | 'desc
     }
   }
   return [...rows].sort((a, b) => {
-    if (sort === 'no') {
-      if (!a.student_no !== !b.student_no) return a.student_no ? -1 : 1
-      return compareRoster(a, b) * sign
-    }
     const x = key(a)
     const y = key(b)
     if (x === null && y === null) return 0

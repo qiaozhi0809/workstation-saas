@@ -19,9 +19,9 @@ it('puts empty student numbers last (null, undefined and empty string alike)', (
 })
 
 it('falls back to name for equal student numbers', () => {
-  const same = [{ student_no: '10', name: '乙' }, { student_no: '10', name: '丁' }]
-  const byName = [...same].sort((a, b) => new Intl.Collator('zh-CN', { numeric: true }).compare(a.name, b.name))
-  expect(order(same)).toEqual(byName.map((s) => `10${s.name}`))
+  // zh-CN 拼音序:李(li)在王(wang)前
+  const same = [{ student_no: '10', name: '王' }, { student_no: '10', name: '李' }]
+  expect(order(same)).toEqual(['10李', '10王'])
 })
 
 it('orders by name when all student numbers are empty', () => {

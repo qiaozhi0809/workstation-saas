@@ -32,3 +32,12 @@ it('orders the monthly sheet by the shared roster order (numeric, empty student 
   const rows = attendanceMonthRows('2027-02', roster, [])
   expect(rows.slice(1).map((r) => r[0])).toEqual(['2', '10', ''])
 })
+
+it('puts an empty-string student no last in the monthly sheet', () => {
+  const roster = [
+    { enrollment_id: 'a', name: '甲', student_no: '' },
+    { enrollment_id: 'b', name: '乙', student_no: '5' },
+  ]
+  const rows = attendanceMonthRows('2027-02', roster, [])
+  expect(rows.slice(1).map((r) => r[1])).toEqual(['乙', '甲'])
+})
