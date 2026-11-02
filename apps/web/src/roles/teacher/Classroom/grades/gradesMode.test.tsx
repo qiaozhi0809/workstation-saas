@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, renderHook, screen, within } from '@testing-library/react'
+import { act, fireEvent, renderHook, screen, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { examsApi } from '@/shared/api/exams'
@@ -87,7 +87,7 @@ it('dims students without scores', async () => {
   expect(tops(container)[1]).not.toBe(GRADE_TINTS[1])
 })
 
-it('opens the scores tab from a seat but not while presenting', async () => {
+it('opens the scores tab from a seat', async () => {
   vi.mocked(examsApi.gradebook).mockResolvedValue(book())
   setup({ mode: '成绩', roster })
   fireEvent.click(await screen.findByRole('button', { name: /^李小二，/ }))
@@ -114,6 +114,51 @@ it('does not open the profile from a seat while presenting', async () => {
     Element.prototype.requestFullscreen = request
     delete (document as { fullscreenElement?: Element | null }).fullscreenElement
   }
+})
+
+it('hides rank tints, badges, dimming and legend while presenting, and restores them after', async () => {
+  const request = Element.prototype.requestFullscreen
+  Element.prototype.requestFullscreen = vi.fn(function (this: Element) {
+    Object.defineProperty(document, 'fullscreenElement', { value: this, configurable: true })
+    document.dispatchEvent(new Event('fullscreenchange'))
+    return Promise.resolve()
+  })
+  try {
+    // 投屏不展示全班排名:e2 无成绩、e1 降 5 名
+    vi.mocked(examsApi.gradebook).mockResolvedValue(book())
+    const { container } = setup({ mode: '成绩', roster: roster.slice(0, 10) })
+    await screen.findByRole('button', { name: '王小一，第1排第1列，#6 ↓5' })
+    expect(screen.getByText('前 20%')).toBeInTheDocument()
+    const normal = tops(container)
+    expect(normal.some((f) => f === GRADE_TINTS[1])).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: '全屏' }))
+    await screen.findByRole('button', { name: '退出全屏' })
+    expect(screen.queryByText('前 20%')).toBeNull()
+    expect(screen.getByRole('combobox', { name: '选择考试' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '完整分析' })).toBeInTheDocument()
+    const label = container.querySelector('[data-enrollment="e1"]')!.getAttribute('aria-label') ?? ''
+    expect(label).not.toMatch(/#|无成绩/)
+    expect(container.querySelector('[data-ghost]')).toBeNull()
+    expect(tops(container).some((f) => Object.values(GRADE_TINTS).includes(f as string))).toBe(false)
+    // 按 Esc 退出全屏
+    Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true })
+    act(() => { document.dispatchEvent(new Event('fullscreenchange')) })
+    await screen.findByText('前 20%')
+    expect(tops(container)).toEqual(normal)
+  } finally {
+    Element.prototype.requestFullscreen = request
+    delete (document as { fullscreenElement?: Element | null }).fullscreenElement
+  }
+})
+
+it('returns no appearance while presenting', () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  client.setQueryData(['gradebook', 'c1'], book())
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  )
+  const r = renderHook(() => useGradesMode({ classId: 'c1', enabled: true, presenting: true, roster, onOpenScores: vi.fn() }), { wrapper })
+  expect(r.result.current.views).toEqual({})
 })
 
 it('links to the full analysis of the chosen exam', async () => {

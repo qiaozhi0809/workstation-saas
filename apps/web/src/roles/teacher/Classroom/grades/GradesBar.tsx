@@ -11,11 +11,13 @@ const LEGEND = [
 ] as const
 
 /** exams:新→旧;没有考试时显示空提示和录入入口。 */
-export default function GradesBar({ exams, value, onChange, analysisHref }: {
+export default function GradesBar({ exams, value, onChange, analysisHref, showLegend = true }: {
   exams: GradesBarExam[]
   value: string
   onChange(id: string): void
   analysisHref: string
+  /** 投屏时为 false:图例会暴露全班排名分档 */
+  showLegend?: boolean
 }) {
   if (exams.length === 0) {
     return (
@@ -30,6 +32,7 @@ export default function GradesBar({ exams, value, onChange, analysisHref }: {
       <NativeSelect aria-label="选择考试" value={value} onChange={(e) => onChange(e.target.value)}>
         {exams.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
       </NativeSelect>
+      {showLegend && (
       <ul aria-label="名次图例" className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
         {LEGEND.map((l) => (
           <li key={l.tint} className="flex items-center gap-1">
@@ -42,6 +45,7 @@ export default function GradesBar({ exams, value, onChange, analysisHref }: {
           无成绩
         </li>
       </ul>
+      )}
       <Button asChild variant="outline"><Link to={analysisHref}>完整分析</Link></Button>
     </div>
   )

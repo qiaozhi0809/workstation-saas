@@ -35,7 +35,8 @@ export function useGradesMode({ classId, enabled, presenting, roster, onOpenScor
 
   const views = useMemo(() => {
     // 页面在有 exam.read 时总会取成绩册,但只有成绩模式才用得上外观
-    if (!enabled || !exams || !selected) return NO_VIEWS
+    // 投屏时不展示全班排名:不着色、不挂进退角标、不标无成绩
+    if (!enabled || presenting || !exams || !selected) return NO_VIEWS
     const ids = roster.map((s) => s.enrollment_id)
     const cur = examTable(selected, ids)
     const before = previousExam(exams, selected.id)
@@ -51,7 +52,7 @@ export function useGradesMode({ classId, enabled, presenting, roster, onOpenScor
       out[r.id] = view
     }
     return out
-  }, [enabled, exams, selected, roster])
+  }, [enabled, presenting, exams, selected, roster])
 
   let bar: ReactNode = null
   if (gradebook.isError && !gradebook.data) bar = <p role="alert" className="text-sm text-destructive">成绩加载失败</p>
@@ -61,6 +62,7 @@ export function useGradesMode({ classId, enabled, presenting, roster, onOpenScor
         exams={selected ? [...exams].reverse() : []}
         value={selected?.id ?? ''}
         onChange={setPicked}
+        showLegend={!presenting}
         analysisHref={`/teacher/analysis?exam=${selected?.id ?? ''}`}
       />
     )
