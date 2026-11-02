@@ -121,8 +121,10 @@ test('asks before leaving unsaved seating through a link or logout', async ({ pa
   await page.getByRole('button', { name: '李小二' }).click()
   const dialogs: string[] = []
   page.on('dialog', (d) => { dialogs.push(d.message()); void d.dismiss() })
-  await page.getByRole('link', { name: '我的偏好' }).click()
-  await page.getByRole('button', { name: '退出登录' }).click()
+  await page.getByRole('button', { name: '账号菜单' }).click()
+  await page.getByRole('menuitem', { name: '我的偏好' }).click()
+  await page.getByRole('button', { name: '账号菜单' }).click()
+  await page.getByRole('menuitem', { name: '退出登录' }).click()
   await page.getByRole('link', { name: '班级工作台' }).click()
   await expect.poll(() => dialogs.length).toBe(3)
   expect(new Set(dialogs)).toEqual(new Set(['有未保存的座位修改,确定离开吗?']))
