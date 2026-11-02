@@ -1,6 +1,10 @@
+import { Trash2 } from 'lucide-react'
 import { useState, type KeyboardEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { todosApi } from '@/shared/api/todos'
+import { Button } from '@/shared/components/ui/button'
+import { Card } from '@/shared/components/ui/card'
+import { Input } from '@/shared/components/ui/input'
 import { toast } from '@/shared/components/Toast'
 
 export default function TodoSection() {
@@ -31,21 +35,23 @@ export default function TodoSection() {
   }
 
   return (
-    <section className="rounded-2xl border border-line bg-panel p-3">
+    <Card className="p-3">
       <h3 className="text-sm font-semibold">待办</h3>
       <ul className="mt-1 flex flex-col gap-1 text-sm">
         {(todos.data?.items ?? []).map((t) => (
           <li key={t.id} className="flex items-center gap-2">
             <input type="checkbox" aria-label={t.content} checked={t.done}
               onChange={() => update.mutate({ id: t.id, done: !t.done })} />
-            <span className={`flex-1 ${t.done ? 'text-ink-3 line-through' : ''}`}>{t.content}</span>
-            <button type="button" className="text-xs text-ink-2" aria-label={`删除 ${t.content}`}
-              onClick={() => remove.mutate(t.id)}>删除</button>
+            <span className={`flex-1 ${t.done ? 'text-muted-foreground line-through' : ''}`}>{t.content}</span>
+            <Button type="button" variant="ghost" size="icon" className="h-7 w-7" aria-label={`删除 ${t.content}`}
+              onClick={() => remove.mutate(t.id)}>
+              <Trash2 aria-hidden />
+            </Button>
           </li>
         ))}
       </ul>
-      <input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onKeyDown}
-        placeholder="添加一件要做的事" className="mt-2 w-full rounded-lg border border-line px-2 py-1 text-sm" />
-    </section>
+      <Input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onKeyDown}
+        placeholder="添加一件要做的事" className="mt-2 h-8" />
+    </Card>
   )
 }

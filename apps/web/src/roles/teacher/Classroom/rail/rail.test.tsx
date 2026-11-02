@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { attendanceApi } from '@/shared/api/attendance'
 import { reviewsApi } from '@/shared/api/reviews'
 import { todosApi } from '@/shared/api/todos'
+import { findLegacyStyles } from '@/test/legacyStyles'
 import { defaultApiMocks, review, setup } from '../pageTestUtils'
 
 vi.mock('@/shared/api/classes')
@@ -101,7 +102,30 @@ it('colours the attendance bar like the map chips', async () => {
   const rail = await screen.findByRole('complementary', { name: '班级概况' })
   await within(rail).findByText('实到 1 / 3')
   const bar = (status: string) => rail.querySelector(`[data-status="${status}"]`)
-  expect(bar('leave')).toHaveClass('bg-amber')
-  expect(bar('absent')).toHaveClass('bg-red')
-  expect(bar('late')).toHaveClass('bg-blue')
+  expect(bar('leave')).toHaveClass('bg-warning')
+  expect(bar('absent')).toHaveClass('bg-destructive')
+  expect(bar('late')).toHaveClass('bg-info')
+})
+
+it('renders the rail as an overlay below 1100px and closes it with Escape', async () => {
+  window.innerWidth = 1024
+  setup()
+  fireEvent.click(await screen.findByRole('button', { name: '概况栏' }))
+  const rail = await screen.findByRole('complementary', { name: '班级概况' })
+  expect(within(rail).getByRole('button', { name: '收起概况栏' })).toBeInTheDocument()
+  fireEvent.keyDown(document, { key: 'Escape' })
+  expect(screen.queryByRole('complementary', { name: '班级概况' })).not.toBeInTheDocument()
+})
+
+it('keeps the inline rail without a close button at 1280px', async () => {
+  window.innerWidth = 1280
+  setup()
+  const rail = await screen.findByRole('complementary', { name: '班级概况' })
+  expect(within(rail).queryByRole('button', { name: '收起概况栏' })).not.toBeInTheDocument()
+})
+
+it('uses design tokens only', () => {
+  const files = import.meta.glob(['./*.tsx', '!./*.test.tsx'], { query: '?raw', import: 'default', eager: true })
+  expect(Object.keys(files).length).toBeGreaterThan(0)
+  expect(findLegacyStyles(files as Record<string, string>)).toEqual([])
 })

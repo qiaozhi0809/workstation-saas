@@ -15,6 +15,7 @@ import { EmptyState } from '@/shared/components/feedback/EmptyState'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { Button } from '@/shared/components/ui/button'
+import { useWindowWidth } from '@/shared/hooks/useWindowWidth'
 import { useReducedMotion } from '@/shared/hooks/useReducedMotion'
 import { useAuthStore } from '@/shared/stores/auth'
 import { confirmLeaveSeating, useTeacherStore } from '@/shared/stores/teacher'
@@ -96,6 +97,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
   const viewport = useRef<ClassroomViewportHandle>(null)
   const { active: presenting, toggle: togglePresent } = useFullscreen(rootRef)
   const [editingBoard, setEditingBoard] = useState(false)
+  const width = useWindowWidth()
   const [railOpen, setRailOpen] = useState(() => window.innerWidth >= RAIL_MIN_WIDTH)
 
   const roster = useQuery({
@@ -288,7 +290,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
 
   return (
     // 高度跟着窗口走:1024×768 的投影下各模式都不用滚动页面,舞台吃掉剩余高度(排座的操作条多,舞台就矮一些)
-    <div ref={rootRef} className="flex h-full gap-4 bg-muted/40 p-3 lg:p-4">
+    <div ref={rootRef} className="relative flex h-full gap-4 bg-muted/40 p-3 lg:p-4">
       <section className="flex min-w-0 flex-1 flex-col gap-3">
         {!presenting && (
           <header>
@@ -367,6 +369,8 @@ function ClassroomView({ cls }: { cls: ClassView }) {
           roster={roster.data?.items ?? []}
           perms={perms}
           todayAttendance={todayAttendance.data}
+          variant={width >= RAIL_MIN_WIDTH ? 'inline' : 'overlay'}
+          onClose={() => setRailOpen(false)}
           onRollCall={() => { if (mode !== 'attendance') setMode('attendance') }}
         />
       )}

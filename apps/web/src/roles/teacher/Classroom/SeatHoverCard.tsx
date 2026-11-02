@@ -17,7 +17,7 @@ export default function SeatHoverCard({ seat, attendance, week }: {
     <div className="flex flex-col gap-1.5">
       <SeatCard seat={seat} />
       {(attendance || week !== undefined) && (
-        <div className="flex flex-col border-t border-line pt-1.5 text-sm leading-5 text-ink-2">
+        <div className="flex flex-col border-t border-border pt-1.5 text-sm leading-5 text-muted-foreground">
           {attendance && <span>{`今日考勤 ${attendance === 'present' ? '出勤' : ATTENDANCE_LABEL[attendance].text}`}</span>}
           {week !== undefined && <span>{`本周积分 ${signed(week)}`}</span>}
         </div>

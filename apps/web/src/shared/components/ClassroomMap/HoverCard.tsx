@@ -28,7 +28,7 @@ export default function HoverCard({ stageRef, seatKey, children }: Props) {
     el.dataset.side = p.side
   })
   return (
-    <div ref={ref} className="cr-hovercard absolute left-0 top-0 z-10 rounded-xl border border-line-2 bg-panel px-3 py-2 text-ink shadow-lg">
+    <div ref={ref} className="cr-hovercard absolute left-0 top-0 z-10 rounded-lg border bg-popover px-3 py-2 text-popover-foreground shadow-md">
       {children}
     </div>
   )
@@ -41,8 +41,8 @@ export function SeatCard({ seat }: { seat: Seat }) {
         color={groupColor(groupOf(seat.seat_col ?? 1))} size={44} title={seat.name} />
       <div className="flex flex-col text-sm leading-5">
         <span className="text-base font-semibold">{seat.name}</span>
-        {seat.student_no && <span className="text-ink-2">{`学号 ${seat.student_no}`}</span>}
-        {seat.class_role && <span className="text-ink-2">{seat.class_role}</span>}
+        {seat.student_no && <span className="text-muted-foreground">{`学号 ${seat.student_no}`}</span>}
+        {seat.class_role && <span className="text-muted-foreground">{seat.class_role}</span>}
       </div>
     </div>
   )

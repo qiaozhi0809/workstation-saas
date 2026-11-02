@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { reviewsApi } from '@/shared/api/reviews'
 import { formatInTz } from '@/shared/lib/date'
+import { Card } from '@/shared/components/ui/card'
 import type { StudentSeat } from '@/shared/types/student'
 import { signed } from '../review/signed'
 
@@ -17,10 +18,10 @@ export default function FeedSection({ classId, roster, timezone }: {
   const names = new Map(roster.map((s) => [s.enrollment_id, s.name]))
   const items = feed.data?.items ?? []
   return (
-    <section className="rounded-2xl border border-line bg-panel p-3">
+    <Card className="p-3">
       <h3 className="text-sm font-semibold">最近点评</h3>
       {items.length === 0 ? (
-        <p className="mt-1 text-xs text-ink-2">还没有点评记录</p>
+        <p className="mt-1 text-xs text-muted-foreground">还没有点评记录</p>
       ) : (
         <ul className="mt-1 flex flex-col gap-1 text-xs">
           {items.map((r) => (
@@ -31,6 +32,6 @@ export default function FeedSection({ classId, roster, timezone }: {
           ))}
         </ul>
       )}
-    </section>
+    </Card>
   )
 }
