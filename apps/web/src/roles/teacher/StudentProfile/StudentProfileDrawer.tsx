@@ -43,7 +43,7 @@ export default function StudentProfileDrawer({ studentId }: { studentId: string 
             {tab === '成绩' && <ScoresTab profile={data} />}
             {/* 成长记录、评语页签尚未开放 */}
             {tab !== '概览' && tab !== '档案' && tab !== '成绩' && (
-              <EmptyState icon={Clock} title="暂未开放" description="成绩、成长记录和评语会在后续版本中提供" />
+              <EmptyState icon={Clock} title="暂未开放" description="成长记录和评语会在后续版本中提供" />
             )}
           </div>
         </>
