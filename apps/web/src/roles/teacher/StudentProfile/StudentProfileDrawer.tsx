@@ -9,6 +9,7 @@ import SidePanel from '@/shared/components/overlay/SidePanel'
 import { SegmentedTabs } from '@/shared/components/ui/segmented-tabs'
 import ArchiveTab from './ArchiveTab'
 import OverviewTab from './OverviewTab'
+import ScoresTab from './ScoresTab'
 import { PROFILE_TABS, useStudentDrawer, type ProfileTab } from './useStudentDrawer'
 
 const TAB_ITEMS: readonly { value: ProfileTab; label: string }[] = PROFILE_TABS.map((t) => ({ value: t, label: t }))
@@ -39,9 +40,10 @@ export default function StudentProfileDrawer({ studentId }: { studentId: string 
           <div role="tabpanel" aria-label={tab}>
             {tab === '概览' && <OverviewTab student={data} />}
             {tab === '档案' && <ArchiveTab student={data} />}
-            {/* 成绩页签:ScoresTab 在此挂载(段 D 替换下面的空状态) */}
-            {tab !== '概览' && tab !== '档案' && (
-              <EmptyState icon={Clock} title="暂未开放" description="成绩、成长记录和评语会在后续版本中提供" />
+            {tab === '成绩' && <ScoresTab profile={data} />}
+            {/* 成长记录、评语页签尚未开放 */}
+            {tab !== '概览' && tab !== '档案' && tab !== '成绩' && (
+              <EmptyState icon={Clock} title="暂未开放" description="成长记录和评语会在后续版本中提供" />
             )}
           </div>
         </>

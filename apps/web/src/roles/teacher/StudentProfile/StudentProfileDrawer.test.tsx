@@ -122,7 +122,7 @@ it('treats an unknown tab value as 概览', async () => {
 it('shows a not-yet-available state on later tabs', async () => {
   renderDrawer()
   await screen.findByRole('heading', { name: '王小一' })
-  fireEvent.click(screen.getByRole('tab', { name: '成绩' }))
+  fireEvent.click(screen.getByRole('tab', { name: '成长记录' }))
   expect(screen.getByText('暂未开放')).toBeInTheDocument()
 })
 
