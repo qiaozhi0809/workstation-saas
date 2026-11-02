@@ -5,8 +5,9 @@ export const MIN_S = 0.3, MAX_S = 2.5, FIT_MIN_S = 0.1, FIT_MAX_S = 1.25
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
 
 // 整间教室放进舞台并居中(放大不超过 1.25)。舞台很矮时可以缩到手动缩小的下限以下,保证整间教室可见
-export function fitView(content: Size, stage: Size): View {
-  const s = clamp(Math.min(stage.w / (content.w || 1), stage.h / (content.h || 1)), FIT_MIN_S, FIT_MAX_S)
+// safeW:适应比例只看安全区宽度(加宽场景时两翼可被裁掉),默认整幅内容宽
+export function fitView(content: Size, stage: Size, safeW = content.w): View {
+  const s = clamp(Math.min(stage.w / (safeW || 1), stage.h / (content.h || 1)), FIT_MIN_S, FIT_MAX_S)
   return { s, x: (stage.w - content.w * s) / 2, y: (stage.h - content.h * s) / 2 }
 }
 

@@ -38,3 +38,11 @@ it('turns wheel delta into a zoom factor', () => {
   expect(wheelZoomFactor(0)).toBe(1)
   expect(wheelZoomFactor(-100)).toBeGreaterThan(1)
 })
+
+it('fits by the safe width so the core keeps its size and only the wings are cropped', () => {
+  const stage = { w: 1000, h: 800 }
+  const wide = fitView({ w: 2298, h: 1292 }, stage, 960)
+  expect(wide.s).toBe(fitView({ w: 960, h: 1292 }, stage).s)
+  expect(wide.x).toBeCloseTo((1000 - 2298 * wide.s) / 2)
+  expect(wide.x + (669 + 960 / 2) * wide.s).toBeCloseTo(500)
+})

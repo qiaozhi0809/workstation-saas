@@ -5,7 +5,7 @@ import { clampView, fitView, wheelZoomFactor, zoomAt, type Size, type View } fro
 const STEP = 1.2, MARGIN = 16
 
 // 舞台视口:挂载 / 舞台尺寸变化时自动适应,用户缩放或平移后不再自动适应,直到 fit()
-export function useViewport(stageRef: RefObject<HTMLElement>, content: Size, enabled = true) {
+export function useViewport(stageRef: RefObject<HTMLElement>, content: Size & { safeW?: number }, enabled = true) {
   const [view, setView] = useState<View>({ s: 1, x: 0, y: 0 })
   const [panning, setPanning] = useState(false)
   const auto = useRef(true), contentRef = useRef(content)
@@ -19,7 +19,7 @@ export function useViewport(stageRef: RefObject<HTMLElement>, content: Size, ena
   }, [stageRef])
   const fit = useCallback(() => {
     auto.current = true
-    setView(fitView(contentRef.current, stage()))
+    setView(fitView(contentRef.current, stage(), contentRef.current.safeW ?? contentRef.current.w))
   }, [stage])
   const apply = useCallback((f: (v: View) => View) => {
     auto.current = false
@@ -49,8 +49,8 @@ export function useViewport(stageRef: RefObject<HTMLElement>, content: Size, ena
     if (dx || dy) apply((v) => ({ ...v, x: v.x + dx, y: v.y + dy }))
   }, [apply, stage, stageRef])
 
-  const { w, h } = content
-  useLayoutEffect(() => refit(), [w, h, refit])
+  const { w, h, safeW } = content
+  useLayoutEffect(() => refit(), [w, h, safeW, refit])
   useEffect(() => {
     const el = stageRef.current
     if (!el) return

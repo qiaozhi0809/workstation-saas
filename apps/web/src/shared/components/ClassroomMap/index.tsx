@@ -10,12 +10,13 @@ import { ROOM, groupColor } from './art/palette'
 import Podium from './art/Podium'
 import Room from './art/Room'
 import { genderOf } from './art/StudentFigure'
+import Wings from './art/Wings'
 import Zones from './art/Zones'
 import DeskLayer from './DeskLayer'
 import Floats from './effects/Floats'
 import Spotlight from './effects/Spotlight'
 import HoverCard, { PresentingCard, SeatCard } from './HoverCard'
-import { computeLayout, groupOf, type Layout } from './layout'
+import { SCENE_ASPECT, computeLayout, groupOf, type Layout } from './layout'
 import SeatLayer, { type HoverSource, type MapCell, type OnHover } from './SeatLayer'
 import type { ClassroomMapProps } from './types'
 import { useNow } from './useNow'
@@ -69,6 +70,7 @@ const Scene = memo(function Scene({ L, mini, rows, board, figure, label, effects
       ) : (
         <>
           <Room layout={L} rows={rows} />
+          <Wings layout={L} />
           <Zones zones={L.zones} />
           {L.frontWall && <LiveFrontWall rect={L.frontWall} board={board} />}
         </>
@@ -93,11 +95,11 @@ export default function ClassroomMap({
 }: ClassroomMapProps) {
   const mini = mode === 'mini'
   const stageRef = useRef<HTMLDivElement>(null)
-  const L = useMemo(() => computeLayout(rows, cols, { decor: !mini, frontWall: !mini }), [rows, cols, mini])
+  const L = useMemo(() => computeLayout(rows, cols, { decor: !mini, frontWall: !mini, aspect: mini ? undefined : SCENE_ASPECT }), [rows, cols, mini])
   const cells = useMemo(() => buildCells(rows, cols, seats), [rows, cols, seats])
   const cellMap = useMemo(() => new Map(cells.map((c) => [`${c.row}-${c.col}`, c])), [cells])
   const placed = useMemo(() => cells.flatMap((c) => (c.seat ? [c.seat] : [])), [cells])
-  const content = useMemo(() => ({ w: L.width, h: L.height }), [L])
+  const content = useMemo(() => ({ w: L.width, h: L.height, safeW: L.safe.w }), [L])
 
   const vp = useViewport(stageRef, content, !mini)
   const { zoomIn, zoomOut, fit } = vp
