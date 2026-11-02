@@ -1,13 +1,14 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.orm import Session
 
 from app.auth.deps import get_current_user
 from app.db import get_db
 from app.domain.classes.service import class_scope_of, get_class_or_404
-from app.domain.exams.schemas import SubjectFull
+from app.domain.exams import service
+from app.domain.exams.schemas import ExamInput, ExamOut, SubjectFull
 from app.domain.exams.subjects import class_subjects
 from app.models import User
 from app.rbac.bindings import Binding
@@ -37,3 +38,96 @@ def list_subjects(
         object_id=str(class_id),
     )
     return {"items": class_subjects(db, cls)}
+
+
+@router.get("/classes/{class_id}/exams")
+def list_exams(
+    class_id: UUID,
+    request: Request,
+    user: Annotated[User, Depends(get_current_user)],
+    bindings: Annotated[list[Binding], Depends(get_bindings)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, list[ExamOut]]:
+    cls = get_class_or_404(db, class_id)
+    ensure(
+        db,
+        request,
+        user.id,
+        bindings,
+        Perm.EXAM_READ,
+        class_scope_of(cls),
+        object_id=str(class_id),
+    )
+    return {"items": service.list_exams(db, cls, bindings, user.id)}
+
+
+@router.post("/classes/{class_id}/exams", status_code=201)
+def create_exam(
+    class_id: UUID,
+    data: ExamInput,
+    request: Request,
+    user: Annotated[User, Depends(get_current_user)],
+    bindings: Annotated[list[Binding], Depends(get_bindings)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ExamOut:
+    cls = get_class_or_404(db, class_id)
+    ensure(
+        db,
+        request,
+        user.id,
+        bindings,
+        Perm.EXAM_WRITE,
+        class_scope_of(cls),
+        object_id=str(class_id),
+    )
+    return service.create_exam(db, cls, data, user.id, bindings, request)
+
+
+@router.put("/classes/{class_id}/exams/{exam_id}")
+def update_exam(
+    class_id: UUID,
+    exam_id: UUID,
+    data: ExamInput,
+    request: Request,
+    user: Annotated[User, Depends(get_current_user)],
+    bindings: Annotated[list[Binding], Depends(get_bindings)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ExamOut:
+    cls = get_class_or_404(db, class_id)
+    ensure(
+        db,
+        request,
+        user.id,
+        bindings,
+        Perm.EXAM_WRITE,
+        class_scope_of(cls),
+        object_id=str(class_id),
+    )
+    exam = service.get_visible_exam(db, cls, exam_id, bindings)
+    service.ensure_exam_owner(db, request, user.id, bindings, cls, exam)
+    return service.update_exam(db, cls, exam, data, user.id, bindings, request)
+
+
+@router.delete("/classes/{class_id}/exams/{exam_id}", status_code=204)
+def delete_exam(
+    class_id: UUID,
+    exam_id: UUID,
+    request: Request,
+    user: Annotated[User, Depends(get_current_user)],
+    bindings: Annotated[list[Binding], Depends(get_bindings)],
+    db: Annotated[Session, Depends(get_db)],
+) -> Response:
+    cls = get_class_or_404(db, class_id)
+    ensure(
+        db,
+        request,
+        user.id,
+        bindings,
+        Perm.EXAM_WRITE,
+        class_scope_of(cls),
+        object_id=str(class_id),
+    )
+    exam = service.get_visible_exam(db, cls, exam_id, bindings)
+    service.ensure_exam_owner(db, request, user.id, bindings, cls, exam)
+    service.delete_exam(db, cls, exam, user.id, bindings, request)
+    return Response(status_code=204)
