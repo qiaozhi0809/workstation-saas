@@ -6,6 +6,12 @@ export type ClassPerm =
   | 'seating.write'
   | 'board.write'
   | 'student.write_basic'
+  | 'exam.read'
+  | 'exam.write'
+  | 'score.write'
+  | 'score.export'
+  | 'student.manage'
+  | 'student.export'
 
 export interface Board {
   left_title: string

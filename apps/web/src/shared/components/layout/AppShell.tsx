@@ -7,6 +7,8 @@ export interface AppShellProps {
   home: string
   /** 品牌右侧的上下文:班级名 / 切换班级;过长时截断(外层给 min-w-0,内容自己带 truncate / max-w,免得裁掉焦点环) */
   context?: ReactNode
+  /** 紧随 context 之后、同一行的主导航;不收缩(shrink-0),窄屏由导航自己缩成图标 */
+  nav?: ReactNode
   /** 顶栏右侧的操作,所有宽度都显示。AppShell 自身不渲染 ThemeToggle,各 shell 须在此放入 */
   actions: ReactNode
   /** 放在 <main> 之外的东西(抽屉、Toaster) */
@@ -14,7 +16,7 @@ export interface AppShellProps {
   children: ReactNode
 }
 
-export default function AppShell({ home, context, actions, overlays, children }: AppShellProps) {
+export default function AppShell({ home, context, nav, actions, overlays, children }: AppShellProps) {
   const mainRef = useRef<HTMLElement>(null)
 
   // 不走原生 #main 跳转:那会产生 data router 不认识的历史记录,惊动教室页的路由守卫
@@ -38,6 +40,7 @@ export default function AppShell({ home, context, actions, overlays, children }:
             <GraduationCap className="h-5 w-5" aria-hidden="true" />
           </Link>
           {context && <div className="flex min-w-0 items-center gap-2">{context}</div>}
+          {nav}
         </div>
         <div className="flex shrink-0 items-center gap-1">{actions}</div>
       </header>

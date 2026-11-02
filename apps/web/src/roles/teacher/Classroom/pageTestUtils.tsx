@@ -157,6 +157,12 @@ function Loc() {
   return <div data-testid="loc">{useLocation().pathname}</div>
 }
 
+/** 教室页旁边显示完整地址(含 ?student= 等参数),抽屉改成地址参数后用它断言。 */
+function Url() {
+  const { pathname, search } = useLocation()
+  return <div data-testid="url">{pathname + search}</div>
+}
+
 /** 渲染教室页(QueryClient 关重试 + 内存 data router + Toaster),返回 render 结果、QueryClient 与 router。 */
 export function setup({ mode, perms, subjects, roster, classId = 'c1' }: SetupOptions = {}) {
   if (roster) vi.mocked(studentsApi.listInClass).mockResolvedValue({ items: roster })
@@ -175,8 +181,7 @@ export function setup({ mode, perms, subjects, roster, classId = 'c1' }: SetupOp
   const entry = ui ? `/teacher/classroom?mode=${ui}` : '/teacher/classroom'
   // data router:页面里的 useBlocker 只能在它下面用
   const router = createMemoryRouter([
-    { path: '/teacher/classroom', element: <ClassroomPage /> },
-    { path: '/teacher/students/:id', element: <Loc /> },
+    { path: '/teacher/classroom', element: <><ClassroomPage /><Url /></> },
     { path: '/teacher/preferences', element: <Loc /> },
   ], { initialEntries: [entry] })
   const result = render(

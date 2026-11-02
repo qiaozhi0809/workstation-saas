@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { Link, MemoryRouter, Route, Routes } from 'react-router-dom'
+import { Link, MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, vi } from 'vitest'
 import { authApi } from '@/shared/api/auth'
 import { classesApi } from '@/shared/api/classes'
@@ -23,6 +23,24 @@ const cls = (id: string, name: string, role: ClassView['role']): ClassView =>
 const renderLayout = () => render(
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
     <MemoryRouter initialEntries={['/teacher/classroom']}><TeacherLayout /></MemoryRouter>
+  </QueryClientProvider>,
+)
+
+function Url() {
+  const { pathname, search } = useLocation()
+  return <div data-testid="url">{pathname + search}</div>
+}
+
+const renderAt = (entry: string) => render(
+  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <MemoryRouter initialEntries={[entry]}>
+      <Routes>
+        <Route element={<TeacherLayout />}>
+          <Route path="/teacher/classroom" element={<><div>教室页</div><Url /></>} />
+          <Route path="/teacher/scores" element={<><div>成绩页</div><Url /></>} />
+        </Route>
+      </Routes>
+    </MemoryRouter>
   </QueryClientProvider>,
 )
 
@@ -139,24 +157,29 @@ it('asks before logging out with unsaved seating changes', async () => {
   confirmSpy.mockRestore()
 })
 
-it('mounts the student profile drawer at /teacher/students/:id', async () => {
+it('shows the main navigation with the current page marked', async () => {
+  vi.mocked(classesApi.mine).mockResolvedValue({ items: [cls('a', '三年二班', 'homeroom_teacher')] })
+  renderAt('/teacher/scores')
+  const nav = await screen.findByRole('navigation', { name: '主导航' })
+  expect(within(nav).getAllByRole('link').map((l) => l.getAttribute('href'))).toEqual([
+    '/teacher/classroom', '/teacher/scores', '/teacher/analysis', '/teacher/students',
+  ])
+  expect(within(nav).getByRole('link', { name: '成绩' })).toHaveAttribute('aria-current', 'page')
+  for (const name of ['教室', '分析', '学生']) {
+    expect(within(nav).getByRole('link', { name })).not.toHaveAttribute('aria-current')
+  }
+})
+
+it('opens the profile drawer from ?student= on any teacher page and closes back to the same page', async () => {
   vi.mocked(classesApi.mine).mockResolvedValue({ items: [cls('a', '三年二班', 'homeroom_teacher')] })
   vi.mocked(studentsApi.detail).mockResolvedValue({ id: 's1', enrollment_id: 'e1', mk: 'S0001', name: '王小一', class_id: 'a' })
-  render(
-    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <MemoryRouter initialEntries={['/teacher/students/s1']}>
-        <Routes>
-          <Route element={<TeacherLayout />}>
-            <Route path="/teacher/students/:id" element={<div>教室页</div>} />
-          </Route>
-        </Routes>
-      </MemoryRouter>
-    </QueryClientProvider>,
-  )
+  renderAt('/teacher/scores?student=s1')
   expect(await screen.findByRole('dialog', { name: '王小一' })).toBeInTheDocument()
   expect(studentsApi.detail).toHaveBeenCalledWith('s1')
-  expect(screen.getByText('教室页')).toBeInTheDocument()
-  await screen.findByText('三年二班')
+  expect(screen.getByText('成绩页')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '关闭' }))
+  await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expect(screen.getByTestId('url')).toHaveTextContent(/^\/teacher\/scores$/)
 })
 
 it('resets the drawer tab when switching to another student', async () => {
@@ -165,10 +188,10 @@ it('resets the drawer tab when switching to another student', async () => {
     ({ id, enrollment_id: 'e' + id, mk: 'M' + id, name: id === 's1' ? '王小一' : '李小二', class_id: 'a' }))
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <MemoryRouter initialEntries={['/teacher/students/s1']}>
+      <MemoryRouter initialEntries={['/teacher/classroom?student=s1']}>
         <Routes>
           <Route element={<TeacherLayout />}>
-            <Route path="/teacher/students/:id" element={<Link to="/teacher/students/s2">去二号</Link>} />
+            <Route path="/teacher/classroom" element={<Link to="/teacher/classroom?student=s2">去二号</Link>} />
           </Route>
         </Routes>
       </MemoryRouter>

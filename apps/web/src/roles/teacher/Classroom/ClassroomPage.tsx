@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Dices, PencilLine, School } from 'lucide-react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
+import { useStudentDrawer } from '../StudentProfile/useStudentDrawer'
 import { classesApi } from '@/shared/api/classes'
 import { classroomApi } from '@/shared/api/classroom'
 import { preferencesApi } from '@/shared/api/preferences'
@@ -92,8 +93,8 @@ export default function ClassroomPage() {
 
 function ClassroomView({ cls }: { cls: ClassView }) {
   const classId = cls.id
-  const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
+  const { open: openDrawer } = useStudentDrawer()
   const displayName = useAuthStore((s) => s.user?.display_name)
 
   const rootRef = useRef<HTMLDivElement>(null)
@@ -138,8 +139,8 @@ function ClassroomView({ cls }: { cls: ClassView }) {
   const teacher = useMemo(() => ({ figure, label }), [figure, label])
 
   const openProfile = useCallback<NonNullable<ModeSlot['onSeatClick']>>(
-    (s) => navigate('/teacher/students/' + s.student_id),
-    [navigate],
+    (s) => openDrawer(s.student_id),
+    [openDrawer],
   )
   // 投屏时只展示姓名:档案抽屉在全屏根元素之外,不能在投屏中打开(退出全屏时会把档案亮在投影上)
   // 考勤日期跟随服务端的学校"今天",不用浏览器时钟;日常/考勤/点评叠加当天考勤外观,排座不叠加

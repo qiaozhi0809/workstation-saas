@@ -1,27 +1,41 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { beforeEach, vi } from 'vitest'
 import { ApiError } from '@/shared/api/client'
 import { classroomApi } from '@/shared/api/classroom'
 import { studentsApi } from '@/shared/api/students'
 import StudentProfileDrawer from './StudentProfileDrawer'
+import { useStudentDrawer } from './useStudentDrawer'
 
 vi.mock('@/shared/api/classroom', () => ({ classroomApi: { summary: vi.fn().mockResolvedValue({ my_perms: [] }) } }))
 vi.mock('@/shared/api/students', () => ({ studentsApi: { detail: vi.fn() } }))
 
 const student = { id: 's1', enrollment_id: 'e1', mk: 'S0001', name: '王小一', class_id: 'c', gender: '男', family_structure: '双亲家庭' }
 
-const renderDrawer = () => render(
+function Url() {
+  const { pathname, search } = useLocation()
+  return <div data-testid="url">{pathname + search}</div>
+}
+
+// 与 TeacherLayout 一样:地址里有 ?student= 才挂载抽屉
+function Host() {
+  const { studentId } = useStudentDrawer()
+  return studentId ? <StudentProfileDrawer key={studentId} studentId={studentId} /> : null
+}
+
+// 抽屉由地址参数驱动:?student=s1[&tab=…];关闭后只去掉这两个参数,留在当前页
+const renderDrawer = (entry = '/teacher/classroom?student=s1') => render(
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-    <MemoryRouter initialEntries={['/teacher/students/s1']}>
+    <MemoryRouter initialEntries={[entry]}>
+      <Url />
       <Routes>
-        <Route path="/teacher/students/:id" element={<StudentProfileDrawer studentId="s1" />} />
-        <Route path="/teacher/classroom" element={<div>教室页</div>} />
+        <Route path="/teacher/classroom" element={<><div>教室页</div><Host /></>} />
       </Routes>
     </MemoryRouter>
   </QueryClientProvider>,
 )
+const url = () => screen.getByTestId('url').textContent
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -56,11 +70,11 @@ it('shows generic failure text on other errors', async () => {
   expect(await screen.findByText('加载失败')).toBeInTheDocument()
 })
 
-it('closes to the classroom via the 关闭 button', async () => {
-  renderDrawer()
+it('closes via the 关闭 button, dropping student and tab but keeping other params', async () => {
+  renderDrawer('/teacher/classroom?mode=review&student=s1&tab=档案')
   await screen.findByRole('heading', { name: '王小一' })
   fireEvent.click(screen.getByRole('button', { name: '关闭' }))
-  expect(await screen.findByText('教室页')).toBeInTheDocument()
+  await waitFor(() => expect(url()).toBe('/teacher/classroom?mode=review'))
 })
 
 it('closes on overlay click but not on a click inside the panel', async () => {
@@ -68,16 +82,16 @@ it('closes on overlay click but not on a click inside the panel', async () => {
   const dialog = await screen.findByRole('dialog')
   await act(() => new Promise((r) => setTimeout(r, 0)))
   fireEvent.pointerDown(dialog)
-  expect(screen.queryByText('教室页')).toBeNull()
+  expect(url()).toBe('/teacher/classroom?student=s1')
   fireEvent.pointerDown(document.body)
-  expect(await screen.findByText('教室页')).toBeInTheDocument()
+  await waitFor(() => expect(url()).toBe('/teacher/classroom'))
 })
 
 it('closes on Escape', async () => {
   renderDrawer()
   await screen.findByRole('heading', { name: '王小一' })
   fireEvent.keyDown(document, { key: 'Escape' })
-  expect(await screen.findByText('教室页')).toBeInTheDocument()
+  await waitFor(() => expect(url()).toBe('/teacher/classroom'))
 })
 
 it('switches to the archive tab', async () => {
@@ -86,6 +100,23 @@ it('switches to the archive tab', async () => {
   expect(screen.getByRole('tab', { name: '概览', selected: true })).toBeInTheDocument()
   fireEvent.click(screen.getByRole('tab', { name: '档案' }))
   expect(screen.getByText('双亲家庭')).toBeInTheDocument()
+})
+
+it('opens on the tab named in the url and writes tab changes back', async () => {
+  renderDrawer('/teacher/classroom?student=s1&tab=成绩')
+  await screen.findByRole('heading', { name: '王小一' })
+  expect(screen.getByRole('tab', { name: '成绩', selected: true })).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('tab', { name: '档案' }))
+  expect(url()).toBe('/teacher/classroom?student=s1&tab=%E6%A1%A3%E6%A1%88')
+  expect(screen.getByRole('tab', { name: '档案', selected: true })).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('tab', { name: '概览' }))
+  expect(url()).toBe('/teacher/classroom?student=s1')
+})
+
+it('treats an unknown tab value as 概览', async () => {
+  renderDrawer('/teacher/classroom?student=s1&tab=bogus')
+  await screen.findByRole('heading', { name: '王小一' })
+  expect(screen.getByRole('tab', { name: '概览', selected: true })).toBeInTheDocument()
 })
 
 it('shows a not-yet-available state on later tabs', async () => {
@@ -102,17 +133,18 @@ it('replaces history on close so Back does not reopen the drawer', async () => {
   }
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <MemoryRouter initialEntries={['/teacher/classroom', '/teacher/students/s1']} initialIndex={1}>
+      <MemoryRouter initialEntries={['/teacher/classroom', '/teacher/classroom?student=s1']} initialIndex={1}>
+        <Back />
         <Routes>
-          <Route path="/teacher/students/:id" element={<StudentProfileDrawer studentId="s1" />} />
-          <Route path="/teacher/classroom" element={<><div>教室页</div><Back /></>} />
+          <Route path="/teacher/classroom" element={<><div>教室页</div><Host /></>} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
   )
   await screen.findByRole('heading', { name: '王小一' })
   fireEvent.click(screen.getByRole('button', { name: '关闭' }))
-  fireEvent.click(await screen.findByRole('button', { name: '返回' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  fireEvent.click(screen.getByRole('button', { name: '返回' }))
   expect(await screen.findByText('教室页')).toBeInTheDocument()
   expect(screen.queryByRole('dialog')).toBeNull()
 })

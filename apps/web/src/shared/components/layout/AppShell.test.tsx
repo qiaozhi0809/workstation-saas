@@ -34,3 +34,17 @@ it('shows the brand as an icon link named 班级工作台 and keeps actions in t
   expect(within(screen.getByRole('banner')).getByRole('link', { name: '我的偏好' })).toBeVisible()
   expect(screen.queryByRole('button', { name: '打开菜单' })).toBeNull()
 })
+
+it('renders the nav slot in the header after the context', () => {
+  render(
+    <MemoryRouter initialEntries={['/a']}>
+      <AppShell home="/a" context={<span>三年二班</span>} nav={<nav aria-label="主导航">导航</nav>} actions={<span>操作</span>}>
+        <p>内容</p>
+      </AppShell>
+    </MemoryRouter>,
+  )
+  const header = screen.getByRole('banner')
+  const nav = within(header).getByRole('navigation', { name: '主导航' })
+  expect(nav.compareDocumentPosition(within(header).getByText('三年二班')) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
+  expect(within(screen.getByRole('main')).queryByRole('navigation')).toBeNull()
+})

@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Outlet, useMatch, useNavigate } from 'react-router-dom'
+import { Outlet, useNavigate } from 'react-router-dom'
 import { authApi } from '@/shared/api/auth'
 import { classesApi } from '@/shared/api/classes'
 import { classroomApi } from '@/shared/api/classroom'
@@ -12,10 +12,12 @@ import { confirmLeaveSeating, useTeacherStore } from '@/shared/stores/teacher'
 import ThemeToggle from '@/theme/ThemeToggle'
 import AccountMenu from './AccountMenu'
 import StudentProfileDrawer from './StudentProfile/StudentProfileDrawer'
+import { useStudentDrawer } from './StudentProfile/useStudentDrawer'
+import TeacherNav from './TeacherNav'
 
 export default function TeacherLayout() {
   const navigate = useNavigate()
-  const studentMatch = useMatch('/teacher/students/:id')
+  const { studentId } = useStudentDrawer()
   const user = useAuthStore((s) => s.user)
   const classId = useTeacherStore((s) => s.classId)
   const setClass = useTeacherStore((s) => s.setClass)
@@ -71,10 +73,11 @@ export default function TeacherLayout() {
     <AppShell
       home="/teacher/classroom"
       context={context}
+      nav={<TeacherNav />}
       actions={actions}
       overlays={
         <>
-          {studentMatch?.params.id && <StudentProfileDrawer key={studentMatch.params.id} studentId={studentMatch.params.id} />}
+          {studentId && <StudentProfileDrawer key={studentId} studentId={studentId} />}
           <Toaster />
         </>
       }
