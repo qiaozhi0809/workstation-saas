@@ -99,17 +99,22 @@ def build_profile(
         "class_id": scope.class_id,
     }
     groups: dict[Perm, tuple[str, ...]] = {
-        Perm.STUDENT_BASIC: ("gender", "student_no", "birthdate", "avatar_seed"),
-        Perm.STUDENT_FAMILY: ("family_structure",),
+        Perm.STUDENT_BASIC: ("gender", "student_no", "birthdate", "avatar_seed", "boarding"),
+        Perm.STUDENT_FAMILY: ("family_structure", "family_note", "contacts"),
         Perm.STUDENT_LEARNING: ("learning_summary",),
-        Perm.STUDENT_PROFILE: ("personality", "health_notes", "tags"),
+        Perm.STUDENT_PROFILE: ("personality", "health_notes", "tags", "note"),
     }
     for perm, fields in groups.items():
         if can(bindings, perm, scope):
             for f in fields:
                 data[f] = _clean(getattr(student, f))
     if can(bindings, Perm.TEACHER_NOTES, scope) and isinstance(student.teacher_notes, dict):
-        data["teacher_notes"] = _clean(student.teacher_notes.get(str(caller_id)))
+        mine = student.teacher_notes.get(str(caller_id))
+        if isinstance(mine, dict) and isinstance(mine.get("text"), str):
+            data["teacher_notes"] = {
+                "text": mine["text"],
+                "updated_at": mine.get("updated_at") or student.updated_at,
+            }
     return StudentProfile(**data)
 
 
