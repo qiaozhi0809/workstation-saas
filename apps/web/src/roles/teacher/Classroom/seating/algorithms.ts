@@ -72,6 +72,8 @@ function placePairs(
   pairs: DraftStudent[][],
   alone: DraftStudent[],
   rand: () => number,
+  /** 补位顺序:默认落单的在前、放不下的配对在后;优带弱要求有名次的先补、没名次的最后 */
+  orderLeftovers: (alone: DraftStudent[], queue: DraftStudent[]) => DraftStudent[] = (a, q) => [...a, ...q],
 ): DraftStudent[] {
   const desks: [Cell, Cell][] = []
   const singles: Cell[] = []
@@ -101,7 +103,7 @@ function placePairs(
   }
 
   const seats = [...singles, ...unusedDesks.flat()]
-  const leftovers = [...alone, ...queue]
+  const leftovers = orderLeftovers(alone, queue)
   leftovers.forEach((s, i) => {
     if (i < seats.length) placed.set(s.enrollmentId, seats[i])
   })
@@ -120,10 +122,12 @@ export function mentorSeats(
   const ranked = loose
     .filter((s) => ranks.has(s.enrollmentId))
     .sort((a, b) => ranks.get(a.enrollmentId)! - ranks.get(b.enrollmentId)!)
-  const alone = loose.filter((s) => !ranks.has(s.enrollmentId))
+  const unranked = loose.filter((s) => !ranks.has(s.enrollmentId))
+  const alone: DraftStudent[] = []
   const pairs: DraftStudent[][] = []
   const n = ranked.length
   for (let i = 0; i < Math.floor(n / 2); i++) pairs.push([ranked[i], ranked[n - 1 - i]])
-  if (n % 2 === 1) alone.unshift(ranked[(n - 1) / 2])
-  return placePairs(students, rows, cols, pairs, alone, rand)
+  if (n % 2 === 1) alone.push(ranked[(n - 1) / 2])
+  // 没坐进同桌的:有名次的配对先补空位,然后是奇数时中间那位,没成绩的最后
+  return placePairs(students, rows, cols, pairs, alone, rand, (a, q) => [...q, ...a, ...unranked])
 }
