@@ -23,7 +23,7 @@ beforeEach(() => {
 
 const openPanel = async () => fireEvent.click(await screen.findByRole('button', { name: '待办与点评' }))
 
-it('opens 待办与点评 as a side panel with only the todo and review sections, and returns focus on close', async () => {
+it('opens 待办与点评 as a side panel with the todo, review and exam sections, and returns focus on close', async () => {
   setup()
   const opener = await screen.findByRole('button', { name: '待办与点评' })
   expect(opener).toHaveAttribute('title', '待办与点评')
@@ -125,11 +125,29 @@ it('shows the latest exam summary in the side panel', async () => {
   expect(within(dlg).getByRole('link', { name: '查看分析' })).toHaveAttribute('href', '/teacher/analysis?exam=x2')
 })
 
-it('says there are no exam scores yet, and hides the section without exam.read', async () => {
+it('says there are no exam scores yet', async () => {
   setup()
   await openPanel()
   const dlg = await screen.findByRole('dialog', { name: '待办与点评' })
   expect(await within(dlg).findByText('还没有考试成绩')).toBeInTheDocument()
+})
+
+it('shows the sparkline only with two exams that have stats', async () => {
+  vi.mocked(examsApi.gradebook).mockResolvedValue({ exams: [exam('x1', '2026-09-20', { e1: 50, e2: 60, e3: 70 })] })
+  setup()
+  await openPanel()
+  const dlg = await screen.findByRole('dialog', { name: '待办与点评' })
+  expect(await within(dlg).findByText('考试x1')).toBeInTheDocument()
+  expect(within(dlg).queryByRole('img', { name: '历次平均得分率' })).toBeNull()
+})
+
+it('shows a load error instead of the empty hint when the gradebook fails', async () => {
+  vi.mocked(examsApi.gradebook).mockRejectedValue(new Error('boom'))
+  setup()
+  await openPanel()
+  const dlg = await screen.findByRole('dialog', { name: '待办与点评' })
+  expect(await within(dlg).findByText('成绩加载失败')).toBeInTheDocument()
+  expect(within(dlg).queryByText('还没有考试成绩')).toBeNull()
 })
 
 it('does not render the exam section without exam.read', async () => {

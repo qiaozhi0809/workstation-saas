@@ -14,11 +14,14 @@ export default function ExamSection({ classId, roster }: { classId: string; rost
   const exams = book.data?.exams ?? []
   const latest = latestExam(exams)
   const ids = roster.map((s) => s.enrollment_id)
+  const rates = exams.map((e) => examStats(e, ids)?.rate ?? null)
   const stats = latest ? examStats(latest, ids) : null
   return (
     <Card className="p-3">
       <h3 className="text-sm font-semibold">最近考试</h3>
-      {!latest ? (
+      {book.isError && !book.data ? (
+        <p role="alert" className="mt-1 text-xs text-destructive">成绩加载失败</p>
+      ) : !latest ? (
         <p className="mt-1 text-xs text-muted-foreground">还没有考试成绩</p>
       ) : (
         <div className="mt-1 flex flex-col gap-1 text-xs">
@@ -31,8 +34,9 @@ export default function ExamSection({ classId, roster }: { classId: string; rost
           ) : (
             <p className="text-muted-foreground">本场还没有录入成绩</p>
           )}
-          <Sparkline label="历次平均得分率" width={280} height={48}
-            values={exams.map((e) => examStats(e, ids)?.rate ?? null)} />
+          {rates.filter((r) => r !== null).length >= 2 && (
+            <Sparkline label="历次平均得分率" height={48} values={rates} />
+          )}
           <Link className="text-primary underline-offset-2 hover:underline" to={`/teacher/analysis?exam=${latest.id}`}>查看分析</Link>
         </div>
       )}
