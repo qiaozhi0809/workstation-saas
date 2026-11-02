@@ -205,6 +205,16 @@ it('asks only once when a header confirm is followed by navigation', async () =>
   expect(confirmSpy).toHaveBeenCalledTimes(1)
 })
 
+it('keeps headers and identity cells on one line so narrow screens scroll instead of squeezing', async () => {
+  setup()
+  const c = await cell('王小一', '语文')
+  const tr = c.closest('tr') as HTMLElement
+  for (const h of screen.getAllByRole('columnheader')) expect(h).toHaveClass('whitespace-nowrap')
+  const cells = within(tr)
+  for (const el of [cells.getByText('王小一'), cells.getByTestId('total'), cells.getByTestId('rank')]) expect(el).toHaveClass('whitespace-nowrap')
+  expect(tr.querySelector('td')).toHaveClass('whitespace-nowrap')
+})
+
 it('updates totals and ranks as you type', async () => {
   setup()
   const row = async (name: string) => within((await cell(name, '语文')).closest('tr') as HTMLElement)
