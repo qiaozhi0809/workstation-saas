@@ -13,10 +13,13 @@
   },
   "dependencies": {
     "@tanstack/react-query": "^5.105.1",
+    "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^7.18.5",
+    "tailwind-merge": "^2.6.1",
+    "tailwindcss-animate": "^1.0.7",
     "zustand": "^5.0.16"
   },
   "devDependencies": {

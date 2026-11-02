@@ -2,5 +2,78 @@
 @tailwind components;
 @tailwind utilities;
 
-html, body, #root { height: 100%; }
-body { background: #f5f5f4; font-family: theme('fontFamily.sans'); }
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 3.9%;
+    --primary: 0 0% 9%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 0 0% 96.1%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 0 0% 96.1%;
+    --muted-foreground: 0 0% 40%;
+    --accent: 0 0% 96.1%;
+    --accent-foreground: 0 0% 9%;
+    --destructive: 0 72.2% 43%;
+    --destructive-foreground: 0 0% 98%;
+    --success: 142.1 76.2% 25%;
+    --success-foreground: 0 0% 98%;
+    --warning: 26 90.5% 32%;
+    --warning-foreground: 0 0% 98%;
+    --info: 221.2 83.2% 48%;
+    --info-foreground: 0 0% 98%;
+    --border: 0 0% 89.8%;
+    --input: 0 0% 89.8%;
+    --ring: 0 0% 3.9%;
+    --radius: 0.5rem;
+  }
+  .dark {
+    --background: 0 0% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 0 0% 3.9%;
+    --card-foreground: 0 0% 98%;
+    --popover: 0 0% 3.9%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 0 0% 9%;
+    --secondary: 0 0% 14.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 0 0% 14.9%;
+    --muted-foreground: 0 0% 63.9%;
+    --accent: 0 0% 14.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 90.6% 72%;
+    --destructive-foreground: 0 0% 3.9%;
+    --success: 141.9 69.2% 58%;
+    --success-foreground: 0 0% 3.9%;
+    --warning: 43.3 96.4% 56.3%;
+    --warning-foreground: 0 0% 3.9%;
+    --info: 213.1 93.9% 67.8%;
+    --info-foreground: 0 0% 3.9%;
+    --border: 0 0% 14.9%;
+    --input: 0 0% 14.9%;
+    --ring: 0 0% 83.1%;
+  }
+
+  * { @apply border-border; }
+  html { color-scheme: light; }
+  html.dark { color-scheme: dark; }
+  html, body, #root { height: 100%; }
+  body { @apply bg-background text-foreground antialiased; font-family: theme('fontFamily.sans'); }
+  /* 原生元素与自写按钮的键盘焦点环;shadcn 组件自带 ring 并关掉 outline */
+  :focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+  input[type='checkbox'], input[type='radio'] { accent-color: hsl(var(--primary)); width: 1rem; height: 1rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
