@@ -56,7 +56,8 @@ test('16:9 fills the stage with the wings', async ({ page }) => {
   await expect(async () => {
     const stage = await stageBox(page)
     const svg = (await page.locator('.cr-canvas > svg').boundingBox())!
-    expect(svg.width).toBeGreaterThanOrEqual(stage.width * 0.9)
+    const visibleWidth = Math.min(svg.x + svg.width, stage.x + stage.width) - Math.max(svg.x, stage.x)
+    expect(visibleWidth, '地图在舞台内的可见宽度').toBeGreaterThanOrEqual(stage.width * 0.9)
     const wing = (await page.locator('[data-wing="left"]').boundingBox())!
     expect(intersects(wing, stage), '左侧窗户与舞台相交').toBe(true)
   }).toPass()
