@@ -58,15 +58,28 @@ export function useAnchoredLayer(initialFocus: (layer: HTMLElement) => HTMLEleme
     ;(pickFocus.current(layer) ?? layer).focus()
   }, [open])
 
-  // 点外面用捕获阶段的 click:到 click 时输入框已失焦并提交;捕获阶段也不怕别处 stopPropagation
+  // 点外面用捕获阶段的 click:到 click 时输入框已失焦并提交;捕获阶段也不怕别处 stopPropagation。
+  // 按下在组件内、松手在外(如在输入框里拖选数字)时 click 落在共同祖先上,但焦点还在输入框里,
+  // 这时卸载会丢掉输入(W16),所以忽略这类按下之后的那次 click
   useEffect(() => {
     if (!open) return
+    let pressedInside = false
+    const inside = (t: EventTarget | null) => t instanceof Node && !!wrapperRef.current?.contains(t)
+    const onPointerDown = (e: PointerEvent) => { pressedInside = inside(e.target) }
+    const onPointerCancel = () => { pressedInside = false }
     const onClick = (e: MouseEvent) => {
-      const wrapper = wrapperRef.current
-      if (wrapper && e.target instanceof Node && !wrapper.contains(e.target)) close(false)
+      const skip = pressedInside
+      pressedInside = false
+      if (!skip && wrapperRef.current && e.target instanceof Node && !inside(e.target)) close(false)
     }
+    document.addEventListener('pointerdown', onPointerDown, true)
+    document.addEventListener('pointercancel', onPointerCancel, true)
     document.addEventListener('click', onClick, true)
-    return () => document.removeEventListener('click', onClick, true)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown, true)
+      document.removeEventListener('pointercancel', onPointerCancel, true)
+      document.removeEventListener('click', onClick, true)
+    }
   }, [open, close])
 
   // 焦点移到组件外才关;relatedTarget 为空(点了不可聚焦处、切走窗口)交给点外面处理

@@ -178,3 +178,36 @@ it('renders inside its own subtree, never in a portal', () => {
   fireEvent.click(screen.getByRole('button', { name: '更多操作' }))
   expect(container.contains(screen.getByRole('menu'))).toBe(true)
 })
+
+it('a drag that starts inside and is released outside keeps the popover open; a press outside still closes', () => {
+  // 在排数框里拖选数字、松手在外面:click 落在共同祖先上,但输入框没失焦,不能直接卸载丢掉输入(W16)
+  renderPopover()
+  fireEvent.click(screen.getByRole('button', { name: '6 排 × 4 列' }))
+  const input = screen.getByLabelText('排数')
+  fireEvent.pointerDown(input)
+  fireEvent.click(document.body)
+  expect(screen.getByRole('dialog')).toBeInTheDocument()
+  expect(input).toHaveFocus()
+  const outside = screen.getByRole('button', { name: '外面' })
+  fireEvent.pointerDown(outside)
+  fireEvent.click(outside)
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+})
+
+it('aria-disabled menu items get no hover highlight', () => {
+  renderMenu()
+  fireEvent.click(menuTrigger())
+  const fixed = screen.getByRole('menuitem', { name: '固定座位' })
+  expect(fixed).toHaveClass('aria-disabled:hover:bg-transparent', 'aria-disabled:hover:text-inherit')
+})
+
+it('popover focuses a [data-autofocus] element before the first focusable one', () => {
+  render(
+    <Popover label="座位行列" trigger="6 排 × 4 列">
+      <button type="button">减少排数</button>
+      <input aria-label="排数" data-autofocus />
+    </Popover>,
+  )
+  fireEvent.click(screen.getByRole('button', { name: '6 排 × 4 列' }))
+  expect(screen.getByLabelText('排数')).toHaveFocus()
+})

@@ -14,11 +14,15 @@ export interface PopoverProps {
   align?: 'start' | 'end'
   /** 加在浮层上 */
   className?: string
+  /** 打开时聚焦第一个带 `data-autofocus` 的元素;没有则聚焦第一个可聚焦元素 */
   children: ReactNode
 }
 
 const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-const firstFocusable = (layer: HTMLElement) => layer.querySelector<HTMLElement>(FOCUSABLE)
+// 约定:内容里标了 data-autofocus 的元素优先。例:行列弹层第一个可聚焦的是"减少排数",
+// 打开后紧接着按 Enter 会误减一排,所以把 data-autofocus 标在排数输入框上
+const firstFocusable = (layer: HTMLElement) =>
+  layer.querySelector<HTMLElement>('[data-autofocus]') ?? layer.querySelector<HTMLElement>(FOCUSABLE)
 
 /** 非模态锚定弹层(role="dialog"),渲染在自己的包裹元素里、不用 portal:舞台进全屏时仍可见 */
 export default function Popover({ label, trigger, triggerProps, side = 'bottom', align = 'start', className, children }: PopoverProps) {

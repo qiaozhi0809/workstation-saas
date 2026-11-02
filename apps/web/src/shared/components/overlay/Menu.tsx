@@ -13,7 +13,13 @@ const CloseMenu = createContext<() => void>(() => {})
 
 const items = (layer: HTMLElement) => Array.from(layer.querySelectorAll<HTMLElement>('[role="menuitem"]'))
 
-const ITEM = 'flex w-full items-center rounded-sm px-2 py-1.5 text-left text-sm outline-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground aria-disabled:cursor-not-allowed aria-disabled:opacity-50'
+// aria-disabled 项:悬停不高亮(免得看着能点);聚焦换成中性的 muted 底色,键盘仍能看出焦点在哪
+const ITEM = cn(
+  'flex w-full items-center rounded-sm px-2 py-1.5 text-left text-sm outline-none',
+  'hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground',
+  'aria-disabled:cursor-not-allowed aria-disabled:opacity-50',
+  'aria-disabled:hover:bg-transparent aria-disabled:hover:text-inherit aria-disabled:focus:bg-muted aria-disabled:focus:text-inherit',
+)
 
 /** 菜单按钮(role="menu"):与 Popover 同一套开关与定位,外加 ↑↓ / Home / End 与菜单项 */
 export default function Menu({ label, trigger, triggerProps, side = 'bottom', align = 'start', className, children }: MenuProps) {
