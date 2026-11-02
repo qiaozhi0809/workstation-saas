@@ -44,6 +44,7 @@ function plan(text: string, exam: Exam, roster: StudentSeat[], writable: string[
   if (cols.name === undefined && cols.no === undefined) return { ...empty, missingId: true }
   const subjects = names.filter((s) => cols.subjects[s.name] !== undefined)
   const out: Plan = { ...empty, rows: table.length - 1, subjects: subjects.map((s) => s.name) }
+  const latest = new Map<string, ScoreCell>()
   for (const row of table.slice(1)) {
     const seat = findStudent(roster, cols.name === undefined ? '' : (row[cols.name] ?? ''), cols.no === undefined ? '' : (row[cols.no] ?? ''))
     if (!seat) { out.unmatched++; continue }
@@ -51,11 +52,12 @@ function plan(text: string, exam: Exam, roster: StudentSeat[], writable: string[
     for (const s of subjects) {
       const p = parseScore(row[cols.subjects[s.name]] ?? '')
       if (p === 'clear') continue
-      if (p === 'absent') out.cells.push({ enrollment_id: seat.enrollment_id, subject: s.name, value: 'absent' })
+      if (p === 'absent') latest.set(`${seat.enrollment_id}|${s.name}`, { enrollment_id: seat.enrollment_id, subject: s.name, value: 'absent' })
       else if (p === 'invalid' || p < 0 || p > s.full) out.rejected++
-      else out.cells.push({ enrollment_id: seat.enrollment_id, subject: s.name, value: p })
+      else latest.set(`${seat.enrollment_id}|${s.name}`, { enrollment_id: seat.enrollment_id, subject: s.name, value: p })
     }
   }
+  out.cells = [...latest.values()]
   return out
 }
 
@@ -79,13 +81,14 @@ export default function HeaderImport({ classId, exam, roster, writable, onClose,
         await examsApi.saveScores(classId, exam.id, p.cells.slice(i, i + CHUNK))
       }
     },
-    onSuccess: async () => {
+    // 中途某一批失败时前面的批次可能已写入,所以成功失败都刷新
+    onSettled: () => Promise.all([
+      qc.invalidateQueries({ queryKey: ['score-sheet', classId, exam.id] }),
+      qc.invalidateQueries({ queryKey: ['exams', classId] }),
+      qc.invalidateQueries({ queryKey: ['gradebook', classId] }),
+    ]),
+    onSuccess: () => {
       toast(summary(p.cells.length, p))
-      await Promise.all([
-        qc.invalidateQueries({ queryKey: ['score-sheet', classId, exam.id] }),
-        qc.invalidateQueries({ queryKey: ['exams', classId] }),
-        qc.invalidateQueries({ queryKey: ['gradebook', classId] }),
-      ])
       onImported()
     },
     onError: (e) => setError(e instanceof ApiError && e.message ? e.message : '导入失败,请重试'),
@@ -117,7 +120,10 @@ export default function HeaderImport({ classId, exam, roster, writable, onClose,
           ? <p className="text-sm text-destructive">第一行要有"姓名"或"学号"</p>
           : text.trim() !== '' && (
             <p className="text-sm">
-              识别到 {p.rows} 行,匹配 {p.matched} 人;科目:{p.subjects.join('、') || '无'}
+              <span>识别到 {p.rows} 行,匹配 {p.matched} 人;科目:{p.subjects.join('、') || '无'}</span>
+              {p.unmatched > 0 && <span>,{p.unmatched} 行没对上名字</span>}
+              {p.rejected > 0 && <span>,{p.rejected} 格超出满分或格式不对</span>}
+              {p.cells.length === 0 && <span className="ml-2 text-muted-foreground">没有可导入的分数</span>}
             </p>
           )}
         {error && <p role="alert" className="text-sm text-destructive">{error}</p>}

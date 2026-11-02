@@ -26,14 +26,14 @@ const EXAM: Exam = {
   created_by_me: true, progress: { entered: 0, total: 3 },
 }
 
-function renderImport(writable: string[] | null = null) {
+function renderImport(writable: string[] | null = null, roster = rosterFixture) {
   const onClose = vi.fn()
   const onImported = vi.fn()
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const invalidate = vi.spyOn(client, 'invalidateQueries')
   render(
     <QueryClientProvider client={client}>
-      <HeaderImport classId="c1" exam={EXAM} roster={rosterFixture} writable={writable}
+      <HeaderImport classId="c1" exam={EXAM} roster={roster} writable={writable}
         onClose={onClose} onImported={onImported} />
     </QueryClientProvider>,
   )
@@ -88,6 +88,24 @@ it('ignores subjects that are not writable', async () => {
   expect(examsApi.saveScores).toHaveBeenCalledWith('c1', 'x1', [{ enrollment_id: 'e1', subject: '数学', value: 80 }])
 })
 
+it('explains why nothing can be imported', () => {
+  renderImport()
+  paste('姓名,语文\n王小一,abc\n李小二,101\n不存在,80')
+  expect(screen.getByText('识别到 3 行,匹配 2 人;科目:语文')).toBeInTheDocument()
+  expect(screen.getByText(',1 行没对上名字')).toBeInTheDocument()
+  expect(screen.getByText(',2 格超出满分或格式不对')).toBeInTheDocument()
+  expect(screen.getByText('没有可导入的分数')).toBeInTheDocument()
+  expect(importBtn()).toBeDisabled()
+})
+
+it('counts a repeated student/subject once, later row winning', async () => {
+  renderImport()
+  paste('姓名,语文\n王小一,60\n王小一,70')
+  fireEvent.click(importBtn())
+  await waitFor(() => expect(toast).toHaveBeenCalledWith('已导入 1 格'))
+  expect(examsApi.saveScores).toHaveBeenCalledWith('c1', 'x1', [{ enrollment_id: 'e1', subject: '语文', value: 70 }])
+})
+
 it('asks for a name or number column', () => {
   renderImport()
   paste('语文,数学\n90,80')
@@ -113,8 +131,9 @@ it('keeps the modal open and shows the error when saving fails', async () => {
 })
 
 it('sends large imports in chunks of at most 2000 cells', async () => {
-  renderImport()
-  const rows = Array.from({ length: 1100 }, () => '王小一,90,80').join('\n')
+  const many = Array.from({ length: 1100 }, (_, i) => ({ ...rosterFixture[0], enrollment_id: `m${i}`, student_no: `N${i}`, name: `学生${i}` }))
+  renderImport(null, many)
+  const rows = many.map((m) => `${m.name},90,80`).join('\n')
   paste(`姓名,语文,数学\n${rows}`)
   fireEvent.click(importBtn())
   await waitFor(() => expect(examsApi.saveScores).toHaveBeenCalledTimes(2))
