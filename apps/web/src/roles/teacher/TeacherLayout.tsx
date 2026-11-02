@@ -4,8 +4,12 @@ import { Link, Outlet, useMatch, useNavigate } from 'react-router-dom'
 import { authApi } from '@/shared/api/auth'
 import { classesApi } from '@/shared/api/classes'
 import { Toaster } from '@/shared/components/Toast'
+import AppShell, { type ShellLayout } from '@/shared/components/layout/AppShell'
+import { Button } from '@/shared/components/ui/button'
+import { NativeSelect } from '@/shared/components/ui/native-select'
 import { useAuthStore } from '@/shared/stores/auth'
 import { confirmLeaveSeating, useTeacherStore } from '@/shared/stores/teacher'
+import ThemeToggle from '@/theme/ThemeToggle'
 import StudentProfileDrawer from './StudentProfile/StudentProfileDrawer'
 
 export default function TeacherLayout() {
@@ -30,29 +34,53 @@ export default function TeacherLayout() {
     navigate('/login', { replace: true })
   }
 
-  return (
-    <div className="h-full grid grid-rows-[48px_1fr]">
-      <header className="flex items-center justify-between px-4 border-b bg-panel">
-        <div className="flex items-center gap-4">
-          <Link to="/teacher/classroom" className="font-semibold">班级工作台</Link>
-          {isError && <span>班级加载失败</span>}
-          {classes.length === 1 && <span>{classes[0].name}</span>}
-          {classes.length > 1 && (
-            <select aria-label="切换班级" value={classId ?? ''} onChange={(e) => { if (confirmLeaveSeating()) setClass(e.target.value) }}>
-              {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          )}
-        </div>
-        <div className="flex items-center gap-4">
-          {/* 排座有未保存修改时,站内跳转由教室页的路由守卫确认 */}
+  const context = (
+    <>
+      {isError && <span className="text-sm text-destructive">班级加载失败</span>}
+      {classes.length === 1 && <span className="truncate font-medium">{classes[0].name}</span>}
+      {classes.length > 1 && (
+        <NativeSelect
+          aria-label="切换班级"
+          className="max-w-[50vw] md:max-w-xs"
+          value={classId ?? ''}
+          onChange={(e) => { if (confirmLeaveSeating()) setClass(e.target.value) }}
+        >
+          {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </NativeSelect>
+      )}
+    </>
+  )
+
+  const actions = (layout: ShellLayout) => {
+    const item = layout === 'menu' ? 'w-full justify-start' : undefined
+    return (
+      <>
+        {/* 排座有未保存修改时,站内跳转由教室页的路由守卫确认 */}
+        <Button variant="ghost" size="sm" className={item} asChild>
           <Link to="/teacher/preferences">我的偏好</Link>
-          <span>{user?.display_name}</span>
-          <button type="button" onClick={logout}>退出登录</button>
-        </div>
-      </header>
-      <main className="overflow-auto"><Outlet /></main>
-      {studentMatch?.params.id && <StudentProfileDrawer key={studentMatch.params.id} studentId={studentMatch.params.id} />}
-      <Toaster />
-    </div>
+        </Button>
+        <ThemeToggle className={layout === 'menu' ? 'w-full justify-start px-3' : undefined} />
+        <span className={layout === 'menu' ? 'px-3 py-1.5 text-sm text-muted-foreground' : 'px-2 text-sm text-muted-foreground'}>
+          {user?.display_name}
+        </span>
+        <Button variant="ghost" size="sm" className={item} onClick={logout}>退出登录</Button>
+      </>
+    )
+  }
+
+  return (
+    <AppShell
+      home="/teacher/classroom"
+      context={context}
+      actions={actions}
+      overlays={
+        <>
+          {studentMatch?.params.id && <StudentProfileDrawer key={studentMatch.params.id} studentId={studentMatch.params.id} />}
+          <Toaster />
+        </>
+      }
+    >
+      <Outlet />
+    </AppShell>
   )
 }

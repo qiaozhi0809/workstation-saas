@@ -7,6 +7,7 @@ import { classesApi } from '@/shared/api/classes'
 import { studentsApi } from '@/shared/api/students'
 import { useAuthStore } from '@/shared/stores/auth'
 import { useTeacherStore } from '@/shared/stores/teacher'
+import { findLegacyStyles } from '@/test/legacyStyles'
 import type { ClassView } from '@/shared/types/class'
 import TeacherLayout from './TeacherLayout'
 
@@ -178,4 +179,9 @@ it('links to my preferences', async () => {
   vi.mocked(classesApi.mine).mockResolvedValue({ items: [cls('a', '三年二班', 'homeroom_teacher')] })
   renderLayout()
   expect(await screen.findByRole('link', { name: '我的偏好' })).toHaveAttribute('href', '/teacher/preferences')
+})
+
+it('uses design tokens only', () => {
+  const files = import.meta.glob(['./TeacherLayout.tsx'], { query: '?raw', import: 'default', eager: true })
+  expect(findLegacyStyles(files as Record<string, string>)).toEqual([])
 })
