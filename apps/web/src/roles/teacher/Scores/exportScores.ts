@@ -4,7 +4,7 @@ import { downloadText, toCSV } from '@/shared/lib/csv'
 import { examTable } from '@/shared/lib/grades'
 import type { Exam, GradebookExam, ScoreSheet, ScoreValue } from '@/shared/types/grades'
 import type { StudentSeat } from '@/shared/types/student'
-import { compareRoster } from './rosterOrder'
+import { compareRoster } from '@/shared/lib/rosterOrder'
 
 const show = (v: ScoreValue | undefined) => (v === undefined ? '' : v === null ? '缺考' : v)
 

@@ -5,7 +5,7 @@ import { parseTable } from '@/shared/lib/table'
 import { cn } from '@/shared/lib/utils'
 import type { Exam, ScoreCell, ScoreSheet, ScoreValue } from '@/shared/types/grades'
 import type { StudentSeat } from '@/shared/types/student'
-import { compareRoster } from './rosterOrder'
+import { compareRoster } from '@/shared/lib/rosterOrder'
 
 const without = <T,>(rec: Record<string, T>, key: string) => {
   const { [key]: dropped, ...rest } = rec

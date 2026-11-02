@@ -25,3 +25,14 @@ it('leaves points empty without a points map', () => {
   const line = rosterCsv([rec()], null).slice(1).split('\r\n')[1]
   expect(line.endsWith(',')).toBe(true)
 })
+
+it('sorts rows by roster order, not the server text order', () => {
+  const csv = rosterCsv([
+    rec({ enrollment_id: 'a', name: '甲', student_no: '1' }),
+    rec({ enrollment_id: 'b', name: '乙', student_no: '10' }),
+    rec({ enrollment_id: 'c', name: '丙', student_no: '2' }),
+    rec({ enrollment_id: 'd', name: '丁', student_no: null }),
+  ], null)
+  const lines = csv.slice(1).split('\r\n')
+  expect(lines.slice(1, 5).map((l) => l.split(',')[0])).toEqual(['1', '2', '10', ''])
+})

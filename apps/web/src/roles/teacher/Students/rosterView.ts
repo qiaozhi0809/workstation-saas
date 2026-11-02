@@ -1,4 +1,5 @@
 import { daysUntilBirthday } from '@/shared/lib/date'
+import { compareRoster } from '@/shared/lib/rosterOrder'
 import type { StudentRecord } from '@/shared/types/student'
 
 export type RosterFilter = 'all' | 'male' | 'female' | 'cadre' | 'focus' | 'boarding' | 'birthday' | 'unseated'
@@ -54,7 +55,7 @@ export function sortRows(rows: RosterRow[], sort: RosterSort, dir: 'asc' | 'desc
   const sign = dir === 'asc' ? 1 : -1
   const key = (r: RosterRow): string | number | null => {
     switch (sort) {
-      case 'no': return r.student_no || null
+      case 'no': return null // 学号走 compareRoster,见下
       case 'name': return r.name
       case 'rank': return r.rank
       case 'points': return r.points
@@ -62,6 +63,10 @@ export function sortRows(rows: RosterRow[], sort: RosterSort, dir: 'asc' | 'desc
     }
   }
   return [...rows].sort((a, b) => {
+    if (sort === 'no') {
+      if (!a.student_no !== !b.student_no) return a.student_no ? -1 : 1
+      return compareRoster(a, b) * sign
+    }
     const x = key(a)
     const y = key(b)
     if (x === null && y === null) return 0
