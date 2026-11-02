@@ -121,7 +121,7 @@ it('uses an opaque background on the root while presenting, so the black backdro
   expect(classes.filter((c) => c.startsWith('bg-') && c.includes('/'))).toEqual([])
 })
 
-it('shows grade, school year and week, and the teacher name plate', async () => {
+it('shows the teacher name plate and the class and date line', async () => {
   setup()
   expect(await screen.findByText('王老师 · 班主任')).toBeInTheDocument()
   expect(await screen.findByText('三年二班 · 11月2日 星期一')).toBeInTheDocument()
