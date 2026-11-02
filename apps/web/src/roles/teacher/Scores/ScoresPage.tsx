@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { examsApi } from '@/shared/api/exams'
 import { studentsApi } from '@/shared/api/students'
 import { EmptyState } from '@/shared/components/feedback/EmptyState'
@@ -11,7 +11,9 @@ import { Button } from '@/shared/components/ui/button'
 import type { Exam } from '@/shared/types/grades'
 import ClassGate, { type ClassContext } from '../ClassGate'
 import ExamForm from './ExamForm'
+import { exportScores } from './exportScores'
 import ExamList from './ExamList'
+import HeaderImport from './HeaderImport'
 import ScoreGrid from './ScoreGrid'
 import { useScoreAutosave, type SaveStatus } from './useScoreAutosave'
 
@@ -96,9 +98,13 @@ function ExamSection({ ctx, exam, onEdit }: { ctx: ClassContext; exam: Exam; onE
   const { cls, perms, subjects } = ctx
   const sheet = useQuery({ queryKey: ['score-sheet', cls.id, exam.id], queryFn: () => examsApi.sheet(cls.id, exam.id) })
   const roster = useQuery({ queryKey: ['class-students', cls.id], queryFn: () => studentsApi.listInClass(cls.id) })
+  const [importing, setImporting] = useState(false)
   const save = useScoreAutosave({ classId: cls.id, examId: exam.id })
 
   const writable = perms.includes('score.write') ? (cls.role !== 'subject_teacher' ? null : subjects) : []
+
+  const canImport = writable === null || writable.length > 0
+  const canExport = perms.includes('score.export')
 
   let body
   if (sheet.isLoading || roster.isLoading) body = <LoadingState />
@@ -124,9 +130,23 @@ function ExamSection({ ctx, exam, onEdit }: { ctx: ClassContext; exam: Exam; onE
           {save.status !== 'idle' && <span>{STATUS_TEXT[save.status]}</span>}
           {save.status === 'error' && <Button variant="outline" size="sm" onClick={save.retry}>重试</Button>}
         </div>
-        {onEdit && <Button variant="outline" size="sm" className="ml-auto" onClick={onEdit}>编辑考试</Button>}
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          {canImport && <Button variant="outline" size="sm" onClick={() => setImporting(true)}>按表头导入</Button>}
+          {canExport && (
+            <Button variant="outline" size="sm" disabled={!roster.data}
+              onClick={() => void exportScores(cls.id, cls.name, exam, roster.data?.items ?? [])}>导出</Button>
+          )}
+          <Button asChild variant="outline" size="sm">
+            <Link to={`/teacher/analysis?exam=${encodeURIComponent(exam.id)}`}>看分析</Link>
+          </Button>
+          {onEdit && <Button variant="outline" size="sm" onClick={onEdit}>编辑考试</Button>}
+        </div>
       </header>
       {body}
+      {importing && sheet.data && roster.data && (
+        <HeaderImport classId={cls.id} exam={sheet.data.exam} roster={roster.data.items} writable={writable}
+          onClose={() => setImporting(false)} onImported={() => setImporting(false)} />
+      )}
     </section>
   )
 }
