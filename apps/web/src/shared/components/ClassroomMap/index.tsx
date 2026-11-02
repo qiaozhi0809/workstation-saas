@@ -157,7 +157,7 @@ export default function ClassroomMap({
     },
   }
   const { s, x, y } = vp.view
-  const stageCls = `cr-stage cr-anim relative h-full w-full ${mini ? 'min-h-[160px]' : 'min-h-[480px] touch-none select-none'}`
+  const stageCls = `cr-stage cr-anim relative h-full w-full ${mini ? 'min-h-[160px]' : 'min-h-[240px] touch-none select-none'}`
 
   return (
     <div ref={stageRef} className={`${stageCls}${busy ? ' cr-grabbing' : ''}`} data-pan={mini ? undefined : ''} {...stageHandlers}>

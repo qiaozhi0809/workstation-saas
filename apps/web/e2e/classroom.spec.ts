@@ -79,3 +79,21 @@ test('subject teacher cannot mark attendance or arrange seats', async ({ page })
   await page.getByRole('button', { name: '王小一' }).click()
   await expect(page.getByText('只有班主任和副班主任可以记考勤')).toBeVisible()
 })
+
+// 1024×768 是常见的教室投影分辨率:各模式都不需要滚动页面,模式条完整落在首屏
+test('fits a 1024×768 projector without page scrolling in every mode', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 })
+  await signIn(page)
+  for (const mode of ['日常', '考勤', '点评', '排座']) {
+    await switchMode(page, mode)
+    if (mode === '排座') await expect(page.getByRole('button', { name: '随机打乱' })).toBeEnabled()
+    // e2e 的 tsconfig 不带 DOM 类型,只声明用到的两个属性
+    const overflow = await page.locator('main').evaluate((m) => {
+      const el = m as unknown as { scrollHeight: number; clientHeight: number }
+      return el.scrollHeight - el.clientHeight
+    })
+    expect(overflow, `${mode}模式页面不应滚动`).toBeLessThanOrEqual(0)
+    const bar = await page.getByRole('tablist', { name: '教室模式' }).boundingBox()
+    expect(bar!.y + bar!.height, `${mode}模式的模式条应在首屏内`).toBeLessThanOrEqual(768)
+  }
+})

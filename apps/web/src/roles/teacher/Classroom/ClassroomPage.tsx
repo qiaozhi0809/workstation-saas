@@ -278,7 +278,8 @@ function ClassroomView({ cls }: { cls: ClassView }) {
   }
 
   return (
-    <div ref={rootRef} className="flex h-full min-h-[640px] gap-4 bg-[#f5f5f4] p-4">
+    // 高度跟着窗口走:1024×768 的投影下各模式都不用滚动页面,舞台吃掉剩余高度(排座的操作条多,舞台就矮一些)
+    <div ref={rootRef} className="flex h-full gap-4 bg-[#f5f5f4] p-4">
       <section className="flex min-w-0 flex-1 flex-col gap-3">
         {!presenting && (
           <header>
@@ -314,7 +315,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
           ref={stageRef}
           data-testid="classroom-stage"
           aria-busy={seatingPending ? true : undefined}
-          className={`relative min-h-[480px] flex-1 overflow-hidden rounded-2xl border border-line bg-panel ${
+          className={`relative min-h-[240px] flex-1 overflow-hidden rounded-2xl border border-line bg-panel ${
             seatingPending ? 'cursor-progress' : ''}`}
           onPointerDownCapture={(e) => {
             if (!(e.target instanceof Element && e.target.closest('[role="dialog"]'))) review.closePopover()
