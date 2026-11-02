@@ -18,7 +18,7 @@ from app.domain.roster.schemas import (
     StudentInput,
     StudentRecord,
 )
-from app.domain.roster.seats import first_empty_seat, place_student, plan_placement
+from app.domain.roster.seats import first_empty_seat, lock_class, place_student, plan_placement
 from app.domain.schools.service import require_active_year
 from app.errors import ApiError
 from app.models import Enrollment, SchoolClass, Student
@@ -140,10 +140,11 @@ def create_student(
     bindings: Sequence[Binding],
     request: Request | None,
 ) -> StudentRecord:
+    lock_class(db, cls)
     year = require_active_year(db, cls.school_id)
     check_student_no(db, cls, data.student_no, None)
     target = _target(data)
-    plan_placement(db, cls, None, target)
+    plan = plan_placement(db, cls, None, target)
     mk = _new_mk(db, cls.school_id)
     student = Student(school_id=cls.school_id, mk=mk, avatar_seed=mk, name=data.name)
     _apply_fields(student, data)
@@ -158,7 +159,7 @@ def create_student(
     )
     db.add(enrollment)
     db.flush()
-    place_student(db, cls, enrollment, target)
+    place_student(db, cls, enrollment, target, plan)
     record(
         db,
         user_id=user_id,
@@ -181,15 +182,17 @@ def update_student(
     bindings: Sequence[Binding],
     request: Request | None,
 ) -> StudentRecord:
+    lock_class(db, cls)
+    db.refresh(enrollment)  # seat state may have moved before we got the lock
     student = db.get(Student, enrollment.student_id)
     assert student is not None
     check_student_no(db, cls, data.student_no, enrollment.id)
     target = _target(data)
-    plan_placement(db, cls, enrollment, target)
+    plan = plan_placement(db, cls, enrollment, target)
     _apply_fields(student, data)
     enrollment.class_role = data.class_role
     db.flush()
-    place_student(db, cls, enrollment, target)
+    place_student(db, cls, enrollment, target, plan)
     record(
         db,
         user_id=user_id,
@@ -210,6 +213,8 @@ def remove_student(
     user_id: UUID,
     request: Request | None,
 ) -> None:
+    lock_class(db, cls)
+    db.refresh(enrollment)
     enrollment.status = "removed"
     enrollment.left_at = clock.utc_now()
     enrollment.seat_locked = False
@@ -236,6 +241,7 @@ def import_students(
     user_id: UUID,
     request: Request | None,
 ) -> StudentImported:
+    lock_class(db, cls)
     year = require_active_year(db, cls.school_id)
     existing = db.execute(
         select(Student.name, Student.student_no, Enrollment.seat_row, Enrollment.seat_col)

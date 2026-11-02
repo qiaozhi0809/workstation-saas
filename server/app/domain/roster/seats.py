@@ -28,6 +28,11 @@ class Plan:
     occupant_dest: Seat | None = None
 
 
+def lock_class(db: Session, cls: SchoolClass) -> None:
+    """Take the class row FOR UPDATE first, like a seating save, so seat writes serialise."""
+    db.get(SchoolClass, cls.id, with_for_update=True, populate_existing=True)
+
+
 def _seat_of(e: Enrollment | None) -> Seat | None:
     if e is None or e.seat_row is None or e.seat_col is None:
         return None
@@ -54,7 +59,7 @@ def plan_placement(
             Enrollment.seat_row.is_not(None),
         )
     ):
-        if e.id != own_id:
+        if e.id != own_id and e.seat_row is not None and e.seat_col is not None:
             occupied[(e.seat_row, e.seat_col)] = e
     occupant = occupied.get(target) if target is not None else None
     dest: Seat | None = None
@@ -66,9 +71,15 @@ def plan_placement(
 
 
 def place_student(
-    db: Session, cls: SchoolClass, enrollment: Enrollment, target: Seat | None
+    db: Session,
+    cls: SchoolClass,
+    enrollment: Enrollment,
+    target: Seat | None,
+    plan: Plan | None = None,
 ) -> bool:
-    plan = plan_placement(db, cls, enrollment, target)
+    """Apply a seat move; a ``plan`` from plan_placement saves a second read."""
+    if plan is None:
+        plan = plan_placement(db, cls, enrollment, target)
     if not plan.changed:
         return False
     if plan.occupant is not None:
@@ -81,6 +92,6 @@ def place_student(
     if plan.occupant is not None and plan.occupant_dest is not None:
         plan.occupant.seat_row, plan.occupant.seat_col = plan.occupant_dest
         db.flush()
-    cls.seat_version += 1
+    cls.seat_version = SchoolClass.seat_version + 1
     db.flush()
     return True

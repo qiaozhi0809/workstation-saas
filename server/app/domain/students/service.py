@@ -4,6 +4,7 @@ from uuid import UUID
 
 from fastapi import Request
 from sqlalchemy import select
+from sqlalchemy import text as sql
 from sqlalchemy.orm import Session
 
 from app import clock
@@ -142,13 +143,26 @@ def save_my_notes(
     db: Session, student: Student, user_id: UUID, text: str, request: Request | None
 ) -> TeacherNote:
     now = clock.utc_now()
-    notes = dict(student.teacher_notes) if isinstance(student.teacher_notes, dict) else {}
     text = text.strip()
+    # 原子更新单个作者的键,并发的其他老师的笔记不会被整体覆盖
     if text:
-        notes[str(user_id)] = {"text": text, "updated_at": now.isoformat()}
+        db.execute(
+            sql(
+                "UPDATE students SET teacher_notes = coalesce(teacher_notes, '{}'::jsonb) || "
+                "jsonb_build_object(CAST(:uid AS text), jsonb_build_object("
+                "'text', CAST(:text AS text), 'updated_at', CAST(:ts AS text))) WHERE id = :sid"
+            ),
+            {"uid": str(user_id), "text": text, "ts": now.isoformat(), "sid": student.id},
+        )
     else:
-        notes.pop(str(user_id), None)
-    student.teacher_notes = notes
+        db.execute(
+            sql(
+                "UPDATE students SET teacher_notes = "
+                "coalesce(teacher_notes, '{}'::jsonb) - CAST(:uid AS text) WHERE id = :sid"
+            ),
+            {"uid": str(user_id), "sid": student.id},
+        )
+    db.expire(student, ["teacher_notes"])
     record(
         db,
         user_id=user_id,

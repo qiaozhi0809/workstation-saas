@@ -248,3 +248,36 @@ def test_profile_has_new_fields(client, settings, db):
     ).json()
     assert "contacts" not in sub and "family_note" not in sub
     assert sub["boarding"] is True
+
+
+def test_full_grid_new_student_displaces_occupant_to_unseated(client, settings, db):
+    rows, cols = db.execute(
+        text("SELECT seat_rows, seat_cols FROM classes WHERE id = :i"), {"i": CLASS_ID}
+    ).one()
+    eids = [enrollment_of(db, s) for s in STUDENT_IDS]
+    # 清空后铺满整个座位表:先给已有 10 人,其余格子用额外学生占满
+    db.execute(text("UPDATE enrollments SET seat_row = NULL, seat_col = NULL, seat_locked = false"))
+    cells = [(r, c) for r in range(1, rows + 1) for c in range(1, cols + 1)]
+    assert len(cells) >= len(eids)
+    for eid, (r, c) in zip(eids, cells, strict=False):
+        db.execute(
+            text("UPDATE enrollments SET seat_row = :r, seat_col = :c WHERE id = :i"),
+            {"r": r, "c": c, "i": eid},
+        )
+    for n, (r, c) in enumerate(cells[len(eids) :]):
+        res = client.post(
+            f"{BASE}/students",
+            json=_input(name=f"填充{n}", student_no=f"F{n}", seat={"row": r, "col": c}),
+            headers=auth(settings),
+        )
+        assert res.status_code == 201, res.text
+    before = _version(db)
+    res = client.post(
+        f"{BASE}/students",
+        json=_input(student_no="N1", seat={"row": 1, "col": 1}),
+        headers=auth(settings),
+    )
+    assert res.status_code == 201, res.text
+    assert (res.json()["seat_row"], res.json()["seat_col"]) == (1, 1)
+    assert _seat(db, 0) == (None, None)
+    assert _version(db) == before + 1
