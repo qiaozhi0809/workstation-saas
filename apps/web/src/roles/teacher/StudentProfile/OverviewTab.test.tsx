@@ -61,6 +61,7 @@ it('lets the homeroom teacher set a class role', async () => {
   await waitFor(() => expect(studentsApi.setClassRole).toHaveBeenCalledWith('c1', 'e1', '体育委员'))
   await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['student', 's1'] }))
   expect(invalidate).toHaveBeenCalledWith({ queryKey: ['class-students', 'c1'] })
+  expect(invalidate).toHaveBeenCalledWith({ queryKey: ['student-records', 'c1'] })
   fireEvent.change(screen.getByLabelText('职务'), { target: { value: '' } })
   await waitFor(() => expect(studentsApi.setClassRole).toHaveBeenLastCalledWith('c1', 'e1', null))
 })
@@ -95,7 +96,7 @@ it('reverts the select and toasts the server error on failure', async () => {
 
 it('shows the latest total, rank change, rate curve and subject radar in the overview', async () => {
   vi.mocked(examsApi.gradebook).mockResolvedValue(book)
-  renderTab({ perms: [], student: profile })
+  renderTab({ perms: ['exam.read'], student: profile })
   expect(await screen.findByText('第 3 名')).toBeInTheDocument()
   expect(examsApi.gradebook).toHaveBeenCalledWith('c1')
   expect(screen.getByText('140')).toBeInTheDocument()
@@ -118,23 +119,43 @@ it('shows the latest total, rank change, rate curve and subject radar in the ove
   const radar = scoreRadar.mock.calls.at(-1)![0]
   expect(radar.label).toBe('学科画像')
   expect(radar.axes).toEqual(['语文', '数学'])
-  expect(radar.series[0].values[0]).toBeCloseTo(55, 5)
-  expect(radar.series[0].values[1]).toBeCloseTo(85, 5)
-  expect(radar.series[1].values[0]).toBeCloseTo(71.67, 1)
-  expect(radar.series[1].values[1]).toBeCloseTo(78.33, 1)
+  expect(radar.series[0].values).toEqual([55, 85])
+  expect(radar.series[1].values).toEqual([72, 78])
 })
 
 it('drops radar axes the student has no score for and shows ↑ for a climb', async () => {
   const climbed: Gradebook = { exams: [book.exams[0], { ...book.exams[1], scores: {
     e1: { 语文: 95, 数学: null }, e2: { 语文: 40, 数学: 30 }, e3: { 语文: 30, 数学: 30 } } }] }
   vi.mocked(examsApi.gradebook).mockResolvedValue(climbed)
-  renderTab({ perms: [], student: profile })
+  renderTab({ perms: ['exam.read'], student: profile })
   expect(await screen.findByText('↑1')).toBeInTheDocument()
   expect(scoreRadar.mock.calls.at(-1)![0].axes).toEqual(['语文'])
 })
 
-it('renders no score blocks without scores or without permission', async () => {
-  renderTab({ perms: [], student: profile })
+it('does not request the gradebook without exam.read', async () => {
+  vi.mocked(examsApi.gradebook).mockResolvedValue(book)
+  renderTab({ perms: ['review.write'], student: profile })
+  await waitFor(() => expect(classroomApi.summary).toHaveBeenCalled())
+  await screen.findByText('职务')
+  expect(examsApi.gradebook).not.toHaveBeenCalled()
+  expect(screen.queryByText('学科画像')).toBeNull()
+  expect(screen.queryByRole('img')).toBeNull()
+})
+
+it('rounds radar values to integers', async () => {
+  const frac: Gradebook = { exams: [{ ...base, id: 'x1', name: '期中', date: '2026-10-25',
+    subjects: [{ name: '数学', full: 120 }],
+    scores: { e1: { 数学: 55 }, e2: { 数学: 100 }, e3: { 数学: 61 } } }] }
+  vi.mocked(examsApi.gradebook).mockResolvedValue(frac)
+  renderTab({ perms: ['exam.read'], student: profile })
+  await waitFor(() => expect(scoreRadar).toHaveBeenCalled())
+  const radar = scoreRadar.mock.calls.at(-1)![0]
+  expect(radar.series[0].values).toEqual([46])
+  expect(radar.series[1].values).toEqual([Math.round(((55 + 100 + 61) / 3 / 120) * 100)])
+})
+
+it('renders no score blocks without scores', async () => {
+  renderTab({ perms: ['exam.read'], student: profile })
   await waitFor(() => expect(examsApi.gradebook).toHaveBeenCalled())
   expect(screen.queryByText('学科画像')).toBeNull()
   expect(screen.queryByRole('img')).toBeNull()
@@ -142,7 +163,7 @@ it('renders no score blocks without scores or without permission', async () => {
 
 it('renders no score blocks when the gradebook is forbidden', async () => {
   vi.mocked(examsApi.gradebook).mockRejectedValue(new ApiError(403, 'FORBIDDEN', 'no'))
-  renderTab({ perms: [], student: profile })
+  renderTab({ perms: ['exam.read'], student: profile })
   await waitFor(() => expect(examsApi.gradebook).toHaveBeenCalled())
   expect(screen.queryByRole('img')).toBeNull()
   expect(screen.queryByRole('alert')).toBeNull()

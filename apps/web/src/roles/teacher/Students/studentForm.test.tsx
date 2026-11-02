@@ -23,6 +23,8 @@ const roster = [
   }),
 ]
 
+const ROSTER_KEYS = ['student-records', 'class-students', 'classroom', 'gradebook', 'student', 'exams', 'score-sheet']
+
 let client: QueryClient
 const renderForm = (props: Partial<React.ComponentProps<typeof StudentForm>> = {}) => {
   const onClose = vi.fn()
@@ -65,9 +67,29 @@ it('adds a student with contacts, invalidates queries and closes', async () => {
     name: '赵六', gender: '女', student_no: '2026011', seat: { row: 2, col: 2 }, tags: ['重点关注'], boarding: false,
     contacts: [{ name: '赵母', relation: '母亲', phone: '13800000006', job: '' }],
   }))
-  for (const k of ['student-records', 'class-students', 'classroom', 'gradebook']) {
+  for (const k of ROSTER_KEYS) {
     expect(spy).toHaveBeenCalledWith({ queryKey: [k] })
   }
+})
+
+it('names every form control by its visible label', () => {
+  renderForm()
+  expect(screen.getByRole('combobox', { name: '性别' })).toBeInTheDocument()
+  expect(screen.getByRole('combobox', { name: '家庭结构' })).toBeInTheDocument()
+  expect(screen.getByRole('combobox', { name: '座位' })).toBeInTheDocument()
+  expect(screen.getByRole('checkbox', { name: '住校' })).toBeInTheDocument()
+  expect(screen.getByRole('checkbox', { name: '保存后继续添加' })).toBeInTheDocument()
+})
+
+it('marks the invalid name, links its error and focuses it on submit', async () => {
+  renderForm()
+  fireEvent.change(screen.getByLabelText('姓名'), { target: { value: '' } })
+  fireEvent.click(screen.getByRole('button', { name: '保存' }))
+  const name = await screen.findByRole('textbox', { name: '姓名' })
+  await waitFor(() => expect(name).toHaveFocus())
+  expect(name).toHaveAttribute('aria-invalid', 'true')
+  expect(name).toHaveAccessibleDescription('请填写姓名')
+  expect(screen.getByRole('textbox', { name: '学号' })).not.toHaveAttribute('aria-invalid')
 })
 
 it('keeps the form open with the next number when asked to continue', async () => {
@@ -192,7 +214,7 @@ it('deletes after confirmation', async () => {
   fireEvent.click(screen.getByRole('button', { name: '确认删除' }))
   await waitFor(() => expect(onClose).toHaveBeenCalled())
   expect(studentsApi.remove).toHaveBeenCalledWith('c1', 'e1')
-  expect(spy).toHaveBeenCalledWith({ queryKey: ['gradebook'] })
+  for (const k of ROSTER_KEYS) expect(spy).toHaveBeenCalledWith({ queryKey: [k] })
 })
 
 it('does not show delete when adding', () => {

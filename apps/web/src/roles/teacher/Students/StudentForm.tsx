@@ -1,4 +1,4 @@
-import { useId, useState, type FormEvent, type ReactNode } from 'react'
+import { cloneElement, isValidElement, useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ApiError } from '@/shared/api/client'
 import { studentsApi } from '@/shared/api/students'
@@ -79,8 +79,10 @@ function Field({ id, label, error, className, children }: {
   return (
     <div className={cn('space-y-1', className)}>
       <Label htmlFor={id}>{label}</Label>
-      {children}
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && isValidElement<Record<string, unknown>>(children)
+        ? cloneElement(children, { 'aria-invalid': true, 'aria-describedby': `${id}-error` })
+        : children}
+      {error && <p id={`${id}-error`} className="text-sm text-destructive">{error}</p>}
     </div>
   )
 }
@@ -92,6 +94,7 @@ export default function StudentForm({ cls, record, roster, onClose }: {
   const uid = useId()
   const id = (k: string) => `${uid}-${k}`
   const editing = !!record
+  const nameRef = useRef<HTMLInputElement>(null)
   const [f, setF] = useState(() => initialState(record, roster))
   const [custom, setCustom] = useState(() => (record?.tags ?? []).filter((t) => !TAG_POOL.includes(t)))
   const [customDraft, setCustomDraft] = useState('')
@@ -143,7 +146,10 @@ export default function StudentForm({ cls, record, roster, onClose }: {
     if (!name) next.name = '请填写姓名'
     if (contacts.some((c) => !c.name && !c.phone)) next.contact = '联系人姓名和电话至少填一项'
     setErrors(next)
-    if (Object.keys(next).length > 0) return
+    if (Object.keys(next).length > 0) {
+      if (next.name) nameRef.current?.focus()
+      return
+    }
 
     const [row, col] = f.seat ? f.seat.split('-').map(Number) : [null, null]
     const input: StudentInput = {
@@ -207,7 +213,7 @@ export default function StudentForm({ cls, record, roster, onClose }: {
       <form onSubmit={(e) => void submit(e)} className="space-y-4">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field id={id('name')} label="姓名" error={errors.name}>
-            <Input id={id('name')} maxLength={20} value={f.name} onChange={(e) => set('name', e.target.value)} />
+            <Input ref={nameRef} id={id('name')} maxLength={20} value={f.name} onChange={(e) => set('name', e.target.value)} />
           </Field>
           <Field id={id('gender')} label="性别">
             <NativeSelect id={id('gender')} className="w-full" value={f.gender} onChange={(e) => set('gender', e.target.value)}>

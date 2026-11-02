@@ -33,6 +33,7 @@ function ClassRoleRow({ student }: { student: StudentProfile }) {
     onSuccess: () => Promise.all([
       queryClient.invalidateQueries({ queryKey: ['student', student.id] }),
       queryClient.invalidateQueries({ queryKey: ['class-students', student.class_id] }),
+      queryClient.invalidateQueries({ queryKey: ['student-records', student.class_id] }),
     ]),
     onError: (err) => {
       setValue(current)
@@ -55,10 +56,13 @@ function ClassRoleRow({ student }: { student: StudentProfile }) {
   )
 }
 
-function ScoreBlocks({ student }: { student: StudentProfile }) {
+const roundOrNull = (v: number | null) => (v === null ? null : Math.round(v))
+
+function ScoreBlocks({ student, enabled }: { student: StudentProfile; enabled: boolean }) {
   const { data } = useQuery({
     queryKey: ['gradebook', student.class_id],
     queryFn: () => examsApi.gradebook(student.class_id),
+    enabled,
   })
   // 无权限、出错或没有成绩:不显示这三块
   if (!data) return null
@@ -77,7 +81,7 @@ function ScoreBlocks({ student }: { student: StudentProfile }) {
   const classRate = withMe.map((e) => examStats(e, ids)?.rate ?? null)
   const axes = latest.subjects.flatMap((s) => {
     const v = latest.scores[me]?.[s.name]
-    return typeof v === 'number' ? [{ name: s.name, mine: (v / s.full) * 100, avg: subjectStats(latest, s.name, ids)?.rate ?? null }] : []
+    return typeof v === 'number' ? [{ name: s.name, mine: Math.round((v / s.full) * 100), avg: roundOrNull(subjectStats(latest, s.name, ids)?.rate ?? null) }] : []
   })
 
   return (
@@ -129,7 +133,7 @@ export default function OverviewTab({ student }: { student: StudentProfile }) {
         <Field label="性别" value={student.gender} />
         {canEdit ? <ClassRoleRow student={student} /> : <Field label="职务" value={student.class_role} />}
       </dl>
-      <ScoreBlocks student={student} />
+      <ScoreBlocks student={student} enabled={summary.data?.my_perms.includes('exam.read') ?? false} />
     </>
   )
 }

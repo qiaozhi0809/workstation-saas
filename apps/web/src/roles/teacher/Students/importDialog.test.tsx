@@ -44,8 +44,10 @@ it('previews and imports pasted rows with auto seating', async () => {
   expect(body.auto_seat).toBe(true)
   expect(body.rows.map((r) => r.name)).toEqual(['张三', '李四'])
   expect(toast).toHaveBeenCalledWith('导入 1 人,跳过重复 1 人')
-  expect(spy).toHaveBeenCalledWith({ queryKey: ['student-records'] })
-  expect(spy).toHaveBeenCalledWith({ queryKey: ['classroom'] })
+  for (const k of ['student-records', 'class-students', 'classroom', 'gradebook', 'student', 'exams', 'score-sheet']) {
+    expect(spy).toHaveBeenCalledWith({ queryKey: [k] })
+  }
+  expect(screen.getByRole('checkbox', { name: '自动安排到空座位' })).toBeInTheDocument()
 })
 
 it('sends auto_seat false when unchecked', async () => {
