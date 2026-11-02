@@ -4,20 +4,41 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { ApiError } from '@/shared/api/client'
 import { classroomApi } from '@/shared/api/classroom'
+import { examsApi } from '@/shared/api/exams'
 import { studentsApi } from '@/shared/api/students'
 import { Toaster } from '@/shared/components/Toast'
+import type { Gradebook } from '@/shared/types/grades'
 import type { ClassPerm } from '@/shared/types/classroom'
 import type { StudentProfile } from '@/shared/types/student'
-import { summaryFixture } from '../Classroom/pageTestUtils'
 import OverviewTab, { CLASS_ROLE_PRESETS } from './OverviewTab'
 
 vi.mock('@/shared/api/classroom', () => ({ classroomApi: { summary: vi.fn() } }))
 vi.mock('@/shared/api/students', () => ({ studentsApi: { setClassRole: vi.fn() } }))
+vi.mock('@/shared/api/exams', () => ({ examsApi: { gradebook: vi.fn() } }))
+const trendLine = vi.hoisted(() => vi.fn())
+const scoreRadar = vi.hoisted(() => vi.fn())
+vi.mock('@/shared/components/charts/TrendLine', () => ({
+  TrendLine: (props: { label: string }) => { trendLine(props); return <div role="img" aria-label={props.label} /> },
+}))
+vi.mock('@/shared/components/charts/ScoreRadar', () => ({
+  ScoreRadar: (props: { label: string }) => { scoreRadar(props); return <div role="img" aria-label={props.label} /> },
+}))
+
+const subjects = [{ name: '语文', full: 100 }, { name: '数学', full: 100 }]
+const base = { exam_type: '月考' as const, subjects, created_by_me: true, progress: { entered: 3, total: 3 } }
+const book: Gradebook = {
+  exams: [
+    { ...base, id: 'x1', name: '九月月考', date: '2026-09-20',
+      scores: { e1: { 语文: 80, 数学: 70 }, e2: { 语文: 90, 数学: 90 }, e3: { 语文: 50, 数学: 60 } } },
+    { ...base, id: 'x2', name: '十月月考', date: '2026-10-25',
+      scores: { e1: { 语文: 55, 数学: 85 }, e2: { 语文: 70, 数学: 80 }, e3: { 语文: 90, 数学: 70 } } },
+  ],
+}
 
 const profile: StudentProfile = { id: 's1', mk: 'S0001', name: '王小一', class_id: 'c1', enrollment_id: 'e1' }
 
 function renderTab({ perms, student }: { perms: ClassPerm[]; student: StudentProfile }) {
-  vi.mocked(classroomApi.summary).mockResolvedValue(summaryFixture({ my_perms: perms }))
+  vi.mocked(classroomApi.summary).mockResolvedValue({ my_perms: perms } as never)
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const invalidate = vi.spyOn(client, 'invalidateQueries')
   render(
@@ -31,6 +52,7 @@ function renderTab({ perms, student }: { perms: ClassPerm[]; student: StudentPro
 beforeEach(() => {
   vi.resetAllMocks()
   vi.mocked(studentsApi.setClassRole).mockResolvedValue({ enrollment_id: 'e1', class_role: null })
+  vi.mocked(examsApi.gradebook).mockResolvedValue({ exams: [] })
 })
 
 it('lets the homeroom teacher set a class role', async () => {
@@ -69,4 +91,58 @@ it('reverts the select and toasts the server error on failure', async () => {
   fireEvent.change(await screen.findByLabelText('职务'), { target: { value: '小组长' } })
   expect(await screen.findByText('没有权限')).toBeInTheDocument()
   await waitFor(() => expect(screen.getByLabelText('职务')).toHaveValue('班长'))
+})
+
+it('shows the latest total, rank change, rate curve and subject radar in the overview', async () => {
+  vi.mocked(examsApi.gradebook).mockResolvedValue(book)
+  renderTab({ perms: [], student: profile })
+  expect(await screen.findByText('第 3 名')).toBeInTheDocument()
+  expect(examsApi.gradebook).toHaveBeenCalledWith('c1')
+  expect(screen.getByText('140')).toBeInTheDocument()
+  expect(screen.getByText('↓1')).toBeInTheDocument()
+
+  const rate = trendLine.mock.calls.at(-1)![0]
+  expect(rate.label).toBe('总分得分率')
+  expect(rate.labels).toEqual(['九月月考', '十月月考'])
+  expect(rate.domain).toEqual([40, 100])
+  expect(rate.endLabel).toBe(true)
+  expect(rate.format(70)).toBe('70%')
+  const me = rate.series.find((x: { key: string }) => x.key === 'me')
+  const avg = rate.series.find((x: { key: string }) => x.key === 'avg')
+  expect(me.values).toEqual([75, 70])
+  expect(avg.muted).toBe(true)
+  expect(avg.values[0]).toBeCloseTo(73.33, 1)
+  expect(avg.values[1]).toBeCloseTo(75, 1)
+
+  const radar = scoreRadar.mock.calls.at(-1)![0]
+  expect(radar.label).toBe('学科画像')
+  expect(radar.axes).toEqual(['语文', '数学'])
+  expect(radar.series[0].values[0]).toBeCloseTo(55, 5)
+  expect(radar.series[0].values[1]).toBeCloseTo(85, 5)
+  expect(radar.series[1].values[0]).toBeCloseTo(71.67, 1)
+  expect(radar.series[1].values[1]).toBeCloseTo(78.33, 1)
+})
+
+it('drops radar axes the student has no score for and shows ↑ for a climb', async () => {
+  const climbed: Gradebook = { exams: [book.exams[0], { ...book.exams[1], scores: {
+    e1: { 语文: 95, 数学: null }, e2: { 语文: 40, 数学: 30 }, e3: { 语文: 30, 数学: 30 } } }] }
+  vi.mocked(examsApi.gradebook).mockResolvedValue(climbed)
+  renderTab({ perms: [], student: profile })
+  expect(await screen.findByText('↑1')).toBeInTheDocument()
+  expect(scoreRadar.mock.calls.at(-1)![0].axes).toEqual(['语文'])
+})
+
+it('renders no score blocks without scores or without permission', async () => {
+  renderTab({ perms: [], student: profile })
+  await waitFor(() => expect(examsApi.gradebook).toHaveBeenCalled())
+  expect(screen.queryByText('学科画像')).toBeNull()
+  expect(screen.queryByRole('img')).toBeNull()
+})
+
+it('renders no score blocks when the gradebook is forbidden', async () => {
+  vi.mocked(examsApi.gradebook).mockRejectedValue(new ApiError(403, 'FORBIDDEN', 'no'))
+  renderTab({ perms: [], student: profile })
+  await waitFor(() => expect(examsApi.gradebook).toHaveBeenCalled())
+  expect(screen.queryByRole('img')).toBeNull()
+  expect(screen.queryByRole('alert')).toBeNull()
 })
