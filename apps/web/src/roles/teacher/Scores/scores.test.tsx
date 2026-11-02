@@ -6,6 +6,7 @@ import { classesApi } from '@/shared/api/classes'
 import { classroomApi } from '@/shared/api/classroom'
 import { ApiError } from '@/shared/api/client'
 import { examsApi } from '@/shared/api/exams'
+import { studentsApi } from '@/shared/api/students'
 import { useTeacherStore } from '@/shared/stores/teacher'
 import type { ClassView } from '@/shared/types/class'
 import type { ClassPerm } from '@/shared/types/classroom'
@@ -16,6 +17,7 @@ import ScoresPage from './ScoresPage'
 vi.mock('@/shared/api/classes', () => ({ classesApi: { mine: vi.fn() } }))
 vi.mock('@/shared/api/classroom', () => ({ classroomApi: { summary: vi.fn() } }))
 vi.mock('@/shared/api/exams')
+vi.mock('@/shared/api/students', () => ({ studentsApi: { listInClass: vi.fn() } }))
 
 const SUBJECTS = ['语文', '数学', '英语', '道法', '科学'].map((name) => ({ name, full: 100 }))
 
@@ -41,6 +43,8 @@ function setup(opts: {
   }))
   vi.mocked(examsApi.list).mockResolvedValue({ items: opts.exams ?? [E1, E2] })
   vi.mocked(examsApi.subjects).mockResolvedValue({ items: SUBJECTS })
+  vi.mocked(examsApi.sheet).mockResolvedValue({ exam: E1, items: [] })
+  vi.mocked(studentsApi.listInClass).mockResolvedValue({ items: [] })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const router = createMemoryRouter(
     [{ path: '/teacher/scores', element: <><ScoresPage /><Url /></> }],
