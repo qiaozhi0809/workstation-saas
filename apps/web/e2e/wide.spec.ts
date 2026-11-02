@@ -173,7 +173,7 @@ test('account menu works from the keyboard', async ({ page }) => {
 })
 
 // 操作台:≥ 1024 宽所有模式都是一行(无概况栏);窄屏允许换行但页面不滚动
-const DOCK_MODES = ['日常', '考勤', '点评', '排座']
+const DOCK_MODES = ['日常', '考勤', '点评', '成绩', '排座']
 for (const [w, h] of [[1024, 768], [1280, 720], [1920, 1080]]) {
   test(`dock fits on one row at ${w}×${h}`, async ({ page }) => {
     await page.setViewportSize({ width: w, height: h })

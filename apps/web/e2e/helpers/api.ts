@@ -68,3 +68,57 @@ export async function revokeReviewsSince(
     expect(res.ok()).toBeTruthy()
   }
 }
+
+interface ExamSummary { id: string; name: string }
+
+/** 删除名字以 E2E 开头的考试(用例自建数据的兜底清理;失败中途退出也不留脏数据)。 */
+export async function deleteE2eExams(request: APIRequestContext, token: string, classId: string): Promise<void> {
+  const headers = authHeaders(token)
+  const res = await request.get(`${API}/classes/${classId}/exams`, { headers })
+  expect(res.ok()).toBeTruthy()
+  const { items } = (await res.json()) as { items: ExamSummary[] }
+  for (const exam of items.filter((x) => x.name.startsWith('E2E'))) {
+    const del = await request.delete(`${API}/classes/${classId}/exams/${exam.id}`, { headers })
+    expect(del.ok()).toBeTruthy()
+  }
+}
+
+/** 用 API 建一场考试(科目只用小学预设里已有的),返回考试 id。 */
+export async function createExam(
+  request: APIRequestContext,
+  token: string,
+  classId: string,
+  exam: { name: string; date: string; subjects: { name: string; full: number }[] },
+): Promise<string> {
+  const res = await request.post(`${API}/classes/${classId}/exams`, {
+    headers: authHeaders(token),
+    data: { ...exam, exam_type: '月考' },
+  })
+  expect(res.ok()).toBeTruthy()
+  return ((await res.json()) as { id: string }).id
+}
+
+/** 在籍学生按学号排序的 enrollment_id(与种子座位顺序一致,第 0 位是 王小一)。 */
+export async function rosterEnrollmentIds(request: APIRequestContext, token: string, classId: string): Promise<string[]> {
+  const res = await request.get(`${API}/classes/${classId}/students`, { headers: authHeaders(token) })
+  expect(res.ok()).toBeTruthy()
+  const { items } = (await res.json()) as { items: { enrollment_id: string; student_no: string | null }[] }
+  return [...items].sort((a, b) => (a.student_no ?? '').localeCompare(b.student_no ?? '')).map((s) => s.enrollment_id)
+}
+
+/** 给一场考试的单科批量写分数:scores[i] 对应 enrollmentIds[i]。 */
+export async function putScores(
+  request: APIRequestContext,
+  token: string,
+  classId: string,
+  examId: string,
+  subject: string,
+  enrollmentIds: string[],
+  scores: number[],
+): Promise<void> {
+  const res = await request.put(`${API}/classes/${classId}/exams/${examId}/scores`, {
+    headers: authHeaders(token),
+    data: { cells: enrollmentIds.map((id, i) => ({ enrollment_id: id, subject, value: scores[i] })) },
+  })
+  expect(res.ok()).toBeTruthy()
+}
