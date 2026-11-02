@@ -46,8 +46,12 @@ export default function ImportDialog({ cls, onClose }: { cls: ClassView; onClose
 
   const onFile = (file: File | undefined) => {
     if (!file) return
+    setError('')
     const reader = new FileReader()
-    reader.onload = () => setText(String(reader.result ?? '').replace(/^\uFEFF/, ''))
+    reader.onload = () => {
+      setError('')
+      setText(String(reader.result ?? '').replace(/^\uFEFF/, ''))
+    }
     reader.onerror = () => setError('读取文件失败,请重试')
     reader.readAsText(file)
     if (fileRef.current) fileRef.current.value = ''
@@ -57,7 +61,7 @@ export default function ImportDialog({ cls, onClose }: { cls: ClassView; onClose
     <Modal open onClose={onClose} title="批量导入学生" dismissOnOutside={false} className="max-w-xl">
       <div className="space-y-3">
         <Textarea
-          aria-label="粘贴名单" rows={8} value={text} onChange={(e) => setText(e.target.value)}
+          aria-label="粘贴名单" rows={8} value={text} onChange={(e) => { setText(e.target.value); setError('') }}
           placeholder="从 Excel 复制粘贴,或选择 CSV 文件;第一行是表头,至少要有“姓名”列"
         />
         <div className="flex flex-wrap items-center gap-2">
@@ -79,7 +83,7 @@ export default function ImportDialog({ cls, onClose }: { cls: ClassView; onClose
         )}
         {tooMany && <p className="text-sm text-destructive">{`一次最多导入 ${MAX_ROWS} 人,请分批导入`}</p>}
         <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={autoSeat} onChange={(e) => setAutoSeat(e.target.checked)} />
+          <input type="checkbox" checked={autoSeat} onChange={(e) => { setAutoSeat(e.target.checked); setError('') }} />
           自动安排到空座位
         </label>
         {error && <p role="alert" className="text-sm text-destructive">{error}</p>}

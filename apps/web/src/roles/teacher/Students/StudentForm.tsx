@@ -47,6 +47,8 @@ interface FormState {
 const emptyContact = (): Contact => ({ name: '', relation: '', phone: '', job: '' })
 const seatKey = (row: number | null, col: number | null) => (row !== null && col !== null ? `${row}-${col}` : '')
 
+// 编辑表单依赖: 持有 student.manage 的角色同时拥有全部读权限(read_basic/family/learning/profile),
+// 见 server/app/rbac/roles.py;否则记录里缺失的字段会回退为空值并被 PUT 覆盖掉。权限矩阵变动时需重新评估。
 function initialState(record: StudentRecord | undefined, roster: StudentSeat[]): FormState {
   const tags = record?.tags ?? []
   const contacts = [...(record?.contacts ?? []), emptyContact(), emptyContact()].slice(0, 2)
@@ -265,7 +267,8 @@ export default function StudentForm({ cls, record, roster, onClose }: {
             aria-label="自定义标签" placeholder="+ 自定义,回车添加" maxLength={10} className="max-w-48"
             value={customDraft} onChange={(e) => setCustomDraft(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key !== 'Enter' || e.nativeEvent.isComposing) return
+              // Safari 在输入法结束后的那次 Enter 上 isComposing 已为 false,但 keyCode 仍是 229
+              if (e.key !== 'Enter' || e.nativeEvent.isComposing || e.keyCode === 229) return
               e.preventDefault()
               addCustomTag()
             }}

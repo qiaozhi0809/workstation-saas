@@ -97,3 +97,22 @@ it('shows the error and stays open when the import fails', async () => {
   expect(await screen.findByRole('alert')).toHaveTextContent('学校还没有进行中的学年')
   expect(onClose).not.toHaveBeenCalled()
 })
+
+it('clears a stale error when the text, file or auto-seat option changes', async () => {
+  vi.mocked(studentsApi.importRows).mockRejectedValue(new ApiError(409, 'NO_ACTIVE_YEAR', '学校还没有进行中的学年'))
+  renderDialog()
+  const fail = async () => {
+    fireEvent.click(screen.getByRole('button', { name: '导入' }))
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+  }
+  paste(PASTED)
+  await fail()
+  paste(PASTED + '王五\t男\t03\n')
+  expect(screen.queryByRole('alert')).toBeNull()
+  await fail()
+  fireEvent.click(screen.getByLabelText('自动安排到空座位'))
+  expect(screen.queryByRole('alert')).toBeNull()
+  await fail()
+  fireEvent.change(screen.getByLabelText('选择 CSV 文件'), { target: { files: [new File([PASTED], 'a.csv')] } })
+  await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+})

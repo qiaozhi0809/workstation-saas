@@ -161,6 +161,14 @@ it('adds custom tags with Enter but not while composing', () => {
   expect(screen.getByRole('button', { name: '爱读书' })).toHaveAttribute('aria-pressed', 'false')
 })
 
+it('ignores the post-composition Enter that Safari reports with keyCode 229', () => {
+  renderForm()
+  const input = screen.getByLabelText('自定义标签')
+  fireEvent.change(input, { target: { value: '爱读书' } })
+  fireEvent.keyDown(input, { key: 'Enter', keyCode: 229 })
+  expect(screen.queryByRole('button', { name: '爱读书' })).toBeNull()
+})
+
 it('keeps boarding and the 住校 tag in sync', () => {
   renderForm()
   const boarding = screen.getByLabelText('住校')
