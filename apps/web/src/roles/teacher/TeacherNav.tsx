@@ -1,0 +1,31 @@
+import { ChartColumn, ClipboardList, School, Users, type LucideIcon } from 'lucide-react'
+import { NavLink } from 'react-router-dom'
+import { cn } from '@/shared/lib/utils'
+
+const LINKS: readonly { to: string; label: string; icon: LucideIcon }[] = [
+  { to: '/teacher/classroom', label: '教室', icon: School },
+  { to: '/teacher/scores', label: '成绩', icon: ClipboardList },
+  { to: '/teacher/analysis', label: '分析', icon: ChartColumn },
+  { to: '/teacher/students', label: '学生', icon: Users },
+]
+
+/** 顶栏主导航。< 768px 只显示图标,文字留给读屏(可访问名称不变);当前页由 NavLink 标 aria-current="page"。 */
+export default function TeacherNav() {
+  return (
+    <nav aria-label="主导航" className="flex shrink-0 items-center gap-0.5">
+      {LINKS.map(({ to, label, icon: Icon }) => (
+        <NavLink
+          key={to}
+          to={to}
+          className={({ isActive }) => cn(
+            'flex h-9 items-center gap-1.5 rounded-md px-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:px-3',
+            isActive ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
+          )}
+        >
+          <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <span className="sr-only md:not-sr-only">{label}</span>
+        </NavLink>
+      ))}
+    </nav>
+  )
+}

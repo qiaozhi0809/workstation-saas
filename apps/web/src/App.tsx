@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState } from 'react'
 import {
-  createBrowserRouter, createRoutesFromElements, Link, Navigate, Route, RouterProvider,
+  createBrowserRouter, createRoutesFromElements, Link, Navigate, Route, RouterProvider, useParams,
 } from 'react-router-dom'
 import { FileQuestion } from 'lucide-react'
 import { QueryClientProvider } from '@tanstack/react-query'
@@ -8,6 +8,9 @@ import { queryClient } from '@/shared/api/queryClient'
 import LoginPage from '@/auth/LoginPage'
 import TeacherLayout from '@/roles/teacher/TeacherLayout'
 import ClassroomPage from '@/roles/teacher/Classroom/ClassroomPage'
+import AnalysisPage from '@/roles/teacher/Analysis/AnalysisPage'
+import ScoresPage from '@/roles/teacher/Scores/ScoresPage'
+import StudentsPage from '@/roles/teacher/Students/StudentsPage'
 import PreferencesPage from '@/roles/teacher/Preferences/PreferencesPage'
 import ProtectedRoute from '@/shared/components/ProtectedRoute'
 import { EmptyState } from '@/shared/components/feedback/EmptyState'
@@ -15,6 +18,12 @@ import { Button } from '@/shared/components/ui/button'
 import { useApplyTheme } from '@/theme/useTheme'
 
 const ClassroomPlayground = import.meta.env.DEV ? lazy(() => import('@/dev/ClassroomPlayground')) : null
+
+/** 旧的学生档案地址 /teacher/students/:id → 教室页并打开档案抽屉 */
+function StudentRedirect() {
+  const { id = '' } = useParams()
+  return <Navigate to={`/teacher/classroom?student=${encodeURIComponent(id)}`} replace />
+}
 
 // data router:教室页排座未保存时用 useBlocker 拦截站内跳转,它只能在 data router 下用
 const routes = createRoutesFromElements(
@@ -24,7 +33,10 @@ const routes = createRoutesFromElements(
       <Route index element={<Navigate to="classroom" replace />} />
       <Route path="classroom" element={<ClassroomPage />} />
       <Route path="preferences" element={<PreferencesPage />} />
-      <Route path="students/:id" element={<ClassroomPage />} />
+      <Route path="scores" element={<ScoresPage />} />
+      <Route path="analysis" element={<AnalysisPage />} />
+      <Route path="students" element={<StudentsPage />} />
+      <Route path="students/:id" element={<StudentRedirect />} />
     </Route>
     {ClassroomPlayground && (
       <Route path="/dev/classroom" element={<Suspense fallback={null}><ClassroomPlayground /></Suspense>} />

@@ -80,10 +80,10 @@ it('renders class title and seated students for the selected class', async () =>
   expect(classroomApi.summary).toHaveBeenCalledWith('c1')
 })
 
-it('navigates to the student page when a seat is clicked', async () => {
+it('opens the profile drawer (?student=) when a seat is clicked in daily mode', async () => {
   setup()
   fireEvent.click(await screen.findByRole('button', { name: /^王小一，/ }))
-  expect(await screen.findByTestId('loc')).toHaveTextContent('/teacher/students/s1')
+  await vi.waitFor(() => expect(screen.getByTestId('url')).toHaveTextContent(/^\/teacher\/classroom\?student=s1$/))
 })
 
 it('shows a class-list error when my-classes fails', async () => {
@@ -195,7 +195,7 @@ it('does not open a student profile from a seat while presenting', async () => {
   expect(await screen.findByRole('button', { name: '退出全屏' })).toBeInTheDocument()
   expect(screen.queryByRole('button', { name: /^王小一，/ })).toBeNull()
   fireEvent.click(container.querySelector('[data-enrollment="e1"]') as Element)
-  expect(screen.queryByTestId('loc')).toBeNull()
+  expect(screen.getByTestId('url')).toHaveTextContent(/^\/teacher\/classroom$/)
   expect(screen.getByRole('button', { name: '退出全屏' })).toBeInTheDocument()
 })
 

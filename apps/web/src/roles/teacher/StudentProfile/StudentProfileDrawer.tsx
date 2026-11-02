@@ -1,6 +1,4 @@
-import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
 import { ApiError } from '@/shared/api/client'
 import { studentsApi } from '@/shared/api/students'
 import { Clock } from 'lucide-react'
@@ -11,10 +9,9 @@ import SidePanel from '@/shared/components/overlay/SidePanel'
 import { SegmentedTabs } from '@/shared/components/ui/segmented-tabs'
 import ArchiveTab from './ArchiveTab'
 import OverviewTab from './OverviewTab'
+import { PROFILE_TABS, useStudentDrawer, type ProfileTab } from './useStudentDrawer'
 
-const TABS = ['概览', '档案', '成绩', '成长记录', '评语'] as const
-type Tab = (typeof TABS)[number]
-const TAB_ITEMS: readonly { value: Tab; label: string }[] = TABS.map((t) => ({ value: t, label: t }))
+const TAB_ITEMS: readonly { value: ProfileTab; label: string }[] = PROFILE_TABS.map((t) => ({ value: t, label: t }))
 
 const errorText = (error: unknown) => {
   if (error instanceof ApiError && error.status === 403) return '没有权限查看该学生'
@@ -23,14 +20,13 @@ const errorText = (error: unknown) => {
 }
 
 export default function StudentProfileDrawer({ studentId }: { studentId: string }) {
-  const navigate = useNavigate()
-  const [tab, setTab] = useState<Tab>('概览')
+  // 当前页签与关闭都走地址参数(?tab= / ?student=)
+  const { tab, open, close } = useStudentDrawer()
   const { data, error, refetch, isFetching } = useQuery({
     queryKey: ['student', studentId],
     queryFn: () => studentsApi.detail(studentId),
   })
 
-  const close = () => navigate('/teacher/classroom', { replace: true })
   const retryable = !(error instanceof ApiError && (error.status === 403 || error.status === 404))
 
   return (
@@ -39,10 +35,11 @@ export default function StudentProfileDrawer({ studentId }: { studentId: string 
       {!data && !error && <LoadingState />}
       {data && (
         <>
-          <SegmentedTabs<Tab> label="档案分区" variant="underline" items={TAB_ITEMS} value={tab} onChange={setTab} />
+          <SegmentedTabs<ProfileTab> label="档案分区" variant="underline" items={TAB_ITEMS} value={tab} onChange={(t) => open(studentId, t)} />
           <div role="tabpanel" aria-label={tab}>
             {tab === '概览' && <OverviewTab student={data} />}
             {tab === '档案' && <ArchiveTab student={data} />}
+            {/* 成绩页签:ScoresTab 在此挂载(段 D 替换下面的空状态) */}
             {tab !== '概览' && tab !== '档案' && (
               <EmptyState icon={Clock} title="暂未开放" description="成绩、成长记录和评语会在后续版本中提供" />
             )}
