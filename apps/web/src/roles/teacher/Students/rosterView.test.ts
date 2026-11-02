@@ -57,5 +57,6 @@ it('sorts by points descending by default', () => {
 })
 
 it('sorts by name', () => {
-  expect(sortRows(rows, 'name', 'asc')).toHaveLength(4)
+  expect(names(sortRows(rows, 'name', 'asc'))).toEqual(['李四', '王五', '张三', '赵六'])
+  expect(names(sortRows(rows, 'name', 'desc'))).toEqual(['赵六', '张三', '王五', '李四'])
 })

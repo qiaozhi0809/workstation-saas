@@ -17,13 +17,17 @@ import StudentsPage from './StudentsPage'
 
 vi.mock('@/shared/api/classes', () => ({ classesApi: { mine: vi.fn() } }))
 vi.mock('@/shared/api/classroom', () => ({ classroomApi: { summary: vi.fn() } }))
-vi.mock('@/shared/api/students', () => ({ studentsApi: { records: vi.fn(), exportRecords: vi.fn() } }))
+vi.mock('@/shared/api/students', () => ({
+  studentsApi: { records: vi.fn(), exportRecords: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), importRows: vi.fn() },
+}))
+vi.mock('@/shared/components/Toast', () => ({ toast: vi.fn() }))
 vi.mock('@/shared/api/reviews', () => ({ reviewsApi: { summary: vi.fn() } }))
 vi.mock('@/shared/api/exams', () => ({ examsApi: { gradebook: vi.fn() } }))
 vi.mock('@/shared/lib/csv', async (orig) => ({ ...(await orig<typeof import('@/shared/lib/csv')>()), downloadText: vi.fn() }))
 
 const cls: ClassView = { id: 'c1', name: '三年二班', grade_name: '三年级', seat_rows: 6, seat_cols: 4, role: 'homeroom_teacher' }
 const ALL: ClassPerm[] = ['review.read', 'exam.read', 'student.export']
+const MANAGE: ClassPerm[] = ['student.manage']
 
 const summary = (perms: ClassPerm[]) => ({ today: '2026-11-02', my_perms: perms, my_subjects: [] }) as unknown as ClassroomSummary
 
@@ -156,4 +160,63 @@ it('shows an empty state for a class without students', async () => {
   setup([], [])
   renderPage()
   expect(await screen.findByText('还没有学生')).toBeInTheDocument()
+})
+
+it('shows no points and exports blanks while the review summary has not loaded', async () => {
+  setup(ALL)
+  vi.mocked(reviewsApi.summary).mockReturnValue(new Promise(() => {}))
+  vi.mocked(studentsApi.exportRecords).mockResolvedValue({ items: [records[0]] })
+  renderPage()
+  const row1 = (await screen.findByText('张三')).closest('tr')!
+  const cells = within(row1).getAllByRole('cell')
+  expect(cells[cells.length - 1]).toHaveTextContent('—')
+  fireEvent.click(screen.getByRole('button', { name: '导出名单' }))
+  await waitFor(() => expect(downloadText).toHaveBeenCalled())
+  const lines = vi.mocked(downloadText).mock.calls[0][1].split('\r\n')
+  expect(lines[1].endsWith(',')).toBe(true)
+})
+
+it('shows no points when the review summary fails', async () => {
+  setup(ALL)
+  vi.mocked(reviewsApi.summary).mockRejectedValue(new Error('x'))
+  renderPage()
+  const row1 = (await screen.findByText('张三')).closest('tr')!
+  await waitFor(() => expect(reviewsApi.summary).toHaveBeenCalled())
+  const cells = within(row1).getAllByRole('cell')
+  expect(cells[cells.length - 1]).toHaveTextContent('—')
+})
+
+it('hides add, import and edit without student.manage', async () => {
+  setup(ALL)
+  renderPage()
+  await screen.findByText('张三')
+  for (const n of ['添加学生', '批量导入', '编辑']) expect(screen.queryByRole('button', { name: n })).toBeNull()
+})
+
+it('opens the edit form from a row without opening the drawer', async () => {
+  setup(MANAGE)
+  renderPage()
+  await screen.findByText('张三')
+  fireEvent.click(within(screen.getByText('张三').closest('tr')!).getByRole('button', { name: '编辑' }))
+  expect(await screen.findByLabelText('姓名')).toHaveValue('张三')
+  expect(screen.getByTestId('url').textContent).toBe('')
+})
+
+it('opens the add form and the import dialog from the toolbar', async () => {
+  setup(MANAGE)
+  renderPage()
+  fireEvent.click(await screen.findByRole('button', { name: '添加学生' }))
+  expect(await screen.findByLabelText('姓名')).toHaveValue('')
+  fireEvent.click(screen.getByRole('button', { name: '取消' }))
+  await waitFor(() => expect(screen.queryByLabelText('姓名')).toBeNull())
+  fireEvent.click(screen.getByRole('button', { name: '批量导入' }))
+  expect(await screen.findByLabelText('粘贴名单')).toBeInTheDocument()
+})
+
+it('offers adding students from the empty state', async () => {
+  setup(MANAGE, [])
+  renderPage()
+  expect(await screen.findByText('还没有学生')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '添加学生' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '批量导入' })).toBeInTheDocument()
 })

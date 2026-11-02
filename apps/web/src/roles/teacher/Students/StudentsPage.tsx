@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowDown, ArrowUp, Download, Search } from 'lucide-react'
+import { ArrowDown, ArrowUp, Download, Search, Upload, UserPlus } from 'lucide-react'
 import { examsApi } from '@/shared/api/exams'
 import { reviewsApi } from '@/shared/api/reviews'
 import { studentsApi } from '@/shared/api/students'
@@ -18,7 +18,9 @@ import type { StudentRecord } from '@/shared/types/student'
 import ClassGate, { type ClassContext } from '../ClassGate'
 import { useStudentDrawer } from '../StudentProfile/useStudentDrawer'
 import { rosterCsv } from './exportRoster'
+import ImportDialog from './ImportDialog'
 import { buildRows, filterRows, sortRows, type RosterFilter, type RosterRow, type RosterSort } from './rosterView'
+import StudentForm from './StudentForm'
 
 const FILTERS: { value: RosterFilter; label: string }[] = [
   { value: 'all', label: '全部' },
@@ -43,6 +45,7 @@ function Roster({ ctx: { cls, summary, perms } }: { ctx: ClassContext }) {
   const canReview = perms.includes('review.read')
   const canExam = perms.includes('exam.read')
   const canExport = perms.includes('student.export')
+  const canManage = perms.includes('student.manage')
 
   const records = useQuery({ queryKey: ['student-records', classId], queryFn: () => studentsApi.records(classId) })
   const review = useQuery({
@@ -54,7 +57,8 @@ function Roster({ ctx: { cls, summary, perms } }: { ctx: ClassContext }) {
 
   const items = records.data?.items
   const points = useMemo(
-    () => (canReview ? new Map((review.data?.items ?? []).map((i) => [i.enrollment_id, i.total])) : null),
+    // 积分汇总未加载好(或失败)时为 null:显示 —、导出留空,而不是误显示 0
+    () => (canReview && review.data ? new Map(review.data.items.map((i) => [i.enrollment_id, i.total])) : null),
     [canReview, review.data],
   )
   const ranks = useMemo(() => {
@@ -78,13 +82,38 @@ function Roster({ ctx: { cls, summary, perms } }: { ctx: ClassContext }) {
   const [dir, setDir] = useState<'asc' | 'desc'>('asc')
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState(false)
+  const [editor, setEditor] = useState<{ record?: StudentRecord } | null>(null)
+  const [importing, setImporting] = useState(false)
   const drawer = useStudentDrawer()
 
   if (records.isLoading) return <LoadingState />
   if (!items) {
     return <ErrorState title="学生名单加载失败" onRetry={() => void records.refetch()} retrying={records.isFetching} />
   }
-  if (items.length === 0) return <EmptyState title="还没有学生" />
+  const dialogs = (
+    <>
+      {editor && <StudentForm cls={cls} record={editor.record} roster={items} onClose={() => setEditor(null)} />}
+      {importing && <ImportDialog cls={cls} onClose={() => setImporting(false)} />}
+    </>
+  )
+  const manageButtons = canManage && (
+    <>
+      <Button type="button" size="sm" onClick={() => setEditor({})}>
+        <UserPlus aria-hidden="true" className="mr-1 h-4 w-4" />添加学生
+      </Button>
+      <Button type="button" variant="outline" size="sm" onClick={() => setImporting(true)}>
+        <Upload aria-hidden="true" className="mr-1 h-4 w-4" />批量导入
+      </Button>
+    </>
+  )
+  if (items.length === 0) {
+    return (
+      <>
+        <EmptyState title="还没有学生" action={manageButtons ? <div className="flex gap-2">{manageButtons}</div> : undefined} />
+        {dialogs}
+      </>
+    )
+  }
 
   const showContacts = items.some((r) => 'contacts' in r)
   const visible = sortRows(filterRows(rows, q, filter, today), sort, dir)
@@ -121,6 +150,7 @@ function Roster({ ctx: { cls, summary, perms } }: { ctx: ClassContext }) {
         </div>
         <div className="ml-auto flex items-center gap-2">
           {exportError && <span role="alert" className="text-sm text-destructive">导出失败,请重试</span>}
+          {manageButtons}
           {canExport && (
             <Button type="button" variant="outline" size="sm" disabled={exporting} onClick={() => void exportRoster()}>
               <Download aria-hidden="true" className="mr-1 h-4 w-4" />导出名单
@@ -148,19 +178,21 @@ function Roster({ ctx: { cls, summary, perms } }: { ctx: ClassContext }) {
                 <Head>标签</Head>
                 {canExam && <SortHead by="rank" {...sortProps}>排名</SortHead>}
                 {canReview && <SortHead by="points" {...sortProps}>积分</SortHead>}
+                {canManage && <th scope="col" className="px-3 py-2"><span className="sr-only">操作</span></th>}
               </tr>
             </thead>
             <tbody>
               {visible.map((r) => (
                 <StudentRow
-                  key={r.enrollment_id} row={r} showContacts={showContacts} canExam={canExam} canReview={canReview}
-                  onOpen={() => drawer.open(r.student_id)}
+                  key={r.enrollment_id} row={r} showContacts={showContacts} canExam={canExam} canReview={canReview} canManage={canManage}
+                  onOpen={() => drawer.open(r.student_id)} onEdit={() => setEditor({ record: r })}
                 />
               ))}
             </tbody>
           </table>
         </div>
       )}
+      {dialogs}
     </div>
   )
 }
@@ -186,8 +218,9 @@ function seatText(r: StudentRecord): string {
   return r.seat_row !== null && r.seat_col !== null ? `${r.seat_row}排${r.seat_col}列` : '—'
 }
 
-function StudentRow({ row: r, showContacts, canExam, canReview, onOpen }: {
-  row: RosterRow; showContacts: boolean; canExam: boolean; canReview: boolean; onOpen(): void
+function StudentRow({ row: r, showContacts, canExam, canReview, canManage, onOpen, onEdit }: {
+  row: RosterRow; showContacts: boolean; canExam: boolean; canReview: boolean; canManage: boolean
+  onOpen(): void; onEdit(): void
 }) {
   const contact = r.contacts?.[0]
   const tags = r.tags ?? []
@@ -229,6 +262,11 @@ function StudentRow({ row: r, showContacts, canExam, canReview, onOpen }: {
         </td>
       )}
       {canReview && <td className="px-3 py-2">{r.points ?? '—'}</td>}
+      {canManage && (
+        <td className="px-3 py-2">
+          <Button type="button" variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onEdit() }}>编辑</Button>
+        </td>
+      )}
     </tr>
   )
 }
