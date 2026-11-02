@@ -43,7 +43,7 @@ export function examTable(exam: GradebookExam, ids: string[]): Row[] {
       subs[name] = v
       if (typeof v === 'number') total = (total ?? 0) + v
     }
-    return { id, total, rank: null, subs }
+    return { id, total: total === null ? null : Math.round(total * 10) / 10, rank: null, subs }
   })
   rows.sort((a, b) => {
     if (a.total === null && b.total === null) return 0
@@ -62,7 +62,10 @@ export function examTable(exam: GradebookExam, ids: string[]): Row[] {
 }
 
 export interface SubjectStats {
-  name: string; full: number; n: number; avg: number; rate: number; max: number; min: number
+  name: string; full: number; n: number; avg: number
+  /** percent 0-100: avg / full x 100 */
+  rate: number; max: number; min: number
+  /** fractions 0-1 */
   passRate: number; goodRate: number; low: number
 }
 
@@ -89,7 +92,10 @@ export function subjectStats(exam: GradebookExam, subject: string, ids: string[]
 }
 
 export interface ExamStats {
-  full: number; n: number; avg: number; rate: number; max: number; maxIds: string[]; min: number
+  full: number; n: number; avg: number
+  /** percent 0-100: avg / full x 100 */
+  rate: number; max: number; maxIds: string[]; min: number
+  /** fractions 0-1; sd is the population standard deviation */
   passRate: number; goodRate: number; sd: number; table: Row[]; subjects: SubjectStats[]
 }
 
@@ -147,11 +153,13 @@ function hasScore(exam: GradebookExam): boolean {
   return Object.values(exam.scores).some((rec) => Object.values(rec).some((v) => typeof v === 'number'))
 }
 
+/** Any numeric score in the exam's scores map counts (the gradebook only contains active enrollments). */
 export function latestExam(book: GradebookExam[]): GradebookExam | null {
   for (let i = book.length - 1; i >= 0; i--) if (hasScore(book[i])) return book[i]
   return null
 }
 
+/** Any numeric score in the exam's scores map counts (the gradebook only contains active enrollments). */
 export function previousExam(book: GradebookExam[], examId: string): GradebookExam | null {
   const at = book.findIndex((e) => e.id === examId)
   if (at < 0) return null
@@ -194,6 +202,7 @@ export function attention(exam: GradebookExam, cur: Row[], changes: Map<string, 
   return { risers, fallers, failing }
 }
 
+/** rate: percent 0-100 (total / full x 100), same unit as SubjectStats.rate and ExamStats.rate */
 export interface TrendPoint { examId: string; name: string; total: number | null; rank: number | null; n: number; rate: number | null }
 
 export function studentTrend(book: GradebookExam[], id: string, ids: string[]): TrendPoint[] {

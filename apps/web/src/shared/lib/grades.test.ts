@@ -95,6 +95,15 @@ describe('examTable', () => {
     const t = examTable(ex, abc)
     expect(t.map((r) => [r.id, r.total, r.rank])).toEqual([['b', 100, 1], ['a', null, null], ['c', null, null]])
   })
+  it('rounds totals to one decimal so float drift cannot split ties', () => {
+    const ex = exam2('t', {
+      a: { 甲: 0.1, 乙: 0.2, 丙: 0.3 }, b: { 甲: 0.3, 乙: 0.2, 丙: 0.1 }, c: { 甲: 0, 乙: 0, 丙: 0.5 },
+    }, ['甲', '乙', '丙'])
+    const t = examTable(ex, abc)
+    expect(t.map((r) => [r.id, r.total, r.rank])).toEqual([['a', 0.6, 1], ['b', 0.6, 1], ['c', 0.5, 3]])
+    const ex2 = exam2('u', { a: { 甲: 80.1, 乙: 80.1 } })
+    expect(examTable(ex2, ['a'])[0].total).toBe(160.2)
+  })
   it('distinguishes not-entered (undefined) from absent (null)', () => {
     const ex = exam2('t', { a: { 甲: null }, b: { 甲: 70, 乙: 60 } })
     const [a] = examTable(ex, ['a'])
