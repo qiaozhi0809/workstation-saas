@@ -23,6 +23,10 @@ export interface Layout {
 
 const LEFT: ZoneId[] = ['reading', 'honor', 'cleaning']
 const RIGHT: ZoneId[] = ['homework', 'nature', 'sports', 'talk']
+// 两翼够宽时荣誉墙、清洁角搬到右翼去画,核心两侧只留其余陈设
+export const WING_MIN = 280
+const LEFT_WIDE: ZoneId[] = ['reading', 'talk']
+const RIGHT_WIDE: ZoneId[] = ['homework', 'nature', 'sports']
 const PODIUM_W = 240
 
 export const groupOf = (col: number) => (col - 1) >> 1
@@ -65,8 +69,9 @@ export function computeLayout(
         used = need
       }
     }
-    stack(LEFT, M.WALL + 12 + dx)
-    stack(RIGHT, width - M.WALL - side + 12 - dx)
+    const wide = dx >= WING_MIN
+    stack(wide ? LEFT_WIDE : LEFT, M.WALL + 12 + dx)
+    stack(wide ? RIGHT_WIDE : RIGHT, width - M.WALL - side + 12 - dx)
   }
 
   const wingH = height - 2 * M.WALL - M.FRONT

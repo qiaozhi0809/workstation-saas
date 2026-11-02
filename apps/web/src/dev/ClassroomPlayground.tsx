@@ -9,6 +9,14 @@ import { SAMPLE_BOARD, makeSeats, sampleViews } from './fixtures'
 
 const MODES: ClassroomMode[] = ['daily', 'attendance', 'review', 'seating', 'overview', 'mini']
 const IDLES: IdleAction[] = ['look', 'raise', 'doze', 'stretch']
+// 舞台预设:常见屏幕分辨率扣掉页面边距 / 工具条后留给教室的像素;自由 = 跟着窗口走
+const STAGES = [
+  { label: '自由', size: null },
+  { label: '1920×1080 投屏', size: { w: 1888, h: 960 } },
+  { label: '1280×720', size: { w: 1248, h: 600 } },
+  { label: '1024×768 投影', size: { w: 992, h: 640 } },
+  { label: '768×1024 平板', size: { w: 736, h: 860 } },
+] as const
 const pick = <T,>(xs: T[]) => xs[Math.floor(Math.random() * xs.length)]
 
 // 拖到有人的格子 → 两人互换;拖到空格 → 搬过去
@@ -39,6 +47,7 @@ export default function ClassroomPlayground() {
   const [floats, setFloats] = useState<FloatFx[]>([])
   const [last, setLast] = useState('')
   const [draggable, setDraggable] = useState(false)
+  const [stage, setStage] = useState(0)
   const seq = useRef(0)
   const viewport = useRef<ClassroomViewportHandle>(null)
 
@@ -65,6 +74,7 @@ export default function ClassroomPlayground() {
     </Field>
   )
   const btn = 'rounded border px-2 py-0.5 text-sm'
+  const size = STAGES[stage].size
 
   return (
     <div className="p-4">
@@ -112,22 +122,30 @@ export default function ClassroomPlayground() {
         <Field label="">
           <input type="checkbox" checked={draggable} onChange={(e) => setDraggable(e.target.checked)} />允许拖拽
         </Field>
+        <Field label="舞台">
+          <select value={stage} onChange={(e) => setStage(Number(e.target.value))} className="rounded border px-1">
+            {STAGES.map((s, i) => <option key={s.label} value={i}>{s.label}</option>)}
+          </select>
+        </Field>
         <button type="button" className={btn} onClick={() => viewport.current?.zoomIn()}>放大</button>
         <button type="button" className={btn} onClick={() => viewport.current?.zoomOut()}>缩小</button>
         <button type="button" className={btn} onClick={() => viewport.current?.fit()}>适应</button>
         {last && <span className="text-sm text-muted-foreground">{last}</span>}
       </div>
-      <div className="h-[70vh] overflow-clip rounded-lg border">
-        <ClassroomMap
-          rows={rows} cols={cols} seats={seats} mode={mode} presenting={presenting} viewportRef={viewport}
-          teacher={{ figure, label: '张老师 · 班主任' }} board={SAMPLE_BOARD} views={views} effects={effects}
-          onSeatClick={(s) => setLast(`点击:${s.name}`)}
-          onEmptySeatClick={(c) => setLast(`空座:${c.row}排${c.col}列`)}
-          onSeatDrop={draggable ? (from, to) => {
-            setSeats((ss) => moveSeat(ss, from, to))
-            setLast(`拖拽:${from.row}-${from.col} → ${to.row}-${to.col}`)
-          } : undefined}
-        />
+      <div className={size ? 'overflow-auto' : undefined}>
+        <div className={size ? 'overflow-clip rounded-lg border' : 'h-[70vh] overflow-clip rounded-lg border'}
+          style={size ? { width: size.w, height: size.h } : undefined}>
+          <ClassroomMap
+            rows={rows} cols={cols} seats={seats} mode={mode} presenting={presenting} viewportRef={viewport}
+            teacher={{ figure, label: '张老师 · 班主任' }} board={SAMPLE_BOARD} views={views} effects={effects}
+            onSeatClick={(s) => setLast(`点击:${s.name}`)}
+            onEmptySeatClick={(c) => setLast(`空座:${c.row}排${c.col}列`)}
+            onSeatDrop={draggable ? (from, to) => {
+              setSeats((ss) => moveSeat(ss, from, to))
+              setLast(`拖拽:${from.row}-${from.col} → ${to.row}-${to.col}`)
+            } : undefined}
+          />
+        </div>
       </div>
       <FigureGallery />
     </div>

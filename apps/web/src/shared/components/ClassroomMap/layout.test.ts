@@ -46,13 +46,21 @@ it('widens to the aspect with symmetric wings and keeps the core unchanged insid
   expect(L.safe).toEqual({ x: 669, y: 0, w: core.width, h: core.height })
   expect(L.seat(3, 2)).toEqual({ x: core.seat(3, 2).x + 669, y: core.seat(3, 2).y })
   expect(L.frontWall).toEqual({ ...core.frontWall!, x: core.frontWall!.x + 669 })
-  expect(L.zones.map((z) => [z.id, z.rect.x])).toEqual(core.zones.map((z) => [z.id, z.rect.x + 669]))
+  const readingX = (l: typeof L) => l.zones.find((z) => z.id === 'reading')!.rect.x
+  expect(readingX(L)).toBe(readingX(core) + 669)
   expect(L.podium!.x + L.podium!.w / 2).toBe(L.width / 2)
   expect(L.wings!.left.wall).toEqual({ x: M.WALL, y: M.WALL, w: 669, h: M.FRONT })
   expect(L.wings!.left.wall.x + L.wings!.left.wall.w).toBe(L.frontWall!.x)
   expect(L.wings!.right.wall.x).toBe(L.frontWall!.x + L.frontWall!.w)
   expect(L.wings!.right.floor.x + L.wings!.right.floor.w).toBe(L.width - M.WALL)
   expect(L.wings!.left.floor).toEqual({ x: M.WALL, y: M.WALL + M.FRONT, w: 669, h: L.height - 2 * M.WALL - M.FRONT })
+})
+
+it('moves honor and cleaning out to the wings when they are wide enough', () => {
+  expect(computeLayout(6, 4, { aspect: SCENE_ASPECT }).zones.map((z) => z.id))
+    .toEqual(['reading', 'talk', 'homework', 'nature', 'sports'])
+  expect(computeLayout(4, 8, { aspect: SCENE_ASPECT }).zones.map((z) => z.id))
+    .toEqual(computeLayout(4, 8).zones.map((z) => z.id))
 })
 
 it('does not widen a room that is already wider than the aspect', () => {
