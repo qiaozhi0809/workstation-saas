@@ -230,10 +230,28 @@ it('shows 0 天未到 when there are only late records', async () => {
   expect(screen.queryByText('全勤')).toBeNull()
 })
 
-it('queries the month of summary.today and hides the card without attendance.read', async () => {
+it('queries the month of summary.today', async () => {
   renderTab({ perms: ['attendance.read'], student: profile, today: '1999-03-31' })
   await waitFor(() => expect(attendanceApi.month).toHaveBeenCalledWith('c1', '1999-03'))
   expect(await screen.findByText('3月无请假缺勤迟到')).toBeInTheDocument()
+})
+
+it('refetches the attendance KPI on reopen even within the global staleTime', async () => {
+  vi.mocked(classroomApi.summary).mockResolvedValue({ my_perms: ['attendance.read'], today: '2026-11-02' } as never)
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 30_000 } } })
+  const ui = (
+    <QueryClientProvider client={client}>
+      <MemoryRouter><OverviewTab student={profile} /></MemoryRouter>
+    </QueryClientProvider>
+  )
+  const first = render(ui)
+  expect(await screen.findByText('全勤')).toBeInTheDocument()
+  first.unmount()
+  vi.mocked(attendanceApi.month).mockResolvedValue({ month: '2026-11', items: [
+    { enrollment_id: 'e1', date: '2026-11-02', status: 'absent' },
+  ] })
+  render(ui)
+  expect(await screen.findByText('1 天未到')).toBeInTheDocument()
 })
 
 it('does not show the attendance card without attendance.read', async () => {

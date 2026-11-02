@@ -85,6 +85,7 @@ function AttendanceCard({ student, today }: { student: StudentProfile; today: st
   const { data } = useQuery({
     queryKey: ['attendance-month', student.class_id, month],
     queryFn: () => attendanceApi.month(student.class_id, month),
+    staleTime: 0, // 考勤随时会改，抽屉每次打开都要重新取
   })
   if (!data) return <KpiCard title="本月考勤" value="—" />
   const mine = data.items.filter((r) => r.enrollment_id === student.enrollment_id)
