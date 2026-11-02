@@ -58,12 +58,18 @@ test('homeroom teacher creates an exam, types and pastes scores, and sees totals
   await expect(page.getByRole('columnheader', { name: /^数学/ })).toBeVisible()
   await expect(page.getByRole('columnheader', { name: /^英语/ })).toHaveCount(0)
 
-  // 输入 95 + Enter:焦点落到下一行同一科
+  // 状态文字"已保存"在新改动排队时不会清掉,不能当作"所有改动都已落库";改为按 PUT 响应等待
+  const scoresSaved = () => page.waitForResponse((r) => r.request().method() === 'PUT' && /\/scores$/.test(r.url()) && r.ok())
+
+  // 输入 95 + Enter:焦点落到下一行同一科;等这次保存落库,粘贴才会是独立的一次保存
+  const typedSaved = scoresSaved()
   await cell(page, '王小一', '语文').fill('95')
   await page.keyboard.press('Enter')
   await expect(cell(page, '李小二', '语文')).toBeFocused()
+  await typedSaved
 
   // 粘贴:空行保留(张小三不变),缺考写进下一行
+  const pastedSaved = scoresSaved()
   await paste(cell(page, '李小二', '语文'), '90\t80\n\n缺考\t70')
   await expect(cell(page, '李小二', '语文')).toHaveValue('90')
   await expect(cell(page, '李小二', '数学')).toHaveValue('80')
@@ -71,6 +77,7 @@ test('homeroom teacher creates an exam, types and pastes scores, and sees totals
   await expect(cell(page, '张小三', '数学')).toHaveValue('')
   await expect(cell(page, '赵小四', '语文')).toHaveValue('缺考')
   await expect(cell(page, '赵小四', '数学')).toHaveValue('70')
+  await pastedSaved
   await expect(page.getByRole('status').getByText('已保存')).toBeVisible()
 
   // 刷新后仍在,总分 / 排名跟着更新(缺考不计分:赵小四总分 70)
@@ -137,24 +144,36 @@ test('classroom grades mode tints seats and links to analysis', async ({ page, r
 test('projection hides grade tints, badges and legend', async ({ page, request }) => {
   await seedMovers(request)
   await signIn(page)
+  // 桌面着色用 rect 的 fill 判断;"投屏"本身可能换底色,所以以"日常模式 + 投屏"的填充色集合为基线
+  const fills = () => page.evaluate(() =>
+    [...new Set(Array.from(document.querySelectorAll('.cr-canvas svg rect')).map((r) => r.getAttribute('fill')))].sort())
+  const present = async () => {
+    await page.getByRole('button', { name: '全屏' }).click()
+    await expect(page.getByRole('button', { name: '退出全屏' })).toBeVisible()
+  }
+  await present()
+  const baseline = await fills()
+  await page.getByRole('button', { name: '退出全屏' }).click()
+  await expect(page.getByRole('button', { name: '全屏' })).toBeVisible()
+
   await switchMode(page, '成绩')
   await expect(page.getByRole('button', { name: /^王小一，.*#10 ↓9/ })).toBeVisible()
   await expect(page.getByRole('group', { name: '名次色阶' })).toBeVisible()
-  // 桌面着色:成绩模式下桌面有多种填充色,投屏后只剩统一的底色
-  const fills = () => page.evaluate(() =>
-    [...new Set(Array.from(document.querySelectorAll('.cr-canvas svg rect')).map((r) => r.getAttribute('fill')))].sort())
-  const tinted = await fills()
-
-  await page.getByRole('button', { name: '全屏' }).click()
-  await expect(page.getByRole('button', { name: '退出全屏' })).toBeVisible()
-  // 投屏时座位不可点,没有读屏名称:改看座位里的文字
   const seats = page.locator('[data-seat][data-enrollment]')
+  await expect(seats).toHaveCount(10)
+  // 非投屏基线:同一批座位里本来就有 ↑ / ↓ 角标,着色的填充色也不在日常基线里
+  await expect(seats.filter({ hasText: /↑/ })).toHaveCount(1)
+  await expect(seats.filter({ hasText: /↓/ })).toHaveCount(1)
+  const tinted = await fills()
+  expect(tinted.filter((f) => !baseline.includes(f)).length, '成绩模式有着色').toBeGreaterThan(0)
+
+  await present()
+  // 投屏时座位不可点,没有读屏名称:改看座位里的文字
   await expect(seats).toHaveCount(10)
   await expect(seats.filter({ hasText: /[↑↓]|#\d/ })).toHaveCount(0)
   await expect(seats.filter({ hasText: '王小一' })).toHaveCount(1)
   await expect(page.getByRole('group', { name: '名次色阶' })).toBeHidden()
-  const plain = await fills()
-  expect(tinted.filter((f) => !plain.includes(f)).length, '投屏后着色用的填充色消失').toBeGreaterThan(0)
+  expect(await fills(), '投屏时不着色:填充色与日常投屏相同').toEqual(baseline)
 })
 
 test('subject teacher only sees math', async ({ page }) => {
@@ -193,7 +212,7 @@ test('asks before logging out with unsaved scores', async ({ page, request }) =>
     await page.getByRole('menuitem', { name: '退出登录' }).click()
   }
   const messages: string[] = []
-  page.once('dialog', (d) => { messages.push(d.message()); void d.dismiss() })
+  page.on('dialog', (d) => { messages.push(d.message()); void d.dismiss() })
   await logout()
   await expect.poll(() => messages).toEqual(['还有成绩没保存,确定离开?'])
   await expect(page).toHaveURL(/\/teacher\/scores/)
@@ -203,7 +222,6 @@ test('asks before logging out with unsaved scores', async ({ page, request }) =>
   await status.getByRole('button', { name: '重试' }).click()
   await expect(status.getByText('已保存')).toBeVisible()
 
-  page.once('dialog', (d) => { messages.push(d.message()); void d.dismiss() })
   await logout()
   await expect(page).toHaveURL(/\/login/)
   expect(messages, '保存成功后退出不再确认').toHaveLength(1)
