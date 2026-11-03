@@ -1,12 +1,15 @@
 import { useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { examsApi } from '@/shared/api/exams'
 import { studentsApi } from '@/shared/api/students'
 import { EmptyState } from '@/shared/components/feedback/EmptyState'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
+import { Button } from '@/shared/components/ui/button'
 import { NativeSelect } from '@/shared/components/ui/native-select'
+import { aiLink } from '@/shared/lib/aiLink'
+import type { ClassPerm } from '@/shared/types/classroom'
 import {
   attention, examStats, examTable, latestExam, previousExam, rankChanges, subjectStats,
 } from '@/shared/lib/grades'
@@ -20,8 +23,9 @@ import { SubjectRateChart } from './SubjectRateChart'
 import { SubjectTable } from './SubjectTable'
 import { TrendGrid } from './TrendGrid'
 
-function AnalysisBody({ classId, chartWidth }: { classId: string; chartWidth?: number }) {
+function AnalysisBody({ classId, perms, chartWidth }: { classId: string; perms: ClassPerm[]; chartWidth?: number }) {
   const [params, setParams] = useSearchParams()
+  const navigate = useNavigate()
   const book = useQuery({ queryKey: ['gradebook', classId], queryFn: () => examsApi.gradebook(classId) })
   const roster = useQuery({ queryKey: ['class-students', classId], queryFn: () => studentsApi.listInClass(classId) })
 
@@ -105,6 +109,21 @@ function AnalysisBody({ classId, chartWidth }: { classId: string; chartWidth?: n
             ))}
           </NativeSelect>
         </label>
+        {/* AI 快捷入口:跟随选择器换行;不对比时链接不带对比考试 */}
+        <div className="ml-auto flex flex-wrap gap-2">
+          {perms.includes('ai.use') && (
+            <Button variant="outline" size="sm"
+              onClick={() => navigate(aiLink({ tpl: 'report', examId: current.id, compareExamId: cmpExam?.id }))}>
+              AI 写分析报告
+            </Button>
+          )}
+          {perms.includes('ai.class') && cmpExam && (
+            <Button variant="outline" size="sm"
+              onClick={() => navigate(aiLink({ tpl: 'parent-batch', examId: current.id, compareExamId: cmpExam.id }))}>
+              给退步同学家长写沟通消息
+            </Button>
+          )}
+        </div>
       </div>
       <KpiRow cur={cur} cmp={cmp} cmpName={cmpExam?.name ?? ''} names={names} />
       <div className="grid gap-4 lg:grid-cols-2">
@@ -126,7 +145,7 @@ function AnalysisBody({ classId, chartWidth }: { classId: string; chartWidth?: n
 export default function AnalysisPage({ chartWidth }: { chartWidth?: number } = {}) {
   return (
     <ClassGate title="成绩分析" need="exam.read">
-      {(ctx) => <AnalysisBody classId={ctx.cls.id} chartWidth={chartWidth} />}
+      {(ctx) => <AnalysisBody classId={ctx.cls.id} perms={ctx.perms} chartWidth={chartWidth} />}
     </ClassGate>
   )
 }

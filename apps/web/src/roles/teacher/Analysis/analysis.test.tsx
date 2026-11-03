@@ -47,6 +47,7 @@ function setup(book: GradebookExam[], entry = '/teacher/analysis') {
         <Routes>
           <Route path="/teacher/analysis" element={<><AnalysisPage chartWidth={300} /><Url /></>} />
           <Route path="/teacher/scores" element={<div>成绩页</div>} />
+          <Route path="/teacher/ai" element={<Url />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -127,6 +128,58 @@ describe('AnalysisPage', () => {
     setup([unscored])
     expect(await screen.findByText('还没有考试成绩')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '去录入成绩' })).toHaveAttribute('href', '/teacher/scores')
+  })
+})
+
+describe('AnalysisPage AI shortcuts', () => {
+  const withPerms = (perms: Array<'exam.read' | 'ai.use' | 'ai.class'>) =>
+    vi.mocked(classroomApi.summary).mockResolvedValue(summaryFixture({ my_perms: perms }))
+
+  it('links to the report template with the current exams', async () => {
+    withPerms(['exam.read', 'ai.use'])
+    setup([first, second])
+    fireEvent.click(await screen.findByRole('button', { name: 'AI 写分析报告' }))
+    expect(await screen.findByTestId('url')).toHaveTextContent('/teacher/ai?tpl=report&exam=x2&vs=x1')
+  })
+
+  it('omits the compare exam from the report link when not comparing', async () => {
+    withPerms(['exam.read', 'ai.use'])
+    setup([first, second], '/teacher/analysis?exam=x2&cmp=none')
+    fireEvent.click(await screen.findByRole('button', { name: 'AI 写分析报告' }))
+    expect(await screen.findByTestId('url')).toHaveTextContent(/^\/teacher\/ai\?tpl=report&exam=x2$/)
+  })
+
+  it('shows the parent batch button only for homeroom with a compare exam', async () => {
+    withPerms(['exam.read', 'ai.use'])
+    const a = setup([first, second])
+    await screen.findByRole('button', { name: 'AI 写分析报告' })
+    expect(screen.queryByRole('button', { name: '给退步同学家长写沟通消息' })).not.toBeInTheDocument()
+    a.unmount()
+
+    withPerms(['exam.read', 'ai.use', 'ai.class'])
+    const b = setup([first, second], '/teacher/analysis?exam=x2&cmp=none')
+    await screen.findByRole('button', { name: 'AI 写分析报告' })
+    expect(screen.queryByRole('button', { name: '给退步同学家长写沟通消息' })).not.toBeInTheDocument()
+    b.unmount()
+
+    setup([first, second])
+    fireEvent.click(await screen.findByRole('button', { name: '给退步同学家长写沟通消息' }))
+    expect(await screen.findByTestId('url')).toHaveTextContent('/teacher/ai?tpl=parent-batch&exam=x2&vs=x1')
+  })
+
+  it('hides the report button without ai.use', async () => {
+    withPerms(['exam.read'])
+    setup([first, second])
+    await avgCard()
+    expect(screen.queryByRole('button', { name: 'AI 写分析报告' })).not.toBeInTheDocument()
+  })
+
+  it('hides both buttons without exams', async () => {
+    withPerms(['exam.read', 'ai.use', 'ai.class'])
+    setup([unscored])
+    await screen.findByText('还没有考试成绩')
+    expect(screen.queryByRole('button', { name: 'AI 写分析报告' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '给退步同学家长写沟通消息' })).not.toBeInTheDocument()
   })
 })
 
