@@ -64,7 +64,8 @@ export default function ClassInfoPage() {
     <div className="grid gap-4 p-4 md:p-6">
       <div className="flex items-center gap-3">
         <Link to="/admin/org" className="text-sm text-primary underline-offset-4 hover:underline">返回组织架构</Link>
-        <h1 className="text-lg font-semibold">{q.data ? `${q.data.grade_name}${q.data.name}` : '班级信息'}</h1>
+        <h1 className="text-lg font-semibold">{q.data ? q.data.name : '班级信息'}</h1>
+        {q.data && <span className="text-sm text-muted-foreground">{q.data.grade_name}</span>}
       </div>
       {q.isPending && <LoadingState />}
       {q.isError && <ErrorState title="班级信息加载失败" description={errMsg(q.error)} onRetry={() => void q.refetch()} />}

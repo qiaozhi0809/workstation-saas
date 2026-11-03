@@ -93,8 +93,52 @@ it('moves a grade by swapping display_order', async () => {
   renderPage()
   fireEvent.click(await screen.findByRole('button', { name: '上移 四年级' }))
   await waitFor(() => expect(api.updateGrade).toHaveBeenCalledTimes(2))
-  expect(api.updateGrade).toHaveBeenCalledWith('g4', { name: '四年级', stage: null, display_order: 3 })
-  expect(api.updateGrade).toHaveBeenCalledWith('g3', { name: '三年级', stage: null, display_order: 4 })
+  expect(api.updateGrade).toHaveBeenCalledWith('g4', { name: '四年级', stage: null, display_order: 0 })
+  expect(api.updateGrade).toHaveBeenCalledWith('g3', { name: '三年级', stage: null, display_order: 1 })
+})
+
+it('renumbers grades sharing a display_order so the swap yields distinct orders', async () => {
+  grades = [grade('g3', '三年级', 1), grade('g4', '四年级', 1), grade('g5', '五年级', 5)]
+  api.updateGrade.mockResolvedValue(grades[0])
+  renderPage()
+  fireEvent.click(await screen.findByRole('button', { name: '上移 四年级' }))
+  await waitFor(() => expect(api.updateGrade).toHaveBeenCalledTimes(2))
+  const orders = Object.fromEntries(api.updateGrade.mock.calls.map(([id, b]) => [id, b.display_order]))
+  // g3 已是 1,无需再发;最终 g4=0、g3=1、g5=2 互不相同
+  expect(orders).toEqual({ g4: 0, g5: 2 })
+})
+
+it('does not send a PUT for grades whose order is unchanged', async () => {
+  grades = [grade('g0', '一年级', 0), grade('g1', '二年级', 1), grade('g2', '三年级', 2)]
+  api.updateGrade.mockResolvedValue(grades[0])
+  renderPage()
+  fireEvent.click(await screen.findByRole('button', { name: '上移 三年级' }))
+  await waitFor(() => expect(api.updateGrade).toHaveBeenCalledTimes(2))
+  expect(api.updateGrade).not.toHaveBeenCalledWith('g0', expect.anything())
+})
+
+it('falls back to the first grade when the selected grade is deleted', async () => {
+  grades = [grade('g3', '三年级', 3), grade('g4', '四年级', 4)]
+  api.deleteGrade.mockImplementation(async (id) => { grades = grades.filter((g) => g.id !== id) })
+  renderPage()
+  fireEvent.click(await screen.findByRole('button', { name: /^四年级/ }))
+  await waitFor(() => expect(api.classes).toHaveBeenCalledWith('g4'))
+  fireEvent.click(screen.getByRole('button', { name: '删除年级 四年级' }))
+  fireEvent.click(screen.getByRole('button', { name: '确认删除' }))
+  await waitFor(() => expect(screen.queryByText('四年级')).toBeNull())
+  await waitFor(() => expect(api.classes).toHaveBeenLastCalledWith('g3'))
+  expect(screen.getByRole('button', { name: /^三年级/ })).toHaveAttribute('aria-pressed', 'true')
+})
+
+it.each([
+  ['school', '学校信息加载失败'],
+  ['years', '学年加载失败'],
+  ['roles', '管理岗位加载失败'],
+  ['grades', '年级加载失败'],
+] as const)('shows an error state when %s fails to load', async (key, title) => {
+  api[key].mockRejectedValue(new ApiError(500, 'X', '服务器开小差了'))
+  renderPage()
+  expect(await screen.findByText(title)).toBeInTheDocument()
 })
 
 it('wraps the class table in an overflow-x-auto container', async () => {

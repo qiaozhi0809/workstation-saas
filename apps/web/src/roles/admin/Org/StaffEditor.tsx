@@ -92,7 +92,7 @@ export default function StaffEditor({ cls }: { cls: ClassAdmin }) {
         </section>
       </CardContent>
 
-      <Modal open={adding !== null && !confirmReplace} onClose={close} title={adding ? (adding === 'homeroom' && cls.homeroom ? '更换班主任' : `添加${TITLE[adding]}`) : ''} className="max-w-md">
+      <Modal open={adding !== null && !confirmReplace} onClose={close} dismissOnOutside={false} title={adding ? (adding === 'homeroom' && cls.homeroom ? '更换班主任' : `添加${TITLE[adding]}`) : ''} className="max-w-md">
         <div className="grid gap-3">
           <PersonPicker value={picked} onChange={setPicked} />
           {adding === 'subject' && (

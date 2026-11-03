@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { adminApi } from '@/shared/api/admin'
+import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { toast } from '@/shared/components/Toast'
 import { Button } from '@/shared/components/ui/button'
@@ -33,7 +34,9 @@ export default function SchoolCard() {
   return (
     <Card>
       <CardHeader><CardTitle>学校</CardTitle></CardHeader>
-      {q.data ? <SchoolForm initial={q.data} /> : <LoadingState />}
+      {q.data ? <SchoolForm initial={q.data} />
+        : q.isError ? <ErrorState title="学校信息加载失败" description={errMsg(q.error)} onRetry={() => void q.refetch()} />
+        : <LoadingState />}
     </Card>
   )
 }

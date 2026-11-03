@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { adminApi } from '@/shared/api/admin'
+import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import Modal from '@/shared/components/overlay/Modal'
 import { toast } from '@/shared/components/Toast'
@@ -53,6 +54,7 @@ export default function AdminRolesCard() {
       <CardHeader><CardTitle>管理岗位</CardTitle></CardHeader>
       <CardContent className="grid gap-4">
         {roles.isPending && <LoadingState />}
+        {roles.isError && <ErrorState title="管理岗位加载失败" description={errMsg(roles.error)} onRetry={() => void roles.refetch()} />}
         {roles.data && ROLES.map(({ role, title: t }) => (
           <section key={role} className="grid gap-2 border-b pb-3 last:border-b-0">
             <div className="flex items-center justify-between gap-2">

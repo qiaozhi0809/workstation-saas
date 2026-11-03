@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowDown, ArrowUp } from 'lucide-react'
 import { adminApi } from '@/shared/api/admin'
 import { EmptyState } from '@/shared/components/feedback/EmptyState'
+import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import Modal from '@/shared/components/overlay/Modal'
 import { toast } from '@/shared/components/Toast'
@@ -96,12 +97,14 @@ export default function GradesPanel() {
   const createClass = useMutation({ mutationFn: (b: ClassInput) => adminApi.createClass(b), onSuccess: () => ok('班级已创建'), onError: fail })
   const deleteClass = useMutation({ mutationFn: (id: string) => adminApi.deleteClass(id), onSuccess: () => ok('班级已删除'), onError: fail })
   const move = useMutation({
-    mutationFn: async ({ x, y, up }: { x: GradeAdmin; y: GradeAdmin; up: boolean }) => {
-      let xo = y.display_order
-      let yo = x.display_order
-      if (xo === yo) { if (up) yo = xo + 1; else xo = yo + 1 }   // 同序号时拉开
-      await adminApi.updateGrade(x.id, input(x, Math.min(99, xo)))
-      await adminApi.updateGrade(y.id, input(y, Math.min(99, yo)))
+    mutationFn: async ({ i, j }: { i: number; j: number }) => {
+      // 按当前顺序整体重排为 0..n-1,再交换 i、j;只对序号变化的年级发 PUT
+      const next = list.map((_, k) => k)
+      next[i] = j
+      next[j] = i
+      for (let k = 0; k < list.length; k++) {
+        if (next[k] !== list[k].display_order) await adminApi.updateGrade(list[k].id, input(list[k], next[k]))
+      }
     },
     onSettled: refresh,
     onError: (e) => toast(errMsg(e)),
@@ -115,6 +118,7 @@ export default function GradesPanel() {
       <CardContent className="grid gap-4 md:grid-cols-[18rem_minmax(0,1fr)]">
         <div className="grid content-start gap-2">
           {grades.isPending && <LoadingState />}
+          {grades.isError && <ErrorState title="年级加载失败" description={errMsg(grades.error)} onRetry={() => void grades.refetch()} />}
           <ul className="grid gap-1">
             {list.map((g, i) => (
               <li key={g.id} className={cn('flex items-center gap-1 rounded-md border px-2 py-1', g.id === gradeId && 'border-primary bg-accent')}>
@@ -124,9 +128,9 @@ export default function GradesPanel() {
                   <span className="text-xs text-muted-foreground">{`${g.effective_stage} · ${g.class_count} 个班`}</span>
                 </button>
                 <Button variant="ghost" size="icon" aria-label={`上移 ${g.name}`} disabled={i === 0 || move.isPending}
-                  onClick={() => move.mutate({ x: g, y: list[i - 1], up: true })}><ArrowUp /></Button>
+                  onClick={() => move.mutate({ i, j: i - 1 })}><ArrowUp /></Button>
                 <Button variant="ghost" size="icon" aria-label={`下移 ${g.name}`} disabled={i === list.length - 1 || move.isPending}
-                  onClick={() => move.mutate({ x: g, y: list[i + 1], up: false })}><ArrowDown /></Button>
+                  onClick={() => move.mutate({ i, j: i + 1 })}><ArrowDown /></Button>
                 <Button variant="ghost" size="sm" aria-label={`编辑年级 ${g.name}`} onClick={() => setDialog({ kind: 'edit', g })}>编辑</Button>
                 <Button variant="ghost" size="sm" aria-label={`删除年级 ${g.name}`} onClick={() => setDialog({ kind: 'delete', g })}>删除</Button>
               </li>
@@ -140,6 +144,7 @@ export default function GradesPanel() {
             <Button size="sm" disabled={gradeId === null} onClick={() => setDialog({ kind: 'class' })}>新建班级</Button>
           </div>
           {classes.isPending && gradeId !== null && <LoadingState />}
+          {classes.isError && <ErrorState title="班级加载失败" description={errMsg(classes.error)} onRetry={() => void classes.refetch()} />}
           {classes.data && classes.data.length === 0 && <EmptyState title="这个年级还没有班级" />}
           {classes.data && classes.data.length > 0 && (
             <div className="overflow-x-auto">
@@ -172,17 +177,17 @@ export default function GradesPanel() {
         </div>
       </CardContent>
 
-      <Modal open={dialog?.kind === 'create'} onClose={close} title="新建年级" className="max-w-md">
+      <Modal open={dialog?.kind === 'create'} onClose={close} title="新建年级" dismissOnOutside={false} className="max-w-md">
         <GradeForm initial={{ name: '', stage: null }} submitLabel="创建" busy={createGrade.isPending} error={error} onClose={close}
           onSubmit={(v) => createGrade.mutate({ ...v, display_order: nextOrder })} />
       </Modal>
-      <Modal open={dialog?.kind === 'edit'} onClose={close} title="编辑年级" className="max-w-md">
+      <Modal open={dialog?.kind === 'edit'} onClose={close} title="编辑年级" dismissOnOutside={false} className="max-w-md">
         {dialog?.kind === 'edit' && (
           <GradeForm key={dialog.g.id} initial={dialog.g} submitLabel="保存" busy={editGrade.isPending} error={error} onClose={close}
             onSubmit={(v) => editGrade.mutate({ g: dialog.g, v: { ...v, display_order: dialog.g.display_order } })} />
         )}
       </Modal>
-      <Modal open={dialog?.kind === 'class'} onClose={close} title="新建班级" className="max-w-md">
+      <Modal open={dialog?.kind === 'class'} onClose={close} title="新建班级" dismissOnOutside={false} className="max-w-md">
         <ClassForm busy={createClass.isPending} error={error} onClose={close}
           onSubmit={(v) => gradeId && createClass.mutate({ grade_id: gradeId, ...v })} />
       </Modal>

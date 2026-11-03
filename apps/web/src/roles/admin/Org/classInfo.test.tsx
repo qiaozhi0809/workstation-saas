@@ -72,3 +72,26 @@ it('shows the stage read-only', async () => {
   renderPage()
   expect(await screen.findByText('小学')).toBeInTheDocument()
 })
+
+it('ends a subject teacher after confirmation', async () => {
+  api.endStaff.mockResolvedValue(undefined)
+  renderPage()
+  fireEvent.click(await screen.findByRole('button', { name: '卸任 王老师(语文)' }))
+  expect(api.endStaff).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: '确认卸任' }))
+  await waitFor(() => expect(api.endStaff).toHaveBeenCalledWith('a2'))
+})
+
+it('ends the homeroom teacher after confirmation', async () => {
+  api.endStaff.mockResolvedValue(undefined)
+  renderPage()
+  fireEvent.click(await screen.findByRole('button', { name: '卸任 李老师(班主任)' }))
+  fireEvent.click(screen.getByRole('button', { name: '确认卸任' }))
+  await waitFor(() => expect(api.endStaff).toHaveBeenCalledWith('a1'))
+})
+
+it('titles the page with the class name only and shows the grade as subtitle', async () => {
+  renderPage()
+  expect(await screen.findByRole('heading', { level: 1, name: '三年二班' })).toBeInTheDocument()
+  expect(screen.getByText('三年级', { selector: 'span.text-muted-foreground' })).toBeInTheDocument()
+})
