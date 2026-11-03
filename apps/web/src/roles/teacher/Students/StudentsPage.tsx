@@ -182,7 +182,7 @@ function Roster({ ctx: { cls, summary, perms } }: { ctx: ClassContext }) {
       {visible.length === 0 ? (
         <EmptyState title="没有符合条件的学生" />
       ) : (
-        <div className="overflow-x-auto rounded-md border">
+        <div className="relative overflow-x-auto rounded-md border">
           <table className="w-full text-sm">
             <thead className="bg-muted text-muted-foreground">
               <tr>

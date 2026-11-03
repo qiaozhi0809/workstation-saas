@@ -265,6 +265,8 @@ it('N5: table scrolls on its own and keeps contacts and tags columns on wide scr
   renderPage()
   const table = (await screen.findByRole('table'))
   expect(table.parentElement).toHaveClass('overflow-x-auto')
+  // relative:表头 sr-only(绝对定位)必须被这个滚动容器裁剪,否则撑宽整页
+  expect(table.parentElement).toHaveClass('relative')
   // 根容器 min-w-0:否则 flex 子项撑开页面,横向滚动落到整页而不是表格自己
   expect(table.closest('.space-y-3')).toHaveClass('min-w-0')
   expect(screen.getByRole('columnheader', { name: '主要联系人' })).toBeInTheDocument()
