@@ -18,7 +18,7 @@ vi.mock('@/shared/api/classroom', () => ({ classroomApi: { summary: vi.fn() } })
 vi.mock('@/shared/api/students', () => ({ studentsApi: { detail: vi.fn() } }))
 
 const cls = (id: string, name: string, role: ClassView['role']): ClassView =>
-  ({ id, name, grade_name: '三年级', seat_rows: 6, seat_cols: 4, role })
+  ({ id, name, grade_name: '三年级', seat_rows: 6, seat_cols: 4, desk_size: 2, seat_layout: 'manual', seat_order: 'row', podium_left: 0, podium_right: 0, room: '', role })
 
 const renderLayout = () => render(
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>

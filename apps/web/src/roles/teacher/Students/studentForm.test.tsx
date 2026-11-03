@@ -13,7 +13,7 @@ vi.mock('@/shared/api/students', () => ({
 }))
 vi.mock('@/shared/components/Toast', () => ({ toast: vi.fn() }))
 
-const cls: ClassView = { id: 'c1', name: '三年二班', grade_name: '三年级', seat_rows: 2, seat_cols: 2, role: 'homeroom_teacher' }
+const cls: ClassView = { id: 'c1', name: '三年二班', grade_name: '三年级', seat_rows: 2, seat_cols: 2, desk_size: 2, seat_layout: 'manual', seat_order: 'row', podium_left: 0, podium_right: 0, room: '', role: 'homeroom_teacher' }
 const roster = [
   rec({ enrollment_id: 'e1', name: '张三', student_no: '2026009', seat_row: 1, seat_col: 1 }),
   rec({ enrollment_id: 'e2', name: '李四', student_no: '2026010', seat_row: 1, seat_col: 2, seat_locked: true }),

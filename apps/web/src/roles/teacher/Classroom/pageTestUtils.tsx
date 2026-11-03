@@ -36,7 +36,7 @@ export const ALL_PERMS: ClassPerm[] = [
 ]
 
 export const classFixture: ClassView = {
-  id: 'c1', name: '三年二班', grade_name: '三年级', seat_rows: 3, seat_cols: 4, role: 'homeroom_teacher',
+  id: 'c1', name: '三年二班', grade_name: '三年级', seat_rows: 3, seat_cols: 4, desk_size: 2, seat_layout: 'manual', seat_order: 'row', podium_left: 0, podium_right: 0, room: '', role: 'homeroom_teacher',
 }
 
 const student = (n: number, name: string, col: number, gender: string, birthdate: string): StudentSeat => ({
@@ -55,6 +55,7 @@ export function summaryFixture(over: Partial<ClassroomSummary> = {}): ClassroomS
     today: '2026-11-02',
     timezone: 'Asia/Shanghai',
     week_no: 10,
+    school_name: '示例小学',
     week_start: '2026-11-02',
     year: { id: 'y1', name: '2026-2027', start_date: '2026-09-01', end_date: '2027-07-15' },
     seat_version: 4,

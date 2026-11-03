@@ -3,7 +3,7 @@ import type { StudentSeat as Seat } from '@/shared/types/student'
 import Avatar from './art/Avatar'
 import { groupColor } from './art/palette'
 import { genderOf } from './art/StudentFigure'
-import { groupOf } from './layout'
+import { groupOf } from '@/shared/lib/seats'
 import { placeCard } from './placeCard'
 
 const FALLBACK = { w: 200, h: 120 }  // jsdom 量不出尺寸时的估计
@@ -34,11 +34,11 @@ export default function HoverCard({ stageRef, seatKey, children }: Props) {
   )
 }
 
-export function SeatCard({ seat }: { seat: Seat }) {
+export function SeatCard({ seat, group }: { seat: Seat; group?: number }) {
   return (
     <div className="flex items-center gap-3 whitespace-nowrap">
       <Avatar gender={genderOf(seat.gender)} seed={seat.avatar_seed ?? seat.student_id}
-        color={groupColor(groupOf(seat.seat_col ?? 1))} size={44} title={seat.name} />
+        color={groupColor(group ?? groupOf(seat.seat_col ?? 1, 2, 0))} size={44} title={seat.name} />
       <div className="flex flex-col text-sm leading-5">
         <span className="text-base font-semibold">{seat.name}</span>
         {seat.student_no && <span className="text-muted-foreground">{`学号 ${seat.student_no}`}</span>}

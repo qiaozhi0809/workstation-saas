@@ -3,7 +3,8 @@ import type { StudentSeat as Seat } from '@/shared/types/student'
 import { ChairBack } from './art/Desk'
 import { groupColor } from './art/palette'
 import StudentFigure, { genderOf, type Pose } from './art/StudentFigure'
-import { groupOf, type Layout } from './layout'
+import { seatText } from '@/shared/lib/seats'
+import type { Layout } from './layout'
 import { Badge, CELL, Chip, Lock, NameTag, Ribbon, Selected } from './seatParts'
 import type { ClassroomEffects, ClassroomMapProps, SeatAnchor, SeatView } from './types'
 
@@ -47,8 +48,8 @@ function pressable(label: string, mark: DragMark, fire: (el: Element) => void) {
 
 // 座位按钮的可访问名称:姓名,位置,再依次追加座位上显示的标签 / 徽章 / 锁定状态
 // eslint-disable-next-line react-refresh/only-export-components
-export function seatLabel(seat: Seat, row: number, col: number, view: SeatView): string {
-  const parts = [seat.name, `第${row}排第${col}列`]
+export function seatLabel(seat: Seat, row: number, col: number, view: SeatView, where = `第${row}排第${col}列`): string {
+  const parts = [seat.name, where]
   if (view.chip?.text) parts.push(view.chip.text)
   if (view.badge?.text) parts.push(view.badge.text)
   if (seat.seat_locked || view.locked) parts.push('已锁定')
@@ -82,13 +83,13 @@ const OccupiedSeat = memo(function OccupiedSeat({ row, col, seat, layout, pose, 
     onMouseEnter: () => onHover('mouse', id, key, true), onMouseLeave: () => onHover('mouse', id, key, false),
     onFocus: () => onHover('focus', id, key, true), onBlur: () => onHover('focus', id, key, false),
   }
-  const act = onSeatClick ? pressable(seatLabel(seat, row, col, view), mark, (el) => onSeatClick(seat, anchorOf(el))) : { className: seatClass(mark) }
+  const act = onSeatClick ? pressable(seatLabel(seat, row, col, view, row === 0 ? seatText({ row, col }, layout.deskGrid) : undefined), mark, (el) => onSeatClick(seat, anchorOf(el))) : { className: seatClass(mark) }
   return (
     <g data-seat={key} data-enrollment={id} data-ghost={view.ghost ? 'true' : undefined} {...hover} {...act}>
       <g transform={`translate(${s.x} ${s.y})`}><HitArea /></g>
       <g opacity={view.ghost ? 0.4 : undefined}>
         <StudentFigure x={h.x} y={h.y} gender={genderOf(seat.gender)} seed={seat.avatar_seed ?? seat.student_id}
-          color={groupColor(groupOf(col))} pose={pose} />
+          color={groupColor(layout.group(row, col))} pose={pose} />
         <ChairBack x={s.x} y={s.y} />
         <g transform={`translate(${s.x} ${s.y})`}>
           {seat.class_role && <Ribbon text={seat.class_role} />}
@@ -107,7 +108,7 @@ function EmptySeat({ row, col, layout, mark, onEmptySeatClick }: {
   row: number; col: number; layout: Layout; mark: DragMark; onEmptySeatClick?: ClassroomMapProps['onEmptySeatClick']
 }) {
   const s = layout.seat(row, col)
-  const act = onEmptySeatClick ? pressable(`空座 ${row}排${col}列`, mark, () => onEmptySeatClick({ row, col })) : { className: seatClass(mark) }
+  const act = onEmptySeatClick ? pressable(`空座 ${seatText({ row, col }, layout.deskGrid)}`, mark, () => onEmptySeatClick({ row, col })) : { className: seatClass(mark) }
   return (
     <g data-seat={`${row}-${col}`} {...act}>
       <g transform={`translate(${s.x} ${s.y})`}><HitArea /></g>

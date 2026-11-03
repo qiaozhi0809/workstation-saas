@@ -37,6 +37,7 @@ export interface StudentInput {
   health_notes: string | null
   contacts: Contact[]
   seat: { row: number; col: number } | null
+  auto_seat?: boolean
 }
 export interface StudentImport { rows: Omit<StudentInput, 'seat'>[]; auto_seat: boolean }
 export interface StudentImported {
