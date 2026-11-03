@@ -139,26 +139,6 @@ test('the map cannot be dragged at fit and never leaves the stage after zooming'
   await expect.poll(() => canvasTransform(page)).toBe(fitTransform)
 })
 
-test('seat size popover applies a typed value when clicking the stage', async ({ page }) => {
-  await signIn(page)
-  await switchMode(page, '排座')
-  await expect(page.getByRole('button', { name: '随机打乱' })).toBeEnabled()
-  await page.getByRole('button', { name: /6 排 × 4 列/ }).click()
-  const dialog = page.getByRole('dialog', { name: '座位行列' })
-  await expect(dialog).toBeVisible()
-  await expect(dialog.getByRole('spinbutton', { name: '排数' })).toBeFocused()
-  await dialog.getByRole('spinbutton', { name: '排数' }).fill('7')
-  const stage = await stageBox(page)
-  await page.mouse.click(stage.x + 8, stage.y + 8)
-  await expect(dialog).toBeHidden()
-  await expect(page.getByRole('button', { name: /7 排 × 4 列/ })).toBeVisible()
-  // 只改了草稿,不保存:放弃修改
-  await page.getByRole('button', { name: '更多操作' }).click()
-  await page.getByRole('menuitem', { name: '放弃修改' }).click()
-  await expect(page.getByRole('button', { name: /6 排 × 4 列/ })).toBeVisible()
-  await expect(page.getByRole('button', { name: '保存座位' })).toBeDisabled()
-})
-
 test('account menu works from the keyboard', async ({ page }) => {
   await signIn(page)
   const trigger = page.getByRole('button', { name: '账号菜单' })

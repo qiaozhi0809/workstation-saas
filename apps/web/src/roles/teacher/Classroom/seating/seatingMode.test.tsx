@@ -1,5 +1,7 @@
-import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
+import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { ApiError } from '@/shared/api/client'
 import { classesApi } from '@/shared/api/classes'
 import { classroomApi } from '@/shared/api/classroom'
@@ -9,6 +11,10 @@ import { studentsApi } from '@/shared/api/students'
 import { useTeacherStore } from '@/shared/stores/teacher'
 import type { SeatingSaved } from '@/shared/types/seating'
 import type { StudentSeat } from '@/shared/types/student'
+import SeatingBar, { type SeatingBarProps } from './SeatingBar'
+import { seatingPrintHtml } from './printSeating'
+import { useSeatingMode } from './useSeatingMode'
+import type { DraftStudent } from './draft'
 import { classFixture, defaultApiMocks, rosterFixture, setup, summaryFixture } from '../pageTestUtils'
 
 vi.mock('@/shared/api/classes')
@@ -41,8 +47,6 @@ function stubFullscreen() {
   })
 }
 
-const SIZE_BUTTON = /排 × .* 列/
-const openSize = () => fireEvent.click(screen.getByRole('button', { name: SIZE_BUTTON }))
 const openMore = () => fireEvent.click(screen.getByRole('button', { name: '更多操作' }))
 const menuItem = (name: string) => screen.getByRole('menuitem', { name })
 
@@ -228,10 +232,9 @@ it('saves once when the save button is double-clicked', async () => {
   act(() => { btn.click(); btn.click() })
   expect(seatingApi.save).toHaveBeenCalledTimes(1)
   expect(btn).toBeDisabled()
-  // 保存中草稿不可编辑:地图座位不可点、行列与托盘禁用
+  // 保存中草稿不可编辑:地图座位不可点、托盘禁用
   expect(screen.queryByRole('button', { name: /^王小一，/ })).toBeNull()
   expect(screen.queryByRole('button', { name: '空座 2排1列' })).toBeNull()
-  expect(screen.getByRole('button', { name: SIZE_BUTTON })).toBeDisabled()
   openMore()
   expect(menuItem('放弃修改')).toHaveAttribute('aria-disabled', 'true')
   fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
@@ -274,72 +277,6 @@ it('locks a student and moves another one to the tray', async () => {
   await waitFor(() => expect(seatingApi.save).toHaveBeenCalledWith('c1', { base_version: 4, rows: 3, cols: 4,
     seats: [{ enrollment_id: 'e1', row: 1, col: 1, locked: true }] }))
   expect(await screen.findByText('座位已保存')).toBeInTheDocument()
-})
-
-it('resizes within 1-12 and discards changes', async () => {
-  setup({ mode: '排座' })
-  await screen.findByRole('button', { name: SIZE_BUTTON })
-  openSize()
-  const cols = screen.getByRole('spinbutton', { name: '列数' })
-  fireEvent.change(cols, { target: { value: '1' } })
-  fireEvent.blur(cols)
-  expect(screen.getByRole('region', { name: '待安排 (2)' })).toBeInTheDocument()
-  const rows = screen.getByRole('spinbutton', { name: '排数' })
-  fireEvent.change(rows, { target: { value: '20' } })
-  expect(rows).toHaveAttribute('aria-invalid', 'true')
-  fireEvent.keyDown(rows, { key: 'Enter' })
-  expect(rows).toHaveValue(12)
-  expect(screen.getByRole('button', { name: '撤销' })).toBeEnabled()
-  expect(screen.getByRole('button', { name: '撤销' })).toHaveAttribute('title', '撤销')
-  expect(screen.getByRole('button', { name: '撤销' }).textContent).toBe('')
-  openMore()
-  fireEvent.click(menuItem('放弃修改'))
-  expect(screen.getByRole('region', { name: '待安排 (1)' })).toBeInTheDocument()
-  openSize()
-  expect(screen.getByRole('spinbutton', { name: '列数' })).toHaveValue(4)
-  expect(screen.getByRole('button', { name: '保存座位' })).toBeDisabled()
-  expect(screen.getByRole('button', { name: '撤销' })).toBeDisabled()
-})
-
-it('applies a typed row count only when committed, keeping every seat', async () => {
-  const sixRows = { ...classFixture, seat_rows: 6 }
-  vi.mocked(classesApi.mine).mockResolvedValue({ items: [sixRows] })
-  const spread = roster.map((s) => (s.enrollment_id === 'e2' ? { ...s, seat_row: 6, seat_col: 2 } : s))
-  vi.mocked(studentsApi.listInClass).mockResolvedValue({ items: spread })
-  setup({ mode: '排座', roster: spread })
-  await screen.findByRole('button', { name: SIZE_BUTTON })
-  openSize()
-  const rows = screen.getByRole('spinbutton', { name: '排数' })
-  expect(rows).toHaveValue(6)
-  // 逐键输入 "1" → "10":中途不调整网格,没有学生被挤进待安排
-  fireEvent.change(rows, { target: { value: '1' } })
-  expect(screen.getByRole('region', { name: '待安排 (1)' })).toBeInTheDocument()
-  fireEvent.change(rows, { target: { value: '10' } })
-  expect(screen.getByRole('region', { name: '待安排 (1)' })).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: '保存座位' })).toBeDisabled()
-  fireEvent.blur(rows)
-  expect(rows).toHaveValue(10)
-  expect(screen.getByRole('region', { name: '待安排 (1)' })).toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: '保存座位' }))
-  await waitFor(() => expect(seatingApi.save).toHaveBeenCalledWith('c1', { base_version: 4, rows: 10, cols: 4,
-    seats: [{ enrollment_id: 'e1', row: 1, col: 1, locked: false }, { enrollment_id: 'e2', row: 6, col: 2, locked: false }] }))
-})
-
-it('steps the size with the buttons and ignores invalid typing', async () => {
-  setup({ mode: '排座' })
-  await screen.findByRole('button', { name: SIZE_BUTTON })
-  openSize()
-  const rows = screen.getByRole('spinbutton', { name: '排数' })
-  fireEvent.click(screen.getByRole('button', { name: '增加排数' }))
-  expect(rows).toHaveValue(4)
-  fireEvent.click(screen.getByRole('button', { name: '减少排数' }))
-  expect(rows).toHaveValue(3)
-  fireEvent.change(rows, { target: { value: '' } })
-  expect(rows).toHaveAttribute('aria-invalid', 'true')
-  fireEvent.blur(rows)
-  expect(rows).toHaveValue(3)
-  expect(rows).not.toHaveAttribute('aria-invalid')
-  expect(screen.getByRole('button', { name: '保存座位' })).toBeDisabled()
 })
 
 it('marks the class switcher as guarded while the draft is dirty', async () => {
@@ -510,51 +447,12 @@ it('guards page unload only while the draft has unsaved changes', async () => {
 it('shows the common seating actions directly and the rest under 更多操作', async () => {
   setup({ mode: '排座' })
   await screen.findByRole('button', { name: /^王小一，/ })
-  for (const name of ['随机打乱', '男女同桌', '撤销', '3 排 × 4 列', '保存座位', '更多操作'])
+  for (const name of ['随机打乱', '男女同桌', '撤销', '保存座位', '更多操作'])
     expect(screen.getByRole('button', { name })).toBeInTheDocument()
   for (const name of ['放弃修改', '固定座位', '打印']) expect(screen.queryByRole('button', { name })).toBeNull()
   openMore()
   expect(within(screen.getByRole('menu', { name: '更多操作' })).getAllByRole('menuitem').map((i) => i.textContent))
     .toEqual(['放弃修改', '固定座位', '打印', '班级设置', '编辑黑板'])
-})
-
-it('typing a row count then leaving the popover applies it', async () => {
-  setup({ mode: '排座' })
-  await screen.findByRole('button', { name: /^王小一，/ })
-  openSize()
-  const rows = screen.getByRole('spinbutton', { name: '排数' })
-  fireEvent.change(rows, { target: { value: '5' } })
-  act(() => rows.blur())
-  fireEvent.click(document.body)
-  expect(screen.queryByRole('dialog', { name: '座位行列' })).toBeNull()
-  expect(screen.getByRole('button', { name: '5 排 × 4 列' })).toBeInTheDocument()
-})
-
-it('Escape closes the size popover without applying typed text', async () => {
-  setup({ mode: '排座' })
-  await screen.findByRole('button', { name: /^王小一，/ })
-  openSize()
-  const rows = screen.getByRole('spinbutton', { name: '排数' })
-  fireEvent.change(rows, { target: { value: '5' } })
-  fireEvent.keyDown(rows, { key: 'Escape' })
-  expect(screen.queryByRole('dialog', { name: '座位行列' })).toBeNull()
-  const trigger = screen.getByRole('button', { name: '3 排 × 4 列' })
-  expect(trigger).toHaveFocus()
-})
-
-it('focuses and selects the row count when the size popover opens', async () => {
-  const select = vi.spyOn(HTMLInputElement.prototype, 'select')
-  setup({ mode: '排座' })
-  await screen.findByRole('button', { name: /^王小一，/ })
-  openSize()
-  const rows = screen.getByRole('spinbutton', { name: '排数' })
-  expect(rows).toHaveFocus()
-  expect(select).toHaveBeenCalled()
-  expect(select.mock.contexts.at(-1)).toBe(rows)
-  select.mockClear()
-  fireEvent.focus(screen.getByRole('spinbutton', { name: '列数' }))
-  expect(select).toHaveBeenCalledTimes(1)
-  select.mockRestore()
 })
 
 it('more menu opens inside the fullscreen root while presenting', async () => {
@@ -565,6 +463,40 @@ it('more menu opens inside the fullscreen root while presenting', async () => {
   await screen.findByRole('button', { name: '退出全屏' })
   openMore()
   expect((document.fullscreenElement as Element).contains(screen.getByRole('menu', { name: '更多操作' }))).toBe(true)
+})
+
+it('no longer offers a rows and columns popover', async () => {
+  setup({ mode: '排座' })
+  await screen.findByRole('button', { name: /^王小一，/ })
+  expect(screen.queryByRole('button', { name: '座位行列' })).toBeNull()
+  expect(screen.queryByRole('button', { name: /排 × .* 列/ })).toBeNull()
+  expect(screen.queryByRole('spinbutton', { name: '排数' })).toBeNull()
+})
+
+it('rejects a stale draft after the layout changed', async () => {
+  // 别处改了桌椅排列:保存带着旧版本,服务端 409,草稿保留并弹出冲突对话框
+  vi.mocked(seatingApi.save).mockRejectedValue(new ApiError(409, 'SEAT_VERSION_CONFLICT', 'x', { current_version: 6 }))
+  setup({ mode: '排座' })
+  fireEvent.click(await screen.findByRole('button', { name: /^王小一，/ }))
+  fireEvent.click(screen.getByRole('button', { name: /^李小二，/ }))
+  fireEvent.click(screen.getByRole('button', { name: '保存座位' }))
+  expect(await screen.findByRole('dialog', { name: '座位表已被其他人修改' })).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '继续编辑' }))
+  expect(screen.getByRole('button', { name: '保存座位' })).toBeEnabled()
+})
+
+it('treats a podium seat inside the grid as seated and saves it first', async () => {
+  vi.mocked(classesApi.mine).mockResolvedValue({ items: [{ ...classFixture, podium_left: 1 }] })
+  const withPodium = roster.map((s) => (s.enrollment_id === 'e3' ? { ...s, seat_row: 0, seat_col: -1 } : s))
+  vi.mocked(studentsApi.listInClass).mockResolvedValue({ items: withPodium })
+  setup({ mode: '排座', roster: withPodium })
+  fireEvent.click(await screen.findByRole('button', { name: /^王小一，/ }))
+  fireEvent.click(screen.getByRole('button', { name: /^李小二，/ }))
+  expect(screen.getByRole('region', { name: '待安排 (0)' })).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '保存座位' }))
+  await waitFor(() => expect(seatingApi.save).toHaveBeenCalledWith('c1', { base_version: 4, rows: 3, cols: 4,
+    seats: [{ enrollment_id: 'e3', row: 0, col: -1, locked: false },
+      { enrollment_id: 'e2', row: 1, col: 1, locked: false }, { enrollment_id: 'e1', row: 1, col: 2, locked: false }] }))
 })
 
 it('disables mentor seating without exam scores', async () => {
@@ -587,4 +519,144 @@ it('runs mentor seating from the bar', async () => {
   expect(screen.getByRole('region', { name: '待安排 (0)' })).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: '撤销' }))
   expect(screen.getByRole('region', { name: '待安排 (1)' })).toBeInTheDocument()
+})
+
+const barProps = (over: Partial<SeatingBarProps> = {}): SeatingBarProps => ({
+  deskSize: 2, onOpenLayout: vi.fn(), layoutBlocked: false, canUndo: false, dirty: false, busy: false, selected: null,
+  conflict: false, onShuffle: vi.fn(), onPair: vi.fn(), onMentor: vi.fn(), canMentor: true, onUndo: vi.fn(), onDiscard: vi.fn(),
+  onToggleLock: vi.fn(), onPrint: vi.fn(), onSave: vi.fn(), onReload: vi.fn(), onKeepEditing: vi.fn(), ...over,
+})
+
+it('opens the desk layout from the bar and blocks it while the draft is dirty', () => {
+  const props = barProps()
+  const { rerender } = render(<SeatingBar {...props} />)
+  fireEvent.click(screen.getByRole('button', { name: '桌椅排列' }))
+  expect(props.onOpenLayout).toHaveBeenCalledTimes(1)
+  // 草稿有未保存的修改(layoutBlocked = dirty)时:禁用并说明原因
+  rerender(<SeatingBar {...props} layoutBlocked dirty />)
+  const blocked = screen.getByRole('button', { name: '桌椅排列' })
+  expect(blocked).toBeDisabled()
+  expect(blocked).toHaveAttribute('title', '先保存或放弃当前的座位修改')
+  // 页面没有提供入口时不渲染按钮
+  rerender(<SeatingBar {...props} onOpenLayout={undefined} />)
+  expect(screen.queryByRole('button', { name: '桌椅排列' })).toBeNull()
+})
+
+it('hides pair buttons for single desks', async () => {
+  vi.mocked(classesApi.mine).mockResolvedValue({ items: [{ ...classFixture, desk_size: 1 }] })
+  setup({ mode: '排座' })
+  expect(await screen.findByRole('button', { name: '随机打乱' })).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '男女同桌' })).toBeNull()
+  expect(screen.queryByRole('button', { name: '优带弱' })).toBeNull()
+})
+
+const ps = (name: string, no: string, row: number, col: number): DraftStudent =>
+  ({ enrollmentId: name, name, studentNo: no, gender: null, row, col, locked: false })
+
+it('prints podium seats, desk gaps, room and student numbers', () => {
+  const html = seatingPrintHtml({ className: '三年二班', schoolName: '示例小学', room: '求知楼 201', today: '2026-11-03',
+    grid: { rows: 1, cols: 6, deskSize: 3, podiumLeft: 2, podiumRight: 1 },
+    students: [ps('甲', '001', 0, -2), ps('乙', '002', 1, 1)] })
+  expect(html).toContain('<h1>三年二班 座位表</h1>')
+  expect(html).toContain('示例小学 · 求知楼 201 · 2026-11-03 · 讲台在上方')
+  // 讲台左外侧座位的人在"讲台"之前(左边)
+  expect(html.indexOf('甲')).toBeLessThan(html.indexOf('讲台</div>'))
+  // 6 列 / 三人桌 = 2 张桌,中间 1 条过道
+  expect(html.match(/class="gap"/g)).toHaveLength(1)
+  expect(html).toContain('乙<small>002</small>')
+  expect(html).toContain('>空<')
+})
+
+it('prints only the podium when there are no podium seats, and omits empty header parts', () => {
+  const html = seatingPrintHtml({ className: 'c', schoolName: '', room: '', today: '2026-11-03',
+    grid: { rows: 1, cols: 2, deskSize: 1, podiumLeft: 0, podiumRight: 0 }, students: [] })
+  expect(html).toContain('2026-11-03 · 讲台在上方')
+  expect(html.match(/讲台<\/div>/g)).toHaveLength(1)
+  // 2 列 1 排 = 2 个空座(class 是 "seat e"),讲台行没有任何座位格
+  expect(html.match(/class="seat/g)).toHaveLength(2)
+  expect(html).not.toContain('class="ps')
+})
+
+it('escapes names in the printout', () => {
+  const html = seatingPrintHtml({ className: 'c', schoolName: '', room: '', today: '2026-11-03',
+    grid: { rows: 1, cols: 2, deskSize: 2, podiumLeft: 0, podiumRight: 0 }, students: [ps('<b>x</b>', '<i>', 1, 1)] })
+  expect(html).toContain('&lt;b&gt;x&lt;/b&gt;')
+  expect(html).not.toContain('<b>x</b>')
+  expect(html).toContain('&lt;i&gt;')
+})
+
+const gaps = (cols: number, deskSize: 1 | 2 | 3) =>
+  (seatingPrintHtml({ className: 'c', schoolName: '', room: '', today: 't',
+    grid: { rows: 1, cols, deskSize, podiumLeft: 0, podiumRight: 0 }, students: [] }).match(/class="gap"/g) ?? []).length
+
+it('orders podium seats outward-to-inward on the left and inward-to-outward on the right', () => {
+  const html = seatingPrintHtml({ className: 'c', schoolName: '', room: '', today: 't',
+    grid: { rows: 1, cols: 2, deskSize: 2, podiumLeft: 2, podiumRight: 2 },
+    students: [ps('左二', '1', 0, -2), ps('左一', '2', 0, -1), ps('右一', '3', 0, 1), ps('右二', '4', 0, 2)] })
+  const at = (n: string) => html.indexOf(n)
+  expect(at('左二')).toBeLessThan(at('左一'))
+  expect(at('左一')).toBeLessThan(html.indexOf('讲台</div>'))
+  expect(html.indexOf('讲台</div>')).toBeLessThan(at('右一'))
+  expect(at('右一')).toBeLessThan(at('右二'))
+})
+
+it('puts a gap only after each desk, never after the last column', () => {
+  expect(gaps(5, 2)).toBe(2) // 列 2、4 后
+  expect(gaps(6, 2)).toBe(2) // 列 6 是最后一列,不插
+  expect(gaps(5, 3)).toBe(1) // 只有列 3 后
+  expect(gaps(6, 3)).toBe(1)
+  expect(gaps(4, 1)).toBe(3) // 单人桌:每列后都插,最后一列除外
+})
+
+it('drives layoutBlocked, print data and reload through useSeatingMode', async () => {
+  vi.mocked(classesApi.mine).mockResolvedValue({ items: [{ ...classFixture, room: '求知楼 201' }] })
+  vi.mocked(classroomApi.summary).mockResolvedValue(summaryFixture({ today: '2026-11-03' }))
+  vi.mocked(studentsApi.listInClass).mockResolvedValue({ items: roster })
+  act(() => { useTeacherStore.setState({ classId: 'c1' }) })
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  let current!: ReturnType<typeof useSeatingMode>
+  function Probe() {
+    useQuery({ queryKey: ['my-classes'], queryFn: classesApi.mine })
+    useQuery({ queryKey: ['class-students', 'c1'], queryFn: () => studentsApi.listInClass('c1') })
+    useQuery({ queryKey: ['classroom', 'c1'], queryFn: () => classroomApi.summary('c1') })
+    current = useSeatingMode({ classId: 'c1', className: '三年二班', enabled: true, onOpenLayout: () => {} })
+    return null
+  }
+  const router = createMemoryRouter([{ path: '/', element: <Probe /> }])
+  render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>)
+  await waitFor(() => expect(current.ready).toBe(true))
+  if (!current.ready) throw new Error('not ready')
+  expect(current.bar.layoutBlocked).toBe(false)
+
+  const seat = (id: string) => roster.find((r) => r.enrollment_id === id)!
+  act(() => current.onSeatClick?.(seat('e1')))
+  act(() => current.onSeatClick?.(seat('e2')))
+  if (!current.ready) throw new Error('not ready')
+  expect(current.dirty).toBe(true)
+  expect(current.bar?.layoutBlocked).toBe(true)
+
+  // 打印用的是缓存里的学校、教室与日期
+  const win = { document: { write: vi.fn(), close: vi.fn() }, focus: vi.fn(), print: vi.fn() }
+  vi.spyOn(window, 'open').mockReturnValue(win as unknown as Window)
+  act(() => current.bar?.onPrint())
+  const html = String(win.document.write.mock.calls[0][0])
+  expect(html).toContain('示例小学 · 求知楼 201 · 2026-11-03 · 讲台在上方')
+
+  // reload 重新拉取并丢掉草稿
+  const before = vi.mocked(studentsApi.listInClass).mock.calls.length
+  await act(async () => { await current.reload() })
+  expect(vi.mocked(studentsApi.listInClass).mock.calls.length).toBeGreaterThan(before)
+  await waitFor(() => expect(current.dirty).toBe(false))
+  if (!current.ready) throw new Error('not ready')
+  expect(current.bar.layoutBlocked).toBe(false)
+})
+
+it.each(['layout_mismatch', 'podium_unavailable'])('says the layout changed on SEAT_INVALID (%s)', async (reason) => {
+  vi.mocked(seatingApi.save).mockRejectedValue(new ApiError(400, 'SEAT_INVALID', 'x', { reason }))
+  setup({ mode: '排座' })
+  fireEvent.click(await screen.findByRole('button', { name: /^王小一，/ }))
+  fireEvent.click(screen.getByRole('button', { name: /^李小二，/ }))
+  fireEvent.click(screen.getByRole('button', { name: '保存座位' }))
+  expect(await screen.findByText('班级的桌椅排列已变化,已重新加载')).toBeInTheDocument()
+  expect(screen.queryByText('学生名单有变化,已重新加载')).toBeNull()
 })
