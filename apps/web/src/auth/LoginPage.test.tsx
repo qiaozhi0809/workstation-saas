@@ -8,7 +8,7 @@ import { useAuthStore } from '@/shared/stores/auth'
 import type { User } from '@/shared/types/user'
 import LoginPage from './LoginPage'
 
-vi.mock('@/shared/api/auth', () => ({ authApi: { login: vi.fn() } }))
+vi.mock('@/shared/api/auth', () => ({ authApi: { login: vi.fn(), logout: vi.fn() } }))
 
 const fill = (login: string, pw: string) => {
   fireEvent.change(screen.getByLabelText('登录名'), { target: { value: login } })
@@ -18,6 +18,7 @@ const fill = (login: string, pw: string) => {
 
 beforeEach(() => {
   vi.mocked(authApi.login).mockReset()
+  vi.mocked(authApi.logout).mockReset().mockResolvedValue({ ok: true })
   useAuthStore.getState().logout()
 })
 
@@ -160,4 +161,10 @@ it('stays on the login page with a hint when the account has no identity', async
   expect(await screen.findByRole('alert')).toHaveTextContent('这个账号还没有分配身份,请联系学校信息中心')
   expect(screen.queryByText('teacher home')).toBeNull()
   expect(useAuthStore.getState().accessToken).toBeNull()
+})
+
+it('revokes the refresh token when discarding a login without identity', async () => {
+  await loginAs({ contexts: [] })
+  await screen.findByRole('alert')
+  expect(authApi.logout).toHaveBeenCalledWith('r')
 })

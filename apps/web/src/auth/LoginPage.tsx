@@ -34,6 +34,8 @@ export default function LoginPage() {
     try {
       const res = await authApi.login(loginName.trim(), password)
       if (res.user.contexts.length === 0) {
+        // 丢弃令牌前 best-effort 吊销刷新令牌(此时 store 里没有 access token)
+        authApi.logout(res.refresh_token).catch(() => {})
         setError(NO_IDENTITY)
         setPending(false)
         return

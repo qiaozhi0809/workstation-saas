@@ -10,6 +10,7 @@ import LoginPage from '@/auth/LoginPage'
 import AdminHome from '@/roles/admin/AdminHome'
 import AdminLayout from '@/roles/admin/AdminLayout'
 import { ADMIN_PAGES } from '@/roles/admin/pages'
+import RequirePerm from '@/roles/admin/RequirePerm'
 import TeacherLayout from '@/roles/teacher/TeacherLayout'
 import ClassroomPage from '@/roles/teacher/Classroom/ClassroomPage'
 import AnalysisPage from '@/roles/teacher/Analysis/AnalysisPage'
@@ -52,7 +53,7 @@ const routes = createRoutesFromElements(
     <Route path="/change-password" element={<ChangePasswordPage />} />
     <Route path="/admin" element={<ProtectedRoute context="admin"><AdminLayout /></ProtectedRoute>}>
       <Route index element={<AdminHome />} />
-      {ADMIN_PAGES.map((p) => <Route key={p.path} path={p.path} element={p.element} />)}
+      {ADMIN_PAGES.map((p) => <Route key={p.path} path={p.path} element={<RequirePerm perm={p.perm}>{p.element}</RequirePerm>} />)}
     </Route>
     <Route path="/parent" element={<EmptyState title="家长端(M4)" className="h-full justify-center p-6" />} />
     <Route path="/" element={<Navigate to="/login" replace />} />

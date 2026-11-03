@@ -3,11 +3,11 @@ import type { LucideIcon } from 'lucide-react'
 import type { AdminPerm } from '@/shared/types/admin'
 // 第 2 波各段只在自己的锚点处追加 import,不动别人的行;锚点之间留空行以免 git 合并冲突。
 
-// ── 段 B(今日 / 看板):import 追加在此行之上 ──
+// ── 段 F(今日 / 看板):import 追加在此行之上 ──
 
 // ── 段 D(组织架构):import 追加在此行之上 ──
 
-// ── 段 C(账号 / 设置):import 追加在此行之上 ──
+// ── 段 E(账号 / 设置):import 追加在此行之上 ──
 
 export interface AdminPage {
   path: string

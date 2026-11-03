@@ -42,8 +42,8 @@ export function ChangePasswordForm({ onSuccess, onCancel }: { onSuccess(): void 
       </div>
       <div className="space-y-2">
         <Label htmlFor="pw-new">新密码</Label>
-        <Input id="pw-new" type="password" value={newPw} onChange={(e) => setNewPw(e.target.value)} autoComplete="new-password" required />
-        <p className="text-xs text-muted-foreground">至少 8 位,字母、数字、符号中至少两种</p>
+        <Input id="pw-new" type="password" value={newPw} onChange={(e) => setNewPw(e.target.value)} autoComplete="new-password" aria-describedby="pw-new-hint" required />
+        <p id="pw-new-hint" className="text-xs text-muted-foreground">至少 8 位,字母、数字、符号中至少两种</p>
       </div>
       <div className="space-y-2">
         <Label htmlFor="pw-confirm">确认新密码</Label>

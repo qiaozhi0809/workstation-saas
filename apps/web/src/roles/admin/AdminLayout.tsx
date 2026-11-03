@@ -14,7 +14,10 @@ export default function AdminLayout({ pages = ADMIN_PAGES }: { pages?: AdminPage
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
   // 失败时不显示校名
-  const school = useQuery({ queryKey: ['admin', 'school'], queryFn: adminApi.school, retry: false })
+  const school = useQuery({ queryKey: ['admin', 'school'], queryFn: adminApi.school, retry: false,
+    // GET /admin/school 属 org.manage 契约,无权限不请求
+    enabled: !!user?.admin_perms.includes('org.manage'),
+  })
 
   const logout = () => {
     const refreshToken = useAuthStore.getState().refreshToken

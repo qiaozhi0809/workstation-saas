@@ -65,3 +65,17 @@ it('redirects an account with no contexts to /login', () => {
   )
   expect(screen.getByText('login page')).toBeInTheDocument()
 })
+
+it('sends an old-shape persisted user (no contexts) to /login without crashing', () => {
+  useAuthStore.setState({ accessToken: 'a', refreshToken: 'r', user: { id: 'u', display_name: 't' } as never })
+  render(
+    <MemoryRouter initialEntries={['/teacher']}>
+      <Routes>
+        <Route path="/login" element={<div>login page</div>} />
+        <Route path="/teacher" element={<ProtectedRoute context="teacher"><div>secret</div></ProtectedRoute>} />
+      </Routes>
+    </MemoryRouter>,
+  )
+  expect(screen.getByText('login page')).toBeInTheDocument()
+  expect(useAuthStore.getState().accessToken).toBeNull()
+})

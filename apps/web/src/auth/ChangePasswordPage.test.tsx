@@ -21,6 +21,7 @@ const renderPage = () => render(
   <MemoryRouter initialEntries={['/change-password']}>
     <Routes>
       <Route path="/change-password" element={<ChangePasswordPage />} />
+      <Route path="/login" element={<div>login page</div>} />
       <Route path="/teacher" element={<div>teacher home</div>} />
     </Routes>
   </MemoryRouter>,
@@ -70,4 +71,10 @@ it('falls back to a local flag reset when me() fails after the password changed'
   expect(await screen.findByText('teacher home')).toBeInTheDocument()
   expect(screen.queryByText('修改失败,请稍后再试')).toBeNull()
   expect(useAuthStore.getState().user?.must_change_password).toBe(false)
+})
+
+it('sends an already-settled signed-in user home', () => {
+  useAuthStore.setState({ user: { ...user, must_change_password: false } })
+  renderPage()
+  expect(screen.getByText('teacher home')).toBeInTheDocument()
 })

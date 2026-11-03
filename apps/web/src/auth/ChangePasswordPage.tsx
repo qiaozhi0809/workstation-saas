@@ -11,7 +11,10 @@ import { homeFor } from './home'
 export default function ChangePasswordPage() {
   const navigate = useNavigate()
   const accessToken = useAuthStore((s) => s.accessToken)
+  const user = useAuthStore((s) => s.user)
+  const lastContext = useAuthStore((s) => s.lastContext)
   if (!accessToken) return <Navigate to="/login" replace />
+  if (user && !user.must_change_password) return <Navigate to={homeFor(user, lastContext)} replace />
 
   const onSuccess = async () => {
     // 密码此时已改成功;me() 失败不能当作"修改失败",回退为本地置 must_change_password=false

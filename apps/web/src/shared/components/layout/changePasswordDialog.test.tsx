@@ -49,3 +49,10 @@ it('closes without a failure message when me() fails after the password changed'
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   expect(screen.queryByText('修改失败,请稍后再试')).toBeNull()
 })
+
+it('links the rule hint to the new password input', async () => {
+  render(<MemoryRouter><AccountMenu name="王老师" onLogout={() => {}} /></MemoryRouter>)
+  fireEvent.click(screen.getByRole('button', { name: '账号菜单' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: '修改密码' }))
+  expect(await screen.findByLabelText('新密码')).toHaveAccessibleDescription('至少 8 位,字母、数字、符号中至少两种')
+})

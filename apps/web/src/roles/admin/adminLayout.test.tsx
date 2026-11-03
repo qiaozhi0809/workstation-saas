@@ -50,6 +50,11 @@ it('lists only the pages the user may use and lands on the first of them', async
   expect(await screen.findByText('accounts page')).toBeInTheDocument()
   const nav = screen.getByRole('navigation', { name: '主导航' })
   expect(within(nav).getAllByRole('link').map((l) => l.getAttribute('href'))).toEqual(['/admin/accounts'])
+})
+
+it('shows the school name for an org.manage admin', async () => {
+  setUser(['admin'], ['org.manage'])
+  renderAt('/admin')
   expect(await screen.findByText('虚构实验学校')).toBeInTheDocument()
 })
 
@@ -63,6 +68,13 @@ it('sends a teacher away from /admin', () => {
   setUser(['teacher'], [])
   renderAt('/admin')
   expect(screen.getByText('teacher home')).toBeInTheDocument()
+})
+
+it('does not request the school without org.manage', async () => {
+  setUser(['admin'], ['account.manage'])
+  renderAt('/admin')
+  await screen.findByText('accounts page')
+  expect(adminApi.school).not.toHaveBeenCalled()
 })
 
 it('hides the school name when it fails to load', async () => {
