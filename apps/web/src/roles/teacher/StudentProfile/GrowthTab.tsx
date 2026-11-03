@@ -98,6 +98,8 @@ export default function GrowthTab({ profile }: { profile: StudentProfile }) {
     queryKey: ['classroom', profile.class_id],
     queryFn: () => classroomApi.summary(profile.class_id),
   })
+  // 班级信息加载失败要给重试,不能一直卡在加载中
+  if (summary.error) return <ErrorState title="加载失败" onRetry={() => void summary.refetch()} retrying={summary.isFetching} />
   if (!summary.data) return <LoadingState />
   const perms = summary.data.my_perms
   const canWrite = perms.includes('growth.write')

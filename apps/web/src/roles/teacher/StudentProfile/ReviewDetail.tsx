@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ApiError } from '@/shared/api/client'
 import { classroomApi } from '@/shared/api/classroom'
 import { reviewsApi } from '@/shared/api/reviews'
+import { ErrorState } from '@/shared/components/feedback/ErrorState'
+import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { toast } from '@/shared/components/Toast'
 import { Button } from '@/shared/components/ui/button'
 import { formatInTz } from '@/shared/lib/date'
@@ -18,7 +20,7 @@ export default function ReviewDetail({ profile }: { profile: StudentProfile }) {
   })
   const canRead = summary.data?.my_perms.includes('review.read') ?? false
   const canWrite = summary.data?.my_perms.includes('review.write') ?? false
-  const { data } = useQuery({
+  const { data, error, refetch, isFetching } = useQuery({
     queryKey: ['student-reviews', classId, enrollmentId],
     queryFn: () => reviewsApi.listForStudent(classId, enrollmentId, 40),
     enabled: canRead,
@@ -36,13 +38,18 @@ export default function ReviewDetail({ profile }: { profile: StudentProfile }) {
     onError: (err) => toast(err instanceof ApiError ? err.message : '撤销失败,请重试'),
   })
 
+  // 班级信息出错时由 GrowthTab 接住,这里不重复展示
   if (!canRead || !summary.data) return null
   const timeZone = summary.data.timezone
 
   return (
     <section>
       <h3 className="mb-2 text-sm font-medium">点评明细</h3>
-      {!data ? null : data.items.length === 0 ? (
+      {error ? (
+        <ErrorState title="点评加载失败" onRetry={() => void refetch()} retrying={isFetching} />
+      ) : !data ? (
+        <LoadingState />
+      ) : data.items.length === 0 ? (
         <p className="py-2 text-sm text-muted-foreground">暂无点评</p>
       ) : (
         <ul className="space-y-2">

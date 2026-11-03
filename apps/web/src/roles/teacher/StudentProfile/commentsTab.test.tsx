@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { beforeEach, expect, it, vi } from 'vitest'
@@ -31,7 +31,7 @@ function setup(ui: React.ReactElement, perms: ClassPerm[]) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const invalidate = vi.spyOn(client, 'invalidateQueries')
   render(<QueryClientProvider client={client}><MemoryRouter>{ui}<Loc /><Toaster /></MemoryRouter></QueryClientProvider>)
-  return { invalidate }
+  return { invalidate, client }
 }
 
 beforeEach(() => {
@@ -87,10 +87,13 @@ it('copies and deletes a comment', async () => {
   expect(del).toHaveLength(1)
   fireEvent.click(del[0])
   expect(confirmSpy).toHaveBeenCalledWith('删除这条评语?')
+  // 先冲掉微任务,再断言取消确认后没有发起删除
+  await act(async () => {})
   expect(commentsApi.remove).not.toHaveBeenCalled()
   confirmSpy.mockReturnValue(true)
   fireEvent.click(del[0])
   await waitFor(() => expect(commentsApi.remove).toHaveBeenCalledWith('m1'))
+  expect(commentsApi.remove).toHaveBeenCalledTimes(1)
   await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['comments', 's1'] }))
   confirmSpy.mockRestore()
 })
@@ -145,8 +148,10 @@ it('shows a retryable error when the comment list fails', async () => {
 })
 
 it('shows header AI actions only with ai.class', async () => {
-  setup(<ProfileActions profile={profile} />, ['comment.write'])
-  await waitFor(() => expect(classroomApi.summary).toHaveBeenCalled())
+  const { client } = setup(<ProfileActions profile={profile} />, ['comment.write'])
+  // 等班级权限数据真正到达并渲染完,再断言按钮不存在(此前 !data 时也不会有按钮)
+  await waitFor(() => expect(client.getQueryData(['classroom', 'c1'])).toBeDefined())
+  await act(async () => {})
   expect(screen.queryByRole('button', { name: 'AI 写评语' })).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: '家长沟通' })).not.toBeInTheDocument()
 })

@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { classroomApi } from '@/shared/api/classroom'
 import { growthApi } from '@/shared/api/growth'
@@ -32,12 +32,17 @@ const review = (over: Partial<Review>): Review => ({
   subject: null, given_at: '2026-10-30T02:15:00Z', given_by_me: true, student_name: '王小一', transferred: false, ...over,
 })
 
+function Loc() {
+  const { pathname, search } = useLocation()
+  return <div data-testid="loc">{pathname + search}</div>
+}
+
 function setup(ui: React.ReactElement, perms: ClassPerm[]) {
   vi.mocked(classroomApi.summary).mockResolvedValue({ my_perms: perms, today: '2026-11-02', timezone: 'Asia/Shanghai' } as never)
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const invalidate = vi.spyOn(client, 'invalidateQueries')
-  render(<QueryClientProvider client={client}><MemoryRouter>{ui}<Toaster /></MemoryRouter></QueryClientProvider>)
-  return { invalidate }
+  render(<QueryClientProvider client={client}><MemoryRouter>{ui}<Loc /><Toaster /></MemoryRouter></QueryClientProvider>)
+  return { invalidate, client }
 }
 
 beforeEach(() => {
@@ -55,9 +60,12 @@ it('adds a record with Enter and keeps composition input', async () => {
   const input = await screen.findByLabelText('记录内容')
   fireEvent.change(input, { target: { value: '家访了解情况' } })
   fireEvent.keyDown(input, { key: 'Enter', isComposing: true })
+  // mutate 在调 mutationFn 前至少有一次 await,先冲掉微任务再断言"没调用",否则守卫失效也会绿
+  await act(async () => {})
   expect(growthApi.create).not.toHaveBeenCalled()
   fireEvent.keyDown(input, { key: 'Enter' })
   await waitFor(() => expect(growthApi.create).toHaveBeenCalledWith('s1', { type: '表扬', date: '2026-11-02', content: '家访了解情况' }))
+  expect(growthApi.create).toHaveBeenCalledTimes(1)
   await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['growth', 's1'] }))
   await waitFor(() => expect(input).toHaveValue(''))
 })
@@ -83,10 +91,13 @@ it('deletes after confirm only when allowed', async () => {
   expect(buttons).toHaveLength(1)
   fireEvent.click(buttons[0])
   expect(confirmSpy).toHaveBeenCalledWith('删除这条成长记录?')
+  // 先冲掉微任务,再断言取消确认后没有发起删除
+  await act(async () => {})
   expect(growthApi.remove).not.toHaveBeenCalled()
   confirmSpy.mockReturnValue(true)
   fireEvent.click(buttons[0])
   await waitFor(() => expect(growthApi.remove).toHaveBeenCalledWith('g1'))
+  expect(growthApi.remove).toHaveBeenCalledTimes(1)
   confirmSpy.mockRestore()
 })
 
@@ -142,11 +153,45 @@ it('shows the latest three records on the overview and links to the tab', async 
   const block = (await screen.findByText('最近成长记录')).closest('section')!
   await within(block).findByText('记录3')
   expect(within(block).queryByText('记录4')).not.toBeInTheDocument()
-  expect(within(block).getByRole('button', { name: '查看全部' })).toBeInTheDocument()
+  fireEvent.click(within(block).getByRole('button', { name: '查看全部' }))
+  const loc = screen.getByTestId('loc').textContent ?? ''
+  const params = new URLSearchParams(loc.slice(loc.indexOf('?')))
+  expect(params.get('student')).toBe('s1')
+  expect(params.get('tab')).toBe('成长记录')
 })
 
 it('hides the overview block without records', async () => {
-  setup(<OverviewTab student={profile} />, ['growth.read'])
-  await waitFor(() => expect(growthApi.list).toHaveBeenCalled())
+  const { client } = setup(<OverviewTab student={profile} />, ['growth.read'])
+  // 等成长记录数据真正到达(此前 data 为空也会返回 null),再断言不显示
+  await waitFor(() => expect(client.getQueryData(['growth', 's1'])).toEqual({ items: [] }))
+  await act(async () => {})
   expect(screen.queryByText('最近成长记录')).not.toBeInTheDocument()
+})
+
+it('shows a retryable error when the classroom summary fails in the growth tab', async () => {
+  vi.mocked(classroomApi.summary).mockRejectedValueOnce(new Error('boom'))
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(<QueryClientProvider client={client}><MemoryRouter><GrowthTab profile={profile} /></MemoryRouter></QueryClientProvider>)
+  expect(await screen.findByRole('alert')).toBeInTheDocument()
+  vi.mocked(classroomApi.summary).mockResolvedValue({ my_perms: ['growth.read'], today: '2026-11-02', timezone: 'Asia/Shanghai' } as never)
+  fireEvent.click(screen.getByRole('button', { name: '重试' }))
+  expect(await screen.findByText('还没有成长记录')).toBeInTheDocument()
+})
+
+it('shows a retryable error when the growth list fails', async () => {
+  vi.mocked(growthApi.list).mockRejectedValueOnce(new Error('boom'))
+  setup(<GrowthTab profile={profile} />, ['growth.read'])
+  expect(await screen.findByText('成长记录加载失败')).toBeInTheDocument()
+  vi.mocked(growthApi.list).mockResolvedValue({ items: [rec({})] })
+  fireEvent.click(screen.getByRole('button', { name: '重试' }))
+  expect(await screen.findByText('主动帮同学补课')).toBeInTheDocument()
+})
+
+it('shows a retryable error when the review list fails', async () => {
+  vi.mocked(reviewsApi.listForStudent).mockRejectedValueOnce(new Error('boom'))
+  setup(<ReviewDetail profile={profile} />, ['review.read'])
+  expect(await screen.findByText('点评加载失败')).toBeInTheDocument()
+  vi.mocked(reviewsApi.listForStudent).mockResolvedValue({ items: [review({})], next_cursor: null })
+  fireEvent.click(screen.getByRole('button', { name: '重试' }))
+  expect(await screen.findByText('作业认真')).toBeInTheDocument()
 })
