@@ -42,7 +42,12 @@ function refreshOnce(refreshToken: string): Promise<boolean> {
   return refreshing
 }
 
-function send(method: string, path: string, body?: unknown): Promise<Response> {
+function send(
+  method: string,
+  path: string,
+  body?: unknown,
+  signal?: AbortSignal,
+): Promise<Response> {
   const headers: Record<string, string> = {}
   const { accessToken } = useAuthStore.getState()
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`
@@ -51,10 +56,12 @@ function send(method: string, path: string, body?: unknown): Promise<Response> {
     method,
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
+    signal,
   })
 }
 
-async function toApiError(res: Response): Promise<ApiError> {
+/** 把非 2xx 响应转成 ApiError（读不出错误外壳时给通用 HTTP_ERROR） */
+export async function toApiError(res: Response): Promise<ApiError> {
   try {
     const data = await res.json()
     const err = data?.error
@@ -72,15 +79,27 @@ function sessionExpired(): ApiError {
   return new ApiError(401, 'UNAUTHORIZED', '登录已失效，请重新登录')
 }
 
-export async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
-  let res = await send(method, path, body)
+/** 带 Bearer 的请求；401 时刷新一次令牌再重发，仍 401 则会话失效。返回原始 Response（不判 2xx）。 */
+export async function authedFetch(
+  method: string,
+  path: string,
+  opts?: { body?: unknown; signal?: AbortSignal },
+): Promise<Response> {
+  const body = opts?.body
+  const signal = opts?.signal
+  let res = await send(method, path, body, signal)
   if (res.status === 401 && !NO_REFRESH_PATHS.includes(path)) {
     const { refreshToken } = useAuthStore.getState()
     if (!refreshToken) throw sessionExpired()
     if (!(await refreshOnce(refreshToken))) throw sessionExpired()
-    res = await send(method, path, body)
+    res = await send(method, path, body, signal)
     if (res.status === 401) throw sessionExpired()
   }
+  return res
+}
+
+export async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const res = await authedFetch(method, path, { body })
   if (!res.ok) throw await toApiError(res)
   if (res.status === 204) return undefined as T
   const text = await res.text()
