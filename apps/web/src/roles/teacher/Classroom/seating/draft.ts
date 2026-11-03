@@ -1,8 +1,10 @@
+import { inGrid, type DeskGrid } from '@/shared/lib/seats'
 import type { SeatingSave } from '@/shared/types/seating'
 
 export interface DraftStudent {
   enrollmentId: string
   name: string
+  studentNo: string | null
   gender: 'female' | 'male' | null
   row: number | null
   col: number | null
@@ -15,11 +17,11 @@ export interface Cell {
 }
 
 export interface SeatDraft {
-  rows: number
-  cols: number
+  /** 桌椅排列(只读,来自班级;草稿里不能改) */
+  readonly grid: DeskGrid
   baseVersion: number
   students: DraftStudent[]
-  past: Pick<SeatDraft, 'rows' | 'cols' | 'students'>[]
+  past: Pick<SeatDraft, 'students'>[]
   selected: string | null
 }
 
@@ -29,18 +31,14 @@ export type DraftAction =
   | { type: 'swapCells'; from: Cell; to: Cell }
   | { type: 'unseat'; enrollmentId: string }
   | { type: 'toggleLock'; enrollmentId: string }
-  | { type: 'resize'; rows: number; cols: number }
   | { type: 'apply'; students: DraftStudent[] }
   | { type: 'undo' }
   | { type: 'reset'; draft: SeatDraft }
 
 const MAX_PAST = 30
-const MIN_SIZE = 1
-const MAX_SIZE = 12
 
 export function initDraft(input: {
-  rows: number
-  cols: number
+  grid: DeskGrid
   baseVersion: number
   students: DraftStudent[]
 }): SeatDraft {
@@ -51,17 +49,15 @@ export function occupantAt(draft: SeatDraft, cell: Cell): DraftStudent | undefin
   return draft.students.find((s) => s.row === cell.row && s.col === cell.col)
 }
 
-function commit(state: SeatDraft, next: Partial<Pick<SeatDraft, 'rows' | 'cols' | 'students'>>): SeatDraft {
-  const snapshot = { rows: state.rows, cols: state.cols, students: state.students }
+function commit(state: SeatDraft, next: Pick<SeatDraft, 'students'>): SeatDraft {
+  const snapshot = { students: state.students }
   return { ...state, ...next, past: [...state.past, snapshot].slice(-MAX_PAST), selected: null }
 }
-
-const clamp = (n: number) => Math.min(MAX_SIZE, Math.max(MIN_SIZE, Math.round(n)))
 
 function moveTo(state: SeatDraft, enrollmentId: string, to: Cell): SeatDraft {
   const mover = state.students.find((s) => s.enrollmentId === enrollmentId)
   if (!mover || mover.locked) return state
-  if (to.row < 1 || to.row > state.rows || to.col < 1 || to.col > state.cols) return state
+  if (!inGrid(state.grid, to)) return state
   if (mover.row === to.row && mover.col === to.col) return state
   const other = occupantAt(state, to)
   if (other?.locked) return state
@@ -101,20 +97,6 @@ export function draftReducer(state: SeatDraft, action: DraftAction): SeatDraft {
         ),
       })
     }
-    case 'resize': {
-      const rows = clamp(action.rows)
-      const cols = clamp(action.cols)
-      const outside = (s: DraftStudent) =>
-        s.row !== null && s.col !== null && (s.row > rows || s.col > cols)
-      if (rows === state.rows && cols === state.cols && !state.students.some(outside)) return state
-      return commit(state, {
-        rows,
-        cols,
-        students: state.students.map((s) =>
-          outside(s) ? { ...s, row: null, col: null, locked: false } : s,
-        ),
-      })
-    }
     case 'apply':
       return commit(state, { students: action.students })
     case 'undo': {
@@ -130,7 +112,6 @@ export function draftReducer(state: SeatDraft, action: DraftAction): SeatDraft {
 const seatKey = (s: DraftStudent) => `${s.enrollmentId}|${s.row}|${s.col}|${s.locked}`
 
 export function isDirty(draft: SeatDraft, original: SeatDraft): boolean {
-  if (draft.rows !== original.rows || draft.cols !== original.cols) return true
   if (draft.students.length !== original.students.length) return true
   const before = new Set(original.students.map(seatKey))
   return draft.students.some((s) => !before.has(seatKey(s)))
@@ -141,5 +122,5 @@ export function toSavePayload(draft: SeatDraft): SeatingSave {
     .filter((s): s is DraftStudent & { row: number; col: number } => s.row !== null && s.col !== null)
     .sort((a, b) => a.row - b.row || a.col - b.col)
     .map((s) => ({ enrollment_id: s.enrollmentId, row: s.row, col: s.col, locked: s.locked }))
-  return { base_version: draft.baseVersion, rows: draft.rows, cols: draft.cols, seats }
+  return { base_version: draft.baseVersion, rows: draft.grid.rows, cols: draft.grid.cols, seats }
 }
