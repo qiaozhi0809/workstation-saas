@@ -242,7 +242,7 @@ def ai_chat_prompt(
     _check_perms(db, request, user, bindings, cls, _chat_needs(chat))
     cfg = load_ai_config(db, settings.school_id, settings.master_key_bytes)  # 可为 None
     effective = chat.mask or (cfg.mask_forced if cfg else False)
-    masker = masker_for_school(db, cls.school_id)
+    masker = masker_for_school(db, cls.school_id, cls.id)
     system = scrub(system_prompt(db, user, bindings, cls))
     template = TEMPLATES.get(chat.template_id) if chat.template_id else None
     items = chat_items(db, chat.id)
@@ -251,7 +251,9 @@ def ai_chat_prompt(
     if chat.batch_only and template is not None:
         for item in items:
             try:
-                jobs.append(build_item_job(db, user, cls, chat, item, mask=effective))
+                jobs.append(
+                    build_item_job(db, user, cls, chat, item, mask=effective, masker=masker)
+                )
             except ApiError:
                 continue  # 学生已不在本班:复制提示词时跳过
             student_ids.append(item.student_id)

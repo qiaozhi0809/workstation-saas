@@ -264,7 +264,7 @@ def prepare_reply(s: Session, ctx: GenContext, body: AiReplyIn) -> Prepared:
         raise ApiError(404, "NOT_FOUND", "对话不存在")
     year = active_academic_year(s, user.school_id)
     bindings = load_bindings(s, user.id, year.id if year else None)
-    masker = masker_for_school(s, cls.school_id)
+    masker = masker_for_school(s, cls.school_id, cls.id)
     mask = chat.mask or ctx.cfg.mask_forced
 
     if body.text is not None:
@@ -347,8 +347,13 @@ def build_item_job(
     item: AiBatchItem,
     *,
     mask: bool,
+    masker: Masker | None = None,
 ) -> Job:
-    """按对话参数和当下数据重建某一条的 prompt;学生已不在本班时抛 400 AI_FIELD_INVALID。"""
+    """按对话参数和当下数据重建某一条的 prompt;学生已不在本班时抛 400 AI_FIELD_INVALID。
+
+    批量时调用方传同一个 ``masker``(只建一次,也让换回认得已生成的编号)。
+    """
+    masker = masker or masker_for_school(s, cls.school_id, cls.id)
     template = TEMPLATES.get(chat.template_id) if chat.template_id else None
     year = active_academic_year(s, user.school_id)
     bindings = load_bindings(s, user.id, year.id if year else None)
@@ -359,7 +364,7 @@ def build_item_job(
     try:
         return build_job(
             s, user, bindings, cls, template, chat.params, student, school_today(s, cls.school_id),
-            masked=mask, masker=masker_for_school(s, cls.school_id),
+            masked=mask, masker=masker,
             regress_n=int(found.group(1)) if found else None,
         )  # fmt: skip
     except ApiError as e:
@@ -376,7 +381,8 @@ def prepare_item(s: Session, ctx: GenContext, item_id: UUID) -> Prepared:
     if chat is None or user is None or cls is None or item is None or item.chat_id != chat.id:
         raise ApiError(404, "NOT_FOUND", "条目不存在")
     mask = chat.mask or ctx.cfg.mask_forced
-    job = build_item_job(s, user, cls, chat, item, mask=mask)
+    masker = masker_for_school(s, cls.school_id, cls.id)
+    job = build_item_job(s, user, cls, chat, item, mask=mask, masker=masker)
     year = active_academic_year(s, user.school_id)
     bindings = load_bindings(s, user.id, year.id if year else None)
     system = scrub(system_prompt(s, user, bindings, cls))
@@ -386,7 +392,7 @@ def prepare_item(s: Session, ctx: GenContext, item_id: UUID) -> Prepared:
     return Prepared(
         meta={"item_id": str(item.id)},
         messages=messages,
-        masker=masker_for_school(s, cls.school_id),
+        masker=masker,
         target_id=item.id,
         template=chat.template_id,
         student_ids=[str(item.student_id)],

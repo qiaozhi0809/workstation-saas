@@ -7,7 +7,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Student
+from app.models import Enrollment, Student
 
 CODE_RE = re.compile(r"[【\[]学生(\d{1,6})[】\]]")
 _TAIL_RE = re.compile(r"^[【\[](学(生\d{0,6})?)?$")
@@ -31,7 +31,16 @@ def scrub(text: str) -> str:
 
 
 class Masker:
-    def __init__(self, people: Iterable[tuple[str, int]]):
+    """姓名 ↔ 编号。
+
+    换回(restore / mapping / 流式)只认两类编号:本班名单学生的编号(``class_nos``),
+    以及本实例 ``mask()`` 实际生成过的编号(``_emitted``)。其余 ``【学生N】`` 原样保留,
+    避免老师手写编号或让模型回显编号来查出全校其他学生的真名。
+    """
+
+    def __init__(self, people: Iterable[tuple[str, int]], class_nos: Iterable[int] = ()):
+        self._class_nos: frozenset[int] = frozenset(class_nos)
+        self._emitted: set[int] = set()
         self._by_name: dict[str, int] = {}
         for name, mask_no in people:
             name = name.strip()
@@ -46,17 +55,27 @@ class Masker:
     def mask(self, text: str) -> str:
         if self._name_re is None:
             return text
-        return self._name_re.sub(lambda m: code_of(self._by_name[m.group(0)]), text)
+
+        def repl(m: re.Match[str]) -> str:
+            no = self._by_name[m.group(0)]
+            self._emitted.add(no)
+            return code_of(no)
+
+        return self._name_re.sub(repl, text)
+
+    def _restorable(self, no: int) -> bool:
+        return no in self._by_no and (no in self._class_nos or no in self._emitted)
 
     def restore(self, text: str) -> str:
         def repl(m: re.Match[str]) -> str:
-            return self._by_no.get(int(m.group(1)), m.group(0))
+            no = int(m.group(1))
+            return self._by_no[no] if self._restorable(no) else m.group(0)
 
         return CODE_RE.sub(repl, text)
 
     def mapping(self, text: str) -> list[tuple[str, str]]:
         used = {int(m.group(1)) for m in CODE_RE.finditer(text)}
-        return [(code_of(n), self._by_no[n]) for n in sorted(used) if n in self._by_no]
+        return [(code_of(n), self._by_no[n]) for n in sorted(used) if self._restorable(n)]
 
     def restorer(self) -> "StreamRestorer":
         return StreamRestorer(self)
@@ -87,8 +106,10 @@ class StreamRestorer:
         return len(buf)
 
 
-def masker_for_school(db: Session, school_id: UUID) -> Masker:
+def masker_for_school(db: Session, school_id: UUID, class_id: UUID | None = None) -> Masker:
     """替换表 = 本校全部学生(不论注册状态与学年),按 mask_no 排序。
+
+    换回范围:``class_id`` 给定时含该班在读学生;其余只换回 ``mask()`` 生成过的编号。
 
     同名学生共用第一个(mask_no 最小的)编号,与 Masker 的 setdefault 行为一致。
     """
@@ -97,4 +118,17 @@ def masker_for_school(db: Session, school_id: UUID) -> Masker:
         .where(Student.school_id == school_id)
         .order_by(Student.mask_no)
     ).all()
-    return Masker((name, mask_no) for name, mask_no in rows)
+    class_nos: list[int] = []
+    if class_id is not None:
+        class_nos = list(
+            db.scalars(
+                select(Student.mask_no)
+                .join(Enrollment, Enrollment.student_id == Student.id)
+                .where(
+                    Student.school_id == school_id,
+                    Enrollment.class_id == class_id,
+                    Enrollment.status == "active",
+                )
+            )
+        )
+    return Masker(((name, mask_no) for name, mask_no in rows), class_nos)
