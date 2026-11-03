@@ -345,6 +345,121 @@ describe('AiThreadPage toolbar and composer', () => {
   })
 })
 
+describe('AiThreadPage final-review fixes', () => {
+  it('F2: a refetch landing mid-stream does not duplicate the question or add a second assistant bubble', async () => {
+    const calls = controlledReply()
+    const { client } = thread()
+    const box = await screen.findByLabelText('继续追问…')
+    type(box, '追问内容')
+    fireEvent.keyDown(box, { key: 'Enter' })
+    await waitFor(() => expect(calls).toHaveLength(1))
+    act(() => calls[0].h.onDelta('正在写'))
+    await screen.findByText(/正在写/)
+    vi.mocked(aiApi.getChat).mockResolvedValue(chatFixture({
+      messages: [userMsg, replyMsg, msg({ id: 'm3', role: 'user', content: '追问内容' }),
+        msg({ id: 'm4', role: 'assistant', content: '', status: 'streaming' })],
+    }))
+    const before = vi.mocked(aiApi.getChat).mock.calls.length
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: ['ai-chat', 't1'] })
+      await new Promise((r) => setTimeout(r, 30))
+    })
+    expect(vi.mocked(aiApi.getChat).mock.calls.length).toBeGreaterThan(before)
+    expect(screen.getAllByText('追问内容')).toHaveLength(1)
+    // 2 条历史 + 老师追问 + 1 个流式气泡
+    expect(screen.getByTestId('thread-scroll').children).toHaveLength(4)
+    expect(screen.getAllByTestId('stream-text')).toHaveLength(1)
+  })
+
+  it('F3: Enter with keyCode 229 (Safari IME) does not send', async () => {
+    thread()
+    const box = await screen.findByLabelText('继续追问…')
+    type(box, '输入中')
+    fireEvent.keyDown(box, { key: 'Enter', keyCode: 229 })
+    expect(aiApi.reply).not.toHaveBeenCalled()
+    expect(box).toHaveValue('输入中')
+  })
+
+  it('F5: keeps the typed follow-up when the request never started (AI_BUSY)', async () => {
+    vi.mocked(aiApi.reply).mockRejectedValue(new ApiError(409, 'AI_BUSY', 'busy'))
+    thread()
+    const box = await screen.findByLabelText('继续追问…')
+    type(box, '我的追问')
+    fireEvent.keyDown(box, { key: 'Enter' })
+    expect(await screen.findByText('这个对话正在生成,请稍候')).toBeInTheDocument()
+    await waitFor(() => expect(box).toHaveValue('我的追问'))
+  })
+
+  it('F6: only the last message offers 重试', async () => {
+    vi.mocked(aiApi.getChat).mockResolvedValue(chatFixture({
+      messages: [userMsg, msg({ id: 'e1', role: 'assistant', status: 'error', error: '第一次失败' }),
+        msg({ id: 'm3', role: 'user', content: '再来' }),
+        msg({ id: 'e2', role: 'assistant', status: 'error', error: '第二次失败' })],
+    }))
+    thread()
+    await screen.findByText('第二次失败')
+    expect(screen.getAllByRole('button', { name: '重试' })).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: '改为复制提示词' })).toHaveLength(2)
+    const older = screen.getByText('第一次失败').closest('[data-testid="error-box"]') as HTMLElement
+    expect(within(older).queryByRole('button', { name: '重试' })).not.toBeInTheDocument()
+  })
+
+  it('M2: whole-chat export only includes finished assistant messages', async () => {
+    vi.mocked(aiApi.getChat).mockResolvedValue(chatFixture({
+      messages: [userMsg, replyMsg, msg({ id: 'm3', role: 'user', content: '再来' }),
+        msg({ id: 'm4', role: 'assistant', status: 'error', error: '失败' }),
+        msg({ id: 'm5', role: 'assistant', content: '半截', status: 'stopped' }),
+        msg({ id: 'm6', role: 'assistant', content: '', status: 'streaming' })],
+    }))
+    thread()
+    fireEvent.click(await screen.findByRole('button', { name: '导出 Word' }))
+    expect(exportWord).toHaveBeenCalledWith(
+      '期中家长会发言稿',
+      '**老师:**帮我写发言稿\n\n---\n\n## 开场\n\n**各位家长**好\n\n---\n\n**老师:**再来\n\n---\n\n半截',
+    )
+  })
+
+  it('M5: retrying a failed regenerate resends regenerate', async () => {
+    const calls = controlledReply()
+    thread()
+    fireEvent.click(await screen.findByRole('button', { name: '重新生成' }))
+    await waitFor(() => expect(calls).toHaveLength(1))
+    act(() => { calls[0].h.onError?.({ code: 'X', message: '重新生成失败' }); calls[0].resolve() })
+    fireEvent.click(await screen.findByRole('button', { name: '重试' }))
+    await waitFor(() => expect(calls).toHaveLength(2))
+    expect(calls[1].body).toEqual({ regenerate: true })
+  })
+
+  it('M5: retrying a failed follow-up after a done reply resends the text', async () => {
+    const calls = controlledReply()
+    thread()
+    const box = await screen.findByLabelText('继续追问…')
+    type(box, '换个说法')
+    fireEvent.keyDown(box, { key: 'Enter' })
+    await waitFor(() => expect(calls).toHaveLength(1))
+    act(() => { calls[0].h.onError?.({ code: 'X', message: '追问失败' }); calls[0].resolve() })
+    fireEvent.click(await screen.findByRole('button', { name: '重试' }))
+    await waitFor(() => expect(calls).toHaveLength(2))
+    expect(calls[1].body).toEqual({ text: '换个说法' })
+  })
+
+  it('F1: 保存为评语 / 记到成长记录 are disabled after success', async () => {
+    vi.mocked(aiApi.getChat).mockResolvedValue(chatFixture({ save_as: 'comment', student_id: 's1' }))
+    vi.mocked(commentsApi.create).mockResolvedValue({} as never)
+    vi.mocked(growthApi.create).mockResolvedValue({} as never)
+    thread()
+    fireEvent.click(await screen.findByRole('button', { name: '保存为评语' }))
+    const done = await screen.findByRole('button', { name: '已保存' })
+    expect(done).toBeDisabled()
+    fireEvent.click(done)
+    fireEvent.click(screen.getByRole('button', { name: '记到成长记录' }))
+    const grown = await screen.findByRole('button', { name: '已记录' })
+    expect(grown).toBeDisabled()
+    expect(commentsApi.create).toHaveBeenCalledTimes(1)
+    expect(growthApi.create).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('AiThreadPage routing guards', () => {
   it('offers to switch class for a chat of another class', async () => {
     vi.mocked(aiApi.getChat).mockResolvedValue(chatFixture({ class_id: 'c2' }))

@@ -18,8 +18,10 @@ const BROKEN: AiStreamError = { code: 'AI_STREAM_BROKEN', message: '连接中断
  * 对话回复的流式状态:delta 先累计到 ref,每 100 ms 刷一次 state;
  * 流结束(完成 / 出错 / 中止)后失效对话与对话列表,等重新取到服务端落库的消息再清掉流式文字。
  */
-export function useAiStream(chatId: string, classId: string) {
+export function useAiStream(chatId: string, classId: string, onRejected?: (body: AiReplyInput) => void) {
   const qc = useQueryClient()
+  const rejectedRef = useRef(onRejected)
+  rejectedRef.current = onRejected
   const [streaming, setStreaming] = useState(false)
   const [text, setText] = useState('')
   const [error, setError] = useState<AiStreamError | null>(null)
@@ -77,6 +79,7 @@ export function useAiStream(chatId: string, classId: string) {
         if (e instanceof Error && e.name === 'AbortError') { aborted = true; return }
         if (e instanceof ApiError) {
           neverStarted = true
+          rejectedRef.current?.(body)
           if (e.code === 'AI_BUSY') toast('这个对话正在生成,请稍候')
           else streamError = { code: e.code, message: e.message }
           return

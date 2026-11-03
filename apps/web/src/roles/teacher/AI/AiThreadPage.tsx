@@ -72,17 +72,25 @@ function Thread({ ctx, chat, chatId }: { ctx: ClassContext; chat: AiChat; chatId
   const location = useLocation()
   const qc = useQueryClient()
   const status = useQuery({ queryKey: ['ai-status'], queryFn: aiApi.status })
-  const { streaming, text, error, lastBody, start, stop } = useAiStream(chatId, ctx.cls.id)
+  // 请求没发出去(忙 / 未配置等)时,把老师输入的追问放回输入框
+  const [draft, setDraft] = useState('')
+  const { streaming, text, error, lastBody, start, stop } = useAiStream(
+    chatId, ctx.cls.id, (body) => { if (body.text) setDraft((d) => d || (body.text as string)) },
+  )
   const [pendingUser, setPendingUser] = useState<string | null>(null)
   const [prompt, setPrompt] = useState<AiPrompt | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const goHandled = useRef(false)
+  // 本次生成开始时对话已有的消息数:之后重新取到的服务端消息(含刚落库的追问和流式占位)不再重复渲染
+  const baseRef = useRef(chat.messages.length)
+  const lenRef = useRef(chat.messages.length)
+  lenRef.current = chat.messages.length
 
   const live = streaming || text !== ''
   const all = chat.messages
   const last = all[all.length - 1]
   // 只有"重新生成"时,最后一条助手回复才由流式气泡代替;追问时旧回复保留
-  const shown = live && lastBody?.regenerate && last?.role === 'assistant' ? all.slice(0, -1) : all
+  const shown = live ? all.slice(0, Math.max(0, lastBody?.regenerate ? baseRef.current - 1 : baseRef.current)) : all
 
   // ?go=1:最后一条是还没回复的用户消息时自动开始,只一次
   useEffect(() => {
@@ -90,7 +98,7 @@ function Thread({ ctx, chat, chatId }: { ctx: ClassContext; chat: AiChat; chatId
     if (goHandled.current) return
     if (new URLSearchParams(location.search).get('go') !== '1') return
     goHandled.current = true
-    if (last?.role === 'user') start({})
+    if (last?.role === 'user') { baseRef.current = lenRef.current; start({}) }
     navigate({ pathname: location.pathname }, { replace: true })
   }, [chat.batch_only, last?.role, location.pathname, location.search, navigate, start])
 
@@ -116,11 +124,16 @@ function Thread({ ctx, chat, chatId }: { ctx: ClassContext; chat: AiChat; chatId
     aiApi.chatPrompt(chatId).then(setPrompt, () => toast('获取提示词失败,请重试'))
   }
   const run = (body: AiReplyInput): boolean => {
+    baseRef.current = lenRef.current
     const ok = start(body)
     if (ok) setPendingUser(body.text ?? null)
     return ok
   }
-  const send = (t: string) => run({ text: t })
+  const send = (t: string) => {
+    const ok = run({ text: t })
+    if (ok) setDraft('')
+    return ok
+  }
   // 重试:按重新取到的对话末尾和上一次请求决定怎么重来,避免误删好回复或丢掉追问
   const retry = () => {
     if (last?.role === 'user') run({})
@@ -130,7 +143,10 @@ function Thread({ ctx, chat, chatId }: { ctx: ClassContext; chat: AiChat; chatId
   }
 
   const exportAll = () => {
-    const md = all.map((m) => (m.role === 'user' ? `**老师:**${m.content}` : m.content)).join('\n\n---\n\n')
+    const md = all
+      .filter((m) => m.role === 'user' || m.status === 'done' || m.status === 'stopped')
+      .map((m) => (m.role === 'user' ? `**老师:**${m.content}` : m.content))
+      .join('\n\n---\n\n')
     exportWord(chat.title, md)
   }
 
@@ -164,7 +180,7 @@ function Thread({ ctx, chat, chatId }: { ctx: ClassContext; chat: AiChat; chatId
             today={ctx.summary.today}
             canRegenerate={!chat.batch_only && !live && i === shown.length - 1}
             onRegenerate={() => run({ regenerate: true })}
-            onRetry={retry}
+            onRetry={i === shown.length - 1 ? retry : undefined}
             onCopyPrompt={openPrompt}
           />
         ))}
@@ -200,7 +216,7 @@ function Thread({ ctx, chat, chatId }: { ctx: ClassContext; chat: AiChat; chatId
         )}
       </div>
 
-      {!chat.batch_only && <ThreadComposer streaming={streaming} onSend={send} onStop={stop} />}
+      {!chat.batch_only && <ThreadComposer value={draft} onChange={setDraft} streaming={streaming} onSend={send} onStop={stop} />}
       {prompt && <CopyPromptDialog prompt={prompt} onClose={() => setPrompt(null)} />}
     </div>
   )

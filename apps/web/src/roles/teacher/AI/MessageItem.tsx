@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Sparkles } from 'lucide-react'
 import { commentsApi } from '@/shared/api/comments'
+import { ApiError } from '@/shared/api/client'
 import { growthApi } from '@/shared/api/growth'
 import { Markdown } from '@/shared/components/Markdown'
 import { toast } from '@/shared/components/Toast'
@@ -13,14 +14,15 @@ import { stripMarkdown } from './stripMarkdown'
 /** 助手消息的错误框:红框 + 错误文字 + 重试 / 改为复制提示词。 */
 export function ErrorBox({ message, onRetry, onCopyPrompt }: {
   message: string
-  onRetry(): void
+  /** 不传 = 不显示重试(只有最后一条消息可以重试) */
+  onRetry?(): void
   onCopyPrompt(): void
 }) {
   return (
     <div data-testid="error-box" className="space-y-2 rounded-lg border border-destructive p-3">
       <p className="text-sm text-destructive">{message}</p>
       <div className="flex gap-2">
-        <Button size="sm" variant="outline" onClick={onRetry}>重试</Button>
+        {onRetry && <Button size="sm" variant="outline" onClick={onRetry}>重试</Button>}
         <Button size="sm" variant="outline" onClick={onCopyPrompt}>改为复制提示词</Button>
       </div>
     </div>
@@ -44,7 +46,7 @@ interface Props {
   /** 是否可显示"重新生成"(最后一条、非批量、没有正在生成) */
   canRegenerate: boolean
   onRegenerate(): void
-  onRetry(): void
+  onRetry?(): void
   onCopyPrompt(): void
 }
 
@@ -57,7 +59,7 @@ export default function MessageItem({ chat, message, perms, today, canRegenerate
       toast('已保存到档案的评语')
       void qc.invalidateQueries({ queryKey: ['comments', studentId] })
     },
-    onError: () => toast('保存失败,请重试'),
+    onError: (e) => toast(e instanceof ApiError ? e.message : '保存失败,请重试'),
   })
   const saveGrowth = useMutation({
     mutationFn: () => growthApi.create(studentId as string, {
@@ -67,7 +69,7 @@ export default function MessageItem({ chat, message, perms, today, canRegenerate
       toast('已记到成长记录')
       void qc.invalidateQueries({ queryKey: ['growth', studentId] })
     },
-    onError: () => toast('保存失败,请重试'),
+    onError: (e) => toast(e instanceof ApiError ? e.message : '保存失败,请重试'),
   })
 
   if (message.role === 'user') {
@@ -112,13 +114,13 @@ export default function MessageItem({ chat, message, perms, today, canRegenerate
               导出 Word
             </Button>
             {canComment && (
-              <Button size="sm" variant="ghost" disabled={saveComment.isPending} onClick={() => saveComment.mutate()}>
-                保存为评语
+              <Button size="sm" variant="ghost" disabled={saveComment.isPending || saveComment.isSuccess} onClick={() => saveComment.mutate()}>
+                {saveComment.isSuccess ? '已保存' : '保存为评语'}
               </Button>
             )}
             {canGrowth && (
-              <Button size="sm" variant="ghost" disabled={saveGrowth.isPending} onClick={() => saveGrowth.mutate()}>
-                记到成长记录
+              <Button size="sm" variant="ghost" disabled={saveGrowth.isPending || saveGrowth.isSuccess} onClick={() => saveGrowth.mutate()}>
+                {saveGrowth.isSuccess ? '已记录' : '记到成长记录'}
               </Button>
             )}
             {canRegenerate && (
