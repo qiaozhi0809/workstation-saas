@@ -268,3 +268,40 @@ def test_can_delete_follows_the_comments_own_class(client, settings, db):
         client.delete(f"/api/v1/comments/{COMMENT_IDS[0]}", headers=auth(settings)).status_code
         == 204
     )
+
+
+def _bulk(client, settings, items, ai=True):
+    body = {"items": [{"student_id": s, "content": c} for s, c in items], "generated_by_ai": ai}
+    return client.post(BULK, json=body, headers=auth(settings))
+
+
+def test_bulk_resend_skips_existing_comments(client, settings, db):
+    items = [(STUDENT_IDS[0], "认真好学"), (STUDENT_IDS[1], "乐于助人")]
+    assert _bulk(client, settings, items).json() == {"created": 2}
+    res = _bulk(client, settings, items)
+    assert res.status_code == 201
+    assert res.json() == {"created": 0}
+    assert _count(db) == 3
+    counts = [a.extra["count"] for a in _audits(db, "comment.create")]
+    assert counts == [2, 0]
+
+
+def test_bulk_duplicates_inside_one_batch_save_once(client, settings, db):
+    items = [
+        (STUDENT_IDS[0], "认真好学"),
+        (STUDENT_IDS[0], "认真好学"),
+        (STUDENT_IDS[1], "认真好学"),
+    ]
+    assert _bulk(client, settings, items).json() == {"created": 2}
+    assert _count(db) == 3
+
+
+def test_bulk_changed_content_is_new_and_other_semester_is_not_a_duplicate(client, settings, db):
+    assert _bulk(client, settings, [(STUDENT_IDS[0], "认真好学")]).json() == {"created": 1}
+    assert _bulk(client, settings, [(STUDENT_IDS[0], "认真好学!")]).json() == {"created": 1}
+    # 同一学生、同内容、不同学期:把已存的那条挪到另一个学期,再发同样的内容就是新评语
+    row = db.scalars(select(Comment).where(Comment.content == "认真好学")).one()
+    row.semester = "2025-2026 第二学期"
+    db.flush()
+    assert _bulk(client, settings, [(STUDENT_IDS[0], "认真好学")]).json() == {"created": 1}
+    assert _count(db) == 4

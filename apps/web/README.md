@@ -43,6 +43,17 @@
 - 有未保存修改的页面用 teacher store(`shared/stores/teacher.ts`)的 `setUnsaved(key, dirty)` 登记(`key` 为 `UnsavedKey`:`'seating'` | `'scores'`),顶栏换班 / 退出登录用 `confirmLeave()` 统一确认;站内跳转仍由页面自己的 `useBlocker` 拦。
 - 投屏:成绩模式在投屏时不着色、不显示角标和图例(用户决定:投屏不公开排名)。
 
+### AI 与 Markdown
+
+- Markdown 只用 `shared/components/Markdown`(不渲染图片,不用 `dangerouslySetInnerHTML`)。
+- 跳到 AI 页只用 `shared/lib/aiLink`(`aiLink()` 生成地址、`readAiLink()` 读预填参数),不要在别处拼 `/teacher/ai?...`。
+- 流式接口只用 `shared/api/sse.ts` 的 `streamSSE`:抛 `ApiError` 表示没开始生成,抛 `AbortError` 表示老师点了停止,服务端自己把已生成的内容落库为 `stopped`。
+- 导出 Word 只用 `shared/lib/exportWord`。
+
+### 配置 AI(本地开发)
+
+后端的 AI 配置见根目录 README“配置 AI”。本地不连真服务商时,起假服务 `node e2e/helpers/fakeLlm.mjs`,再在 `server/` 下执行 `printf 'test-key\n' | uv run python -m app.cli ai-config set --provider custom --base-url http://127.0.0.1:18089/v1 --model fake-model --api-key-stdin`。真 Key 只从标准输入给,不写进任何文件、不进仓库。
+
 ### 教室操作台
 
 - 新模式的操作放进 `ModeSlot.actions`(`ClassroomPage.tsx`);次要操作放进 `ModeSlot.menu`(用 `MenuItem`),由 `ClassroomDock` 渲染成唯一的"更多操作"菜单;不再在舞台上方加工具条。

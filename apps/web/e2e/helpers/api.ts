@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { expect, type APIRequestContext } from '@playwright/test'
 
 const API = '/api/v1'
@@ -164,4 +165,98 @@ export async function schoolToday(request: APIRequestContext, token: string, cla
   const res = await request.get(`${API}/classes/${classId}/classroom`, { headers: authHeaders(token) })
   expect(res.ok()).toBeTruthy()
   return ((await res.json()) as { today: string }).today
+}
+
+/** AI / 档案相关数据的快照:对话、评语、成长记录的 id。用例前取一次,用例后 restoreAiData 删掉新增的。 */
+export interface AiDataSnapshot {
+  chats: Set<string>
+  comments: Set<string>
+  growth: Set<string>
+}
+
+async function classStudentIds(request: APIRequestContext, token: string, classId: string): Promise<string[]> {
+  const res = await request.get(`${API}/classes/${classId}/students`, { headers: authHeaders(token) })
+  expect(res.ok()).toBeTruthy()
+  return ((await res.json()) as { items: { student_id: string }[] }).items.map((s) => s.student_id)
+}
+
+export async function snapshotAiData(request: APIRequestContext, token: string, classId: string): Promise<AiDataSnapshot> {
+  const headers = authHeaders(token)
+  const chats = await request.get(`${API}/ai/chats?class_id=${classId}`, { headers })
+  expect(chats.ok()).toBeTruthy()
+  const snap: AiDataSnapshot = {
+    chats: new Set(((await chats.json()) as { items: { id: string }[] }).items.map((c) => c.id)),
+    comments: new Set(),
+    growth: new Set(),
+  }
+  for (const sid of await classStudentIds(request, token, classId)) {
+    const c = await request.get(`${API}/students/${sid}/comments`, { headers })
+    expect(c.ok()).toBeTruthy()
+    for (const x of ((await c.json()) as { items: { id: string }[] }).items) snap.comments.add(x.id)
+    const g = await request.get(`${API}/students/${sid}/growth-records`, { headers })
+    expect(g.ok()).toBeTruthy()
+    for (const x of ((await g.json()) as { items: { id: string }[] }).items) snap.growth.add(x.id)
+  }
+  return snap
+}
+
+/** 删掉快照之后新增的对话、评语、成长记录(用班主任 token;对话只能由创建者删,所以要传各创建者的 token)。 */
+export async function restoreAiData(
+  request: APIRequestContext,
+  tokens: string[],
+  classId: string,
+  snap: AiDataSnapshot,
+): Promise<void> {
+  // 一条删除失败不能让后面的清理全部跳过:先删完,最后统一断言
+  const failed: string[] = []
+  const [owner] = tokens
+  const ownerHeaders = authHeaders(owner)
+  for (const sid of await classStudentIds(request, owner, classId)) {
+    const c = await request.get(`${API}/students/${sid}/comments`, { headers: ownerHeaders })
+    for (const x of ((await c.json()) as { items: { id: string }[] }).items) {
+      if (snap.comments.has(x.id)) continue
+      if (!(await request.delete(`${API}/comments/${x.id}`, { headers: ownerHeaders })).ok()) failed.push(`${API}/comments/${x.id}`)
+    }
+    const g = await request.get(`${API}/students/${sid}/growth-records`, { headers: ownerHeaders })
+    for (const x of ((await g.json()) as { items: { id: string }[] }).items) {
+      if (snap.growth.has(x.id)) continue
+      if (!(await request.delete(`${API}/growth-records/${x.id}`, { headers: ownerHeaders })).ok()) failed.push(`${API}/growth-records/${x.id}`)
+    }
+  }
+  // 对话按创建者隔离:每个 token 只看得到、删得掉自己的
+  for (const token of tokens) {
+    const chats = await request.get(`${API}/ai/chats?class_id=${classId}`, { headers: authHeaders(token) })
+    if (!chats.ok()) continue
+    for (const x of ((await chats.json()) as { items: { id: string }[] }).items) {
+      if (snap.chats.has(x.id)) continue
+      if (!(await request.delete(`${API}/ai/chats/${x.id}`, { headers: authHeaders(token) })).ok()) failed.push(`${API}/ai/chats/${x.id}`)
+    }
+  }
+  expect(failed, '清理自建数据时有删除失败').toEqual([])
+}
+
+/** 给一名学生(enrollment)一条个人点评,返回 op_id。 */
+export async function giveReview(
+  request: APIRequestContext,
+  token: string,
+  classId: string,
+  enrollmentId: string,
+  reason: string,
+  delta: number,
+): Promise<string> {
+  const opId = randomUUID()
+  const res = await request.post(`${API}/classes/${classId}/reviews`, {
+    headers: authHeaders(token),
+    data: { op_id: opId, category: 'individual', enrollment_ids: [enrollmentId], reason_text: reason, score_delta: delta },
+  })
+  expect(res.ok()).toBeTruthy()
+  return opId
+}
+
+/** 某名学生的累计积分(来自点评汇总)。 */
+export async function reviewTotal(request: APIRequestContext, token: string, classId: string, enrollmentId: string): Promise<number> {
+  const res = await request.get(`${API}/classes/${classId}/reviews/summary`, { headers: authHeaders(token) })
+  expect(res.ok()).toBeTruthy()
+  const { items } = (await res.json()) as { items: { enrollment_id: string; total: number }[] }
+  return items.find((i) => i.enrollment_id === enrollmentId)?.total ?? 0
 }
