@@ -292,6 +292,18 @@ def ai_chat_prompt(
     return AiPrompt(prompt=prompt, mapping=[AiMapping(code=c, name=n) for c, n in mapping])
 
 
+def _check_reply_pending(db: Session, chat_id: UUID, body: AiReplyIn) -> None:
+    if body.text is None and not body.regenerate:
+        msgs = ordered_messages(db, chat_id)
+        if not msgs or msgs[-1].role != "user":
+            raise ApiError(409, "AI_NOTHING_TO_REPLY", "没有需要回复的内容")
+
+
+def _check_item_runnable(item: AiBatchItem) -> None:
+    if item_status(item, clock.utc_now()) not in ("wait", "err"):
+        raise ApiError(409, "AI_NOTHING_TO_REPLY", "这一条已经生成过了或正在生成")
+
+
 @router.post("/chats/{chat_id}/reply")
 def ai_chat_reply(
     chat_id: UUID,
@@ -312,12 +324,11 @@ def ai_chat_reply(
         raise ApiError(409, "AI_NOT_CONFIGURED", "学校还没有配置 AI 服务")
     if chat.batch_only:
         raise ApiError(409, "AI_BATCH_ONLY", "批量对话不能追问或重新生成")
-    if body.text is None and not body.regenerate:
-        msgs = ordered_messages(db, chat.id)
-        if not msgs or msgs[-1].role != "user":
-            raise ApiError(409, "AI_NOTHING_TO_REPLY", "没有需要回复的内容")
+    _check_reply_pending(db, chat.id, body)
     token = acquire_lock(redis, chat.id)
     try:
+        db.expire_all()  # 拿到锁后重查:并发的另一次提交可能已经回复过了
+        _check_reply_pending(db, chat.id, body)
         ctx = GenContext(
             chat_id=chat.id,
             user_id=user.id,
@@ -382,12 +393,13 @@ def ai_chat_run_item(
     cfg = load_ai_config(db, settings.school_id, settings.master_key_bytes)
     if cfg is None or not is_ready(cfg):
         raise ApiError(409, "AI_NOT_CONFIGURED", "学校还没有配置 AI 服务")
-    if item_status(item, clock.utc_now()) not in ("wait", "err"):
-        raise ApiError(409, "AI_NOTHING_TO_REPLY", "这一条已经生成过了或正在生成")
+    _check_item_runnable(item)
     # 学生已不在本班等问题:开始推流前就以普通 400 返回
     build_item_job(db, user, cls, chat, item, mask=chat.mask or cfg.mask_forced)
     token = acquire_lock(redis, chat.id)
     try:
+        db.refresh(item)  # 拿到锁后重查:并发的另一次点击可能已经生成完了
+        _check_item_runnable(item)
         ctx = _gen_context(request, user, cls, chat, cfg, scope, redis, token)
         return StreamingResponse(
             run_item_events(ctx, item.id),

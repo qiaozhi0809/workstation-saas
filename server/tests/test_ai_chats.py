@@ -615,3 +615,27 @@ def test_prompt_copy_batch_honours_forced_mask(client, settings, db):
     rows = [a for a in audit_rows(db, CLASS_ID) if a.action == "ai.prompt_copy"]
     assert rows[-1].extra["masked"] is True
     assert rows[-1].extra["student_ids"] == [STUDENT_IDS[0], STUDENT_IDS[1]]
+
+
+def test_reply_rechecks_nothing_to_reply_under_lock(
+    client, settings, db, redis_client, monkeypatch
+):
+    from app.domain.ai import router as ai_router
+
+    configure_ai(db, settings)
+    chat = create(client, settings, lesson_body())
+    real = ai_router.acquire_lock
+
+    def racing_acquire(redis, chat_id):
+        token = real(redis, chat_id)
+        # 另一个请求在我们拿到锁之前已经写好了回复
+        db.add(AiMessage(chat_id=UUID(chat["id"]), role="assistant", content="已有", status="done"))
+        db.commit()
+        return token
+
+    monkeypatch.setattr(ai_router, "acquire_lock", racing_acquire)
+    with reply(client, settings, chat["id"]) as r:
+        assert r.status_code == 409
+        assert json.loads(r.read())["error"]["code"] == "AI_NOTHING_TO_REPLY"
+    assert redis_client.exists(f"ai:chat:{chat['id']}") == 0
+    assert len(get_chat(client, settings, chat["id"]).json()["messages"]) == 2

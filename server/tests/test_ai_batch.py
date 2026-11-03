@@ -254,3 +254,27 @@ def test_item_done_and_error_events_after_save_and_unlock(client, settings, db, 
         assert seen["chat"]["items"][0]["status"] == status, final
         assert seen["lock"] == 0 and seen["audits"] == 1
         assert len(generate_audits(db, chat["id"])) == 1
+
+
+def test_run_rechecks_item_status_under_lock(client, settings, db, redis_client, monkeypatch):
+    from app.domain.ai import router as ai_router
+
+    configure_ai(db, settings)
+    set_transport(client, ["不该被调用"])
+    chat = create(client, settings, comments_body(STUDENT_IDS[:2]))
+    item_id = chat["items"][0]["id"]
+    real = ai_router.acquire_lock
+
+    def racing_acquire(redis, chat_id):
+        token = real(redis, chat_id)
+        # 另一个请求刚把这一条生成完
+        row = db.get(AiBatchItem, UUID(item_id))
+        row.status, row.content = "done", "已生成"
+        db.commit()
+        return token
+
+    monkeypatch.setattr(ai_router, "acquire_lock", racing_acquire)
+    r = post_run(client, settings, chat["id"], item_id)
+    assert r.status_code == 409 and r.json()["error"]["code"] == "AI_NOTHING_TO_REPLY"
+    assert redis_client.exists(f"ai:chat:{chat['id']}") == 0
+    assert get_chat(client, settings, chat["id"]).json()["items"][0]["content"] == "已生成"
