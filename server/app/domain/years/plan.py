@@ -65,6 +65,14 @@ class NewClassPlan(BaseModel):
     homeroom_teacher_id: UUID | None = None
     seat_rows: int = Field(default=7, ge=1, le=12)
     seat_cols: int = Field(default=4, ge=1, le=12)
+    desk_size: Literal[1, 2, 3] = 2
+    seat_layout: Literal["auto", "manual"] = "auto"
+
+    @model_validator(mode="after")
+    def _cols_fit_desk(self) -> "NewClassPlan":
+        if self.seat_cols % self.desk_size != 0:
+            raise ValueError("seat_cols 必须是 desk_size 的整数倍")
+        return self
 
 
 class UpgradePlan(BaseModel):
