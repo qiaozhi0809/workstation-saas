@@ -42,6 +42,7 @@ def test_summary_for_homeroom(client, settings, monkeypatch):
     assert (body["week_no"], body["week_start"]) == (10, "2026-11-02")
     assert body["year"]["name"] == "2026-2027"
     assert body["seat_version"] == 0
+    assert body["school_name"] == "示例小学"
     assert body["my_perms"] == ALL_PERMS
     assert body["my_subjects"] == []
     assert body["board"] == {
