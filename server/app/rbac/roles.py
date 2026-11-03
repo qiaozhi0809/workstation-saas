@@ -14,6 +14,8 @@ class Role(StrEnum):
 
 
 TEACHER_ROLES = frozenset({Role.homeroom_teacher, Role.subject_teacher, Role.assistant_teacher})
+ADMIN_ROLES = frozenset({Role.principal, Role.dean, Role.grade_head, Role.it_admin})
+LEADER_ROLES = frozenset({Role.principal, Role.dean, Role.grade_head})
 
 
 class Perm(StrEnum):
@@ -43,6 +45,14 @@ class Perm(StrEnum):
     COMMENT_WRITE = "comment.write"
     AI_USE = "ai.use"
     AI_CLASS = "ai.class"
+    ORG_MANAGE = "org.manage"
+    ACCOUNT_MANAGE = "account.manage"
+    SETTINGS_MANAGE = "settings.manage"
+    AUDIT_READ = "audit.read"
+    AI_USAGE = "ai.usage"
+    NOTICE_SEND = "notice.send"
+    GRADE_EXAM_WRITE = "exam.grade_write"
+    YEAR_UPGRADE = "year.upgrade"
 
 
 # Order matches ClassroomSummary.my_perms.
@@ -91,10 +101,33 @@ _PARENT = frozenset(
 )
 
 ROLE_PERMS: dict[Role, frozenset[Perm]] = {
-    Role.principal: _LEADERS,
-    Role.dean: _LEADERS,
-    Role.grade_head: _LEADERS,
-    Role.it_admin: frozenset(),
+    Role.principal: _LEADERS
+    | frozenset(
+        {
+            Perm.ORG_MANAGE,
+            Perm.ACCOUNT_MANAGE,
+            Perm.SETTINGS_MANAGE,
+            Perm.AUDIT_READ,
+            Perm.AI_USAGE,
+            Perm.NOTICE_SEND,
+            Perm.GRADE_EXAM_WRITE,
+            Perm.YEAR_UPGRADE,
+        }
+    ),
+    Role.dean: _LEADERS
+    | frozenset(
+        {
+            Perm.ORG_MANAGE,
+            Perm.AI_USAGE,
+            Perm.NOTICE_SEND,
+            Perm.GRADE_EXAM_WRITE,
+            Perm.YEAR_UPGRADE,
+        }
+    ),
+    Role.grade_head: _LEADERS | frozenset({Perm.NOTICE_SEND, Perm.GRADE_EXAM_WRITE}),
+    Role.it_admin: frozenset(
+        {Perm.ORG_MANAGE, Perm.ACCOUNT_MANAGE, Perm.SETTINGS_MANAGE, Perm.AUDIT_READ}
+    ),
     Role.homeroom_teacher: frozenset(
         {
             Perm.CLASS_READ,

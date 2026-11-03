@@ -33,6 +33,7 @@ class AcademicYear(Base):
     name: Mapped[str] = mapped_column(Text)
     start_date: Mapped[date]
     end_date: Mapped[date]
+    term2_start: Mapped[date | None]
     is_active: Mapped[bool] = mapped_column(server_default=text("false"))
     created_at: Mapped[datetime] = mapped_column(**_NOW)
     updated_at: Mapped[datetime] = mapped_column(**_NOW)
@@ -48,6 +49,7 @@ class Grade(Base):
     )
     name: Mapped[str] = mapped_column(Text)
     display_order: Mapped[int] = mapped_column(server_default=text("0"))
+    stage: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(**_NOW)
     updated_at: Mapped[datetime] = mapped_column(**_NOW)
 
