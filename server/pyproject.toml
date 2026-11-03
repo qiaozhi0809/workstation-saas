@@ -14,12 +14,13 @@ dependencies = [
   "redis>=5.2",
   "structlog>=24.4",
   "tzdata>=2026.6",
+  "httpx>=0.28,<1",
+  "cryptography>=44,<47",
 ]
 
 [dependency-groups]
 dev = [
   "pytest>=8.3",
-  "httpx>=0.28",
   "testcontainers[postgres,redis]>=4.9",
   "ruff>=0.8",
 ]

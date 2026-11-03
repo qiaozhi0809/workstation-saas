@@ -107,6 +107,8 @@ def test_role_perms_full_matrix():
         Perm.EXAM_READ,
         Perm.SCORE_EXPORT,
         Perm.STUDENT_EXPORT,
+        Perm.GROWTH_READ,
+        Perm.COMMENT_READ,
     }
     parent = {Perm.STUDENT_BASIC, Perm.STUDENT_FAMILY, Perm.STUDENT_LEARNING, Perm.STUDENT_PROFILE}
     expected = {
@@ -130,6 +132,12 @@ def test_role_perms_full_matrix():
             Perm.SCORE_EXPORT,
             Perm.STUDENT_MANAGE,
             Perm.STUDENT_EXPORT,
+            Perm.GROWTH_READ,
+            Perm.GROWTH_WRITE,
+            Perm.COMMENT_READ,
+            Perm.COMMENT_WRITE,
+            Perm.AI_USE,
+            Perm.AI_CLASS,
         },
         Role.subject_teacher: {
             Perm.CLASS_READ,
@@ -143,6 +151,8 @@ def test_role_perms_full_matrix():
             Perm.EXAM_READ,
             Perm.EXAM_WRITE,
             Perm.SCORE_WRITE,
+            Perm.GROWTH_READ,
+            Perm.AI_USE,
         },
         Role.assistant_teacher: {
             Perm.CLASS_READ,
@@ -152,6 +162,9 @@ def test_role_perms_full_matrix():
             Perm.ATTENDANCE_WRITE,
             Perm.REVIEW_READ,
             Perm.REVIEW_WRITE,
+            Perm.GROWTH_READ,
+            Perm.GROWTH_WRITE,
+            Perm.AI_USE,
         },
         Role.primary_parent: parent,
         Role.secondary_parent: parent,

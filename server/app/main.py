@@ -4,6 +4,7 @@ from sqlalchemy import create_engine
 
 from app.auth.router import router as auth_router
 from app.config import Settings, get_settings
+from app.domain.ai.router import router as ai_router
 from app.domain.attendance.router import router as attendance_router
 from app.domain.classes.router import router as classes_router
 from app.domain.classroom.router import router as classroom_router
@@ -25,6 +26,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.engine = create_engine(settings.database_url, pool_pre_ping=True)
     app.state.redis = Redis.from_url(settings.redis_url, decode_responses=True)
+    app.state.ai_transport = None  # None = 真实网络;测试里注入假传输
     install_error_handlers(app)
 
     router = APIRouter(prefix="/api/v1")
@@ -44,5 +46,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     router.include_router(preferences_router)
     router.include_router(exams_router)
     router.include_router(roster_router)
+    router.include_router(ai_router)
     app.include_router(router)
     return app

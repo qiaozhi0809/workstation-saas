@@ -1,4 +1,5 @@
 from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -12,7 +13,7 @@ from testcontainers.postgres import PostgresContainer
 from testcontainers.redis import RedisContainer
 
 from app.config import Settings
-from app.db import get_db
+from app.db import SessionScope, get_db, session_scope
 from app.main import create_app
 from app.redis import get_redis
 
@@ -78,9 +79,21 @@ def settings(pg_url: str, redis_url: str) -> Settings:
     )
 
 
+def _reuse(db: Session) -> SessionScope:
+    """测试里的 session_scope:每次进入都给同一个测试会话,退出不关闭。"""
+
+    @contextmanager
+    def scope() -> Iterator[Session]:
+        yield db
+
+    return scope
+
+
 @pytest.fixture
 def client(settings: Settings, db: Session, redis_client: Redis) -> TestClient:
     app = create_app(settings)
     app.dependency_overrides[get_db] = lambda: db
     app.dependency_overrides[get_redis] = lambda: redis_client
+    app.dependency_overrides[session_scope] = lambda: _reuse(db)
+    app.state.ai_transport = None
     return TestClient(app)

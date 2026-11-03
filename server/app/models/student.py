@@ -33,6 +33,7 @@ class Student(Base):
     family_note: Mapped[str | None] = mapped_column(Text)
     note: Mapped[str | None] = mapped_column(Text)
     contacts: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, server_default=text("'[]'"))
+    mask_no: Mapped[int] = mapped_column(server_default=text("nextval('student_mask_no_seq')"))
     created_at: Mapped[datetime] = mapped_column(**_NOW)
     updated_at: Mapped[datetime] = mapped_column(**_NOW)
 
