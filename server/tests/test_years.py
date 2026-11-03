@@ -786,7 +786,7 @@ def test_cli_prints_errors_with_details(db, tmp_path):
         {"e": enr, "c": new_cls},
     )
     code, out = _run_cli(db, ["rollback", "--yes"])
-    assert code == 1 and "attendances: 1" in out
+    assert code == 1 and "  考勤记录 1 条" in out and "新学年已有数据,不能回滚" in out
 
 
 def test_cli_bad_plan_file(db, tmp_path):
@@ -796,3 +796,48 @@ def test_cli_bad_plan_file(db, tmp_path):
     assert code == 1 and out.startswith("失败:")
     code, out = _run_cli(db, ["preview", str(tmp_path / "missing.json")])
     assert code == 1 and out.startswith("失败:")
+
+
+def test_cli_rollback_refused_lists_chinese_labels(db):
+    apply(db, SCHOOL, _seed_plan(db), now=NOW)
+    new_cls = _active_classes(db)[0].id
+    year = _active_year(db).id
+    enr = _scalar(db, "SELECT id FROM enrollments WHERE class_id = :c LIMIT 1", c=new_cls)
+    db.execute(
+        text(
+            "INSERT INTO attendances (enrollment_id, class_id, date, status)"
+            " VALUES (:e, :c, '2027-09-01', 'absent')"
+        ),
+        {"e": enr, "c": new_cls},
+    )
+    make_student(db, new_cls, "新生甲", "S9001", year_id=year)
+    make_student(db, new_cls, "新生乙", "S9002", year_id=year)
+    code, out = _run_cli(db, ["rollback", "--yes"])
+    assert code == 1
+    assert "  考勤记录 1 条" in out and "  新增学生 2 人" in out
+    assert out.rstrip().endswith("新学年已有数据,不能回滚")
+    assert "attendances" not in out and "new_students" not in out
+
+
+def test_apply_same_plan_twice_is_stale(db):
+    plan = _plan(db)
+    apply(db, SCHOOL, plan, now=NOW)
+    snap = _snapshot(db)
+    with pytest.raises(UpgradeError) as ei:
+        apply(db, SCHOOL, plan, now=NOW)
+    assert ei.value.code == "UPGRADE_PLAN_STALE"
+    assert _snapshot(db) == snap
+    assert _scalar(db, "SELECT count(*) FROM year_upgrades") == 1
+
+
+def test_rollback_undoes_only_latest_of_two_upgrades(db):
+    apply(db, SCHOOL, _plan(db), now=NOW)
+    second = suggest(db, SCHOOL, "2028-2029", date(2028, 9, 1), date(2029, 7, 15))
+    apply(db, SCHOOL, second, now=datetime(2028, 8, 20, tzinfo=UTC))
+    assert _active_year(db).name == "2028-2029"
+    rollback(db, SCHOOL, now=datetime(2028, 8, 21, tzinfo=UTC))
+    assert _active_year(db).name == "2027-2028"
+    assert _scalar(db, "SELECT is_active FROM academic_years WHERE name = '2026-2027'") is False
+    assert _scalar(db, "SELECT count(*) FROM academic_years") == 2
+    assert [c.name for c in _active_classes(db)] == ["四年二班"]
+    assert _scalar(db, "SELECT count(*) FROM year_upgrades WHERE rolled_back_at IS NULL") == 1

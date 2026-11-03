@@ -347,7 +347,7 @@ def apply(db: Session, school_id: UUID, plan: UpgradePlan, *, now: datetime) -> 
         for r in db.execute(
             text(
                 "SELECT c.id, g.display_order FROM classes c JOIN grades g ON g.id = c.grade_id"
-                " WHERE c.id = ANY(:cs)"
+                " WHERE c.id = ANY(cast(:cs as uuid[]))"
             ),
             {"cs": list(ctx.class_names)},
         )

@@ -19,9 +19,30 @@ from app.domain.years.suggest import suggest
 CONFIRM_HINT = "确认无误后加 --yes 执行"
 
 
+# UPGRADE_HAS_DATA 的 details 键(表名)→ 给管理员看的说法
+_DATA_LABELS = {
+    "attendances": "考勤记录 {} 条",
+    "attendance_days": "已确认的考勤 {} 天",
+    "reviews": "点评 {} 条",
+    "exams": "考试 {} 场",
+    "seat_arrangements": "排座方案 {} 个",
+    "growth_records": "成长记录 {} 条",
+    "comments": "评语 {} 条",
+    "ai_chats": "AI 对话 {} 个",
+    "new_students": "新增学生 {} 人",
+}
+
+
 def _print_error(e: UpgradeError, out: TextIO) -> int:
     print(f"失败:{e.message}", file=out)
-    for k, v in (e.details or {}).items():
+    details = e.details or {}
+    if e.code == service.HAS_DATA:
+        for k, v in details.items():
+            label = _DATA_LABELS.get(k)
+            print(f"  {label.format(v)}" if label else f"  {k}: {v}", file=out)
+        print("新学年已有数据,不能回滚", file=out)
+        return 1
+    for k, v in details.items():
         print(f"  {k}: {v}", file=out)
     return 1
 
