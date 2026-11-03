@@ -390,8 +390,10 @@ def apply(db: Session, school_id: UUID, plan: UpgradePlan, *, now: datetime) -> 
         cid = db.execute(
             text(
                 "INSERT INTO classes (school_id, academic_year_id, grade_id, name, seat_rows,"
-                " seat_cols, subjects, seat_version, homeroom_teacher_id)"
-                " SELECT school_id, :y, :g, :n, seat_rows, seat_cols, subjects, 0, :t"
+                " seat_cols, subjects, seat_version, homeroom_teacher_id, desk_size,"
+                " seat_layout, seat_order, podium_left, podium_right, room)"
+                " SELECT school_id, :y, :g, :n, seat_rows, seat_cols, subjects, 0, :t,"
+                " desk_size, seat_layout, seat_order, podium_left, podium_right, ''"
                 " FROM classes WHERE id = :old RETURNING id"
             ),
             {
@@ -409,8 +411,8 @@ def apply(db: Session, school_id: UUID, plan: UpgradePlan, *, now: datetime) -> 
         cid = db.execute(
             text(
                 "INSERT INTO classes (school_id, academic_year_id, grade_id, name, seat_rows,"
-                " seat_cols, seat_version, homeroom_teacher_id)"
-                " VALUES (:s, :y, :g, :n, :r, :c, 0, :t) RETURNING id"
+                " seat_cols, seat_version, homeroom_teacher_id, desk_size, seat_layout)"
+                " VALUES (:s, :y, :g, :n, :r, :c, 0, :t, :d, :l) RETURNING id"
             ),
             {
                 "s": school_id,
@@ -419,6 +421,8 @@ def apply(db: Session, school_id: UUID, plan: UpgradePlan, *, now: datetime) -> 
                 "n": n.name,
                 "r": n.seat_rows,
                 "c": n.seat_cols,
+                "d": n.desk_size,
+                "l": n.seat_layout,
                 "t": n.homeroom_teacher_id,
             },
         ).scalar_one()

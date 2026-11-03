@@ -993,3 +993,57 @@ def test_cli_database_error_is_reported_not_traceback(db, monkeypatch):
     code, out = _run_cli(db, ["rollback"])
     assert code == 1
     assert out.startswith("失败:数据库操作失败") and "OperationalError" in out
+
+
+def test_promote_copies_desk_layout_and_clears_room(db):
+    db.execute(
+        text(
+            "UPDATE classes SET desk_size = 3, seat_layout = 'manual', seat_rows = 4,"
+            " seat_cols = 6, seat_order = 'col', podium_left = 1, podium_right = 2,"
+            " room = '求知楼 201' WHERE id = :c"
+        ),
+        {"c": CLASS_ID},
+    )
+    db.execute(
+        text("UPDATE enrollments SET seat_row = 0, seat_col = -1 WHERE student_id = :s"),
+        {"s": STUDENT_IDS[0]},
+    )
+    apply(db, SCHOOL, _plan(db), now=NOW)
+
+    (new_cls,) = _active_classes(db)
+    row = db.execute(
+        text(
+            "SELECT desk_size, seat_layout, seat_order, podium_left, podium_right, room,"
+            " seat_rows, seat_cols FROM classes WHERE id = :c"
+        ),
+        {"c": new_cls.id},
+    ).one()
+    assert tuple(row) == (3, "manual", "col", 1, 2, "", 4, 6)
+    seat = db.execute(
+        text(
+            "SELECT seat_row, seat_col FROM enrollments"
+            " WHERE student_id = :s AND class_id = :c AND status = 'active'"
+        ),
+        {"s": STUDENT_IDS[0], "c": new_cls.id},
+    ).one()
+    assert tuple(seat) == (0, -1)
+
+
+def test_new_class_plan_desk_fields():
+    from pydantic import ValidationError
+
+    from app.domain.years.plan import NewClassPlan
+
+    assert NewClassPlan(grade_name="一年级", name="一班").desk_size == 2
+    with pytest.raises(ValidationError):
+        NewClassPlan(grade_name="一年级", name="一班", desk_size=3, seat_cols=4)
+
+
+def test_new_class_created_with_auto_layout(db):
+    plan = _plan(db)
+    plan.new_classes.append(_new_class("一年级", "一班"))
+    apply(db, SCHOOL, plan, now=NOW)
+    row = db.execute(
+        text("SELECT seat_layout, desk_size, room FROM classes WHERE name = '一班' AND active")
+    ).one()
+    assert tuple(row) == ("auto", 2, "")

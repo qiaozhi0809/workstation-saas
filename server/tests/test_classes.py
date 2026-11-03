@@ -21,6 +21,12 @@ def test_my_classes_seed_teacher(client, settings):
             "seat_rows": 6,
             "seat_cols": 4,
             "role": "homeroom_teacher",
+            "desk_size": 2,
+            "seat_layout": "manual",
+            "seat_order": "row",
+            "podium_left": 0,
+            "podium_right": 0,
+            "room": "求知楼 201",
         }
     ]
 

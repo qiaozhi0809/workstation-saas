@@ -77,6 +77,7 @@ class ClassroomSummary(BaseModel):
     week_start: date
     year: YearInfo
     seat_version: int
+    school_name: str
     my_perms: list[str]
     my_subjects: list[str]
     board: Board

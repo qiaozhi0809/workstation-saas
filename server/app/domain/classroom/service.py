@@ -11,7 +11,7 @@ from app.domain.classes.service import class_scope_of
 from app.domain.classroom.schemas import Board, ClassRoleUpdated, ClassroomSummary, YearInfo
 from app.domain.schools.service import school_today, school_tz, week_monday, week_no
 from app.domain.students.service import require_enrollment
-from app.models import AcademicYear, ClassBoard, SchoolClass
+from app.models import AcademicYear, ClassBoard, School, SchoolClass
 from app.rbac.bindings import Binding, can, subjects_in_class
 from app.rbac.roles import CLASSROOM_PERMS
 
@@ -84,6 +84,7 @@ def build_summary(
             id=year.id, name=year.name, start_date=year.start_date, end_date=year.end_date
         ),
         seat_version=cls.seat_version,
+        school_name=db.scalars(select(School.name).where(School.id == cls.school_id)).one(),
         my_perms=[p.value for p in CLASSROOM_PERMS if can(bindings, p, scope)],
         my_subjects=subjects_in_class(bindings, cls.id),
         board=get_board(db, cls.id),

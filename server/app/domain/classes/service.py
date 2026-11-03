@@ -24,6 +24,12 @@ class ClassView(BaseModel):
     seat_rows: int
     seat_cols: int
     role: TeacherRole
+    desk_size: Literal[1, 2, 3]
+    seat_layout: Literal["auto", "manual"]
+    seat_order: Literal["row", "col"]
+    podium_left: int
+    podium_right: int
+    room: str
 
 
 def list_my_classes(db: Session, bindings: Sequence[Binding], year_id: UUID) -> list[ClassView]:
@@ -51,6 +57,12 @@ def list_my_classes(db: Session, bindings: Sequence[Binding], year_id: UUID) -> 
             seat_rows=cls.seat_rows,
             seat_cols=cls.seat_cols,
             role=best[cls.id].value,
+            desk_size=cls.desk_size,
+            seat_layout=cls.seat_layout,
+            seat_order=cls.seat_order,
+            podium_left=cls.podium_left,
+            podium_right=cls.podium_right,
+            room=cls.room,
         )
         for cls, grade in rows
     ]

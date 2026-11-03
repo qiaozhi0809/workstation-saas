@@ -78,6 +78,9 @@ class SeatArrangement(Base):
     version: Mapped[int]
     seat_rows: Mapped[int]
     seat_cols: Mapped[int]
+    desk_size: Mapped[int] = mapped_column(server_default=text("2"))
+    podium_left: Mapped[int] = mapped_column(server_default=text("0"))
+    podium_right: Mapped[int] = mapped_column(server_default=text("0"))
     layout: Mapped[Any] = mapped_column(JSONB)
     saved_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")

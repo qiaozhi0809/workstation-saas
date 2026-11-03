@@ -29,8 +29,8 @@ def _nullable(value: str | None, limit: int, label: str) -> str | None:
 
 
 class SeatPos(BaseModel):
-    row: int = Field(ge=1)
-    col: int = Field(ge=1)
+    row: int = Field(ge=0)
+    col: int = Field(ge=-2, le=12)
 
 
 class StudentImportRow(BaseModel):
@@ -90,6 +90,7 @@ class StudentImportRow(BaseModel):
 
 class StudentInput(StudentImportRow):
     seat: SeatPos | None
+    auto_seat: bool = False
 
 
 class StudentImport(BaseModel):
