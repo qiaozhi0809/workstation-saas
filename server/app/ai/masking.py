@@ -7,7 +7,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Enrollment, Student
+from app.models import Student
 
 CODE_RE = re.compile(r"[【\[]学生(\d{1,6})[】\]]")
 _TAIL_RE = re.compile(r"^[【\[](学(生\d{0,6})?)?$")
@@ -87,13 +87,14 @@ class StreamRestorer:
         return len(buf)
 
 
-def masker_for_class(db: Session, class_id: UUID) -> Masker:
-    """替换表 = 本班全部注册记录(任何 status)的学生。"""
+def masker_for_school(db: Session, school_id: UUID) -> Masker:
+    """替换表 = 本校全部学生(不论注册状态与学年),按 mask_no 排序。
+
+    同名学生共用第一个(mask_no 最小的)编号,与 Masker 的 setdefault 行为一致。
+    """
     rows = db.execute(
         select(Student.name, Student.mask_no)
-        .join(Enrollment, Enrollment.student_id == Student.id)
-        .where(Enrollment.class_id == class_id)
-        .distinct()
+        .where(Student.school_id == school_id)
         .order_by(Student.mask_no)
     ).all()
     return Masker((name, mask_no) for name, mask_no in rows)

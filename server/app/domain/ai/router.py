@@ -27,7 +27,7 @@ from app.ai.gateway import (
     reply_events,
     run_item_events,
 )
-from app.ai.masking import masker_for_class, scrub
+from app.ai.masking import masker_for_school, scrub
 from app.ai.providers import provider_label
 from app.ai.requests import (
     Job,
@@ -242,7 +242,7 @@ def ai_chat_prompt(
     _check_perms(db, request, user, bindings, cls, _chat_needs(chat))
     cfg = load_ai_config(db, settings.school_id, settings.master_key_bytes)  # 可为 None
     effective = chat.mask or (cfg.mask_forced if cfg else False)
-    masker = masker_for_class(db, cls.id)
+    masker = masker_for_school(db, cls.school_id)
     system = scrub(system_prompt(db, user, bindings, cls))
     template = TEMPLATES.get(chat.template_id) if chat.template_id else None
     items = chat_items(db, chat.id)

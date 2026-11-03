@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 from app.ai.chats import chat_items, ordered_messages
 from app.ai.client import AIUpstreamError, ChatMessage, Delta, Usage
 from app.ai.context import system_prompt
-from app.ai.masking import Masker, masker_for_class, scrub
+from app.ai.masking import Masker, masker_for_school, scrub
 from app.ai.requests import Job, build_job
 from app.ai.settings import AIConfig, make_client
 from app.ai.templates import TEMPLATES
@@ -264,7 +264,7 @@ def prepare_reply(s: Session, ctx: GenContext, body: AiReplyIn) -> Prepared:
         raise ApiError(404, "NOT_FOUND", "对话不存在")
     year = active_academic_year(s, user.school_id)
     bindings = load_bindings(s, user.id, year.id if year else None)
-    masker = masker_for_class(s, cls.id)
+    masker = masker_for_school(s, cls.school_id)
     mask = chat.mask or ctx.cfg.mask_forced
 
     if body.text is not None:
@@ -359,7 +359,7 @@ def build_item_job(
     try:
         return build_job(
             s, user, bindings, cls, template, chat.params, student, school_today(s, cls.school_id),
-            masked=mask, masker=masker_for_class(s, cls.id),
+            masked=mask, masker=masker_for_school(s, cls.school_id),
             regress_n=int(found.group(1)) if found else None,
         )  # fmt: skip
     except ApiError as e:
@@ -386,7 +386,7 @@ def prepare_item(s: Session, ctx: GenContext, item_id: UUID) -> Prepared:
     return Prepared(
         meta={"item_id": str(item.id)},
         messages=messages,
-        masker=masker_for_class(s, cls.id),
+        masker=masker_for_school(s, cls.school_id),
         target_id=item.id,
         template=chat.template_id,
         student_ids=[str(item.student_id)],

@@ -1,9 +1,11 @@
+import json
+
 import pytest
 from sqlalchemy import update
 
-from app.ai.masking import Masker, code_of, masker_for_class, scrub
-from app.models import Enrollment
-from tests.seed_ids import CLASS_ID, STUDENT_IDS
+from app.ai.masking import Masker, code_of, masker_for_school, scrub
+from app.models import Enrollment, School, Student
+from tests.seed_ids import CLASS_ID, SCHOOL_ID, STUDENT_IDS
 
 PEOPLE = [("张三", 3), ("张三丰", 12), ("李四", 4), ("王", 9)]
 
@@ -123,13 +125,49 @@ def test_stream_restorer_half_width_bracket_split():
     assert out == "好张三丰!"
 
 
-def test_masker_for_class_includes_removed_students(db):
+def test_masker_for_school_includes_removed_students(db):
     db.execute(
         update(Enrollment)
         .where(Enrollment.class_id == CLASS_ID, Enrollment.student_id == STUDENT_IDS[0])
         .values(status="removed")
     )
     db.flush()
-    m = masker_for_class(db, CLASS_ID)
+    m = masker_for_school(db, SCHOOL_ID)
     assert m.mask("王小一") == "【学生01】"
     assert m.restore("【学生01】") == "王小一"
+
+
+def test_masker_for_school_covers_unenrolled_but_not_other_schools(db):
+    other = School(name="外校")
+    db.add(other)
+    db.flush()
+    mine = Student(school_id=SCHOOL_ID, mk="mk-x1", name="周远航")
+    theirs = Student(school_id=other.id, mk="mk-x2", name="吴天佑")
+    db.add_all([mine, theirs])
+    db.flush()
+    m = masker_for_school(db, SCHOOL_ID)
+    assert m.mask("周远航与吴天佑") == f"{code_of(mine.mask_no)}与吴天佑"
+
+
+def test_other_class_student_masked(client, settings, db):
+    from tests.test_ai_chats import (
+        configure_ai,
+        create,
+        get_chat,
+        lesson_body,
+        run_reply,
+        set_transport,
+    )
+
+    configure_ai(db, settings)
+    other = Student(school_id=SCHOOL_ID, mk="mk-x3", name="赵明轩")
+    db.add(other)
+    db.commit()
+    code = code_of(other.mask_no)
+    rec = set_transport(client, [f"{code}很棒"])
+    chat = create(client, settings, {**lesson_body(), "mask": True})
+    run_reply(client, settings, chat["id"], {"text": "请表扬赵明轩"})
+    sent = json.dumps(rec[0], ensure_ascii=False)
+    assert code in sent and "赵明轩" not in sent
+    got = get_chat(client, settings, chat["id"]).json()
+    assert got["messages"][-1]["content"] == "赵明轩很棒"
