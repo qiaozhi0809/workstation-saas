@@ -265,6 +265,9 @@ export function useSeatingMode(o: Options) {
     seats: seats ?? [],
     rows: draft.grid.rows,
     cols: draft.grid.cols,
+    // 桌型和讲台座位也取草稿的,保存班级设置后草稿重建完成前,地图不会按新旧混合的桌椅画
+    deskSize: draft.grid.deskSize,
+    podium: { left: draft.grid.podiumLeft, right: draft.grid.podiumRight },
     views,
     // 保存 / 加载期间地图不可编辑
     onSeatClick: busy ? undefined : (seat: StudentSeat) => clickStudent(seat.enrollment_id),

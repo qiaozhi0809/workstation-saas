@@ -10,7 +10,7 @@ export const M = {
   // 即 SEAT_BOTTOM + 20),所以不能小于约 20
   CORE_PAD: 24,
   // 单人桌之间的过道;讲台两侧座位:离讲桌的间距、两张桌之间的间距、离地台上沿的距离
-  AISLE_SINGLE: 40, POD_GAP: 30, POD_SEP: 14, POD_Y: 14,
+  AISLE_SINGLE: 40, POD_GAP: 30, POD_SEP: 14, POD_Y: 20, // 20:名牌离前墙留足空隙;座位画到平台下沿(102 + 20 < 128)略压住台面前沿,是名牌与椅背之间的取舍
 } as const
 
 export interface Rect { x: number; y: number; w: number; h: number }

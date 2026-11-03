@@ -28,6 +28,38 @@ export async function restoreSeedSeating(request: APIRequestContext, token: stri
   expect(saved.ok()).toBeTruthy()
 }
 
+/** 把桌椅排列存回种子:双人同桌、自己设定 6 排 × 4 座、无讲台座位、教室 求知楼 201,座位随后由 restoreSeedSeating 还原。 */
+export async function restoreSeedLayout(request: APIRequestContext, token: string, classId: string): Promise<void> {
+  const headers = { Authorization: `Bearer ${token}` }
+  const summary = await request.get(`${API}/classes/${classId}/classroom`, { headers })
+  expect(summary.ok()).toBeTruthy()
+  const { seat_version } = (await summary.json()) as { seat_version: number }
+  const res = await request.put(`${API}/classes/${classId}/layout`, {
+    headers,
+    data: {
+      base_version: seat_version, desk_size: 2, seat_layout: 'manual', rows: 6, cols: 4,
+      podium_left: 0, podium_right: 0, how: 'row', room: '求知楼 201',
+    },
+  })
+  expect(res.ok()).toBeTruthy()
+  await restoreSeedSeating(request, token, classId)
+}
+
+/** 经 API 加若干名学生(姓名 测试加人N,不带座位);用例结束由 deleteTestStudents 兜底清理。 */
+export async function addTestStudents(request: APIRequestContext, token: string, classId: string, count: number): Promise<void> {
+  for (let i = 1; i <= count; i++) {
+    const res = await request.post(`${API}/classes/${classId}/students`, {
+      headers: { Authorization: `Bearer ${token}` },
+      data: {
+        name: `测试加人${i}`, gender: null, student_no: `20269${String(i).padStart(2, '0')}`, birthdate: null, class_role: null,
+        tags: [], boarding: false, family_structure: null, family_note: null, learning_summary: null, personality: null,
+        note: null, health_notes: null, contacts: [], seat: null, auto_seat: true,
+      },
+    })
+    expect(res.ok(), await res.text()).toBeTruthy()
+  }
+}
+
 const authHeaders = (token: string) => ({ Authorization: `Bearer ${token}` })
 
 /** 把 王小一 今天的考勤改回"出勤"(种子初始态);用例失败留下脏状态时也能恢复。 */

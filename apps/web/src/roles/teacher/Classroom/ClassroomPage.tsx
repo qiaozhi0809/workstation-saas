@@ -65,6 +65,8 @@ interface ModeSlot {
   /** 覆盖班级行列(排座草稿可改行列) */
   rows?: number
   cols?: number
+  deskSize?: ClassView['desk_size']
+  podium?: { left: number; right: number }
   views?: Record<string, SeatView>
   effects?: ClassroomEffects
   onSeatClick?: ClassroomMapProps['onSeatClick']
@@ -311,7 +313,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
     slot = { views: grades.views, onSeatClick: grades.onSeatClick, actions: grades.bar }
   } else if (mode === 'seating' && seating.ready) {
     slot = {
-      seats: seating.seats, rows: seating.rows, cols: seating.cols, views: seating.views,
+      seats: seating.seats, rows: seating.rows, cols: seating.cols, deskSize: seating.deskSize, podium: seating.podium, views: seating.views,
       onSeatClick: seating.onSeatClick, onEmptySeatClick: seating.onEmptySeatClick, onSeatDrop: seating.onSeatDrop,
       actions: <SeatingBar {...seating.bar} />,
       menu: <SeatingMenuItems {...seating.bar} />,
@@ -357,8 +359,8 @@ function ClassroomView({ cls }: { cls: ClassView }) {
       <ClassroomMap
         rows={slot.rows ?? cls.seat_rows}
         cols={slot.cols ?? cls.seat_cols}
-        deskSize={cls.desk_size}
-        podium={{ left: cls.podium_left, right: cls.podium_right }}
+        deskSize={slot.deskSize ?? cls.desk_size}
+        podium={slot.podium ?? { left: cls.podium_left, right: cls.podium_right }}
         seats={slot.seats ?? roster.data.items}
         mode={mode}
         teacher={teacher}
