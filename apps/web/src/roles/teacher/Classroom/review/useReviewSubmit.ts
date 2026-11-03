@@ -60,6 +60,7 @@ export function useReviewSubmit(classId: string, subject: string) {
         retry.current = null
         void qc.invalidateQueries({ queryKey: ['review-summary', classId] })
         void qc.invalidateQueries({ queryKey: ['reviews', classId] })
+        void qc.invalidateQueries({ queryKey: ['student-reviews', classId] })
         h.onSuccess?.(res.items, op_id)
       },
       onError: (err) => {
