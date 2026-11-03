@@ -65,17 +65,48 @@ def test_stale_base_version_conflict_writes_nothing(client, db, settings):
     assert version_now(db) == 1
 
 
-def test_resize_updates_class_dimensions(client, db, settings):
-    assert client.put(URL, json=payload(db, rows=3, cols=4), headers=auth(settings)).is_success
-    [cls] = client.get("/api/v1/me/classes", headers=auth(settings)).json()["items"]
-    assert (cls["seat_rows"], cls["seat_cols"]) == (3, 4)
+def test_seating_save_rejects_layout_mismatch(client, db, settings):
+    res = client.put(URL, json=payload(db, rows=3, cols=4), headers=auth(settings))
+    err = res.json()["error"]
+    assert (res.status_code, err["code"], err["details"]["reason"]) == (
+        400,
+        "SEAT_INVALID",
+        "layout_mismatch",
+    )
+    assert version_now(db) == 0
+
+
+def test_seating_save_accepts_podium_seat(client, db, settings):
+    layout = {
+        "desk_size": 2,
+        "seat_layout": "manual",
+        "rows": 6,
+        "cols": 4,
+        "podium_left": 0,
+        "podium_right": 2,
+        "how": "keep",
+        "base_version": 0,
+        "room": "",
+    }
+    base = f"/api/v1/classes/{CLASS_ID}/layout"
+    assert client.put(base, json=layout, headers=auth(settings)).status_code == 200
+    ok = payload(db, base=1, moves={0: (0, 2)})
+    assert client.put(URL, json=ok, headers=auth(settings)).status_code == 200
+    now = layout_now(db)
+    assert now[enrollment_of(db, STUDENT_IDS[0])][:2] == (0, 2)
+    for bad in ((0, 3), (0, -1), (0, 0)):
+        res = client.put(URL, json=payload(db, base=2, moves={0: bad}), headers=auth(settings))
+        err = res.json()["error"]
+        assert (res.status_code, err["details"]["reason"]) == (400, "podium_unavailable")
+    res = client.put(URL, json=payload(db, base=2, moves={0: (7, 1)}), headers=auth(settings))
+    assert res.json()["error"]["details"]["reason"] == "out_of_grid"
 
 
 def test_invalid_layouts(client, db, settings):
     duplicate_enrollment = payload(db)
     duplicate_enrollment["seats"].append({**duplicate_enrollment["seats"][0], "row": 6, "col": 4})
     cases = {
-        "out_of_grid": payload(db, rows=2),
+        "out_of_grid": payload(db, moves={3: (7, 4)}),
         "duplicate_position": payload(db, moves={1: (1, 1)}),
         "duplicate_enrollment": duplicate_enrollment,
     }
