@@ -30,6 +30,6 @@ it('saves a layout', async () => {
   await seatingApi.saveLayout('c1', body)
   const c = lastCall()
   expect(c.method).toBe('PUT')
-  expect(c.url).toContain('/api/v1/classes/c1/layout')
+  expect(c.url).toMatch(/\/api\/v1\/classes\/c1\/layout$/)
   expect(c.body).toEqual(body)
 })
