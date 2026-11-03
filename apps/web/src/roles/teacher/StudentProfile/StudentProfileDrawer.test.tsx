@@ -10,6 +10,7 @@ import { useStudentDrawer } from './useStudentDrawer'
 
 vi.mock('@/shared/api/classroom', () => ({ classroomApi: { summary: vi.fn().mockResolvedValue({ my_perms: [] }) } }))
 vi.mock('@/shared/api/students', () => ({ studentsApi: { detail: vi.fn() } }))
+vi.mock('@/shared/api/comments', () => ({ commentsApi: { list: vi.fn().mockResolvedValue({ items: [] }), create: vi.fn(), remove: vi.fn() } }))
 vi.mock('@/shared/api/growth', () => ({ growthApi: { list: vi.fn().mockResolvedValue({ items: [] }), create: vi.fn(), remove: vi.fn() } }))
 vi.mock('@/shared/api/reviews', () => ({ reviewsApi: { listForStudent: vi.fn(), revokeItem: vi.fn(), summary: vi.fn() } }))
 
@@ -121,11 +122,12 @@ it('treats an unknown tab value as 概览', async () => {
   expect(screen.getByRole('tab', { name: '概览', selected: true })).toBeInTheDocument()
 })
 
-it('shows a not-yet-available state on later tabs', async () => {
+it('shows the comments tab content', async () => {
   renderDrawer()
   await screen.findByRole('heading', { name: '王小一' })
   fireEvent.click(screen.getByRole('tab', { name: '评语' }))
-  expect(screen.getByText('暂未开放')).toBeInTheDocument()
+  expect(await screen.findByText('只有班主任可以查看评语')).toBeInTheDocument()
+  expect(screen.queryByText('暂未开放')).not.toBeInTheDocument()
 })
 
 it('replaces history on close so Back does not reopen the drawer', async () => {
