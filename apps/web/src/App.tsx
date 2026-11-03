@@ -11,6 +11,8 @@ import ClassroomPage from '@/roles/teacher/Classroom/ClassroomPage'
 import AnalysisPage from '@/roles/teacher/Analysis/AnalysisPage'
 import ScoresPage from '@/roles/teacher/Scores/ScoresPage'
 import StudentsPage from '@/roles/teacher/Students/StudentsPage'
+import AiHomePage from '@/roles/teacher/AI/AiHomePage'
+import AiThreadPage from '@/roles/teacher/AI/AiThreadPage'
 import PreferencesPage from '@/roles/teacher/Preferences/PreferencesPage'
 import ProtectedRoute from '@/shared/components/ProtectedRoute'
 import { EmptyState } from '@/shared/components/feedback/EmptyState'
@@ -37,6 +39,8 @@ const routes = createRoutesFromElements(
       <Route path="analysis" element={<AnalysisPage />} />
       <Route path="students" element={<StudentsPage />} />
       <Route path="students/:id" element={<StudentRedirect />} />
+      <Route path="ai" element={<AiHomePage />} />
+      <Route path="ai/:chatId" element={<AiThreadPage />} />
     </Route>
     {ClassroomPlayground && (
       <Route path="/dev/classroom" element={<Suspense fallback={null}><ClassroomPlayground /></Suspense>} />

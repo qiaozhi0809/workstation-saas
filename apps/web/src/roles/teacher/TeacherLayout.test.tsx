@@ -184,10 +184,10 @@ it('shows the main navigation with the current page marked', async () => {
   renderAt('/teacher/scores')
   const nav = await screen.findByRole('navigation', { name: '主导航' })
   expect(within(nav).getAllByRole('link').map((l) => l.getAttribute('href'))).toEqual([
-    '/teacher/classroom', '/teacher/scores', '/teacher/analysis', '/teacher/students',
+    '/teacher/classroom', '/teacher/scores', '/teacher/analysis', '/teacher/students', '/teacher/ai',
   ])
   expect(within(nav).getByRole('link', { name: '成绩' })).toHaveAttribute('aria-current', 'page')
-  for (const name of ['教室', '分析', '学生']) {
+  for (const name of ['教室', '分析', '学生', 'AI 助手']) {
     expect(within(nav).getByRole('link', { name })).not.toHaveAttribute('aria-current')
   }
 })
