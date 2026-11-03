@@ -5,6 +5,9 @@ import type { AdminPerm } from '@/shared/types/admin'
 
 // ── 段 F(今日 / 看板):import 追加在此行之上 ──
 
+import { Building2 } from 'lucide-react'
+import ClassInfoPage from './Org/ClassInfoPage'
+import OrgPage from './Org/OrgPage'
 // ── 段 D(组织架构):import 追加在此行之上 ──
 
 // ── 段 E(账号 / 设置):import 追加在此行之上 ──
@@ -26,6 +29,8 @@ export const ADMIN_PAGES: AdminPage[] = [
 
   // ── board:追加在此行之上 ──
 
+  { path: 'org', label: '组织架构', icon: Building2, perm: 'org.manage', element: <OrgPage /> },
+  { path: 'org/classes/:id', label: '班级信息', icon: Building2, perm: 'org.manage', element: <ClassInfoPage />, hidden: true },
   // ── org:追加在此行之上 ──
 
   // ── accounts:追加在此行之上 ──
