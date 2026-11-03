@@ -104,3 +104,14 @@ class BoardView(BaseModel):
     grades: list[GradeBrief]
     grade_id: UUID | None
     classes: list[BoardClass]
+
+
+class DetailAbsentee(BaseModel):
+    student_id: UUID
+    name: str
+    status: Literal["leave", "absent"]
+    reason: str | None
+
+
+class BoardClassDetail(BoardClass):
+    absentees: list[DetailAbsentee]

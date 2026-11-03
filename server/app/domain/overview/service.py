@@ -12,10 +12,12 @@ from app.domain.classes.service import class_scope_of
 from app.domain.overview.schemas import (
     Absentee,
     BoardClass,
+    BoardClassDetail,
     BoardMetrics,
     BoardView,
     BottomStudent,
     ClassWeek,
+    DetailAbsentee,
     GradeBrief,
     TeacherCount,
     TodayView,
@@ -30,7 +32,9 @@ from app.domain.schools.service import (
     week_monday,
 )
 from app.domain.students.schemas import StudentSeat
+from app.errors import ApiError
 from app.models import (
+    AcademicYear,
     Attendance,
     AttendanceDay,
     Enrollment,
@@ -328,32 +332,9 @@ def _seats_by_class(db: Session, class_ids: list[UUID]) -> dict[UUID, list[Stude
     return out
 
 
-def board_view(
-    db: Session,
-    user: User,
-    bindings: Sequence[Binding],
-    grade_id: UUID | None,
-    request: Request | None = None,
-) -> BoardView:
-    year = require_active_year(db, user.school_id)
-    visible = _visible(db, bindings, year.id, year.school_id)
-    grades = list(dict.fromkeys((v.grade.id, v.grade.name) for v in visible))
-    if grade_id is None:
-        grade_id = grades[0][0] if grades else None
-    elif grade_id not in {g[0] for g in grades}:
-        deny(
-            db,
-            user_id=user.id,
-            action=SCHOOL_VIEW,
-            object_type="grade",
-            object_id=str(grade_id),
-            request=request,
-        )
-    picked = [v for v in visible if v.grade.id == grade_id]
-    grade_list = [GradeBrief(id=gid, name=name) for gid, name in grades]
-    if not picked:
-        return BoardView(grades=grade_list, grade_id=grade_id, classes=[])
-
+def _build_board_classes(
+    db: Session, picked: list[VisibleClass], year: AcademicYear
+) -> list[BoardClass]:
     ids = [v.cls.id for v in picked]
     today, week_start = _today_and_start(db, year.school_id)
     seats = _seats_by_class(db, ids)
@@ -403,4 +384,86 @@ def board_view(
                 ),
             )
         )
-    return BoardView(grades=grade_list, grade_id=grade_id, classes=classes)
+    return classes
+
+
+def board_view(
+    db: Session,
+    user: User,
+    bindings: Sequence[Binding],
+    grade_id: UUID | None,
+    request: Request | None = None,
+) -> BoardView:
+    year = require_active_year(db, user.school_id)
+    visible = _visible(db, bindings, year.id, year.school_id)
+    grades = list(dict.fromkeys((v.grade.id, v.grade.name) for v in visible))
+    if grade_id is None:
+        grade_id = grades[0][0] if grades else None
+    elif grade_id not in {g[0] for g in grades}:
+        deny(
+            db,
+            user_id=user.id,
+            action=SCHOOL_VIEW,
+            object_type="grade",
+            object_id=str(grade_id),
+            request=request,
+        )
+    picked = [v for v in visible if v.grade.id == grade_id]
+    grade_list = [GradeBrief(id=gid, name=name) for gid, name in grades]
+    if not picked:
+        return BoardView(grades=grade_list, grade_id=grade_id, classes=[])
+
+    return BoardView(
+        grades=grade_list, grade_id=grade_id, classes=_build_board_classes(db, picked, year)
+    )
+
+
+def board_class_detail(
+    db: Session,
+    user: User,
+    bindings: Sequence[Binding],
+    class_id: UUID,
+    request: Request | None = None,
+) -> BoardClassDetail:
+    year = require_active_year(db, user.school_id)
+    exists = db.scalars(
+        select(SchoolClass.id).where(
+            SchoolClass.id == class_id,
+            SchoolClass.school_id == year.school_id,
+            SchoolClass.academic_year_id == year.id,
+            SchoolClass.active.is_(True),
+        )
+    ).first()
+    if exists is None:
+        raise ApiError(404, "NOT_FOUND", "班级不存在")
+    picked = [v for v in _visible(db, bindings, year.id, year.school_id) if v.cls.id == class_id]
+    if not picked:
+        deny(
+            db,
+            user_id=user.id,
+            action=SCHOOL_VIEW,
+            object_type="class",
+            object_id=str(class_id),
+            request=request,
+        )
+    [card] = _build_board_classes(db, picked, year)
+    today, _ = _today_and_start(db, year.school_id)
+    rows = db.execute(
+        select(Student.id, Student.name, Attendance.status, Attendance.reason)
+        .join(Enrollment, Enrollment.id == Attendance.enrollment_id)
+        .join(Student, Student.id == Enrollment.student_id)
+        .where(
+            Attendance.class_id == class_id,
+            Attendance.date == today,
+            Attendance.status.in_(["leave", "absent"]),
+            Enrollment.status == "active",
+        )
+        .order_by(Student.mk)
+    ).all()
+    return BoardClassDetail(
+        **card.model_dump(),
+        absentees=[
+            DetailAbsentee(student_id=sid, name=name, status=st, reason=reason)
+            for sid, name, st, reason in rows
+        ],
+    )

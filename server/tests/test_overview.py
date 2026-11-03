@@ -335,3 +335,46 @@ def test_grade_head_cannot_read_other_grade_class(client, db, settings, monkeypa
         client.get(f"{base}/attendance", params={"date": "2026-10-14"}, headers=h).status_code
         == 403
     )
+
+
+def get_detail(client, settings, class_id, user=PRINCIPAL):
+    return client.get(f"/api/v1/admin/board/classes/{class_id}", headers=auth(settings, user))
+
+
+def test_board_class_detail_principal(client, db, settings, monkeypatch):
+    freeze(monkeypatch, NOW)
+    e = enrollment_by_mk(db, "S0013")
+    db.add(
+        Attendance(
+            enrollment_id=e.id, class_id=e.class_id, date=TODAY, status="leave", reason="感冒"
+        )
+    )
+    db.flush()
+    res = get_detail(client, settings, C31)
+    assert res.status_code == 200
+    body = res.json()
+    card = next(c for c in get_board(client, settings).json()["classes"] if c["id"] == C31)
+    assert {k: v for k, v in body.items() if k != "absentees"} == card
+    assert [(a["name"], a["status"], a["reason"]) for a in body["absentees"]] == [
+        ("曹小三", "leave", "感冒")
+    ]
+    students = client.get(f"/api/v1/classes/{C31}/students", headers=auth(settings, PRINCIPAL))
+    assert body["seats"] == students.json()["items"]
+
+
+def test_board_class_detail_grade_head_scope(client, db, settings, monkeypatch):
+    freeze(monkeypatch, NOW)
+    assert get_detail(client, settings, CLASS_ID, GRADE_HEAD3).status_code == 200
+    assert get_detail(client, settings, C41, GRADE_HEAD3).status_code == 403
+    row = db.scalars(
+        select(AuditLog).where(AuditLog.user_id == UUID(GRADE_HEAD3), AuditLog.success.is_(False))
+    ).first()
+    assert row is not None and row.object_id == C41
+    bind(db, UUID(GRADE_HEAD3), Role.homeroom_teacher, class_id=C41)
+    assert get_detail(client, settings, C41, GRADE_HEAD3).status_code == 403
+
+
+def test_board_class_detail_it_admin_and_missing(client, db, settings, monkeypatch):
+    freeze(monkeypatch, NOW)
+    assert get_detail(client, settings, C31, IT_ADMIN).status_code == 403
+    assert get_detail(client, settings, uuid4()).status_code == 404
