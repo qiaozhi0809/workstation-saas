@@ -37,3 +37,12 @@ it('adds the current subject to the payload', async () => {
   act(() => result.current.submit(body))
   await waitFor(() => expect(reviewsApi.create).toHaveBeenCalledWith('c1', { op_id: 'op-1', ...body, subject: '化学' }))
 })
+
+it('invalidates the drawer review detail after a successful review', async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const spy = vi.spyOn(client, 'invalidateQueries')
+  const w = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  const { result } = renderHook(() => useReviewSubmit('c1', ''), { wrapper: w })
+  act(() => result.current.submit(body))
+  await waitFor(() => expect(spy).toHaveBeenCalledWith({ queryKey: ['student-reviews', 'c1'] }))
+})

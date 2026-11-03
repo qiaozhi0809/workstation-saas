@@ -148,6 +148,18 @@ it('revokes from the undo toast', async () => {
   await waitFor(() => expect(reviewsApi.revoke).toHaveBeenCalledWith('c1', 'op1'))
 })
 
+it('invalidates the drawer review detail after revoking', async () => {
+  vi.mocked(reviewsApi.create).mockResolvedValue({ items: [review({ op_id: 'op1' })] })
+  const { client } = setup({ mode: '点评' })
+  const spy = vi.spyOn(client, 'invalidateQueries')
+  fireEvent.click(await screen.findByRole('button', { name: /^王小一，/ }))
+  fireEvent.click(await screen.findByRole('button', { name: '积极发言 +1' }))
+  const undo = await screen.findByRole('button', { name: '撤销' })
+  spy.mockClear()
+  fireEvent.click(undo)
+  await waitFor(() => expect(spy).toHaveBeenCalledWith({ queryKey: ['student-reviews', 'c1'] }))
+})
+
 it('asks for a subject when the teacher teaches several here', async () => {
   setup({ mode: '点评', subjects: ['物理', '化学'], perms: ['attendance.read', 'review.read', 'review.write'] })
   fireEvent.click(await screen.findByRole('button', { name: /^王小一，/ }))

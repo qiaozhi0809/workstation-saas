@@ -6,6 +6,7 @@ import { ApiError } from '@/shared/api/client'
 import { classroomApi } from '@/shared/api/classroom'
 import { attendanceApi } from '@/shared/api/attendance'
 import { examsApi } from '@/shared/api/exams'
+import { growthApi } from '@/shared/api/growth'
 import { reviewsApi } from '@/shared/api/reviews'
 import { studentsApi } from '@/shared/api/students'
 import { Toaster } from '@/shared/components/Toast'
@@ -19,6 +20,7 @@ vi.mock('@/shared/api/students', () => ({ studentsApi: { setClassRole: vi.fn() }
 vi.mock('@/shared/api/exams', () => ({ examsApi: { gradebook: vi.fn() } }))
 vi.mock('@/shared/api/reviews', () => ({ reviewsApi: { summary: vi.fn() } }))
 vi.mock('@/shared/api/attendance', () => ({ attendanceApi: { month: vi.fn() } }))
+vi.mock('@/shared/api/growth', () => ({ growthApi: { list: vi.fn().mockResolvedValue({ items: [] }) } }))
 const trendLine = vi.hoisted(() => vi.fn())
 const scoreRadar = vi.hoisted(() => vi.fn())
 vi.mock('@/shared/components/charts/TrendLine', () => ({
@@ -59,6 +61,7 @@ beforeEach(() => {
   vi.mocked(examsApi.gradebook).mockResolvedValue({ exams: [] })
   vi.mocked(reviewsApi.summary).mockResolvedValue({ week_start: '2026-10-26', items: [] })
   vi.mocked(attendanceApi.month).mockResolvedValue({ month: '2026-11', items: [] })
+  vi.mocked(growthApi.list).mockResolvedValue({ items: [] })
 })
 
 it('lets the homeroom teacher set a class role', async () => {

@@ -1,14 +1,15 @@
 import { useQuery } from '@tanstack/react-query'
 import { ApiError } from '@/shared/api/client'
 import { studentsApi } from '@/shared/api/students'
-import { Clock } from 'lucide-react'
-import { EmptyState } from '@/shared/components/feedback/EmptyState'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import SidePanel from '@/shared/components/overlay/SidePanel'
 import { SegmentedTabs } from '@/shared/components/ui/segmented-tabs'
 import ArchiveTab from './ArchiveTab'
+import CommentsTab from './CommentsTab'
+import GrowthTab from './GrowthTab'
 import OverviewTab from './OverviewTab'
+import ProfileActions from './ProfileActions'
 import ScoresTab from './ScoresTab'
 import { PROFILE_TABS, useStudentDrawer, type ProfileTab } from './useStudentDrawer'
 
@@ -36,15 +37,14 @@ export default function StudentProfileDrawer({ studentId }: { studentId: string 
       {!data && !error && <LoadingState />}
       {data && (
         <>
+          <ProfileActions profile={data} />
           <SegmentedTabs<ProfileTab> label="档案分区" variant="underline" items={TAB_ITEMS} value={tab} onChange={(t) => open(studentId, t)} />
           <div role="tabpanel" aria-label={tab}>
             {tab === '概览' && <OverviewTab student={data} />}
             {tab === '档案' && <ArchiveTab student={data} />}
             {tab === '成绩' && <ScoresTab profile={data} />}
-            {/* 成长记录、评语页签尚未开放 */}
-            {tab !== '概览' && tab !== '档案' && tab !== '成绩' && (
-              <EmptyState icon={Clock} title="暂未开放" description="成长记录和评语会在后续版本中提供" />
-            )}
+            {tab === '成长记录' && <GrowthTab profile={data} />}
+            {tab === '评语' && <CommentsTab profile={data} />}
           </div>
         </>
       )}

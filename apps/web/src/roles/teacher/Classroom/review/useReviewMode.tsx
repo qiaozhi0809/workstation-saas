@@ -76,6 +76,7 @@ export function useReviewMode(o: Options) {
       await reviewsApi.revoke(classId, opId)
       void qc.invalidateQueries({ queryKey: ['review-summary', classId] })
       void qc.invalidateQueries({ queryKey: ['reviews', classId] })
+      void qc.invalidateQueries({ queryKey: ['student-reviews', classId] })
     } catch (err) {
       toast(err instanceof Error ? err.message : '撤销失败')
     }
