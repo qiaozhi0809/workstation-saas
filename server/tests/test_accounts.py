@@ -1,0 +1,204 @@
+from sqlalchemy import select
+
+from app.models import User
+from app.models.audit import AuditLog
+from tests.helpers import audit_rows, auth
+
+ACCOUNTS = "/api/v1/admin/accounts"
+IT_ADMIN = "55555555-5555-5555-5555-555555555546"
+DEAN = "55555555-5555-5555-5555-555555555544"
+NEW = {
+    "login_name": "newteacher01",
+    "display_name": "钱老师",
+    "phone": "13800000021",
+    "employee_no": "T101",
+    "subjects": ["语文", "数学"],
+}
+
+
+def _admin(settings):
+    return auth(settings, IT_ADMIN)
+
+
+def _login(client, name, pw="dev123"):
+    return client.post("/api/v1/auth/login", json={"login_name": name, "password": pw})
+
+
+def _bearer(token):
+    return {"Authorization": f"Bearer {token}"}
+
+
+def _create(client, settings, **over):
+    return client.post(ACCOUNTS, headers=_admin(settings), json={**NEW, **over})
+
+
+def _user_id(db, login):
+    return db.scalars(select(User.id).where(User.login_name == login)).one()
+
+
+def test_list_filters(client, settings):
+    h = _admin(settings)
+    res = client.get(ACCOUNTS, headers=h, params={"q": "校长"}).json()
+    assert [a["login_name"] for a in res["items"]] == ["principal01"]
+    assert res["total"] == 1
+    assert res["items"][0]["roles"] == [{"role": "principal", "label": "校长"}]
+    res = client.get(ACCOUNTS, headers=h, params={"role": "grade_head"}).json()
+    assert [a["login_name"] for a in res["items"]] == ["gradehead03"]
+    assert res["items"][0]["roles"] == [{"role": "grade_head", "label": "三年级 组长"}]
+    assert client.get(ACCOUNTS, headers=h, params={"status": "frozen"}).json() == {
+        "items": [],
+        "total": 0,
+    }
+    res = client.get(ACCOUNTS, headers=h, params={"q": "TEACHER01"}).json()
+    item = res["items"][0]
+    assert item["login_name"] == "teacher01"
+    assert item["roles"] == [{"role": "homeroom_teacher", "label": "三年二班 班主任"}]
+    assert item["employee_no"] == "T001" and item["subjects"] == ["语文"]
+    assert item["status"] == "active" and item["must_change_password"] is False
+    everyone = client.get(ACCOUNTS, headers=h).json()
+    assert everyone["total"] == len(everyone["items"]) >= 9
+    assert client.get(ACCOUNTS, headers=h, params={"page": 2}).json()["items"] == []
+
+
+def test_create_account_temp_password_works_once(client, settings, db, caplog, capsys):
+    res = _create(client, settings)
+    assert res.status_code == 201
+    body = res.json()
+    temp = body["temp_password"]
+    assert len(temp) == 10
+    assert body["account"]["login_name"] == "newteacher01"
+    assert body["account"]["must_change_password"] is True
+    assert body["account"]["subjects"] == ["语文", "数学"]
+    assert body["account"]["employee_no"] == "T101"
+    assert "temp_password" not in client.get(ACCOUNTS, headers=_admin(settings)).text
+
+    tokens = _login(client, "newteacher01", temp).json()
+    assert tokens["user"]["must_change_password"] is True
+    h = _bearer(tokens["access_token"])
+    blocked = client.get("/api/v1/me/classes", headers=h)
+    assert blocked.status_code == 403
+    changed = client.post(
+        "/api/v1/auth/password",
+        headers=h,
+        json={
+            "old_password": temp,
+            "new_password": "NewPass-2026",
+            "refresh_token": tokens["refresh_token"],
+        },
+    )
+    assert changed.status_code == 200
+    assert client.get("/api/v1/me/classes", headers=h).status_code == 200
+    assert _login(client, "newteacher01", temp).status_code == 401
+
+    for row in db.scalars(select(AuditLog)).all():
+        assert temp not in repr(row.extra)
+    assert temp not in caplog.text
+    out = capsys.readouterr()
+    assert temp not in out.out + out.err
+    rows = audit_rows(db, body["account"]["id"])
+    assert [r.action for r in rows] == ["account.create", "account.password_change"]
+    assert rows[0].success is True and rows[0].object_type == "user"
+
+
+def test_login_name_rules(client, settings):
+    assert _create(client, settings, login_name="ab").status_code == 400
+    assert _create(client, settings, login_name="bad name").status_code == 400
+    assert _create(client, settings, login_name="x" * 33).status_code == 400
+    taken = _create(client, settings, login_name="Teacher01")
+    assert taken.status_code == 409
+    assert taken.json()["error"]["code"] == "LOGIN_TAKEN"
+    assert _create(client, settings, phone="123").status_code == 400
+    assert _create(client, settings, subjects=["a"] * 7).status_code == 400
+    assert _create(client, settings, display_name="").status_code == 400
+    assert _create(client, settings, phone=None, employee_no=None, subjects=[]).status_code == 201
+
+
+def test_update_account(client, settings, db):
+    created = _create(client, settings).json()["account"]
+    res = client.put(
+        f"{ACCOUNTS}/{created['id']}",
+        headers=_admin(settings),
+        json={
+            "display_name": "钱老师B",
+            "phone": None,
+            "employee_no": "T102",
+            "subjects": ["英语"],
+        },
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["login_name"] == "newteacher01"
+    assert (body["display_name"], body["phone"]) == ("钱老师B", None)
+    assert (body["employee_no"], body["subjects"]) == ("T102", ["英语"])
+    assert [r.action for r in audit_rows(db, created["id"])][-1] == "account.update"
+    missing = client.put(
+        f"{ACCOUNTS}/00000000-0000-0000-0000-000000000000",
+        headers=_admin(settings),
+        json={"display_name": "x", "phone": None, "employee_no": None, "subjects": []},
+    )
+    assert missing.status_code == 404
+
+
+def test_reset_password_revokes_sessions(client, settings, db):
+    first = _login(client, "teacher02").json()
+    second = _login(client, "teacher02").json()
+    res = client.post(
+        f"{ACCOUNTS}/{_user_id(db, 'teacher02')}/reset-password", headers=_admin(settings)
+    )
+    assert res.status_code == 200
+    temp = res.json()["temp_password"]
+    assert len(temp) == 10
+    for t in (first, second):
+        ref = client.post("/api/v1/auth/refresh", json={"refresh_token": t["refresh_token"]})
+        assert ref.status_code == 401
+    assert _login(client, "teacher02").status_code == 401
+    again = _login(client, "teacher02", temp)
+    assert again.status_code == 200
+    assert again.json()["user"]["must_change_password"] is True
+    rows = audit_rows(db, _user_id(db, "teacher02"))
+    assert [r.action for r in rows] == ["account.reset_password"]
+    assert all(temp not in repr(r.extra) for r in rows)
+
+
+def test_freeze_logs_user_out_everywhere(client, settings, db):
+    tokens = _login(client, "teacher02").json()
+    h = _bearer(tokens["access_token"])
+    assert client.get("/api/v1/me/classes", headers=h).status_code == 200
+    uid = _user_id(db, "teacher02")
+    res = client.post(f"{ACCOUNTS}/{uid}/freeze", headers=_admin(settings))
+    assert res.status_code == 200
+    assert res.json()["status"] == "frozen"
+    assert client.get("/api/v1/me/classes", headers=h).status_code == 401
+    ref = client.post("/api/v1/auth/refresh", json={"refresh_token": tokens["refresh_token"]})
+    assert ref.status_code == 401
+    assert _login(client, "teacher02").status_code == 401
+    listed = client.get(ACCOUNTS, headers=_admin(settings), params={"status": "frozen"}).json()
+    assert [a["login_name"] for a in listed["items"]] == ["teacher02"]
+
+    back = client.post(f"{ACCOUNTS}/{uid}/unfreeze", headers=_admin(settings))
+    assert back.status_code == 200 and back.json()["status"] == "active"
+    assert _login(client, "teacher02").status_code == 200
+    assert [r.action for r in audit_rows(db, uid)] == ["account.freeze", "account.unfreeze"]
+
+
+def test_cannot_freeze_self(client, settings, db):
+    res = client.post(f"{ACCOUNTS}/{IT_ADMIN}/freeze", headers=_admin(settings))
+    assert res.status_code == 409
+    assert res.json()["error"]["code"] == "CANNOT_FREEZE_SELF"
+    assert db.get(User, _user_id(db, "itadmin01")).status == "active"
+    assert client.get(ACCOUNTS, headers=_admin(settings)).status_code == 200
+
+
+def test_accounts_require_permission(client, settings, db):
+    h = auth(settings, DEAN)
+    assert client.get(ACCOUNTS, headers=h).status_code == 403
+    assert client.post(ACCOUNTS, headers=h, json=NEW).status_code == 403
+    target = _user_id(db, "teacher02")
+    for tail in ("reset-password", "freeze", "unfreeze"):
+        assert client.post(f"{ACCOUNTS}/{target}/{tail}", headers=h).status_code == 403
+    assert client.post(f"{ACCOUNTS}/import/preview", headers=h, json={"csv": ""}).status_code == 403
+    assert client.post(f"{ACCOUNTS}/import", headers=h, json={"csv": ""}).status_code == 403
+    denied = [r for r in db.scalars(select(AuditLog)).all() if r.user_id == _user_id(db, "dean01")]
+    assert denied and all(r.success is False for r in denied)
+    assert db.get(User, target).status == "active"
+    assert client.get(ACCOUNTS, headers=auth(settings, target)).status_code == 403
