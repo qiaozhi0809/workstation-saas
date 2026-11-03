@@ -70,3 +70,14 @@ class SchoolClass(Base):
     subjects: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(**_NOW)
     updated_at: Mapped[datetime] = mapped_column(**_NOW)
+
+
+class SchoolSetting(Base):
+    __tablename__ = "school_settings"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, **_UUID_PK)
+    school_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("schools.id", ondelete="CASCADE"))
+    key: Mapped[str] = mapped_column(Text)
+    value: Mapped[Any] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(**_NOW)
+    updated_at: Mapped[datetime] = mapped_column(**_NOW)

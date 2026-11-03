@@ -37,6 +37,12 @@ class Perm(StrEnum):
     SCORE_EXPORT = "score.export"
     STUDENT_MANAGE = "student.manage"
     STUDENT_EXPORT = "student.export"
+    GROWTH_READ = "growth.read"
+    GROWTH_WRITE = "growth.write"
+    COMMENT_READ = "comment.read"
+    COMMENT_WRITE = "comment.write"
+    AI_USE = "ai.use"
+    AI_CLASS = "ai.class"
 
 
 # Order matches ClassroomSummary.my_perms.
@@ -54,6 +60,12 @@ CLASSROOM_PERMS: tuple[Perm, ...] = (
     Perm.SCORE_EXPORT,
     Perm.STUDENT_MANAGE,
     Perm.STUDENT_EXPORT,
+    Perm.GROWTH_READ,
+    Perm.GROWTH_WRITE,
+    Perm.COMMENT_READ,
+    Perm.COMMENT_WRITE,
+    Perm.AI_USE,
+    Perm.AI_CLASS,
 )
 
 
@@ -70,6 +82,8 @@ _LEADERS = frozenset(
         Perm.EXAM_READ,
         Perm.SCORE_EXPORT,
         Perm.STUDENT_EXPORT,
+        Perm.GROWTH_READ,
+        Perm.COMMENT_READ,
     }
 )
 _PARENT = frozenset(
@@ -103,6 +117,12 @@ ROLE_PERMS: dict[Role, frozenset[Perm]] = {
             Perm.SCORE_EXPORT,
             Perm.STUDENT_MANAGE,
             Perm.STUDENT_EXPORT,
+            Perm.GROWTH_READ,
+            Perm.GROWTH_WRITE,
+            Perm.COMMENT_READ,
+            Perm.COMMENT_WRITE,
+            Perm.AI_USE,
+            Perm.AI_CLASS,
         }
     ),
     Role.subject_teacher: frozenset(
@@ -118,6 +138,8 @@ ROLE_PERMS: dict[Role, frozenset[Perm]] = {
             Perm.EXAM_READ,
             Perm.EXAM_WRITE,
             Perm.SCORE_WRITE,
+            Perm.GROWTH_READ,
+            Perm.AI_USE,
         }
     ),
     Role.assistant_teacher: frozenset(
@@ -129,6 +151,9 @@ ROLE_PERMS: dict[Role, frozenset[Perm]] = {
             Perm.ATTENDANCE_WRITE,
             Perm.REVIEW_READ,
             Perm.REVIEW_WRITE,
+            Perm.GROWTH_READ,
+            Perm.GROWTH_WRITE,
+            Perm.AI_USE,
         }
     ),
     Role.primary_parent: _PARENT,

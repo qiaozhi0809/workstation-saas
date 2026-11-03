@@ -1,4 +1,7 @@
+import base64
+
 import pytest
+from pydantic import ValidationError
 
 from app.config import Settings
 
@@ -19,3 +22,17 @@ def test_env_override(monkeypatch):
 def test_non_dev_rejects_default_secret():
     with pytest.raises(ValueError):
         Settings(_env_file=None, env="prod")
+
+
+def test_master_key_must_be_32_bytes():
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, master_key=base64.b64encode(b"short").decode())
+
+
+def test_default_master_key_rejected_outside_dev():
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, env="prod", jwt_secret="x" * 32)
+
+
+def test_default_master_key_is_32_bytes():
+    assert len(Settings(_env_file=None).master_key_bytes) == 32

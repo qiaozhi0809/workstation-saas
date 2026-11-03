@@ -121,3 +121,28 @@ FROM (
 ) v
 JOIN students s ON s.mk = 'S' || lpad((v.idx + 1)::text, 4, '0')
 JOIN enrollments e ON e.student_id = s.id AND e.status = 'active';
+
+-- M2c:成长记录(teacher01 记)与一条教师手写评语;mask_no 由序列按插入顺序自动得到 1-10
+INSERT INTO growth_records (id, student_id, enrollment_id, class_id, academic_year_id,
+                            type, date, content, created_by_user_id)
+SELECT v.id::uuid, s.id, e.id, '44444444-4444-4444-4444-444444444444',
+       '22222222-2222-2222-2222-222222222222', v.type, v.date::date, v.content,
+       '55555555-5555-5555-5555-555555555555'
+FROM (VALUES
+  ('f0000001-0000-0000-0000-000000000001', 'S0001', '表扬', '2026-10-20', '主动帮同学讲解数学题'),
+  ('f0000002-0000-0000-0000-000000000002', 'S0001', '谈话', '2026-10-28', '近期上课有些走神,约定每天整理错题'),
+  ('f0000003-0000-0000-0000-000000000003', 'S0005', '家访', '2026-10-15', '与家长沟通作业习惯,家长表示配合')
+) AS v(id, mk, type, date, content)
+JOIN students s ON s.mk = v.mk
+JOIN enrollments e ON e.student_id = s.id AND e.status = 'active';
+
+INSERT INTO comments (id, student_id, enrollment_id, class_id, academic_year_id,
+                      semester, content, generated_by_ai, created_by_user_id)
+SELECT 'c0000001-0000-0000-0000-000000000001', s.id, e.id,
+       '44444444-4444-4444-4444-444444444444', '22222222-2222-2222-2222-222222222222',
+       '2026-2027 第一学期',
+       '做事认真踏实,是老师的好帮手。希望下学期在课堂上更大胆地表达自己的想法。',
+       false, '55555555-5555-5555-5555-555555555555'
+FROM students s
+JOIN enrollments e ON e.student_id = s.id AND e.status = 'active'
+WHERE s.mk = 'S0002';

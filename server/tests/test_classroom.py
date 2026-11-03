@@ -18,6 +18,12 @@ ALL_PERMS = [
     "score.export",
     "student.manage",
     "student.export",
+    "growth.read",
+    "growth.write",
+    "comment.read",
+    "comment.write",
+    "ai.use",
+    "ai.class",
 ]
 A_BOARD = {
     "left_title": "今日课程",
@@ -57,6 +63,8 @@ def test_summary_for_subject_teacher(client, settings):
         "exam.read",
         "exam.write",
         "score.write",
+        "growth.read",
+        "ai.use",
     ]
     assert body["my_subjects"] == ["数学"]
 
