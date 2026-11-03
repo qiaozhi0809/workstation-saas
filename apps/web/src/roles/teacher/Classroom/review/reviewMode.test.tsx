@@ -154,7 +154,9 @@ it('invalidates the drawer review detail after revoking', async () => {
   const spy = vi.spyOn(client, 'invalidateQueries')
   fireEvent.click(await screen.findByRole('button', { name: /^王小一，/ }))
   fireEvent.click(await screen.findByRole('button', { name: '积极发言 +1' }))
-  fireEvent.click(await screen.findByRole('button', { name: '撤销' }))
+  const undo = await screen.findByRole('button', { name: '撤销' })
+  spy.mockClear()
+  fireEvent.click(undo)
   await waitFor(() => expect(spy).toHaveBeenCalledWith({ queryKey: ['student-reviews', 'c1'] }))
 })
 
