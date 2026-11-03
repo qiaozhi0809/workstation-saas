@@ -9,12 +9,14 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader } from '@/sh
 import { Input } from '@/shared/components/ui/input'
 import { Label } from '@/shared/components/ui/label'
 import ThemeToggle from '@/theme/ThemeToggle'
+import { homeFor } from './home'
 
 const MESSAGES: Record<string, string> = {
   INVALID_CREDENTIALS: '登录名或密码不正确',
   BAD_REQUEST: '登录名或密码不正确',
   ACCOUNT_LOCKED: '失败次数过多,请 15 分钟后再试',
 }
+const NO_IDENTITY = '这个账号还没有分配身份,请联系学校信息中心'
 const FALLBACK = '登录失败,请稍后再试'
 
 export default function LoginPage() {
@@ -31,8 +33,15 @@ export default function LoginPage() {
     setPending(true)
     try {
       const res = await authApi.login(loginName.trim(), password)
+      if (res.user.contexts.length === 0) {
+        // 丢弃令牌前 best-effort 吊销刷新令牌(此时 store 里没有 access token)
+        authApi.logout(res.refresh_token).catch(() => {})
+        setError(NO_IDENTITY)
+        setPending(false)
+        return
+      }
       setTokens(res.access_token, res.refresh_token, res.user)
-      navigate('/teacher', { replace: true })
+      navigate(homeFor(res.user, useAuthStore.getState().lastContext), { replace: true })
     } catch (err) {
       setError((err instanceof ApiError && MESSAGES[err.code]) || FALLBACK)
       setPending(false)

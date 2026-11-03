@@ -181,7 +181,7 @@ export function setup({ mode, perms, subjects, roster, classId = 'c1', search }:
   }
   act(() => {
     useTeacherStore.setState({ classId })
-    useAuthStore.setState({ user: { id: 'u1', display_name: '王老师' } })
+    useAuthStore.setState({ user: { id: 'u1', display_name: '王老师', contexts: ['teacher'], admin_perms: [], must_change_password: false } })
   })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const ui = mode && mode !== '日常' ? MODE_OF[mode] : null

@@ -11,7 +11,7 @@ const fetchMock = vi.fn()
 beforeEach(() => {
   fetchMock.mockReset().mockResolvedValue(new Response('{}', { status: 200 }))
   vi.stubGlobal('fetch', fetchMock)
-  useAuthStore.setState({ accessToken: 'a', refreshToken: 'r', user: { id: 'u', display_name: 'x' } })
+  useAuthStore.setState({ accessToken: 'a', refreshToken: 'r', user: { id: 'u', display_name: 'x', contexts: ['teacher'], admin_perms: [], must_change_password: false } })
 })
 
 const lastCall = () => {

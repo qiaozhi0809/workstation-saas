@@ -5,12 +5,12 @@ import { authApi } from '@/shared/api/auth'
 import { classesApi } from '@/shared/api/classes'
 import { classroomApi } from '@/shared/api/classroom'
 import { Toaster } from '@/shared/components/Toast'
+import AccountMenu from '@/shared/components/layout/AccountMenu'
 import AppShell from '@/shared/components/layout/AppShell'
 import { NativeSelect } from '@/shared/components/ui/native-select'
 import { useAuthStore } from '@/shared/stores/auth'
 import { confirmLeave, useTeacherStore } from '@/shared/stores/teacher'
 import ThemeToggle from '@/theme/ThemeToggle'
-import AccountMenu from './AccountMenu'
 import StudentProfileDrawer from './StudentProfile/StudentProfileDrawer'
 import { useStudentDrawer } from './StudentProfile/useStudentDrawer'
 import TeacherNav from './TeacherNav'
@@ -65,7 +65,11 @@ export default function TeacherLayout() {
   const actions = (
     <>
       <ThemeToggle />
-      <AccountMenu name={user?.display_name} onLogout={logout} />
+      <AccountMenu
+        name={user?.display_name}
+        onLogout={logout}
+        switchTo={user?.contexts.includes('admin') ? { label: '切换到管理端', to: '/admin', context: 'admin' as const } : undefined}
+      />
     </>
   )
 

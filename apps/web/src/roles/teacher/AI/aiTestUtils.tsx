@@ -121,7 +121,7 @@ export function setupAi({ perms, element, path = '/teacher/ai', entry = '/teache
   }))
   act(() => {
     useTeacherStore.setState({ classId: 'c1' })
-    useAuthStore.setState({ user: { id: 'u1', display_name: '王' } })
+    useAuthStore.setState({ user: { id: 'u1', display_name: '王', contexts: ['teacher'], admin_perms: [], must_change_password: false } })
   })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const router = createMemoryRouter([

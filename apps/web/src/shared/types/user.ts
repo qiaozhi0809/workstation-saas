@@ -1,1 +1,3 @@
-export interface User { id: string; display_name: string; login_name?: string }
+import type { UserBrief } from './admin'
+
+export type User = UserBrief & { login_name?: string }

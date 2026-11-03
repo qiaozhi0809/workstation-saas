@@ -5,9 +5,10 @@ import { authApi } from '@/shared/api/auth'
 import { ApiError } from '@/shared/api/client'
 import type { LoginResponse } from '@/shared/types/api'
 import { useAuthStore } from '@/shared/stores/auth'
+import type { User } from '@/shared/types/user'
 import LoginPage from './LoginPage'
 
-vi.mock('@/shared/api/auth', () => ({ authApi: { login: vi.fn() } }))
+vi.mock('@/shared/api/auth', () => ({ authApi: { login: vi.fn(), logout: vi.fn() } }))
 
 const fill = (login: string, pw: string) => {
   fireEvent.change(screen.getByLabelText('登录名'), { target: { value: login } })
@@ -17,6 +18,7 @@ const fill = (login: string, pw: string) => {
 
 beforeEach(() => {
   vi.mocked(authApi.login).mockReset()
+  vi.mocked(authApi.logout).mockReset().mockResolvedValue({ ok: true })
   useAuthStore.getState().logout()
 })
 
@@ -27,7 +29,7 @@ afterEach(() => {
 
 it('submits trimmed login name and unicode password', async () => {   // Review Focus #5
   vi.mocked(authApi.login).mockResolvedValue({
-    access_token: 'a', refresh_token: 'r', expires_at: 'x', user: { id: 'u', display_name: 't' },
+    access_token: 'a', refresh_token: 'r', expires_at: 'x', user: { id: 'u', display_name: 't', contexts: ['teacher'], admin_perms: [], must_change_password: false },
   })
   render(<MemoryRouter><LoginPage /></MemoryRouter>)
   fill(' teacher01 ', '中文🎉')
@@ -63,7 +65,7 @@ it('shows generic message for other errors', async () => {
 })
 
 it('stores tokens and navigates to /teacher on success', async () => {
-  const user = { id: 'u', display_name: 't' }
+  const user: User = { id: 'u', display_name: 't', contexts: ['teacher'], admin_perms: [], must_change_password: false }
   vi.mocked(authApi.login).mockResolvedValue({
     access_token: 'a', refresh_token: 'r', expires_at: 'x', user,
   })
@@ -95,7 +97,7 @@ it('disables the button while pending and clears the error on resubmit', async (
   const btn = await screen.findByRole('button', { name: '登录中…' })
   expect(btn).toBeDisabled()
   expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-  resolve({ access_token: 'a', refresh_token: 'r', expires_at: 'x', user: { id: 'u', display_name: 't' } })
+  resolve({ access_token: 'a', refresh_token: 'r', expires_at: 'x', user: { id: 'u', display_name: 't', contexts: ['teacher'], admin_perms: [], must_change_password: false } })
   await waitFor(() => expect(useAuthStore.getState().accessToken).toBe('a'))
 })
 
@@ -106,4 +108,63 @@ it('marks the submit button busy while signing in', async () => {
   const busy = await screen.findByRole('button', { name: '登录中…' })
   expect(busy).toBeDisabled()
   expect(busy).toHaveAttribute('aria-busy', 'true')
+})
+
+const loginAs = async (user: Partial<User>, lastContext: 'teacher' | 'admin' | null = null) => {
+  useAuthStore.setState({ lastContext })
+  vi.mocked(authApi.login).mockResolvedValue({
+    access_token: 'a', refresh_token: 'r', expires_at: 'x',
+    user: { id: 'u', display_name: 't', contexts: ['teacher'], admin_perms: [], must_change_password: false, ...user },
+  })
+  render(
+    <MemoryRouter initialEntries={['/login']}>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/teacher" element={<div>teacher home</div>} />
+        <Route path="/admin" element={<div>admin home</div>} />
+        <Route path="/change-password" element={<div>change pw</div>} />
+      </Routes>
+    </MemoryRouter>,
+  )
+  fill('u', 'pw')
+}
+
+it('sends a principal to /admin', async () => {
+  await loginAs({ contexts: ['admin'], admin_perms: ['school.view'] })
+  expect(await screen.findByText('admin home')).toBeInTheDocument()
+})
+
+it('sends a teacher to /teacher', async () => {
+  await loginAs({ contexts: ['teacher'] })
+  expect(await screen.findByText('teacher home')).toBeInTheDocument()
+})
+
+it('sends a dual-identity user to the last used context', async () => {
+  await loginAs({ contexts: ['teacher', 'admin'] }, 'admin')
+  expect(await screen.findByText('admin home')).toBeInTheDocument()
+})
+
+it('keeps a must-change-password account without identity on the login page', async () => {
+  await loginAs({ contexts: [], must_change_password: true })
+  expect(await screen.findByRole('alert')).toHaveTextContent('这个账号还没有分配身份,请联系学校信息中心')
+  expect(screen.queryByText('change pw')).toBeNull()
+  expect(useAuthStore.getState().accessToken).toBeNull()
+})
+
+it('sends a user who must change password to /change-password', async () => {
+  await loginAs({ must_change_password: true })
+  expect(await screen.findByText('change pw')).toBeInTheDocument()
+})
+
+it('stays on the login page with a hint when the account has no identity', async () => {
+  await loginAs({ contexts: [] })
+  expect(await screen.findByRole('alert')).toHaveTextContent('这个账号还没有分配身份,请联系学校信息中心')
+  expect(screen.queryByText('teacher home')).toBeNull()
+  expect(useAuthStore.getState().accessToken).toBeNull()
+})
+
+it('revokes the refresh token when discarding a login without identity', async () => {
+  await loginAs({ contexts: [] })
+  await screen.findByRole('alert')
+  expect(authApi.logout).toHaveBeenCalledWith('r')
 })
