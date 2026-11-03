@@ -69,11 +69,13 @@ test('homeroom teacher sets triple desks with a podium seat and keeps them throu
   await page.getByRole('button', { name: '保存座位' }).click()
   await expect(page.getByText('座位已保存')).toBeVisible()
 
-  // 随机打乱:讲台边的同学不动
+  // 随机打乱:讲台边的同学不动(第一次保存的 toast 消失后再存,免得断言命中旧 toast)
+  await expect(page.getByText('座位已保存')).toBeHidden()
   await page.getByRole('button', { name: '随机打乱' }).click()
   await expect(page.locator('[data-seat="0--1"]')).toContainText('王小一')
+  const saved = page.waitForResponse((r) => r.url().endsWith(`/classes/${CLASS_ID}/seating`) && r.request().method() === 'PUT')
   await page.getByRole('button', { name: '保存座位' }).click()
-  await expect(page.getByText('座位已保存')).toBeVisible()
+  expect((await saved).ok()).toBe(true)
   await page.reload()
   await expect(page.locator('[data-seat="0--1"]')).toContainText('王小一')
   const seats = await (await request.get(`/api/v1/classes/${CLASS_ID}/students`, { headers: { Authorization: `Bearer ${token}` } })).json() as
@@ -81,8 +83,22 @@ test('homeroom teacher sets triple desks with a podium seat and keeps them throu
   const first = seats.items.find((s) => s.enrollment_id === firstId)
   expect([first?.seat_row, first?.seat_col]).toEqual([0, -1])
 
-  // 打印:拦截 window.open,写入的 HTML 含教室名与讲台
+  // 排座栏的"桌椅排列"按钮:有未保存修改时不可用;保存后点开,讲台右边加一张,草稿按新桌椅重建、讲台同学不动
   await switchMode(page, '排座')
+  await expect(page.getByRole('button', { name: '随机打乱' })).toBeEnabled()
+  await page.getByRole('button', { name: '随机打乱' }).click()
+  await expect(page.getByRole('button', { name: '桌椅排列' })).toBeDisabled()
+  await page.getByRole('button', { name: '保存座位' }).click()
+  await expect(page.getByRole('button', { name: '保存座位' })).toBeDisabled()
+  await page.getByRole('button', { name: '桌椅排列' }).click()
+  const dlg2 = page.getByRole('dialog', { name: /班级设置/ })
+  await dlg2.getByRole('button', { name: '右边增加' }).click()
+  await dlg2.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(dlg2).toBeHidden()
+  await expect(page.locator('[data-seat]')).toHaveCount(38)
+  await expect(page.locator('[data-seat="0--1"]')).toContainText('王小一')
+
+  // 打印:拦截 window.open,写入的 HTML 含教室名,讲台边的同学印在讲台那一行
   await page.evaluate(() => {
     const w = window as unknown as { __printed: string; open: () => unknown }
     w.__printed = ''
@@ -92,7 +108,7 @@ test('homeroom teacher sets triple desks with a podium seat and keeps them throu
   await page.getByRole('menuitem', { name: '打印' }).click()
   const html = await page.evaluate(() => (window as unknown as { __printed: string }).__printed)
   expect(html).toContain('博学楼 301')
-  expect(html).toContain('讲台')
+  expect(html).toContain('<span class="ps">王小一')
 })
 
 test('auto layout grows a row when a student is added to a full class', async ({ page, request }) => {
@@ -121,7 +137,8 @@ test('auto layout grows a row when a student is added to a full class', async ({
   await expect(form.getByLabel('座位').locator('option:checked')).toHaveText('自动加座位')
   await form.getByRole('button', { name: '保存' }).click()
   await expect(form).toBeHidden()
-  await page.goto('/teacher/classroom')
+  // 站内跳回教室(不整页刷新):靠名单变动后失效 my-classes,教室图才拿到新行列
+  await page.getByRole('link', { name: '教室' }).click()
   await expect(page.locator('[data-seat]')).toHaveCount(20)
 })
 
