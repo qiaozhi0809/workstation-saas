@@ -4,16 +4,21 @@ import { ApiError } from '@/shared/api/client'
 import { attendanceApi } from '@/shared/api/attendance'
 import { classroomApi } from '@/shared/api/classroom'
 import { examsApi } from '@/shared/api/exams'
+import { growthApi } from '@/shared/api/growth'
 import { reviewsApi } from '@/shared/api/reviews'
 import { studentsApi } from '@/shared/api/students'
 import { ScoreRadar } from '@/shared/components/charts/ScoreRadar'
 import { TrendLine } from '@/shared/components/charts/TrendLine'
 import { daysUntilBirthday, formatMonthDay } from '@/shared/lib/date'
 import { examStats, examTable, latestExam, previousExam, rankChanges, studentTrend, subjectStats } from '@/shared/lib/grades'
+import { Badge } from '@/shared/components/ui/badge'
+import { Button } from '@/shared/components/ui/button'
 import { NativeSelect } from '@/shared/components/ui/native-select'
 import { toast } from '@/shared/components/Toast'
 import type { StudentProfile } from '@/shared/types/student'
 import Field from './Field'
+import { GROWTH_TONE } from './GrowthTab'
+import { useStudentDrawer } from './useStudentDrawer'
 
 // eslint-disable-next-line react-refresh/only-export-components
 export const CLASS_ROLE_PRESETS = [
@@ -165,6 +170,33 @@ function ScoreBlocks({ student, enabled }: { student: StudentProfile; enabled: b
   )
 }
 
+function RecentGrowth({ student }: { student: StudentProfile }) {
+  const { open } = useStudentDrawer()
+  const { data } = useQuery({
+    queryKey: ['growth', student.id],
+    queryFn: () => growthApi.list(student.id),
+  })
+  // 没有记录(或加载失败)时不显示这一块
+  if (!data || data.items.length === 0) return null
+  return (
+    <section className="mt-4">
+      <div className="mb-1 flex items-center justify-between">
+        <h3 className="text-sm font-medium">最近成长记录</h3>
+        <Button type="button" variant="ghost" size="sm" className="h-7 px-2" onClick={() => open(student.id, '成长记录')}>查看全部</Button>
+      </div>
+      <ul className="space-y-1 text-sm">
+        {data.items.slice(0, 3).map((r) => (
+          <li key={r.id} className="flex items-baseline gap-2">
+            <span className="shrink-0 text-muted-foreground">{r.date}</span>
+            <Badge variant={GROWTH_TONE[r.type]}>{r.type}</Badge>
+            <span className="min-w-0 break-words">{r.content}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
 export default function OverviewTab({ student }: { student: StudentProfile }) {
   const summary = useQuery({
     queryKey: ['classroom', student.class_id],
@@ -187,6 +219,7 @@ export default function OverviewTab({ student }: { student: StudentProfile }) {
         </div>
       )}
       <ScoreBlocks student={student} enabled={summary.data?.my_perms.includes('exam.read') ?? false} />
+      {summary.data?.my_perms.includes('growth.read') && <RecentGrowth student={student} />}
     </>
   )
 }

@@ -10,6 +10,8 @@ import { useStudentDrawer } from './useStudentDrawer'
 
 vi.mock('@/shared/api/classroom', () => ({ classroomApi: { summary: vi.fn().mockResolvedValue({ my_perms: [] }) } }))
 vi.mock('@/shared/api/students', () => ({ studentsApi: { detail: vi.fn() } }))
+vi.mock('@/shared/api/growth', () => ({ growthApi: { list: vi.fn().mockResolvedValue({ items: [] }), create: vi.fn(), remove: vi.fn() } }))
+vi.mock('@/shared/api/reviews', () => ({ reviewsApi: { listForStudent: vi.fn(), revokeItem: vi.fn(), summary: vi.fn() } }))
 
 const student = { id: 's1', enrollment_id: 'e1', mk: 'S0001', name: '王小一', class_id: 'c', gender: '男', family_structure: '双亲家庭' }
 
@@ -122,7 +124,7 @@ it('treats an unknown tab value as 概览', async () => {
 it('shows a not-yet-available state on later tabs', async () => {
   renderDrawer()
   await screen.findByRole('heading', { name: '王小一' })
-  fireEvent.click(screen.getByRole('tab', { name: '成长记录' }))
+  fireEvent.click(screen.getByRole('tab', { name: '评语' }))
   expect(screen.getByText('暂未开放')).toBeInTheDocument()
 })
 

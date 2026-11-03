@@ -8,6 +8,7 @@ import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import SidePanel from '@/shared/components/overlay/SidePanel'
 import { SegmentedTabs } from '@/shared/components/ui/segmented-tabs'
 import ArchiveTab from './ArchiveTab'
+import GrowthTab from './GrowthTab'
 import OverviewTab from './OverviewTab'
 import ScoresTab from './ScoresTab'
 import { PROFILE_TABS, useStudentDrawer, type ProfileTab } from './useStudentDrawer'
@@ -41,9 +42,10 @@ export default function StudentProfileDrawer({ studentId }: { studentId: string 
             {tab === '概览' && <OverviewTab student={data} />}
             {tab === '档案' && <ArchiveTab student={data} />}
             {tab === '成绩' && <ScoresTab profile={data} />}
-            {/* 成长记录、评语页签尚未开放 */}
-            {tab !== '概览' && tab !== '档案' && tab !== '成绩' && (
-              <EmptyState icon={Clock} title="暂未开放" description="成长记录和评语会在后续版本中提供" />
+            {tab === '成长记录' && <GrowthTab profile={data} />}
+            {/* 评语页签尚未开放 */}
+            {tab === '评语' && (
+              <EmptyState icon={Clock} title="暂未开放" description="评语会在后续版本中提供" />
             )}
           </div>
         </>
