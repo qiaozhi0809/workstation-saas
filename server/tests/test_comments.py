@@ -338,8 +338,15 @@ def test_bulk_concurrent_duplicates_store_once(engine):
     content = "并发测试评语"
     item = SimpleNamespace(student_id=UUID(STUDENT_IDS[0]), content=content)
     results: list[int] = []
+    errors: list[BaseException] = []
 
     def run(hold: threading.Event | None, started: threading.Event | None) -> None:
+        try:
+            _run(hold, started)
+        except BaseException as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    def _run(hold: threading.Event | None, started: threading.Event | None) -> None:
         with Session(engine) as s:
             year = s.get(AcademicYear, UUID(YEAR_ID))
             user = s.get(User, UUID(TEACHER_USER_ID))
@@ -362,13 +369,31 @@ def test_bulk_concurrent_duplicates_store_once(engine):
     t1.join(10)
     t2.join(10)
     try:
+        if errors:
+            raise errors[0]
+        assert not t1.is_alive()
+        assert not t2.is_alive()
+        assert sorted(results) == [0, 1]
         with Session(engine) as s:
             stored = s.scalar(
                 select(func.count()).select_from(Comment).where(Comment.content == content)
             )
         assert stored == 1
-        assert sum(results) == 1
     finally:
         with Session(engine) as s:
             s.query(Comment).filter(Comment.content == content).delete()
             s.commit()
+
+
+def test_duplicate_returns_original_author(client, settings, db):
+    from app.rbac.roles import Role
+    from tests.factories import bind, make_user
+
+    first = make_user(db, "teacher_first", "甲老师")
+    bind(db, first.id, Role.homeroom_teacher, class_id=CLASS_ID)
+    res1 = client.post(URL, json=BODY, headers=auth(settings, first.id))
+    assert res1.status_code == 201
+    res2 = client.post(URL, json=BODY, headers=auth(settings))
+    assert res2.status_code == 200
+    assert res2.json()["id"] == res1.json()["id"]
+    assert res2.json()["created_by_name"] == "甲老师"

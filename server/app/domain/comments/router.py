@@ -93,7 +93,10 @@ def create_comment(
     )
     if not created:
         response.status_code = 200
-    out = service.comment_out(comment, user, year.id, bindings, scope)
+    author = user
+    if comment.created_by_user_id not in (None, user.id):
+        author = db.get(User, comment.created_by_user_id) or user
+    out = service.comment_out(comment, author, year.id, bindings, scope)
     db.commit()
     return out
 
