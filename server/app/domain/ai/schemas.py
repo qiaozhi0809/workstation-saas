@@ -1,9 +1,10 @@
 """AI 助手的请求与响应模型。"""
 
+from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 from pydantic import Field as PField
 
 
@@ -71,3 +72,58 @@ class AiMapping(BaseModel):
 class AiPrompt(BaseModel):
     prompt: str
     mapping: list[AiMapping]
+
+
+class AiReplyIn(BaseModel):
+    text: str | None = None
+    regenerate: bool = False
+
+    @field_validator("text")
+    @classmethod
+    def _strip_text(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip()
+        if not 1 <= len(v) <= 4000:
+            raise ValueError("追问需为 1–4000 字")
+        return v
+
+
+class AiMessageOut(BaseModel):
+    id: UUID
+    role: Literal["user", "assistant"]
+    content: str
+    status: Literal["streaming", "done", "error", "stopped"]
+    error: str | None
+    created_at: datetime
+
+
+class AiBatchItemOut(BaseModel):
+    id: UUID
+    student_id: UUID
+    student_name: str
+    note: str | None
+    status: Literal["wait", "run", "done", "err"]
+    content: str
+    error: str | None
+
+
+class AiChatSummaryOut(BaseModel):
+    id: UUID
+    title: str
+    template_id: str | None
+    updated_at: datetime
+
+
+class AiChatOut(AiChatSummaryOut):
+    class_id: UUID
+    student_id: UUID | None
+    save_as: Literal["comment"] | None
+    mask: bool
+    batch_only: bool
+    messages: list[AiMessageOut]
+    items: list[AiBatchItemOut]
+
+
+class AiChatList(BaseModel):
+    items: list[AiChatSummaryOut]
