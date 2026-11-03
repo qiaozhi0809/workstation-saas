@@ -188,8 +188,6 @@ export default function StudentForm({ cls, record, roster, onClose }: {
         ? await studentsApi.update(cls.id, record.enrollment_id, input)
         : await studentsApi.create(cls.id, input)
       void invalidateRosterQueries(qc)
-      // 自动加座位会改班级行列,教室图读的是 my-classes
-      void qc.invalidateQueries({ queryKey: ['my-classes'] })
       toast(record ? `已保存${name}` : `已添加${name}`)
       if (!record && keepAdding) {
         setF(initialState(undefined, [...roster, saved], wantsAutoSeat(cls, [...roster, saved], false)))

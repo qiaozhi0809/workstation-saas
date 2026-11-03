@@ -129,6 +129,11 @@ it('places podium seats beside the lectern, inside the core, clear of the side z
   expect(contains(L.core, seatRect(L, 0, -2))).toBe(true)
   expect(L.cells.slice(0, 4)).toEqual([{ row: 0, col: -1 }, { row: 0, col: -2 }, { row: 0, col: 1 }, { row: 0, col: 2 }])
 })
+it('keeps podium seats a clear step off the front wall and inside the platform', () => {
+  const L = computeLayout(4, 4, { podium: { left: 1, right: 1 } })
+  expect(L.seat(0, -1).y - L.podium!.y).toBeGreaterThanOrEqual(20)
+  expect(L.seat(0, -1).y + M.SEAT_BOTTOM).toBeLessThanOrEqual(L.podium!.y + L.podium!.h)
+})
 it('draws podium seats in a strip above the grid without a front wall', () => {
   const L = computeLayout(4, 4, { decor: false, frontWall: false, podium: { left: 1, right: 0 } })
   expect(L.seat(0, -1).y).toBeLessThan(L.grid.y)

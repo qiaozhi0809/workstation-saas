@@ -660,3 +660,15 @@ it.each(['layout_mismatch', 'podium_unavailable'])('says the layout changed on S
   expect(await screen.findByText('班级的桌椅排列已变化,已重新加载')).toBeInTheDocument()
   expect(screen.queryByText('学生名单有变化,已重新加载')).toBeNull()
 })
+
+it('keeps drawing the draft desks until the draft is rebuilt after the class settings change', async () => {
+  const { client, container } = setup({ mode: '排座' })
+  await screen.findByRole('button', { name: /^王小一，/ })
+  expect(container.querySelector('[data-seat="0--1"]')).toBeNull()
+  // 班级数据先于草稿刷新:地图桌型、讲台座位仍跟草稿走,不按新旧混合的桌椅画
+  vi.mocked(classesApi.mine).mockResolvedValue({ items: [{ ...classFixture, desk_size: 3, seat_cols: 6, podium_left: 1 }] })
+  await act(async () => { await client.invalidateQueries({ queryKey: ['my-classes'] }) })
+  await new Promise((r) => setTimeout(r, 50))
+  expect(client.getQueryData<{ items: { podium_left: number }[] }>(['my-classes'])?.items[0].podium_left).toBe(1)
+  expect(container.querySelector('[data-seat="0--1"]')).toBeNull()
+})
