@@ -32,7 +32,7 @@ function YearForm({ year }: { year: YearAdmin }) {
   const shown = problem ?? (save.isError ? errMsg(save.error) : null)
   return (
     <CardContent className="grid gap-3">
-      <Field label="学年名称"><Input value={name} maxLength={40} onChange={(e) => setName(e.target.value)} /></Field>
+      <Field label="学年名称"><Input value={name} maxLength={20} onChange={(e) => setName(e.target.value)} /></Field>
       <div className="grid gap-3 sm:grid-cols-3">
         <Field label="开学日期"><Input type="date" value={start} onChange={(e) => setStart(e.target.value)} /></Field>
         <Field label="第二学期开学日期"><Input type="date" value={term2} onChange={(e) => setTerm2(e.target.value)} /></Field>
