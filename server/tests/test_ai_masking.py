@@ -171,3 +171,30 @@ def test_other_class_student_masked(client, settings, db):
     assert code in sent and "赵明轩" not in sent
     got = get_chat(client, settings, chat["id"]).json()
     assert got["messages"][-1]["content"] == "赵明轩很棒"
+
+
+def test_same_name_across_classes_shares_smaller_mask_no(db):
+    first = Student(school_id=SCHOOL_ID, mk="mk-dup1", name="张伟")
+    db.add(first)
+    db.flush()
+    second = Student(school_id=SCHOOL_ID, mk="mk-dup2", name="张伟")
+    db.add(second)
+    db.flush()
+    low, high = sorted((first.mask_no, second.mask_no))
+    assert low < high
+    m = masker_for_school(db, SCHOOL_ID)
+    assert m.mask("张伟今天进步了") == f"{code_of(low)}今天进步了"
+    assert code_of(high) not in m.mask("张伟")
+    assert m.restore(code_of(low)) == "张伟"
+
+
+def test_prefix_name_not_truncated_by_shorter_name(db):
+    short = Student(school_id=SCHOOL_ID, mk="mk-pf1", name="王明")
+    long_ = Student(school_id=SCHOOL_ID, mk="mk-pf2", name="王明轩")
+    db.add_all([short, long_])
+    db.flush()
+    m = masker_for_school(db, SCHOOL_ID)
+    masked = m.mask("王明轩和王明一起")
+    assert masked == f"{code_of(long_.mask_no)}和{code_of(short.mask_no)}一起"
+    assert "轩" not in masked
+    assert m.restore(masked) == "王明轩和王明一起"
