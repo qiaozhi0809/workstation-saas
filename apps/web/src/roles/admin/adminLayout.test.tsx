@@ -70,11 +70,12 @@ it('sends a teacher away from /admin', () => {
   expect(screen.getByText('teacher home')).toBeInTheDocument()
 })
 
-it('does not request the school without org.manage', async () => {
+it('shows the school name for an admin without org.manage', async () => {
   setUser(['admin'], ['account.manage'])
   renderAt('/admin')
   await screen.findByText('accounts page')
-  expect(adminApi.school).not.toHaveBeenCalled()
+  expect(await screen.findByText('虚构实验学校')).toBeInTheDocument()
+  expect(adminApi.school).toHaveBeenCalled()
 })
 
 it('hides the school name when it fails to load', async () => {
