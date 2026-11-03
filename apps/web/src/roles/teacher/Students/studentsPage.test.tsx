@@ -260,7 +260,7 @@ it('opens the import dialog from ?action=import and clears the parameter', async
   await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(''))
 })
 
-it('N5: table scrolls horizontally on its own and drops secondary columns at 375px', async () => {
+it('N5: table scrolls on its own and keeps contacts and tags columns on wide screens', async () => {
   setup(ALL)
   renderPage()
   const table = (await screen.findByRole('table'))
