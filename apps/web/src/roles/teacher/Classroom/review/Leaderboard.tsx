@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { groupOf } from '@/shared/components/ClassroomMap/layout'
+import { groupOf } from '@/shared/lib/seats'
 import Modal from '@/shared/components/overlay/Modal'
 import type { ReviewSummary } from '@/shared/types/review'
 import type { StudentSeat } from '@/shared/types/student'
@@ -19,7 +19,7 @@ export default function Leaderboard({ roster, summary, onClose }: {
     const byGroup = new Map<number, number>()
     for (const p of people) {
       if (p.seat.seat_col == null) continue
-      const g = groupOf(p.seat.seat_col)
+      const g = groupOf(p.seat.seat_col, 2, 0)
       byGroup.set(g, (byGroup.get(g) ?? 0) + p.total)
     }
     return {

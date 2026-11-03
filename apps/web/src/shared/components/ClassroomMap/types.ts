@@ -1,4 +1,5 @@
 import type { ReactNode, Ref } from 'react'
+import type { DeskSize } from '@/shared/types/seating'
 import type { StudentSeat } from '@/shared/types/student'
 
 export type ClassroomMode = 'daily' | 'attendance' | 'review' | 'grades' | 'seating' | 'overview' | 'mini'
@@ -41,6 +42,8 @@ export interface ClassroomViewportHandle { zoomIn(): void; zoomOut(): void; fit(
 export interface ClassroomMapProps {
   rows: number
   cols: number
+  deskSize?: DeskSize                    // 每桌几人,默认 2
+  podium?: { left: number; right: number }   // 讲台两侧座位数,默认 0 / 0
   seats: StudentSeat[]
   mode?: ClassroomMode
   teacher?: { figure: 'female' | 'male'; label: string }

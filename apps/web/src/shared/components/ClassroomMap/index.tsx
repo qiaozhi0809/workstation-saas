@@ -17,7 +17,8 @@ import DeskLayer from './DeskLayer'
 import Floats from './effects/Floats'
 import Spotlight from './effects/Spotlight'
 import HoverCard, { PresentingCard, SeatCard } from './HoverCard'
-import { SCENE_ASPECT, computeLayout, groupOf, type Layout } from './layout'
+import { inGrid } from '@/shared/lib/seats'
+import { SCENE_ASPECT, computeLayout, type Layout } from './layout'
 import SeatLayer, { type HoverSource, type MapCell, type OnHover } from './SeatLayer'
 import type { ClassroomMapProps } from './types'
 import { rectFullyShownInFit, type Size } from './viewport'
@@ -31,21 +32,18 @@ const DEFAULT_TEACHER = { figure: 'female', label: '' } as const
 const NO_FLOATS: never[] = []
 const SHOW_MS = 200, HIDE_MS = 120
 
-function buildCells(rows: number, cols: number, seats: Seat[]): MapCell[] {
+function buildCells(L: Layout, seats: Seat[]): MapCell[] {
   const at = new Map<string, Seat>()
   for (const s of seats) {
     if (s.seat_row == null || s.seat_col == null) continue
-    if (s.seat_row < 1 || s.seat_row > rows || s.seat_col < 1 || s.seat_col > cols) continue
+    if (!inGrid(L.deskGrid, { row: s.seat_row, col: s.seat_col })) continue
     at.set(`${s.seat_row}-${s.seat_col}`, s)
   }
-  return Array.from({ length: rows * cols }, (_, i) => {
-    const row = Math.floor(i / cols) + 1, col = (i % cols) + 1
-    return { row, col, seat: at.get(`${row}-${col}`) ?? null }
-  })
+  return L.cells.map(({ row, col }) => ({ row, col, seat: at.get(`${row}-${col}`) ?? null }))
 }
 
 type SceneProps = Pick<ClassroomMapProps, 'rows' | 'board' | 'attendanceBoard' | 'views' | 'effects' | 'onSeatClick' | 'onEmptySeatClick'> & {
-  L: Layout; mini: boolean; interactive: boolean; cells: MapCell[]; placed: Seat[]
+  L: Layout; mini: boolean; interactive: boolean; cells: MapCell[]; podCells: MapCell[]; placed: Seat[]
   figure: 'female' | 'male'; label: string
   turnedId: string | null; onHover: OnHover; dragKey: string | null; overKey: string | null
 }
@@ -56,8 +54,8 @@ function LiveFrontWall(props: Omit<Parameters<typeof FrontWall>[0], 'now'>) {
 }
 
 // 整张 svg(自然尺寸);平移 / 缩放只改外层 transform,不重画这里
-// 顺序:房间 → 陈设 → 前墙 → 桌椅 → 座位 → 讲台(教鞭压住第一排)→ 聚光灯 → 积分气泡
-const Scene = memo(function Scene({ L, mini, rows, board, attendanceBoard, figure, label, effects, placed, ...seat }: SceneProps) {
+// 顺序:房间 → 陈设 → 前墙 → 桌椅 → 座位 → 讲台(教鞭压住第一排)→ 讲台两侧桌椅与座位(不被地台盖住)→ 聚光灯 → 积分气泡
+const Scene = memo(function Scene({ L, mini, rows, board, attendanceBoard, figure, label, effects, placed, podCells, ...seat }: SceneProps) {
   const teacher = useMemo(() => ({ figure, label }), [figure, label])
   const headOf = (id?: string | null) => {
     const s = id ? placed.find((p) => p.enrollment_id === id) : undefined
@@ -81,6 +79,12 @@ const Scene = memo(function Scene({ L, mini, rows, board, attendanceBoard, figur
       <DeskLayer layout={L} cells={seat.cells} views={seat.views} />
       <SeatLayer layout={L} effects={effects} {...seat} />
       {L.podium && <Podium rect={L.podium} teacher={teacher} action={action} pointAt={picked ?? undefined} />}
+      {podCells.length > 0 && (
+        <>
+          <DeskLayer layout={L} cells={podCells} views={seat.views} />
+          <SeatLayer layout={L} effects={effects} {...seat} cells={podCells} />
+        </>
+      )}
       <Spotlight at={spot} />
       <Floats items={effects?.floats ?? NO_FLOATS} layout={L} seats={placed} />
     </svg>
@@ -93,15 +97,20 @@ const NO_HOVER: HoverState = { mouse: null, focus: null, last: 'mouse' }
 
 // 纯展示:props 进、回调出。舞台(滚轮 / 平移)→ 变换画布 → svg;悬停卡与拖拽影子是舞台内的 HTML
 export default function ClassroomMap({
-  rows, cols, seats, mode = 'daily', teacher = DEFAULT_TEACHER, board, attendanceBoard, onAttendanceBoardVisibleChange, views, effects, presenting,
+  rows, cols, deskSize = 2, podium, seats, mode = 'daily', teacher = DEFAULT_TEACHER, board, attendanceBoard, onAttendanceBoardVisibleChange, views, effects, presenting,
   renderHoverCard, onSeatClick, onEmptySeatClick, onSeatDrop, viewportRef, zoomControls = false,
 }: ClassroomMapProps) {
   const mini = mode === 'mini'
   const stageRef = useRef<HTMLDivElement>(null)
-  const L = useMemo(() => computeLayout(rows, cols, { decor: !mini, frontWall: !mini, aspect: mini ? undefined : SCENE_ASPECT }), [rows, cols, mini])
-  const cells = useMemo(() => buildCells(rows, cols, seats), [rows, cols, seats])
-  const cellMap = useMemo(() => new Map(cells.map((c) => [`${c.row}-${c.col}`, c])), [cells])
-  const placed = useMemo(() => cells.flatMap((c) => (c.seat ? [c.seat] : [])), [cells])
+  const podLeft = podium?.left ?? 0, podRight = podium?.right ?? 0
+  const L = useMemo(() => computeLayout(rows, cols, {
+    decor: !mini, frontWall: !mini, aspect: mini ? undefined : SCENE_ASPECT, deskSize, podium: { left: podLeft, right: podRight },
+  }), [rows, cols, mini, deskSize, podLeft, podRight])
+  const allCells = useMemo(() => buildCells(L, seats), [L, seats])
+  const cells = useMemo(() => allCells.filter((c) => c.row !== 0), [allCells])
+  const podCells = useMemo(() => allCells.filter((c) => c.row === 0), [allCells])
+  const cellMap = useMemo(() => new Map(allCells.map((c) => [`${c.row}-${c.col}`, c])), [allCells])
+  const placed = useMemo(() => allCells.flatMap((c) => (c.seat ? [c.seat] : [])), [allCells])
   const content = useMemo(() => ({ w: L.width, h: L.height, safeW: L.safe.w, core: L.core }), [L])
 
   const vp = useViewport(stageRef, content, !mini)
@@ -192,20 +201,20 @@ export default function ClassroomMap({
     <div ref={stageRef} className={`${stageCls}${busy ? ' cr-grabbing' : ''}`} data-pan={mini || vp.fitted ? undefined : ''} {...stageHandlers}>
       <div className="cr-canvas absolute left-0 top-0" style={{ transform: `translate(${x}px, ${y}px) scale(${s})`, transformOrigin: '0 0' }}>
         <Scene L={L} mini={mini} rows={rows} board={board} attendanceBoard={mini ? undefined : attendanceBoard} figure={teacher.figure} label={teacher.label}
-          views={views} effects={effects} interactive={mode !== 'overview'} cells={cells} placed={placed}
+          views={views} effects={effects} interactive={mode !== 'overview'} cells={cells} podCells={podCells} placed={placed}
           onSeatClick={onSeatClick ? seatClick : undefined} onEmptySeatClick={onEmptySeatClick ? emptyClick : undefined}
           turnedId={active?.id ?? null} onHover={onHover}
           dragKey={drag ? `${drag.from.row}-${drag.from.col}` : null} overKey={drag?.over ?? null} />
       </div>
       {cardSeat && card && (
         <HoverCard stageRef={stageRef} seatKey={card.key}>
-          {presenting ? <PresentingCard seat={cardSeat} /> : renderHoverCard ? renderHoverCard(cardSeat) : <SeatCard seat={cardSeat} />}
+          {presenting ? <PresentingCard seat={cardSeat} /> : renderHoverCard ? renderHoverCard(cardSeat) : <SeatCard seat={cardSeat} group={L.group(cardSeat.seat_row ?? 1, cardSeat.seat_col ?? 1)} />}
         </HoverCard>
       )}
       {drag && (
         <div className="cr-drag-ghost pointer-events-none absolute z-20" style={{ left: drag.x, top: drag.y }}>
           <Avatar gender={genderOf(drag.from.seat.gender)} seed={drag.from.seat.avatar_seed ?? drag.from.seat.student_id}
-            color={groupColor(groupOf(drag.from.col))} size={48} title={drag.from.seat.name} />
+            color={groupColor(L.group(drag.from.row, drag.from.col))} size={48} title={drag.from.seat.name} />
         </div>
       )}
       {zoomControls && !mini && (

@@ -1,4 +1,4 @@
-import { SCENE_ASPECT, computeLayout, groupOf, M } from './layout'
+import { SCENE_ASPECT, computeLayout, M, type Layout, type Rect } from './layout'
 import { CELL } from './seatParts'
 
 it('keeps a fixed row pitch for 9 rows so names never overlap the row above', () => {
@@ -36,7 +36,8 @@ it('drops decor, front wall and podium for the mini map', () => {
 })
 
 it('maps columns to desk-pair groups', () => {
-  expect([1, 2, 3, 4, 5].map(groupOf)).toEqual([0, 0, 1, 1, 2])
+  const L = computeLayout(1, 5)
+  expect([1, 2, 3, 4, 5].map((c) => L.group(1, c))).toEqual([0, 0, 1, 1, 2])
 })
 
 it('widens to the aspect with symmetric wings and keeps the core unchanged inside the safe area', () => {
@@ -95,4 +96,49 @@ it('marks the core: front wall top to just below the last row of seats, across t
 it('treats the whole scene as core when there is no front wall (mini map)', () => {
   const L = computeLayout(2, 4, { decor: false, frontWall: false })
   expect(L.core).toEqual({ x: 0, y: 0, w: L.width, h: L.height })
+})
+
+const overlaps = (a: Rect, b: Rect) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+const contains = (o: Rect, i: Rect) => i.x >= o.x && i.y >= o.y && i.x + i.w <= o.x + o.w && i.y + i.h <= o.y + o.h
+const seatRect = (L: Layout, r: number, c: number): Rect => ({ ...L.seat(r, c), w: M.DESK_W, h: M.SEAT_BOTTOM })
+// 函数字段每次新建,按数据与取样结果比较
+const plain = (L: Layout) => ({
+  ...L, seat: undefined, head: undefined, label: undefined, group: undefined,
+  seats: L.cells.map((c) => [L.seat(c.row, c.col), L.head(c.row, c.col), L.label(c.row, c.col), L.group(c.row, c.col)]),
+})
+
+it('keeps the double-desk layout unchanged by default', () => {
+  expect(plain(computeLayout(6, 4))).toEqual(plain(computeLayout(6, 4, { deskSize: 2, podium: { left: 0, right: 0 } })))
+})
+it('groups three seats per desk with an aisle between desks', () => {
+  const L = computeLayout(4, 9, { deskSize: 3 })
+  expect(L.seat(1, 2).x - L.seat(1, 1).x).toBe(M.DESK_W)
+  expect(L.seat(1, 4).x - L.seat(1, 3).x).toBe(M.DESK_W + M.AISLE)
+})
+it('uses a narrow aisle between single desks', () => {
+  const L = computeLayout(4, 4, { deskSize: 1 })
+  expect(L.seat(1, 2).x - L.seat(1, 1).x).toBe(M.DESK_W + M.AISLE_SINGLE)
+})
+it('places podium seats beside the lectern, inside the core, clear of the side zones', () => {
+  const L = computeLayout(4, 2, { deskSize: 1, podium: { left: 2, right: 2 } })
+  const cx = L.width / 2
+  expect(L.seat(0, -1).x + M.DESK_W).toBe(cx - 120 - M.POD_GAP)
+  expect(L.seat(0, -1).x - L.seat(0, -2).x).toBe(M.DESK_W + M.POD_SEP)
+  expect(L.seat(0, 1).x).toBe(cx + 120 + M.POD_GAP)
+  for (const z of L.zones) for (const c of [-2, -1, 1, 2]) expect(overlaps(z.rect, seatRect(L, 0, c))).toBe(false)
+  expect(contains(L.core, seatRect(L, 0, -2))).toBe(true)
+  expect(L.cells.slice(0, 4)).toEqual([{ row: 0, col: -1 }, { row: 0, col: -2 }, { row: 0, col: 1 }, { row: 0, col: 2 }])
+})
+it('draws podium seats in a strip above the grid without a front wall', () => {
+  const L = computeLayout(4, 4, { decor: false, frontWall: false, podium: { left: 1, right: 0 } })
+  expect(L.seat(0, -1).y).toBeLessThan(L.grid.y)
+})
+it('widens the podium platform to hold the side seats and exposes the group of podium seats', () => {
+  const L = computeLayout(4, 8, { podium: { left: 1, right: 2 } })
+  expect(L.podium!.w).toBe(240 + 2 * (M.POD_GAP + 2 * M.DESK_W + M.POD_SEP + 24))
+  expect(L.podium!.x + L.podium!.w / 2).toBe(L.width / 2)
+  expect(contains(L.podiumSeats!, seatRect(L, 0, 2))).toBe(true)
+  expect(computeLayout(4, 8).podiumSeats).toBeNull()
+  expect(L.group(0, -1)).toBe(0)
+  expect(L.group(0, 1)).toBe(3)
 })

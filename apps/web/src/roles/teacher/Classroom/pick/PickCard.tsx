@@ -1,7 +1,7 @@
 import Avatar from '@/shared/components/ClassroomMap/art/Avatar'
 import { genderOf } from '@/shared/components/ClassroomMap/art/identity'
 import { groupColor } from '@/shared/components/ClassroomMap/art/palette'
-import { groupOf } from '@/shared/components/ClassroomMap/layout'
+import { groupOf } from '@/shared/lib/seats'
 import { Button } from '@/shared/components/ui/button'
 import { useEscapeLayer } from '@/shared/hooks/useEscapeLayer'
 import type { StudentSeat } from '@/shared/types/student'
@@ -25,7 +25,7 @@ export default function PickCard({ seat, presenting = false, canReward, rewardin
         <>
           <div className="flex items-center gap-3">
             <Avatar gender={genderOf(seat.gender)} seed={seat.avatar_seed ?? seat.student_id}
-              color={groupColor(groupOf(seat.seat_col ?? 1))} size={56} title={seat.name} />
+              color={groupColor(groupOf(seat.seat_col ?? 1, 2, 0))} size={56} title={seat.name} />
             <div className="flex flex-col leading-6">
               <span className="text-xl font-semibold">{seat.name}</span>
               {!presenting && seat.student_no && <span className="text-sm text-muted-foreground">{`学号 ${seat.student_no}`}</span>}

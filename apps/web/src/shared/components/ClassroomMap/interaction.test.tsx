@@ -347,3 +347,12 @@ describe('fit on a wide short stage', () => {
     expect(scaleOf(container)).toBeCloseTo(618 / SCENE.height, 6)
   })
 })
+
+it('drops a student onto a podium seat with the podium coding', () => {
+  const onDrop = vi.fn()
+  const { container } = render(<ClassroomMap rows={1} cols={2} seats={seats} mode="seating" onSeatDrop={onDrop} podium={{ left: 1, right: 0 }} />)
+  fireEvent.pointerDown(cell(container, '1-1'), { clientX: 0, clientY: 0, pointerId: 1, button: 0 })
+  fireEvent.pointerMove(cell(container, '1-1'), { clientX: 20, clientY: 0, pointerId: 1 })
+  fireEvent.pointerUp(cell(container, '0--1'), { clientX: 120, clientY: 0, pointerId: 1 })
+  expect(onDrop).toHaveBeenCalledWith({ row: 1, col: 1 }, { row: 0, col: -1 })
+})

@@ -117,3 +117,18 @@ it('repaints a memoised seat when only the tint changes, and keeps tint out of t
   expect(container.querySelector('.cr-desk rect')!.getAttribute('fill')).toBe(GRADE_TINTS[4])
   expect(screen.getByRole('button', { name: '王小一，第1排第1列' })).toBeInTheDocument()
 })
+
+describe('desk types and podium seats', () => {
+  it('renders podium seats after the grid cells and names them by side', () => {
+    const { container } = render(<ClassroomMap rows={2} cols={3} deskSize={3} podium={{ left: 1, right: 0 }}
+      seats={[seat({ seat_row: 0, seat_col: -1 })]} onSeatClick={() => undefined} onEmptySeatClick={() => undefined} />)
+    expect(container.querySelectorAll('[data-seat]')).toHaveLength(2 * 3 + 1)
+    expect(q(container, '[data-seat="0--1"]')).not.toBeNull()
+    expect(screen.getByRole('button', { name: /^王小一，讲台左边/ })).toBeInTheDocument()
+  })
+  it('names an empty podium seat', () => {
+    render(<ClassroomMap rows={2} cols={3} deskSize={3} podium={{ left: 1, right: 0 }} seats={[]} onEmptySeatClick={() => undefined} />)
+    expect(screen.getByRole('button', { name: '空座 讲台左边' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '空座 2排3列' })).toBeInTheDocument()
+  })
+})
