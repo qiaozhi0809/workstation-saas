@@ -22,6 +22,7 @@ class User(Base):
     phone: Mapped[str | None] = mapped_column(Text)
     email: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(Text, server_default=text("'active'"))
+    must_change_password: Mapped[bool] = mapped_column(server_default=text("false"))
     last_login_at: Mapped[datetime | None]
     created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
     updated_at: Mapped[datetime] = mapped_column(server_default=text("now()"))

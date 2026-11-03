@@ -2,7 +2,8 @@ from collections.abc import Sequence
 from datetime import date
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.domain.classes.service import class_scope_of
@@ -14,7 +15,10 @@ from app.rbac.roles import Perm
 
 
 def semester_of(year: AcademicYear, today: date) -> str:
-    first = today.month >= 8 or today.month == 1
+    if year.term2_start is not None:
+        first = today < year.term2_start
+    else:
+        first = today.month >= 8 or today.month == 1
     return f"{year.name} {'第一学期' if first else '第二学期'}"
 
 
@@ -67,6 +71,20 @@ def list_comments(
     ]
 
 
+def _insert_ignoring_duplicates(db: Session, values: dict) -> Comment | None:
+    """同一学生、同一学期、内容逐字相同的评语只存一条;冲突时返回 None。"""
+    stmt = (
+        insert(Comment)
+        .values(**values)
+        .on_conflict_do_nothing(
+            index_elements=[Comment.enrollment_id, Comment.semester, func.md5(Comment.content)]
+        )
+        .returning(Comment.id)
+    )
+    new_id = db.execute(stmt).scalar_one_or_none()
+    return None if new_id is None else db.get(Comment, new_id)
+
+
 def create_comment(
     db: Session,
     student_id: UUID,
@@ -76,21 +94,33 @@ def create_comment(
     content: str,
     generated_by_ai: bool,
     today: date,
-) -> Comment:
-    comment = Comment(
-        student_id=student_id,
-        enrollment_id=enrollment.id,
-        class_id=enrollment.class_id,
-        academic_year_id=year.id,
-        semester=semester_of(year, today),
-        content=content,
-        generated_by_ai=generated_by_ai,
-        created_by_user_id=user.id,
+) -> tuple[Comment, bool]:
+    """返回 (评语, 是否新建);已有相同评语时返回那一条。"""
+    semester = semester_of(year, today)
+    comment = _insert_ignoring_duplicates(
+        db,
+        {
+            "student_id": student_id,
+            "enrollment_id": enrollment.id,
+            "class_id": enrollment.class_id,
+            "academic_year_id": year.id,
+            "semester": semester,
+            "content": content,
+            "generated_by_ai": generated_by_ai,
+            "created_by_user_id": user.id,
+        },
     )
-    db.add(comment)
-    db.flush()
-    db.refresh(comment)
-    return comment
+    if comment is not None:
+        db.refresh(comment)
+        return comment, True
+    existing = db.scalars(
+        select(Comment).where(
+            Comment.enrollment_id == enrollment.id,
+            Comment.semester == semester,
+            func.md5(Comment.content) == func.md5(content),
+        )
+    ).one()
+    return existing, False
 
 
 def comment_out(
@@ -128,35 +158,21 @@ def create_bulk(
     if any(i.student_id not in enrollments for i in items):
         raise ApiError(400, "AI_FIELD_INVALID", "有学生不在本班", {"field": "items"})
     semester = semester_of(year, today)
-    # 同一学生、同一学期、内容逐字相同的评语已经存在就不再写(重发、刷新后再保存都不会重复),
-    # 同一批里的重复也只存一条
-    seen = {
-        (enrollment_id, content)
-        for enrollment_id, content in db.execute(
-            select(Comment.enrollment_id, Comment.content).where(
-                Comment.enrollment_id.in_([e.id for e in enrollments.values()]),
-                Comment.semester == semester,
-            )
-        )
-    }
     created = 0
     for i in items:
-        key = (enrollments[i.student_id].id, i.content)
-        if key in seen:
-            continue
-        seen.add(key)
-        created += 1
-        db.add(
-            Comment(
-                student_id=i.student_id,
-                enrollment_id=enrollments[i.student_id].id,
-                class_id=class_id,
-                academic_year_id=year.id,
-                semester=semester,
-                content=i.content,
-                generated_by_ai=generated_by_ai,
-                created_by_user_id=user.id,
-            )
+        row = _insert_ignoring_duplicates(
+            db,
+            {
+                "student_id": i.student_id,
+                "enrollment_id": enrollments[i.student_id].id,
+                "class_id": class_id,
+                "academic_year_id": year.id,
+                "semester": semester,
+                "content": i.content,
+                "generated_by_ai": generated_by_ai,
+                "created_by_user_id": user.id,
+            },
         )
-    db.flush()
+        if row is not None:
+            created += 1
     return created

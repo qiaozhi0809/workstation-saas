@@ -17,6 +17,7 @@ from tests.seed_ids import (
     STUDENT_IDS,
     SUBJECT_USER_ID,
     TEACHER_USER_ID,
+    YEAR_ID,
 )
 
 S1 = STUDENT_IDS[1]  # 李小二
@@ -47,6 +48,13 @@ def _count(db):
 def test_semester_of(today, expected):
     year = AcademicYear(name="2026-2027")
     assert semester_of(year, today) == expected
+
+
+def test_semester_uses_term2_start():
+    year = AcademicYear(name="2026-2027", term2_start=date(2027, 2, 20))
+    assert semester_of(year, date(2027, 2, 19)) == "2026-2027 第一学期"
+    assert semester_of(year, date(2027, 2, 20)) == "2026-2027 第二学期"
+    assert semester_of(year, date(2026, 11, 2)) == "2026-2027 第一学期"
 
 
 def test_list_create_delete(client, settings, db):
@@ -305,3 +313,62 @@ def test_bulk_changed_content_is_new_and_other_semester_is_not_a_duplicate(clien
     db.flush()
     assert _bulk(client, settings, [(STUDENT_IDS[0], "认真好学")]).json() == {"created": 1}
     assert _count(db) == 4
+
+
+def test_single_create_duplicate_returns_existing(client, settings, db):
+    h = auth(settings)
+    first = client.post(URL, json=BODY, headers=h)
+    assert first.status_code == 201
+    again = client.post(URL, json=BODY, headers=h)
+    assert again.status_code == 200
+    assert again.json()["id"] == first.json()["id"]
+    assert _count(db) == 2
+
+
+def test_bulk_concurrent_duplicates_store_once(engine):
+    import threading
+    import time
+    from types import SimpleNamespace
+
+    from sqlalchemy.orm import Session
+
+    from app.domain.comments.service import create_bulk
+    from app.models import User
+
+    content = "并发测试评语"
+    item = SimpleNamespace(student_id=UUID(STUDENT_IDS[0]), content=content)
+    results: list[int] = []
+
+    def run(hold: threading.Event | None, started: threading.Event | None) -> None:
+        with Session(engine) as s:
+            year = s.get(AcademicYear, UUID(YEAR_ID))
+            user = s.get(User, UUID(TEACHER_USER_ID))
+            n = create_bulk(s, UUID(CLASS_ID), year, user, [item], False, date(2026, 11, 2))
+            if started:
+                started.set()
+            if hold:
+                hold.wait(5)
+            s.commit()
+            results.append(n)
+
+    hold, started = threading.Event(), threading.Event()
+    t1 = threading.Thread(target=run, args=(hold, started))
+    t1.start()
+    assert started.wait(5)
+    t2 = threading.Thread(target=run, args=(None, None))
+    t2.start()
+    time.sleep(0.5)  # 第二个会话此时卡在唯一索引上,等第一个提交
+    hold.set()
+    t1.join(10)
+    t2.join(10)
+    try:
+        with Session(engine) as s:
+            stored = s.scalar(
+                select(func.count()).select_from(Comment).where(Comment.content == content)
+            )
+        assert stored == 1
+        assert sum(results) == 1
+    finally:
+        with Session(engine) as s:
+            s.query(Comment).filter(Comment.content == content).delete()
+            s.commit()
