@@ -253,15 +253,13 @@ function ClassroomView({ cls }: { cls: ClassView }) {
     return out
   }, [canReadExams, gradebook.data, roster.data])
   const openSettings = useCallback(() => setSettingsOpen(true), [])
-  // 段 C 合并后 useSeatingMode 才有 onOpenLayout 选项和 reload();在此之前按约定签名做一次局部类型适配,合并后可去掉
-  const seatingOptions: Parameters<typeof useSeatingMode>[0] & { onOpenLayout?: () => void } = {
+  const seating = useSeatingMode({
     classId,
     className: cls.name,
     enabled: mode === 'seating',
     ranks,
     onOpenLayout: openSettings,
-  }
-  const seating = useSeatingMode(seatingOptions) as ReturnType<typeof useSeatingMode> & { reload?: () => Promise<void> }
+  })
   // 离开排座前确认未保存的修改;进入排座时收起点名(聚光灯 / 指向不落在排座地图上)
   const setMode = (next: ClassroomUiMode) => {
     if (mode === 'seating' && !confirmLeave(['seating'])) return
@@ -289,7 +287,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
     for (const key of [['my-classes'], ['classroom', classId], ['class-students', classId], ['student-records', classId]]) {
       void qc.invalidateQueries({ queryKey: key })
     }
-    if (mode === 'seating') void seating.reload?.()
+    if (mode === 'seating') void seating.reload()
   }
   const goFromSettings = async (to: 'add' | 'import' | 'list') => {
     // 先等班级数据刷新,学生页 / 添加表单才能拿到新的行列
