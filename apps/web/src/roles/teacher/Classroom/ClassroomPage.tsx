@@ -285,12 +285,14 @@ function ClassroomView({ cls }: { cls: ClassView }) {
   const canSettings = perms.includes('seating.write') && !!summary.data
   // 保存班级设置后名单、教室概况、班级行列都变了;排座模式下草稿也要按新桌椅重建
   const onLayoutSaved = () => {
-    for (const key of [['my-classes'], ['classroom', classId], ['class-students', classId]]) {
+    for (const key of [['my-classes'], ['classroom', classId], ['class-students', classId], ['student-records', classId]]) {
       void qc.invalidateQueries({ queryKey: key })
     }
     if (mode === 'seating') void seating.reload?.()
   }
-  const goFromSettings = (to: 'add' | 'import' | 'list') => {
+  const goFromSettings = async (to: 'add' | 'import' | 'list') => {
+    // 先等班级数据刷新,学生页 / 添加表单才能拿到新的行列
+    await qc.invalidateQueries({ queryKey: ['my-classes'] })
     navigate(to === 'list' ? '/teacher/students' : `/teacher/students?action=${to}`)
   }
   const canPick = mode !== 'seating' && !!todayAttendance.data && !!roster.data
@@ -446,7 +448,12 @@ function ClassroomView({ cls }: { cls: ClassView }) {
           menu={slot.menu || canSettings || (mode !== 'daily' && (canPick || canEditBoard)) ? (
             <>
               {slot.menu}
-              {canSettings && <MenuItem onSelect={openSettings}>班级设置</MenuItem>}
+              {canSettings && (
+                // 排座草稿有未保存的修改时不能改桌椅(保存会按新桌椅重排并重建草稿)
+                <MenuItem disabled={seating.dirty} onSelect={openSettings}>
+                  {seating.dirty ? '班级设置(先保存或放弃当前的座位修改)' : '班级设置'}
+                </MenuItem>
+              )}
               {mode !== 'daily' && canPick && <MenuItem disabled={picking} onSelect={pick.start}>随机点名</MenuItem>}
               {mode !== 'daily' && canEditBoard && <MenuItem onSelect={() => setEditingBoard(true)}>编辑黑板</MenuItem>}
             </>

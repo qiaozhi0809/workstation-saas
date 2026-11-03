@@ -72,14 +72,20 @@ export default function ClassSettingsDialog({ cls, seatVersion, studentCount, ha
 
   const setDesk = (desk: DeskSize) => {
     if (!manual) return patch({ desk_size: desk, cols: null })
-    const current = draft.cols ?? preview.data?.cols ?? cls.seat_cols
+    const current = draft.cols ?? cls.seat_cols
     const [lo, hi] = deskRange(desk)
     patch({ desk_size: desk, cols: clamp(Math.round(current / desk), lo, hi) * desk })
   }
   const setLayout = (mode: SeatLayoutMode) => {
-    if (mode === 'manual') patch({ seat_layout: mode, rows: preview.data?.rows ?? draft.rows, cols: preview.data?.cols ?? draft.cols })
-    else patch({ seat_layout: mode, cols: preview.data?.cols ?? draft.cols })
+    // preview 可能是改桌型之前的结果:自己设定时按当前桌型归一,不直接信任它
+    if (mode === 'manual') {
+      const [lo, hi] = deskRange(draft.desk_size)
+      const cols = preview.data?.cols ?? draft.cols ?? cls.seat_cols
+      patch({ seat_layout: mode, rows: preview.data?.rows ?? draft.rows, cols: clamp(Math.round(cols / draft.desk_size), lo, hi) * draft.desk_size })
+    } else patch({ seat_layout: mode, cols: draft.cols ?? preview.data?.cols ?? null })
   }
+
+  const close = () => { if (!busy) onClose() }
 
   const save = async (then?: () => void) => {
     setBusy(true)
@@ -97,11 +103,11 @@ export default function ClassSettingsDialog({ cls, seatVersion, studentCount, ha
   }
 
   const pv = preview.data
-  const podiumSeats = draft.podium_left + draft.podium_right
+  const podiumSeats = preview.settled.podium_left + preview.settled.podium_right
   const [deskLo, deskHi] = deskRange(draft.desk_size)
 
   return (
-    <Modal open onClose={onClose} title={`班级设置 · ${cls.name}`} dismissOnOutside={false} className="max-w-3xl">
+    <Modal open onClose={close} title={`班级设置 · ${cls.name}`} dismissOnOutside={false} className="max-w-3xl">
       <div className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1">
@@ -154,7 +160,7 @@ export default function ClassSettingsDialog({ cls, seatVersion, studentCount, ha
           </div>
 
           <div className="space-y-2">
-            {pv && <SeatPreview draft={draft} preview={pv} names={names} />}
+            {pv && <SeatPreview draft={preview.settled} preview={pv} names={names} />}
             {pv && (
               <p className="text-sm">
                 {`${pv.rows} 排 × ${pv.cols} 个座位${podiumSeats > 0 ? ` + 讲台边 ${podiumSeats} 个` : ''} = ${pv.capacity} 个座位 · 学生 ${pv.students} 人`}
@@ -181,7 +187,7 @@ export default function ClassSettingsDialog({ cls, seatVersion, studentCount, ha
           </span>
         </div>
         <div className="flex justify-end gap-2">
-          <Button type="button" variant="outline" onClick={onClose}>取消</Button>
+          <Button type="button" variant="outline" disabled={busy} onClick={close}>取消</Button>
           <Button type="button" disabled={busy} onClick={() => void save()}>保存</Button>
         </div>
       </div>

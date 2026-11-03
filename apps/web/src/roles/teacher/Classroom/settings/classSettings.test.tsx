@@ -126,3 +126,49 @@ it('saves before going to add students', async () => {
   expect(toast).toHaveBeenCalledWith('已保存')
   expect(p.onClose).toHaveBeenCalled()
 })
+
+it('normalizes cols to the desk size when switching to manual before the preview catches up', async () => {
+  renderDialog({ cls: { ...cls, seat_layout: 'auto' } })
+  await waitFor(() => expect(seatingApi.preview).toHaveBeenCalledTimes(1))
+  fireEvent.click(screen.getByRole('tab', { name: '三人一排' }))
+  fireEvent.click(screen.getByRole('tab', { name: '自己设定' }))
+  await waitFor(() => expect(lastPreview()).toMatchObject({ seat_layout: 'manual', desk_size: 3 }))
+  const cols = lastPreview().cols as number
+  expect(cols % 3).toBe(0)
+  expect(cols).toBeGreaterThanOrEqual(3)
+})
+
+it('clears cols when the desk changes under auto and keeps the draft cols when switching back to auto', async () => {
+  renderDialog({ cls: { ...cls, seat_layout: 'auto' } })
+  fireEvent.click(screen.getByRole('tab', { name: '三人一排' }))
+  await waitFor(() => expect(lastPreview()).toMatchObject({ seat_layout: 'auto', desk_size: 3, cols: null }))
+  vi.mocked(seatingApi.preview).mockResolvedValue({ ...PREVIEW, cols: 9 })
+  fireEvent.click(screen.getByRole('tab', { name: '自己设定' }))
+  await waitFor(() => expect(lastPreview()).toMatchObject({ seat_layout: 'manual' }))
+  const manualCols = lastPreview().cols
+  fireEvent.click(screen.getByRole('button', { name: '每排增加' }))
+  fireEvent.click(screen.getByRole('button', { name: '每排减少' }))
+  fireEvent.click(screen.getByRole('tab', { name: '按人数自动排' }))
+  await waitFor(() => expect(lastPreview()).toMatchObject({ seat_layout: 'auto', cols: manualCols }))
+})
+
+it('shows the preview text from the same settled draft as the preview map', async () => {
+  renderDialog()
+  expect(await screen.findByText('2 排 × 4 个座位 = 8 个座位 · 学生 8 人')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '左边增加' }))
+  expect(screen.getByText('2 排 × 4 个座位 = 8 个座位 · 学生 8 人')).toBeInTheDocument()
+  expect(await screen.findByText('2 排 × 4 个座位 + 讲台边 1 个 = 8 个座位 · 学生 8 人')).toBeInTheDocument()
+})
+
+it('blocks cancel and closing while saving', async () => {
+  let release!: (v: unknown) => void
+  vi.mocked(seatingApi.saveLayout).mockReturnValue(new Promise((r) => { release = r }) as never)
+  const p = renderDialog()
+  fireEvent.click(screen.getByRole('button', { name: '保存' }))
+  await waitFor(() => expect(screen.getByRole('button', { name: '取消' })).toBeDisabled())
+  fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+  fireEvent.keyDown(document, { key: 'Escape' })
+  expect(p.onClose).not.toHaveBeenCalled()
+  release({ version: 8, moved: false, rows: 2, cols: 4 })
+  await waitFor(() => expect(p.onClose).toHaveBeenCalledTimes(1))
+})

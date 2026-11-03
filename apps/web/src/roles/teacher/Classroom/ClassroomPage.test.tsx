@@ -414,7 +414,7 @@ it('opens the dialog with the seat version and routes its onGo targets', async (
   fireEvent.click(await screen.findByRole('menuitem', { name: '班级设置' }))
   expect(await screen.findByText('v4')).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: '去添加' }))
-  expect(navigate).toHaveBeenCalledWith('/teacher/students?action=add')
+  await waitFor(() => expect(navigate).toHaveBeenCalledWith('/teacher/students?action=add'))
 })
 
 it('routes 去导入 and 去名单 to the students page', async () => {
@@ -423,9 +423,9 @@ it('routes 去导入 and 去名单 to the students page', async () => {
   await moreMenu()
   fireEvent.click(await screen.findByRole('menuitem', { name: '班级设置' }))
   fireEvent.click(await screen.findByRole('button', { name: '去导入' }))
-  expect(navigate).toHaveBeenCalledWith('/teacher/students?action=import')
+  await waitFor(() => expect(navigate).toHaveBeenCalledWith('/teacher/students?action=import'))
   fireEvent.click(await screen.findByRole('button', { name: '去名单' }))
-  expect(navigate).toHaveBeenCalledWith('/teacher/students')
+  await waitFor(() => expect(navigate).toHaveBeenCalledWith('/teacher/students'))
 })
 
 it('refreshes queries and reloads the seating draft after saving the layout', async () => {
@@ -466,4 +466,60 @@ it('passes desk size and podium seats to the map', async () => {
   vi.mocked(classesApi.mine).mockResolvedValue({ items: [{ ...classFixture, desk_size: 3, podium_left: 1, seat_cols: 6 }] })
   const { container } = setup()
   await waitFor(() => expect(container.querySelector('[data-seat="0--1"]')).not.toBeNull())
+})
+
+it('disables class settings in the menu while the seating draft is dirty', async () => {
+  hoisted.seating = () => ({ ready: false, failed: false, dirty: true, pending: null, retry: vi.fn() })
+  try {
+    setup({ mode: '排座' })
+    await moreMenu()
+    const item = await screen.findByRole('menuitem', { name: /班级设置/ })
+    expect(item).toHaveAttribute('aria-disabled', 'true')
+    expect(item).toHaveTextContent('先保存或放弃当前的座位修改')
+    fireEvent.click(item)
+    expect(screen.queryByRole('dialog', { name: '班级设置对话框' })).toBeNull()
+  } finally {
+    hoisted.seating = null
+  }
+})
+
+it('also invalidates the students page records after saving the layout', async () => {
+  const { client } = setup()
+  const spy = vi.spyOn(client, 'invalidateQueries')
+  await moreMenu()
+  fireEvent.click(await screen.findByRole('menuitem', { name: '班级设置' }))
+  fireEvent.click(await screen.findByRole('button', { name: '模拟保存' }))
+  expect(spy).toHaveBeenCalledWith({ queryKey: ['student-records', 'c1'] })
+})
+
+it('refreshes my-classes before navigating to the students page', async () => {
+  const navigate = hoisted.navigate = vi.fn()
+  setup()
+  await moreMenu()
+  fireEvent.click(await screen.findByRole('menuitem', { name: '班级设置' }))
+  await screen.findByRole('button', { name: '去添加' })
+  let release!: (v: { items: typeof classFixture[] }) => void
+  vi.mocked(classesApi.mine).mockReturnValue(new Promise((r) => { release = r }))
+  fireEvent.click(screen.getByRole('button', { name: '去添加' }))
+  await waitFor(() => expect(classesApi.mine).toHaveBeenCalled())
+  expect(navigate).not.toHaveBeenCalled()
+  release({ items: [classFixture] })
+  await waitFor(() => expect(navigate).toHaveBeenCalledWith('/teacher/students?action=add'))
+})
+
+it('colors the hover card avatar with the map group of three-seat desks and podium seats', async () => {
+  vi.mocked(classesApi.mine).mockResolvedValue({ items: [{ ...classFixture, desk_size: 3, seat_cols: 9, podium_right: 1 }] })
+  const roster = [
+    { ...rosterFixture[0], seat_row: 1, seat_col: 4 },
+    { ...rosterFixture[1], seat_row: 0, seat_col: 1 },
+  ]
+  const { container } = setup({ roster })
+  await screen.findByRole('button', { name: /^王小一，/ })
+  // 三人桌第 4 列属第 2 组;讲台右侧座位属最后一组(第 3 组)
+  const card1 = await hoverCard(container, '1-4')
+  expect(card1.innerHTML).toContain('#f08a5d')
+  expect(card1.innerHTML).not.toContain('#3fb8a9')
+  fireEvent.mouseLeave(container.querySelector('[data-seat="1-4"]') as Element)
+  const card2 = await hoverCard(container, '0-1')
+  expect(card2.innerHTML).toContain('#8b7cf6')
 })

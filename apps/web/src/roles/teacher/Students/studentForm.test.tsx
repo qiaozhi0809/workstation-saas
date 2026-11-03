@@ -273,3 +273,13 @@ it('does not offer auto seat while an auto class still has an empty seat', () =>
   renderForm({ cls: fullAuto, roster: fullRoster.slice(0, 3) })
   expect(screen.queryByRole('option', { name: '自动加座位' })).toBeNull()
 })
+
+it('also invalidates my-classes after adding so the classroom map sees new seats', async () => {
+  vi.mocked(studentsApi.create).mockResolvedValue(rec({ enrollment_id: 'e9' }))
+  const spy = vi.spyOn(client, 'invalidateQueries')
+  renderForm()
+  fireEvent.change(screen.getByLabelText('姓名'), { target: { value: '赵六' } })
+  fireEvent.change(screen.getByLabelText('联系人1姓名'), { target: { value: '赵父' } })
+  fireEvent.click(screen.getByRole('button', { name: '保存' }))
+  await waitFor(() => expect(spy).toHaveBeenCalledWith({ queryKey: ['my-classes'] }))
+})
