@@ -47,7 +47,10 @@ export default function BatchView({ chat, classId, perms }: Props) {
       generated_by_ai: true,
     }),
     onSuccess: (r, batch) => {
-      toast(`已保存 ${r.created} 条评语`)
+      const dup = batch.length - r.created
+      toast(r.created === 0 ? '这些评语已经保存过了'
+        : dup > 0 ? `已保存 ${r.created} 条,另有 ${dup} 条之前已保存`
+        : `已保存 ${r.created} 条评语`)
       markSaved(batch.map((i) => i.id))
       for (const i of batch) void qc.invalidateQueries({ queryKey: ['comments', i.student_id] })
     },

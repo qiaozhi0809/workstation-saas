@@ -184,6 +184,11 @@ function Thread({ ctx, chat, chatId }: { ctx: ClassContext; chat: AiChat; chatId
             onCopyPrompt={openPrompt}
           />
         ))}
+        {!chat.batch_only && !live && !showHookError && last?.role === 'user' && (
+          <div className="flex justify-end">
+            <Button size="sm" variant="outline" onClick={() => run({})}>重新生成</Button>
+          </div>
+        )}
         {chat.batch_only && <BatchView chat={chat} classId={ctx.cls.id} perms={ctx.perms} />}
         {pendingUser !== null && live && (
           <div className="flex justify-end">
