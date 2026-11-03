@@ -80,9 +80,8 @@ def create_growth(
     return out
 
 
-@router.delete("/students/{student_id}/growth-records/{record_id}", status_code=204)
+@router.delete("/growth-records/{record_id}", status_code=204)
 def delete_growth(
-    student_id: UUID,
     record_id: UUID,
     request: Request,
     user: Annotated[User, Depends(get_current_user)],
@@ -90,16 +89,8 @@ def delete_growth(
     db: Annotated[Session, Depends(get_db)],
 ) -> Response:
     year = require_active_year(db, user.school_id)
-    found = find_enrolled_student(db, student_id, year.id)
-    if found is None:
-        raise _not_found()
-    _, scope, _ = found
-    ensure(
-        db, request, user.id, bindings, Perm.GROWTH_READ, scope,
-        object_id=str(student_id), object_type="student",
-    )  # fmt: skip
     rec = db.get(GrowthRecord, record_id)
-    if rec is None or rec.student_id != student_id:
+    if rec is None:
         raise ApiError(404, "NOT_FOUND", "记录不存在")
     if rec.academic_year_id != year.id:
         raise ApiError(409, "RECORD_READONLY", "往年的记录只读,不能删除")

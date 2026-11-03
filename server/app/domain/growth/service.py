@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.domain.growth.schemas import GrowthInput, GrowthRecordOut
-from app.models import AcademicYear, GrowthRecord, SchoolClass, User
+from app.models import AcademicYear, Enrollment, GrowthRecord, SchoolClass, User
 from app.rbac.bindings import Binding, Scope, can, has_role_in_class
 from app.rbac.roles import Perm, Role
 
@@ -81,7 +81,7 @@ def one_out(
 
 
 def create_record(
-    db: Session, student_id: UUID, enrollment, user_id: UUID, data: GrowthInput
+    db: Session, student_id: UUID, enrollment: Enrollment, user_id: UUID, data: GrowthInput
 ) -> GrowthRecord:
     record = GrowthRecord(
         student_id=student_id,

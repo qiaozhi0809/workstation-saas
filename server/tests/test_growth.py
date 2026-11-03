@@ -12,7 +12,6 @@ from tests.seed_ids import (
     SCHOOL_ID,
     STUDENT_IDS,
     SUBJECT_USER_ID,
-    TEACHER_USER_ID,
 )
 
 S0 = STUDENT_IDS[0]
@@ -63,18 +62,21 @@ def test_create_by_assistant_and_delete_rules(client, settings, db):
     assert mine["can_delete"] is True
     assert mine["current_year"] is True
     assert mine["created_by_name"] == "王老师"
-    assert client.delete(f"{URL}/{mine['id']}", headers=h2).status_code == 204
+    assert client.delete(f"/api/v1/growth-records/{mine['id']}", headers=h2).status_code == 204
 
     res = client.post(URL, json=BODY, headers=h2)
     theirs_by_t2 = res.json()["id"]
     # 班主任可删副班主任写的
-    assert client.delete(f"{URL}/{theirs_by_t2}", headers=auth(settings)).status_code == 204
+    assert (
+        client.delete(f"/api/v1/growth-records/{theirs_by_t2}", headers=auth(settings)).status_code
+        == 204
+    )
 
     # 副班主任不能删班主任写的
     seed_id = client.get(URL, headers=h2).json()["items"][0]["id"]
     listed = client.get(URL, headers=h2).json()["items"]
     assert all(i["can_delete"] is False for i in listed)
-    res = client.delete(f"{URL}/{seed_id}", headers=h2)
+    res = client.delete(f"/api/v1/growth-records/{seed_id}", headers=h2)
     assert res.status_code == 403
     assert res.json()["error"]["code"] == "FORBIDDEN"
     rows = [a for a in _audits(db, "growth.delete") if a.object_id == seed_id]
@@ -133,7 +135,7 @@ def test_past_year_record_is_read_only(client, settings, db):
         type="获奖",
         date=date(2026, 5, 20),
         content="获得校运会跳远第一名",
-        created_by_user_id=UUID(TEACHER_USER_ID),
+        created_by_user_id=UUID(ASSISTANT_USER_ID),
     )
     db.add(rec)
     db.flush()
@@ -148,7 +150,7 @@ def test_past_year_record_is_read_only(client, settings, db):
     assert past["class_name"] == "二年一班"
     assert all(i["current_year"] for i in items if i is not past)
 
-    res = client.delete(f"{URL}/{rec.id}", headers=h)
+    res = client.delete(f"/api/v1/growth-records/{rec.id}", headers=h)
     assert res.status_code == 409
     assert res.json()["error"]["code"] == "RECORD_READONLY"
     assert db.get(GrowthRecord, rec.id) is not None
@@ -170,13 +172,11 @@ def test_unknown_student_404(client, settings):
     assert client.post(url, json=BODY, headers=auth(settings)).status_code == 404
 
 
-def test_delete_record_of_other_student_404(client, settings):
-    other = STUDENT_IDS[4]
-    seed_id = client.get(URL, headers=auth(settings)).json()["items"][0]["id"]
-    res = client.delete(
-        f"/api/v1/students/{other}/growth-records/{seed_id}", headers=auth(settings)
-    )
+def test_delete_unknown_record_404(client, settings):
+    url = "/api/v1/growth-records/00000000-0000-0000-0000-000000000000"
+    res = client.delete(url, headers=auth(settings))
     assert res.status_code == 404
+    assert res.json()["error"]["code"] == "NOT_FOUND"
 
 
 def test_growth_audit_without_content(client, settings, db):
@@ -187,7 +187,7 @@ def test_growth_audit_without_content(client, settings, db):
     a = created[0]
     assert (a.success, a.object_type, a.object_id) == (True, "student", S0)
     assert "主动整理" not in str(a.extra)
-    client.delete(f"{URL}/{rid}", headers=auth(settings))
+    client.delete(f"/api/v1/growth-records/{rid}", headers=auth(settings))
     d = _audits(db, "growth.delete")
     assert [(x.success, x.object_type, x.object_id) for x in d] == [(True, "growth_record", rid)]
     assert "主动整理" not in str(d[0].extra)
