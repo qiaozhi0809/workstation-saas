@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.auth.passwords import hash_password
@@ -110,3 +111,31 @@ def make_student(
     )
     db.flush()
     return student.id
+
+
+def make_teacher_account(
+    db: Session, school: str | UUID | None = None, login_name: str | None = None
+) -> User:
+    user = make_user(db, login_name or f"t_{uuid4().hex[:8]}")
+    if school is not None:
+        user.school_id = UUID(str(school))
+    db.execute(text("INSERT INTO teachers (user_id) VALUES (:uid)"), {"uid": user.id})
+    db.flush()
+    return user
+
+
+def make_admin(
+    db: Session,
+    school: str | UUID | None,
+    role: str,
+    *,
+    grade: str | UUID | None = None,
+) -> User:
+    """管理岗账号:校长 / 教导主任 / 信息中心绑学校作用域(不限学年),年级组长绑年级(当前学年)。"""
+    school_id = SCHOOL_ID if school is None else school
+    user = make_teacher_account(db, school_id)
+    if role == Role.grade_head.value:
+        bind(db, user.id, Role.grade_head, grade_id=grade or GRADE_ID)
+    else:
+        bind(db, user.id, Role(role), school_id=school_id, year_id=None)
+    return user

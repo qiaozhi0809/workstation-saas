@@ -26,6 +26,27 @@ from tests.seed_ids import (
 SCHOOL = UUID(SCHOOL_ID)
 
 
+@pytest.fixture(autouse=True)
+def _only_original_seed(db):
+    """学年升级用例按最初的单班种子(三年二班 + 10 名学生)写断言。
+
+    M3a 种子新增了四年级、两个班、12 名学生、6 个账号,
+    以及 10-12 至 10-16 的考勤;这里在测试事务内删掉,测试结束整体回滚。
+    """
+    db.execute(text("DELETE FROM attendances WHERE date BETWEEN '2026-10-12' AND '2026-10-16'"))
+    db.execute(text("DELETE FROM attendance_days WHERE date BETWEEN '2026-10-12' AND '2026-10-16'"))
+    db.execute(text("DELETE FROM classes WHERE name IN ('三年一班', '四年一班')"))
+    db.execute(text("DELETE FROM grades WHERE name = '四年级'"))
+    db.execute(text("DELETE FROM students WHERE mk BETWEEN 'S0011' AND 'S0022'"))
+    db.execute(
+        text(
+            "DELETE FROM users WHERE login_name IN "
+            "('teacher04', 'teacher05', 'principal01', 'dean01', 'gradehead03', 'itadmin01')"
+        )
+    )
+    db.flush()
+
+
 @pytest.mark.parametrize(
     "name,expected",
     [

@@ -163,7 +163,7 @@ def test_seat_out_of_grid(client, settings, db):
     assert res.json()["error"]["code"] == "SEAT_INVALID"
     assert res.json()["error"]["details"]["reason"] == "out_of_grid"
     n = db.scalar(select(text("count(*)")).select_from(Student))
-    assert n == 10
+    assert n == 22
 
 
 def test_duplicate_student_no(client, settings, db):
