@@ -301,6 +301,11 @@ def end_role(
     request: Request | None = None,
 ) -> None:
     if bd.role_type in ACCOUNT_ROLES:
+        # 同校卸任串行,否则两人同时卸任会各自看到对方还在
+        db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:k)::bigint)"),
+            {"k": f"last-admin:{school_id}"},
+        )
         holder = db.get(User, bd.user_id)
         if (
             holder is not None

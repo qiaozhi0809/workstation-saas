@@ -239,3 +239,32 @@ def test_frozen_account_admin_not_counted_as_last(client, db, settings):
     res = client.delete(f"{API}/roles/{principal}", headers=h)
     assert res.status_code == 409 and res.json()["error"]["code"] == "LAST_ADMIN"
     assert client.delete(f"{API}/roles/{it_admin}", headers=h).status_code == 204
+
+
+def _capture_sql(db):
+    from sqlalchemy import event
+
+    statements: list[str] = []
+
+    def grab(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    conn = db.get_bind()
+    event.listen(conn, "before_cursor_execute", grab)
+    return statements, lambda: event.remove(conn, "before_cursor_execute", grab)
+
+
+def test_end_role_takes_advisory_lock_for_account_roles(client, db, settings):
+    h = auth(settings, PRINCIPAL)
+    it_admin = _binding_id(client, settings, "蒋老师", "it_admin")
+    dean = _binding_id(client, settings, "冯主任", "dean")
+    statements, stop = _capture_sql(db)
+    try:
+        assert client.delete(f"{API}/roles/{dean}", headers=h).status_code == 204
+        assert not any("pg_advisory_xact_lock" in s for s in statements)
+        assert client.delete(f"{API}/roles/{it_admin}", headers=h).status_code == 204
+    finally:
+        stop()
+    lock_at = [i for i, s in enumerate(statements) if "pg_advisory_xact_lock" in s]
+    count_at = [i for i, s in enumerate(statements) if "count(distinct" in s.lower()]
+    assert len(lock_at) == 1 and count_at and lock_at[0] < count_at[0]
