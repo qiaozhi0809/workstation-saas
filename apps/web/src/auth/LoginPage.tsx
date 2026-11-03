@@ -33,7 +33,7 @@ export default function LoginPage() {
     setPending(true)
     try {
       const res = await authApi.login(loginName.trim(), password)
-      if (res.user.contexts.length === 0 && !res.user.must_change_password) {
+      if (res.user.contexts.length === 0) {
         setError(NO_IDENTITY)
         setPending(false)
         return

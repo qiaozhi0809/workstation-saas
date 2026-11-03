@@ -68,7 +68,7 @@ export default function TeacherLayout() {
       <AccountMenu
         name={user?.display_name}
         onLogout={logout}
-        switchTo={user?.contexts.includes('admin') ? { label: '切换到管理端', to: '/admin' } : undefined}
+        switchTo={user?.contexts.includes('admin') ? { label: '切换到管理端', to: '/admin', context: 'admin' as const } : undefined}
       />
     </>
   )

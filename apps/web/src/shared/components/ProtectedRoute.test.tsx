@@ -52,3 +52,16 @@ it('redirects to /change-password when the password must be changed', () => {
   )
   expect(screen.getByText('change pw')).toBeInTheDocument()
 })
+
+it('redirects an account with no contexts to /login', () => {
+  useAuthStore.getState().setTokens('a', 'r', { id: 'u', display_name: 't', contexts: [], admin_perms: [], must_change_password: false })
+  render(
+    <MemoryRouter initialEntries={['/private']}>
+      <Routes>
+        <Route path="/login" element={<div>login page</div>} />
+        <Route path="/private" element={<ProtectedRoute context="admin"><div>secret</div></ProtectedRoute>} />
+      </Routes>
+    </MemoryRouter>,
+  )
+  expect(screen.getByText('login page')).toBeInTheDocument()
+})

@@ -23,7 +23,7 @@ export default function AdminLayout({ pages = ADMIN_PAGES }: { pages?: AdminPage
     navigate('/login', { replace: true })
   }
 
-  const switchTo = user?.contexts.includes('teacher') ? { label: '切换到教师端', to: '/teacher' } : undefined
+  const switchTo = user?.contexts.includes('teacher') ? { label: '切换到教师端', to: '/teacher', context: 'teacher' as const } : undefined
 
   return (
     <AppShell

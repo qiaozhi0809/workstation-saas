@@ -61,3 +61,13 @@ it('on success refetches me and goes home', async () => {
   expect(authApi.changePassword).toHaveBeenCalledWith({ old_password: 'old', new_password: 'abc12345', refresh_token: 'rt' })
   await waitFor(() => expect(useAuthStore.getState().user?.must_change_password).toBe(false))
 })
+
+it('falls back to a local flag reset when me() fails after the password changed', async () => {
+  vi.mocked(authApi.changePassword).mockResolvedValue(undefined)
+  vi.mocked(authApi.me).mockRejectedValue(new Error('net'))
+  renderPage()
+  fill('old', 'abc12345', 'abc12345')
+  expect(await screen.findByText('teacher home')).toBeInTheDocument()
+  expect(screen.queryByText('修改失败,请稍后再试')).toBeNull()
+  expect(useAuthStore.getState().user?.must_change_password).toBe(false)
+})

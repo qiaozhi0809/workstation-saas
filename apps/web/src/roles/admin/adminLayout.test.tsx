@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { Building2, Users } from 'lucide-react'
@@ -71,4 +71,14 @@ it('hides the school name when it fails to load', async () => {
   renderAt('/admin')
   await screen.findByText('org page')
   expect(screen.queryByText('虚构实验学校')).toBeNull()
+})
+
+it('switches to the teacher side and remembers it', async () => {
+  setUser(['admin', 'teacher'], ['org.manage'])
+  renderAt('/admin')
+  await screen.findByText('org page')
+  fireEvent.click(screen.getByRole('button', { name: '账号菜单' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: '切换到教师端' }))
+  expect(await screen.findByText('teacher home')).toBeInTheDocument()
+  expect(useAuthStore.getState().lastContext).toBe('teacher')
 })

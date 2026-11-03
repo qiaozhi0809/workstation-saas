@@ -95,4 +95,5 @@ it('auth store: setUser 与 lastContext 持久字段', () => {
   expect(useAuthStore.getState().user?.id).toBe('u9')
   useAuthStore.getState().setLastContext('admin')
   expect(useAuthStore.getState().lastContext).toBe('admin')
+  expect(JSON.parse(localStorage.getItem('ws-auth') ?? '{}').state.lastContext).toBe('admin')
 })
