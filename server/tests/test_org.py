@@ -4,7 +4,7 @@ from uuid import UUID
 from sqlalchemy import select, text
 
 from app.domain.comments.service import semester_of
-from app.models import AcademicYear, RoleBinding, SchoolClass
+from app.models import AcademicYear, ClassBoard, RoleBinding, SchoolClass, SeatArrangement
 from tests.helpers import audit_rows, auth
 from tests.seed_ids import CLASS_ID, GRADE_ID, SCHOOL_ID, TEACHER_USER_ID, YEAR_ID
 
@@ -205,3 +205,15 @@ def test_delete_class_with_data_rejected(client, db, settings):
     assert open_bindings == []
     assert _actions(db, cls["id"], "org.class_delete")
     assert client.get(f"{API}/classes/{cls['id']}", headers=h).status_code == 404
+
+
+def test_delete_class_cascades_seat_snapshots_and_board(client, db, settings):
+    cls = _create_class(client, settings, GRADE_ID, "三年六班")
+    cid = UUID(cls["id"])
+    db.add(SeatArrangement(class_id=cid, version=1, seat_rows=6, seat_cols=8, layout=[]))
+    db.add(ClassBoard(class_id=cid))
+    db.flush()
+    res = client.delete(f"{API}/classes/{cid}", headers=auth(settings, PRINCIPAL))
+    assert res.status_code == 204
+    for model in (SeatArrangement, ClassBoard):
+        assert db.scalars(select(model).where(model.class_id == cid)).all() == []
