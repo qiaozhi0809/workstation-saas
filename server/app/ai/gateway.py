@@ -115,6 +115,8 @@ def release_lock(redis: Redis, key: str, token: str) -> None:
 
 
 async def stream_provider(ctx: GenContext, prep: Prepared, state: GenState) -> AsyncIterator[bytes]:
+    """只产出 delta 事件;结局记在 ``state``(done / error),终结事件由 ``generation_events``
+    在落库、释放锁之后再发,这样前端收到 done / error 时数据与锁都已就绪。"""
     client = make_client(ctx.cfg, ctx.transport)
     restorer = prep.masker.restorer()
     try:
@@ -130,16 +132,17 @@ async def stream_provider(ctx: GenContext, prep: Prepared, state: GenState) -> A
                     state.completion_tokens = ev.completion_tokens
     except AIUpstreamError as e:
         state.status, state.error_code, state.error = "error", e.code, e.message
-        tail = restorer.flush()
-        if tail:
-            yield sse("delta", {"text": tail})
-        yield sse("error", {"code": e.code, "message": e.message})
-        return
-    state.status = "done"
+    else:
+        state.status = "done"
     tail = restorer.flush()
     if tail:
         yield sse("delta", {"text": tail})
-    yield sse("done", {"status": "done"})
+
+
+def _final_event(state: GenState) -> bytes:
+    if state.status == "error":
+        return sse("error", {"code": state.error_code, "message": state.error})
+    return sse("done", {"status": state.status})
 
 
 # ---------------------------------------------------------------- 生命周期
@@ -195,6 +198,21 @@ def _finalize(
         s.commit()
 
 
+async def _finalize_and_unlock(
+    ctx: GenContext,
+    prep: Prepared | None,
+    state: GenState,
+    save: Callable[[Session, Prepared, GenState], None],
+) -> None:
+    with anyio.CancelScope(shield=True):
+        try:
+            await anyio.to_thread.run_sync(partial(_finalize, ctx, prep, state, save))
+        finally:
+            await anyio.to_thread.run_sync(
+                partial(release_lock, ctx.redis, ctx.lock_key, ctx.lock_token)
+            )
+
+
 async def generation_events(
     ctx: GenContext,
     prepare: Callable[[Session], Prepared],
@@ -202,6 +220,7 @@ async def generation_events(
 ) -> AsyncIterator[bytes]:
     state = GenState()
     prep: Prepared | None = None
+    finalized = False
     try:
         prep = await anyio.to_thread.run_sync(partial(_run_prepare, ctx, prepare))
         yield sse("meta", prep.meta)
@@ -209,6 +228,10 @@ async def generation_events(
         async with contextlib.aclosing(inner):
             async for chunk in inner:
                 yield chunk
+        # 先落库、释放锁,再告诉前端结束了
+        finalized = True
+        await _finalize_and_unlock(ctx, prep, state, save)
+        yield _final_event(state)
     except (GeneratorExit, anyio.get_cancelled_exc_class()):
         if state.status == "streaming":
             state.status = "stopped"
@@ -216,15 +239,13 @@ async def generation_events(
     except Exception:
         log.exception("ai_generation_failed", chat_id=str(ctx.chat_id))
         state.status, state.error_code, state.error = "error", "AI_UPSTREAM", GENERIC_ERROR
-        yield sse("error", {"code": state.error_code, "message": GENERIC_ERROR})
+        if not finalized:
+            finalized = True
+            await _finalize_and_unlock(ctx, prep, state, save)
+        yield _final_event(state)
     finally:
-        with anyio.CancelScope(shield=True):
-            try:
-                await anyio.to_thread.run_sync(partial(_finalize, ctx, prep, state, save))
-            finally:
-                await anyio.to_thread.run_sync(
-                    partial(release_lock, ctx.redis, ctx.lock_key, ctx.lock_token)
-                )
+        if not finalized:
+            await _finalize_and_unlock(ctx, prep, state, save)
 
 
 # ---------------------------------------------------------------- reply

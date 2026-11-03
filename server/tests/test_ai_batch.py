@@ -6,11 +6,13 @@ from sqlalchemy import select
 
 from app.ai.gateway import acquire_lock, run_item_events
 from app.models import AiBatchItem, Enrollment
+from tests.fake_llm import sse_transport
 from tests.helpers import auth, freeze
 from tests.seed_ids import CLASS_ID, EXAM_IDS, STUDENT_IDS, SUBJECT_USER_ID
 from tests.test_ai_chats import (
     CHATS,
     _ctx,
+    _state_at_final_event,
     configure_ai,
     create,
     generate_audits,
@@ -236,3 +238,19 @@ def test_run_item_student_left_class(client, settings, db, redis_client):
     assert r.status_code == 400 and err["code"] == "AI_FIELD_INVALID"
     assert err["details"]["field"] == "students"
     assert redis_client.exists(f"ai:chat:{chat['id']}") == 0
+
+
+def test_item_done_and_error_events_after_save_and_unlock(client, settings, db, redis_client):
+    configure_ai(db, settings)
+    for final, kw, status in (("done", {}, "done"), ("error", {"fail_after": 1}, "err")):
+        chat = create(client, settings, comments_body(STUDENT_IDS[:2]))
+        item_id = chat["items"][0]["id"]
+        ctx = _ctx(client, settings, db, redis_client, chat["id"], ["甲", "乙"])
+        ctx.transport = sse_transport(["甲", "乙"], **kw)
+        seen = _state_at_final_event(
+            client, settings, db, redis_client, chat["id"],
+            lambda c, i=item_id: run_item_events(c, UUID(i)), ctx, final,
+        )  # fmt: skip
+        assert seen["chat"]["items"][0]["status"] == status, final
+        assert seen["lock"] == 0 and seen["audits"] == 1
+        assert len(generate_audits(db, chat["id"])) == 1

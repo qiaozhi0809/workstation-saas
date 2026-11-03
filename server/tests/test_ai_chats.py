@@ -534,3 +534,50 @@ def test_forced_mask_applies_to_chat_created_unmasked(client, settings, db):
     assert generate_audits(db, chat["id"])[0].extra["masked"] is True
     got = get_chat(client, settings, chat["id"]).json()
     assert got["messages"][-1]["content"] == "王小一很棒"
+
+
+def _state_at_final_event(client, settings, db, redis_client, chat_id, events_fn, ctx, final):
+    """逐个读事件;收到 done / error 的当下立刻查库与锁。"""
+    seen: dict = {}
+
+    async def drive():
+        agen = events_fn(ctx)
+        async for chunk in agen:
+            if chunk.startswith(f"event: {final}".encode()):
+                db.expire_all()
+                seen["chat"] = get_chat(client, settings, chat_id).json()
+                seen["lock"] = redis_client.exists(f"ai:chat:{chat_id}")
+                seen["audits"] = len(generate_audits(db, chat_id))
+        await agen.aclose()
+
+    asyncio.run(drive())
+    return seen
+
+
+def test_reply_done_event_after_save_and_unlock(client, settings, db, redis_client):
+    configure_ai(db, settings)
+    chat = create(client, settings, parent_body())
+    ctx = _ctx(client, settings, db, redis_client, chat["id"], ["第一段", "第二段"])
+    seen = _state_at_final_event(
+        client, settings, db, redis_client, chat["id"],
+        lambda c: reply_events(c, AiReplyIn()), ctx, "done",
+    )  # fmt: skip
+    msg = seen["chat"]["messages"][1]
+    assert (msg["status"], msg["content"]) == ("done", "第一段第二段")
+    assert seen["lock"] == 0 and seen["audits"] == 1
+    assert len(generate_audits(db, chat["id"])) == 1
+
+
+def test_reply_error_event_after_save_and_unlock(client, settings, db, redis_client):
+    configure_ai(db, settings)
+    for kw, code in (({"fail_after": 1}, "AI_UNREACHABLE"), ({"status": 401}, "AI_KEY_INVALID")):
+        chat = create(client, settings, parent_body())
+        ctx = _ctx(client, settings, db, redis_client, chat["id"], ["你好", "世界"])
+        ctx.transport = sse_transport(["你好", "世界"], **kw)
+        seen = _state_at_final_event(
+            client, settings, db, redis_client, chat["id"],
+            lambda c: reply_events(c, AiReplyIn()), ctx, "error",
+        )  # fmt: skip
+        assert seen["chat"]["messages"][1]["status"] == "error", code
+        assert seen["lock"] == 0 and seen["audits"] == 1
+        assert len(generate_audits(db, chat["id"])) == 1
