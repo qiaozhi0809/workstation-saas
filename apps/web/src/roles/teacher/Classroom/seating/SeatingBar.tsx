@@ -64,11 +64,19 @@ export default function SeatingBar(p: SeatingBarProps) {
   return (
     <div className="flex flex-wrap items-center gap-1.5 text-sm">
       <Button type="button" variant="outline" disabled={p.busy} onClick={p.onShuffle}>随机打乱</Button>
-      <Button type="button" variant="outline" disabled={p.busy} onClick={p.onPair}>男女同桌</Button>
-      <Button type="button" variant="outline" disabled={p.busy || !p.canMentor} title={p.canMentor ? undefined : '还没有考试成绩'}
-        onClick={p.onMentor}>优带弱</Button>
+      {p.deskSize !== 1 && (
+        <Button type="button" variant="outline" disabled={p.busy} onClick={p.onPair}>男女同桌</Button>
+      )}
+      {p.deskSize !== 1 && (
+        <Button type="button" variant="outline" disabled={p.busy || !p.canMentor} title={p.canMentor ? undefined : '还没有考试成绩'}
+          onClick={p.onMentor}>优带弱</Button>
+      )}
       <Button type="button" variant="outline" disabled={p.busy || !p.canUndo} onClick={p.onUndo}
         aria-label="撤销" title="撤销" size="icon"><Undo2 aria-hidden /></Button>
+      {p.onOpenLayout && (
+        <Button type="button" variant="outline" disabled={p.busy || p.layoutBlocked}
+          title={p.layoutBlocked ? '先保存或放弃当前的座位修改' : undefined} onClick={p.onOpenLayout}>桌椅排列</Button>
+      )}
       <Button type="button" disabled={p.busy || !p.dirty} onClick={p.onSave}>保存座位</Button>
       {p.conflict && <ConflictDialog onReload={p.onReload} onKeepEditing={p.onKeepEditing} />}
     </div>

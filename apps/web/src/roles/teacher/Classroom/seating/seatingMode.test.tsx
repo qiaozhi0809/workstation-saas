@@ -1,4 +1,5 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { render } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { ApiError } from '@/shared/api/client'
 import { classesApi } from '@/shared/api/classes'
@@ -9,6 +10,9 @@ import { studentsApi } from '@/shared/api/students'
 import { useTeacherStore } from '@/shared/stores/teacher'
 import type { SeatingSaved } from '@/shared/types/seating'
 import type { StudentSeat } from '@/shared/types/student'
+import SeatingBar, { type SeatingBarProps } from './SeatingBar'
+import { seatingPrintHtml } from './printSeating'
+import type { DraftStudent } from './draft'
 import { classFixture, defaultApiMocks, rosterFixture, setup, summaryFixture } from '../pageTestUtils'
 
 vi.mock('@/shared/api/classes')
@@ -513,4 +517,66 @@ it('runs mentor seating from the bar', async () => {
   expect(screen.getByRole('region', { name: '待安排 (0)' })).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: '撤销' }))
   expect(screen.getByRole('region', { name: '待安排 (1)' })).toBeInTheDocument()
+})
+
+const barProps = (over: Partial<SeatingBarProps> = {}): SeatingBarProps => ({
+  deskSize: 2, onOpenLayout: vi.fn(), layoutBlocked: false, canUndo: false, dirty: false, busy: false, selected: null,
+  conflict: false, onShuffle: vi.fn(), onPair: vi.fn(), onMentor: vi.fn(), canMentor: true, onUndo: vi.fn(), onDiscard: vi.fn(),
+  onToggleLock: vi.fn(), onPrint: vi.fn(), onSave: vi.fn(), onReload: vi.fn(), onKeepEditing: vi.fn(), ...over,
+})
+
+it('opens the desk layout from the bar and blocks it while the draft is dirty', () => {
+  const props = barProps()
+  const { rerender } = render(<SeatingBar {...props} />)
+  fireEvent.click(screen.getByRole('button', { name: '桌椅排列' }))
+  expect(props.onOpenLayout).toHaveBeenCalledTimes(1)
+  // 草稿有未保存的修改(layoutBlocked = dirty)时:禁用并说明原因
+  rerender(<SeatingBar {...props} layoutBlocked dirty />)
+  const blocked = screen.getByRole('button', { name: '桌椅排列' })
+  expect(blocked).toBeDisabled()
+  expect(blocked).toHaveAttribute('title', '先保存或放弃当前的座位修改')
+  // 页面没有提供入口时不渲染按钮
+  rerender(<SeatingBar {...props} onOpenLayout={undefined} />)
+  expect(screen.queryByRole('button', { name: '桌椅排列' })).toBeNull()
+})
+
+it('hides pair buttons for single desks', async () => {
+  vi.mocked(classesApi.mine).mockResolvedValue({ items: [{ ...classFixture, desk_size: 1 }] })
+  setup({ mode: '排座' })
+  expect(await screen.findByRole('button', { name: '随机打乱' })).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '男女同桌' })).toBeNull()
+  expect(screen.queryByRole('button', { name: '优带弱' })).toBeNull()
+})
+
+const ps = (name: string, no: string, row: number, col: number): DraftStudent =>
+  ({ enrollmentId: name, name, studentNo: no, gender: null, row, col, locked: false })
+
+it('prints podium seats, desk gaps, room and student numbers', () => {
+  const html = seatingPrintHtml({ className: '三年二班', schoolName: '示例小学', room: '求知楼 201', today: '2026-11-03',
+    grid: { rows: 1, cols: 6, deskSize: 3, podiumLeft: 2, podiumRight: 1 },
+    students: [ps('甲', '001', 0, -2), ps('乙', '002', 1, 1)] })
+  expect(html).toContain('<h1>三年二班 座位表</h1>')
+  expect(html).toContain('示例小学 · 求知楼 201 · 2026-11-03 · 讲台在上方')
+  // 讲台左外侧座位的人在"讲台"之前(左边)
+  expect(html.indexOf('甲')).toBeLessThan(html.indexOf('讲台</div>'))
+  // 6 列 / 三人桌 = 2 张桌,中间 1 条过道
+  expect(html.match(/class="gap"/g)).toHaveLength(1)
+  expect(html).toContain('乙<small>002</small>')
+  expect(html).toContain('>空<')
+})
+
+it('prints only the podium when there are no podium seats, and omits empty header parts', () => {
+  const html = seatingPrintHtml({ className: 'c', schoolName: '', room: '', today: '2026-11-03',
+    grid: { rows: 1, cols: 2, deskSize: 1, podiumLeft: 0, podiumRight: 0 }, students: [] })
+  expect(html).toContain('2026-11-03 · 讲台在上方')
+  expect(html.match(/讲台<\/div>/g)).toHaveLength(1)
+  expect(html).not.toContain('class="seat"')
+})
+
+it('escapes names in the printout', () => {
+  const html = seatingPrintHtml({ className: 'c', schoolName: '', room: '', today: '2026-11-03',
+    grid: { rows: 1, cols: 2, deskSize: 2, podiumLeft: 0, podiumRight: 0 }, students: [ps('<b>x</b>', '<i>', 1, 1)] })
+  expect(html).toContain('&lt;b&gt;x&lt;/b&gt;')
+  expect(html).not.toContain('<b>x</b>')
+  expect(html).toContain('&lt;i&gt;')
 })

@@ -1,7 +1,6 @@
 import type { DeskGrid } from '@/shared/lib/seats'
 import { genderPairSeats, mentorSeats, shuffleSeats } from './algorithms'
 import { draftReducer, initDraft, isDirty, occupantAt, toSavePayload, type DraftStudent } from './draft'
-import { seatingPrintHtml } from './printSeating'
 
 const lcg = (seed = 1) => () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646
 const st = (id: string, gender: DraftStudent['gender'], row: number | null, col: number | null,
@@ -137,6 +136,8 @@ describe('podium seats and k-seat desks', () => {
     const out = mentorSeats(six(), grid(2, 3, 3), ranks, lcg(4))
     const rankSet = (row: number) => out.filter((x) => x.row === row).map((x) => ranks.get(x.enrollmentId)!).sort((a, b) => a - b)
     expect([rankSet(1), rankSet(2)].sort((x, y) => x[0] - y[0])).toEqual([[1, 4, 6], [2, 3, 5]])
+    expect(out).toHaveLength(6)
+    expect(new Set(out.map((x) => `${x.row},${x.col}`)).size).toBe(6)
     // 名次居中的那位坐在三个座位的正中
     for (const row of [1, 2]) {
       const mid = out.find((x) => x.row === row && x.col === 2)!
@@ -154,6 +155,8 @@ describe('podium seats and k-seat desks', () => {
         const seq = [1, 2, 3].map((col) => out.find((x) => x.row === row && x.col === col)!.gender).join()
         expect(['male,female,male', 'female,male,female']).toContain(seq)
       }
+      expect(new Set(out.map((x) => `${x.row},${x.col}`)).size).toBe(6)
+      expect(new Set(out.map((x) => x.enrollmentId)).size).toBe(6)
     }
   })
 
@@ -178,6 +181,18 @@ describe('podium seats and k-seat desks', () => {
     }
   })
 
+  it('pairs genders without losing anyone when counts are unbalanced (4 boys, 2 girls, k=3)', () => {
+    const students = [...['m1', 'm2', 'm3', 'm4'].map((id) => st(id, 'male', null, null)),
+      ...['f1', 'f2'].map((id) => st(id, 'female', null, null))]
+    for (const seed of [1, 5, 9]) {
+      const out = genderPairSeats(students, grid(2, 3, 3), lcg(seed))
+      expect(out).toHaveLength(6)
+      expect(out.every((x) => x.row !== null && x.col !== null)).toBe(true)
+      expect(new Set(out.map((x) => `${x.row},${x.col}`)).size).toBe(6)
+      expect(new Set(out.map((x) => x.enrollmentId)).size).toBe(6)
+    }
+  })
+
   it('saves podium seats first with current grid dims', () => {
     const d = initDraft({ grid: g3, baseVersion: 2, students: [st('a', null, 1, 1), st('p', null, 0, -1)] })
     const payload = toSavePayload(d)
@@ -189,22 +204,6 @@ describe('podium seats and k-seat desks', () => {
     const d = initDraft({ grid: g3, baseVersion: 2, students: [{ ...st('a', null, 1, 1), studentNo: '2026009' }] })
     expect(d.students[0].studentNo).toBe('2026009')
     expect(isDirty(d, d)).toBe(false)
-  })
-})
-
-describe('print', () => {
-  it('prints an escaped seating chart with aisles', () => {
-    const html = seatingPrintHtml({ className: '三年二班', rows: 2, cols: 4,
-      students: [st('<b>x</b>', null, 1, 1)] })
-    expect(html).toContain('三年二班')
-    expect(html).toContain('讲台')
-    expect(html).toContain('&lt;b&gt;x&lt;/b&gt;')
-    expect(html.match(/class="gap"/g)).toHaveLength(2)
-  })
-
-  it('inserts two aisles per row for five columns', () => {
-    const html = seatingPrintHtml({ className: 'c', rows: 1, cols: 5, students: [] })
-    expect(html.match(/class="gap"/g)).toHaveLength(2)
   })
 })
 

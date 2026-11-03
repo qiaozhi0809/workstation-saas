@@ -231,7 +231,14 @@ export function useSeatingMode(o: Options) {
     onUndo: () => dispatch({ type: 'undo' }),
     onDiscard: () => dispatch({ type: 'reset', draft: drafts.original }),
     onToggleLock: () => { if (selectedSeated) dispatch({ type: 'toggleLock', enrollmentId: selectedSeated.enrollmentId }) },
-    onPrint: () => printSeating(seatingPrintHtml({ className: o.className, rows: draft.grid.rows, cols: draft.grid.cols, students: draft.students })),
+    onPrint: () => {
+      const summary = qc.getQueryData<ClassroomSummary>(['classroom', classId])
+      const cls = qc.getQueryData<{ items: ClassView[] }>(['my-classes'])?.items.find((c) => c.id === classId)
+      printSeating(seatingPrintHtml({
+        className: o.className, schoolName: summary?.school_name ?? '', room: cls?.room ?? '', today: summary?.today ?? '',
+        grid: draft.grid, students: draft.students,
+      }))
+    },
     onSave: () => void save(),
     onReload: () => { setConflict(false); void load() },
     onKeepEditing: () => setConflict(false),
