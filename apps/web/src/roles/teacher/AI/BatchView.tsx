@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { aiApi } from '@/shared/api/ai'
+import { ApiError } from '@/shared/api/client'
 import { commentsApi } from '@/shared/api/comments'
 import { Markdown } from '@/shared/components/Markdown'
 import { toast } from '@/shared/components/Toast'
@@ -35,17 +36,22 @@ export default function BatchView({ chat, classId, perms }: Props) {
   const done = items.filter((i) => i.status === 'done')
   const pending = items.some((i) => i.status === 'wait' || i.status === 'err')
   const canSave = chat.save_as === 'comment' && perms.includes('comment.write')
+  // 本页已保存过的条目:再点「全部保存」时不重复写入(只在本次打开期间有效)
+  const [saved, setSaved] = useState<Set<string>>(() => new Set())
+  const markSaved = (ids: string[]) => setSaved((s) => new Set([...s, ...ids]))
+  const unsaved = done.filter((i) => !saved.has(i.id))
 
   const saveAll = useMutation({
-    mutationFn: () => commentsApi.bulk(classId, {
-      items: done.map((i) => ({ student_id: i.student_id, content: i.content })),
+    mutationFn: (batch: AiBatchItem[]) => commentsApi.bulk(classId, {
+      items: batch.map((i) => ({ student_id: i.student_id, content: i.content })),
       generated_by_ai: true,
     }),
-    onSuccess: (r) => {
+    onSuccess: (r, batch) => {
       toast(`已保存 ${r.created} 条评语`)
-      for (const i of done) void qc.invalidateQueries({ queryKey: ['comments', i.student_id] })
+      markSaved(batch.map((i) => i.id))
+      for (const i of batch) void qc.invalidateQueries({ queryKey: ['comments', i.student_id] })
     },
-    onError: () => toast('保存失败,请重试'),
+    onError: (e) => toast(e instanceof ApiError ? e.message : '保存失败,请重试'),
   })
 
   const openPrompt = () => {
@@ -74,9 +80,9 @@ export default function BatchView({ chat, classId, perms }: Props) {
         ) : pending ? (
           <Button size="sm" onClick={start}>{done.length > 0 || items.some((i) => i.status === 'err') ? '继续生成' : '开始生成'}</Button>
         ) : null}
-        {canSave && done.length > 0 && (
-          <Button size="sm" variant="outline" disabled={saveAll.isPending} onClick={() => saveAll.mutate()}>
-            全部保存到档案
+        {canSave && unsaved.length > 0 && (
+          <Button size="sm" variant="outline" disabled={saveAll.isPending} onClick={() => saveAll.mutate(unsaved)}>
+            {saved.size === 0 ? '全部保存到档案' : `保存其余 ${unsaved.length} 条`}
           </Button>
         )}
       </div>
@@ -96,6 +102,8 @@ export default function BatchView({ chat, classId, perms }: Props) {
             live={item.id === currentId}
             liveText={liveText}
             canSave={canSave}
+            saved={saved.has(item.id)}
+            onSaved={() => markSaved([item.id])}
           />
         ))}
       </ul>
@@ -104,11 +112,13 @@ export default function BatchView({ chat, classId, perms }: Props) {
   )
 }
 
-function ItemCard({ item, live, liveText, canSave }: {
+function ItemCard({ item, live, liveText, canSave, saved, onSaved }: {
   item: AiBatchItem
   live: boolean
   liveText: string
   canSave: boolean
+  saved: boolean
+  onSaved(): void
 }) {
   const qc = useQueryClient()
   const status: AiItemStatus = live ? 'run' : item.status
@@ -117,9 +127,10 @@ function ItemCard({ item, live, liveText, canSave }: {
     mutationFn: () => commentsApi.create(item.student_id, { content: item.content, generated_by_ai: true }),
     onSuccess: () => {
       toast('已保存到档案的评语')
+      onSaved()
       void qc.invalidateQueries({ queryKey: ['comments', item.student_id] })
     },
-    onError: () => toast('保存失败,请重试'),
+    onError: (e) => toast(e instanceof ApiError ? e.message : '保存失败,请重试'),
   })
   const { label, variant } = STATUS[status]
   return (
@@ -140,7 +151,9 @@ function ItemCard({ item, live, liveText, canSave }: {
             )
           }}>复制</Button>
           {canSave && (
-            <Button size="sm" variant="ghost" disabled={save.isPending} onClick={() => save.mutate()}>保存到档案</Button>
+            <Button size="sm" variant="ghost" disabled={save.isPending || saved} onClick={() => save.mutate()}>
+              {saved ? '已保存' : '保存到档案'}
+            </Button>
           )}
         </div>
       )}

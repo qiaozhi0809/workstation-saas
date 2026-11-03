@@ -185,4 +185,79 @@ describe('BatchView', () => {
     expect(await screen.findByText('连接中断了,可以点「继续生成」')).toBeInTheDocument()
     expect(calls).toHaveLength(1)
   })
+
+  it('F1: save-all twice only sends newly finished items; per-item button becomes 已保存', async () => {
+    setServer([item(1, { status: 'done', content: '甲' }), item(2, { status: 'err', error: '额度' })])
+    vi.mocked(commentsApi.bulk).mockResolvedValue({ created: 1 })
+    vi.mocked(commentsApi.create).mockResolvedValue({} as never)
+    const calls = controlledRun()
+    page()
+    fireEvent.click(await screen.findByRole('button', { name: '全部保存到档案' }))
+    await waitFor(() => expect(commentsApi.bulk).toHaveBeenCalledTimes(1))
+    await screen.findByText('已保存 1 条评语')
+    expect(screen.queryByRole('button', { name: /保存其余/ })).not.toBeInTheDocument()
+    const card1 = screen.getByText('学生1').closest('li') as HTMLElement
+    expect(within(card1).getByRole('button', { name: '已保存' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: '继续生成' }))
+    await waitFor(() => expect(calls).toHaveLength(1))
+    finish(calls[0], '乙')
+    fireEvent.click(await screen.findByRole('button', { name: '保存其余 1 条' }))
+    await waitFor(() => expect(commentsApi.bulk).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(commentsApi.bulk).mock.calls[1][1]).toEqual({
+      items: [{ student_id: 's2', content: '乙' }], generated_by_ai: true,
+    })
+  })
+
+  it('F1: a single saved item is disabled afterwards and excluded from save-all', async () => {
+    setServer([item(1, { status: 'done', content: '甲' }), item(2, { status: 'done', content: '乙' })])
+    vi.mocked(commentsApi.create).mockResolvedValue({} as never)
+    vi.mocked(commentsApi.bulk).mockResolvedValue({ created: 1 })
+    page()
+    const card = (await screen.findByText('学生1')).closest('li') as HTMLElement
+    fireEvent.click(within(card).getByRole('button', { name: '保存到档案' }))
+    expect(await within(card).findByRole('button', { name: '已保存' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: '保存其余 1 条' }))
+    await waitFor(() => expect(commentsApi.bulk).toHaveBeenCalled())
+    expect(vi.mocked(commentsApi.bulk).mock.calls[0][1].items).toEqual([{ student_id: 's2', content: '乙' }])
+  })
+
+  it('M3: flushes the buffered tail when the item finishes before the next tick', async () => {
+    const calls = controlledRun()
+    page()
+    fireEvent.click(await screen.findByRole('button', { name: '开始生成' }))
+    await waitFor(() => expect(calls).toHaveLength(1))
+    vi.mocked(aiApi.getChat).mockReturnValue(new Promise(() => {}))
+    act(() => { calls[0].h.onDelta('尾巴文字'); calls[0].h.onDone?.({} as never); calls[0].resolve() })
+    expect(await screen.findByText('尾巴文字')).toBeInTheDocument()
+  })
+
+  it.each(['AI_KEY_INVALID', 'AI_QUOTA', 'AI_MODEL_NOT_FOUND', 'AI_UNREACHABLE'])(
+    'M4: %s ends the loop and toasts the message', async (code) => {
+      const calls = controlledRun()
+      page()
+      fireEvent.click(await screen.findByRole('button', { name: '开始生成' }))
+      await waitFor(() => expect(calls).toHaveLength(1))
+      setServer([item(1, { status: 'err', error: '额度不足' }), item(2), item(3)])
+      act(() => { calls[0].h.onError?.({ code, message: '服务商拒绝了请求' }); calls[0].resolve() })
+      expect((await screen.findAllByText('服务商拒绝了请求')).length).toBeGreaterThan(0)
+      await screen.findByRole('button', { name: '继续生成' })
+      expect(calls).toHaveLength(1)
+    })
+
+  it('M4: a transient provider error continues with the next item', async () => {
+    const calls = controlledRun()
+    page()
+    fireEvent.click(await screen.findByRole('button', { name: '开始生成' }))
+    await waitFor(() => expect(calls).toHaveLength(1))
+    act(() => { calls[0].h.onError?.({ code: 'AI_UPSTREAM', message: '上游出错' }); calls[0].resolve() })
+    await waitFor(() => expect(calls).toHaveLength(2))
+  })
+
+  it('M6: bulk save failure shows the server message', async () => {
+    setServer([item(1, { status: 'done', content: '甲' })])
+    vi.mocked(commentsApi.bulk).mockRejectedValue(new ApiError(403, 'FORBIDDEN', '没有评语权限'))
+    page()
+    fireEvent.click(await screen.findByRole('button', { name: '全部保存到档案' }))
+    expect(await screen.findByText('没有评语权限')).toBeInTheDocument()
+  })
 })

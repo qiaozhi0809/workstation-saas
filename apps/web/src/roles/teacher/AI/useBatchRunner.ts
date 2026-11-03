@@ -11,6 +11,8 @@ const ABORT_REFETCH_MS = 500
 const BROKEN = '连接中断了,可以点「继续生成」'
 
 type Outcome = 'next' | 'end'
+/** 服务商层面的永久性错误:继续跑后面的条目只会重复失败 */
+const PERMANENT = new Set(['AI_KEY_INVALID', 'AI_QUOTA', 'AI_MODEL_NOT_FOUND', 'AI_UNREACHABLE'])
 
 /**
  * 批量生成:开始时给 wait / err 的条目拍一张快照,按顺序一次一条地跑(一遍里失败的不重试);
@@ -68,7 +70,10 @@ export function useBatchRunner(chat: AiChat) {
       await aiApi.runItem(chat.id, itemId, {
         onDelta: (t) => { buf.current += t },
         onDone: () => { finished = true },
-        onError: () => { finished = true },
+        onError: (e) => {
+          finished = true
+          if (PERMANENT.has(e.code)) { outcome = 'end'; toast(e.message) }
+        },
       }, mine.signal)
       if (!finished) { toast(BROKEN); outcome = 'end' }
     } catch (e) {
@@ -81,6 +86,7 @@ export function useBatchRunner(chat: AiChat) {
       } else toast(BROKEN)
     }
     clearTimer()
+    if (mounted.current) setLiveText(buf.current)
     ctrl.current = null
     if (aborted) await new Promise((r) => setTimeout(r, ABORT_REFETCH_MS))
     if (mounted.current) {
