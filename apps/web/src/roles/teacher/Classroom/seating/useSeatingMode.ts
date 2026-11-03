@@ -177,7 +177,9 @@ export function useSeatingMode(o: Options) {
     } catch (err) {
       if (err instanceof ApiError && err.code === 'SEAT_VERSION_CONFLICT') setConflict(true)
       else if (err instanceof ApiError && err.code === 'SEAT_INVALID') {
-        toast('学生名单有变化,已重新加载')
+        const reason = (err.details as { reason?: string } | undefined)?.reason
+        toast(reason === 'layout_mismatch' || reason === 'podium_unavailable'
+          ? '班级的桌椅排列已变化,已重新加载' : '学生名单有变化,已重新加载')
         await load()
       } else toast(err instanceof Error ? err.message : '保存失败')
     } finally {

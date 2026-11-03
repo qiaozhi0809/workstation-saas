@@ -6,7 +6,7 @@ import type { DeskSize } from '@/shared/types/seating'
 import type { DraftStudent } from './draft'
 
 export interface SeatingBarProps {
-  /** 每桌几人(桌椅排列对话框的入口在 Task 9 接上) */
+  /** 每桌几人 */
   deskSize: DeskSize
   onOpenLayout?: () => void
   /** 有未保存的草稿时,不能改桌椅排列 */

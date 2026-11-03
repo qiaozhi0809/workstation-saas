@@ -1,6 +1,7 @@
-import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
-import { render } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
+import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { ApiError } from '@/shared/api/client'
 import { classesApi } from '@/shared/api/classes'
 import { classroomApi } from '@/shared/api/classroom'
@@ -12,6 +13,7 @@ import type { SeatingSaved } from '@/shared/types/seating'
 import type { StudentSeat } from '@/shared/types/student'
 import SeatingBar, { type SeatingBarProps } from './SeatingBar'
 import { seatingPrintHtml } from './printSeating'
+import { useSeatingMode } from './useSeatingMode'
 import type { DraftStudent } from './draft'
 import { classFixture, defaultApiMocks, rosterFixture, setup, summaryFixture } from '../pageTestUtils'
 
@@ -570,7 +572,9 @@ it('prints only the podium when there are no podium seats, and omits empty heade
     grid: { rows: 1, cols: 2, deskSize: 1, podiumLeft: 0, podiumRight: 0 }, students: [] })
   expect(html).toContain('2026-11-03 · 讲台在上方')
   expect(html.match(/讲台<\/div>/g)).toHaveLength(1)
-  expect(html).not.toContain('class="seat"')
+  // 2 列 1 排 = 2 个空座(class 是 "seat e"),讲台行没有任何座位格
+  expect(html.match(/class="seat/g)).toHaveLength(2)
+  expect(html).not.toContain('class="ps')
 })
 
 it('escapes names in the printout', () => {
@@ -579,4 +583,80 @@ it('escapes names in the printout', () => {
   expect(html).toContain('&lt;b&gt;x&lt;/b&gt;')
   expect(html).not.toContain('<b>x</b>')
   expect(html).toContain('&lt;i&gt;')
+})
+
+const gaps = (cols: number, deskSize: 1 | 2 | 3) =>
+  (seatingPrintHtml({ className: 'c', schoolName: '', room: '', today: 't',
+    grid: { rows: 1, cols, deskSize, podiumLeft: 0, podiumRight: 0 }, students: [] }).match(/class="gap"/g) ?? []).length
+
+it('orders podium seats outward-to-inward on the left and inward-to-outward on the right', () => {
+  const html = seatingPrintHtml({ className: 'c', schoolName: '', room: '', today: 't',
+    grid: { rows: 1, cols: 2, deskSize: 2, podiumLeft: 2, podiumRight: 2 },
+    students: [ps('左二', '1', 0, -2), ps('左一', '2', 0, -1), ps('右一', '3', 0, 1), ps('右二', '4', 0, 2)] })
+  const at = (n: string) => html.indexOf(n)
+  expect(at('左二')).toBeLessThan(at('左一'))
+  expect(at('左一')).toBeLessThan(html.indexOf('讲台</div>'))
+  expect(html.indexOf('讲台</div>')).toBeLessThan(at('右一'))
+  expect(at('右一')).toBeLessThan(at('右二'))
+})
+
+it('puts a gap only after each desk, never after the last column', () => {
+  expect(gaps(5, 2)).toBe(2) // 列 2、4 后
+  expect(gaps(6, 2)).toBe(2) // 列 6 是最后一列,不插
+  expect(gaps(5, 3)).toBe(1) // 只有列 3 后
+  expect(gaps(6, 3)).toBe(1)
+  expect(gaps(4, 1)).toBe(3) // 单人桌:每列后都插,最后一列除外
+})
+
+it('drives layoutBlocked, print data and reload through useSeatingMode', async () => {
+  vi.mocked(classesApi.mine).mockResolvedValue({ items: [{ ...classFixture, room: '求知楼 201' }] })
+  vi.mocked(classroomApi.summary).mockResolvedValue(summaryFixture({ today: '2026-11-03' }))
+  vi.mocked(studentsApi.listInClass).mockResolvedValue({ items: roster })
+  act(() => { useTeacherStore.setState({ classId: 'c1' }) })
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  let current!: ReturnType<typeof useSeatingMode>
+  function Probe() {
+    useQuery({ queryKey: ['my-classes'], queryFn: classesApi.mine })
+    useQuery({ queryKey: ['class-students', 'c1'], queryFn: () => studentsApi.listInClass('c1') })
+    useQuery({ queryKey: ['classroom', 'c1'], queryFn: () => classroomApi.summary('c1') })
+    current = useSeatingMode({ classId: 'c1', className: '三年二班', enabled: true, onOpenLayout: () => {} })
+    return null
+  }
+  const router = createMemoryRouter([{ path: '/', element: <Probe /> }])
+  render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>)
+  await waitFor(() => expect(current.ready).toBe(true))
+  if (!current.ready) throw new Error('not ready')
+  expect(current.bar.layoutBlocked).toBe(false)
+
+  const seat = (id: string) => roster.find((r) => r.enrollment_id === id)!
+  act(() => current.onSeatClick?.(seat('e1')))
+  act(() => current.onSeatClick?.(seat('e2')))
+  if (!current.ready) throw new Error('not ready')
+  expect(current.dirty).toBe(true)
+  expect(current.bar?.layoutBlocked).toBe(true)
+
+  // 打印用的是缓存里的学校、教室与日期
+  const win = { document: { write: vi.fn(), close: vi.fn() }, focus: vi.fn(), print: vi.fn() }
+  vi.spyOn(window, 'open').mockReturnValue(win as unknown as Window)
+  act(() => current.bar?.onPrint())
+  const html = String(win.document.write.mock.calls[0][0])
+  expect(html).toContain('示例小学 · 求知楼 201 · 2026-11-03 · 讲台在上方')
+
+  // reload 重新拉取并丢掉草稿
+  const before = vi.mocked(studentsApi.listInClass).mock.calls.length
+  await act(async () => { await current.reload() })
+  expect(vi.mocked(studentsApi.listInClass).mock.calls.length).toBeGreaterThan(before)
+  await waitFor(() => expect(current.dirty).toBe(false))
+  if (!current.ready) throw new Error('not ready')
+  expect(current.bar.layoutBlocked).toBe(false)
+})
+
+it.each(['layout_mismatch', 'podium_unavailable'])('says the layout changed on SEAT_INVALID (%s)', async (reason) => {
+  vi.mocked(seatingApi.save).mockRejectedValue(new ApiError(400, 'SEAT_INVALID', 'x', { reason }))
+  setup({ mode: '排座' })
+  fireEvent.click(await screen.findByRole('button', { name: /^王小一，/ }))
+  fireEvent.click(screen.getByRole('button', { name: /^李小二，/ }))
+  fireEvent.click(screen.getByRole('button', { name: '保存座位' }))
+  expect(await screen.findByText('班级的桌椅排列已变化,已重新加载')).toBeInTheDocument()
+  expect(screen.queryByText('学生名单有变化,已重新加载')).toBeNull()
 })
