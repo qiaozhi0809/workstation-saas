@@ -141,7 +141,34 @@ describe('AiThreadPage streaming', () => {
     fireEvent.click(within(dlg).getByRole('button', { name: '关闭' }))
     fireEvent.click(screen.getByRole('button', { name: '重试' }))
     await waitFor(() => expect(calls).toHaveLength(2))
-    expect(calls[1].body).toEqual({ regenerate: true })
+    expect(calls[1].body).toEqual({ text: '再来' })
+    expect(aiApi.chatPrompt).toHaveBeenCalled()
+  })
+
+  it('retries a persisted error reply with regenerate', async () => {
+    const calls = controlledReply()
+    vi.mocked(aiApi.getChat).mockResolvedValue(chatFixture({
+      messages: [userMsg, msg({ id: 'm2', role: 'assistant', status: 'error', error: '密钥无效' })],
+    }))
+    thread()
+    expect(await screen.findByText('密钥无效')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '重试' }))
+    await waitFor(() => expect(calls).toHaveLength(1))
+    expect(calls[0].body).toEqual({ regenerate: true })
+  })
+
+  it('retries an unanswered user message with an empty body', async () => {
+    const calls = controlledReply()
+    vi.mocked(aiApi.getChat).mockResolvedValue(chatFixture({ messages: [userMsg] }))
+    thread()
+    const box = await screen.findByLabelText('继续追问…')
+    type(box, '再来')
+    fireEvent.keyDown(box, { key: 'Enter' })
+    await waitFor(() => expect(calls).toHaveLength(1))
+    act(() => { calls[0].h.onError?.({ code: 'X', message: '出错了' }); calls[0].resolve() })
+    fireEvent.click(await screen.findByRole('button', { name: '重试' }))
+    await waitFor(() => expect(calls).toHaveLength(2))
+    expect(calls[1].body).toEqual({})
   })
 
   it('reports a stream that ends silently as a broken connection', async () => {
@@ -245,11 +272,31 @@ describe('AiThreadPage toolbar and composer', () => {
     await waitFor(() => expect(calls).toHaveLength(1))
     expect(calls[0].body).toEqual({ text: '再短一点' })
     expect(await screen.findByText('再短一点')).toBeInTheDocument()
+    act(() => calls[0].h.onDelta('新回复'))
+    await screen.findByText(/新回复/)
+    expect(screen.getByText('开场')).toBeInTheDocument()
     act(() => { calls[0].h.onDone?.({ status: 'done' }); calls[0].resolve() })
     await waitFor(() => expect(screen.queryByRole('button', { name: '停止' })).not.toBeInTheDocument())
     fireEvent.click(await screen.findByRole('button', { name: '重新生成' }))
     await waitFor(() => expect(calls).toHaveLength(2))
     expect(calls[1].body).toEqual({ regenerate: true })
+  })
+
+  it('accepts a new request right after a stream ends and clears the box only when accepted', async () => {
+    const calls = controlledReply()
+    thread()
+    const box = await screen.findByLabelText('继续追问…')
+    type(box, '第一问')
+    fireEvent.keyDown(box, { key: 'Enter' })
+    await waitFor(() => expect(calls).toHaveLength(1))
+    vi.mocked(aiApi.getChat).mockReturnValue(new Promise(() => {}))
+    act(() => { calls[0].h.onDone?.({ status: 'done' }); calls[0].resolve() })
+    await waitFor(() => expect(screen.queryByRole('button', { name: '停止' })).not.toBeInTheDocument())
+    type(box, '第二问')
+    fireEvent.keyDown(box, { key: 'Enter' })
+    await waitFor(() => expect(calls).toHaveLength(2))
+    expect(calls[1].body).toEqual({ text: '第二问' })
+    expect(box).toHaveValue('')
   })
 
   it('exports the whole chat and a single message to Word', async () => {

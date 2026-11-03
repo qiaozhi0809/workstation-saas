@@ -11,7 +11,7 @@ import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { Button } from '@/shared/components/ui/button'
 import { exportWord } from '@/shared/lib/exportWord'
 import { useTeacherStore } from '@/shared/stores/teacher'
-import type { AiChat, AiPrompt } from '@/shared/types/ai'
+import type { AiChat, AiPrompt, AiReplyInput } from '@/shared/types/ai'
 import ClassGate, { type ClassContext } from '../ClassGate'
 import CopyPromptDialog from './CopyPromptDialog'
 import MessageItem, { AssistantIcon, ErrorBox } from './MessageItem'
@@ -71,7 +71,7 @@ function Thread({ ctx, chat, chatId }: { ctx: ClassContext; chat: AiChat; chatId
   const location = useLocation()
   const qc = useQueryClient()
   const status = useQuery({ queryKey: ['ai-status'], queryFn: aiApi.status })
-  const { streaming, text, error, start, stop } = useAiStream(chatId, ctx.cls.id)
+  const { streaming, text, error, lastBody, start, stop } = useAiStream(chatId, ctx.cls.id)
   const [pendingUser, setPendingUser] = useState<string | null>(null)
   const [prompt, setPrompt] = useState<AiPrompt | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -80,8 +80,8 @@ function Thread({ ctx, chat, chatId }: { ctx: ClassContext; chat: AiChat; chatId
   const live = streaming || text !== ''
   const all = chat.messages
   const last = all[all.length - 1]
-  // 生成中,最后一条助手回复(重新生成时)由流式气泡代替
-  const shown = live && last?.role === 'assistant' ? all.slice(0, -1) : all
+  // 只有"重新生成"时,最后一条助手回复才由流式气泡代替;追问时旧回复保留
+  const shown = live && lastBody?.regenerate && last?.role === 'assistant' ? all.slice(0, -1) : all
 
   // ?go=1:最后一条是还没回复的用户消息时自动开始,只一次
   useEffect(() => {
@@ -113,8 +113,19 @@ function Thread({ ctx, chat, chatId }: { ctx: ClassContext; chat: AiChat; chatId
   const openPrompt = () => {
     aiApi.chatPrompt(chatId).then(setPrompt, () => toast('获取提示词失败,请重试'))
   }
-  const send = (t: string) => { setPendingUser(t); start({ text: t }) }
-  const retry = () => start({ regenerate: true })
+  const run = (body: AiReplyInput): boolean => {
+    const ok = start(body)
+    if (ok) setPendingUser(body.text ?? null)
+    return ok
+  }
+  const send = (t: string) => run({ text: t })
+  // 重试:按重新取到的对话末尾和上一次请求决定怎么重来,避免误删好回复或丢掉追问
+  const retry = () => {
+    if (last?.role === 'user') run({})
+    else if (last && (last.status === 'error' || last.status === 'streaming')) run({ regenerate: true })
+    else if (lastBody?.text) run({ text: lastBody.text })
+    else run({ regenerate: true })
+  }
 
   const exportAll = () => {
     const md = all.map((m) => (m.role === 'user' ? `**老师:**${m.content}` : m.content)).join('\n\n---\n\n')
@@ -151,7 +162,7 @@ function Thread({ ctx, chat, chatId }: { ctx: ClassContext; chat: AiChat; chatId
             perms={ctx.perms}
             today={ctx.summary.today}
             canRegenerate={!chat.batch_only && !live && i === shown.length - 1}
-            onRegenerate={retry}
+            onRegenerate={() => run({ regenerate: true })}
             onRetry={retry}
             onCopyPrompt={openPrompt}
           />

@@ -6,15 +6,15 @@ import { Textarea } from '@/shared/components/ui/textarea'
 /** 对话底部的追问输入框:Enter 发送 / Shift+Enter 换行 / 输入法组合中不处理;生成中显示"停止"。 */
 export default function ThreadComposer({ streaming, onSend, onStop }: {
   streaming: boolean
-  onSend(text: string): void
+  /** 返回 false = 请求被拒绝,输入框内容保留 */
+  onSend(text: string): boolean | void
   onStop(): void
 }) {
   const [value, setValue] = useState('')
   const trimmed = value.trim()
   const send = () => {
     if (streaming || !trimmed) return
-    onSend(trimmed)
-    setValue('')
+    if (onSend(trimmed) !== false) setValue('')
   }
   return (
     <div className="flex items-end gap-2 border-t border-border bg-background p-3">

@@ -23,6 +23,7 @@ export function useAiStream(chatId: string, classId: string) {
   const [streaming, setStreaming] = useState(false)
   const [text, setText] = useState('')
   const [error, setError] = useState<AiStreamError | null>(null)
+  const [lastBody, setLastBody] = useState<AiReplyInput | null>(null)
   const buf = useRef('')
   const ctrl = useRef<AbortController | null>(null)
   const timer = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -46,13 +47,15 @@ export function useAiStream(chatId: string, classId: string) {
     }
   }, [])
 
-  const start = useCallback((body: AiReplyInput) => {
-    if (ctrl.current) return
+  /** 返回 false 表示上一次生成还没结束,这次请求被拒绝。 */
+  const start = useCallback((body: AiReplyInput): boolean => {
+    if (ctrl.current) return false
     const mine = new AbortController()
     ctrl.current = mine
     buf.current = ''
     setText('')
     setError(null)
+    setLastBody(body)
     setStreaming(true)
     timer.current = setInterval(() => setText(buf.current), FLUSH_MS)
 
@@ -82,6 +85,8 @@ export function useAiStream(chatId: string, classId: string) {
       })
       .then(async () => {
         clearTimer()
+        // 流一结束就释放,之后(含中止后的延迟刷新期间)可以立刻开始下一次
+        if (ctrl.current === mine) ctrl.current = null
         setStreaming(false)
         if (streamError) setError(streamError)
         setText(neverStarted ? '' : buf.current)
@@ -90,13 +95,15 @@ export function useAiStream(chatId: string, classId: string) {
           qc.invalidateQueries({ queryKey: ['ai-chat', chatId] }),
           qc.invalidateQueries({ queryKey: ['ai-chats', classId] }),
         ])
-        ctrl.current = null
-        buf.current = ''
-        setText('')
+        if (ctrl.current === null) {
+          buf.current = ''
+          setText('')
+        }
       })
+    return true
   }, [chatId, classId, qc])
 
   const stop = useCallback(() => { ctrl.current?.abort() }, [])
 
-  return { streaming, text, error, start, stop }
+  return { streaming, text, error, lastBody, start, stop }
 }
