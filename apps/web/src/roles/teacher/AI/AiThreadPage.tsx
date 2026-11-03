@@ -13,6 +13,7 @@ import { exportWord } from '@/shared/lib/exportWord'
 import { useTeacherStore } from '@/shared/stores/teacher'
 import type { AiChat, AiPrompt, AiReplyInput } from '@/shared/types/ai'
 import ClassGate, { type ClassContext } from '../ClassGate'
+import BatchView from './BatchView'
 import CopyPromptDialog from './CopyPromptDialog'
 import MessageItem, { AssistantIcon, ErrorBox } from './MessageItem'
 import StatusPill from './StatusPill'
@@ -63,7 +64,7 @@ function ThreadBody({ ctx }: { ctx: ClassContext }) {
       />
     )
   }
-  return <Thread ctx={ctx} chat={chat} chatId={chatId} />
+  return <Thread key={chatId} ctx={ctx} chat={chat} chatId={chatId} />
 }
 
 function Thread({ ctx, chat, chatId }: { ctx: ClassContext; chat: AiChat; chatId: string }) {
@@ -85,10 +86,11 @@ function Thread({ ctx, chat, chatId }: { ctx: ClassContext; chat: AiChat; chatId
 
   // ?go=1:最后一条是还没回复的用户消息时自动开始,只一次
   useEffect(() => {
+    if (chat.batch_only) return // 批量对话的 go=1 由 useBatchRunner 处理
     if (goHandled.current) return
     if (new URLSearchParams(location.search).get('go') !== '1') return
     goHandled.current = true
-    if (!chat.batch_only && last?.role === 'user') start({})
+    if (last?.role === 'user') start({})
     navigate({ pathname: location.pathname }, { replace: true })
   }, [chat.batch_only, last?.role, location.pathname, location.search, navigate, start])
 
@@ -153,7 +155,6 @@ function Thread({ ctx, chat, chatId }: { ctx: ClassContext; chat: AiChat; chatId
       </header>
 
       <div ref={scrollRef} data-testid="thread-scroll" className="min-h-0 flex-1 space-y-4 overflow-y-auto px-3 py-4">
-        {/* 批量对话(Task 20)在这里用批量视图替换消息列表 */}
         {shown.map((m, i) => (
           <MessageItem
             key={m.id}
@@ -167,6 +168,7 @@ function Thread({ ctx, chat, chatId }: { ctx: ClassContext; chat: AiChat; chatId
             onCopyPrompt={openPrompt}
           />
         ))}
+        {chat.batch_only && <BatchView chat={chat} classId={ctx.cls.id} perms={ctx.perms} />}
         {pendingUser !== null && live && (
           <div className="flex justify-end">
             <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl bg-muted px-3 py-2 text-sm text-foreground">{pendingUser}</div>
