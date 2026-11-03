@@ -523,3 +523,12 @@ it('colors the hover card avatar with the map group of three-seat desks and podi
   const card2 = await hoverCard(container, '0-1')
   expect(card2.innerHTML).toContain('#8b7cf6')
 })
+
+it('falls back to double desks when the class has no desk size yet', async () => {
+  const { desk_size: _drop, ...legacy } = classFixture
+  vi.mocked(classesApi.mine).mockResolvedValue({ items: [legacy as typeof classFixture] })
+  const { container } = setup({ roster: [{ ...rosterFixture[0], seat_row: 1, seat_col: 1 }] })
+  await screen.findByRole('button', { name: /^王小一，/ })
+  const card = await hoverCard(container, '1-1')
+  expect(card.innerHTML).toContain('#3fb8a9')
+})

@@ -143,8 +143,9 @@ function ClassroomView({ cls }: { cls: ClassView }) {
     [cls.name, today, summary.data, roster.data, reviewSummary.data],
   )
   // 小组序号与地图着色一致:随桌型、列数,讲台左边第一组、右边最后一组
+  // 接口还没带 desk_size 时(后端晚于前端上线)按双人桌算,避免小组序号成 NaN 让头像取色崩溃
   const seatGroup = useCallback(
-    (s: StudentSeat) => groupOf(s.seat_col ?? 1, cls.desk_size, cls.seat_cols, s.seat_row ?? 1),
+    (s: StudentSeat) => groupOf(s.seat_col ?? 1, cls.desk_size ?? 2, cls.seat_cols, s.seat_row ?? 1),
     [cls.desk_size, cls.seat_cols],
   )
   const figure = preferences.data?.teacher_figure ?? 'female'
