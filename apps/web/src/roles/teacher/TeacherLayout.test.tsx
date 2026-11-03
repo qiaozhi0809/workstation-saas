@@ -266,3 +266,17 @@ it('shows the room after the grade, and no stray separators without a room', asy
   renderLayout()
   expect(await screen.findByText('三年级 · 2026-2027 第 10 周')).toBeInTheDocument()
 })
+
+it('offers 切换到管理端 only to dual-identity users', async () => {
+  vi.mocked(classesApi.mine).mockResolvedValue({ items: [cls('a', '三年二班', 'homeroom_teacher')] })
+  const first = renderLayout()
+  await screen.findByText('三年二班')
+  openAccount()
+  expect(screen.queryByRole('menuitem', { name: '切换到管理端' })).toBeNull()
+  first.unmount()
+  useAuthStore.setState({ user: { id: 'u1', display_name: '王老师', contexts: ['teacher', 'admin'], admin_perms: [], must_change_password: false } })
+  renderLayout()
+  await screen.findByText('三年二班')
+  openAccount()
+  expect(screen.getByRole('menuitem', { name: '切换到管理端' })).toBeInTheDocument()
+})

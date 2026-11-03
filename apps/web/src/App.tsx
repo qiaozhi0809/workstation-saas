@@ -5,7 +5,11 @@ import {
 import { FileQuestion } from 'lucide-react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClient } from '@/shared/api/queryClient'
+import ChangePasswordPage from '@/auth/ChangePasswordPage'
 import LoginPage from '@/auth/LoginPage'
+import AdminHome from '@/roles/admin/AdminHome'
+import AdminLayout from '@/roles/admin/AdminLayout'
+import { ADMIN_PAGES } from '@/roles/admin/pages'
 import TeacherLayout from '@/roles/teacher/TeacherLayout'
 import ClassroomPage from '@/roles/teacher/Classroom/ClassroomPage'
 import AnalysisPage from '@/roles/teacher/Analysis/AnalysisPage'
@@ -31,7 +35,7 @@ function StudentRedirect() {
 const routes = createRoutesFromElements(
   <>
     <Route path="/login" element={<LoginPage />} />
-    <Route path="/teacher" element={<ProtectedRoute><TeacherLayout /></ProtectedRoute>}>
+    <Route path="/teacher" element={<ProtectedRoute context="teacher"><TeacherLayout /></ProtectedRoute>}>
       <Route index element={<Navigate to="classroom" replace />} />
       <Route path="classroom" element={<ClassroomPage />} />
       <Route path="preferences" element={<PreferencesPage />} />
@@ -45,7 +49,11 @@ const routes = createRoutesFromElements(
     {ClassroomPlayground && (
       <Route path="/dev/classroom" element={<Suspense fallback={null}><ClassroomPlayground /></Suspense>} />
     )}
-    <Route path="/admin" element={<EmptyState title="管理端(M3)" className="h-full justify-center p-6" />} />
+    <Route path="/change-password" element={<ChangePasswordPage />} />
+    <Route path="/admin" element={<ProtectedRoute context="admin"><AdminLayout /></ProtectedRoute>}>
+      <Route index element={<AdminHome />} />
+      {ADMIN_PAGES.map((p) => <Route key={p.path} path={p.path} element={p.element} />)}
+    </Route>
     <Route path="/parent" element={<EmptyState title="家长端(M4)" className="h-full justify-center p-6" />} />
     <Route path="/" element={<Navigate to="/login" replace />} />
     <Route

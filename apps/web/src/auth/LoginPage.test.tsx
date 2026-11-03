@@ -108,3 +108,49 @@ it('marks the submit button busy while signing in', async () => {
   expect(busy).toBeDisabled()
   expect(busy).toHaveAttribute('aria-busy', 'true')
 })
+
+const loginAs = async (user: Partial<User>, lastContext: 'teacher' | 'admin' | null = null) => {
+  useAuthStore.setState({ lastContext })
+  vi.mocked(authApi.login).mockResolvedValue({
+    access_token: 'a', refresh_token: 'r', expires_at: 'x',
+    user: { id: 'u', display_name: 't', contexts: ['teacher'], admin_perms: [], must_change_password: false, ...user },
+  })
+  render(
+    <MemoryRouter initialEntries={['/login']}>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/teacher" element={<div>teacher home</div>} />
+        <Route path="/admin" element={<div>admin home</div>} />
+        <Route path="/change-password" element={<div>change pw</div>} />
+      </Routes>
+    </MemoryRouter>,
+  )
+  fill('u', 'pw')
+}
+
+it('sends a principal to /admin', async () => {
+  await loginAs({ contexts: ['admin'], admin_perms: ['school.view'] })
+  expect(await screen.findByText('admin home')).toBeInTheDocument()
+})
+
+it('sends a teacher to /teacher', async () => {
+  await loginAs({ contexts: ['teacher'] })
+  expect(await screen.findByText('teacher home')).toBeInTheDocument()
+})
+
+it('sends a dual-identity user to the last used context', async () => {
+  await loginAs({ contexts: ['teacher', 'admin'] }, 'admin')
+  expect(await screen.findByText('admin home')).toBeInTheDocument()
+})
+
+it('sends a user who must change password to /change-password', async () => {
+  await loginAs({ must_change_password: true })
+  expect(await screen.findByText('change pw')).toBeInTheDocument()
+})
+
+it('stays on the login page with a hint when the account has no identity', async () => {
+  await loginAs({ contexts: [] })
+  expect(await screen.findByRole('alert')).toHaveTextContent('这个账号还没有分配身份,请联系学校信息中心')
+  expect(screen.queryByText('teacher home')).toBeNull()
+  expect(useAuthStore.getState().accessToken).toBeNull()
+})

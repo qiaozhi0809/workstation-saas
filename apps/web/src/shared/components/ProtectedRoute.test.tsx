@@ -39,3 +39,16 @@ it('navigates to /login when the token is cleared while mounted', () => {
   act(() => useAuthStore.getState().logout())
   expect(screen.getByText('login page')).toBeInTheDocument()
 })
+
+it('redirects to /change-password when the password must be changed', () => {
+  useAuthStore.getState().setTokens('a', 'r', { id: 'u', display_name: 't', contexts: ['teacher'], admin_perms: [], must_change_password: true })
+  render(
+    <MemoryRouter initialEntries={['/private']}>
+      <Routes>
+        <Route path="/change-password" element={<div>change pw</div>} />
+        <Route path="/private" element={<ProtectedRoute><div>secret</div></ProtectedRoute>} />
+      </Routes>
+    </MemoryRouter>,
+  )
+  expect(screen.getByText('change pw')).toBeInTheDocument()
+})
