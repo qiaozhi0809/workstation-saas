@@ -1,9 +1,19 @@
 name: CI
 
+# 纯文档改动不跑 CI。main 目前没开分支保护;以后若把 CI 设为必须通过的检查,
+# 要改成任务级跳过(否则纯文档 PR 会一直等待检查)。
 on:
   pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - 'reference-html/**'
   push:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - 'reference-html/**'
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
