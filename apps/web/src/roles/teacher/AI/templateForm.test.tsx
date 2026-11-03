@@ -1,7 +1,8 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { aiApi } from '@/shared/api/ai'
 import { ApiError } from '@/shared/api/client'
+import { useAuthStore } from '@/shared/stores/auth'
 import { examsApi } from '@/shared/api/exams'
 import type { AiChat } from '@/shared/types/ai'
 import AiHomePage from './AiHomePage'
@@ -200,5 +201,18 @@ describe('AI status failure', () => {
     click(screen.getByRole('button', { name: '重试' }))
     await waitFor(() => expect(screen.queryByText('AI 状态加载失败')).toBeNull())
     expect(await screen.findByText('DeepSeek · deepseek-flash')).toBeInTheDocument()
+  })
+})
+
+describe('home greeting', () => {
+  it.each([
+    ['王', '王老师,今天想做点什么?'],
+    ['王老师', '王老师,今天想做点什么?'],
+    ['', '老师您好,今天想做点什么?'],
+  ])('greets display name %j as %s', async (display_name, text) => {
+    // 先让用户为空,避免 setupAi 的默认姓名先渲染
+    setupAi({ element: <AiHomePage /> })
+    act(() => useAuthStore.setState({ user: { id: 'u1', display_name } }))
+    expect(await screen.findByText(text)).toBeInTheDocument()
   })
 })

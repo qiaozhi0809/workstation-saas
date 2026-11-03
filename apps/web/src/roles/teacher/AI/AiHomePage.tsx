@@ -16,7 +16,8 @@ import { useTemplateEntry } from './useTemplateEntry'
 
 /** AI 助手首页:问候与状态、自由输入、模板卡片、最近对话。需要本班 ai.use 权限。 */
 export default function AiHomePage() {
-  const name = useAuthStore((s) => s.user?.display_name ?? '')
+  const name = useAuthStore((s) => s.user?.display_name ?? '').trim()
+  const greeting = name === '' ? '老师您好' : name.endsWith('老师') ? name : `${name}老师`
   const status = useQuery({ queryKey: ['ai-status'], queryFn: aiApi.status })
 
   return (
@@ -24,7 +25,7 @@ export default function AiHomePage() {
       {({ cls, summary, perms }) => (
         <div className="mx-auto max-w-3xl space-y-6 p-4">
           <div className="flex flex-wrap items-center gap-3">
-            <p className="text-lg font-semibold text-foreground">{name}老师,今天想做点什么?</p>
+            <p className="text-lg font-semibold text-foreground">{greeting},今天想做点什么?</p>
             <StatusPill status={status.data} />
             {status.isError && (
               <span className="inline-flex items-center gap-2 text-xs text-destructive">
