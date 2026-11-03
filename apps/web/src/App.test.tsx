@@ -55,7 +55,7 @@ describe('App routing', () => {
       window.history.pushState({}, '', '/teacher/ai')
       const { unmount } = render(<App />)
       expect(await screen.findByRole('heading', { level: 1, name: 'AI 助手' })).toBeInTheDocument()
-      expect(await screen.findByRole('heading', { level: 2, name: 'AI 助手' })).toBeInTheDocument()
+      expect(await screen.findByText('王老师老师,今天想做点什么?')).toBeInTheDocument()
       unmount()
       window.history.pushState({}, '', '/teacher/ai/chat-1')
       render(<App />)
