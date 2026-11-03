@@ -1,6 +1,8 @@
+import base64
 import io
 from dataclasses import dataclass
 
+import pytest
 from sqlalchemy import select
 
 from app.cli import ai_config as run_ai_config
@@ -14,6 +16,11 @@ from tests.helpers import auth
 class CliResult:
     code: int
     text: str
+
+
+@pytest.fixture(autouse=True)
+def _cli_settings(monkeypatch, settings):
+    monkeypatch.setattr("app.cli.get_settings", lambda: settings)
 
 
 def run_cli(db, argv, stdin="", transport=None) -> CliResult:
@@ -93,9 +100,57 @@ def test_provider_change_resets_preset(db):
     _set_deepseek(db)
     out = run_cli(db, ["ai-config", "set", "--provider", "qwen"])
     assert out.code == 0 and "模型:qwen-plus" in out.text
-    assert "API Key:已设置(…0000)" in out.text  # Key 保留
+    assert "API Key:未设置" in out.text  # 换服务商,旧 Key 清除
+    assert "已更换服务商或地址,原 API Key 已清除,请用 --api-key-stdin 重新设置" in out.text
     out = run_cli(db, ["ai-config", "set", "--provider", "deepseek", "--model", "m2"])
     assert "模型:m2" in out.text
+
+
+def test_provider_switch_with_new_key_keeps_new_key(db):
+    _set_deepseek(db)
+    out = run_cli(
+        db, ["ai-config", "set", "--provider", "qwen", "--api-key-stdin"], stdin="sk-test-1111\n"
+    )
+    assert "API Key:已设置(…1111)" in out.text and "已更换" not in out.text
+
+
+def test_base_url_host_change_drops_key(db):
+    _set_deepseek(db)
+    out = run_cli(db, ["ai-config", "set", "--base-url", "https://evil.example.test/v1"])
+    assert "API Key:未设置" in out.text and "原 API Key 已清除" in out.text
+
+
+def test_model_only_change_keeps_key(db):
+    _set_deepseek(db)
+    out = run_cli(db, ["ai-config", "set", "--model", "m2"])
+    assert "API Key:已设置(…0000)" in out.text and "已更换" not in out.text
+
+
+def test_hint_shown_when_model_empty(db):
+    out = run_cli(db, ["ai-config", "set", "--provider", "doubao"])
+    assert out.text.strip().splitlines()[-1].startswith("提示:模型名填方舟控制台")
+    assert "提示:" in run_cli(db, ["ai-config", "show"]).text
+
+
+def test_wrong_master_key_does_not_lock_out(db, client, settings, monkeypatch):
+    _set_deepseek(db)
+    other = settings.model_copy(update={"master_key": base64.b64encode(b"b" * 32).decode()})
+    monkeypatch.setattr("app.cli.get_settings", lambda: other)
+    app_dep = client.app.dependency_overrides
+    from app.config import settings_dep
+
+    app_dep[settings_dep] = lambda: other
+    try:
+        st = client.get("/api/v1/ai/status", headers=auth(settings))
+        assert st.status_code == 200 and st.json()["configured"] is False
+    finally:
+        app_dep.pop(settings_dep, None)
+    shown = run_cli(db, ["ai-config", "show"])
+    assert shown.code == 0 and "API Key:无法解密(主密钥可能已更换),请重新设置" in shown.text
+    assert run_cli(db, ["ai-config", "test"]).code == 1
+    fixed = run_cli(db, ["ai-config", "set", "--api-key-stdin"], stdin="sk-test-2222\n")
+    assert fixed.code == 0 and "API Key:已设置(…2222)" in fixed.text
+    assert run_cli(db, ["ai-config", "clear"]).code == 0
 
 
 def test_empty_stdin_key_deletes_key(db):
@@ -137,16 +192,22 @@ def test_config_audited_without_key(db):
     run_cli(db, ["ai-config", "set", "--temperature", "0.3"])
     run_cli(db, ["ai-config", "clear"])
     rows = list(db.scalars(select(AuditLog).where(AuditLog.action == "ai.config")).all())
-    assert len(rows) == 3
+    assert len(rows) == 3  # at 同一事务内相同,按内容而非顺序断言
     assert all(r.user_id is None and r.extra["via"] == "cli" for r in rows)
-    assert rows[0].extra == {
+    extras = [r.extra for r in rows]
+    assert {
         "provider": "deepseek",
         "model": "deepseek-flash",
         "key_changed": True,
         "via": "cli",
-    }
-    assert rows[1].extra["key_changed"] is False
-    assert rows[2].extra == {"cleared": True, "via": "cli"}
+    } in extras
+    assert {
+        "provider": "deepseek",
+        "model": "deepseek-flash",
+        "key_changed": False,
+        "via": "cli",
+    } in extras
+    assert {"cleared": True, "via": "cli"} in extras
     assert "sk-test-0000" not in str([r.extra for r in rows])
 
 

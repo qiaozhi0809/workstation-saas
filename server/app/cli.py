@@ -7,6 +7,7 @@ from contextlib import AbstractContextManager
 from dataclasses import replace
 from pathlib import Path
 from typing import TextIO
+from urllib.parse import urlparse
 
 import httpx
 from sqlalchemy import create_engine, text
@@ -18,6 +19,7 @@ from app.ai.settings import (
     AIConfig,
     clear_ai_config,
     is_ready,
+    key_undecryptable,
     load_ai_config,
     make_client,
     save_ai_config,
@@ -46,7 +48,7 @@ def seed_dev() -> str:
         engine.dispose()
 
 
-def _show(cfg: AIConfig | None) -> None:
+def _show(cfg: AIConfig | None, *, undecryptable: bool = False) -> None:
     if cfg is None:
         print("尚未配置 AI 服务")
         return
@@ -55,8 +57,14 @@ def _show(cfg: AIConfig | None) -> None:
     print(f"地址:{cfg.base_url}")
     print(f"模型:{cfg.model}")
     print(f"temperature:{cfg.temperature}")
-    print(f"API Key:已设置(…{cfg.api_key[-4:]})" if cfg.api_key else "API Key:未设置")
+    if undecryptable:
+        print("API Key:无法解密(主密钥可能已更换),请重新设置")
+    else:
+        print(f"API Key:已设置(…{cfg.api_key[-4:]})" if cfg.api_key else "API Key:未设置")
     print(f"强制隐去姓名:{'是' if cfg.mask_forced else '否'}")
+    preset = PRESETS.get(cfg.provider)
+    if preset and preset.hint and (not is_ready(cfg) or not cfg.model):
+        print(f"提示:{preset.hint}")
 
 
 def _usage_error(msg: str) -> int:
@@ -87,8 +95,14 @@ def _set(ns: argparse.Namespace, db: Session, key: bytes, school_id) -> int:
         temperature=base.temperature if ns.temperature is None else ns.temperature,
         mask_forced=base.mask_forced if ns.mask_forced is None else ns.mask_forced,
     )
+    dropped = False
     if ns.api_key_stdin:
         cfg = replace(cfg, api_key=ns.stdin_key or None)
+    elif old is not None and cfg.api_key:
+        host = urlparse(cfg.base_url).hostname
+        if provider != old.provider or host != urlparse(old.base_url).hostname:
+            cfg = replace(cfg, api_key=None)  # 不把旧 Key 发给新服务商/新地址
+            dropped = True
     if provider == "custom" and not (cfg.base_url and cfg.model):
         return _usage_error("自定义服务商必须同时提供 --base-url 和 --model")
     save_ai_config(db, school_id, key, cfg)
@@ -106,6 +120,8 @@ def _set(ns: argparse.Namespace, db: Session, key: bytes, school_id) -> int:
     )
     db.commit()
     print("已保存")
+    if dropped:
+        print("已更换服务商或地址,原 API Key 已清除,请用 --api-key-stdin 重新设置")
     _show(cfg)
     return 0
 
@@ -136,9 +152,11 @@ def ai_config(
     with db_factory() as db:
         if ns.action == "set":
             return _set(ns, db, key, school_id)
-        cfg = load_ai_config(db, school_id, key)
         if ns.action == "show":
-            _show(cfg)
+            _show(
+                load_ai_config(db, school_id, key),
+                undecryptable=key_undecryptable(db, school_id, key),
+            )
             return 0
         if ns.action == "clear":
             clear_ai_config(db, school_id)
@@ -152,6 +170,7 @@ def ai_config(
             db.commit()
             print("已清除")
             return 0
+        cfg = load_ai_config(db, school_id, key)
     # test
     if cfg is None or not is_ready(cfg):
         print("尚未配置 AI 服务或配置不完整")

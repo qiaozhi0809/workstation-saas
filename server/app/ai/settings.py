@@ -3,14 +3,17 @@ from urllib.parse import urlparse
 from uuid import UUID
 
 import httpx
+import structlog
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.ai.client import OpenAICompatClient
-from app.crypto import decrypt, encrypt
+from app.crypto import CryptoError, decrypt, encrypt
 from app.models import SchoolSetting
 
 _KEY = "ai"
+
+log = structlog.get_logger()
 
 
 @dataclass
@@ -35,14 +38,34 @@ def load_ai_config(db: Session, school_id: UUID, key: bytes) -> AIConfig | None:
         return None
     v = row.value
     enc = v.get("api_key_enc")
+    api_key: str | None = None
+    if enc:
+        try:
+            api_key = decrypt(enc, key)
+        except CryptoError:
+            # 主密钥可能已更换:按"未设置 Key"处理,不让状态接口和 CLI 崩溃
+            log.warning("ai_key_decrypt_failed", school_id=str(school_id))
     return AIConfig(
         provider=v["provider"],
         base_url=v["base_url"],
         model=v["model"],
         temperature=v["temperature"],
-        api_key=decrypt(enc, key) if enc else None,
+        api_key=api_key,
         mask_forced=bool(v.get("mask_forced", False)),
     )
+
+
+def key_undecryptable(db: Session, school_id: UUID, key: bytes) -> bool:
+    """库里存着 Key 密文但用当前主密钥解不开。"""
+    row = _row(db, school_id)
+    enc = row.value.get("api_key_enc") if row is not None else None
+    if not enc:
+        return False
+    try:
+        decrypt(enc, key)
+    except CryptoError:
+        return True
+    return False
 
 
 def save_ai_config(db: Session, school_id: UUID, key: bytes, cfg: AIConfig) -> None:

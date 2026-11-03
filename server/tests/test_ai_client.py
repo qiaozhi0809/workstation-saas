@@ -12,6 +12,7 @@ from app.ai.settings import (
     AIConfig,
     clear_ai_config,
     is_ready,
+    key_undecryptable,
     load_ai_config,
     make_client,
     save_ai_config,
@@ -189,3 +190,83 @@ def test_make_client_uses_config():
     cfg = AIConfig("deepseek", "https://api.deepseek.com", "m", 0.5, "k", False)
     out = collect(make_client(cfg, sse_transport(["ok"])), MSGS)
     assert out[0] == Delta("ok")
+
+
+def _raw(body: bytes, *, ctype="text/event-stream", headers=None):
+    h = {"content-type": ctype, **(headers or {})}
+    return httpx.MockTransport(lambda r: httpx.Response(200, headers=h, content=body))
+
+
+def _sse(*payloads) -> bytes:
+    return b"".join(b"data: " + json.dumps(p).encode() + b"\n\n" for p in payloads) + (
+        b"data: [DONE]\n\n"
+    )
+
+
+def _code(transport, c=None):
+    with pytest.raises(AIUpstreamError) as e:
+        collect(c or client(transport), MSGS)
+    return e.value.code
+
+
+@pytest.mark.parametrize(
+    "chunk",
+    [
+        {"choices": ["x"]},
+        {"choices": [{"delta": "x"}]},
+        {"choices": [{"delta": {"content": ["a"]}}]},
+        {"choices": [{"delta": {"content": 5}}]},
+    ],
+)
+def test_malformed_chunk_shapes_map_to_upstream(chunk):
+    assert _code(_raw(_sse(chunk))) == "AI_UPSTREAM"
+
+
+def test_error_chunk_on_200_stream_maps_to_upstream():
+    assert _code(_raw(_sse({"error": {"message": "boom"}}))) == "AI_UPSTREAM"
+
+
+def test_html_page_with_200_maps_to_upstream():
+    assert _code(_raw(b"<html>hi</html>", ctype="text/html")) == "AI_UPSTREAM"
+
+
+def test_empty_stream_without_data_lines_maps_to_upstream():
+    assert _code(_raw(b"data: [DONE]\n\n")) == "AI_UPSTREAM"
+
+
+def test_usage_only_stream_is_fine():
+    out = collect(client(_raw(_sse({"choices": [], "usage": {"prompt_tokens": 1}}))), MSGS)
+    assert out == [Usage(1, None)]
+
+
+def test_bad_gzip_maps_to_upstream():
+    t = _raw(b"not gzip", headers={"content-encoding": "gzip"})
+    assert _code(t) == "AI_UPSTREAM"
+
+
+def test_invalid_url_maps_to_unreachable():
+    c = OpenAICompatClient(
+        base_url="http://[::1", api_key=None, model="m", temperature=0.7, transport=None
+    )
+    assert _code(None, c) == "AI_UNREACHABLE"
+
+
+def test_json_path_malformed_shape_maps_to_upstream():
+    for body in (
+        {"choices": ["x"]},
+        {"choices": [{"message": "x"}]},
+        {"choices": [{"message": {"content": [1]}}]},
+    ):
+        t = _raw(json.dumps(body).encode(), ctype="application/json")
+        assert _code(t) == "AI_UPSTREAM"
+
+
+def test_load_config_with_wrong_master_key_returns_no_key(db):
+    save_ai_config(
+        db, SID, KEY, AIConfig("deepseek", "https://x/v1", "m", 0.7, "sk-test-0000", False)
+    )
+    other = b"y" * 32
+    cfg = load_ai_config(db, SID, other)
+    assert cfg is not None and cfg.api_key is None and cfg.model == "m"
+    assert key_undecryptable(db, SID, other) is True
+    assert key_undecryptable(db, SID, KEY) is False

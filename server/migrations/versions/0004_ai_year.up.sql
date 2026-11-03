@@ -38,8 +38,8 @@ CREATE TABLE growth_records (
   date date NOT NULL,
   content text NOT NULL CHECK (char_length(content) BETWEEN 1 AND 500),
   created_by_user_id uuid REFERENCES users(id) ON DELETE SET NULL,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
+  created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  updated_at timestamptz NOT NULL DEFAULT clock_timestamp()
 );
 CREATE TRIGGER growth_records_touch BEFORE UPDATE ON growth_records
   FOR EACH ROW EXECUTE FUNCTION trg_touch_updated_at();
@@ -55,8 +55,8 @@ CREATE TABLE comments (
   content text NOT NULL CHECK (char_length(content) BETWEEN 1 AND 1000),
   generated_by_ai boolean NOT NULL DEFAULT false,
   created_by_user_id uuid REFERENCES users(id) ON DELETE SET NULL,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
+  created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  updated_at timestamptz NOT NULL DEFAULT clock_timestamp()
 );
 CREATE TRIGGER comments_touch BEFORE UPDATE ON comments
   FOR EACH ROW EXECUTE FUNCTION trg_touch_updated_at();
@@ -73,8 +73,8 @@ CREATE TABLE ai_chats (
   save_as text CHECK (save_as IN ('comment')),
   mask boolean NOT NULL,
   batch_only boolean NOT NULL DEFAULT false,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
+  created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  updated_at timestamptz NOT NULL DEFAULT clock_timestamp()
 );
 CREATE TRIGGER ai_chats_touch BEFORE UPDATE ON ai_chats
   FOR EACH ROW EXECUTE FUNCTION trg_touch_updated_at();
@@ -90,8 +90,8 @@ CREATE TABLE ai_messages (
   error text,
   prompt_tokens integer,
   completion_tokens integer,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
+  created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  updated_at timestamptz NOT NULL DEFAULT clock_timestamp()
 );
 CREATE TRIGGER ai_messages_touch BEFORE UPDATE ON ai_messages
   FOR EACH ROW EXECUTE FUNCTION trg_touch_updated_at();

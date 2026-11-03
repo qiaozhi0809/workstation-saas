@@ -94,7 +94,9 @@ class OpenAICompatClient:
             body["max_tokens"] = max_tokens
         headers = {"Authorization": f"Bearer {self._api_key}"} if self._api_key else {}
         try:
-            async with httpx.AsyncClient(transport=self._transport, timeout=self._timeout) as http:
+            # 每次调用新建 AsyncClient,退出时会一并关闭注入的 transport。
+            timeout = httpx.Timeout(self._timeout, connect=10.0)
+            async with httpx.AsyncClient(transport=self._transport, timeout=timeout) as http:
                 async with http.stream("POST", self._url, json=body, headers=headers) as resp:
                     if resp.status_code != 200:
                         raw = await resp.aread()
@@ -110,7 +112,9 @@ class OpenAICompatClient:
                     else:
                         async for item in self._parse_sse(resp):
                             yield item
-        except httpx.TransportError as e:
+        except httpx.DecodingError as e:
+            raise _upstream() from e
+        except (httpx.TransportError, httpx.InvalidURL) as e:
             raise _unreachable() from e
 
     async def _parse_json(self, raw: bytes) -> AsyncIterator[Delta | Usage]:
@@ -119,12 +123,15 @@ class OpenAICompatClient:
             text = data["choices"][0]["message"]["content"]
         except (ValueError, KeyError, IndexError, TypeError) as e:
             raise _upstream() from e
+        if text is not None and not isinstance(text, str):
+            raise _upstream()
         if text:
             yield Delta(text)
         yield _usage(data) or Usage(None, None)
 
     async def _parse_sse(self, resp: httpx.Response) -> AsyncIterator[Delta | Usage]:
         usage: Usage | None = None
+        seen = False
         async for line in resp.aiter_lines():
             if not line.startswith("data:"):
                 continue
@@ -135,12 +142,29 @@ class OpenAICompatClient:
                 data = json.loads(payload)
             except ValueError as e:
                 raise _upstream() from e
+            seen = True
+            if not isinstance(data, dict):
+                raise _upstream()
+            if data.get("error") is not None:
+                log.warning("ai_upstream_error", status=200, body=str(data["error"])[:200])
+                raise _upstream()
             u = _usage(data)
             if u is not None:
                 usage = u
-            choices = data.get("choices") if isinstance(data, dict) else None
+            choices = data.get("choices")
             if choices:
-                text = (choices[0].get("delta") or {}).get("content")
+                if not isinstance(choices, list) or not isinstance(choices[0], dict):
+                    raise _upstream()
+                delta = choices[0].get("delta")
+                if delta is None:
+                    delta = {}
+                if not isinstance(delta, dict):
+                    raise _upstream()
+                text = delta.get("content")
+                if text is not None and not isinstance(text, str):
+                    raise _upstream()
                 if text:
                     yield Delta(text)
+        if not seen:
+            raise _upstream()
         yield usage or Usage(None, None)

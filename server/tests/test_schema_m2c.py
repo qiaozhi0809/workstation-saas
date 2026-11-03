@@ -3,7 +3,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from app.db import session_scope
-from tests.seed_ids import CLASS_ID, SCHOOL_ID, STUDENT_IDS, YEAR_ID
+from tests.seed_ids import CLASS_ID, SCHOOL_ID, STUDENT_IDS, TEACHER_USER_ID, YEAR_ID
 
 NEW_TABLES = {
     "school_settings",
@@ -134,3 +134,24 @@ def test_session_scope_reuses_test_session(client, db):
     assert n == 1
     # 退出上下文不得关闭测试会话
     assert db.execute(text("SELECT 1")).scalar_one() == 1
+
+
+def test_message_timestamps_strictly_increase_within_one_transaction(db):
+    chat_id = db.execute(
+        text(
+            "INSERT INTO ai_chats (user_id, class_id, title, mask)"
+            " VALUES (:u, :c, 't', true) RETURNING id"
+        ),
+        {"u": TEACHER_USER_ID, "c": CLASS_ID},
+    ).scalar_one()
+    for role in ("user", "assistant"):
+        db.execute(
+            text("INSERT INTO ai_messages (chat_id, role) VALUES (:c, :r)"),
+            {"c": chat_id, "r": role},
+        )
+    rows = db.execute(
+        text("SELECT role, created_at FROM ai_messages WHERE chat_id = :c ORDER BY created_at"),
+        {"c": chat_id},
+    ).all()
+    assert [r[0] for r in rows] == ["user", "assistant"]
+    assert rows[0][1] < rows[1][1]
