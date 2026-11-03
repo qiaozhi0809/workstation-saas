@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { aiApi } from '@/shared/api/ai'
+import { ApiError } from '@/shared/api/client'
 import { examsApi } from '@/shared/api/exams'
 import { studentsApi } from '@/shared/api/students'
 import { toast } from '@/shared/components/Toast'
@@ -54,7 +55,7 @@ export default function Composer({ classId, status, canReadExams }: {
       if ('chatId' in res) navigate(`/teacher/ai/${res.chatId}?go=1`)
       else setPrompt(res.prompt)
     },
-    onError: () => toast(configured ? '发送失败,请重试' : '生成提示词失败,请重试'),
+    onError: (e) => toast(e instanceof ApiError ? e.message : configured ? '发送失败,请重试' : '生成提示词失败,请重试'),
   })
 
   const canSend = status !== undefined && text.trim().length > 0 && !send.isPending

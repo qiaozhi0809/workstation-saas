@@ -139,6 +139,22 @@ describe('TemplateForm', () => {
     expect(screen.queryByText('请填写课题')).toBeNull()
   })
 
+  it('F4: clicking outside does not close the form', async () => {
+    form()
+    await screen.findByRole('dialog', { name: '成绩分析' })
+    fireEvent.pointerDown(document.body)
+    expect(onClose).not.toHaveBeenCalled()
+    expect(screen.getByRole('dialog', { name: '成绩分析' })).toBeInTheDocument()
+  })
+
+  it.each(['tips', 'nope'])('M1: AI_FIELD_INVALID for a field without an error slot (%s) falls back to a toast', async (field) => {
+    vi.mocked(aiApi.createChat).mockRejectedValue(new ApiError(422, 'AI_FIELD_INVALID', '这个选项不合法', { field }))
+    form()
+    click(await screen.findByRole('button', { name: '开始生成' }))
+    expect(await screen.findByText('这个选项不合法')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
   it('toasts when no student regressed and on other errors', async () => {
     vi.mocked(aiApi.createChat)
       .mockRejectedValueOnce(new ApiError(422, 'AI_NO_TARGETS', 'x'))

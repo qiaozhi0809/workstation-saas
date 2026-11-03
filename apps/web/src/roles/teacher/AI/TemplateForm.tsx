@@ -105,7 +105,11 @@ export default function TemplateForm({ template, classId, initial, status, onClo
     if (err instanceof ApiError) {
       if (err.code === 'AI_FIELD_INVALID') {
         const field = (err.details as { field?: string } | undefined)?.field
-        if (field) { setErrors((e) => ({ ...e, [field]: err.message })); return }
+        // 只有渲染了错误位的字段才能就地显示;勾选项或未知字段改用提示
+        if (field && template.fields.some((f) => f.key === field && f.type !== 'check')) {
+          setErrors((e) => ({ ...e, [field]: err.message }))
+          return
+        }
       }
       if (err.code === 'AI_NO_TARGETS') { toast('这两场考试之间没有退步 5 名及以上的同学'); return }
       toast(err.message)
@@ -226,7 +230,7 @@ export default function TemplateForm({ template, classId, initial, status, onClo
   }
 
   return (
-    <Modal open onClose={onClose} title={template.title} description={template.desc} className="max-w-xl">
+    <Modal open onClose={onClose} title={template.title} description={template.desc} dismissOnOutside={false} className="max-w-xl">
       <div className="space-y-4">
         {template.fields.map(renderField)}
         <div className="space-y-1 border-t border-border pt-3">

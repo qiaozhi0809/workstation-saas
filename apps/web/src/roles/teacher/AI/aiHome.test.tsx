@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { aiApi } from '@/shared/api/ai'
+import { ApiError } from '@/shared/api/client'
 import { examsApi } from '@/shared/api/exams'
 import type { AiChat } from '@/shared/types/ai'
 import AiHomePage from './AiHomePage'
@@ -57,6 +58,14 @@ describe('AiHomePage', () => {
       context: { class: true, student_id: 's1', exam_id: null }, mask: true,
     }))
     await waitFor(() => expect(screen.getByTestId('url')).toHaveTextContent('/teacher/ai/c1?go=1'))
+  })
+
+  it('M6: a failed send toasts the server message', async () => {
+    vi.mocked(aiApi.createChat).mockRejectedValue(new ApiError(429, 'RATE_LIMITED', '请求太频繁了'))
+    home()
+    type(await box(), '写点什么')
+    click(await screen.findByRole('button', { name: '发送' }))
+    expect(await screen.findByText('请求太频繁了')).toBeInTheDocument()
   })
 
   it('disables send while the text is empty', async () => {
