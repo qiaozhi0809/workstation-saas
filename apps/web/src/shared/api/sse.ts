@@ -37,27 +37,32 @@ export async function streamSSE(
   handlers: SseHandlers,
   signal?: AbortSignal,
 ): Promise<void> {
-  const res = await authedFetch('POST', path, { body, signal })
-  if (!res.ok) throw await toApiError(res)
-  if (!res.body) return
-  const reader = res.body.getReader()
+  const aborted = () => new DOMException('已中止', 'AbortError')
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
   const decoder = new TextDecoder()
   let buf = ''
   const flush = (final: boolean) => {
     buf = buf.replace(/\r\n/g, '\n')
     let i: number
     while ((i = buf.indexOf('\n\n')) >= 0) {
+      // handler 可能在 chunk 中途中止：不再分发后续事件
+      if (signal?.aborted) throw aborted()
       dispatch(buf.slice(0, i), handlers)
       buf = buf.slice(i + 2)
     }
     if (final && buf.trim()) {
+      if (signal?.aborted) throw aborted()
       dispatch(buf, handlers)
       buf = ''
     }
   }
   try {
+    const res = await authedFetch('POST', path, { body, signal })
+    if (!res.ok) throw await toApiError(res)
+    if (!res.body) return
+    reader = res.body.getReader()
     for (;;) {
-      if (signal?.aborted) throw new DOMException('已中止', 'AbortError')
+      if (signal?.aborted) throw aborted()
       const { done, value } = await reader.read()
       if (done) break
       buf += decoder.decode(value, { stream: true })
@@ -72,11 +77,10 @@ export async function streamSSE(
     buf += decoder.decode()
     flush(true)
   } catch (e) {
-    if (signal?.aborted && !(e instanceof DOMException && e.name === 'AbortError')) {
-      throw new DOMException('已中止', 'AbortError')
-    }
+    // 中止期间的任何拒绝（含自定义 reason）统一规范为 AbortError
+    if (signal?.aborted && !(e instanceof DOMException && e.name === 'AbortError')) throw aborted()
     throw e
   } finally {
-    reader.cancel().catch(() => {})
+    reader?.cancel().catch(() => {})
   }
 }

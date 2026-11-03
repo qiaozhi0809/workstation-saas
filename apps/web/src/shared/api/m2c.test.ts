@@ -159,6 +159,67 @@ it('rejects with AbortError when aborted', async () => {
   expect(texts).toEqual(['a'])
 })
 
+it('normalises a custom abort reason before the response arrives', async () => {
+  fetchMock.mockImplementation(
+    (_url: string, init: RequestInit) =>
+      new Promise((_res, rej) => {
+        init.signal?.addEventListener('abort', () => rej(init.signal?.reason))
+      }),
+  )
+  const ctl = new AbortController()
+  const p = aiApi.reply('h1', { text: 'hi' }, noop, ctl.signal)
+  ctl.abort('custom reason')
+  await expect(p).rejects.toMatchObject({ name: 'AbortError' })
+})
+
+it('rejects with AbortError when aborted while read() is pending', async () => {
+  fetchMock.mockImplementation((_url: string, init: RequestInit) => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(c) {
+        init.signal?.addEventListener('abort', () => c.error(init.signal?.reason))
+      },
+    })
+    return Promise.resolve(new Response(stream, { status: 200 }))
+  })
+  const ctl = new AbortController()
+  const p = aiApi.reply('h1', { text: 'hi' }, noop, ctl.signal)
+  await new Promise((r) => setTimeout(r, 0))
+  ctl.abort('stop')
+  await expect(p).rejects.toMatchObject({ name: 'AbortError' })
+})
+
+it('stops dispatching events once a handler aborts mid-chunk', async () => {
+  fetchMock.mockResolvedValue(
+    sseResponse([
+      'event: delta\ndata: {"text":"a"}\n\nevent: delta\ndata: {"text":"b"}\n\n',
+    ]),
+  )
+  const ctl = new AbortController()
+  const texts: string[] = []
+  const p = aiApi.reply('h1', { text: 'hi' }, { onDelta: (t) => { texts.push(t); ctl.abort() } }, ctl.signal)
+  await expect(p).rejects.toMatchObject({ name: 'AbortError' })
+  expect(texts).toEqual(['a'])
+})
+
+it('parses CRLF split across chunks', async () => {
+  fetchMock.mockResolvedValue(
+    sseResponse(['event: delta\r\ndata: {"text":"x"}\r\n\r', '\nevent: done\ndata: {"status":"done"}\n\n']),
+  )
+  const { events, h } = recorder()
+  await aiApi.reply('h1', { text: 'hi' }, h)
+  expect(events).toEqual([
+    ['delta', 'x'],
+    ['done', { status: 'done' }],
+  ])
+})
+
+it('dispatches a trailing event without the final blank line', async () => {
+  fetchMock.mockResolvedValue(sseResponse(['event: delta\ndata: {"text":"z"}\n']))
+  const { events, h } = recorder()
+  await aiApi.reply('h1', { text: 'hi' }, h)
+  expect(events).toEqual([['delta', 'z']])
+})
+
 it('keeps api() behaviour unchanged', async () => {
   fetchMock.mockResolvedValue(new Response(null, { status: 204 }))
   await expect(growthApi.remove('g1')).resolves.toBeUndefined()
