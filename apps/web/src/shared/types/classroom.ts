@@ -12,6 +12,12 @@ export type ClassPerm =
   | 'score.export'
   | 'student.manage'
   | 'student.export'
+  | 'growth.read'
+  | 'growth.write'
+  | 'comment.read'
+  | 'comment.write'
+  | 'ai.use'
+  | 'ai.class'
 
 export interface Board {
   left_title: string
