@@ -1,3 +1,4 @@
+import pytest
 from sqlalchemy import select
 
 from app.auth.passwords import check_policy, generate_temp_password
@@ -72,23 +73,30 @@ def test_change_password_policy(client):
 def test_check_policy_edges():
     check_policy("abcd1234")
     check_policy("abcd!!!!")
-    for bad, reason in [
-        ("12345678", "one_kind"),
-        ("!!!!!!!!", "one_kind"),
-        ("short1", "too_short"),
-    ]:
-        try:
+    cases = [("12345678", "one_kind"), ("!!!!!!!!", "one_kind"), ("short1", "too_short")]
+    for bad, reason in cases:
+        with pytest.raises(ApiError) as exc:
             check_policy(bad)
-        except ApiError as exc:
-            assert exc.details["reason"] == reason
-        else:
-            raise AssertionError(bad)
-    try:
-        check_policy("a1" * 37)
-    except ApiError as exc:
-        assert exc.code == "PASSWORD_WEAK"
-    else:
-        raise AssertionError("over 72 bytes accepted")
+        assert exc.value.details["reason"] == reason
+
+
+def test_too_long_password_over_http(client):
+    t = login(client).json()
+    res = _change(client, t["access_token"], t["refresh_token"], "dev123", "中" * 25 + "a1")
+    assert res.status_code == 400
+    err = res.json()["error"]
+    assert err["code"] == "PASSWORD_WEAK"
+    assert err["details"]["reason"] == "too_long"
+    assert err["message"] == "密码不能超过 72 个字节"
+
+
+def test_validation_error_does_not_echo_passwords(client):
+    t = login(client).json()
+    long_pw = "SECRETpw1" * 40
+    res = _change(client, t["access_token"], t["refresh_token"], long_pw, long_pw)
+    assert res.status_code == 400
+    assert res.json()["error"]["code"] == "BAD_REQUEST"
+    assert "SECRETpw1" not in res.text
 
 
 def test_change_password_keeps_current_session_only(client, db, redis_client):

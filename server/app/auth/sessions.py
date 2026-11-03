@@ -6,7 +6,7 @@ from redis import Redis
 from app.config import Settings
 
 
-def _refresh_key(token: str) -> str:
+def refresh_key(token: str) -> str:
     return f"ws:refresh:{token}"
 
 
@@ -18,7 +18,7 @@ def issue_refresh(redis: Redis, settings: Settings, user_id: UUID) -> str:
     token = secrets.token_urlsafe(32)
     set_key = _user_set_key(user_id)
     pipe = redis.pipeline()
-    pipe.set(_refresh_key(token), str(user_id), ex=settings.refresh_ttl_seconds)
+    pipe.set(refresh_key(token), str(user_id), ex=settings.refresh_ttl_seconds)
     pipe.sadd(set_key, token)
     pipe.expire(set_key, settings.refresh_ttl_seconds)
     pipe.execute()
@@ -26,7 +26,7 @@ def issue_refresh(redis: Redis, settings: Settings, user_id: UUID) -> str:
 
 
 def revoke_refresh(redis: Redis, token: str) -> None:
-    key = _refresh_key(token)
+    key = refresh_key(token)
     user_id = redis.get(key)
     pipe = redis.pipeline()
     pipe.delete(key)
@@ -36,12 +36,14 @@ def revoke_refresh(redis: Redis, token: str) -> None:
 
 
 def revoke_all(redis: Redis, user_id: UUID, *, keep: str | None = None) -> int:
+    """作废除 keep 外的全部刷新令牌,返回真正存活被删掉的个数;过期残留成员一并清出集合。"""
     set_key = _user_set_key(user_id)
-    doomed = [t for t in redis.smembers(set_key) if t != keep]
-    if not doomed:
+    members = [t for t in redis.smembers(set_key) if t != keep]
+    if not members:
         return 0
     pipe = redis.pipeline()
-    pipe.delete(*[_refresh_key(t) for t in doomed])
-    pipe.srem(set_key, *doomed)
-    pipe.execute()
-    return len(doomed)
+    for t in members:
+        pipe.delete(refresh_key(t))
+    pipe.srem(set_key, *members)
+    results = pipe.execute()
+    return sum(results[:-1])

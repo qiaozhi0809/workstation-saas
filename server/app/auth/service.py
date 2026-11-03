@@ -73,10 +73,6 @@ def _fail_key(settings: Settings, login_name: str) -> str:
     return f"ws:login_fail:{settings.school_id}:{login_name}"
 
 
-def _refresh_key(refresh_token: str) -> str:
-    return f"ws:refresh:{refresh_token}"
-
-
 def login(
     db: Session, redis: Redis, settings: Settings, login_name: str, password: str
 ) -> LoginResult:
@@ -105,7 +101,7 @@ def login(
 def refresh(
     db: Session, redis: Redis, settings: Settings, refresh_token: str
 ) -> tuple[str, datetime]:
-    key = _refresh_key(refresh_token)
+    key = sessions.refresh_key(refresh_token)
     user_id = redis.get(key)
     user = None
     if user_id is not None:

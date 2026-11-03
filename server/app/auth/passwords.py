@@ -50,7 +50,7 @@ def check_policy(new: str, *, old: str | None = None) -> None:
     if len(data) < 8:
         raise _weak("too_short", "新密码至少 8 位")
     if len(data.encode("utf-8")) > MAX_PASSWORD_BYTES:
-        raise _weak("too_long", "新密码太长")
+        raise _weak("too_long", "密码不能超过 72 个字节")
     kinds = {"letter" if c.isalpha() else "digit" if c.isdigit() else "other" for c in data}
     if len(kinds) < 2:
         raise _weak("one_kind", "新密码需包含字母、数字、其他字符中的至少两类")

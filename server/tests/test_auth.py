@@ -171,3 +171,10 @@ def test_logout_removes_token_from_user_set(client, redis_client):
     assert redis_client.smembers(set_key) == set(tokens)
     client.post("/api/v1/auth/logout", json={"refresh_token": tokens[0]})
     assert redis_client.smembers(set_key) == {tokens[1]}
+
+
+def test_revoke_all_counts_only_live_tokens(client, redis_client):
+    tokens = [login(client).json()["refresh_token"] for _ in range(3)]
+    redis_client.delete(sessions.refresh_key(tokens[0]))  # 单键过期,集合里残留
+    assert sessions.revoke_all(redis_client, UUID(TEACHER_USER_ID)) == 2
+    assert redis_client.smembers(f"ws:user_refresh:{TEACHER_USER_ID}") == set()
