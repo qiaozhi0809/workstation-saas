@@ -22,8 +22,11 @@ async function copy(text: string) {
 }
 
 /** 临时密码只存在于调用方传进来的 entries;关闭时调用方把它置空 */
-export default function TempPasswordDialog({ entries, onClose }: { entries: TempPassword[]; onClose(): void }) {
-  const many = entries.length > 1
+export default function TempPasswordDialog({ entries, batch = false, onClose }: {
+  entries: TempPassword[]; batch?: boolean; onClose(): void
+}) {
+  // 批量导入即使只有一行也用表格 + 下载 CSV
+  const many = batch || entries.length > 1
   const download = () => downloadText(
     `临时密码-${today()}.csv`,
     toCSV([['登录名', '姓名', '临时密码'], ...entries.map((e) => [e.login_name, e.display_name, e.temp_password])]),

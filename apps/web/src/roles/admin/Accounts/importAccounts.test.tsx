@@ -118,3 +118,19 @@ it('discards a stale preview that resolves after a newer one', async () => {
   expect(screen.queryByText('stale01')).toBeNull()
   expect(screen.getByText('newer01')).toBeInTheDocument()
 })
+
+it('offers the CSV download even when only one account was imported', async () => {
+  vi.mocked(adminApi.importPreview).mockResolvedValue({ rows: [row({})] })
+  vi.mocked(adminApi.importAccounts).mockResolvedValue({ created: [
+    { login_name: 'teacher11', display_name: '孙一', temp_password: 'Pw1aaaaaaa' },
+  ] })
+  await openImport()
+  pick(CSV)
+  const confirm = await screen.findByRole('button', { name: '确认导入' })
+  await waitFor(() => expect(confirm).toBeEnabled())
+  fireEvent.click(confirm)
+  const dlg = await screen.findByRole('dialog', { name: '临时密码' })
+  expect(within(dlg).getByText('Pw1aaaaaaa')).toBeInTheDocument()
+  fireEvent.click(within(dlg).getByRole('button', { name: '下载 CSV' }))
+  expect(vi.mocked(downloadText).mock.calls[0][1]).toContain('Pw1aaaaaaa')
+})

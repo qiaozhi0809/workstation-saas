@@ -39,7 +39,7 @@ export default function AccountsPage() {
   const [freezeError, setFreezeError] = useState('')
   const [freezeBusy, setFreezeBusy] = useState(false)
   // 临时密码只放这里,关闭即置空
-  const [temp, setTemp] = useState<TempPassword[] | null>(null)
+  const [temp, setTemp] = useState<{ entries: TempPassword[]; batch: boolean } | null>(null)
 
   useEffect(() => {
     const t = setTimeout(() => { setQ(search.trim()); setPage(1) }, 300)
@@ -57,7 +57,7 @@ export default function AccountsPage() {
   const resetPassword = async (a: Account) => {
     try {
       const res = await adminApi.resetPassword(a.id)
-      setTemp([{ login_name: a.login_name, display_name: a.display_name, temp_password: res.temp_password }])
+      setTemp({ entries: [{ login_name: a.login_name, display_name: a.display_name, temp_password: res.temp_password }], batch: false })
     } catch (err) {
       toast(err instanceof ApiError ? err.message : '重置失败,请重试')
     }
@@ -154,11 +154,11 @@ export default function AccountsPage() {
 
       {dialog?.kind === 'form' && (
         <AccountForm account={dialog.account} onClose={() => setDialog(null)}
-          onCreated={(t) => { setDialog(null); setTemp([t]) }} />
+          onCreated={(t) => { setDialog(null); setTemp({ entries: [t], batch: false }) }} />
       )}
       {dialog?.kind === 'import' && (
         <ImportAccountsDialog onClose={() => setDialog(null)}
-          onImported={(created) => { setDialog(null); setTemp(created) }} />
+          onImported={(created) => { setDialog(null); setTemp({ entries: created, batch: true }) }} />
       )}
       {freezing && (
         <Modal open onClose={() => setFreezing(null)} title="冻结账号">
@@ -170,7 +170,7 @@ export default function AccountsPage() {
           </div>
         </Modal>
       )}
-      {temp && <TempPasswordDialog entries={temp} onClose={() => setTemp(null)} />}
+      {temp && <TempPasswordDialog entries={temp.entries} batch={temp.batch} onClose={() => setTemp(null)} />}
     </div>
   )
 }
