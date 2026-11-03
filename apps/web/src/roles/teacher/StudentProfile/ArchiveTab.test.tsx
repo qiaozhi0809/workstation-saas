@@ -11,7 +11,7 @@ vi.mock('@/shared/api/classes', () => ({ classesApi: { mine: vi.fn() } }))
 vi.mock('@/shared/api/students', () => ({ studentsApi: { saveMyNotes: vi.fn() } }))
 
 const bare: StudentProfile = { id: 's', enrollment_id: 'e1', mk: 'S0002', name: '李小二', class_id: 'c' }
-const klass = (role: ClassView['role']): ClassView => ({ id: 'c', name: '一班', grade_name: '七年级', seat_rows: 6, seat_cols: 8, role })
+const klass = (role: ClassView['role']): ClassView => ({ id: 'c', name: '一班', grade_name: '七年级', seat_rows: 6, seat_cols: 8, desk_size: 2, seat_layout: 'manual', seat_order: 'row', podium_left: 0, podium_right: 0, room: '', role })
 
 function renderTab(student: StudentProfile) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })

@@ -41,7 +41,7 @@ describe('App routing', () => {
   })
 
   describe('AI routes', () => {
-    const cls = { id: 'c1', name: '三年二班', grade_name: '三年级', seat_rows: 6, seat_cols: 4, role: 'subject_teacher' as const }
+    const cls = { id: 'c1', name: '三年二班', grade_name: '三年级', seat_rows: 6, seat_cols: 4, desk_size: 2 as const, seat_layout: 'manual' as const, seat_order: 'row' as const, podium_left: 0, podium_right: 0, room: '', role: 'subject_teacher' as const }
 
     beforeEach(() => {
       vi.mocked(classesApi.mine).mockResolvedValue({ items: [cls] })

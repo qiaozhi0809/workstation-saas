@@ -32,6 +32,7 @@ export interface ClassroomSummary {
   today: string
   timezone: string
   week_no: number
+  school_name: string
   week_start: string
   year: { id: string; name: string; start_date: string; end_date: string }
   seat_version: number

@@ -13,7 +13,7 @@ vi.mock('@/shared/api/students', () => ({ studentsApi: { importRows: vi.fn() } }
 vi.mock('@/shared/components/Toast', () => ({ toast: vi.fn() }))
 vi.mock('@/shared/lib/csv', async (orig) => ({ ...(await orig<typeof import('@/shared/lib/csv')>()), downloadText: vi.fn() }))
 
-const cls: ClassView = { id: 'c1', name: '三年二班', grade_name: '三年级', seat_rows: 2, seat_cols: 2, role: 'homeroom_teacher' }
+const cls: ClassView = { id: 'c1', name: '三年二班', grade_name: '三年级', seat_rows: 2, seat_cols: 2, desk_size: 2, seat_layout: 'manual', seat_order: 'row', podium_left: 0, podium_right: 0, room: '', role: 'homeroom_teacher' }
 const PASTED = '姓名\t性别\t学号\n张三\t男\t01\n李四\t女\t02\n'
 
 let client: QueryClient

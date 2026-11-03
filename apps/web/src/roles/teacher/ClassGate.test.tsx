@@ -12,7 +12,7 @@ import ClassGate, { type ClassContext } from './ClassGate'
 vi.mock('@/shared/api/classes', () => ({ classesApi: { mine: vi.fn() } }))
 vi.mock('@/shared/api/classroom', () => ({ classroomApi: { summary: vi.fn() } }))
 
-const cls: ClassView = { id: 'c1', name: '三年二班', grade_name: '三年级', seat_rows: 6, seat_cols: 4, role: 'subject_teacher' }
+const cls: ClassView = { id: 'c1', name: '三年二班', grade_name: '三年级', seat_rows: 6, seat_cols: 4, desk_size: 2, seat_layout: 'manual', seat_order: 'row', podium_left: 0, podium_right: 0, room: '', role: 'subject_teacher' }
 
 const renderGate = (need?: 'exam.read', children: (ctx: ClassContext) => React.ReactNode = () => <p>内容</p>) => render(
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
