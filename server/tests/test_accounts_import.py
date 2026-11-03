@@ -145,3 +145,11 @@ def test_import_race_integrity_error_rolls_back_all(client, settings, db, monkey
     assert err["code"] == "IMPORT_INVALID"
     assert [(r["line"], r["error"]) for r in err["details"]["rows"]] == [(3, "登录名已被使用")]
     assert _count(db) == before
+
+
+def test_malformed_csv_is_400_not_500(client, settings, db):
+    huge = f'{HEADER}\nimp_a,"' + "x" * 200_000 + '",,,'
+    for tail in ("import/preview", "import"):
+        res = _post(client, settings, tail, huge)
+        assert res.status_code == 400
+        assert res.json()["error"]["code"] == "IMPORT_INVALID"

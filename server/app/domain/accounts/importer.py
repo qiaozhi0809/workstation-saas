@@ -16,6 +16,13 @@ def _bad_header() -> ApiError:
 
 def parse_csv(text: str, existing_logins: set[str]) -> list[ImportRow]:
     """existing_logins 为小写登录名集合;逐行校验,不抛行级错误。"""
+    try:
+        return _parse(text, existing_logins)
+    except csv.Error:
+        raise ApiError(400, "IMPORT_INVALID", "CSV 文件格式不对,无法读取") from None
+
+
+def _parse(text: str, existing_logins: set[str]) -> list[ImportRow]:
     reader = csv.reader(io.StringIO(text.lstrip("﻿")))
     header = next(reader, None)
     if header is None:
