@@ -63,14 +63,26 @@ def make_class(
     *,
     grade_id: str | UUID = GRADE_ID,
     year_id: str | UUID = YEAR_ID,
+    seat_rows: int = 6,
+    seat_cols: int = 4,
+    desk_size: int = 2,
+    seat_layout: str = "manual",
+    seat_order: str = "row",
+    podium_left: int = 0,
+    podium_right: int = 0,
 ) -> UUID:
     cls = SchoolClass(
         school_id=UUID(SCHOOL_ID),
         academic_year_id=UUID(str(year_id)),
         grade_id=UUID(str(grade_id)),
         name=name,
-        seat_rows=6,
-        seat_cols=4,
+        seat_rows=seat_rows,
+        seat_cols=seat_cols,
+        desk_size=desk_size,
+        seat_layout=seat_layout,
+        seat_order=seat_order,
+        podium_left=podium_left,
+        podium_right=podium_right,
     )
     db.add(cls)
     db.flush()
