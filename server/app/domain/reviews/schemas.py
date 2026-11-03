@@ -85,3 +85,8 @@ class ReviewSummary(BaseModel):
 class RevokeResult(BaseModel):
     op_id: UUID
     revoked: int
+
+
+class ItemRevokeResult(BaseModel):
+    review_id: UUID
+    revoked: int

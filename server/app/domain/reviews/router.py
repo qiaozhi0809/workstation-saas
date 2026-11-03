@@ -9,6 +9,7 @@ from app.db import get_db
 from app.domain.classes.service import class_scope_of, get_class_or_404
 from app.domain.reviews import service
 from app.domain.reviews.schemas import (
+    ItemRevokeResult,
     ReviewCreate,
     ReviewCreated,
     ReviewPage,
@@ -91,6 +92,7 @@ def get_reviews(
     bindings: Annotated[list[Binding], Depends(get_bindings)],
     db: Annotated[Session, Depends(get_db)],
     cursor: str | None = None,
+    enrollment_id: UUID | None = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> ReviewPage:
     cls = get_class_or_404(db, class_id)
@@ -103,7 +105,7 @@ def get_reviews(
         class_scope_of(cls),
         object_id=str(class_id),
     )
-    return service.list_reviews(db, class_id, user.id, cursor, limit)
+    return service.list_reviews(db, class_id, user.id, cursor, limit, enrollment_id)
 
 
 @router.post("/classes/{class_id}/reviews/{op_id}/revoke")
@@ -126,3 +128,25 @@ def post_revoke(
         object_id=str(class_id),
     )
     return service.revoke(db, class_id, op_id, user.id, request)
+
+
+@router.post("/classes/{class_id}/reviews/items/{review_id}/revoke")
+def post_revoke_item(
+    class_id: UUID,
+    review_id: UUID,
+    request: Request,
+    user: Annotated[User, Depends(get_current_user)],
+    bindings: Annotated[list[Binding], Depends(get_bindings)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ItemRevokeResult:
+    cls = get_class_or_404(db, class_id)
+    ensure(
+        db,
+        request,
+        user.id,
+        bindings,
+        Perm.REVIEW_WRITE,
+        class_scope_of(cls),
+        object_id=str(class_id),
+    )
+    return service.revoke_item(db, class_id, review_id, user.id, request)
