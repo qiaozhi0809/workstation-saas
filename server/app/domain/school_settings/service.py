@@ -91,6 +91,13 @@ def save_tag_pool(
     renames: list[TagRename],
     request: Request | None = None,
 ) -> list[str]:
+    """保存标签池,并先把改名同步到本校学生。
+
+    - renames 的 from 不能是受保护标签,否则 400 TAG_PROTECTED;池里必须仍含受保护标签。
+    - renames 的 to 不要求在新池里:契约未规定,服务端不校验,由前端保证改名目标在池内。
+    - renames 按 from 建映射,同一个 from 重复出现时后一条覆盖前一条;每个学生只替换一遍
+      (a→b 与 b→c 同时出现不会连环改成 c),保持原顺序,后出现的重复标签去掉。
+    """
     if any(t not in tags for t in PROTECTED_TAGS) or any(
         r.from_ in PROTECTED_TAGS for r in renames
     ):

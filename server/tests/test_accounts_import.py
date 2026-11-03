@@ -104,3 +104,44 @@ def test_import_header_and_limit(client, settings, db):
     assert over.status_code == 400
     assert over.json()["error"]["code"] == "IMPORT_INVALID"
     assert _post(client, settings, "import/preview", "").status_code == 400
+
+
+def test_login_case_duplicates(client, settings, db):
+    text = f"{HEADER}\nImp_A,甲,,,\nimp_a,乙,,,\nTEACHER01,丙,,,"
+    rows = _post(client, settings, "import/preview", text).json()["rows"]
+    assert [r["error"] for r in rows] == [None, "登录名重复", "登录名已被使用"]
+    before = _count(db)
+    res = _post(client, settings, "import", text)
+    assert res.status_code == 400
+    assert res.json()["error"]["code"] == "IMPORT_INVALID"
+    assert _count(db) == before
+
+
+def test_phone_non_ascii_digits_rejected():
+    rows = parse_csv(f"{HEADER}\nimp_a,甲,,,١٣٨٠٠٠٠٠٠٢١\n", set())
+    assert rows[0].error == "手机号应为 11 位数字"
+
+
+def test_exactly_500_rows(client, settings, db, monkeypatch):
+    from app.domain.accounts import service
+
+    monkeypatch.setattr(service, "hash_password", lambda plain: "x")
+    text = HEADER + "\n" + "\n".join(f"imp_{n:04d},甲{n},,," for n in range(500))
+    assert len(_post(client, settings, "import/preview", text).json()["rows"]) == 500
+    before = _count(db)
+    res = _post(client, settings, "import", text)
+    assert res.status_code == 201 and len(res.json()["created"]) == 500
+    assert _count(db) == before + 500
+
+
+def test_import_race_integrity_error_rolls_back_all(client, settings, db, monkeypatch):
+    from app.domain.accounts import service
+
+    monkeypatch.setattr(service, "_existing_logins", lambda db, school_id: set())
+    before = _count(db)
+    res = _post(client, settings, "import", f"{HEADER}\nimp_a,甲,,,\nteacher01,乙,,,")
+    assert res.status_code == 400
+    err = res.json()["error"]
+    assert err["code"] == "IMPORT_INVALID"
+    assert [(r["line"], r["error"]) for r in err["details"]["rows"]] == [(3, "登录名已被使用")]
+    assert _count(db) == before

@@ -6,7 +6,7 @@ from uuid import UUID
 from pydantic import AfterValidator, BaseModel, BeforeValidator, Field
 
 LOGIN_RE = re.compile(r"^[A-Za-z0-9_.-]{3,32}$")
-PHONE_RE = re.compile(r"^\d{11}$")
+PHONE_RE = re.compile(r"^[0-9]{11}$")
 
 
 def _blank_to_none(value: object) -> object:

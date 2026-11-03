@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, Response
 from redis import Redis
 from sqlalchemy.orm import Session
 
@@ -65,12 +65,14 @@ def list_accounts(
 def create_account(
     body: AccountCreate,
     request: Request,
+    response: Response,
     user: UserDep,
     bindings: BindingsDep,
     db: DbDep,
     settings: SettingsDep,
 ) -> AccountCreated:
     year_id = _guard(db, request, user, bindings, settings)
+    response.headers["Cache-Control"] = "no-store"
     account, temp = service.create_account(db, settings.school_id, year_id, user, body, request)
     return AccountCreated(account=account, temp_password=temp)
 
@@ -92,12 +94,14 @@ def import_preview(
 def import_accounts(
     body: ImportRequest,
     request: Request,
+    response: Response,
     user: UserDep,
     bindings: BindingsDep,
     db: DbDep,
     settings: SettingsDep,
 ) -> ImportResult:
     _guard(db, request, user, bindings, settings)
+    response.headers["Cache-Control"] = "no-store"
     created = service.import_accounts(db, settings.school_id, user, body.csv, request)
     return ImportResult(created=created)
 
@@ -121,6 +125,7 @@ def update_account(
 def reset_password(
     account_id: UUID,
     request: Request,
+    response: Response,
     user: UserDep,
     bindings: BindingsDep,
     db: DbDep,
@@ -129,6 +134,7 @@ def reset_password(
 ) -> TempPassword:
     _guard(db, request, user, bindings, settings)
     target = service.get_account_or_404(db, settings.school_id, account_id)
+    response.headers["Cache-Control"] = "no-store"
     return TempPassword(temp_password=service.reset_password(db, redis, user, target, request))
 
 

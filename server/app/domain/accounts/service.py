@@ -5,6 +5,7 @@ from uuid import UUID
 from fastapi import Request
 from redis import Redis
 from sqlalchemy import and_, exists, func, or_, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.audit.service import record
@@ -219,7 +220,11 @@ def create_account(
     if data.login_name.lower() in _existing_logins(db, school_id):
         raise ApiError(409, "LOGIN_TAKEN", "登录名已被使用")
     temp = generate_temp_password()
-    user = _insert_user(db, school_id, data, temp)
+    try:
+        with db.begin_nested():
+            user = _insert_user(db, school_id, data, temp)
+    except IntegrityError:
+        raise ApiError(409, "LOGIN_TAKEN", "登录名已被使用") from None
     record(
         db,
         user_id=actor.id,
@@ -355,7 +360,18 @@ def import_accounts(
             employee_no=r.employee_no,
             subjects=r.subjects,
         )
-        _insert_user(db, school_id, data, temp)
+        try:
+            with db.begin_nested():
+                _insert_user(db, school_id, data, temp)
+        except IntegrityError:
+            db.rollback()
+            bad = r.model_copy(update={"error": "登录名已被使用"})
+            raise ApiError(
+                400,
+                "IMPORT_INVALID",
+                "导入文件有错误,请修正后重试",
+                {"rows": [bad.model_dump()]},
+            ) from None
         created.append(
             ImportedAccount(
                 login_name=r.login_name, display_name=r.display_name, temp_password=temp

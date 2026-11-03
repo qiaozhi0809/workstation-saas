@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.models import User
 from app.models.audit import AuditLog
@@ -202,3 +202,62 @@ def test_accounts_require_permission(client, settings, db):
     assert denied and all(r.success is False for r in denied)
     assert db.get(User, target).status == "active"
     assert client.get(ACCOUNTS, headers=auth(settings, target)).status_code == 403
+
+
+def test_phone_rejects_non_ascii_digits(client, settings):
+    assert _create(client, settings, phone="١٣٨٠٠٠٠٠٠٢١").status_code == 400
+    assert _create(client, settings, phone="13800000021").status_code == 201
+
+
+def test_create_race_integrity_error_becomes_login_taken(client, settings, db, monkeypatch):
+    from app.domain.accounts import service
+
+    monkeypatch.setattr(service, "_existing_logins", lambda db, school_id: set())
+    before = db.scalar(select(func.count()).select_from(User))
+    res = _create(client, settings, login_name="teacher01")
+    assert res.status_code == 409
+    assert res.json()["error"]["code"] == "LOGIN_TAKEN"
+    assert db.scalar(select(func.count()).select_from(User)) == before
+
+
+def test_temp_password_responses_not_cached(client, settings, db):
+    h = _admin(settings)
+    created = _create(client, settings)
+    assert created.headers["cache-control"] == "no-store"
+    reset = client.post(f"{ACCOUNTS}/{_user_id(db, 'teacher02')}/reset-password", headers=h)
+    assert reset.headers["cache-control"] == "no-store"
+    imported = client.post(
+        f"{ACCOUNTS}/import", headers=h, json={"csv": "登录名,姓名,工号,科目,手机\nimp_a,甲,,,"}
+    )
+    assert imported.status_code == 201
+    assert imported.headers["cache-control"] == "no-store"
+
+
+def test_other_school_user_is_404(client, settings, db):
+    from uuid import uuid4
+
+    from app.models import School
+    from tests.factories import make_user
+
+    other = School(name="外校")
+    db.add(other)
+    db.flush()
+    stranger = make_user(db, f"stranger_{uuid4().hex[:6]}")
+    stranger.school_id = other.id
+    db.commit()
+    h = _admin(settings)
+    for tail in ("freeze", "reset-password", "unfreeze"):
+        assert client.post(f"{ACCOUNTS}/{stranger.id}/{tail}", headers=h).status_code == 404
+    body = {"display_name": "x", "phone": None, "employee_no": None, "subjects": []}
+    assert client.put(f"{ACCOUNTS}/{stranger.id}", headers=h, json=body).status_code == 404
+    assert db.get(User, stranger.id).status == "active"
+
+
+def test_unfreeze_keeps_must_change_password(client, settings, db):
+    uid = _user_id(db, "teacher02")
+    db.get(User, uid).must_change_password = True
+    db.commit()
+    h = _admin(settings)
+    client.post(f"{ACCOUNTS}/{uid}/freeze", headers=h)
+    back = client.post(f"{ACCOUNTS}/{uid}/unfreeze", headers=h).json()
+    assert back["status"] == "active" and back["must_change_password"] is True
