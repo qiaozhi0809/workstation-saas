@@ -28,8 +28,8 @@ def test_all_tables_exist(db):
 
 
 def test_seed_counts(db):
-    assert db.execute(text("SELECT count(*) FROM students")).scalar_one() == 10
-    assert db.execute(text("SELECT count(*) FROM enrollments")).scalar_one() == 10
+    assert db.execute(text("SELECT count(*) FROM students")).scalar_one() == 22
+    assert db.execute(text("SELECT count(*) FROM enrollments")).scalar_one() == 22
 
 
 def test_seed_seats_follow_mk_order(db):

@@ -103,7 +103,10 @@ def test_month_lists_exceptions_by_date(client, db, settings, monkeypatch):
     put(client, settings, "2026-11-02", enrollment_of(db, STUDENT_IDS[0]), "leave")
     body = client.get(f"{BASE}/month", params={"month": "2026-10"}, headers=auth(settings)).json()
     assert body["month"] == "2026-10"
+    # 种子在 10-12(请假)与 10-14(迟到)已有两条,见 dev_seed.sql 的 M3a 考勤
     assert [(i["date"], i["status"]) for i in body["items"]] == [
+        ("2026-10-12", "leave"),
+        ("2026-10-14", "late"),
         ("2026-10-29", "late"),
         ("2026-10-30", "absent"),
     ]
@@ -121,6 +124,9 @@ def test_removed_student_rows_hidden_from_day_and_month_views(client, db, settin
     day = day_view(client, settings).json()["items"]
     assert [(i["enrollment_id"], i["status"]) for i in day] == [(str(keep), "leave")]
     month = client.get(f"{BASE}/month", params={"month": "2026-10"}, headers=auth(settings))
+    seeded = enrollment_of(db, STUDENT_IDS[2]), enrollment_of(db, STUDENT_IDS[3])
     assert [(i["enrollment_id"], i["status"]) for i in month.json()["items"]] == [
-        (str(keep), "late")
+        (str(seeded[0]), "leave"),
+        (str(seeded[1]), "late"),
+        (str(keep), "late"),
     ]
