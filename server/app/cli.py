@@ -5,6 +5,7 @@ import time
 from collections.abc import Callable
 from contextlib import AbstractContextManager
 from dataclasses import replace
+from datetime import date
 from pathlib import Path
 from typing import TextIO
 from urllib.parse import urlparse
@@ -203,6 +204,20 @@ def build_parser() -> argparse.ArgumentParser:
     mask = s.add_mutually_exclusive_group()
     mask.add_argument("--mask-forced", dest="mask_forced", action="store_true", default=None)
     mask.add_argument("--no-mask-forced", dest="mask_forced", action="store_false")
+    yu = sub.add_parser("year-upgrade", help="学年升级:生成方案、预览、执行、回滚")
+    ya = yu.add_subparsers(dest="action", required=True)
+    ys = ya.add_parser("suggest", help="按现有班级生成升级方案 JSON")
+    ys.add_argument("--name", required=True, help="新学年名,如 2027-2028")
+    ys.add_argument("--start", required=True, type=date.fromisoformat, help="开学日 YYYY-MM-DD")
+    ys.add_argument("--end", required=True, type=date.fromisoformat, help="学年结束日 YYYY-MM-DD")
+    ys.add_argument("--out", help="写入文件;不给则输出到标准输出")
+    ya.add_parser("preview", help="预览方案").add_argument("plan")
+    yp = ya.add_parser("apply", help="执行方案")
+    yp.add_argument("plan")
+    yp.add_argument("--yes", action="store_true", help="确认执行")
+    ya.add_parser("rollback", help="回滚最近一次升级").add_argument(
+        "--yes", action="store_true", help="确认回滚"
+    )
     return parser
 
 
@@ -214,6 +229,15 @@ def main() -> None:
         engine = create_engine(get_settings().database_url)
         try:
             code = ai_config(ns, db_factory=sessionmaker(bind=engine), stdin=sys.stdin)
+        finally:
+            engine.dispose()
+        sys.exit(code)
+    elif ns.command == "year-upgrade":
+        from app.domain.years import cli as years_cli
+
+        engine = create_engine(get_settings().database_url)
+        try:
+            code = years_cli.run(ns, sessionmaker(bind=engine), sys.stdout)
         finally:
             engine.dispose()
         sys.exit(code)
