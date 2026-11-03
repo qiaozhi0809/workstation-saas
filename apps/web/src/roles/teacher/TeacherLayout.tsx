@@ -56,7 +56,7 @@ export default function TeacherLayout() {
       )}
       {cls && summary.data && (
         <span className="hidden truncate text-sm text-muted-foreground sm:inline">
-          {`${cls.grade_name} · ${summary.data.year.name} 第 ${summary.data.week_no} 周`}
+          {[cls.grade_name, cls.room, `${summary.data.year.name} 第 ${summary.data.week_no} 周`].filter(Boolean).join(' · ')}
         </span>
       )}
     </>

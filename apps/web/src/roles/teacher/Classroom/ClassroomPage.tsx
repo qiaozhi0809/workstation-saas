@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Dices, PencilLine, School } from 'lucide-react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useStudentDrawer } from '../StudentProfile/useStudentDrawer'
 import { classesApi } from '@/shared/api/classes'
 import { examsApi } from '@/shared/api/exams'
@@ -19,6 +19,7 @@ import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { MenuItem } from '@/shared/components/overlay/Menu'
 import { Button } from '@/shared/components/ui/button'
 import { examTable, latestExam } from '@/shared/lib/grades'
+import { groupOf } from '@/shared/lib/seats'
 import { useReducedMotion } from '@/shared/hooks/useReducedMotion'
 import { useAuthStore } from '@/shared/stores/auth'
 import { confirmLeave, useTeacherStore } from '@/shared/stores/teacher'
@@ -38,6 +39,7 @@ import SeatHoverCard from './SeatHoverCard'
 import SeatingBar, { SeatingMenuItems } from './seating/SeatingBar'
 import UnseatedTray from './seating/UnseatedTray'
 import { useSeatingMode } from './seating/useSeatingMode'
+import ClassSettingsDialog from './settings/ClassSettingsDialog'
 import { buildBoard } from './buildBoard'
 import { useIdleActions } from './idle/useIdleActions'
 import SidePanel from '@/shared/components/overlay/SidePanel'
@@ -99,6 +101,8 @@ export default function ClassroomPage() {
 function ClassroomView({ cls }: { cls: ClassView }) {
   const classId = cls.id
   const [params, setParams] = useSearchParams()
+  const navigate = useNavigate()
+  const qc = useQueryClient()
   const { open: openDrawer } = useStudentDrawer()
   const displayName = useAuthStore((s) => s.user?.display_name)
 
@@ -107,6 +111,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
   const { active: presenting, toggle: togglePresent } = useFullscreen(rootRef)
   const [editingBoard, setEditingBoard] = useState(false)
   const [panelOpen, setPanelOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   const roster = useQuery({
     queryKey: ['class-students', classId],
@@ -136,6 +141,12 @@ function ClassroomView({ cls }: { cls: ClassView }) {
       ? buildBoard({ className: cls.name, today, summary: summary.data, roster: roster.data.items, reviewSummary: reviewSummary.data })
       : undefined),
     [cls.name, today, summary.data, roster.data, reviewSummary.data],
+  )
+  // 小组序号与地图着色一致:随桌型、列数,讲台左边第一组、右边最后一组
+  // 接口还没带 desk_size 时(后端晚于前端上线)按双人桌算,避免小组序号成 NaN 让头像取色崩溃
+  const seatGroup = useCallback(
+    (s: StudentSeat) => groupOf(s.seat_col ?? 1, cls.desk_size ?? 2, cls.seat_cols, s.seat_row ?? 1),
+    [cls.desk_size, cls.seat_cols],
   )
   const figure = preferences.data?.teacher_figure ?? 'female'
   const label = summary.data
@@ -184,6 +195,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
     reasons: preferences.data?.review_reasons,
     subject,
     roster: roster.data?.items ?? [],
+    groupOf: seatGroup,
     timezone: summary.data?.timezone,
     summary: reviewSummary.data,
     // 投屏时不把考勤投到屏幕上
@@ -222,8 +234,8 @@ function ClassroomView({ cls }: { cls: ClassView }) {
     const week = reviewSummary.data
       ? reviewSummary.data.items.find((t) => t.enrollment_id === s.enrollment_id)?.week ?? 0
       : undefined
-    return <SeatHoverCard seat={s} attendance={status} week={week} />
-  }, [todayAttendance.data, reviewSummary.data])
+    return <SeatHoverCard seat={s} attendance={status} week={week} groupOf={seatGroup} />
+  }, [todayAttendance.data, reviewSummary.data, seatGroup])
   // 排座"优带弱"用最近一次考试的名次;与成绩模式、侧边面板共用 ['gradebook', classId]
   const canReadExams = perms.includes('exam.read')
   const gradebook = useQuery({
@@ -240,11 +252,13 @@ function ClassroomView({ cls }: { cls: ClassView }) {
     }
     return out
   }, [canReadExams, gradebook.data, roster.data])
+  const openSettings = useCallback(() => setSettingsOpen(true), [])
   const seating = useSeatingMode({
     classId,
     className: cls.name,
     enabled: mode === 'seating',
     ranks,
+    onOpenLayout: openSettings,
   })
   // 离开排座前确认未保存的修改;进入排座时收起点名(聚光灯 / 指向不落在排座地图上)
   const setMode = (next: ClassroomUiMode) => {
@@ -267,6 +281,19 @@ function ClassroomView({ cls }: { cls: ClassView }) {
   // 点名进行中(转动或结果卡打开):Task 21 据此暂停空闲动画
   const picking = pick.state === 'spinning' || cardOpen
   const canEditBoard = perms.includes('board.write') && !presenting && !!summary.data
+  const canSettings = perms.includes('seating.write') && !!summary.data
+  // 保存班级设置后名单、教室概况、班级行列都变了;排座模式下草稿也要按新桌椅重建
+  const onLayoutSaved = () => {
+    for (const key of [['my-classes'], ['classroom', classId], ['class-students', classId], ['student-records', classId]]) {
+      void qc.invalidateQueries({ queryKey: key })
+    }
+    if (mode === 'seating') void seating.reload()
+  }
+  const goFromSettings = async (to: 'add' | 'import' | 'list') => {
+    // 先等班级数据刷新,学生页 / 添加表单才能拿到新的行列
+    await qc.invalidateQueries({ queryKey: ['my-classes'] })
+    navigate(to === 'list' ? '/teacher/students' : `/teacher/students?action=${to}`)
+  }
   const canPick = mode !== 'seating' && !!todayAttendance.data && !!roster.data
   const overlay = mode === 'seating' ? undefined : attendance.views
   let slot: ModeSlot = {}
@@ -330,6 +357,8 @@ function ClassroomView({ cls }: { cls: ClassView }) {
       <ClassroomMap
         rows={slot.rows ?? cls.seat_rows}
         cols={slot.cols ?? cls.seat_cols}
+        deskSize={cls.desk_size}
+        podium={{ left: cls.podium_left, right: cls.podium_right }}
         seats={slot.seats ?? roster.data.items}
         mode={mode}
         teacher={teacher}
@@ -383,6 +412,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
           {review.popover}
           {cardOpen && (
             <PickCard
+              groupOf={seatGroup}
               seat={pick.state === 'picked' ? pickedSeat : null}
               presenting={presenting}
               canReward={perms.includes('review.write')}
@@ -414,9 +444,15 @@ function ClassroomView({ cls }: { cls: ClassView }) {
               )}
             </>
           ) : undefined}
-          menu={slot.menu || (mode !== 'daily' && (canPick || canEditBoard)) ? (
+          menu={slot.menu || canSettings || (mode !== 'daily' && (canPick || canEditBoard)) ? (
             <>
               {slot.menu}
+              {canSettings && (
+                // 排座草稿有未保存的修改时不能改桌椅(保存会按新桌椅重排并重建草稿)
+                <MenuItem disabled={seating.dirty} onSelect={openSettings}>
+                  {seating.dirty ? '班级设置(先保存或放弃当前的座位修改)' : '班级设置'}
+                </MenuItem>
+              )}
               {mode !== 'daily' && canPick && <MenuItem disabled={picking} onSelect={pick.start}>随机点名</MenuItem>}
               {mode !== 'daily' && canEditBoard && <MenuItem onSelect={() => setEditingBoard(true)}>编辑黑板</MenuItem>}
             </>
@@ -427,6 +463,17 @@ function ClassroomView({ cls }: { cls: ClassView }) {
           onOpenPanel={() => setPanelOpen(true)}
         />
       </section>
+      {settingsOpen && summary.data && roster.data && (
+        <ClassSettingsDialog
+          cls={cls}
+          seatVersion={summary.data.seat_version}
+          studentCount={roster.data.items.length}
+          hasSeated={roster.data.items.some((s) => s.seat_row != null && s.seat_col != null)}
+          onClose={() => setSettingsOpen(false)}
+          onSaved={onLayoutSaved}
+          onGo={goFromSettings}
+        />
+      )}
       {editingBoard && summary.data && (
         <BoardEditor classId={classId} board={summary.data.board} onClose={() => setEditingBoard(false)} />
       )}

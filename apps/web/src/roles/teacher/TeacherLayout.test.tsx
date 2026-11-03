@@ -255,3 +255,14 @@ it('keeps 我的偏好 and 退出登录 in the account menu under my initial', a
   expect(within(menu).getByRole('menuitem', { name: '我的偏好' })).toHaveAttribute('href', '/teacher/preferences')
   expect(within(menu).getByRole('menuitem', { name: '退出登录' })).toBeInTheDocument()
 })
+
+it('shows the room after the grade, and no stray separators without a room', async () => {
+  vi.mocked(classesApi.mine).mockResolvedValue({ items: [{ ...cls('a', '三年二班', 'homeroom_teacher'), room: '求知楼 201' }] })
+  const first = renderLayout()
+  expect(await screen.findByText('三年级 · 求知楼 201 · 2026-2027 第 10 周')).toBeInTheDocument()
+  first.unmount()
+  useTeacherStore.setState({ classId: null })
+  vi.mocked(classesApi.mine).mockResolvedValue({ items: [cls('a', '三年二班', 'homeroom_teacher')] })
+  renderLayout()
+  expect(await screen.findByText('三年级 · 2026-2027 第 10 周')).toBeInTheDocument()
+})

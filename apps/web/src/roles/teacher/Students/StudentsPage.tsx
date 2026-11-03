@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
 import { ArrowDown, ArrowUp, Download, Search, Upload, UserPlus } from 'lucide-react'
 import { examsApi } from '@/shared/api/exams'
 import { reviewsApi } from '@/shared/api/reviews'
@@ -13,6 +14,7 @@ import { Input } from '@/shared/components/ui/input'
 import { SegmentedTabs } from '@/shared/components/ui/segmented-tabs'
 import { downloadText } from '@/shared/lib/csv'
 import { examTable, latestExam, previousExam, rankChanges } from '@/shared/lib/grades'
+import { gridOf, seatText as cellText, type DeskGrid } from '@/shared/lib/seats'
 import { cn } from '@/shared/lib/utils'
 import type { StudentRecord } from '@/shared/types/student'
 import ClassGate, { type ClassContext } from '../ClassGate'
@@ -85,6 +87,17 @@ function Roster({ ctx: { cls, summary, perms } }: { ctx: ClassContext }) {
   const [editor, setEditor] = useState<{ record?: StudentRecord } | null>(null)
   const [importing, setImporting] = useState(false)
   const drawer = useStudentDrawer()
+  // 班级设置里"去添加 / 去导入"跳来的:打开对应对话框,并清掉参数免得刷新后重复弹出
+  const [params, setParams] = useSearchParams()
+  const action = params.get('action')
+  useEffect(() => {
+    if (action !== 'add' && action !== 'import') return
+    if (canManage) {
+      if (action === 'add') setEditor({})
+      else setImporting(true)
+    }
+    setParams((prev) => { const out = new URLSearchParams(prev); out.delete('action'); return out }, { replace: true })
+  }, [action, canManage, setParams])
 
   if (records.isLoading) return <LoadingState />
   if (!items) {
@@ -115,6 +128,7 @@ function Roster({ ctx: { cls, summary, perms } }: { ctx: ClassContext }) {
     )
   }
 
+  const grid = gridOf(cls)
   const showContacts = items.some((r) => 'contacts' in r)
   const visible = sortRows(filterRows(rows, q, filter, today), sort, dir)
 
@@ -186,7 +200,7 @@ function Roster({ ctx: { cls, summary, perms } }: { ctx: ClassContext }) {
             <tbody>
               {visible.map((r) => (
                 <StudentRow
-                  key={r.enrollment_id} row={r} showContacts={showContacts} canExam={canExam} canReview={canReview} canManage={canManage}
+                  key={r.enrollment_id} row={r} grid={grid} showContacts={showContacts} canExam={canExam} canReview={canReview} canManage={canManage}
                   onOpen={() => drawer.open(r.student_id)} onEdit={() => setEditor({ record: r })}
                 />
               ))}
@@ -216,12 +230,12 @@ function Head({ children }: { children: string }) {
   return <th scope="col" className="whitespace-nowrap px-3 py-2 text-left font-medium">{children}</th>
 }
 
-function seatText(r: StudentRecord): string {
-  return r.seat_row !== null && r.seat_col !== null ? `${r.seat_row}排${r.seat_col}列` : '—'
+function seatText(r: StudentRecord, grid: DeskGrid): string {
+  return r.seat_row !== null && r.seat_col !== null ? cellText({ row: r.seat_row, col: r.seat_col }, grid) : '—'
 }
 
-function StudentRow({ row: r, showContacts, canExam, canReview, canManage, onOpen, onEdit }: {
-  row: RosterRow; showContacts: boolean; canExam: boolean; canReview: boolean; canManage: boolean
+function StudentRow({ row: r, grid, showContacts, canExam, canReview, canManage, onOpen, onEdit }: {
+  row: RosterRow; grid: DeskGrid; showContacts: boolean; canExam: boolean; canReview: boolean; canManage: boolean
   onOpen(): void; onEdit(): void
 }) {
   const contact = r.contacts?.[0]
@@ -233,7 +247,7 @@ function StudentRow({ row: r, showContacts, canExam, canReview, canManage, onOpe
         <button type="button" className="text-left hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" onClick={(e) => { e.stopPropagation(); onOpen() }}>{r.name}</button>
       </td>
       <td className="whitespace-nowrap px-3 py-2">{r.gender ?? '—'}</td>
-      <td className="whitespace-nowrap px-3 py-2">{seatText(r)}</td>
+      <td className="whitespace-nowrap px-3 py-2">{seatText(r, grid)}</td>
       <td className="whitespace-nowrap px-3 py-2">{r.class_role ?? '—'}</td>
       <td className="whitespace-nowrap px-3 py-2">
         {r.birthdate ? (

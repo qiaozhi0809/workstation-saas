@@ -10,6 +10,7 @@ import { Label } from '@/shared/components/ui/label'
 import { NativeSelect } from '@/shared/components/ui/native-select'
 import { Textarea } from '@/shared/components/ui/textarea'
 import { FAMILY_TYPES } from '@/shared/lib/columns'
+import { gridCells, gridOf, podiumCells, seatText } from '@/shared/lib/seats'
 import { cn } from '@/shared/lib/utils'
 import type { ClassView } from '@/shared/types/class'
 import type { Contact, StudentInput, StudentRecord, StudentSeat } from '@/shared/types/student'
@@ -46,10 +47,20 @@ interface FormState {
 
 const emptyContact = (): Contact => ({ name: '', relation: '', phone: '', job: '' })
 const seatKey = (row: number | null, col: number | null) => (row !== null && col !== null ? `${row}-${col}` : '')
+const AUTO_SEAT = 'auto'
+// 讲台座位的列是负数("0--1"),不能直接按 - 拆开
+const parseSeat = (v: string): { row: number; col: number } | null => {
+  const m = /^(\d+)-(-?\d+)$/.exec(v)
+  return m ? { row: Number(m[1]), col: Number(m[2]) } : null
+}
+/** 新增学生、按人数自动排的班级、普通座位已坐满:提供"自动加座位"并默认选中 */
+const wantsAutoSeat = (cls: ClassView, roster: StudentSeat[], editing: boolean) =>
+  !editing && cls.seat_layout === 'auto'
+  && gridCells(gridOf(cls)).every((c) => roster.some((s) => s.seat_row === c.row && s.seat_col === c.col))
 
 // 编辑表单依赖: 持有 student.manage 的角色同时拥有全部读权限(read_basic/family/learning/profile),
 // 见 server/app/rbac/roles.py;否则记录里缺失的字段会回退为空值并被 PUT 覆盖掉。权限矩阵变动时需重新评估。
-function initialState(record: StudentRecord | undefined, roster: StudentSeat[]): FormState {
+function initialState(record: StudentRecord | undefined, roster: StudentSeat[], autoSeat = false): FormState {
   const tags = record?.tags ?? []
   const contacts = [...(record?.contacts ?? []), emptyContact(), emptyContact()].slice(0, 2)
   return {
@@ -58,7 +69,7 @@ function initialState(record: StudentRecord | undefined, roster: StudentSeat[]):
     studentNo: record ? record.student_no ?? '' : nextStudentNo(roster),
     birthdate: record?.birthdate ?? '',
     classRole: record?.class_role ?? '',
-    seat: record ? seatKey(record.seat_row, record.seat_col) : '',
+    seat: record ? seatKey(record.seat_row, record.seat_col) : autoSeat ? AUTO_SEAT : '',
     tags,
     boarding: record?.boarding === true || tags.includes(BOARDING_TAG),
     family: record?.family_structure ?? '',
@@ -95,7 +106,7 @@ export default function StudentForm({ cls, record, roster, onClose }: {
   const id = (k: string) => `${uid}-${k}`
   const editing = !!record
   const nameRef = useRef<HTMLInputElement>(null)
-  const [f, setF] = useState(() => initialState(record, roster))
+  const [f, setF] = useState(() => initialState(record, roster, wantsAutoSeat(cls, roster, !!record)))
   const [custom, setCustom] = useState(() => (record?.tags ?? []).filter((t) => !TAG_POOL.includes(t)))
   const [customDraft, setCustomDraft] = useState('')
   const [keepAdding, setKeepAdding] = useState(false)
@@ -126,14 +137,15 @@ export default function StudentForm({ cls, record, roster, onClose }: {
     setCustomDraft('')
   }
 
-  const seatOptions: { value: string; label: string; disabled: boolean }[] = [{ value: '', label: '不排座', disabled: false }]
-  for (let r = 1; r <= cls.seat_rows; r++) {
-    for (let c = 1; c <= cls.seat_cols; c++) {
-      const occupant = roster.find((s) => s.seat_row === r && s.seat_col === c && s.enrollment_id !== record?.enrollment_id)
-      let suffix = ''
-      if (occupant) suffix = occupant.seat_locked ? ' (已固定)' : editing ? ' (将互换)' : ' (原座位同学将挪到空位)'
-      seatOptions.push({ value: `${r}-${c}`, label: `${r}排${c}列${suffix}`, disabled: !!occupant?.seat_locked })
-    }
+  const grid = gridOf(cls)
+  const seatOptions: { value: string; label: string; disabled: boolean }[] = []
+  if (wantsAutoSeat(cls, roster, editing)) seatOptions.push({ value: AUTO_SEAT, label: '自动加座位', disabled: false })
+  seatOptions.push({ value: '', label: '不排座', disabled: false })
+  for (const { row, col } of [...podiumCells(grid), ...gridCells(grid)]) {
+    const occupant = roster.find((s) => s.seat_row === row && s.seat_col === col && s.enrollment_id !== record?.enrollment_id)
+    let suffix = ''
+    if (occupant) suffix = occupant.seat_locked ? ' (已固定)' : editing ? ' (将互换)' : ' (原座位同学将挪到空位)'
+    seatOptions.push({ value: `${row}-${col}`, label: `${seatText({ row, col }, grid)}${suffix}`, disabled: !!occupant?.seat_locked })
   }
 
   const submit = async (e: FormEvent) => {
@@ -151,7 +163,7 @@ export default function StudentForm({ cls, record, roster, onClose }: {
       return
     }
 
-    const [row, col] = f.seat ? f.seat.split('-').map(Number) : [null, null]
+    const picked = parseSeat(f.seat)
     const input: StudentInput = {
       name,
       gender: f.gender === '男' || f.gender === '女' ? f.gender : null,
@@ -167,7 +179,8 @@ export default function StudentForm({ cls, record, roster, onClose }: {
       note: orNull(f.note),
       health_notes: orNull(f.health),
       contacts,
-      seat: row !== null && col !== null ? { row, col } : null,
+      seat: picked,
+      ...(f.seat === AUTO_SEAT ? { auto_seat: true } : {}),
     }
     setBusy(true)
     try {
@@ -175,9 +188,11 @@ export default function StudentForm({ cls, record, roster, onClose }: {
         ? await studentsApi.update(cls.id, record.enrollment_id, input)
         : await studentsApi.create(cls.id, input)
       void invalidateRosterQueries(qc)
+      // 自动加座位会改班级行列,教室图读的是 my-classes
+      void qc.invalidateQueries({ queryKey: ['my-classes'] })
       toast(record ? `已保存${name}` : `已添加${name}`)
       if (!record && keepAdding) {
-        setF(initialState(undefined, [...roster, saved]))
+        setF(initialState(undefined, [...roster, saved], wantsAutoSeat(cls, [...roster, saved], false)))
         setCustom([])
         setCustomDraft('')
       } else onClose()

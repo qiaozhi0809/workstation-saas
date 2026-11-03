@@ -452,7 +452,7 @@ it('shows the common seating actions directly and the rest under 更多操作', 
   for (const name of ['放弃修改', '固定座位', '打印']) expect(screen.queryByRole('button', { name })).toBeNull()
   openMore()
   expect(within(screen.getByRole('menu', { name: '更多操作' })).getAllByRole('menuitem').map((i) => i.textContent))
-    .toEqual(['放弃修改', '固定座位', '打印', '编辑黑板'])
+    .toEqual(['放弃修改', '固定座位', '打印', '班级设置', '编辑黑板'])
 })
 
 it('more menu opens inside the fullscreen root while presenting', async () => {
