@@ -3,6 +3,7 @@ import { useQueryClient, type QueryKey } from '@tanstack/react-query'
 import { useBlocker, type Location } from 'react-router-dom'
 import { ApiError } from '@/shared/api/client'
 import { seatingApi } from '@/shared/api/seating'
+import { gridOf, inGrid, type DeskGrid } from '@/shared/lib/seats'
 import { genderOf } from '@/shared/components/ClassroomMap/art/StudentFigure'
 import type { Cell, SeatView } from '@/shared/components/ClassroomMap/types'
 import { toast } from '@/shared/components/Toast'
@@ -22,6 +23,8 @@ interface Options {
   enabled: boolean
   /** enrollment_id → 最近一次考试的名次 */
   ranks?: Map<string, number>
+  /** 打开"桌椅排列"对话框(由页面提供) */
+  onOpenLayout?: () => void
 }
 
 /** 草稿、它的起点,以及建草稿时用的名单(地图上的学生信息取自它,和草稿始终一致) */
@@ -35,16 +38,16 @@ const LOAD_FAILED = '座位表加载失败,请重试'
 const leavesSeating = (from: Location, to: Location) =>
   to.pathname !== from.pathname || new URLSearchParams(to.search).get('mode') !== 'seating'
 
-/** 用名单 + 行列 + 版本建草稿;不在格内的座位视为未排座。 */
-function buildDraft(roster: StudentSeat[], rows: number, cols: number, baseVersion: number): SeatDraft {
+/** 用名单 + 桌椅排列 + 版本建草稿;不在格内的座位视为未排座,讲台边的座位在格内即算已就座。 */
+function buildDraft(roster: StudentSeat[], grid: DeskGrid, baseVersion: number): SeatDraft {
   return initDraft({
-    rows, cols, baseVersion,
+    grid, baseVersion,
     students: roster.map((s) => {
-      const seated = s.seat_row !== null && s.seat_col !== null
-        && s.seat_row >= 1 && s.seat_row <= rows && s.seat_col >= 1 && s.seat_col <= cols
+      const seated = s.seat_row !== null && s.seat_col !== null && inGrid(grid, { row: s.seat_row, col: s.seat_col })
       return {
         enrollmentId: s.enrollment_id,
         name: s.name,
+        studentNo: s.student_no,
         gender: genderOf(s.gender),
         row: seated ? s.seat_row : null,
         col: seated ? s.seat_col : null,
@@ -95,7 +98,7 @@ export function useSeatingMode(o: Options) {
       const cls = qc.getQueryData<{ items: ClassView[] }>(['my-classes'])?.items.find((c) => c.id === classId)
       if (!summary || !roster || !cls) throw new Error(LOAD_FAILED)
       if (token !== seq.current) return
-      const d = buildDraft(roster, cls.seat_rows, cls.seat_cols, Math.max(summary.seat_version, minVersion))
+      const d = buildDraft(roster, gridOf(cls), Math.max(summary.seat_version, minVersion))
       setDrafts({ draft: d, original: d, roster })
       setStatus('idle')
     } catch {
@@ -174,7 +177,9 @@ export function useSeatingMode(o: Options) {
     } catch (err) {
       if (err instanceof ApiError && err.code === 'SEAT_VERSION_CONFLICT') setConflict(true)
       else if (err instanceof ApiError && err.code === 'SEAT_INVALID') {
-        toast('学生名单有变化,已重新加载')
+        const reason = (err.details as { reason?: string } | undefined)?.reason
+        toast(reason === 'layout_mismatch' || reason === 'podium_unavailable'
+          ? '班级的桌椅排列已变化,已重新加载' : '学生名单有变化,已重新加载')
         await load()
       } else toast(err instanceof Error ? err.message : '保存失败')
     } finally {
@@ -206,29 +211,36 @@ export function useSeatingMode(o: Options) {
   }, [draft])
 
   if (!enabled || !drafts || !draft) {
-    return { ready: false as const, dirty, pending, failed: status === 'failed', retry: () => void load() }
+    return { ready: false as const, dirty, pending, failed: status === 'failed', retry: () => void load(), reload: () => load() }
   }
 
   const selected = draft.students.find((s) => s.enrollmentId === draft.selected) ?? null
   const selectedSeated = selected && selected.row !== null ? selected : null
 
   const bar: SeatingBarProps = {
-    rows: draft.rows,
-    cols: draft.cols,
+    deskSize: draft.grid.deskSize,
+    onOpenLayout: o.onOpenLayout,
+    layoutBlocked: dirty,
     canUndo: draft.past.length > 0,
     dirty,
     busy,
     selected: selectedSeated,
     conflict,
-    onShuffle: () => dispatch({ type: 'apply', students: shuffleSeats(draft.students, draft.rows, draft.cols, Math.random) }),
-    onPair: () => dispatch({ type: 'apply', students: genderPairSeats(draft.students, draft.rows, draft.cols, Math.random) }),
+    onShuffle: () => dispatch({ type: 'apply', students: shuffleSeats(draft.students, draft.grid, Math.random) }),
+    onPair: () => dispatch({ type: 'apply', students: genderPairSeats(draft.students, draft.grid, Math.random) }),
     canMentor: !!o.ranks && o.ranks.size > 0,
-    onMentor: () => { if (o.ranks) dispatch({ type: 'apply', students: mentorSeats(draft.students, draft.rows, draft.cols, o.ranks, Math.random) }) },
+    onMentor: () => { if (o.ranks) dispatch({ type: 'apply', students: mentorSeats(draft.students, draft.grid, o.ranks, Math.random) }) },
     onUndo: () => dispatch({ type: 'undo' }),
     onDiscard: () => dispatch({ type: 'reset', draft: drafts.original }),
-    onResize: (r, c) => dispatch({ type: 'resize', rows: r, cols: c }),
     onToggleLock: () => { if (selectedSeated) dispatch({ type: 'toggleLock', enrollmentId: selectedSeated.enrollmentId }) },
-    onPrint: () => printSeating(seatingPrintHtml({ className: o.className, rows: draft.rows, cols: draft.cols, students: draft.students })),
+    onPrint: () => {
+      const summary = qc.getQueryData<ClassroomSummary>(['classroom', classId])
+      const cls = qc.getQueryData<{ items: ClassView[] }>(['my-classes'])?.items.find((c) => c.id === classId)
+      printSeating(seatingPrintHtml({
+        className: o.className, schoolName: summary?.school_name ?? '', room: cls?.room ?? '', today: summary?.today ?? '',
+        grid: draft.grid, students: draft.students,
+      }))
+    },
     onSave: () => void save(),
     onReload: () => { setConflict(false); void load() },
     onKeepEditing: () => setConflict(false),
@@ -251,8 +263,8 @@ export function useSeatingMode(o: Options) {
     dirty,
     pending,
     seats: seats ?? [],
-    rows: draft.rows,
-    cols: draft.cols,
+    rows: draft.grid.rows,
+    cols: draft.grid.cols,
     views,
     // 保存 / 加载期间地图不可编辑
     onSeatClick: busy ? undefined : (seat: StudentSeat) => clickStudent(seat.enrollment_id),
@@ -260,5 +272,6 @@ export function useSeatingMode(o: Options) {
     onSeatDrop: busy ? undefined : drop,
     bar,
     tray,
+    reload: () => load(),
   }
 }

@@ -1,3 +1,4 @@
+import { gridCells, isPodium, type DeskGrid } from '@/shared/lib/seats'
 import type { Cell, DraftStudent } from './draft'
 
 function shuffled<T>(items: T[], rand: () => number): T[] {
@@ -9,125 +10,150 @@ function shuffled<T>(items: T[], rand: () => number): T[] {
   return out
 }
 
-function freeCells(students: DraftStudent[], rows: number, cols: number): Cell[][] {
-  const taken = new Set(students.filter((s) => s.locked).map((s) => `${s.row},${s.col}`))
-  const grid: Cell[][] = []
-  for (let row = 1; row <= rows; row++) {
-    const line: Cell[] = []
-    for (let col = 1; col <= cols; col++) {
-      if (!taken.has(`${row},${col}`)) line.push({ row, col })
-    }
-    grid.push(line)
+/** 固定不动的同学:老师固定的,以及坐在讲台边的(讲台座位不参与排列,也不腾位)。 */
+const fixed = (s: DraftStudent) => s.locked || (s.row !== null && isPodium(s))
+
+/** 每排的空座(普通座位,按列升序);固定同学占的座位不算。 */
+function freeCells(students: DraftStudent[], grid: DeskGrid): Cell[][] {
+  const taken = new Set(students.filter(fixed).map((s) => `${s.row},${s.col}`))
+  const lines: Cell[][] = []
+  for (let row = 1; row <= grid.rows; row++) lines.push([])
+  for (const cell of gridCells(grid)) {
+    if (!taken.has(`${cell.row},${cell.col}`)) lines[cell.row - 1].push(cell)
   }
-  return grid
+  return lines
 }
 
 function assign(students: DraftStudent[], placed: Map<string, Cell>): DraftStudent[] {
   return students.map((s) => {
-    if (s.locked) return { ...s }
+    if (fixed(s)) return { ...s }
     const cell = placed.get(s.enrollmentId)
     return { ...s, row: cell?.row ?? null, col: cell?.col ?? null }
   })
 }
 
-export function shuffleSeats(
-  students: DraftStudent[],
-  rows: number,
-  cols: number,
-  rand: () => number,
-): DraftStudent[] {
-  const cells = freeCells(students, rows, cols).flat()
+export function shuffleSeats(students: DraftStudent[], grid: DeskGrid, rand: () => number): DraftStudent[] {
+  const cells = freeCells(students, grid).flat()
   const placed = new Map<string, Cell>()
-  shuffled(students.filter((s) => !s.locked), rand).forEach((s, i) => {
+  shuffled(students.filter((s) => !fixed(s)), rand).forEach((s, i) => {
     if (i < cells.length) placed.set(s.enrollmentId, cells[i])
   })
   return assign(students, placed)
 }
 
-export function genderPairSeats(
-  students: DraftStudent[],
-  rows: number,
-  cols: number,
-  rand: () => number,
-): DraftStudent[] {
-  const loose = students.filter((s) => !s.locked)
-  const males = shuffled(loose.filter((s) => s.gender === 'male'), rand)
-  const females = shuffled(loose.filter((s) => s.gender === 'female'), rand)
-  const pairs: DraftStudent[][] = []
-  while (males.length > 0 && females.length > 0) pairs.push([males.pop()!, females.pop()!])
-  const rest = shuffled([...males, ...females, ...loose.filter((s) => s.gender === null)], rand)
-  const alone: DraftStudent[] = []
-  for (let i = 0; i < rest.length; i += 2) {
-    if (i + 1 < rest.length) pairs.push([rest[i], rest[i + 1]])
-    else alone.push(rest[i])
+/** 取出最多 k 个同学放进一桌:男女交替,先手取人数多的一方(一样多则随机),该性别没人了就取另一方。 */
+function genderGroups(males: DraftStudent[], females: DraftStudent[], k: number, rand: () => number): DraftStudent[][] {
+  const groups: DraftStudent[][] = []
+  while (males.length > 0 && females.length > 0) {
+    const maleFirst = males.length === females.length ? rand() < 0.5 : males.length > females.length
+    const [a, b] = maleFirst ? [males, females] : [females, males]
+    const group: DraftStudent[] = []
+    for (let i = 0; i < k; i++) {
+      const pool = (i % 2 === 0 ? a : b).length > 0 ? (i % 2 === 0 ? a : b) : (i % 2 === 0 ? b : a)
+      if (pool.length === 0) break
+      group.push(pool.pop()!)
+    }
+    groups.push(group)
   }
-  return placePairs(students, rows, cols, pairs, alone, rand)
+  return groups
 }
 
-/** 把成好的同桌对放进空桌(桌序打乱、左右随机),落单的和放不下的补进单座 / 剩余座位。 */
-function placePairs(
+export function genderPairSeats(students: DraftStudent[], grid: DeskGrid, rand: () => number): DraftStudent[] {
+  const k = grid.deskSize
+  const loose = students.filter((s) => !fixed(s))
+  const males = shuffled(loose.filter((s) => s.gender === 'male'), rand)
+  const females = shuffled(loose.filter((s) => s.gender === 'female'), rand)
+  const groups: DraftStudent[][] = []
+  const rest: DraftStudent[] = []
+  for (const g of genderGroups(males, females, k, rand)) {
+    if (g.length === k) groups.push(g)
+    else rest.push(...g)
+  }
+  rest.push(...males, ...females, ...loose.filter((s) => s.gender === null))
+  const alone: DraftStudent[] = []
+  const mixed = shuffled(rest, rand)
+  for (let i = 0; i < mixed.length; i += k) {
+    const chunk = mixed.slice(i, i + k)
+    if (chunk.length === k) groups.push(chunk)
+    else alone.push(...chunk)
+  }
+  return placeGroups(students, grid, groups, alone, rand)
+}
+
+/**
+ * 把成好的同桌组放进空桌(桌序打乱、组内左右随机翻转),落单的和放不下的补进散座 / 剩余座位。
+ * 整桌 = 同一排里第 p*k+1 .. p*k+k 列都空着;凑不成整桌的空座是散座。
+ */
+function placeGroups(
   students: DraftStudent[],
-  rows: number,
-  cols: number,
-  pairs: DraftStudent[][],
+  grid: DeskGrid,
+  groups: DraftStudent[][],
   alone: DraftStudent[],
   rand: () => number,
-  /** 补位顺序:默认落单的在前、放不下的配对在后;优带弱要求有名次的先补、没名次的最后 */
+  /** 补位顺序:默认落单的在前、放不下的组在后;优带弱要求有名次的先补、没名次的最后 */
   orderLeftovers: (alone: DraftStudent[], queue: DraftStudent[]) => DraftStudent[] = (a, q) => [...a, ...q],
 ): DraftStudent[] {
-  const desks: [Cell, Cell][] = []
+  const k = grid.deskSize
+  const desks: Cell[][] = []
   const singles: Cell[] = []
-  for (const line of freeCells(students, rows, cols)) {
+  for (const line of freeCells(students, grid)) {
     const free = new Set(line.map((c) => c.col))
-    for (const cell of line) {
-      if (cell.col % 2 === 1 && free.has(cell.col + 1)) {
-        desks.push([cell, { row: cell.row, col: cell.col + 1 }])
-      } else if (!(cell.col % 2 === 0 && free.has(cell.col - 1))) {
-        singles.push(cell)
+    const inDesk = new Set<number>()
+    for (let start = 1; start + k - 1 <= grid.cols; start += k) {
+      const cols = Array.from({ length: k }, (_, i) => start + i)
+      if (cols.every((c) => free.has(c))) {
+        cols.forEach((c) => inDesk.add(c))
+        desks.push(cols.map((col) => ({ row: line[0].row, col })))
       }
     }
+    for (const cell of line) if (!inDesk.has(cell.col)) singles.push(cell)
   }
 
   const placed = new Map<string, Cell>()
   const queue: DraftStudent[] = []
   const unusedDesks = [...desks]
-  for (const pair of shuffled(pairs, rand)) {
+  for (const group of shuffled(groups, rand)) {
     const desk = unusedDesks.shift()
     if (!desk) {
-      queue.push(...pair)
+      queue.push(...group)
       continue
     }
-    const [left, right] = rand() < 0.5 ? desk : [desk[1], desk[0]]
-    placed.set(pair[0].enrollmentId, left)
-    placed.set(pair[1].enrollmentId, right)
+    const seats = rand() < 0.5 ? desk : [...desk].reverse()
+    group.forEach((s, i) => placed.set(s.enrollmentId, seats[i]))
   }
 
   const seats = [...singles, ...unusedDesks.flat()]
-  const leftovers = orderLeftovers(alone, queue)
-  leftovers.forEach((s, i) => {
+  orderLeftovers(alone, queue).forEach((s, i) => {
     if (i < seats.length) placed.set(s.enrollmentId, seats[i])
   })
   return assign(students, placed)
 }
 
-/** 优带弱:未固定且有名次的按名次升序,第 i 名配倒数第 i 名;奇数时中间一人、以及没有名次的同学单独。 */
+/**
+ * 优带弱:有名次的按名次升序成 list;每组取第一名,k >= 2 再取最后一名,k >= 3 再把 list 正中间的人插到第二位。
+ * 凑不满一桌的(奇数余下的)和没有名次的单独,没名次的最后。
+ */
 export function mentorSeats(
   students: DraftStudent[],
-  rows: number,
-  cols: number,
+  grid: DeskGrid,
   ranks: Map<string, number>,
   rand: () => number,
 ): DraftStudent[] {
-  const loose = students.filter((s) => !s.locked)
-  const ranked = loose
+  const k = grid.deskSize
+  const loose = students.filter((s) => !fixed(s))
+  const list = loose
     .filter((s) => ranks.has(s.enrollmentId))
     .sort((a, b) => ranks.get(a.enrollmentId)! - ranks.get(b.enrollmentId)!)
   const unranked = loose.filter((s) => !ranks.has(s.enrollmentId))
   const alone: DraftStudent[] = []
-  const pairs: DraftStudent[][] = []
-  const n = ranked.length
-  for (let i = 0; i < Math.floor(n / 2); i++) pairs.push([ranked[i], ranked[n - 1 - i]])
-  if (n % 2 === 1) alone.push(ranked[(n - 1) / 2])
-  // 没坐进同桌的:有名次的配对先补空位,然后是奇数时中间那位,没成绩的最后
-  return placePairs(students, rows, cols, pairs, alone, rand, (a, q) => [...q, ...a, ...unranked])
+  const groups: DraftStudent[][] = []
+  while (list.length > 0) {
+    const g = [list.shift()!]
+    if (k >= 2 && list.length > 0) g.push(list.pop()!)
+    if (k >= 3 && list.length > 0) g.splice(1, 0, list.splice(Math.floor(list.length / 2), 1)[0])
+    if (g.length === k) groups.push(g)
+    else alone.push(...g)
+  }
+  // 没坐进整桌的:有名次的组先补空位,然后是落单的有名次同学,没成绩的最后
+  return placeGroups(students, grid, groups, alone, rand, (a, q) => [...q, ...a, ...unranked])
 }
