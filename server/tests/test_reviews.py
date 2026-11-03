@@ -278,3 +278,68 @@ def test_replay_after_revoke_does_not_resurrect(client, db, settings):
     assert review_count(db) == 1
     other = client.post(BASE, json=payload, headers=auth(settings, SUBJECT_USER_ID))
     assert other.status_code == 409
+
+
+def test_list_filtered_by_enrollment(client, db, settings):
+    e1 = enrollment_of(db, STUDENT_IDS[0])
+    e2 = enrollment_of(db, STUDENT_IDS[1])
+    client.post(BASE, json=individual([e1], reason="第一条"), headers=auth(settings))
+    client.post(BASE, json=individual([e1], reason="第二条"), headers=auth(settings))
+    client.post(BASE, json=individual([e2], reason="别人"), headers=auth(settings))
+    body = client.get(f"{BASE}?enrollment_id={e1}", headers=auth(settings)).json()
+    assert len(body["items"]) == 2
+    assert {i["enrollment_id"] for i in body["items"]} == {str(e1)}
+    limited = client.get(f"{BASE}?enrollment_id={e1}&limit=1", headers=auth(settings)).json()
+    assert len(limited["items"]) == 1 and limited["next_cursor"] is not None
+    assert len(client.get(f"{BASE}?limit=40", headers=auth(settings)).json()["items"]) == 3
+    # 已撤销的仍被排除
+    rid = body["items"][0]["id"]
+    client.post(f"{BASE}/items/{rid}/revoke", headers=auth(settings))
+    after = client.get(f"{BASE}?enrollment_id={e1}", headers=auth(settings)).json()
+    assert len(after["items"]) == 1
+
+
+def test_revoke_single_item_keeps_rest_of_op(client, db, settings):
+    op = uuid4()
+    res = client.post(BASE, json=whole_class(op), headers=auth(settings))
+    assert len(res.json()["items"]) == 10
+    target = enrollment_of(db, STUDENT_IDS[0])
+    rid = next(i["id"] for i in res.json()["items"] if i["enrollment_id"] == str(target))
+    first = client.post(f"{BASE}/items/{rid}/revoke", headers=auth(settings))
+    assert first.status_code == 200
+    assert first.json() == {"review_id": rid, "revoked": 1}
+    items = client.get(f"{BASE}/summary", headers=auth(settings)).json()["items"]
+    totals = {i["enrollment_id"]: i["total"] for i in items}
+    assert totals.pop(str(target)) == 0
+    assert len(totals) == 9 and set(totals.values()) == {1}
+    again = client.post(f"{BASE}/items/{rid}/revoke", headers=auth(settings))
+    assert again.status_code == 200
+    assert again.json() == {"review_id": rid, "revoked": 0}
+    assert [(r.action, r.success, r.object_type) for r in audit_rows(db, rid)] == [
+        ("review.revoke", True, "review")
+    ]
+
+
+def test_revoke_item_by_other_teacher_denied(client, db, settings):
+    res = client.post(
+        BASE,
+        json=individual([enrollment_of(db, STUDENT_IDS[0])]),
+        headers=auth(settings),
+    )
+    rid = res.json()["items"][0]["id"]
+    other = client.post(f"{BASE}/items/{rid}/revoke", headers=auth(settings, SUBJECT_USER_ID))
+    assert other.status_code == 403
+    assert [(r.action, r.success, r.object_type) for r in audit_rows(db, rid)] == [
+        ("review.revoke", False, "review")
+    ]
+    assert len(client.get(BASE, headers=auth(settings)).json()["items"]) == 1
+
+
+def test_revoke_item_wrong_class_404(client, db, settings):
+    missing = client.post(f"{BASE}/items/{uuid4()}/revoke", headers=auth(settings))
+    assert (missing.status_code, missing.json()["error"]["code"]) == (404, "NOT_FOUND")
+    other_class = uuid4()
+    res = client.post(
+        f"/api/v1/classes/{other_class}/reviews/items/{uuid4()}/revoke", headers=auth(settings)
+    )
+    assert res.status_code == 404

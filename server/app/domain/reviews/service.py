@@ -12,6 +12,7 @@ from app import clock
 from app.audit.service import deny, record
 from app.domain.attendance.service import exceptions_on
 from app.domain.reviews.schemas import (
+    ItemRevokeResult,
     ReviewCreate,
     ReviewOut,
     ReviewPage,
@@ -161,7 +162,12 @@ def _decode_cursor(cursor: str) -> tuple[datetime, UUID]:
 
 
 def list_reviews(
-    db: Session, class_id: UUID, user_id: UUID, cursor: str | None, limit: int
+    db: Session,
+    class_id: UUID,
+    user_id: UUID,
+    cursor: str | None,
+    limit: int,
+    enrollment_id: UUID | None = None,
 ) -> ReviewPage:
     stmt = (
         select(Review)
@@ -174,6 +180,8 @@ def list_reviews(
         .order_by(Review.given_at.desc(), Review.id.desc())
         .limit(limit + 1)
     )
+    if enrollment_id is not None:
+        stmt = stmt.where(Review.enrollment_id == enrollment_id)
     if cursor:
         at, rid = _decode_cursor(cursor)
         if at.tzinfo is None:
@@ -262,3 +270,39 @@ def revoke(
         )
     db.commit()
     return RevokeResult(op_id=op_id, revoked=count)
+
+
+def revoke_item(
+    db: Session, class_id: UUID, review_id: UUID, user_id: UUID, request: Request
+) -> ItemRevokeResult:
+    row = db.scalars(
+        select(Review).where(Review.id == review_id, Review.class_id == class_id)
+    ).one_or_none()
+    if row is None:
+        raise ApiError(404, "NOT_FOUND", "点评不存在")
+    if row.given_by_user_id != user_id:
+        deny(
+            db,
+            user_id=user_id,
+            action="review.revoke",
+            object_type="review",
+            object_id=str(review_id),
+            request=request,
+        )
+    count = db.execute(
+        update(Review)
+        .where(Review.id == review_id, Review.revoked_at.is_(None))
+        .values(revoked_at=clock.utc_now(), revoked_by_user_id=user_id)
+    ).rowcount
+    if count > 0:
+        record(
+            db,
+            user_id=user_id,
+            action="review.revoke",
+            success=True,
+            object_type="review",
+            object_id=str(review_id),
+            request=request,
+        )
+    db.commit()
+    return ItemRevokeResult(review_id=review_id, revoked=count)
