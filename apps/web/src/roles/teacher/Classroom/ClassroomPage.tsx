@@ -228,16 +228,6 @@ function ClassroomView({ cls }: { cls: ClassView }) {
     return pickPool(roster.data?.items ?? [], (id) => status.get(id))
   }, [todayAttendance.data, roster.data])
   const pick = usePick({ pool })
-  // 悬停卡:今日考勤固定看学校"今天"(与考勤模式正在看的日期无关),本周积分要有 review.read 才有
-  const renderHoverCard = useCallback<NonNullable<ClassroomMapProps['renderHoverCard']>>((s) => {
-    const status = todayAttendance.data
-      ? todayAttendance.data.items.find((i) => i.enrollment_id === s.enrollment_id)?.status ?? 'present'
-      : undefined
-    const week = reviewSummary.data
-      ? reviewSummary.data.items.find((t) => t.enrollment_id === s.enrollment_id)?.week ?? 0
-      : undefined
-    return <SeatHoverCard seat={s} attendance={status} week={week} groupOf={seatGroup} />
-  }, [todayAttendance.data, reviewSummary.data, seatGroup])
   // 排座"优带弱"用最近一次考试的名次;与成绩模式、侧边面板共用 ['gradebook', classId]
   const canReadExams = perms.includes('exam.read')
   const gradebook = useQuery({
@@ -262,6 +252,26 @@ function ClassroomView({ cls }: { cls: ClassView }) {
     ranks,
     onOpenLayout: openSettings,
   })
+  // 悬停卡 / 点名卡的小组号与地图着色一致:排座模式地图画的是草稿(桌型、列数),不是已保存的班级设置,
+  // 草稿重建的瞬间两者会不同,所以排座就绪时按草稿算
+  const draftDesk = seating.ready ? seating.deskSize : null
+  const draftCols = seating.ready ? seating.cols : null
+  const mapGroup = useCallback(
+    (s: StudentSeat) => (draftDesk !== null && draftCols !== null
+      ? groupOf(s.seat_col ?? 1, draftDesk, draftCols, s.seat_row ?? 1)
+      : seatGroup(s)),
+    [draftDesk, draftCols, seatGroup],
+  )
+  // 悬停卡:今日考勤固定看学校"今天"(与考勤模式正在看的日期无关),本周积分要有 review.read 才有
+  const renderHoverCard = useCallback<NonNullable<ClassroomMapProps['renderHoverCard']>>((s) => {
+    const status = todayAttendance.data
+      ? todayAttendance.data.items.find((i) => i.enrollment_id === s.enrollment_id)?.status ?? 'present'
+      : undefined
+    const week = reviewSummary.data
+      ? reviewSummary.data.items.find((t) => t.enrollment_id === s.enrollment_id)?.week ?? 0
+      : undefined
+    return <SeatHoverCard seat={s} attendance={status} week={week} groupOf={mapGroup} />
+  }, [todayAttendance.data, reviewSummary.data, mapGroup])
   // 离开排座前确认未保存的修改;进入排座时收起点名(聚光灯 / 指向不落在排座地图上)
   const setMode = (next: ClassroomUiMode) => {
     if (mode === 'seating' && !confirmLeave(['seating'])) return
@@ -414,7 +424,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
           {review.popover}
           {cardOpen && (
             <PickCard
-              groupOf={seatGroup}
+              groupOf={mapGroup}
               seat={pick.state === 'picked' ? pickedSeat : null}
               presenting={presenting}
               canReward={perms.includes('review.write')}

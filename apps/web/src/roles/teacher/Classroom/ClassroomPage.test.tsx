@@ -524,6 +524,28 @@ it('colors the hover card avatar with the map group of three-seat desks and podi
   expect(card2.innerHTML).toContain('#8b7cf6')
 })
 
+it('hover card group follows the draft desk size', async () => {
+  // 班级是双人桌;排座草稿已改为三人桌、9 列:第 3 列按草稿属第 1 组(groupOf(3, 3) = 0),按双人桌会算成第 2 组
+  const seat = { ...rosterFixture[0], seat_row: 1, seat_col: 3 }
+  hoisted.seating = () => ({
+    ready: true, dirty: false, pending: null, seats: [seat], rows: 2, cols: 9, deskSize: 3, podium: { left: 0, right: 0 }, views: {},
+    onSeatClick: undefined, onEmptySeatClick: undefined, onSeatDrop: undefined, reload: vi.fn(),
+    bar: {
+      deskSize: 3, layoutBlocked: false, canUndo: false, dirty: false, busy: false, selected: null, conflict: false, canMentor: false,
+      onShuffle: vi.fn(), onPair: vi.fn(), onMentor: vi.fn(), onUndo: vi.fn(), onDiscard: vi.fn(), onToggleLock: vi.fn(),
+      onPrint: vi.fn(), onSave: vi.fn(), onReload: vi.fn(), onKeepEditing: vi.fn(),
+    },
+    tray: { students: [], selectedId: null, canUnseat: false, busy: false, seedOf: (id: string) => id, onSelect: vi.fn(), onUnseat: vi.fn() },
+  })
+  try {
+    const { container } = setup({ mode: '排座', roster: [seat] })
+    await waitFor(() => expect(container.querySelector('[data-seat="1-3"]')).not.toBeNull())
+    const card = await hoverCard(container, '1-3')
+    expect(card.innerHTML).toContain('#3fb8a9')
+    expect(card.innerHTML).not.toContain('#f08a5d')
+  } finally { hoisted.seating = null }
+})
+
 it('falls back to double desks when the class has no desk size yet', async () => {
   const legacy = { ...classFixture, desk_size: undefined } as unknown as typeof classFixture
   vi.mocked(classesApi.mine).mockResolvedValue({ items: [legacy] })
