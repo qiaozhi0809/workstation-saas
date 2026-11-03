@@ -10,7 +10,10 @@ export const M = {
   // 即 SEAT_BOTTOM + 20),所以不能小于约 20
   CORE_PAD: 24,
   // 单人桌之间的过道;讲台两侧座位:离讲桌的间距、两张桌之间的间距、离地台上沿的距离
-  AISLE_SINGLE: 40, POD_GAP: 30, POD_SEP: 14, POD_Y: 20, // 20:名牌离前墙留足空隙;座位画到平台下沿(102 + 20 < 128)略压住台面前沿,是名牌与椅背之间的取舍
+  // POD_EDGE:讲台地台画出的前沿(下面那条木边的下沿)比地台矩形下沿高多少(见 art/Podium.tsx:rect.y + rect.h - 20 起 10 高的木边)。
+  // POD_Y:座位矩形(含名牌)上沿到地台上沿的距离;POD_Y + SEAT_BOTTOM ≤ PODIUM - POD_EDGE,座位整体落在前沿以内,不压住台面;
+  // 名牌上沿(座位上方约 17)因此只比地台上沿高 1,落在前墙底边,不会碰到前墙内容
+  AISLE_SINGLE: 40, POD_GAP: 30, POD_SEP: 14, POD_Y: 16, POD_EDGE: 10,
 } as const
 
 export interface Rect { x: number; y: number; w: number; h: number }
@@ -28,7 +31,7 @@ export interface Layout {
   core: Rect
   frontWall: Rect | null; podium: Rect | null
   zones: { id: ZoneId; rect: Rect }[]
-  // 讲台座位在前,再普通座位行优先
+  // 讲台座位在前(左外、左内、右内、右外,即画面从左到右),再普通座位行优先;Tab 顺序随它
   cells: { row: number; col: number }[]
   deskGrid: DeskGrid
   // 讲台两侧座位占的外框;没有讲台座位时为 null
@@ -146,7 +149,7 @@ export function computeLayout(
       : { x: dx, y: 0, w: coreW, h: height },
     frontWall: frontWall ? { x: M.WALL + dx, y: M.WALL, w: coreW - 2 * M.WALL, h: M.FRONT } : null,
     podium: podiumRect,
-    cells: [...podCells, ...gridCells(deskGrid)], deskGrid, podiumSeats,
+    cells: [...[...podCells].sort((a, b) => a.col - b.col), ...gridCells(deskGrid)], deskGrid, podiumSeats,
     group: (r, c) => groupOf(c, k, cols, r),
     seat,
     head: (r, c) => { const s = seat(r, c); return { x: s.x + M.DESK_W / 2, y: s.y + M.DESK_D + 8 } },

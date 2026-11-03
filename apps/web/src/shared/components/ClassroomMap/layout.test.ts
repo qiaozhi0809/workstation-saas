@@ -127,12 +127,23 @@ it('places podium seats beside the lectern, inside the core, clear of the side z
   expect(L.seat(0, 1).x).toBe(cx + 120 + M.POD_GAP)
   for (const z of L.zones) for (const c of [-2, -1, 1, 2]) expect(overlaps(z.rect, seatRect(L, 0, c))).toBe(false)
   expect(contains(L.core, seatRect(L, 0, -2))).toBe(true)
-  expect(L.cells.slice(0, 4)).toEqual([{ row: 0, col: -1 }, { row: 0, col: -2 }, { row: 0, col: 1 }, { row: 0, col: 2 }])
+  expect(L.cells.slice(0, 4)).toEqual([{ row: 0, col: -2 }, { row: 0, col: -1 }, { row: 0, col: 1 }, { row: 0, col: 2 }])
 })
 it('keeps podium seats a clear step off the front wall and inside the platform', () => {
   const L = computeLayout(4, 4, { podium: { left: 1, right: 1 } })
-  expect(L.seat(0, -1).y - L.podium!.y).toBeGreaterThanOrEqual(20)
+  expect(L.seat(0, -1).y - L.podium!.y).toBeGreaterThanOrEqual(16)
   expect(L.seat(0, -1).y + M.SEAT_BOTTOM).toBeLessThanOrEqual(L.podium!.y + L.podium!.h)
+})
+it('podium seats do not straddle the platform front edge', () => {
+  for (const opts of [{ left: 1, right: 1 }, { left: 2, right: 2 }]) {
+    const L = computeLayout(4, 4, { deskSize: 1, podium: opts })
+    const edge = L.podium!.y + L.podium!.h - M.POD_EDGE
+    for (const c of L.cells.filter((x) => x.row === 0)) {
+      const r = seatRect(L, 0, c.col)
+      expect(r.y + r.h <= edge || r.y >= edge).toBe(true)
+      expect(L.seat(0, c.col).y + CELL.y).toBeLessThan(edge)
+    }
+  }
 })
 it('draws podium seats in a strip above the grid without a front wall', () => {
   const L = computeLayout(4, 4, { decor: false, frontWall: false, podium: { left: 1, right: 0 } })

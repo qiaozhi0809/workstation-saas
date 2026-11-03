@@ -126,6 +126,12 @@ describe('desk types and podium seats', () => {
     expect(q(container, '[data-seat="0--1"]')).not.toBeNull()
     expect(screen.getByRole('button', { name: /^王小一，讲台左边/ })).toBeInTheDocument()
   })
+  it('podium seats come first in tab order', () => {
+    const { container } = render(<ClassroomMap rows={2} cols={2} deskSize={1} podium={{ left: 2, right: 2 }}
+      seats={[]} onEmptySeatClick={() => undefined} />)
+    const order = Array.from(container.querySelectorAll('[data-seat][tabindex="0"]')).map((e) => e.getAttribute('data-seat'))
+    expect(order.slice(0, 6)).toEqual(['0--2', '0--1', '0-1', '0-2', '1-1', '1-2'])
+  })
   it('names an empty podium seat', () => {
     render(<ClassroomMap rows={2} cols={3} deskSize={3} podium={{ left: 1, right: 0 }} seats={[]} onEmptySeatClick={() => undefined} />)
     expect(screen.getByRole('button', { name: '空座 讲台左边' })).toBeInTheDocument()
