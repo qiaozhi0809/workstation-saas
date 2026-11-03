@@ -140,8 +140,7 @@ it('podium seats do not straddle the platform front edge', () => {
     const edge = L.podium!.y + L.podium!.h - M.POD_EDGE
     for (const c of L.cells.filter((x) => x.row === 0)) {
       const r = seatRect(L, 0, c.col)
-      expect(r.y + r.h <= edge || r.y >= edge).toBe(true)
-      expect(L.seat(0, c.col).y + CELL.y).toBeLessThan(edge)
+      expect(r.y + r.h).toBeLessThanOrEqual(edge)
     }
   }
 })

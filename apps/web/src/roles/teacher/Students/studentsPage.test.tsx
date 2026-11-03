@@ -262,14 +262,13 @@ it('opens the import dialog from ?action=import and clears the parameter', async
 
 it('N5: table scrolls horizontally on its own and drops secondary columns at 375px', async () => {
   setup(ALL)
-  const original = window.matchMedia
-  try {
-    renderPage()
-    const table = (await screen.findByRole('table'))
-    expect(table.parentElement).toHaveClass('overflow-x-auto')
-    expect(screen.getByRole('columnheader', { name: '主要联系人' })).toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: '标签' })).toBeInTheDocument()
-  } finally { window.matchMedia = original }
+  renderPage()
+  const table = (await screen.findByRole('table'))
+  expect(table.parentElement).toHaveClass('overflow-x-auto')
+  // 根容器 min-w-0:否则 flex 子项撑开页面,横向滚动落到整页而不是表格自己
+  expect(table.closest('.space-y-3')).toHaveClass('min-w-0')
+  expect(screen.getByRole('columnheader', { name: '主要联系人' })).toBeInTheDocument()
+  expect(screen.getByRole('columnheader', { name: '标签' })).toBeInTheDocument()
 })
 
 it('N5: hides contacts and tags columns when max-width 639px matches', async () => {

@@ -524,19 +524,21 @@ it('colors the hover card avatar with the map group of three-seat desks and podi
   expect(card2.innerHTML).toContain('#8b7cf6')
 })
 
+// 班级是双人桌;排座草稿已改为三人桌、9 列:第 3 列按草稿属第 1 组(groupOf(3, 3) = 0),按双人桌会算成第 2 组
+const draftSeating = (seat: typeof rosterFixture[number]) => () => ({
+  ready: true, dirty: false, pending: null, seats: [seat], rows: 2, cols: 9, deskSize: 3, podium: { left: 0, right: 0 }, views: {},
+  onSeatClick: undefined, onEmptySeatClick: undefined, onSeatDrop: undefined, reload: vi.fn(),
+  bar: {
+    deskSize: 3, layoutBlocked: false, canUndo: false, dirty: false, busy: false, selected: null, conflict: false, canMentor: false,
+    onShuffle: vi.fn(), onPair: vi.fn(), onMentor: vi.fn(), onUndo: vi.fn(), onDiscard: vi.fn(), onToggleLock: vi.fn(),
+    onPrint: vi.fn(), onSave: vi.fn(), onReload: vi.fn(), onKeepEditing: vi.fn(),
+  },
+  tray: { students: [], selectedId: null, canUnseat: false, busy: false, seedOf: (id: string) => id, onSelect: vi.fn(), onUnseat: vi.fn() },
+})
+
 it('hover card group follows the draft desk size', async () => {
-  // 班级是双人桌;排座草稿已改为三人桌、9 列:第 3 列按草稿属第 1 组(groupOf(3, 3) = 0),按双人桌会算成第 2 组
   const seat = { ...rosterFixture[0], seat_row: 1, seat_col: 3 }
-  hoisted.seating = () => ({
-    ready: true, dirty: false, pending: null, seats: [seat], rows: 2, cols: 9, deskSize: 3, podium: { left: 0, right: 0 }, views: {},
-    onSeatClick: undefined, onEmptySeatClick: undefined, onSeatDrop: undefined, reload: vi.fn(),
-    bar: {
-      deskSize: 3, layoutBlocked: false, canUndo: false, dirty: false, busy: false, selected: null, conflict: false, canMentor: false,
-      onShuffle: vi.fn(), onPair: vi.fn(), onMentor: vi.fn(), onUndo: vi.fn(), onDiscard: vi.fn(), onToggleLock: vi.fn(),
-      onPrint: vi.fn(), onSave: vi.fn(), onReload: vi.fn(), onKeepEditing: vi.fn(),
-    },
-    tray: { students: [], selectedId: null, canUnseat: false, busy: false, seedOf: (id: string) => id, onSelect: vi.fn(), onUnseat: vi.fn() },
-  })
+  hoisted.seating = draftSeating(seat)
   try {
     const { container } = setup({ mode: '排座', roster: [seat] })
     await waitFor(() => expect(container.querySelector('[data-seat="1-3"]')).not.toBeNull())
@@ -544,6 +546,22 @@ it('hover card group follows the draft desk size', async () => {
     expect(card.innerHTML).toContain('#3fb8a9')
     expect(card.innerHTML).not.toContain('#f08a5d')
   } finally { hoisted.seating = null }
+})
+
+it('pick card group follows the draft desk size', async () => {
+  // 随机点名只在非排座模式可用(进入排座会收起点名),真实运行里点名卡不会和就绪的草稿同时出现;
+  // 这里用就绪的草稿 mock 在日常模式点名,只验证点名卡拿到的是与悬停卡同一个 mapGroup(草稿口径)
+  const seat = { ...rosterFixture[0], seat_row: 1, seat_col: 3 }
+  hoisted.seating = draftSeating(seat)
+  const original = window.matchMedia
+  window.matchMedia = vi.fn().mockReturnValue({ matches: true, addEventListener() {}, removeEventListener() {} }) as never
+  try {
+    setup({ roster: [seat] })
+    fireEvent.click(await screen.findByRole('button', { name: '随机点名' }))
+    const card = await screen.findByRole('dialog', { name: '随机点名' })
+    expect(card.innerHTML).toContain('#3fb8a9')
+    expect(card.innerHTML).not.toContain('#f08a5d')
+  } finally { hoisted.seating = null; window.matchMedia = original }
 })
 
 it('falls back to double desks when the class has no desk size yet', async () => {
