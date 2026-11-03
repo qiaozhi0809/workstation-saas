@@ -1,4 +1,4 @@
-import { ChartColumn, ClipboardList, School, Users, type LucideIcon } from 'lucide-react'
+import { ChartColumn, ClipboardList, School, Sparkles, Users, type LucideIcon } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 import { cn } from '@/shared/lib/utils'
 
@@ -7,6 +7,7 @@ const LINKS: readonly { to: string; label: string; icon: LucideIcon }[] = [
   { to: '/teacher/scores', label: '成绩', icon: ClipboardList },
   { to: '/teacher/analysis', label: '分析', icon: ChartColumn },
   { to: '/teacher/students', label: '学生', icon: Users },
+  { to: '/teacher/ai', label: 'AI 助手', icon: Sparkles },
 ]
 
 /** 顶栏主导航。< 768px 只显示图标,文字留给读屏(可访问名称不变);当前页由 NavLink 标 aria-current="page"。 */
