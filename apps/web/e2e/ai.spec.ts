@@ -15,6 +15,13 @@ async function signIn(page: Page, name = 'teacher01') {
 // 本文件的用例会产生 AI 对话、评语、成长记录:用例前取快照、用例后(含失败)删掉新增的,可重复跑。
 // 假服务商 fakeLlm.mjs 由外部起在 18089(CI 与本地都要先起),这里只清空它记下的最近请求。
 let before: AiDataSnapshot
+// 防止本地之前配过真服务商:没指向假服务就直接失败,绝不把种子数据发出去
+test.beforeAll(async ({ request }) => {
+  const token = await login(request, 'teacher01')
+  const res = await request.get('/api/v1/ai/status', { headers: { Authorization: `Bearer ${token}` } })
+  const status = (await res.json()) as { provider_label: string | null }
+  expect(status.provider_label, 'AI 必须配到假服务 fake-model,见 README“测试”一节').toContain('fake-model')
+})
 test.beforeEach(async ({ request }) => {
   const token = await login(request, 'teacher01')
   before = await snapshotAiData(request, token, CLASS_ID)
@@ -129,6 +136,9 @@ test('stop keeps the partial reply', async ({ page }) => {
   await expect(page.getByText('第 3 段')).toBeVisible()
   await page.getByRole('button', { name: '停止' }).click()
   await expect(page.getByText('(已停止)')).toBeVisible()
+  // 刷新后从服务端取回:确认已生成的部分真的落库、状态是 stopped
+  await page.reload()
+  await expect(page.getByText('(已停止)')).toBeVisible()
   await expect(page.getByText(/第 3 段/)).toBeVisible()
 })
 
@@ -154,12 +164,16 @@ test('subject teacher sees homeroom templates disabled', async ({ page }) => {
   }
 })
 
-test('provider failure shows an error box and survives a retry', async ({ page }) => {
+test('provider failure shows an error box and survives a retry', async ({ page, request }) => {
   await signIn(page)
   await chatFreely(page, '这次会出错')
   const box = page.getByTestId('error-box')
   await expect(box).toBeVisible()
+  // 重试要真的再向服务商发一次请求,并再次失败:先清空假服务记录,再等它重新记到请求
+  await request.post(`${FAKE_LLM}/reset`)
   await box.getByRole('button', { name: '重试' }).click()
+  await expect.poll(async () => (await (await request.get(`${FAKE_LLM}/last`)).json()) !== null).toBe(true)
+  await expect(box).toHaveCount(1)
   await expect(box).toBeVisible()
-  await expect(page.getByRole('heading', { name: '三年二班' })).toHaveCount(0)
+  await expect(page).toHaveURL(/\/teacher\/ai\/[0-9a-f-]{36}/)
 })

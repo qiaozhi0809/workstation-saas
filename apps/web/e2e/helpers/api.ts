@@ -207,18 +207,20 @@ export async function restoreAiData(
   classId: string,
   snap: AiDataSnapshot,
 ): Promise<void> {
+  // 一条删除失败不能让后面的清理全部跳过:先删完,最后统一断言
+  const failed: string[] = []
   const [owner] = tokens
   const ownerHeaders = authHeaders(owner)
   for (const sid of await classStudentIds(request, owner, classId)) {
     const c = await request.get(`${API}/students/${sid}/comments`, { headers: ownerHeaders })
     for (const x of ((await c.json()) as { items: { id: string }[] }).items) {
       if (snap.comments.has(x.id)) continue
-      expect((await request.delete(`${API}/comments/${x.id}`, { headers: ownerHeaders })).ok()).toBeTruthy()
+      if (!(await request.delete(`${API}/comments/${x.id}`, { headers: ownerHeaders })).ok()) failed.push(`${API}/comments/${x.id}`)
     }
     const g = await request.get(`${API}/students/${sid}/growth-records`, { headers: ownerHeaders })
     for (const x of ((await g.json()) as { items: { id: string }[] }).items) {
       if (snap.growth.has(x.id)) continue
-      expect((await request.delete(`${API}/growth-records/${x.id}`, { headers: ownerHeaders })).ok()).toBeTruthy()
+      if (!(await request.delete(`${API}/growth-records/${x.id}`, { headers: ownerHeaders })).ok()) failed.push(`${API}/growth-records/${x.id}`)
     }
   }
   // 对话按创建者隔离:每个 token 只看得到、删得掉自己的
@@ -227,9 +229,10 @@ export async function restoreAiData(
     if (!chats.ok()) continue
     for (const x of ((await chats.json()) as { items: { id: string }[] }).items) {
       if (snap.chats.has(x.id)) continue
-      expect((await request.delete(`${API}/ai/chats/${x.id}`, { headers: authHeaders(token) })).ok()).toBeTruthy()
+      if (!(await request.delete(`${API}/ai/chats/${x.id}`, { headers: authHeaders(token) })).ok()) failed.push(`${API}/ai/chats/${x.id}`)
     }
   }
+  expect(failed, '清理自建数据时有删除失败').toEqual([])
 }
 
 /** 给一名学生(enrollment)一条个人点评,返回 op_id。 */

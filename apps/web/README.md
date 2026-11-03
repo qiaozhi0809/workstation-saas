@@ -52,7 +52,7 @@
 
 ### 配置 AI(本地开发)
 
-后端的 AI 配置见根目录 README“配置 AI”。本地不连真服务商时,起假服务 `node e2e/helpers/fakeLlm.mjs`,再 `ai-config set --provider custom --base-url http://127.0.0.1:18089/v1 --model fake-model --api-key-stdin`。真 Key 只从标准输入给,不写进任何文件、不进仓库。
+后端的 AI 配置见根目录 README“配置 AI”。本地不连真服务商时,起假服务 `node e2e/helpers/fakeLlm.mjs`,再在 `server/` 下执行 `printf 'test-key\n' | uv run python -m app.cli ai-config set --provider custom --base-url http://127.0.0.1:18089/v1 --model fake-model --api-key-stdin`。真 Key 只从标准输入给,不写进任何文件、不进仓库。
 
 ### 教室操作台
 

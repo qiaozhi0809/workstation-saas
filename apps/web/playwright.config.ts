@@ -1,6 +1,6 @@
 import { defineConfig } from '@playwright/test'
 
-// classroom / grades / students / ai / profile 五个 spec 会改共享种子数据(考勤、点评、座位、考试成绩、学生名单),
+// classroom / grades / students / ai / profile 五个 spec 会改共享种子数据(考勤、点评、座位、考试成绩、学生名单、AI 对话、评语、成长记录),
 // 其余 spec 在同一个班级上只读断言。改数据的 project 串成一条链(mutating → grades → students → ai → profile),
 // 各自单独跑完、互不交叠(都改座位、名单,并行会互相踩);只读 project 最后再并行,避免读到改到一半的数据。
 // 上游 project 失败会让下游 project 全部跳过(不会显示为失败),排查时先看最早失败的 project。

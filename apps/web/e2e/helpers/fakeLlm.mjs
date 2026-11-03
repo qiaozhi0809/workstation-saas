@@ -1,5 +1,5 @@
 // 假的 OpenAI 兼容服务商,只给 E2E 用,绝不连外网。只用 Node 内置 http。
-// POST /v1/chat/completions 记下请求体并按 SSE 回;GET /last 返回最近一次请求体;POST /reset 清空。
+// POST /v1/chat/completions 记下请求体并按 SSE 回(最后一条用户消息含“出错”则回 401);GET /last 返回最近一次请求体;POST /reset 清空。
 import http from 'node:http'
 
 const PORT = Number(process.env.FAKE_LLM_PORT ?? 18089)
@@ -18,7 +18,6 @@ function lastUserText(body) {
 }
 
 function plan(text) {
-  if (text.includes('很久')) return { chunks: Array.from({ length: 50 }, (_, i) => `第 ${i + 1} 段。`), gap: 3000 }
   const code = text.match(/【学生(\d{2})】/)
   if (code) return { chunks: ['## 草稿\n\n', '【学', `生${code[1]}】这学期进步很大。\n`, '\n- 第一条建议\n'], gap: 30 }
   if (text.includes('慢慢')) return { chunks: Array.from({ length: 40 }, (_, i) => `第 ${i + 1} 段。`), gap: 150 }
@@ -38,7 +37,12 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && req.url === '/v1/chat/completions') {
     let raw = ''
     for await (const c of req) raw += c
-    last = JSON.parse(raw || '{}')
+    try {
+      last = JSON.parse(raw || '{}')
+    } catch {
+      res.writeHead(400)
+      return res.end()
+    }
     if (lastUserText(last).includes('出错')) {
       res.writeHead(401, { 'content-type': 'application/json' })
       return res.end(JSON.stringify({ error: { message: 'bad key' } }))
