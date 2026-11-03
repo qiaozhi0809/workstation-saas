@@ -84,7 +84,7 @@ test('profile shortcut writes a comment and saves it to the profile', async ({ p
   await expect(card.getByText('AI 生成', { exact: true })).toBeVisible()
 })
 
-test('batch comments for two students and save all', async ({ page, request }) => {
+test('batch comments for two students, save all, and saving again after a reload does not duplicate', async ({ page, request }) => {
   await signIn(page)
   await page.goto('/teacher/ai')
   await templateCard(page, '期末评语').click()
@@ -107,6 +107,19 @@ test('batch comments for two students and save all', async ({ page, request }) =
     const res = await request.get(`/api/v1/students/${sid}/comments`, { headers: { Authorization: `Bearer ${token}` } })
     const list = ((await res.json()) as { items: { id: string; content: string; generated_by_ai: boolean }[] }).items
     expect(list.some((c) => !before.comments.has(c.id) && c.generated_by_ai && c.content.includes(`${name}这学期进步很大`))).toBe(true)
+  }
+
+  // 刷新页面后前端不记得已保存过;再点"全部保存"时后端按同学生、同学期、同内容去重,不会出现重复评语
+  await page.reload()
+  await expect(page.getByText('完成 2/2')).toBeVisible()
+  const bulk = page.waitForResponse((r) => r.url().includes('/comments/bulk') && r.request().method() === 'POST')
+  await page.getByRole('button', { name: '全部保存到档案' }).click()
+  expect((await bulk).status()).toBe(201)
+  for (const name of ['王小一', '李小二']) {
+    const sid = items.find((s) => s.name === name)!.student_id
+    const res = await request.get(`/api/v1/students/${sid}/comments`, { headers: { Authorization: `Bearer ${token}` } })
+    const list = ((await res.json()) as { items: { id: string; content: string }[] }).items
+    expect(list.filter((c) => !before.comments.has(c.id) && c.content.includes(`${name}这学期进步很大`))).toHaveLength(1)
   }
 })
 
