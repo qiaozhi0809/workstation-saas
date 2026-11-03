@@ -4,20 +4,11 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.domain.seating.arrange import first_empty, grid_of, in_grid
 from app.errors import ApiError
 from app.models import Enrollment, SchoolClass
 
 Seat = tuple[int, int]
-
-
-def first_empty_seat(
-    occupied: set[Seat], rows: int, cols: int, exclude: Seat | None = None
-) -> Seat | None:
-    for r in range(1, rows + 1):
-        for c in range(1, cols + 1):
-            if (r, c) != exclude and (r, c) not in occupied:
-                return (r, c)
-    return None
 
 
 @dataclass
@@ -43,10 +34,10 @@ def plan_placement(
     db: Session, cls: SchoolClass, enrollment: Enrollment | None, target: Seat | None
 ) -> Plan:
     """Validate a seat move without mutating anything; ``enrollment`` is None for a new student."""
-    if target is not None and not (
-        1 <= target[0] <= cls.seat_rows and 1 <= target[1] <= cls.seat_cols
-    ):
-        raise ApiError(400, "SEAT_INVALID", "座位表无效", {"reason": "out_of_grid"})
+    g = grid_of(cls)
+    if target is not None and not in_grid(g, target):
+        reason = "podium_unavailable" if target[0] == 0 else "out_of_grid"
+        raise ApiError(400, "SEAT_INVALID", "座位表无效", {"reason": reason})
     current = _seat_of(enrollment)
     if target == current:
         return Plan(False)
@@ -66,7 +57,7 @@ def plan_placement(
     if occupant is not None:
         if occupant.seat_locked:
             raise ApiError(409, "SEAT_LOCKED", "目标座位上的同学已被固定")
-        dest = current or first_empty_seat(set(occupied), cls.seat_rows, cls.seat_cols, target)
+        dest = current or first_empty(g, set(occupied), cls.seat_order, target)  # type: ignore[arg-type]
     return Plan(True, target, occupant, dest)
 
 

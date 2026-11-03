@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.models import Enrollment, SchoolClass, Student
 from app.rbac.roles import Role
@@ -177,3 +177,68 @@ def test_my_notes_roundtrip_and_privacy(client, settings, db):
         _notes_url("a0000099-0000-0000-0000-000000000099"), json={"text": "x"}, headers=h
     )
     assert r.status_code == 404
+
+
+def _empty_auto_class(db, *, rows, cols, desk=2):
+    """种子班改成 auto、没有在读同学。"""
+    db.expire_all()
+    cls = db.get(SchoolClass, UUID(CLASS_ID))
+    cls.seat_layout, cls.seat_rows, cls.seat_cols, cls.desk_size = "auto", rows, cols, desk
+    db.execute(
+        text(
+            "UPDATE enrollments SET status = 'removed', seat_row = NULL, seat_col = NULL "
+            "WHERE class_id = :c"
+        ),
+        {"c": CLASS_ID},
+    )
+    db.commit()
+
+
+def _imported_seats(db, n):
+    db.expire_all()
+    out = []
+    for i in range(n):
+        _, e = _by_name(db, f"学生{i:03d}")
+        out.append((e.seat_row, e.seat_col))
+    return out
+
+
+def test_import_into_auto_class_grows_then_seats(client, settings, db):
+    _empty_auto_class(db, rows=4, cols=8)
+    rows = [_row(f"学生{i:03d}", f"2028{i:03d}") for i in range(40)]
+    r = client.post(IMPORT, json={"rows": rows, "auto_seat": True}, headers=auth(settings))
+    assert r.status_code == 201, r.text
+    assert r.json() == {"created": 40, "skipped": []}
+    db.expire_all()
+    cls = db.get(SchoolClass, UUID(CLASS_ID))
+    assert (cls.seat_rows, cls.seat_cols) == (5, 8)
+    # 按横排依次落座,顺序与导入顺序一致
+    assert _imported_seats(db, 40) == [(i // 8 + 1, i % 8 + 1) for i in range(40)]
+
+
+def test_import_beyond_capacity_leaves_rest_unseated(client, settings, db):
+    _empty_auto_class(db, rows=4, cols=8)
+    n = 130
+    rows = [_row(f"学生{i:03d}", f"2028{i:03d}") for i in range(n)]
+    r = client.post(IMPORT, json={"rows": rows, "auto_seat": True}, headers=auth(settings))
+    assert r.status_code == 201, r.text
+    assert r.json() == {"created": n, "skipped": []}
+    db.expire_all()
+    cls = db.get(SchoolClass, UUID(CLASS_ID))
+    assert (cls.seat_rows, cls.seat_cols) == (10, 12)
+    seats = _imported_seats(db, n)
+    seated = [s for s in seats if s[0] is not None]
+    assert len(seated) == 120 and len(set(seated)) == 120
+    assert all(1 <= r_ <= 10 and 1 <= c_ <= 12 for r_, c_ in seated)
+    assert seats[:120] == [(i // 12 + 1, i % 12 + 1) for i in range(120)]
+    assert seats[120:] == [(None, None)] * 10  # 多出来的 10 人未排座
+
+
+def test_import_into_auto_class_without_auto_seat_still_grows(client, settings, db):
+    _empty_auto_class(db, rows=4, cols=8)
+    rows = [_row(f"学生{i:03d}", f"2028{i:03d}") for i in range(40)]
+    r = client.post(IMPORT, json={"rows": rows, "auto_seat": False}, headers=auth(settings))
+    assert r.status_code == 201, r.text
+    db.expire_all()
+    assert db.get(SchoolClass, UUID(CLASS_ID)).seat_rows == 5
+    assert all(s == (None, None) for s in _imported_seats(db, 40))

@@ -18,8 +18,10 @@ from app.domain.roster.schemas import (
     StudentInput,
     StudentRecord,
 )
-from app.domain.roster.seats import first_empty_seat, lock_class, place_student, plan_placement
+from app.domain.roster.seats import lock_class, place_student, plan_placement
 from app.domain.schools.service import require_active_year
+from app.domain.seating.arrange import first_empty, grid_of
+from app.domain.seating.layout import reflow_auto
 from app.errors import ApiError
 from app.models import Enrollment, SchoolClass, Student
 from app.rbac.bindings import Binding, can
@@ -132,6 +134,18 @@ def _target(data: StudentInput) -> tuple[int, int] | None:
     return (data.seat.row, data.seat.col) if data.seat else None
 
 
+def _occupied(db: Session, cls: SchoolClass) -> set[tuple[int, int]]:
+    rows = db.execute(
+        select(Enrollment.seat_row, Enrollment.seat_col).where(
+            Enrollment.class_id == cls.id,
+            Enrollment.status == "active",
+            Enrollment.seat_row.is_not(None),
+            Enrollment.seat_col.is_not(None),
+        )
+    ).all()
+    return {(r, c) for r, c in rows}
+
+
 def create_student(
     db: Session,
     cls: SchoolClass,
@@ -160,6 +174,15 @@ def create_student(
     db.add(enrollment)
     db.flush()
     place_student(db, cls, enrollment, target, plan)
+    if reflow_auto(db, cls, user_id):
+        db.refresh(enrollment)
+    if target is None and data.auto_seat:
+        seat = first_empty(grid_of(cls), _occupied(db, cls), cls.seat_order)  # type: ignore[arg-type]
+        if seat is not None:
+            enrollment.seat_row, enrollment.seat_col = seat
+            db.flush()
+            cls.seat_version = SchoolClass.seat_version + 1
+            db.flush()
     record(
         db,
         user_id=user_id,
@@ -225,7 +248,8 @@ def remove_student(
     enrollment.seat_row = None
     enrollment.seat_col = None
     db.flush()
-    cls.seat_version = SchoolClass.seat_version + 1
+    if not reflow_auto(db, cls, user_id):
+        cls.seat_version = SchoolClass.seat_version + 1
     record(
         db,
         user_id=user_id,
@@ -248,15 +272,14 @@ def import_students(
     lock_class(db, cls)
     year = require_active_year(db, cls.school_id)
     existing = db.execute(
-        select(Student.name, Student.student_no, Enrollment.seat_row, Enrollment.seat_col)
+        select(Student.name, Student.student_no)
         .join(Enrollment, Enrollment.student_id == Student.id)
         .where(Enrollment.class_id == cls.id, Enrollment.status == "active")
     ).all()
     known: list[tuple[str, str | None]] = [(r.name, r.student_no) for r in existing]
-    occupied = {(r.seat_row, r.seat_col) for r in existing if r.seat_row is not None}
     skipped: list[SkippedRow] = []
     created = 0
-    placed = 0
+    new_enrollments: list[Enrollment] = []
     for index, row in enumerate(data.rows):
         if any(
             name == row.name and (row.student_no is None or no == row.student_no)
@@ -279,17 +302,27 @@ def import_students(
             class_role=row.class_role,
             status="active",
         )
-        if data.auto_seat:
-            seat = first_empty_seat(occupied, cls.seat_rows, cls.seat_cols)
-            if seat is not None:
-                enrollment.seat_row, enrollment.seat_col = seat
-                occupied.add(seat)
-                placed += 1
         db.add(enrollment)
+        new_enrollments.append(enrollment)
         known.append((row.name, row.student_no))
         created += 1
-    if placed:
-        cls.seat_version = SchoolClass.seat_version + 1
+    db.flush()
+    if created:
+        reflow_auto(db, cls, user_id)
+    if data.auto_seat and new_enrollments:
+        occupied = _occupied(db, cls)
+        g = grid_of(cls)
+        placed = 0
+        for enrollment in new_enrollments:
+            seat = first_empty(g, occupied, cls.seat_order)  # type: ignore[arg-type]
+            if seat is None:
+                break
+            enrollment.seat_row, enrollment.seat_col = seat
+            occupied.add(seat)
+            placed += 1
+        if placed:
+            db.flush()
+            cls.seat_version = SchoolClass.seat_version + 1
     record(
         db,
         user_id=user_id,
