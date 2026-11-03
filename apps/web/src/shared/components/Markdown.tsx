@@ -8,6 +8,8 @@ const components: Components = {
   h2: ({ children }) => <h3 className="mb-2 mt-4 text-base font-semibold text-foreground">{children}</h3>,
   h3: ({ children }) => <h3 className="mb-2 mt-4 text-base font-semibold text-foreground">{children}</h3>,
   h4: ({ children }) => <h4 className="mb-1 mt-3 text-sm font-semibold text-foreground">{children}</h4>,
+  h5: ({ children }) => <h4 className="mb-1 mt-3 text-sm font-semibold text-foreground">{children}</h4>,
+  h6: ({ children }) => <h4 className="mb-1 mt-3 text-sm font-semibold text-foreground">{children}</h4>,
   p: ({ children }) => <p className="my-2 leading-relaxed text-foreground">{children}</p>,
   ul: ({ children }) => <ul className="my-2 list-disc pl-5 text-foreground">{children}</ul>,
   ol: ({ children }) => <ol className="my-2 list-decimal pl-5 text-foreground">{children}</ol>,
@@ -19,8 +21,10 @@ const components: Components = {
     <code className="rounded bg-muted px-1 py-0.5 text-[0.9em] text-foreground">{children}</code>
   ),
   pre: ({ children }) => (
-    <pre className="my-2 overflow-x-auto rounded bg-muted p-3 text-sm text-foreground">{children}</pre>
+    <pre className="my-2 overflow-x-auto rounded bg-muted p-3 text-sm text-foreground [&>code]:bg-transparent [&>code]:p-0">{children}</pre>
   ),
+  // 绝不渲染 <img>:AI 输出里的远程图片 URL 可能带着还原后的真实学生姓名,浏览器一加载就泄露
+  img: ({ alt }) => (alt ? <span className="text-muted-foreground">[图片:{alt}]</span> : null),
   a: ({ href, children }) => (
     <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary underline">
       {children}
