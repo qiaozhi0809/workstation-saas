@@ -14,11 +14,20 @@ from app.ai.chats import (
     create_chat,
     delete_chat,
     get_own_chat,
+    item_status,
     list_chats,
     ordered_messages,
 )
 from app.ai.context import system_prompt
-from app.ai.gateway import GenContext, acquire_lock, lock_key, release_lock, reply_events
+from app.ai.gateway import (
+    GenContext,
+    acquire_lock,
+    build_item_job,
+    lock_key,
+    release_lock,
+    reply_events,
+    run_item_events,
+)
 from app.ai.masking import masker_for_class, scrub
 from app.ai.providers import provider_label
 from app.ai.requests import (
@@ -53,7 +62,7 @@ from app.domain.ai.schemas import (
 from app.domain.classes.service import class_scope_of, get_class_or_404
 from app.domain.schools.service import school_today
 from app.errors import ApiError
-from app.models import Student, User
+from app.models import AiBatchItem, Student, User
 from app.rbac.bindings import Binding, can
 from app.rbac.deps import get_bindings
 from app.rbac.guard import ensure
@@ -343,6 +352,63 @@ def ai_chat_reply(
         )
         return StreamingResponse(
             reply_events(ctx, body),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+    except BaseException:
+        release_lock(redis, lock_key(chat.id), token)
+        raise
+
+
+def _gen_context(request: Request, user: User, cls, chat, cfg, scope, redis, token) -> GenContext:
+    return GenContext(
+        chat_id=chat.id,
+        user_id=user.id,
+        school_id=user.school_id,
+        class_id=cls.id,
+        cfg=cfg,
+        transport=request.app.state.ai_transport,
+        scope=scope,
+        redis=redis,
+        lock_key=lock_key(chat.id),
+        lock_token=token,
+        ip=request.client.host if request.client and _is_ip(request.client.host) else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+
+
+@router.post("/chats/{chat_id}/items/{item_id}/run")
+def ai_chat_run_item(
+    chat_id: UUID,
+    item_id: UUID,
+    request: Request,
+    db: DbDep,
+    user: UserDep,
+    bindings: BindingsDep,
+    settings: SettingsDep,
+    redis: RedisDep,
+    scope: ScopeDep,
+) -> StreamingResponse:
+    chat = get_own_chat(db, user.id, chat_id)
+    if not chat.batch_only:
+        raise ApiError(404, "NOT_FOUND", "对话不存在")
+    item = db.get(AiBatchItem, item_id)
+    if item is None or item.chat_id != chat.id:
+        raise ApiError(404, "NOT_FOUND", "条目不存在")
+    cls = get_class_or_404(db, chat.class_id)
+    _check_perms(db, request, user, bindings, cls, _chat_needs(chat))
+    cfg = load_ai_config(db, settings.school_id, settings.master_key_bytes)
+    if cfg is None or not is_ready(cfg):
+        raise ApiError(409, "AI_NOT_CONFIGURED", "学校还没有配置 AI 服务")
+    if item_status(item, clock.utc_now()) not in ("wait", "err"):
+        raise ApiError(409, "AI_NOTHING_TO_REPLY", "这一条已经生成过了或正在生成")
+    # 学生已不在本班等问题:开始推流前就以普通 400 返回
+    build_item_job(db, user, cls, chat, item, mask=chat.mask or cfg.mask_forced)
+    token = acquire_lock(redis, chat.id)
+    try:
+        ctx = _gen_context(request, user, cls, chat, cfg, scope, redis, token)
+        return StreamingResponse(
+            run_item_events(ctx, item.id),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )

@@ -90,6 +90,11 @@ def _stale(updated_at: datetime, now: datetime) -> bool:
     return now - updated_at > STALE_AFTER
 
 
+def item_status(item: AiBatchItem, now: datetime) -> str:
+    """显示用状态:超过 2 分钟还在 run 的算 wait。"""
+    return "wait" if item.status == "run" and _stale(item.updated_at, now) else item.status
+
+
 def chat_out(db: Session, chat: AiChat, now: datetime) -> AiChatOut:
     messages = []
     for m in ordered_messages(db, chat.id):
@@ -109,7 +114,7 @@ def chat_out(db: Session, chat: AiChat, now: datetime) -> AiChatOut:
     items = []
     for it in chat_items(db, chat.id):
         student = db.get(Student, it.student_id)
-        status = "wait" if it.status == "run" and _stale(it.updated_at, now) else it.status
+        status = item_status(it, now)
         items.append(
             AiBatchItemOut(
                 id=it.id,

@@ -10,6 +10,7 @@
 
 import contextlib
 import json
+import re
 import secrets
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
@@ -29,12 +30,14 @@ from app.ai.chats import chat_items, ordered_messages
 from app.ai.client import AIUpstreamError, ChatMessage, Delta, Usage
 from app.ai.context import system_prompt
 from app.ai.masking import Masker, masker_for_class, scrub
+from app.ai.requests import Job, build_job
 from app.ai.settings import AIConfig, make_client
+from app.ai.templates import TEMPLATES
 from app.db import SessionScope
 from app.domain.ai.schemas import AiReplyIn
-from app.domain.schools.service import active_academic_year
+from app.domain.schools.service import active_academic_year, school_today
 from app.errors import ApiError
-from app.models import AiChat, AiMessage, SchoolClass, User
+from app.models import AiBatchItem, AiChat, AiMessage, SchoolClass, Student, User
 from app.models.audit import AuditLog
 from app.rbac.bindings import load_bindings
 
@@ -62,7 +65,7 @@ class GenContext:
     lock_key: str
     ip: str | None
     user_agent: str | None
-    lock_token: str = ""
+    lock_token: str
 
 
 @dataclass
@@ -241,6 +244,7 @@ def prepare_reply(s: Session, ctx: GenContext, body: AiReplyIn) -> Prepared:
     year = active_academic_year(s, user.school_id)
     bindings = load_bindings(s, user.id, year.id if year else None)
     masker = masker_for_class(s, cls.id)
+    mask = chat.mask or ctx.cfg.mask_forced
 
     if body.text is not None:
         s.add(
@@ -248,7 +252,7 @@ def prepare_reply(s: Session, ctx: GenContext, body: AiReplyIn) -> Prepared:
                 chat_id=chat.id,
                 role="user",
                 content=body.text,
-                sent=_outgoing(masker, chat.mask, body.text),
+                sent=_outgoing(masker, mask, body.text),
                 status="done",
             )
         )
@@ -269,10 +273,10 @@ def prepare_reply(s: Session, ctx: GenContext, body: AiReplyIn) -> Prepared:
         if m.id == assistant.id:
             continue
         if m.role == "user":
-            content = m.sent if m.sent is not None else _outgoing(masker, chat.mask, m.content)
+            content = _outgoing(masker, mask, m.sent if m.sent is not None else m.content)
             messages.append(ChatMessage("user", content))
         elif m.content:
-            messages.append(ChatMessage("assistant", _outgoing(masker, chat.mask, m.content)))
+            messages.append(ChatMessage("assistant", _outgoing(masker, mask, m.content)))
     student_ids = (
         [str(chat.student_id)]
         if chat.student_id
@@ -285,7 +289,7 @@ def prepare_reply(s: Session, ctx: GenContext, body: AiReplyIn) -> Prepared:
         target_id=assistant.id,
         template=chat.template_id,
         student_ids=student_ids,
-        masked=chat.mask,
+        masked=mask,
         chars_in=sum(len(m.content) for m in messages),
     )
 
@@ -309,6 +313,83 @@ def reply_events(ctx: GenContext, body: AiReplyIn) -> AsyncIterator[bytes]:
     return generation_events(ctx, partial(prepare_reply, ctx=ctx, body=body), save_reply)
 
 
+# ---------------------------------------------------------------- 批量条目
+
+_NOTE_N = re.compile(r"(\d+)")
+
+
+def build_item_job(
+    s: Session,
+    user: User,
+    cls: SchoolClass,
+    chat: AiChat,
+    item: AiBatchItem,
+    *,
+    mask: bool,
+) -> Job:
+    """按对话参数和当下数据重建某一条的 prompt;学生已不在本班时抛 400 AI_FIELD_INVALID。"""
+    template = TEMPLATES.get(chat.template_id) if chat.template_id else None
+    year = active_academic_year(s, user.school_id)
+    bindings = load_bindings(s, user.id, year.id if year else None)
+    student = s.get(Student, item.student_id)
+    if template is None or student is None:
+        raise ApiError(404, "NOT_FOUND", "条目不存在")
+    found = _NOTE_N.search(item.note or "")
+    try:
+        return build_job(
+            s, user, bindings, cls, template, chat.params, student, school_today(s, cls.school_id),
+            masked=mask, masker=masker_for_class(s, cls.id),
+            regress_n=int(found.group(1)) if found else None,
+        )  # fmt: skip
+    except ApiError as e:
+        if e.code == "AI_FIELD_INVALID" and (e.details or {}).get("field") == "student":
+            raise ApiError(400, "AI_FIELD_INVALID", "学生已不在本班", {"field": "students"}) from e
+        raise
+
+
+def prepare_item(s: Session, ctx: GenContext, item_id: UUID) -> Prepared:
+    chat = s.get(AiChat, ctx.chat_id)
+    user = s.get(User, ctx.user_id)
+    cls = s.get(SchoolClass, chat.class_id) if chat else None
+    item = s.get(AiBatchItem, item_id)
+    if chat is None or user is None or cls is None or item is None or item.chat_id != chat.id:
+        raise ApiError(404, "NOT_FOUND", "条目不存在")
+    mask = chat.mask or ctx.cfg.mask_forced
+    job = build_item_job(s, user, cls, chat, item, mask=mask)
+    year = active_academic_year(s, user.school_id)
+    bindings = load_bindings(s, user.id, year.id if year else None)
+    system = scrub(system_prompt(s, user, bindings, cls))
+    messages = [ChatMessage("system", system), ChatMessage("user", job.sent)]
+    item.status, item.content, item.error = "run", "", None
+    s.flush()
+    return Prepared(
+        meta={"item_id": str(item.id)},
+        messages=messages,
+        masker=masker_for_class(s, cls.id),
+        target_id=item.id,
+        template=chat.template_id,
+        student_ids=[str(item.student_id)],
+        masked=mask,
+        chars_in=sum(len(m.content) for m in messages),
+    )
+
+
+def save_item(s: Session, prep: Prepared, state: GenState) -> None:
+    item = s.get(AiBatchItem, prep.target_id)
+    if item is None:  # 生成期间对话被删
+        return
+    if state.status == "done":
+        item.status, item.content, item.error = "done", prep.masker.restore(state.raw), None
+    elif state.status == "error":
+        item.status, item.content, item.error = "err", "", state.error or GENERIC_ERROR
+    else:  # stopped / 断开:回到待生成
+        item.status, item.content, item.error = "wait", "", None
+
+
+def run_item_events(ctx: GenContext, item_id: UUID) -> AsyncIterator[bytes]:
+    return generation_events(ctx, partial(prepare_item, ctx=ctx, item_id=item_id), save_item)
+
+
 __all__ = [
     "GenContext",
     "GenState",
@@ -318,6 +399,7 @@ __all__ = [
     "lock_key",
     "release_lock",
     "reply_events",
+    "run_item_events",
     "sse",
     "stream_provider",
 ]

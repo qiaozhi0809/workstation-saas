@@ -515,3 +515,22 @@ def test_generate_audit(client, settings, db):
         )
     ).one()
     assert (msg.prompt_tokens, msg.completion_tokens) == (12, 34)
+
+
+def test_forced_mask_applies_to_chat_created_unmasked(client, settings, db):
+    configure_ai(db, settings)
+    chat = create(client, settings, parent_body(mask=False))
+    cfg = load_ai_config(db, settings.school_id, settings.master_key_bytes)
+    cfg.mask_forced = True
+    save_ai_config(db, settings.school_id, settings.master_key_bytes, cfg)
+    db.commit()
+    rec = set_transport(client, ["【学生01】很棒"])
+    events = run_reply(client, settings, chat["id"], {"text": "王小一最近怎么样"})
+    assert events[-1][0] == "done"
+    body = json.dumps(rec[0], ensure_ascii=False)
+    for name in ("王小一", "李小二", "张小三"):
+        assert name not in body
+    assert "【学生01】" in body
+    assert generate_audits(db, chat["id"])[0].extra["masked"] is True
+    got = get_chat(client, settings, chat["id"]).json()
+    assert got["messages"][-1]["content"] == "王小一很棒"
