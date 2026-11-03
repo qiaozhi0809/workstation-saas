@@ -17,7 +17,7 @@ class SeatingSave(BaseModel):
     base_version: int = Field(ge=0)
     rows: int = Field(ge=1, le=12)
     cols: int = Field(ge=1, le=12)
-    seats: list[SeatIn] = Field(max_length=144)
+    seats: list[SeatIn] = Field(max_length=148)
 
 
 class SeatingSaved(BaseModel):

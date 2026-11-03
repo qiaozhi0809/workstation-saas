@@ -118,9 +118,10 @@ def auto_grid(n: int, desk: int, pref_cols: int | None) -> tuple[int, int]:
 
 
 def _natural(no: str) -> tuple:
+    # re.split with a capture group puts the digit runs at odd indexes
     return tuple(
-        (0, int(part), "") if part.isdigit() else (1, 0, part)
-        for part in re.split(r"(\d+)", no)
+        (0, int(part), "") if i % 2 else (1, 0, part)
+        for i, part in enumerate(re.split(r"(\d+)", no))
         if part != ""
     )
 

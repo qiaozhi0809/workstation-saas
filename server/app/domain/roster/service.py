@@ -21,7 +21,7 @@ from app.domain.roster.schemas import (
 from app.domain.roster.seats import lock_class, place_student, plan_placement
 from app.domain.schools.service import require_active_year
 from app.domain.seating.arrange import first_empty, grid_of
-from app.domain.seating.layout import reflow_auto
+from app.domain.seating.layout import record_seat_change, reflow_auto
 from app.errors import ApiError
 from app.models import Enrollment, SchoolClass, Student
 from app.rbac.bindings import Binding, can
@@ -155,6 +155,7 @@ def create_student(
     request: Request | None,
 ) -> StudentRecord:
     lock_class(db, cls)
+    start_version = cls.seat_version
     year = require_active_year(db, cls.school_id)
     check_student_no(db, cls, data.student_no, None)
     target = _target(data)
@@ -176,6 +177,14 @@ def create_student(
     place_student(db, cls, enrollment, target, plan)
     if reflow_auto(db, cls, user_id):
         db.refresh(enrollment)
+    displaced = plan.occupant if plan.occupant is not None and plan.occupant_dest is None else None
+    if displaced is not None:
+        db.refresh(displaced)
+        if displaced.seat_row is None:
+            seat = first_empty(grid_of(cls), _occupied(db, cls), cls.seat_order)  # type: ignore[arg-type]
+            if seat is not None:
+                displaced.seat_row, displaced.seat_col = seat
+                db.flush()
     if target is None and data.auto_seat:
         seat = first_empty(grid_of(cls), _occupied(db, cls), cls.seat_order)  # type: ignore[arg-type]
         if seat is not None:
@@ -183,6 +192,7 @@ def create_student(
             db.flush()
             cls.seat_version = SchoolClass.seat_version + 1
             db.flush()
+    record_seat_change(db, cls, user_id, start_version)
     record(
         db,
         user_id=user_id,
@@ -206,6 +216,7 @@ def update_student(
     request: Request | None,
 ) -> StudentRecord:
     lock_class(db, cls)
+    start_version = cls.seat_version
     db.refresh(enrollment)  # seat state may have moved before we got the lock
     if enrollment.status != "active":
         raise ApiError(404, "NOT_FOUND", "学生不存在")
@@ -218,6 +229,7 @@ def update_student(
     enrollment.class_role = data.class_role
     db.flush()
     place_student(db, cls, enrollment, target, plan)
+    record_seat_change(db, cls, user_id, start_version)
     record(
         db,
         user_id=user_id,
@@ -239,6 +251,7 @@ def remove_student(
     request: Request | None,
 ) -> None:
     lock_class(db, cls)
+    start_version = cls.seat_version
     db.refresh(enrollment)
     if enrollment.status != "active":
         raise ApiError(404, "NOT_FOUND", "学生不存在")
@@ -250,6 +263,7 @@ def remove_student(
     db.flush()
     if not reflow_auto(db, cls, user_id):
         cls.seat_version = SchoolClass.seat_version + 1
+    record_seat_change(db, cls, user_id, start_version)
     record(
         db,
         user_id=user_id,
@@ -270,6 +284,7 @@ def import_students(
     request: Request | None,
 ) -> StudentImported:
     lock_class(db, cls)
+    start_version = cls.seat_version
     year = require_active_year(db, cls.school_id)
     existing = db.execute(
         select(Student.name, Student.student_no)
@@ -323,6 +338,7 @@ def import_students(
         if placed:
             db.flush()
             cls.seat_version = SchoolClass.seat_version + 1
+    record_seat_change(db, cls, user_id, start_version)
     record(
         db,
         user_id=user_id,

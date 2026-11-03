@@ -1,4 +1,4 @@
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import select, update
 
@@ -143,3 +143,32 @@ def test_assistant_cannot_save_and_is_audited(client, db, settings):
     res = client.put(URL, json=payload(db), headers=auth(settings, ASSISTANT_USER_ID))
     assert res.status_code == 403
     assert [(r.action, r.success) for r in audit_rows(db, CLASS_ID)] == [("seating.write", False)]
+
+
+def test_stale_version_after_layout_change_is_409_not_400(client, db, settings):
+    layout = {
+        "desk_size": 2,
+        "seat_layout": "manual",
+        "rows": 7,
+        "cols": 4,
+        "podium_left": 0,
+        "podium_right": 0,
+        "how": "keep",
+        "base_version": 0,
+        "room": "",
+    }
+    base = f"/api/v1/classes/{CLASS_ID}/layout"
+    assert client.put(base, json=layout, headers=auth(settings)).status_code == 200
+    res = client.put(URL, json=payload(db, base=0, rows=6, cols=4), headers=auth(settings))
+    err = res.json()["error"]
+    assert (res.status_code, err["code"]) == (409, "SEAT_VERSION_CONFLICT")
+    assert err["details"] == {"current_version": version_now(db)}
+
+
+def test_seating_save_accepts_full_grid_plus_podium_payload(client, db, settings):
+    from app.domain.seating.schemas import SeatingSave
+
+    seats = [
+        {"enrollment_id": str(uuid4()), "row": 1, "col": 1, "locked": False} for _ in range(148)
+    ]
+    SeatingSave.model_validate({"base_version": 0, "rows": 12, "cols": 12, "seats": seats})

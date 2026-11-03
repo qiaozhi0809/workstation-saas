@@ -4,7 +4,7 @@ from collections.abc import Mapping, Sequence
 from uuid import UUID
 
 from fastapi import Request
-from sqlalchemy import bindparam, select, update
+from sqlalchemy import bindparam, delete, select, update
 from sqlalchemy.orm import Session
 
 from app import clock
@@ -147,6 +147,56 @@ def apply_placements(
     )
     db.flush()
     return version
+
+
+def record_seat_change(
+    db: Session, cls: SchoolClass, user_id: UUID | None, start_version: int
+) -> None:
+    """One request, one version: collapse every bump since ``start_version`` into a single
+    version with one snapshot of the final seating. Caller holds lock_class; no commit."""
+    db.flush()
+    db.refresh(cls)
+    if cls.seat_version == start_version:
+        return
+    version = start_version + 1
+    db.execute(
+        delete(SeatArrangement).where(
+            SeatArrangement.class_id == cls.id, SeatArrangement.version > start_version
+        )
+    )
+    cls.seat_version = version
+    layout = [
+        {
+            "enrollment_id": str(e.id),
+            "row": e.seat_row,
+            "col": e.seat_col,
+            "locked": bool(e.seat_locked),
+        }
+        for e in db.scalars(
+            select(Enrollment).where(
+                Enrollment.class_id == cls.id,
+                Enrollment.status == "active",
+                Enrollment.seat_row.is_not(None),
+                Enrollment.seat_col.is_not(None),
+            ),
+            execution_options={"populate_existing": True},
+        )
+    ]
+    db.add(
+        SeatArrangement(
+            class_id=cls.id,
+            version=version,
+            seat_rows=cls.seat_rows,
+            seat_cols=cls.seat_cols,
+            desk_size=cls.desk_size,
+            podium_left=cls.podium_left,
+            podium_right=cls.podium_right,
+            layout=layout,
+            saved_by_user_id=user_id,
+            saved_at=clock.utc_now(),
+        )
+    )
+    db.flush()
 
 
 def reflow_auto(db: Session, cls: SchoolClass, user_id: UUID | None) -> bool:

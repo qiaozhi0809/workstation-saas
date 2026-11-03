@@ -242,3 +242,19 @@ def test_import_into_auto_class_without_auto_seat_still_grows(client, settings, 
     db.expire_all()
     assert db.get(SchoolClass, UUID(CLASS_ID)).seat_rows == 5
     assert all(s == (None, None) for s in _imported_seats(db, 40))
+
+
+def test_import_auto_seat_writes_one_snapshot(client, settings, db):
+    from app.models import SeatArrangement
+
+    def snaps():
+        db.expire_all()
+        return db.scalars(
+            select(SeatArrangement).where(SeatArrangement.class_id == UUID(CLASS_ID))
+        ).all()
+
+    n, v = len(snaps()), _version(db)
+    rows = [_row("新甲", "Z1"), _row("新乙", "Z2")]
+    res = client.post(IMPORT, json={"rows": rows, "auto_seat": True}, headers=auth(settings))
+    assert res.status_code == 201, res.text
+    assert (len(snaps()), _version(db)) == (n + 1, v + 1)

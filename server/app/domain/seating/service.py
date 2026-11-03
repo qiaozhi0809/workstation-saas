@@ -16,6 +16,12 @@ def _invalid(reason: str) -> ApiError:
     return ApiError(400, "SEAT_INVALID", "座位表无效", {"reason": reason})
 
 
+def _conflict(current: int) -> ApiError:
+    return ApiError(
+        409, "SEAT_VERSION_CONFLICT", "座位表已被其他人修改", {"current_version": current}
+    )
+
+
 def _validate(db: Session, cls: SchoolClass, body: SeatingSave) -> None:
     if body.rows != cls.seat_rows or body.cols != cls.seat_cols:
         raise _invalid("layout_mismatch")
@@ -39,6 +45,8 @@ def _validate(db: Session, cls: SchoolClass, body: SeatingSave) -> None:
 
 def save_seating(db: Session, cls: SchoolClass, body: SeatingSave, user_id: UUID) -> SeatingSaved:
     lock_class(db, cls)
+    if body.base_version != cls.seat_version:
+        raise _conflict(cls.seat_version)
     _validate(db, cls, body)
     version = db.execute(
         text(
@@ -50,12 +58,7 @@ def save_seating(db: Session, cls: SchoolClass, body: SeatingSave, user_id: UUID
     if version is None:
         db.rollback()
         current = db.get(SchoolClass, cls.id, populate_existing=True)
-        raise ApiError(
-            409,
-            "SEAT_VERSION_CONFLICT",
-            "座位表已被其他人修改",
-            {"current_version": current.seat_version if current else 0},
-        )
+        raise _conflict(current.seat_version if current else 0)
     db.execute(
         update(Enrollment)
         .where(Enrollment.class_id == cls.id, Enrollment.status == "active")

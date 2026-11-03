@@ -2,7 +2,7 @@ from uuid import UUID
 
 from sqlalchemy import select, text
 
-from app.models import Enrollment, SchoolClass, Student
+from app.models import Enrollment, SchoolClass, SeatArrangement, Student
 from tests.factories import make_student
 from tests.helpers import audit_rows, auth, enrollment_of
 from tests.seed_ids import CLASS_ID, STUDENT_IDS, SUBJECT_USER_ID
@@ -477,3 +477,78 @@ def test_auto_seat_ignored_on_update_and_when_seat_given(client, settings, db):
         headers=auth(settings),
     )
     assert (res.json()["seat_row"], res.json()["seat_col"]) == (3, 3)
+
+
+def test_auto_full_class_displaced_occupant_gets_new_row_seat(client, settings, db):
+    eids = _setup_grid(db, rows=4, cols=4, seats=_row_major(4, 4))
+    res = client.post(
+        f"{BASE}/students",
+        json=_input(student_no="N1", seat={"row": 1, "col": 1}, auto_seat=False),
+        headers=auth(settings),
+    )
+    assert res.status_code == 201, res.text
+    assert (res.json()["seat_row"], res.json()["seat_col"]) == (1, 1)
+    assert _cls(db).seat_rows == 5
+    now = _seats_by_eid(db)
+    assert now[eids[0]] == (5, 1)
+    assert all(v is not None and v[0] is not None for v in now.values())
+
+
+def _snaps(db):
+    db.expire_all()
+    return db.scalars(
+        select(SeatArrangement)
+        .where(SeatArrangement.class_id == UUID(CLASS_ID))
+        .order_by(SeatArrangement.version)
+    ).all()
+
+
+def test_auto_seat_without_reflow_writes_one_snapshot(client, settings, db):
+    _setup_grid(db, rows=4, cols=4, seats=_row_major(4, 4)[:10])
+    n, v = len(_snaps(db)), _version(db)
+    res = client.post(
+        f"{BASE}/students",
+        json=_input(student_no="N1", seat=None, auto_seat=True),
+        headers=auth(settings),
+    )
+    assert res.status_code == 201, res.text
+    snaps = _snaps(db)
+    assert (len(snaps), _version(db)) == (n + 1, v + 1)
+    assert snaps[-1].version == v + 1 and len(snaps[-1].layout) == 11
+
+
+def test_manual_seat_create_writes_snapshot(client, settings, db):
+    _setup_grid(db, rows=4, cols=4, seats=_row_major(4, 4)[:10])
+    n, v = len(_snaps(db)), _version(db)
+    res = client.post(
+        f"{BASE}/students",
+        json=_input(student_no="N1", seat={"row": 4, "col": 4}, auto_seat=False),
+        headers=auth(settings),
+    )
+    assert res.status_code == 201, res.text
+    assert (len(_snaps(db)), _version(db)) == (n + 1, v + 1)
+
+
+def test_reflow_plus_displaced_seat_merges_into_one_snapshot(client, settings, db):
+    _setup_grid(db, rows=4, cols=4, seats=_row_major(4, 4))
+    n, v = len(_snaps(db)), _version(db)
+    res = client.post(
+        f"{BASE}/students",
+        json=_input(student_no="N1", seat={"row": 1, "col": 1}, auto_seat=False),
+        headers=auth(settings),
+    )
+    assert res.status_code == 201, res.text
+    snaps = _snaps(db)
+    assert (len(snaps), _version(db)) == (n + 1, v + 1)
+    assert len(snaps[-1].layout) == 17 and snaps[-1].seat_rows == 5
+
+
+def test_remove_student_writes_snapshot(client, settings, db):
+    _setup_grid(db, rows=4, cols=4, seats=_row_major(4, 4)[:10], layout="manual")
+    n, v = len(_snaps(db)), _version(db)
+    eid = enrollment_of(db, STUDENT_IDS[0])
+    res = client.delete(f"{BASE}/students/{eid}", headers=auth(settings))
+    assert res.status_code in (200, 204), res.text
+    snaps = _snaps(db)
+    assert (len(snaps), _version(db)) == (n + 1, v + 1)
+    assert len(snaps[-1].layout) == 9

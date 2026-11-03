@@ -133,3 +133,11 @@ def test_first_empty_respects_order_and_skips_podium():
     # 双人桌竖排:一组两列,先坐满组内再往后
     assert first_empty(Grid(2, 2, 2), {(1, 1)}, "col") == (1, 2)
     assert first_empty(g, set(), "row", exclude=(1, 1)) == (1, 2)
+
+
+def test_student_no_key_tolerates_unicode_digits():
+    from app.domain.seating.arrange import student_no_key
+
+    student_no_key("1²", "x")
+    student_no_key("A①", "x")
+    assert student_no_key("٣", "x") < student_no_key("12", "x")
