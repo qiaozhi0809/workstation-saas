@@ -71,6 +71,11 @@ def ensure_school_view(
         )
 
 
+def _leader_bindings(bindings: Sequence[Binding]) -> list[Binding]:
+    """看全校只认领导身份;兼任别班班主任等教师身份不扩大可见范围。"""
+    return [b for b in bindings if b.role in LEADER_ROLES]
+
+
 def _visible(
     db: Session, bindings: Sequence[Binding], year_id: UUID, school_id: UUID
 ) -> list[VisibleClass]:
@@ -89,7 +94,7 @@ def _visible(
     return [
         VisibleClass(cls, grade, name)
         for cls, grade, name in rows
-        if can(bindings, Perm.CLASS_READ, class_scope_of(cls))
+        if can(_leader_bindings(bindings), Perm.CLASS_READ, class_scope_of(cls))
     ]
 
 
@@ -171,7 +176,7 @@ def today_view(db: Session, user: User, bindings: Sequence[Binding]) -> TodayVie
     names = {v.cls.id: v.cls.name for v in visible}
     order = {cid: i for i, cid in enumerate(ids)}
 
-    if can(bindings, Perm.CLASS_READ, Scope(school_id=year.school_id)):
+    if can(_leader_bindings(bindings), Perm.CLASS_READ, Scope(school_id=year.school_id)):
         scope_label = "全校"
     else:
         scope_label = "、".join(dict.fromkeys(v.grade.name for v in visible))

@@ -7,7 +7,8 @@ from app.domain.overview.service import board_view
 from app.models import Attendance, AttendanceDay, Enrollment, Review, Student, User
 from app.models.audit import AuditLog
 from app.rbac.bindings import load_bindings
-from tests.factories import make_class, make_student
+from app.rbac.roles import Role
+from tests.factories import bind, make_class, make_student
 from tests.helpers import auth, freeze
 from tests.seed_ids import CLASS_ID, GRADE_ID, YEAR_ID
 
@@ -290,3 +291,47 @@ def test_board_query_count(db, monkeypatch):
         event.remove(conn, "before_cursor_execute", count)
     assert len(view.classes) == 12
     assert len(statements) <= 8, statements
+
+
+def test_grade_head_also_homeroom_elsewhere_stays_scoped(client, db, settings, monkeypatch):
+    freeze(monkeypatch, NOW)
+    bind(db, UUID(GRADE_HEAD3), Role.homeroom_teacher, class_id=C41)
+    body = get_today(client, settings, GRADE_HEAD3).json()
+    assert body["scope_label"] == "三年级"
+    assert body["totals"]["classes"] == 2
+    assert {u["class_name"] for u in body["unconfirmed"]} <= {"三年一班", "三年二班"}
+    board = get_board(client, settings, GRADE_HEAD3)
+    assert board.json()["grades"] == [{"id": GRADE_ID, "name": "三年级"}]
+    assert get_board(client, settings, GRADE_HEAD3, grade_id=G4).status_code == 403
+
+
+def test_board_seats_equal_class_students_endpoint(client, db, settings, monkeypatch):
+    freeze(monkeypatch, NOW)
+    for c in get_board(client, settings).json()["classes"]:
+        res = client.get(f"/api/v1/classes/{c['id']}/students", headers=auth(settings, PRINCIPAL))
+        assert c["seats"] == res.json()["items"]
+
+
+def test_leaders_read_class_endpoints_within_scope(client, db, settings, monkeypatch):
+    freeze(monkeypatch, NOW)
+    for user in (PRINCIPAL, GRADE_HEAD3):
+        h = auth(settings, user)
+        base = f"/api/v1/classes/{CLASS_ID}"
+        assert client.get(f"{base}/classroom", headers=h).status_code == 200
+        assert client.get(f"{base}/students", headers=h).status_code == 200
+        assert (
+            client.get(f"{base}/attendance", params={"date": "2026-10-14"}, headers=h).status_code
+            == 200
+        )
+
+
+def test_grade_head_cannot_read_other_grade_class(client, db, settings, monkeypatch):
+    freeze(monkeypatch, NOW)
+    h = auth(settings, GRADE_HEAD3)
+    base = f"/api/v1/classes/{C41}"
+    assert client.get(f"{base}/classroom", headers=h).status_code == 403
+    assert client.get(f"{base}/students", headers=h).status_code == 403
+    assert (
+        client.get(f"{base}/attendance", params={"date": "2026-10-14"}, headers=h).status_code
+        == 403
+    )
