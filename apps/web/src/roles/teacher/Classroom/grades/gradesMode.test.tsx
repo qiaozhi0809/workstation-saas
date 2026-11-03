@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, fireEvent, renderHook, screen, within } from '@testing-library/react'
+import { act, fireEvent, renderHook, screen, waitFor, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { examsApi } from '@/shared/api/exams'
@@ -56,7 +56,8 @@ it('shows the grades tab only with exam.read', async () => {
 it('puts the grades tab between 点评 and 排座', async () => {
   setup({ perms: ['review.read', 'exam.read', 'seating.write'] })
   await screen.findByRole('tab', { name: '日常' })
-  expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['日常', '点评', '成绩', '排座'])
+  // 其余标签依赖 my_perms,等权限加载完再断言顺序
+  await waitFor(() => expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['日常', '点评', '成绩', '排座']))
 })
 
 it('tints seats by rank fifths and badges big moves', async () => {
