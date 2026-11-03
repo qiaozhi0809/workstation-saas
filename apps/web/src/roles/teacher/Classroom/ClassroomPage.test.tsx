@@ -7,6 +7,38 @@ import { reviewsApi } from '@/shared/api/reviews'
 import { studentsApi } from '@/shared/api/students'
 import { classFixture, defaultApiMocks, rosterFixture, setup } from './pageTestUtils'
 
+const hoisted = vi.hoisted(() => ({
+  seating: null as null | ((o: unknown) => unknown),
+  onOpenLayout: undefined as undefined | (() => void),
+  navigate: null as null | ReturnType<typeof import('vitest').vi.fn>,
+}))
+// 测试用的路由表里没有学生页,跳转改为记录调用
+vi.mock('react-router-dom', async (orig) => {
+  const actual = await orig<typeof import('react-router-dom')>()
+  return { ...actual, useNavigate: () => { const real = actual.useNavigate(); return hoisted.navigate ?? real } }
+})
+// 默认走真实的排座逻辑;个别用例注入一个带 reload 的假实现,并记下页面传进去的 onOpenLayout
+vi.mock('./seating/useSeatingMode', async (orig) => {
+  const actual = await orig<typeof import('./seating/useSeatingMode')>()
+  return {
+    useSeatingMode: (o: Parameters<typeof actual.useSeatingMode>[0] & { onOpenLayout?: () => void }) => {
+      hoisted.onOpenLayout = o.onOpenLayout
+      return hoisted.seating ? hoisted.seating(o) : actual.useSeatingMode(o)
+    },
+  }
+})
+// 对话框本身由自己的测试覆盖;这里只看页面怎么接它
+vi.mock('./settings/ClassSettingsDialog', () => ({
+  default: (p: { seatVersion: number; onSaved(r: unknown): void; onGo(to: string): void; onClose(): void }) => (
+    <div role="dialog" aria-label="班级设置对话框">
+      <span>{`v${p.seatVersion}`}</span>
+      <button onClick={() => { p.onSaved({ moved: 0 }); p.onClose() }}>模拟保存</button>
+      <button onClick={() => p.onGo('add')}>去添加</button>
+      <button onClick={() => p.onGo('import')}>去导入</button>
+      <button onClick={() => p.onGo('list')}>去名单</button>
+    </div>
+  ),
+}))
 vi.mock('@/shared/api/classes')
 vi.mock('@/shared/api/students')
 vi.mock('@/shared/api/classroom')
@@ -40,6 +72,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  hoisted.navigate = null
   window.innerWidth = WIDTH
   Element.prototype.requestFullscreen = REQUEST_FULLSCREEN
   document.exitFullscreen = EXIT_FULLSCREEN
@@ -356,4 +389,81 @@ it('keeps other search params when switching modes', async () => {
   await waitFor(() => expect(screen.getByTestId('url')).toHaveTextContent('/teacher/classroom?foo=1&bar=2&mode=review'))
   fireEvent.click(screen.getByRole('tab', { name: '日常' }))
   await waitFor(() => expect(screen.getByTestId('url')).toHaveTextContent(/^\/teacher\/classroom\?foo=1&bar=2$/))
+})
+
+const moreMenu = async () => {
+  fireEvent.click(await screen.findByRole('button', { name: '更多操作' }))
+}
+
+it('offers class settings in the more menu for homeroom teachers in every mode', async () => {
+  setup()
+  await moreMenu()
+  expect(await screen.findByRole('menuitem', { name: '班级设置' })).toBeInTheDocument()
+})
+
+it('does not offer class settings without seating.write', async () => {
+  setup({ perms: ['attendance.read', 'review.read'] })
+  await screen.findByRole('button', { name: '待办与点评' })
+  expect(screen.queryByRole('button', { name: '更多操作' })).toBeNull()
+})
+
+it('opens the dialog with the seat version and routes its onGo targets', async () => {
+  const navigate = hoisted.navigate = vi.fn()
+  setup()
+  await moreMenu()
+  fireEvent.click(await screen.findByRole('menuitem', { name: '班级设置' }))
+  expect(await screen.findByText('v4')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '去添加' }))
+  expect(navigate).toHaveBeenCalledWith('/teacher/students?action=add')
+})
+
+it('routes 去导入 and 去名单 to the students page', async () => {
+  const navigate = hoisted.navigate = vi.fn()
+  setup()
+  await moreMenu()
+  fireEvent.click(await screen.findByRole('menuitem', { name: '班级设置' }))
+  fireEvent.click(await screen.findByRole('button', { name: '去导入' }))
+  expect(navigate).toHaveBeenCalledWith('/teacher/students?action=import')
+  fireEvent.click(await screen.findByRole('button', { name: '去名单' }))
+  expect(navigate).toHaveBeenCalledWith('/teacher/students')
+})
+
+it('refreshes queries and reloads the seating draft after saving the layout', async () => {
+  const reload = vi.fn().mockResolvedValue(undefined)
+  hoisted.seating = () => ({ ready: false, failed: false, dirty: false, pending: null, retry: vi.fn(), reload })
+  try {
+    const { client } = setup({ mode: '排座' })
+    const spy = vi.spyOn(client, 'invalidateQueries')
+    await moreMenu()
+    fireEvent.click(await screen.findByRole('menuitem', { name: '班级设置' }))
+    fireEvent.click(await screen.findByRole('button', { name: '模拟保存' }))
+    await waitFor(() => expect(reload).toHaveBeenCalledTimes(1))
+    for (const k of [['my-classes'], ['classroom', 'c1'], ['class-students', 'c1']]) {
+      expect(spy).toHaveBeenCalledWith({ queryKey: k })
+    }
+    expect(typeof hoisted.onOpenLayout).toBe('function')
+  } finally {
+    hoisted.seating = null
+  }
+})
+
+it('does not reload the seating draft after saving outside the seating mode', async () => {
+  const reload = vi.fn().mockResolvedValue(undefined)
+  hoisted.seating = () => ({ ready: false, failed: false, dirty: false, pending: null, retry: vi.fn(), reload })
+  try {
+    setup()
+    await moreMenu()
+    fireEvent.click(await screen.findByRole('menuitem', { name: '班级设置' }))
+    fireEvent.click(await screen.findByRole('button', { name: '模拟保存' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '班级设置对话框' })).toBeNull())
+    expect(reload).not.toHaveBeenCalled()
+  } finally {
+    hoisted.seating = null
+  }
+})
+
+it('passes desk size and podium seats to the map', async () => {
+  vi.mocked(classesApi.mine).mockResolvedValue({ items: [{ ...classFixture, desk_size: 3, podium_left: 1, seat_cols: 6 }] })
+  const { container } = setup()
+  await waitFor(() => expect(container.querySelector('[data-seat="0--1"]')).not.toBeNull())
 })

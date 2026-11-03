@@ -221,3 +221,55 @@ it('does not show delete when adding', () => {
   renderForm()
   expect(screen.queryByRole('button', { name: '删除学生' })).toBeNull()
 })
+
+const podiumCls: ClassView = { ...cls, podium_left: 2, podium_right: 1 }
+const fullAuto: ClassView = { ...cls, seat_layout: 'auto' }
+const fullRoster = [
+  rec({ enrollment_id: 'f1', name: '甲', seat_row: 1, seat_col: 1 }),
+  rec({ enrollment_id: 'f2', name: '乙', seat_row: 1, seat_col: 2 }),
+  rec({ enrollment_id: 'f3', name: '丙', seat_row: 2, seat_col: 1 }),
+  rec({ enrollment_id: 'f4', name: '丁', seat_row: 2, seat_col: 2 }),
+]
+
+it('lists podium seats with their names', async () => {
+  vi.mocked(studentsApi.create).mockResolvedValue(rec({ enrollment_id: 'e9' }))
+  const onClose = renderForm({ cls: podiumCls })
+  const labels = within(screen.getByLabelText('座位')).getAllByRole('option').map((o) => o.textContent)
+  expect(labels.slice(0, 4)).toEqual(['不排座', '讲台左边（靠讲桌）', '讲台左边（外侧）', '讲台右边'])
+  fireEvent.change(screen.getByLabelText('姓名'), { target: { value: '赵六' } })
+  fireEvent.change(screen.getByLabelText('座位'), { target: { value: '0--2' } })
+  fireEvent.click(screen.getByRole('button', { name: '保存' }))
+  await waitFor(() => expect(onClose).toHaveBeenCalled())
+  expect(studentsApi.create).toHaveBeenCalledWith('c1', expect.objectContaining({ seat: { row: 0, col: -2 } }))
+})
+
+it('defaults to auto seat when an auto class is full', async () => {
+  vi.mocked(studentsApi.create).mockResolvedValue(rec({ enrollment_id: 'e9' }))
+  const onClose = renderForm({ cls: fullAuto, roster: fullRoster })
+  const select = screen.getByLabelText('座位') as HTMLSelectElement
+  expect(within(select).getAllByRole('option')[0]).toHaveTextContent('自动加座位')
+  expect(select.selectedOptions[0]).toHaveTextContent('自动加座位')
+  fireEvent.change(screen.getByLabelText('姓名'), { target: { value: '赵六' } })
+  fireEvent.click(screen.getByRole('button', { name: '保存' }))
+  await waitFor(() => expect(onClose).toHaveBeenCalled())
+  const body = vi.mocked(studentsApi.create).mock.calls[0][1]
+  expect(body.seat).toBeNull()
+  expect(body.auto_seat).toBe(true)
+})
+
+it('does not offer auto seat when editing or for manual classes', () => {
+  const { unmount } = render(
+    <QueryClientProvider client={client}>
+      <StudentForm cls={fullAuto} record={fullRoster[0]} roster={fullRoster} onClose={vi.fn()} />
+    </QueryClientProvider>,
+  )
+  expect(screen.queryByRole('option', { name: '自动加座位' })).toBeNull()
+  unmount()
+  renderForm({ cls: { ...cls, seat_layout: 'manual' }, roster: fullRoster })
+  expect(screen.queryByRole('option', { name: '自动加座位' })).toBeNull()
+})
+
+it('does not offer auto seat while an auto class still has an empty seat', () => {
+  renderForm({ cls: fullAuto, roster: fullRoster.slice(0, 3) })
+  expect(screen.queryByRole('option', { name: '自动加座位' })).toBeNull()
+})

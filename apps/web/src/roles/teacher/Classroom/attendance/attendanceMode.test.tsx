@@ -214,5 +214,5 @@ it('puts 导出本月 in the 更多操作 menu, not on the bar', async () => {
   await openMore()
   expect(screen.queryByRole('button', { name: '导出本月' })).toBeNull()
   await waitFor(() => expect(within(screen.getByRole('menu', { name: '更多操作' })).getAllByRole('menuitem').map((i) => i.textContent))
-    .toEqual(['导出本月', '随机点名', '编辑黑板']))
+    .toEqual(['导出本月', '班级设置', '随机点名', '编辑黑板']))
 })

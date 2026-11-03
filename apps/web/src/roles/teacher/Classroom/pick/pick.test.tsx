@@ -157,7 +157,10 @@ it('keeps 随机点名 and 编辑黑板 as plain buttons in daily mode and moves
   setup()
   await screen.findByRole('button', { name: '随机点名' })
   expect(screen.getByRole('button', { name: '编辑黑板' })).toBeInTheDocument()
-  expect(screen.queryByRole('button', { name: '更多操作' })).toBeNull()
+  // 日常模式下 ⋯ 里只有"班级设置",随机点名 / 编辑黑板仍是平铺按钮
+  fireEvent.click(screen.getByRole('button', { name: '更多操作' }))
+  expect(within(screen.getByRole('menu', { name: '更多操作' })).getAllByRole('menuitem').map((i) => i.textContent)).toEqual(['班级设置'])
+  fireEvent.keyDown(document.body, { key: 'Escape' })
   fireEvent.click(screen.getByRole('tab', { name: '考勤' }))
   await screen.findByRole('button', { name: '更多操作' })
   expect(screen.queryByRole('button', { name: '随机点名' })).toBeNull()

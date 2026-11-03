@@ -45,9 +45,9 @@ function Url() {
   return <div data-testid="url">{useLocation().search}</div>
 }
 
-const renderPage = () => render(
+const renderPage = (entry = '/teacher/students') => render(
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-    <MemoryRouter initialEntries={['/teacher/students']}><Url /><StudentsPage /></MemoryRouter>
+    <MemoryRouter initialEntries={[entry]}><Url /><StudentsPage /></MemoryRouter>
   </QueryClientProvider>,
 )
 
@@ -213,7 +213,7 @@ it('opens the edit form from a row without opening the drawer', async () => {
   await screen.findByText('张三')
   fireEvent.click(within(screen.getByText('张三').closest('tr')!).getByRole('button', { name: '编辑' }))
   expect(await screen.findByLabelText('姓名')).toHaveValue('张三')
-  expect(screen.getByTestId('url').textContent).toBe('')
+  await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(''))
 })
 
 it('opens the add form and the import dialog from the toolbar', async () => {
@@ -233,4 +233,29 @@ it('offers adding students from the empty state', async () => {
   expect(await screen.findByText('还没有学生')).toBeInTheDocument()
   expect(screen.getByRole('button', { name: '添加学生' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: '批量导入' })).toBeInTheDocument()
+})
+
+it('shows podium seat text in the seat column', async () => {
+  setup(ALL, [
+    rec({ enrollment_id: 'e1', name: '张三', seat_row: 0, seat_col: 1 }),
+    rec({ enrollment_id: 'e2', name: '李四', seat_row: 2, seat_col: 3 }),
+  ])
+  renderPage()
+  const row1 = (await screen.findByText('张三')).closest('tr')!
+  expect(within(row1).getByText('讲台右边')).toBeInTheDocument()
+  expect(within(screen.getByText('李四').closest('tr')!).getByText('2排3列')).toBeInTheDocument()
+})
+
+it('opens the add form from ?action=add and clears the parameter', async () => {
+  setup(MANAGE)
+  renderPage('/teacher/students?action=add')
+  expect(await screen.findByRole('dialog', { name: '添加学生' })).toBeInTheDocument()
+  await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(''))
+})
+
+it('opens the import dialog from ?action=import and clears the parameter', async () => {
+  setup(MANAGE)
+  renderPage('/teacher/students?action=import')
+  expect(await screen.findByRole('dialog', { name: /导入/ })).toBeInTheDocument()
+  await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(''))
 })
