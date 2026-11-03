@@ -11,8 +11,13 @@ from app.models import Enrollment, Student
 
 CODE_RE = re.compile(r"[【\[]学生(\d{1,6})[】\]]")
 _TAIL_RE = re.compile(r"^[【\[](学(生\d{0,6})?)?$")
-_ID_RE = re.compile(r"(?<!\d)\d{17}[\dXx](?!\d)")
-_PHONE_RE = re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)")
+# 数字含全角;分组之间允许一个空格 / 连字符;号码前后不得紧挨数字
+_D = "[0-9０-９]"
+_SEP = "[ \u00a0\u3000\t-]?"
+_ID_RE = re.compile(rf"(?<!{_D}){_D}{{6}}{_SEP}{_D}{{8}}{_SEP}{_D}{{3}}[0-9０-９XxＸｘ](?!{_D})")
+_PHONE_RE = re.compile(
+    rf"(?<!{_D})(?:[+＋]?[8８][6６]{_SEP})?[1１][3-9３-９]{_D}{_SEP}{_D}{{4}}{_SEP}{_D}{{4}}(?!{_D})"
+)
 _REDACTED = "〔号码已隐去〕"
 
 
