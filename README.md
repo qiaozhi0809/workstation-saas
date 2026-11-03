@@ -14,7 +14,7 @@
 
 ## 项目状态
 
-🚧 **构建期** — M1(骨架 + 教师角色底座)与 M2a(教室交互)已完成:老师可登录,在自绘的教室场景里记考勤、点评、随机点名、排座,编辑黑板和个人偏好。M2b 成绩也已完成:成绩录入与分析、学生名单与导入导出、档案成绩页签与个人笔记、教室成绩模式与优带弱。下一步是 M2c(AI 与学年)。
+🚧 **构建期** — M1(骨架 + 教师角色底座)与 M2a(教室交互)已完成:老师可登录,在自绘的教室场景里记考勤、点评、随机点名、排座,编辑黑板和个人偏好。M2b 成绩也已完成:成绩录入与分析、学生名单与导入导出、档案成绩页签与个人笔记、教室成绩模式与优带弱。M2c(AI 与学年)也已完成:老师可以用 AI 助手(14 个模板、自由对话、批量评语、复制提示词、导出 Word),档案抽屉有成长记录与评语页签,后端有学年升级的完整流程。下一步是 M3(管理角色)。
 
 ## 技术栈(锁定方向)
 
@@ -77,6 +77,38 @@ make web        # 前端 http://localhost:5173,/api 由 Vite 代理到 :8080
 
 `make backend` 和 `make web` 各占一个终端。停止数据库用 `make dev-down`。
 
+### 配置 AI
+
+AI 服务由学校统一配置,API Key 加密后存在数据库里,不进任何文件。用命令行配置(Key 只从标准输入给):
+
+```bash
+cd server
+printf '%s\n' "$YOUR_KEY" | uv run python -m app.cli ai-config set --provider deepseek --api-key-stdin
+uv run python -m app.cli ai-config show    # 显示当前配置(Key 只露末 4 位)
+uv run python -m app.cli ai-config test    # 测试连通性
+uv run python -m app.cli ai-config clear   # 清除
+```
+
+`--provider` 可选 `deepseek`、`qwen`、`kimi`、`glm`、`doubao`、`silicon`、`custom`(任何 OpenAI 兼容地址,配 `--base-url` 和 `--model`)。`--mask-forced` 让学校强制隐去姓名:开启后,老师在页面上关掉"隐去姓名"也无效,而且已有对话的追问、批量条目和复制提示词也一律脱敏。
+
+不想连真服务商时,本地开发和 E2E 用仓库里的假服务:`node apps/web/e2e/helpers/fakeLlm.mjs`(监听 18089),然后 `ai-config set --provider custom --base-url http://127.0.0.1:18089/v1 --model fake-model --api-key-stdin`(Key 随便给一个假值)。
+
+**`WS_MASTER_KEY`**:加密 API Key 用的主密钥,32 字节的 base64(`openssl rand -base64 32`)。`WS_ENV` 不是 `dev` 时必须设置;它必须和数据库里的配置一起备份,主密钥丢了或换了,已存的 Key 就解不开,只能重新 `ai-config set`。开发环境用内置的固定值。
+
+### 学年升级(命令行)
+
+升级流程只有命令行(向导页面随 M3):
+
+```bash
+cd server
+uv run python -m app.cli year-upgrade suggest --name 2027-2028 --start 2027-09-01 --end 2028-07-15 --out plan.json   # 按现有班级生成方案
+uv run python -m app.cli year-upgrade preview plan.json     # 预览:每个班升到哪、留级、毕业、新建
+uv run python -m app.cli year-upgrade apply plan.json --yes # 执行
+uv run python -m app.cli year-upgrade rollback --yes        # 回滚最近一次(新学年已有数据时会拒绝,并列出数量)
+```
+
+升级会保留往年的考试、点评和成长记录(往年记录只读);原任课老师看不到旧班,新班主任能看到学生往年的成长记录但不能删。年级组长跟届走。
+
 ### 默认账号
 
 | 登录名 | 密码 | 身份 |
@@ -93,10 +125,10 @@ make web        # 前端 http://localhost:5173,/api 由 Vite 代理到 :8080
 make test                     # 后端 pytest(testcontainers 起真 Postgres / Redis)+ 前端 Vitest
 cd server && uv run ruff check . && uv run ruff format --check .
 cd apps/web && npm run lint && npx tsc -b
-cd apps/web && npm run e2e    # Playwright:冒烟、教室、宽屏、成绩、学生流程
+cd apps/web && npm run e2e    # Playwright:冒烟、教室、宽屏、成绩、学生、AI 助手、档案流程
 ```
 
-`npm run e2e` 不会自己起服务,需要先按上面的启动顺序把数据库、后端和前端都跑起来;建议先 `make reset-db`。用例会自己恢复改动过的数据(考勤点回出勤、点评撤销、座位存回种子布局;删掉 `E2E` 开头的考试、`测试` 开头的学生,清空王小一的个人笔记),可以重复跑。API 建考试会把预设科目写回 `classes.subjects`(种子里原本为空),不影响重复跑。
+`npm run e2e` 不会自己起服务,需要先按上面的启动顺序把数据库、后端和前端都跑起来;建议先 `make reset-db`。AI 配置存在数据库里,`reset-db` 会把它清掉:跑 E2E 前要先起假服务(`node apps/web/e2e/helpers/fakeLlm.mjs`),再用上面“配置 AI”一节的命令把 AI 配到假服务;`ai.spec.ts` 发现配置没指向 `fake-model` 会直接失败,不会把数据发给真服务商。用例会自己恢复改动过的数据(考勤点回出勤、点评撤销、座位存回种子布局;删掉 `E2E` 开头的考试、`测试` 开头的学生,清空王小一的个人笔记),可以重复跑。AI 与档案用例用 API 清掉自己建的对话、评语和成长记录。API 建考试会把预设科目写回 `classes.subjects`(种子里原本为空),不影响重复跑。
 
 ### 常见故障
 
@@ -122,6 +154,20 @@ cd apps/web && npm run e2e    # Playwright:冒烟、教室、宽屏、成绩、�
 
   后端仍监听 8080,前端代理无需改动。
 - **登录提示"失败次数过多,请 15 分钟后再试"**:同一账号连续 5 次密码错误会锁定 15 分钟。等锁定过期,或清空开发 Redis:`redis-cli FLUSHDB`(改过端口时加 `-p 16379`);本机没装 `redis-cli` 时用 `docker compose -f deploy/docker-compose.dev.yml exec redis redis-cli FLUSHDB`。
+
+### M2c AI 与学年
+
+| 功能 | 做什么 | 谁能用 |
+|---|---|---|
+| AI 助手(`/teacher/ai`) | 14 个模板(备课、作业、家长沟通、评语、家长会发言稿、成绩分析报告等)、自由对话、追问 / 停止 / 重新生成、复制提示词(给自己的 AI 工具用)、导出 Word | 有 `ai.use` 的老师;班主任模板需 `ai.class`,成绩分析报告需成绩读权限,不够的模板显示为禁用 |
+| 批量评语 | 选多名学生逐条生成,可一键保存为评语 | 班主任 |
+| 隐去姓名 | 姓名换成 `【学生07】` 这样的编号再发给服务商,回复里再换回真名;电话、证件号一律过滤;联系人不进提示词 | 默认开;学校强制时老师不能关 |
+| 成长记录 | 档案抽屉里添加 / 删除成长记录,往年记录只读 | 班主任、副班主任可写;删别人写的记录需要班主任 |
+| 评语 | 档案抽屉里的评语页签,可由 AI 生成后保存 | 班主任(副班主任和任课老师看不到评语页签内容) |
+| 点评明细与撤销 | 档案成长记录页签里看前 40 条点评,撤销自己给的那条 | 给分人本人 |
+| 分析页 AI 按钮 | AI 写分析报告、给退步同学家长写沟通消息 | 有对应模板权限的老师(成绩分析报告需成绩读权限,家长沟通需班主任) |
+
+AI 的所有调用都经后端:脱敏、过滤、审计(每次生成一条 `ai.generate`,不记内容)都在服务端做;前端拿到的永远是真名文本。
 
 ### M2a 教室交互
 
@@ -164,7 +210,7 @@ cd apps/web && npm run e2e    # Playwright:冒烟、教室、宽屏、成绩、�
 | M1 骨架 + 教师角色底座 ✅ 已完成 | 老师可登录、看教室(静态)、看学生档案 |
 | M2a 教室交互 ✅ 已完成 | 考勤、点评、随机点名、排座、黑板、空闲小动画、全屏投屏、我的偏好 |
 | M2b 成绩 ✅ 已完成 | 成绩录入与分析、学生名单与导入导出、档案成绩页签与个人笔记、教室成绩模式与优带弱 |
-| M2c AI 与学年升级 | AI Gateway、批量评语、学年升级 |
+| M2c AI 与学年升级 ✅ 已完成 | AI Gateway(脱敏、审计、流式)、14 个模板与批量评语、成长记录与评语页签、点评撤销、学年升级(后端 + 命令行) |
 | M3 管理角色 | 校长看板 + 报表 + 账号管理 + 通知下发 |
 | M4 家长角色 | 响应式 Web,家长看自己孩子 |
 | M5 监控 + 部署 | 视频流接入 + Docker Compose 一键部署 |
