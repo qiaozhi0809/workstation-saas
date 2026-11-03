@@ -128,7 +128,24 @@ def create_bulk(
     if any(i.student_id not in enrollments for i in items):
         raise ApiError(400, "AI_FIELD_INVALID", "有学生不在本班", {"field": "items"})
     semester = semester_of(year, today)
+    # 同一学生、同一学期、内容逐字相同的评语已经存在就不再写(重发、刷新后再保存都不会重复),
+    # 同一批里的重复也只存一条
+    seen = {
+        (enrollment_id, content)
+        for enrollment_id, content in db.execute(
+            select(Comment.enrollment_id, Comment.content).where(
+                Comment.enrollment_id.in_([e.id for e in enrollments.values()]),
+                Comment.semester == semester,
+            )
+        )
+    }
+    created = 0
     for i in items:
+        key = (enrollments[i.student_id].id, i.content)
+        if key in seen:
+            continue
+        seen.add(key)
+        created += 1
         db.add(
             Comment(
                 student_id=i.student_id,
@@ -142,4 +159,4 @@ def create_bulk(
             )
         )
     db.flush()
-    return len(items)
+    return created
