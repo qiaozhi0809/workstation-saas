@@ -20,7 +20,7 @@ from app.ai.context import (
     student_context,
     system_prompt,
 )
-from app.ai.masking import Masker, masker_for_class, scrub
+from app.ai.masking import Masker, defuse_codes, masker_for_school, scrub
 from app.ai.prompts import task_text
 from app.ai.settings import AIConfig
 from app.ai.templates import (
@@ -325,10 +325,10 @@ def _title(template: Template, params: dict[str, Any], names: dict[str, str], n:
 
 
 def _finish(db: Session, cls: SchoolClass, text: str, masked: bool, masker: Masker | None) -> str:
-    text = scrub(text)
+    text = defuse_codes(scrub(text))
     if not masked:
         return text
-    return (masker or masker_for_class(db, cls.id)).mask(text)
+    return (masker or masker_for_school(db, cls.school_id, cls.id)).mask(text)
 
 
 def _exam_name(db: Session, exam_id: str | None) -> str:
@@ -485,7 +485,7 @@ def resolve(
     _check_perms(db, request, user, bindings, cls, needs)
 
     masked = bool(cfg.mask_forced if cfg else False) or req.mask
-    masker = masker_for_class(db, cls.id)
+    masker = masker_for_school(db, cls.school_id, cls.id)
     system = scrub(system_prompt(db, user, bindings, cls))
 
     def make(params: dict[str, Any], student: Student | None, n: int | None = None) -> Job:

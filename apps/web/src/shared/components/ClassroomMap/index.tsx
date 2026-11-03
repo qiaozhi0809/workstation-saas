@@ -54,7 +54,8 @@ function LiveFrontWall(props: Omit<Parameters<typeof FrontWall>[0], 'now'>) {
 }
 
 // 整张 svg(自然尺寸);平移 / 缩放只改外层 transform,不重画这里
-// 顺序:房间 → 陈设 → 前墙 → 桌椅 → 座位 → 讲台(教鞭压住第一排)→ 讲台两侧桌椅与座位(不被地台盖住)→ 聚光灯 → 积分气泡
+// 顺序:房间 → 陈设 → 前墙 → 桌椅 → 讲台 → 讲台两侧桌椅与座位(不被地台盖住)→ 普通座位 → 聚光灯 → 积分气泡
+// 讲台座位排在普通座位之前,键盘 Tab 顺序才是画面从前到后;教鞭最低约 y=334,在地台下沿 y=364 之上,与第一排热区(上沿 y=368)不重叠,顺序不影响遮挡
 const Scene = memo(function Scene({ L, mini, rows, board, attendanceBoard, figure, label, effects, placed, podCells, ...seat }: SceneProps) {
   const teacher = useMemo(() => ({ figure, label }), [figure, label])
   const headOf = (id?: string | null) => {
@@ -77,7 +78,6 @@ const Scene = memo(function Scene({ L, mini, rows, board, attendanceBoard, figur
         </>
       )}
       <DeskLayer layout={L} cells={seat.cells} views={seat.views} />
-      <SeatLayer layout={L} effects={effects} {...seat} />
       {L.podium && <Podium rect={L.podium} teacher={teacher} action={action} pointAt={picked ?? undefined} />}
       {podCells.length > 0 && (
         <>
@@ -85,6 +85,7 @@ const Scene = memo(function Scene({ L, mini, rows, board, attendanceBoard, figur
           <SeatLayer layout={L} effects={effects} {...seat} cells={podCells} />
         </>
       )}
+      <SeatLayer layout={L} effects={effects} {...seat} />
       <Spotlight at={spot} />
       <Floats items={effects?.floats ?? NO_FLOATS} layout={L} seats={placed} />
     </svg>

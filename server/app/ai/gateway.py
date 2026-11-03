@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 from app.ai.chats import chat_items, ordered_messages
 from app.ai.client import AIUpstreamError, ChatMessage, Delta, Usage
 from app.ai.context import system_prompt
-from app.ai.masking import Masker, masker_for_class, scrub
+from app.ai.masking import Masker, defuse_codes, masker_for_school, scrub
 from app.ai.requests import Job, build_job
 from app.ai.settings import AIConfig, make_client
 from app.ai.templates import TEMPLATES
@@ -251,9 +251,21 @@ async def generation_events(
 # ---------------------------------------------------------------- reply
 
 
-def _outgoing(masker: Masker, mask: bool, text: str) -> str:
+def _outgoing(masker: Masker, mask: bool, text: str, *, fresh: bool = False) -> str:
+    """``fresh``:老师刚输入的文本,手写编号先破坏掉(见 ``defuse_codes``)。"""
     text = scrub(text)
+    if fresh:
+        text = defuse_codes(text)
     return masker.mask(text) if mask else text
+
+
+def _history_user(masker: Masker, mask: bool, text: str) -> str:
+    """历史用户消息:``sent`` 已脱敏,先认下其中生成过的编号,再对遗留真名补脱。"""
+    text = scrub(text)
+    if not mask:
+        return text
+    masker.adopt(text)
+    return masker.mask(text)
 
 
 def prepare_reply(s: Session, ctx: GenContext, body: AiReplyIn) -> Prepared:
@@ -264,7 +276,7 @@ def prepare_reply(s: Session, ctx: GenContext, body: AiReplyIn) -> Prepared:
         raise ApiError(404, "NOT_FOUND", "对话不存在")
     year = active_academic_year(s, user.school_id)
     bindings = load_bindings(s, user.id, year.id if year else None)
-    masker = masker_for_class(s, cls.id)
+    masker = masker_for_school(s, cls.school_id, cls.id)
     mask = chat.mask or ctx.cfg.mask_forced
 
     if body.text is not None:
@@ -273,7 +285,7 @@ def prepare_reply(s: Session, ctx: GenContext, body: AiReplyIn) -> Prepared:
                 chat_id=chat.id,
                 role="user",
                 content=body.text,
-                sent=_outgoing(masker, mask, body.text),
+                sent=_outgoing(masker, mask, body.text, fresh=True),
                 status="done",
             )
         )
@@ -294,7 +306,7 @@ def prepare_reply(s: Session, ctx: GenContext, body: AiReplyIn) -> Prepared:
         if m.id == assistant.id:
             continue
         if m.role == "user":
-            content = _outgoing(masker, mask, m.sent if m.sent is not None else m.content)
+            content = _history_user(masker, mask, m.sent if m.sent is not None else m.content)
             messages.append(ChatMessage("user", content))
         elif m.content:
             messages.append(ChatMessage("assistant", _outgoing(masker, mask, m.content)))
@@ -347,8 +359,13 @@ def build_item_job(
     item: AiBatchItem,
     *,
     mask: bool,
+    masker: Masker | None = None,
 ) -> Job:
-    """按对话参数和当下数据重建某一条的 prompt;学生已不在本班时抛 400 AI_FIELD_INVALID。"""
+    """按对话参数和当下数据重建某一条的 prompt;学生已不在本班时抛 400 AI_FIELD_INVALID。
+
+    批量时调用方传同一个 ``masker``(只建一次,也让换回认得已生成的编号)。
+    """
+    masker = masker or masker_for_school(s, cls.school_id, cls.id)
     template = TEMPLATES.get(chat.template_id) if chat.template_id else None
     year = active_academic_year(s, user.school_id)
     bindings = load_bindings(s, user.id, year.id if year else None)
@@ -359,7 +376,7 @@ def build_item_job(
     try:
         return build_job(
             s, user, bindings, cls, template, chat.params, student, school_today(s, cls.school_id),
-            masked=mask, masker=masker_for_class(s, cls.id),
+            masked=mask, masker=masker,
             regress_n=int(found.group(1)) if found else None,
         )  # fmt: skip
     except ApiError as e:
@@ -376,7 +393,8 @@ def prepare_item(s: Session, ctx: GenContext, item_id: UUID) -> Prepared:
     if chat is None or user is None or cls is None or item is None or item.chat_id != chat.id:
         raise ApiError(404, "NOT_FOUND", "条目不存在")
     mask = chat.mask or ctx.cfg.mask_forced
-    job = build_item_job(s, user, cls, chat, item, mask=mask)
+    masker = masker_for_school(s, cls.school_id, cls.id)
+    job = build_item_job(s, user, cls, chat, item, mask=mask, masker=masker)
     year = active_academic_year(s, user.school_id)
     bindings = load_bindings(s, user.id, year.id if year else None)
     system = scrub(system_prompt(s, user, bindings, cls))
@@ -386,7 +404,7 @@ def prepare_item(s: Session, ctx: GenContext, item_id: UUID) -> Prepared:
     return Prepared(
         meta={"item_id": str(item.id)},
         messages=messages,
-        masker=masker_for_class(s, cls.id),
+        masker=masker,
         target_id=item.id,
         template=chat.template_id,
         student_ids=[str(item.student_id)],

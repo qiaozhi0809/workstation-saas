@@ -27,7 +27,7 @@ from app.ai.gateway import (
     reply_events,
     run_item_events,
 )
-from app.ai.masking import masker_for_class, scrub
+from app.ai.masking import masker_for_school, scrub
 from app.ai.providers import provider_label
 from app.ai.requests import (
     Job,
@@ -242,7 +242,7 @@ def ai_chat_prompt(
     _check_perms(db, request, user, bindings, cls, _chat_needs(chat))
     cfg = load_ai_config(db, settings.school_id, settings.master_key_bytes)  # 可为 None
     effective = chat.mask or (cfg.mask_forced if cfg else False)
-    masker = masker_for_class(db, cls.id)
+    masker = masker_for_school(db, cls.school_id, cls.id)
     system = scrub(system_prompt(db, user, bindings, cls))
     template = TEMPLATES.get(chat.template_id) if chat.template_id else None
     items = chat_items(db, chat.id)
@@ -251,7 +251,9 @@ def ai_chat_prompt(
     if chat.batch_only and template is not None:
         for item in items:
             try:
-                jobs.append(build_item_job(db, user, cls, chat, item, mask=effective))
+                jobs.append(
+                    build_item_job(db, user, cls, chat, item, mask=effective, masker=masker)
+                )
             except ApiError:
                 continue  # 学生已不在本班:复制提示词时跳过
             student_ids.append(item.student_id)
@@ -259,7 +261,9 @@ def ai_chat_prompt(
         first = next((m for m in ordered_messages(db, chat.id) if m.role == "user"), None)
         sent = first.sent if first is not None and first.sent is not None else ""
         if effective:
-            sent = masker.mask(scrub(sent))  # 对已脱敏文本幂等
+            sent = scrub(sent)
+            masker.adopt(sent)  # 已脱敏文本里的编号都出自 mask()
+            sent = masker.mask(sent)
         jobs.append(
             Job(
                 sent=sent, student_id=chat.student_id, enrollment_id=None, note=None, student_ids=[]

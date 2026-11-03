@@ -208,6 +208,19 @@ describe('BatchView', () => {
     })
   })
 
+  it('N4: bulk save toast reflects how many were already saved', async () => {
+    const three = [1, 2, 3].map((n) => item(n, { status: 'done', content: `评${n}` }))
+    for (const [created, text] of [[0, '这些评语已经保存过了'], [1, '已保存 1 条,另有 2 条之前已保存'], [3, '已保存 3 条评语']] as const) {
+      vi.mocked(commentsApi.bulk).mockReset()
+      setServer(three)
+      vi.mocked(commentsApi.bulk).mockResolvedValue({ created })
+      const { unmount } = page()
+      fireEvent.click(await screen.findByRole('button', { name: '全部保存到档案' }))
+      expect(await screen.findByText(text)).toBeInTheDocument()
+      unmount()
+    }
+  })
+
   it('F1: a single saved item is disabled afterwards and excluded from save-all', async () => {
     setServer([item(1, { status: 'done', content: '甲' }), item(2, { status: 'done', content: '乙' })])
     vi.mocked(commentsApi.create).mockResolvedValue({} as never)

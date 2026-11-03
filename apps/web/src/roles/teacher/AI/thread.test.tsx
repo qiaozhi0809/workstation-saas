@@ -80,6 +80,16 @@ describe('AiThreadPage streaming', () => {
     expect(aiApi.reply).toHaveBeenCalledTimes(1)
   })
 
+  it('N6: offers 重新生成 when the thread ends with an unanswered user message', async () => {
+    vi.mocked(aiApi.getChat).mockResolvedValue(chatFixture({ messages: [userMsg] }))
+    const calls = controlledReply()
+    thread()
+    fireEvent.click(await screen.findByRole('button', { name: '重新生成' }))
+    await waitFor(() => expect(calls).toHaveLength(1))
+    expect(calls[0].body).toEqual({})
+    expect(screen.queryByRole('button', { name: '重新生成' })).not.toBeInTheDocument()
+  })
+
   it('throttles renders to about every 100ms', async () => {
     const calls = controlledReply()
     thread()
