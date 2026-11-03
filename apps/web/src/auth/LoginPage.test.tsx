@@ -5,6 +5,7 @@ import { authApi } from '@/shared/api/auth'
 import { ApiError } from '@/shared/api/client'
 import type { LoginResponse } from '@/shared/types/api'
 import { useAuthStore } from '@/shared/stores/auth'
+import type { User } from '@/shared/types/user'
 import LoginPage from './LoginPage'
 
 vi.mock('@/shared/api/auth', () => ({ authApi: { login: vi.fn() } }))
@@ -27,7 +28,7 @@ afterEach(() => {
 
 it('submits trimmed login name and unicode password', async () => {   // Review Focus #5
   vi.mocked(authApi.login).mockResolvedValue({
-    access_token: 'a', refresh_token: 'r', expires_at: 'x', user: { id: 'u', display_name: 't' },
+    access_token: 'a', refresh_token: 'r', expires_at: 'x', user: { id: 'u', display_name: 't', contexts: ['teacher'], admin_perms: [], must_change_password: false },
   })
   render(<MemoryRouter><LoginPage /></MemoryRouter>)
   fill(' teacher01 ', '中文🎉')
@@ -63,7 +64,7 @@ it('shows generic message for other errors', async () => {
 })
 
 it('stores tokens and navigates to /teacher on success', async () => {
-  const user = { id: 'u', display_name: 't' }
+  const user: User = { id: 'u', display_name: 't', contexts: ['teacher'], admin_perms: [], must_change_password: false }
   vi.mocked(authApi.login).mockResolvedValue({
     access_token: 'a', refresh_token: 'r', expires_at: 'x', user,
   })
@@ -95,7 +96,7 @@ it('disables the button while pending and clears the error on resubmit', async (
   const btn = await screen.findByRole('button', { name: '登录中…' })
   expect(btn).toBeDisabled()
   expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-  resolve({ access_token: 'a', refresh_token: 'r', expires_at: 'x', user: { id: 'u', display_name: 't' } })
+  resolve({ access_token: 'a', refresh_token: 'r', expires_at: 'x', user: { id: 'u', display_name: 't', contexts: ['teacher'], admin_perms: [], must_change_password: false } })
   await waitFor(() => expect(useAuthStore.getState().accessToken).toBe('a'))
 })
 

@@ -39,4 +39,5 @@ export interface ClassroomSummary {
   my_perms: ClassPerm[]
   my_subjects: string[]
   board: Board
+  switches?: { star_of_week: boolean; birthdays: boolean }
 }

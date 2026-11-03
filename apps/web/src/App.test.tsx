@@ -33,7 +33,7 @@ describe('App routing', () => {
     vi.mocked(classroomApi.summary).mockReturnValue(never)
     vi.mocked(studentsApi.detail).mockReturnValue(never)
     vi.mocked(studentsApi.listInClass).mockReturnValue(never)
-    useAuthStore.setState({ accessToken: 'at', refreshToken: 'rt', user: { id: 'u1', display_name: '王老师' } })
+    useAuthStore.setState({ accessToken: 'at', refreshToken: 'rt', user: { id: 'u1', display_name: '王老师', contexts: ['teacher'], admin_perms: [], must_change_password: false } })
     window.history.pushState({}, '', '/teacher/students/a%20b')
     render(<App />)
     await waitFor(() => expect(window.location.pathname + window.location.search).toBe('/teacher/classroom?student=a%20b'))
@@ -46,7 +46,7 @@ describe('App routing', () => {
     beforeEach(() => {
       vi.mocked(classesApi.mine).mockResolvedValue({ items: [cls] })
       useTeacherStore.setState({ classId: 'c1' })
-      useAuthStore.setState({ accessToken: 'at', refreshToken: 'rt', user: { id: 'u1', display_name: '王老师' } })
+      useAuthStore.setState({ accessToken: 'at', refreshToken: 'rt', user: { id: 'u1', display_name: '王老师', contexts: ['teacher'], admin_perms: [], must_change_password: false } })
     })
     afterEach(() => useAuthStore.setState({ accessToken: null, refreshToken: null, user: null }))
 

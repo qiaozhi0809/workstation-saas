@@ -27,13 +27,13 @@ it('redirects to /login without a token', () => {
 })
 
 it('renders children with a token', () => {
-  useAuthStore.getState().setTokens('a', 'r', { id: 'u', display_name: 't' })
+  useAuthStore.getState().setTokens('a', 'r', { id: 'u', display_name: 't', contexts: ['teacher'], admin_perms: [], must_change_password: false })
   renderApp()
   expect(screen.getByText('secret')).toBeInTheDocument()
 })
 
 it('navigates to /login when the token is cleared while mounted', () => {
-  useAuthStore.getState().setTokens('a', 'r', { id: 'u', display_name: 't' })
+  useAuthStore.getState().setTokens('a', 'r', { id: 'u', display_name: 't', contexts: ['teacher'], admin_perms: [], must_change_password: false })
   renderApp()
   expect(screen.getByText('secret')).toBeInTheDocument()
   act(() => useAuthStore.getState().logout())

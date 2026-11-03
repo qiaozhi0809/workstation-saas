@@ -228,7 +228,7 @@ describe('home greeting', () => {
   ])('greets display name %j as %s', async (display_name, text) => {
     // 先让用户为空,避免 setupAi 的默认姓名先渲染
     setupAi({ element: <AiHomePage /> })
-    act(() => useAuthStore.setState({ user: { id: 'u1', display_name } }))
+    act(() => useAuthStore.setState({ user: { id: 'u1', display_name, contexts: ['teacher'], admin_perms: [], must_change_password: false } }))
     expect(await screen.findByText(text)).toBeInTheDocument()
   })
 })

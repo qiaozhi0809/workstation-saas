@@ -6,7 +6,7 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 
 beforeEach(() => {
-  useAuthStore.setState({ accessToken: 'old', refreshToken: 'ref', user: { id: 'u', display_name: 't' } })
+  useAuthStore.setState({ accessToken: 'old', refreshToken: 'ref', user: { id: 'u', display_name: 't', contexts: ['teacher'], admin_perms: [], must_change_password: false } })
 })
 
 afterEach(() => {
@@ -18,7 +18,7 @@ it('refreshes once on 401 and retries', async () => {   // Review Focus #1
   const fetchMock = vi.fn()
     .mockResolvedValueOnce(json({ error: { code: 'TOKEN_EXPIRED', message: 'x' } }, 401))
     .mockResolvedValueOnce(json({ access_token: 'new', expires_at: '2026-01-01T00:00:00Z' }))
-    .mockResolvedValueOnce(json({ id: 'u', display_name: 't' }))
+    .mockResolvedValueOnce(json({ id: 'u', display_name: 't', contexts: ['teacher'], admin_perms: [], must_change_password: false }))
   vi.stubGlobal('fetch', fetchMock)
   const me = await api<{ display_name: string }>('GET', '/auth/me')
   expect(me.display_name).toBe('t')

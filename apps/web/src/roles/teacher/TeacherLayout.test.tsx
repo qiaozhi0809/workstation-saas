@@ -51,7 +51,7 @@ beforeEach(() => {
   vi.mocked(classroomApi.summary).mockResolvedValue(summaryFixture())
   useTeacherStore.setState({ classId: null, unsaved: { seating: false, scores: false } })
   useAuthStore.setState({
-    accessToken: 'at', refreshToken: 'rt', user: { id: 'u1', display_name: '王老师' },
+    accessToken: 'at', refreshToken: 'rt', user: { id: 'u1', display_name: '王老师', contexts: ['teacher'], admin_perms: [], must_change_password: false },
   })
 })
 
