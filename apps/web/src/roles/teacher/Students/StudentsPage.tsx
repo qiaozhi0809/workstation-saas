@@ -82,6 +82,7 @@ function Roster({ ctx: { cls, summary, perms } }: { ctx: ClassContext }) {
   const [filter, setFilter] = useState<RosterFilter>('all')
   const [sort, setSort] = useState<RosterSort>('no')
   const [dir, setDir] = useState<'asc' | 'desc'>('asc')
+  const narrow = useNarrow()
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState(false)
   const [editor, setEditor] = useState<{ record?: StudentRecord } | null>(null)
@@ -129,7 +130,8 @@ function Roster({ ctx: { cls, summary, perms } }: { ctx: ClassContext }) {
   }
 
   const grid = gridOf(cls)
-  const showContacts = items.some((r) => 'contacts' in r)
+  const showContacts = !narrow && items.some((r) => 'contacts' in r)
+  const showTags = !narrow
   const visible = sortRows(filterRows(rows, q, filter, today), sort, dir)
 
   const toggleSort = (next: RosterSort) => {
@@ -153,7 +155,7 @@ function Roster({ ctx: { cls, summary, perms } }: { ctx: ClassContext }) {
   }
 
   return (
-    <div className="space-y-3 p-4">
+    <div className="min-w-0 space-y-3 p-4">
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative w-full max-w-xs">
           <Search aria-hidden="true" className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -191,7 +193,7 @@ function Roster({ ctx: { cls, summary, perms } }: { ctx: ClassContext }) {
                 <Head>职务</Head>
                 <SortHead by="birthday" {...sortProps}>生日</SortHead>
                 {showContacts && <Head>主要联系人</Head>}
-                <Head>标签</Head>
+                {showTags && <Head>标签</Head>}
                 {canExam && <SortHead by="rank" {...sortProps}>排名</SortHead>}
                 {canReview && <SortHead by="points" {...sortProps}>积分</SortHead>}
                 {canManage && <th scope="col" className="whitespace-nowrap px-3 py-2"><span className="sr-only">操作</span></th>}
@@ -200,7 +202,7 @@ function Roster({ ctx: { cls, summary, perms } }: { ctx: ClassContext }) {
             <tbody>
               {visible.map((r) => (
                 <StudentRow
-                  key={r.enrollment_id} row={r} grid={grid} showContacts={showContacts} canExam={canExam} canReview={canReview} canManage={canManage}
+                  key={r.enrollment_id} row={r} grid={grid} showContacts={showContacts} showTags={showTags} canExam={canExam} canReview={canReview} canManage={canManage}
                   onOpen={() => drawer.open(r.student_id)} onEdit={() => setEditor({ record: r })}
                 />
               ))}
@@ -234,8 +236,24 @@ function seatText(r: StudentRecord, grid: DeskGrid): string {
   return r.seat_row !== null && r.seat_col !== null ? cellText({ row: r.seat_row, col: r.seat_col }, grid) : '—'
 }
 
-function StudentRow({ row: r, grid, showContacts, canExam, canReview, canManage, onOpen, onEdit }: {
-  row: RosterRow; grid: DeskGrid; showContacts: boolean; canExam: boolean; canReview: boolean; canManage: boolean
+const NARROW = '(max-width: 639px)'
+
+/** 手机宽度(375)下隐藏次要列,其余靠表格自己横向滚动。 */
+function useNarrow(): boolean {
+  const [narrow, setNarrow] = useState(() => typeof window.matchMedia === 'function' && window.matchMedia(NARROW).matches)
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const mql = window.matchMedia(NARROW)
+    const on = () => setNarrow(mql.matches)
+    on()
+    mql.addEventListener?.('change', on)
+    return () => mql.removeEventListener?.('change', on)
+  }, [])
+  return narrow
+}
+
+function StudentRow({ row: r, grid, showContacts, showTags, canExam, canReview, canManage, onOpen, onEdit }: {
+  row: RosterRow; grid: DeskGrid; showContacts: boolean; showTags: boolean; canExam: boolean; canReview: boolean; canManage: boolean
   onOpen(): void; onEdit(): void
 }) {
   const contact = r.contacts?.[0]
@@ -257,12 +275,14 @@ function StudentRow({ row: r, grid, showContacts, canExam, canReview, canManage,
         ) : '—'}
       </td>
       {showContacts && <td className="whitespace-nowrap px-3 py-2">{contact ? `${contact.name} ${contact.phone}` : '—'}</td>}
-      <td className="min-w-[8rem] px-3 py-2">
-        <div className="flex flex-wrap gap-1">
-          {tags.slice(0, MAX_TAGS).map((t) => <Badge key={t} variant="neutral">{t}</Badge>)}
-          {tags.length > MAX_TAGS && <Badge variant="outline">{`+${tags.length - MAX_TAGS}`}</Badge>}
-        </div>
-      </td>
+      {showTags && (
+        <td className="min-w-[8rem] px-3 py-2">
+          <div className="flex flex-wrap gap-1">
+            {tags.slice(0, MAX_TAGS).map((t) => <Badge key={t} variant="neutral">{t}</Badge>)}
+            {tags.length > MAX_TAGS && <Badge variant="outline">{`+${tags.length - MAX_TAGS}`}</Badge>}
+          </div>
+        </td>
+      )}
       {canExam && (
         <td className="whitespace-nowrap px-3 py-2">
           {r.rank === null ? '—' : (

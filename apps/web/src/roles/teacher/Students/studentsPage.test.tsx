@@ -259,3 +259,31 @@ it('opens the import dialog from ?action=import and clears the parameter', async
   expect(await screen.findByRole('dialog', { name: /导入/ })).toBeInTheDocument()
   await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(''))
 })
+
+it('N5: table scrolls horizontally on its own and drops secondary columns at 375px', async () => {
+  setup(ALL)
+  const original = window.matchMedia
+  try {
+    renderPage()
+    const table = (await screen.findByRole('table'))
+    expect(table.parentElement).toHaveClass('overflow-x-auto')
+    expect(screen.getByRole('columnheader', { name: '主要联系人' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: '标签' })).toBeInTheDocument()
+  } finally { window.matchMedia = original }
+})
+
+it('N5: hides contacts and tags columns when max-width 639px matches', async () => {
+  setup(ALL)
+  const original = window.matchMedia
+  window.matchMedia = vi.fn().mockImplementation((q: string) => ({
+    matches: q === '(max-width: 639px)', addEventListener() {}, removeEventListener() {},
+  })) as never
+  try {
+    renderPage()
+    await screen.findByText('张三')
+    expect(screen.queryByRole('columnheader', { name: '主要联系人' })).toBeNull()
+    expect(screen.queryByRole('columnheader', { name: '标签' })).toBeNull()
+    expect(screen.queryByText('张父 13800000001')).toBeNull()
+    expect(screen.getByRole('columnheader', { name: /姓名/ })).toBeInTheDocument()
+  } finally { window.matchMedia = original }
+})
