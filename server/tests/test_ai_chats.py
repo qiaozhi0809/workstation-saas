@@ -581,3 +581,37 @@ def test_reply_error_event_after_save_and_unlock(client, settings, db, redis_cli
         assert seen["chat"]["messages"][1]["status"] == "error", code
         assert seen["lock"] == 0 and seen["audits"] == 1
         assert len(generate_audits(db, chat["id"])) == 1
+
+
+def _force_mask(db, settings) -> None:
+    cfg = load_ai_config(db, settings.school_id, settings.master_key_bytes)
+    cfg.mask_forced = True
+    save_ai_config(db, settings.school_id, settings.master_key_bytes, cfg)
+    db.commit()
+
+
+def test_prompt_copy_honours_forced_mask(client, settings, db):
+    configure_ai(db, settings)
+    chat = create(client, settings, parent_body(mask=False))
+    before = client.get(f"{CHATS}/{chat['id']}/prompt", headers=auth(settings)).json()
+    assert "王小一" in before["prompt"] and before["mapping"] == []
+    _force_mask(db, settings)
+    body = client.get(f"{CHATS}/{chat['id']}/prompt", headers=auth(settings)).json()
+    assert "王小一" not in body["prompt"] and "【学生01】" in body["prompt"]
+    assert {"code": "【学生01】", "name": "王小一"} in body["mapping"]
+    rows = [a for a in audit_rows(db, CLASS_ID) if a.action == "ai.prompt_copy"]
+    assert rows[-1].extra["masked"] is True
+
+
+def test_prompt_copy_batch_honours_forced_mask(client, settings, db):
+    configure_ai(db, settings)
+    body = {**comments_body(), "mask": False}
+    chat = create(client, settings, body)
+    _force_mask(db, settings)
+    got = client.get(f"{CHATS}/{chat['id']}/prompt", headers=auth(settings)).json()
+    assert "王小一" not in got["prompt"] and "李小二" not in got["prompt"]
+    assert "【学生01】" in got["prompt"] and "=== 第 2 位 ===" in got["prompt"]
+    assert {"code": "【学生01】", "name": "王小一"} in got["mapping"]
+    rows = [a for a in audit_rows(db, CLASS_ID) if a.action == "ai.prompt_copy"]
+    assert rows[-1].extra["masked"] is True
+    assert rows[-1].extra["student_ids"] == [STUDENT_IDS[0], STUDENT_IDS[1]]

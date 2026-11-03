@@ -1,4 +1,3 @@
-import re
 from typing import Annotated
 from uuid import UUID
 
@@ -34,7 +33,6 @@ from app.ai.requests import (
     Job,
     Resolved,
     _check_perms,
-    build_job,
     combined_prompt,
     effective_default,
     field_defaults,
@@ -62,7 +60,7 @@ from app.domain.ai.schemas import (
 from app.domain.classes.service import class_scope_of, get_class_or_404
 from app.domain.schools.service import school_today
 from app.errors import ApiError
-from app.models import AiBatchItem, Student, User
+from app.models import AiBatchItem, User
 from app.rbac.bindings import Binding, can
 from app.rbac.deps import get_bindings
 from app.rbac.guard import ensure
@@ -230,9 +228,6 @@ def _chat_needs(chat) -> frozenset[Perm]:
     return template.needs if template else frozenset({Perm.AI_USE})
 
 
-_NOTE_N = re.compile(r"(\d+)")
-
-
 @router.get("/chats/{chat_id}/prompt", response_model=AiPrompt)
 def ai_chat_prompt(
     chat_id: UUID,
@@ -240,43 +235,31 @@ def ai_chat_prompt(
     db: DbDep,
     user: UserDep,
     bindings: BindingsDep,
+    settings: SettingsDep,
 ) -> AiPrompt:
     chat = get_own_chat(db, user.id, chat_id)
     cls = get_class_or_404(db, chat.class_id)
     _check_perms(db, request, user, bindings, cls, _chat_needs(chat))
+    cfg = load_ai_config(db, settings.school_id, settings.master_key_bytes)  # 可为 None
+    effective = chat.mask or (cfg.mask_forced if cfg else False)
     masker = masker_for_class(db, cls.id)
     system = scrub(system_prompt(db, user, bindings, cls))
     template = TEMPLATES.get(chat.template_id) if chat.template_id else None
     items = chat_items(db, chat.id)
     jobs: list[Job] = []
+    student_ids: list[UUID] = [chat.student_id] if chat.student_id else []
     if chat.batch_only and template is not None:
-        today = school_today(db, cls.school_id)
         for item in items:
-            student = db.get(Student, item.student_id)
-            if student is None:
-                continue
-            found = _NOTE_N.search(item.note or "")
             try:
-                jobs.append(
-                    build_job(
-                        db,
-                        user,
-                        bindings,
-                        cls,
-                        template,
-                        chat.params,
-                        student,
-                        today,
-                        masked=chat.mask,
-                        masker=masker,
-                        regress_n=int(found.group(1)) if found else None,
-                    )  # fmt: skip
-                )
+                jobs.append(build_item_job(db, user, cls, chat, item, mask=effective))
             except ApiError:
                 continue  # 学生已不在本班:复制提示词时跳过
+            student_ids.append(item.student_id)
     else:
         first = next((m for m in ordered_messages(db, chat.id) if m.role == "user"), None)
         sent = first.sent if first is not None and first.sent is not None else ""
+        if effective:
+            sent = masker.mask(scrub(sent))  # 对已脱敏文本幂等
         jobs.append(
             Job(
                 sent=sent, student_id=chat.student_id, enrollment_id=None, note=None, student_ids=[]
@@ -285,11 +268,10 @@ def ai_chat_prompt(
     r = Resolved(
         template=template, title=chat.title, show=chat.title, params=chat.params,
         student_id=chat.student_id, save_as=chat.save_as, batch_only=chat.batch_only,
-        masked=chat.mask, masker=masker, system=system, jobs=jobs,
+        masked=effective, masker=masker, system=system, jobs=jobs,
     )  # fmt: skip
     prompt = combined_prompt(r)
-    mapping = masker.mapping("\n".join(j.sent for j in jobs)) if chat.mask else []
-    student_ids = [chat.student_id] if chat.student_id else [i.student_id for i in items]
+    mapping = masker.mapping("\n".join(j.sent for j in jobs)) if effective else []
     record(
         db,
         user_id=user.id,
@@ -301,7 +283,7 @@ def ai_chat_prompt(
         extra={
             "template": chat.template_id,
             "student_ids": [str(s) for s in student_ids],
-            "masked": chat.mask,
+            "masked": effective,
             "chars_in": len(prompt),
             "chars_out": 0,
         },
