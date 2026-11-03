@@ -1,10 +1,10 @@
-import { useQueries, useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { useCallback, useMemo } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import SeatHoverCard from '@/roles/teacher/Classroom/SeatHoverCard'
 import StudentProfileDrawer from '@/roles/teacher/StudentProfile/StudentProfileDrawer'
 import { useStudentDrawer } from '@/roles/teacher/StudentProfile/useStudentDrawer'
-import { adminApi } from '@/shared/api/admin'
+import { ApiError } from '@/shared/api/client'
 import ClassroomMap from '@/shared/components/ClassroomMap'
 import type { ClassroomMapProps } from '@/shared/components/ClassroomMap/types'
 import { EmptyState } from '@/shared/components/feedback/EmptyState'
@@ -13,34 +13,14 @@ import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { groupOf } from '@/shared/lib/seats'
 import { TONE_TEXT, ATTENDANCE_TONE } from '@/shared/lib/tone'
 import { cn } from '@/shared/lib/utils'
-import type { BoardClass } from '@/shared/types/admin'
+import { boardClassApi } from './api'
 import { STATUS_TEXT, attendanceViews } from './attendanceViews'
-
-/**
- * 单班只读页。领导身份没有"班级版式"端点,教室尺寸 / 座位 / 今日考勤都取自全校看板同一份数据:
- * 先按 ?grade= 查,没带或没找到就依次查其他年级。
- */
-function useBoardClass(id: string) {
-  const gradeParam = useSearchParams()[0].get('grade')
-  const first = useQuery({ queryKey: ['admin', 'board', gradeParam], queryFn: () => adminApi.board(gradeParam) })
-  const hit = first.data?.classes.find((c) => c.id === id)
-  const rest = first.data && !hit ? first.data.grades.filter((g) => g.id !== first.data!.grade_id) : []
-  const others = useQueries({
-    queries: rest.map((g) => ({ queryKey: ['admin', 'board', g.id], queryFn: () => adminApi.board(g.id) })),
-  })
-  const cls: BoardClass | undefined = hit ?? others.flatMap((o) => o.data?.classes ?? []).find((c) => c.id === id)
-  return {
-    cls,
-    error: !cls && (first.isError || others.some((o) => o.isError)),
-    loading: !cls && (first.isPending || others.some((o) => o.isPending)),
-    refetch: () => { void first.refetch(); others.forEach((o) => void o.refetch()) },
-  }
-}
 
 export default function ClassViewPage() {
   const id = useParams().id ?? ''
   const { studentId, open } = useStudentDrawer()
-  const { cls, error, loading, refetch } = useBoardClass(id)
+  const q = useQuery({ queryKey: ['admin', 'board', 'class', id], queryFn: () => boardClassApi.detail(id) })
+  const cls = q.data
 
   const views = useMemo(() => attendanceViews(cls?.attendance ?? {}), [cls?.attendance])
   const podium = useMemo(() => ({ left: cls?.podium_left ?? 0, right: cls?.podium_right ?? 0 }), [cls?.podium_left, cls?.podium_right])
@@ -50,15 +30,19 @@ export default function ClassViewPage() {
       groupOf={(x) => groupOf(x.seat_col ?? 1, cls.desk_size, cls.seat_cols, x.seat_row ?? 1)} />
   ), [cls])
 
-  if (error) return <ErrorState title="加载失败" onRetry={refetch} className="p-6" />
-  if (loading) return <LoadingState />
-  if (!cls) return <EmptyState title="未找到该班级" className="p-6" />
+  if (q.isError) {
+    const gone = q.error instanceof ApiError && (q.error.status === 404 || q.error.status === 403)
+    return gone
+      ? <EmptyState title="未找到该班级" className="p-6" />
+      : <ErrorState title="加载失败" onRetry={() => void q.refetch()} retrying={q.isFetching} className="p-6" />
+  }
+  if (!cls) return <LoadingState />
 
   const m = cls.metrics
-  const nameOf = new Map(cls.seats.map((s) => [s.enrollment_id, s] as const))
-  const absent = Object.entries(cls.attendance).flatMap(([eid, status]) => {
-    const s = nameOf.get(eid)
-    return s ? [{ seat: s, status }] : []
+  const reasonOf = new Map(cls.absentees.map((x) => [x.student_id, x.reason] as const))
+  const absent = cls.seats.flatMap((s) => {
+    const status = cls.attendance[s.enrollment_id]
+    return status ? [{ seat: s, status, reason: reasonOf.get(s.student_id) ?? null }] : []
   })
   const title = [cls.name, cls.room, cls.homeroom_name ? `班主任 ${cls.homeroom_name}` : null].filter(Boolean).join(' · ')
 
@@ -83,11 +67,11 @@ export default function ClassViewPage() {
           </p>
           {absent.length === 0 ? <p className="text-sm text-muted-foreground">今天全员到齐</p> : (
             <ul className="flex flex-col divide-y">
-              {absent.map(({ seat, status }) => (
+              {absent.map(({ seat, status, reason }) => (
                 <li key={seat.enrollment_id} className="py-1.5">
                   <button type="button" onClick={() => open(seat.student_id)}
                     className="flex w-full items-center justify-between gap-2 rounded-sm text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                    <span>{seat.name}</span>
+                    <span>{seat.name}{reason && <span className="ml-2 text-muted-foreground">{reason}</span>}</span>
                     <span className={cn('font-medium', TONE_TEXT[ATTENDANCE_TONE[status]])}>{STATUS_TEXT[status]}</span>
                   </button>
                 </li>

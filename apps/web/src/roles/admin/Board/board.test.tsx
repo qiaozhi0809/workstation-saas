@@ -43,6 +43,17 @@ describe('全校看板', () => {
     expect(adminApi.board).toHaveBeenLastCalledWith('g4')
   })
 
+  it('地址带 ?grade= 时按该年级打开', async () => {
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <MemoryRouter initialEntries={['/admin/board?grade=g4']}><BoardPage /></MemoryRouter>
+      </QueryClientProvider>,
+    )
+    expect(await screen.findByText('四年一班')).toBeInTheDocument()
+    expect(adminApi.board).toHaveBeenCalledWith('g4')
+    expect(screen.getByRole('tab', { name: '四年级' })).toHaveAttribute('aria-selected', 'true')
+  })
+
   it('卡片显示班名、教室、班主任与指标', async () => {
     setup()
     const card = (await screen.findByText('三年一班')).closest('[data-class-card]') as HTMLElement
@@ -66,7 +77,7 @@ describe('全校看板', () => {
   it('点卡片跳到单班页', async () => {
     setup()
     fireEvent.click(await screen.findByRole('link', { name: /三年二班/ }))
-    await waitFor(() => expect(screen.getByTestId('loc')).toHaveTextContent('/admin/classes/c2?grade=g3'))
+    await waitFor(() => expect(screen.getByTestId('loc')).toHaveTextContent('/admin/classes/c2'))
   })
 
   it('网格随宽度 1 / 2 / 3 / 4 列', async () => {

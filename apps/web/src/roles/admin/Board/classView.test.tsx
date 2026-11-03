@@ -2,11 +2,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { adminApi } from '@/shared/api/admin'
+import { ApiError } from '@/shared/api/client'
 import ClassViewPage from './ClassViewPage'
-import { boardClass, boardView } from './boardFixtures'
+import { boardClassApi } from './api'
+import { boardClass } from './boardFixtures'
 
-vi.mock('@/shared/api/admin', () => ({ adminApi: { board: vi.fn() } }))
+vi.mock('./api', () => ({ boardClassApi: { detail: vi.fn() } }))
 vi.mock('@/roles/teacher/StudentProfile/StudentProfileDrawer', () => ({
   default: ({ studentId }: { studentId: string }) => <div role="dialog" aria-label="学生档案">档案 {studentId}</div>,
 }))
@@ -16,7 +17,7 @@ function Url() {
   return <div data-testid="url">{l.pathname + l.search}</div>
 }
 
-function setup(entry = '/admin/classes/c1?grade=g3') {
+function setup(entry = '/admin/classes/c1') {
   return render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <MemoryRouter initialEntries={[entry]}>
@@ -31,8 +32,10 @@ function setup(entry = '/admin/classes/c1?grade=g3') {
 
 beforeEach(() => {
   vi.resetAllMocks()
-  vi.mocked(adminApi.board).mockImplementation(async (g) =>
-    g === 'g4' ? boardView({ grade_id: 'g4', classes: [boardClass({ id: 'c9', name: '四年一班', room: '401' })] }) : boardView())
+  vi.mocked(boardClassApi.detail).mockImplementation(async (id) => {
+    if (id === 'nope') throw new ApiError(404, 'NOT_FOUND', '班级不存在')
+    return { ...boardClass({ id }), absentees: [{ student_id: 's2', name: '李小二', status: 'absent', reason: '感冒' }] }
+  })
 })
 afterEach(cleanup)
 
@@ -43,6 +46,7 @@ describe('单班只读页', () => {
     const sum = screen.getByRole('region', { name: '今日考勤' })
     expect(within(sum).getByText('出勤 2/3')).toBeInTheDocument()
     expect(within(sum).getByRole('button', { name: /李小二/ })).toHaveTextContent('缺勤')
+    expect(within(sum).getByRole('button', { name: /李小二/ })).toHaveTextContent('感冒')
     expect(within(sum).getByRole('button', { name: /张小三/ })).toHaveTextContent('迟到')
   })
 
@@ -62,19 +66,31 @@ describe('单班只读页', () => {
     }
   })
 
+  it('座位上拖动不产生拖拽影子,也没有空座位处理', async () => {
+    const { container } = setup()
+    const seat = await screen.findByRole('button', { name: /王小一/ })
+    fireEvent.pointerDown(seat, { clientX: 10, clientY: 10, button: 0, pointerId: 1 })
+    fireEvent.pointerMove(seat, { clientX: 120, clientY: 120, pointerId: 1 })
+    expect(container.querySelector('.cr-drag-ghost')).toBeNull()
+    expect(screen.queryByRole('button', { name: /空座/ })).toBeNull()
+  })
+
   it('返回全校看板', async () => {
     setup()
-    fireEvent.click(await screen.findByRole('link', { name: '← 全校看板' }))
+    const link = await screen.findByRole('link', { name: '← 全校看板' })
+    expect(link).toHaveAttribute('href', '/admin/board')
+    fireEvent.click(link)
     expect(await screen.findByText('看板页')).toBeInTheDocument()
   })
 
-  it('没带年级参数时在其他年级里找班', async () => {
-    setup('/admin/classes/c9')
-    expect(await screen.findByRole('heading', { level: 1, name: '四年一班 · 401 · 班主任 赵老师' })).toBeInTheDocument()
+  it('按班级 id 请求新端点', async () => {
+    setup()
+    await screen.findByRole('heading', { level: 1 })
+    expect(boardClassApi.detail).toHaveBeenCalledWith('c1')
   })
 
   it('找不到班级', async () => {
-    setup('/admin/classes/nope?grade=g3')
+    setup('/admin/classes/nope')
     expect(await screen.findByText('未找到该班级')).toBeInTheDocument()
   })
 })

@@ -1,5 +1,6 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { adminApi } from '@/shared/api/admin'
 import { EmptyState } from '@/shared/components/feedback/EmptyState'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
@@ -8,7 +9,7 @@ import { SegmentedTabs } from '@/shared/components/ui/segmented-tabs'
 import ClassCard from './ClassCard'
 
 export default function BoardPage() {
-  const [gradeId, setGradeId] = useState<string | null>(null)
+  const [gradeId, setGradeId] = useState<string | null>(useSearchParams()[0].get('grade'))
   const q = useQuery({
     queryKey: ['admin', 'board', gradeId],
     queryFn: () => adminApi.board(gradeId),
@@ -18,7 +19,7 @@ export default function BoardPage() {
   if (q.isError) return <ErrorState title="加载失败" onRetry={() => void q.refetch()} retrying={q.isFetching} className="p-6" />
   if (!q.data) return <LoadingState />
   const d = q.data
-  const active = d.grade_id
+  const active = gradeId ?? d.grade_id
 
   return (
     <div className="flex flex-col gap-4 p-4 md:p-6">
@@ -35,7 +36,7 @@ export default function BoardPage() {
         <EmptyState title="暂无班级" />
       ) : (
         <div data-class-grid className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {d.classes.map((c) => <ClassCard key={c.id} cls={c} gradeId={active} />)}
+          {d.classes.map((c) => <ClassCard key={c.id} cls={c} />)}
         </div>
       )}
     </div>
