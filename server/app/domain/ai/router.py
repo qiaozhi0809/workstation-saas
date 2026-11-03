@@ -261,7 +261,9 @@ def ai_chat_prompt(
         first = next((m for m in ordered_messages(db, chat.id) if m.role == "user"), None)
         sent = first.sent if first is not None and first.sent is not None else ""
         if effective:
-            sent = masker.mask(scrub(sent))  # 对已脱敏文本幂等
+            sent = scrub(sent)
+            masker.adopt(sent)  # 已脱敏文本里的编号都出自 mask()
+            sent = masker.mask(sent)
         jobs.append(
             Job(
                 sent=sent, student_id=chat.student_id, enrollment_id=None, note=None, student_ids=[]

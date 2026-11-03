@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 from app.ai.chats import chat_items, ordered_messages
 from app.ai.client import AIUpstreamError, ChatMessage, Delta, Usage
 from app.ai.context import system_prompt
-from app.ai.masking import Masker, masker_for_school, scrub
+from app.ai.masking import Masker, defuse_codes, masker_for_school, scrub
 from app.ai.requests import Job, build_job
 from app.ai.settings import AIConfig, make_client
 from app.ai.templates import TEMPLATES
@@ -251,9 +251,21 @@ async def generation_events(
 # ---------------------------------------------------------------- reply
 
 
-def _outgoing(masker: Masker, mask: bool, text: str) -> str:
+def _outgoing(masker: Masker, mask: bool, text: str, *, fresh: bool = False) -> str:
+    """``fresh``:老师刚输入的文本,手写编号先破坏掉(见 ``defuse_codes``)。"""
     text = scrub(text)
+    if fresh:
+        text = defuse_codes(text)
     return masker.mask(text) if mask else text
+
+
+def _history_user(masker: Masker, mask: bool, text: str) -> str:
+    """历史用户消息:``sent`` 已脱敏,先认下其中生成过的编号,再对遗留真名补脱。"""
+    text = scrub(text)
+    if not mask:
+        return text
+    masker.adopt(text)
+    return masker.mask(text)
 
 
 def prepare_reply(s: Session, ctx: GenContext, body: AiReplyIn) -> Prepared:
@@ -273,7 +285,7 @@ def prepare_reply(s: Session, ctx: GenContext, body: AiReplyIn) -> Prepared:
                 chat_id=chat.id,
                 role="user",
                 content=body.text,
-                sent=_outgoing(masker, mask, body.text),
+                sent=_outgoing(masker, mask, body.text, fresh=True),
                 status="done",
             )
         )
@@ -294,7 +306,7 @@ def prepare_reply(s: Session, ctx: GenContext, body: AiReplyIn) -> Prepared:
         if m.id == assistant.id:
             continue
         if m.role == "user":
-            content = _outgoing(masker, mask, m.sent if m.sent is not None else m.content)
+            content = _history_user(masker, mask, m.sent if m.sent is not None else m.content)
             messages.append(ChatMessage("user", content))
         elif m.content:
             messages.append(ChatMessage("assistant", _outgoing(masker, mask, m.content)))

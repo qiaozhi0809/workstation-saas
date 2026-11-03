@@ -30,6 +30,11 @@ def scrub(text: str) -> str:
     return _PHONE_RE.sub(_REDACTED, _ID_RE.sub(_REDACTED, text))
 
 
+def defuse_codes(text: str) -> str:
+    """手写的编号改成 〔学生N〕,使其既不会被换回,也不会被当作 mask() 生成的编号。"""
+    return CODE_RE.sub(lambda m: f"〔学生{m.group(1)}〕", text)
+
+
 class Masker:
     """姓名 ↔ 编号。
 
@@ -62,6 +67,13 @@ class Masker:
             return code_of(no)
 
         return self._name_re.sub(repl, text)
+
+    def adopt(self, sent: str) -> None:
+        """历史里已脱敏的 ``sent``:其中的编号(落库前已破坏手写编号)都是 mask() 生成的。"""
+        for m in CODE_RE.finditer(sent):
+            no = int(m.group(1))
+            if no in self._by_no:
+                self._emitted.add(no)
 
     def _restorable(self, no: int) -> bool:
         return no in self._by_no and (no in self._class_nos or no in self._emitted)

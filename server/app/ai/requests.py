@@ -20,7 +20,7 @@ from app.ai.context import (
     student_context,
     system_prompt,
 )
-from app.ai.masking import Masker, masker_for_school, scrub
+from app.ai.masking import Masker, defuse_codes, masker_for_school, scrub
 from app.ai.prompts import task_text
 from app.ai.settings import AIConfig
 from app.ai.templates import (
@@ -325,7 +325,7 @@ def _title(template: Template, params: dict[str, Any], names: dict[str, str], n:
 
 
 def _finish(db: Session, cls: SchoolClass, text: str, masked: bool, masker: Masker | None) -> str:
-    text = scrub(text)
+    text = defuse_codes(scrub(text))
     if not masked:
         return text
     return (masker or masker_for_school(db, cls.school_id, cls.id)).mask(text)

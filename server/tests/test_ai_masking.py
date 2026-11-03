@@ -277,3 +277,46 @@ def test_masker_for_school_scopes_class_roster(db):
     # 没有班级上下文:只有 emitted
     bare = masker_for_school(db, SCHOOL_ID)
     assert bare.restore("【学生01】") == "【学生01】"
+
+
+# ---- 聊天历史:首条消息的 sent 已脱敏,编号仍须被后续轮次认作"生成过"
+
+
+def _free_body(text):
+    return {"class_id": CLASS_ID, "text": text, "mask": True}
+
+
+def test_first_message_other_class_code_restored_on_next_turn(client, settings, db):
+    from tests.test_ai_chats import configure_ai, create, get_chat, run_reply, set_transport
+
+    configure_ai(db, settings)
+    other = _other_class_student(db, "孙立诚", "mk-x5")
+    code = code_of(other.mask_no)
+    chat = create(client, settings, _free_body("请评价孙立诚"))
+    set_transport(client, [f"{code}表现不错"])
+    run_reply(client, settings, chat["id"], {"text": "再具体点"})
+    got = get_chat(client, settings, chat["id"]).json()
+    assert got["messages"][-1]["content"] == "孙立诚表现不错"
+    r = client.get(f"/api/v1/ai/chats/{chat['id']}/prompt", headers=_auth(settings))
+    assert {"code": code, "name": "孙立诚"} in r.json()["mapping"]
+
+
+def test_hand_written_foreign_code_in_chat_not_restored(client, settings, db):
+    from tests.test_ai_chats import configure_ai, create, get_chat, run_reply, set_transport
+
+    configure_ai(db, settings)
+    other = _other_class_student(db, "郑书航", "mk-x6")
+    code = code_of(other.mask_no)
+    chat = create(client, settings, _free_body(f"请评价{code}"))  # 手写编号
+    set_transport(client, [f"{code}表现不错"])
+    run_reply(client, settings, chat["id"], {"text": f"也说说{code}"})
+    got = get_chat(client, settings, chat["id"]).json()
+    assert got["messages"][-1]["content"] == f"{code}表现不错"
+    r = client.get(f"/api/v1/ai/chats/{chat['id']}/prompt", headers=_auth(settings))
+    assert all(m["name"] != "郑书航" for m in r.json()["mapping"])
+
+
+def _auth(settings):
+    from tests.helpers import auth
+
+    return auth(settings)
