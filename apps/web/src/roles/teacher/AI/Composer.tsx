@@ -11,6 +11,7 @@ import { NativeSelect } from '@/shared/components/ui/native-select'
 import { Textarea } from '@/shared/components/ui/textarea'
 import type { AiPrompt, AiRequest, AiStatus } from '@/shared/types/ai'
 import CopyPromptDialog from './CopyPromptDialog'
+import MaskToggle from './MaskToggle'
 
 /** 自由对话输入框:文字 + 资料开关;已配置直接开对话,未配置生成可复制的提示词。 */
 export default function Composer({ classId, status, canReadExams }: {
@@ -101,18 +102,7 @@ export default function Composer({ classId, status, canReadExams }: {
             </NativeSelect>
           </label>
         )}
-        <span className="inline-flex items-center gap-1.5">
-          <label className="inline-flex items-center gap-1.5">
-            <input
-              type="checkbox"
-              checked={masked}
-              disabled={status?.mask_forced === true}
-              onChange={(e) => setMask(e.target.checked)}
-            />
-            隐去学生姓名
-          </label>
-          {status?.mask_forced && <span className="text-xs text-muted-foreground">学校要求</span>}
-        </span>
+        <MaskToggle status={status} checked={mask} onChange={setMask} />
         <Button className="ml-auto" disabled={!canSend} onClick={submit}>
           {configured ? '发送' : '复制提示词'}
         </Button>

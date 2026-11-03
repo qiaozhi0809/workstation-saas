@@ -48,6 +48,38 @@ export const templatesFixture: AiTemplates = {
   ],
 }
 
+/** 覆盖全部字段类型的模板(report) */
+export const formTemplateFixture: AiTemplate = tpl({
+  id: 'report', title: '成绩分析', cat: 'grow',
+  fields: [
+    { key: 'topic', type: 'text', label: '课题', required: true, placeholder: '比如:期中复盘' },
+    { key: 'note', type: 'textarea', label: '补充说明', required: false },
+    { key: 'tone', type: 'select', label: '语气', required: false, options: ['温和', '严肃', '鼓励'], default: '温和' },
+    { key: 'tips', type: 'check', label: '附带建议', required: false, default: true },
+    { key: 'who', type: 'student', label: '学生', required: true },
+    { key: 'group', type: 'students', label: '同学', required: false },
+    { key: 'cur', type: 'exam', label: '考试', required: true },
+    { key: 'prev', type: 'exam0', label: '对比考试', required: false },
+  ],
+})
+
+/** 仅入口可用的隐藏模板(单个学生评语) */
+export const hiddenTemplateFixture: AiTemplate = tpl({
+  id: 'comment1', title: '个人评语', cat: 'grow', hidden: true,
+  fields: [
+    { key: 'student', type: 'student', label: '学生', required: true },
+    { key: 'exam', type: 'exam', label: '考试', required: false },
+    { key: 'vs', type: 'exam0', label: '对比考试', required: false },
+  ],
+})
+
+/** 新 → 旧 */
+export const examsFixture = [
+  { id: 'x3', name: '期末考试', exam_type: 'final', date: '2027-01-10', subjects: [], created_by_me: true, progress: { entered: 3, total: 3 } },
+  { id: 'x2', name: '月考', exam_type: 'monthly', date: '2026-11-20', subjects: [], created_by_me: true, progress: { entered: 3, total: 3 } },
+  { id: 'x1', name: '期中考试', exam_type: 'midterm', date: '2026-10-20', subjects: [], created_by_me: true, progress: { entered: 3, total: 3 } },
+]
+
 export const chatsFixture: AiChatSummary[] = [
   { id: 'c1', title: '期中家长会发言稿', template_id: 'pmeeting', updated_at: '2026-11-02T01:30:00Z' },
   { id: 'c2', title: '班会方案', template_id: 'meeting', updated_at: '2026-11-01T14:05:00Z' },
