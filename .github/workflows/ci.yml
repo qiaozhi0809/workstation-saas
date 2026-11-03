@@ -136,6 +136,13 @@ jobs:
         working-directory: server
         run: uv run alembic upgrade head && uv run python -m app.cli seed-dev
 
+      # 假 AI 服务:只监听本机,E2E 绝不连外网;Key 是假值
+      - name: Start fake LLM and configure AI
+        working-directory: server
+        run: |
+          nohup node ../apps/web/e2e/helpers/fakeLlm.mjs > "$RUNNER_TEMP/fakellm.log" 2>&1 &
+          printf 'test-key\n' | uv run python -m app.cli ai-config set --provider custom --base-url http://127.0.0.1:18089/v1 --model fake-model --api-key-stdin
+
       - name: Start backend
         working-directory: server
         run: |
@@ -169,6 +176,7 @@ jobs:
             echo "--- frontend.log ---"; cat "$RUNNER_TEMP/frontend.log" || true
             return 1
           }
+          wait_for http://127.0.0.1:18089/last
           wait_for http://localhost:8080/api/v1/healthz
           wait_for http://localhost:5173/
           wait_for http://localhost:5173/api/v1/healthz
@@ -182,6 +190,7 @@ jobs:
         run: |
           echo "--- backend.log ---"; cat "$RUNNER_TEMP/backend.log" || true
           echo "--- frontend.log ---"; cat "$RUNNER_TEMP/frontend.log" || true
+          echo "--- fakellm.log ---"; cat "$RUNNER_TEMP/fakellm.log" || true
 
       - name: Upload Playwright artifacts
         if: failure()
