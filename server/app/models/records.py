@@ -8,7 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import Base
 
 _UUID_PK = {"server_default": text("gen_random_uuid()")}
-_NOW = {"server_default": text("now()")}
+_CLOCK = {"server_default": text("clock_timestamp()")}
 
 
 class GrowthRecord(Base):
@@ -29,8 +29,8 @@ class GrowthRecord(Base):
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )
-    created_at: Mapped[datetime] = mapped_column(**_NOW)
-    updated_at: Mapped[datetime] = mapped_column(**_NOW)
+    created_at: Mapped[datetime] = mapped_column(**_CLOCK)
+    updated_at: Mapped[datetime] = mapped_column(**_CLOCK)
 
 
 class Comment(Base):
@@ -51,5 +51,5 @@ class Comment(Base):
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )
-    created_at: Mapped[datetime] = mapped_column(**_NOW)
-    updated_at: Mapped[datetime] = mapped_column(**_NOW)
+    created_at: Mapped[datetime] = mapped_column(**_CLOCK)
+    updated_at: Mapped[datetime] = mapped_column(**_CLOCK)

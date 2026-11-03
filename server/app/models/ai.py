@@ -10,6 +10,7 @@ from app.models.base import Base
 
 _UUID_PK = {"server_default": text("gen_random_uuid()")}
 _NOW = {"server_default": text("now()")}
+_CLOCK = {"server_default": text("clock_timestamp()")}
 
 
 class AiChat(Base):
@@ -27,8 +28,8 @@ class AiChat(Base):
     save_as: Mapped[str | None] = mapped_column(Text)
     mask: Mapped[bool]
     batch_only: Mapped[bool] = mapped_column(server_default=text("false"))
-    created_at: Mapped[datetime] = mapped_column(**_NOW)
-    updated_at: Mapped[datetime] = mapped_column(**_NOW)
+    created_at: Mapped[datetime] = mapped_column(**_CLOCK)
+    updated_at: Mapped[datetime] = mapped_column(**_CLOCK)
 
 
 class AiMessage(Base):
@@ -43,8 +44,8 @@ class AiMessage(Base):
     error: Mapped[str | None] = mapped_column(Text)
     prompt_tokens: Mapped[int | None]
     completion_tokens: Mapped[int | None]
-    created_at: Mapped[datetime] = mapped_column(**_NOW)
-    updated_at: Mapped[datetime] = mapped_column(**_NOW)
+    created_at: Mapped[datetime] = mapped_column(**_CLOCK)
+    updated_at: Mapped[datetime] = mapped_column(**_CLOCK)
 
 
 class AiBatchItem(Base):
