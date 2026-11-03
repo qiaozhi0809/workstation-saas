@@ -44,6 +44,8 @@ interface Options {
   /** 页面级当前科目(弹层、全班 +1、点名奖励共用) */
   subject: ReviewSubject
   roster: StudentSeat[]
+  /** 座位所属小组序号(0 起),积分榜分组用 */
+  groupOf(seat: StudentSeat): number
   timezone: string | undefined
   summary: ReviewSummary | undefined
   /** 点评模式下叠在下面的外观(当天考勤) */
@@ -167,7 +169,7 @@ export function useReviewMode(o: Options) {
     />
   )
   const leaderboard: ReactNode = enabled && board && (
-    <Leaderboard roster={o.roster} summary={o.summary} onClose={() => setBoard(false)} />
+    <Leaderboard roster={o.roster} groupOf={o.groupOf} summary={o.summary} onClose={() => setBoard(false)} />
   )
 
   return {

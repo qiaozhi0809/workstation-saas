@@ -19,6 +19,7 @@ import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { MenuItem } from '@/shared/components/overlay/Menu'
 import { Button } from '@/shared/components/ui/button'
 import { examTable, latestExam } from '@/shared/lib/grades'
+import { groupOf } from '@/shared/lib/seats'
 import { useReducedMotion } from '@/shared/hooks/useReducedMotion'
 import { useAuthStore } from '@/shared/stores/auth'
 import { confirmLeave, useTeacherStore } from '@/shared/stores/teacher'
@@ -137,6 +138,11 @@ function ClassroomView({ cls }: { cls: ClassView }) {
       : undefined),
     [cls.name, today, summary.data, roster.data, reviewSummary.data],
   )
+  // 小组序号与地图着色一致:随桌型、列数,讲台左边第一组、右边最后一组
+  const seatGroup = useCallback(
+    (s: StudentSeat) => groupOf(s.seat_col ?? 1, cls.desk_size, cls.seat_cols, s.seat_row ?? 1),
+    [cls.desk_size, cls.seat_cols],
+  )
   const figure = preferences.data?.teacher_figure ?? 'female'
   const label = summary.data
     ? [displayName, roleLabel(perms)].filter(Boolean).join(' · ')
@@ -184,6 +190,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
     reasons: preferences.data?.review_reasons,
     subject,
     roster: roster.data?.items ?? [],
+    groupOf: seatGroup,
     timezone: summary.data?.timezone,
     summary: reviewSummary.data,
     // 投屏时不把考勤投到屏幕上
@@ -222,8 +229,8 @@ function ClassroomView({ cls }: { cls: ClassView }) {
     const week = reviewSummary.data
       ? reviewSummary.data.items.find((t) => t.enrollment_id === s.enrollment_id)?.week ?? 0
       : undefined
-    return <SeatHoverCard seat={s} attendance={status} week={week} />
-  }, [todayAttendance.data, reviewSummary.data])
+    return <SeatHoverCard seat={s} attendance={status} week={week} groupOf={seatGroup} />
+  }, [todayAttendance.data, reviewSummary.data, seatGroup])
   // 排座"优带弱"用最近一次考试的名次;与成绩模式、侧边面板共用 ['gradebook', classId]
   const canReadExams = perms.includes('exam.read')
   const gradebook = useQuery({
@@ -383,6 +390,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
           {review.popover}
           {cardOpen && (
             <PickCard
+              groupOf={seatGroup}
               seat={pick.state === 'picked' ? pickedSeat : null}
               presenting={presenting}
               canReward={perms.includes('review.write')}

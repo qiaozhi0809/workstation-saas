@@ -1,12 +1,13 @@
 import { useMemo } from 'react'
-import { groupOf } from '@/shared/lib/seats'
 import Modal from '@/shared/components/overlay/Modal'
 import type { ReviewSummary } from '@/shared/types/review'
 import type { StudentSeat } from '@/shared/types/student'
 
 /** 积分榜:小组积分(按座位列分组,未排座不计)+ 学生榜(同分并列,下一名跳号)。 */
-export default function Leaderboard({ roster, summary, onClose }: {
+export default function Leaderboard({ roster, summary, groupOf, onClose }: {
   roster: StudentSeat[]
+  /** 座位所属小组序号(0 起),与地图着色一致 */
+  groupOf(seat: StudentSeat): number
   summary: ReviewSummary | undefined
   onClose(): void
 }) {
@@ -19,14 +20,14 @@ export default function Leaderboard({ roster, summary, onClose }: {
     const byGroup = new Map<number, number>()
     for (const p of people) {
       if (p.seat.seat_col == null) continue
-      const g = groupOf(p.seat.seat_col, 2, 0)
+      const g = groupOf(p.seat)
       byGroup.set(g, (byGroup.get(g) ?? 0) + p.total)
     }
     return {
       groups: [...byGroup].map(([g, total]) => ({ g, total })).sort((a, b) => b.total - a.total || a.g - b.g),
       rows: people.map((p, i) => ({ ...p, rank: i > 0 && people[i - 1].total === p.total ? 0 : i + 1 })),
     }
-  }, [roster, summary])
+  }, [roster, summary, groupOf])
   // 并列取上一名的名次
   let last = 0
   const ranked = rows.map((r) => { last = r.rank || last; return { ...r, rank: last } })
