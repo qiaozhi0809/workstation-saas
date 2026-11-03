@@ -1,6 +1,7 @@
 import { cloneElement, isValidElement, useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ApiError } from '@/shared/api/client'
+import { schoolApi } from '@/shared/api/school'
 import { studentsApi } from '@/shared/api/students'
 import Modal from '@/shared/components/overlay/Modal'
 import { toast } from '@/shared/components/Toast'
@@ -11,6 +12,7 @@ import { NativeSelect } from '@/shared/components/ui/native-select'
 import { Textarea } from '@/shared/components/ui/textarea'
 import { FAMILY_TYPES } from '@/shared/lib/columns'
 import { gridCells, gridOf, podiumCells, seatText } from '@/shared/lib/seats'
+import { DEFAULT_TAG_POOL } from '@/shared/lib/tags'
 import { cn } from '@/shared/lib/utils'
 import type { ClassView } from '@/shared/types/class'
 import type { Contact, StudentInput, StudentRecord, StudentSeat } from '@/shared/types/student'
@@ -19,7 +21,6 @@ import { invalidateRosterQueries } from './invalidate'
 // 预设枚举来自原版(PRD §1.9)
 const ROLES = ['班长', '副班长', '学习委员', '纪律委员', '体育委员', '文艺委员', '劳动委员', '宣传委员', '心理委员',
   '语文课代表', '数学课代表', '英语课代表', '物理课代表', '化学课代表', '小组长']
-const TAG_POOL = ['重点关注', '住校', '留守', '单亲', '近视', '过敏', '体育特长', '文艺特长', '进步明显', '偏科', '心理关注', '困难帮扶']
 const RELATIONS = ['母亲', '父亲', '祖母', '祖父', '外祖母', '外祖父', '其他']
 const BOARDING_TAG = '住校'
 const MAX_TAGS = 12
@@ -107,7 +108,9 @@ export default function StudentForm({ cls, record, roster, onClose }: {
   const editing = !!record
   const nameRef = useRef<HTMLInputElement>(null)
   const [f, setF] = useState(() => initialState(record, roster, wantsAutoSeat(cls, roster, !!record)))
-  const [custom, setCustom] = useState(() => (record?.tags ?? []).filter((t) => !TAG_POOL.includes(t)))
+  // 标签池来自学校设置;加载中或失败时用默认池兜底
+  const pool = useQuery({ queryKey: ['tag-pool'], queryFn: schoolApi.tagPool }).data?.tags ?? DEFAULT_TAG_POOL
+  const [custom, setCustom] = useState(() => record?.tags ?? [])
   const [customDraft, setCustomDraft] = useState('')
   const [keepAdding, setKeepAdding] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -132,7 +135,7 @@ export default function StudentForm({ cls, record, roster, onClose }: {
   const addCustomTag = () => {
     const tag = customDraft.trim()
     if (!tag) return
-    if (!TAG_POOL.includes(tag) && !custom.includes(tag)) setCustom((c) => [...c, tag])
+    if (!pool.includes(tag) && !custom.includes(tag)) setCustom((c) => [...c, tag])
     if (!f.tags.includes(tag)) toggleTag(tag)
     setCustomDraft('')
   }
@@ -219,7 +222,7 @@ export default function StudentForm({ cls, record, roster, onClose }: {
     }
   }
 
-  const chips = [...TAG_POOL, ...custom]
+  const chips = [...pool, ...custom.filter((t) => !pool.includes(t))]
 
   return (
     <Modal open onClose={onClose} title={editing ? '编辑学生' : '添加学生'} dismissOnOutside={false} className="max-w-2xl">

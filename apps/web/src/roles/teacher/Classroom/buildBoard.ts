@@ -32,7 +32,11 @@ export function buildBoard({ className, today, summary, roster, reviewSummary }:
   const countdown = b.countdown_label && days >= 0 ? { label: b.countdown_label, days } : null
 
   const byId = new Map(roster.map((s) => [s.enrollment_id, s]))
-  const stars = (reviewSummary?.items ?? [])
+  // 开关字段缺失(旧后端)按开处理
+  const showStars = summary.switches?.star_of_week !== false
+  const showBirthdays = summary.switches?.birthdays !== false
+
+  const stars = (showStars ? reviewSummary?.items ?? [] : [])
     .flatMap((t) => {
       const s = byId.get(t.enrollment_id)
       return s && t.week > 0 ? [{ s, week: t.week }] : []
@@ -42,7 +46,7 @@ export function buildBoard({ className, today, summary, roster, reviewSummary }:
     .map(({ s, week }) => ({ name: s.name, points: week }))
 
   const month = today.slice(5, 7)
-  const birthdays = roster
+  const birthdays = (showBirthdays ? roster : [])
     .filter((s) => s.birthdate?.slice(5, 7) === month)
     .sort((x, y) => x.birthdate!.slice(8).localeCompare(y.birthdate!.slice(8)) || byStudentNoThenName(x, y))
     .slice(0, SHOW)

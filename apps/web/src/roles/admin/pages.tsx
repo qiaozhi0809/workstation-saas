@@ -7,8 +7,9 @@ import type { AdminPerm } from '@/shared/types/admin'
 
 // ── 段 D(组织架构):import 追加在此行之上 ──
 
-import { Users } from 'lucide-react'
+import { Settings, Users } from 'lucide-react'
 import AccountsPage from './Accounts/AccountsPage'
+import SettingsPage from './Settings/SettingsPage'
 // ── 段 E(账号 / 设置):import 追加在此行之上 ──
 
 export interface AdminPage {
@@ -33,5 +34,6 @@ export const ADMIN_PAGES: AdminPage[] = [
   { path: 'accounts', label: '账号', icon: Users, perm: 'account.manage', element: <AccountsPage /> },
   // ── accounts:追加在此行之上 ──
 
+  { path: 'settings', label: '学校设置', icon: Settings, perm: 'settings.manage', element: <SettingsPage /> },
   // ── settings:追加在此行之上 ──
 ]
