@@ -143,10 +143,6 @@ def _confirmed(db: Session, class_ids: list[UUID], day) -> set[UUID]:
     )
 
 
-def _week_start(db: Session, school_id: UUID, today):
-    return local_day_start_utc(week_monday(today), school_tz(db, school_id))
-
-
 def _class_week(db: Session, class_ids: list[UUID], week_start) -> dict[UUID, tuple[int, int]]:
     rows = db.execute(
         select(

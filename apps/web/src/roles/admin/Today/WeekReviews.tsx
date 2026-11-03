@@ -15,7 +15,8 @@ function Block({ title, children }: { title: string; children: React.ReactNode }
 }
 
 export function WeekReviews({ data }: { data: TodayView['week_reviews'] }) {
-  if (data.classes.length === 0 && data.bottom.length === 0 && data.teachers.length === 0) {
+  // 后端总会列出每个可见班(没点评时 plus / minus 为 0),有没有点评只看老师次数
+  if (data.teachers.length === 0) {
     return <EmptyState title="本周还没有点评" />
   }
   const max = Math.max(1, ...data.classes.map((c) => Math.abs(c.net)))

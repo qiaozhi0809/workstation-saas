@@ -85,7 +85,11 @@ describe('今日关注页', () => {
   it('三个空状态', async () => {
     setup(view({
       absentees: [], unconfirmed: [],
-      week_reviews: { classes: [], bottom: [], teachers: [] },
+      // 与后端一致:没有点评时每个班仍在 classes 里,只是 0 分
+      week_reviews: {
+        classes: [{ class_id: 'c1', class_name: '三年一班', plus: 0, minus: 0, net: 0 }],
+        bottom: [], teachers: [],
+      },
     }))
     expect(await screen.findByText('今天全员到齐')).toBeInTheDocument()
     expect(screen.getByText('各班都已确认')).toBeInTheDocument()
