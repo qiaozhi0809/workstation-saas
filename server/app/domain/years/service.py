@@ -342,16 +342,18 @@ def apply(db: Session, school_id: UUID, plan: UpgradePlan, *, now: datetime) -> 
     ).scalar_one()
 
     # 2. 年级
-    old_orders = {
-        r.id: r.display_order
-        for r in db.execute(
+    old_grade_rows = list(
+        db.execute(
             text(
-                "SELECT c.id, g.display_order FROM classes c JOIN grades g ON g.id = c.grade_id"
+                "SELECT c.id, g.id AS grade_id, g.display_order FROM classes c"
+                " JOIN grades g ON g.id = c.grade_id"
                 " WHERE c.id = ANY(cast(:cs as uuid[]))"
             ),
             {"cs": list(ctx.class_names)},
         )
-    }
+    )
+    old_orders = {r.id: r.display_order for r in old_grade_rows}
+    old_grade_of = {r.id: r.grade_id for r in old_grade_rows}
     fallback = max(old_orders.values(), default=0) + 1
     wanted: dict[str, int] = {}
     for c in plan.classes:
@@ -574,11 +576,26 @@ def apply(db: Session, school_id: UUID, plan: UpgradePlan, *, now: datetime) -> 
             text("UPDATE role_bindings SET ended_at = :now WHERE id = ANY(:ids)"),
             {"now": now, "ids": old_binding_ids},
         )
+    # 旧年级 → 新年级:该年级升级班里占多数的目标年级(并列取 display_order 小、再取名字小的)
+    votes: dict[UUID, dict[str, int]] = {}
+    for c in plan.classes:
+        if c.action == "promote" and c.to_grade_name:
+            v = votes.setdefault(old_grade_of[c.from_class_id], {})
+            v[c.to_grade_name] = v.get(c.to_grade_name, 0) + 1
+    grade_successor = {
+        old_g: grade_ids[min(v, key=lambda n: (-v[n], wanted[n], n))] for old_g, v in votes.items()
+    }
     for b in old_bindings:
-        if "class_id" not in (b.scope or {}):
-            new_binding_ids.append(
-                _insert_binding(db, b.user_id, b.role_type, b.scope or {}, new_year_id, now)
-            )
+        scope = dict(b.scope or {})
+        if "class_id" in scope:
+            continue
+        if scope.get("grade_id"):
+            # 年级作用域的绑定跟届走;整个年级毕业(或不在方案里)则不复制
+            target = grade_successor.get(UUID(scope["grade_id"]))
+            if target is None:
+                continue
+            scope["grade_id"] = str(target)
+        new_binding_ids.append(_insert_binding(db, b.user_id, b.role_type, scope, new_year_id, now))
 
     # 7. 记录
     def s(values: list[UUID]) -> list[str]:

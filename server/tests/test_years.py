@@ -12,7 +12,7 @@ from app.domain.years import cli as years_cli
 from app.domain.years.plan import UpgradePlan
 from app.domain.years.service import UpgradeError, apply, preview, rollback, validate
 from app.domain.years.suggest import grade_index, next_class_name, next_grade, suggest
-from tests.factories import make_student
+from tests.factories import make_class, make_student
 from tests.helpers import auth
 from tests.seed_ids import (
     CLASS_ID,
@@ -841,3 +841,101 @@ def test_rollback_undoes_only_latest_of_two_upgrades(db):
     assert _scalar(db, "SELECT count(*) FROM academic_years") == 2
     assert [c.name for c in _active_classes(db)] == ["四年二班"]
     assert _scalar(db, "SELECT count(*) FROM year_upgrades WHERE rolled_back_at IS NULL") == 1
+
+
+def _grade_head(db, scope_grade=None):
+    uid = _scalar(db, "SELECT id FROM users WHERE login_name = 'teacher02'")
+    db.execute(
+        text(
+            "INSERT INTO role_bindings (user_id, role_type, scope, academic_year_id)"
+            " VALUES (:u, 'grade_head', jsonb_build_object('grade_id', cast(:g as text)), :y)"
+        ),
+        {"u": uid, "g": scope_grade or "33333333-3333-3333-3333-333333333333", "y": YEAR_ID},
+    )
+    return uid
+
+
+def _heads(db, year_id):
+    return db.execute(
+        text(
+            "SELECT scope->>'grade_id' AS g, ended_at FROM role_bindings"
+            " WHERE role_type = 'grade_head' AND academic_year_id = :y"
+        ),
+        {"y": year_id},
+    ).all()
+
+
+def test_grade_head_binding_follows_cohort_and_rolls_back(db):
+    _grade_head(db)
+    before = _snapshot(db)
+    up = apply(db, SCHOOL, _plan(db), now=NOW)
+    new_grade = _scalar(db, "SELECT id FROM grades WHERE name = '四年级'")
+    new = _heads(db, up.to_year_id)
+    assert [(r.g, r.ended_at) for r in new] == [(str(new_grade), None)]
+    assert [r.ended_at for r in _heads(db, YEAR_ID)] == [NOW]
+    ids = set(up.summary["new_binding_ids"])
+    assert _scalar(
+        db,
+        "SELECT id FROM role_bindings WHERE role_type = 'grade_head' AND academic_year_id = :y",
+        y=up.to_year_id,
+    ) in {UUID(i) for i in ids}
+    rollback(db, SCHOOL, now=NOW)
+    assert _snapshot(db) == before
+    assert [r.ended_at for r in _heads(db, YEAR_ID)] == [None]
+
+
+def test_grade_head_not_copied_when_grade_graduates(db):
+    db.execute(text("UPDATE grades SET name = '六年级', display_order = 6"))
+    _grade_head(db)
+    up = apply(db, SCHOOL, _plan(db), now=NOW)
+    assert _heads(db, up.to_year_id) == []
+    assert [r.ended_at for r in _heads(db, YEAR_ID)] == [NOW]
+
+
+def test_grade_head_not_copied_for_grade_without_classes(db):
+    other = _scalar(
+        db,
+        "INSERT INTO grades (school_id, academic_year_id, name, display_order)"
+        " VALUES (:s, :y, '五年级', 5) RETURNING id",
+        s=SCHOOL_ID,
+        y=YEAR_ID,
+    )
+    _grade_head(db, str(other))
+    up = apply(db, SCHOOL, _plan(db), now=NOW)
+    assert _heads(db, up.to_year_id) == []
+    assert [r.ended_at for r in _heads(db, YEAR_ID)] == [NOW]
+
+
+def test_grade_head_follows_majority_grade(db):
+    # 同一年级下三个班:两班升入"四年级",一班升入"五年级" → 跟"四年级"
+    for name in ("三年一班", "三年三班"):
+        make_class(db, name)
+    plan = _plan(db)
+    assert len(plan.classes) == 3
+    plan.classes.sort(key=lambda c: c.from_name)
+    for c, (g, n) in zip(
+        plan.classes,
+        [("四年级", "四年一班"), ("四年级", "四年二班"), ("五年级", "五年三班")],
+        strict=True,
+    ):
+        c.to_grade_name, c.to_name = g, n
+    _grade_head(db)
+    up = apply(db, SCHOOL, plan, now=NOW)
+    four = _scalar(
+        db, "SELECT id FROM grades WHERE name = '四年级' AND academic_year_id = :y", y=up.to_year_id
+    )
+    assert [r.g for r in _heads(db, up.to_year_id)] == [str(four)]
+
+
+def test_grade_head_majority_tie_prefers_lower_grade(db):
+    make_class(db, "三年一班")
+    plan = _plan(db)
+    plan.classes.sort(key=lambda c: c.from_name)
+    plan.classes[0].to_grade_name, plan.classes[0].to_name = "五年级", "五年一班"
+    plan.classes[1].to_grade_name, plan.classes[1].to_name = "四年级", "四年二班"
+    _grade_head(db)
+    up = apply(db, SCHOOL, plan, now=NOW)
+    four = _scalar(
+        db, "SELECT id FROM grades WHERE name = '四年级' AND academic_year_id = :y", y=up.to_year_id
+    )
+    assert [r.g for r in _heads(db, up.to_year_id)] == [str(four)]
