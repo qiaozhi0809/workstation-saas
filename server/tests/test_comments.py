@@ -238,3 +238,33 @@ def test_other_class_student_forbidden(client, settings, db):
         headers=h,
     )
     assert res.status_code == 403
+
+
+def test_can_delete_follows_the_comments_own_class(client, settings, db):
+    """学生年内转班:新班班主任看到老班写的评语,按钮与 DELETE 都以评语所在班为准。"""
+    from app.models import Enrollment as Enr
+    from app.rbac.roles import Role
+    from tests.factories import bind, make_user
+
+    class_b = make_class(db, "三年四班")
+    new_homeroom = make_user(db, "teacher_b", "乙老师")
+    bind(db, new_homeroom.id, Role.homeroom_teacher, class_id=class_b)
+    old_enr = db.scalars(
+        select(Enr).where(Enr.student_id == UUID(S1), Enr.status == "active")
+    ).one()
+    old_enr.status = "transferred"
+    db.add(Enr(student_id=UUID(S1), class_id=class_b, academic_year_id=old_enr.academic_year_id))
+    db.flush()
+
+    hb = auth(settings, new_homeroom.id)
+    items = client.get(URL, headers=hb).json()["items"]
+    assert [i["id"] for i in items] == COMMENT_IDS
+    assert items[0]["can_delete"] is False
+    assert client.delete(f"/api/v1/comments/{COMMENT_IDS[0]}", headers=hb).status_code == 403
+    assert db.get(Comment, UUID(COMMENT_IDS[0])) is not None
+
+    # 老班班主任:列表不可见(学生已不在其班),但 DELETE 仍按评语所在班放行
+    assert (
+        client.delete(f"/api/v1/comments/{COMMENT_IDS[0]}", headers=auth(settings)).status_code
+        == 204
+    )

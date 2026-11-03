@@ -63,8 +63,8 @@ class NewClassPlan(BaseModel):
     grade_name: str = Field(min_length=1)
     name: str = Field(min_length=1)
     homeroom_teacher_id: UUID | None = None
-    seat_rows: int = Field(default=7, ge=1)
-    seat_cols: int = Field(default=4, ge=1)
+    seat_rows: int = Field(default=7, ge=1, le=12)
+    seat_cols: int = Field(default=4, ge=1, le=12)
 
 
 class UpgradePlan(BaseModel):

@@ -321,6 +321,13 @@ def apply(db: Session, school_id: UUID, plan: UpgradePlan, *, now: datetime) -> 
         text("SELECT id FROM academic_years WHERE school_id = :s AND is_active FOR UPDATE"),
         {"s": school_id},
     ).all()
+    # 同一学年的在读班也锁上(按 id 排序防死锁),与 lock_class 的名册写入串行
+    db.execute(
+        text(
+            "SELECT id FROM classes WHERE academic_year_id = :y AND active ORDER BY id FOR UPDATE"
+        ),
+        {"y": plan.from_year_id},
+    ).all()
     ctx = check_plan(db, school_id, plan)
     old_year_id = plan.from_year_id
 
@@ -511,7 +518,18 @@ def apply(db: Session, school_id: UUID, plan: UpgradePlan, *, now: datetime) -> 
             continue
         cid = successor[c.from_class_id]
         if c.homeroom_teacher_id is not None:
-            wanted_assignments.append((c.homeroom_teacher_id, cid, "homeroom", None))
+            # 原班主任继续带新班时,保留他原来的任课科目
+            kept_subject = next(
+                (
+                    a.subject
+                    for a in old_assignments
+                    if a.class_id == c.from_class_id
+                    and a.identity == "homeroom"
+                    and a.teacher_id == c.homeroom_teacher_id
+                ),
+                None,
+            )
+            wanted_assignments.append((c.homeroom_teacher_id, cid, "homeroom", kept_subject))
         if c.keep_teachers:
             wanted_assignments += [
                 (a.teacher_id, cid, a.identity, a.subject)
@@ -675,6 +693,12 @@ def rollback(db: Session, school_id: UUID, *, now: datetime) -> YearUpgrade:
     new_classes = _uuids(sm["new_class_ids"])
     new_enrollments = _uuids(sm["new_enrollment_ids"])
 
+    # 锁住新班(按 id 排序),与并发的名册写入串行,再数有没有新数据
+    db.execute(
+        text("SELECT id FROM classes WHERE id = ANY(CAST(:ids AS uuid[])) ORDER BY id FOR UPDATE"),
+        {"ids": new_classes},
+    ).all()
+
     found: dict[str, int] = {}
     for table in _EVENT_TABLES:
         n = db.execute(
@@ -703,6 +727,11 @@ def rollback(db: Session, school_id: UUID, *, now: datetime) -> YearUpgrade:
     delete("enrollments", new_enrollments)
     delete("classes", new_classes)  # class_boards 随级联删除
     delete("grades", _uuids(sm["new_grade_ids"]))
+    # 新学年若是更早一次已回滚升级的 from_year,先清掉那些行(审计日志仍留有记录)
+    db.execute(
+        text("DELETE FROM year_upgrades WHERE from_year_id = :y AND rolled_back_at IS NOT NULL"),
+        {"y": UUID(sm["new_year_id"])},
+    )
     delete("academic_years", [UUID(sm["new_year_id"])])
 
     def restore(sql: str, ids: list[UUID]) -> None:

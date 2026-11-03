@@ -7,6 +7,7 @@ from contextlib import AbstractContextManager
 from typing import TextIO
 
 from pydantic import ValidationError
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.clock import utc_now
@@ -100,6 +101,9 @@ def run(
             return _dispatch(ns, db, school_id, out)
     except UpgradeError as e:
         return _print_error(e, out)
+    except SQLAlchemyError as e:
+        print(f"失败:数据库操作失败({type(e).__name__})", file=out)
+        return 1
 
 
 def _dispatch(ns: argparse.Namespace, db: Session, school_id, out: TextIO) -> int:

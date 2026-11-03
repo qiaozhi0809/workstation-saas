@@ -5,9 +5,10 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.domain.classes.service import class_scope_of
 from app.domain.comments.schemas import CommentOut
 from app.errors import ApiError
-from app.models import AcademicYear, Comment, Enrollment, User
+from app.models import AcademicYear, Comment, Enrollment, SchoolClass, User
 from app.rbac.bindings import Binding, Scope, can
 from app.rbac.roles import Perm
 
@@ -20,6 +21,7 @@ def semester_of(year: AcademicYear, today: date) -> str:
 def can_delete_comment(
     comment: Comment, current_year_id: UUID, bindings: Sequence[Binding], scope: Scope
 ) -> bool:
+    """scope 必须是评语所在班(comment.class_id)的范围,与 DELETE 端点的校验一致。"""
     return comment.academic_year_id == current_year_id and can(bindings, Perm.COMMENT_WRITE, scope)
 
 
@@ -49,8 +51,18 @@ def list_comments(
         .where(Comment.student_id == student_id)
         .order_by(Comment.created_at.desc(), Comment.id)
     ).all()
+    scopes: dict[UUID, Scope] = {}
+    for c, _ in rows:
+        if c.class_id not in scopes:
+            cls = db.get(SchoolClass, c.class_id)
+            scopes[c.class_id] = class_scope_of(cls) if cls is not None else scope
     return [
-        _out(c, a, current_year_id, can_delete_comment(c, current_year_id, bindings, scope))
+        _out(
+            c,
+            a,
+            current_year_id,
+            can_delete_comment(c, current_year_id, bindings, scopes[c.class_id]),
+        )
         for c, a in rows
     ]
 

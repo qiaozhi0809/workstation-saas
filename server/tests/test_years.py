@@ -418,6 +418,26 @@ def _counts(db, tables):
 HISTORY = ["attendances", "reviews", "exams", "scores", "growth_records", "comments"]
 
 
+def _add_old_class_history(db):
+    """种子里没有点评和考勤:在旧班补一条,让历史计数断言有意义。"""
+    enr = _enrollment(db, STUDENT_IDS[0])
+    db.execute(
+        text(
+            "INSERT INTO attendances (enrollment_id, class_id, date, status)"
+            " VALUES (:e, :c, '2026-10-08', 'late')"
+        ),
+        {"e": enr, "c": CLASS_ID},
+    )
+    db.execute(
+        text(
+            "INSERT INTO reviews (op_id, enrollment_id, class_id, category, reason_text,"
+            " score_delta) VALUES (gen_random_uuid(), :e, :c, 'individual', '积极发言', 2)"
+        ),
+        {"e": enr, "c": CLASS_ID},
+    )
+    db.commit()
+
+
 def test_apply_moves_students_teachers_and_bindings(db):
     names = [
         r.name for r in db.execute(text("SELECT name FROM students ORDER BY mk"))
@@ -472,7 +492,7 @@ def test_apply_moves_students_teachers_and_bindings(db):
         {"y": year.id},
     ).all()
     assert {(str(r.teacher_id), r.identity, r.subject) for r in rows} == {
-        (TEACHER_IDS["teacher01"], "homeroom", None),
+        (TEACHER_IDS["teacher01"], "homeroom", "语文"),  # 同一班主任延续任课科目
         (TEACHER_IDS["teacher03"], "subject", "数学"),
         (TEACHER_IDS["teacher02"], "assistant", None),
     }
@@ -529,7 +549,9 @@ def test_apply_rejects_invalid_plan_and_changes_nothing(db):
 
 
 def test_upgrade_keeps_history_and_moves_access(client, settings, db):
+    _add_old_class_history(db)
     before = _counts(db, HISTORY)
+    assert before["attendances"] == 1 and before["reviews"] == 1
     assert before["growth_records"] == 3 and before["comments"] >= 1 and before["exams"] == 2
     apply(db, SCHOOL, _seed_plan(db), now=NOW)
     assert _counts(db, HISTORY) == before
@@ -627,8 +649,10 @@ def _snapshot(db):
 
 
 def test_rollback_restores_everything(db):
+    _add_old_class_history(db)
     before = _snapshot(db)
     history = _counts(db, HISTORY)
+    assert history["attendances"] == 1 and history["reviews"] == 1
     up = apply(db, SCHOOL, _seed_plan(db, repeat=STUDENT_IDS[4], leave=STUDENT_IDS[8]), now=NOW)
     assert _snapshot(db) != before
     done = rollback(db, SCHOOL, now=NOW)
@@ -831,6 +855,7 @@ def test_apply_same_plan_twice_is_stale(db):
 
 
 def test_rollback_undoes_only_latest_of_two_upgrades(db):
+    before = _snapshot(db)
     apply(db, SCHOOL, _plan(db), now=NOW)
     second = suggest(db, SCHOOL, "2028-2029", date(2028, 9, 1), date(2029, 7, 15))
     apply(db, SCHOOL, second, now=datetime(2028, 8, 20, tzinfo=UTC))
@@ -841,6 +866,12 @@ def test_rollback_undoes_only_latest_of_two_upgrades(db):
     assert _scalar(db, "SELECT count(*) FROM academic_years") == 2
     assert [c.name for c in _active_classes(db)] == ["四年二班"]
     assert _scalar(db, "SELECT count(*) FROM year_upgrades WHERE rolled_back_at IS NULL") == 1
+    # 再回滚一次:已回滚的第二次升级留下的 year_upgrades 行不能拦住删除 2027-2028
+    rollback(db, SCHOOL, now=datetime(2028, 8, 22, tzinfo=UTC))
+    assert _active_year(db).name == "2026-2027"
+    assert _snapshot(db) == before
+    assert _scalar(db, "SELECT count(*) FROM academic_years") == 1
+    assert _scalar(db, "SELECT count(*) FROM year_upgrades WHERE rolled_back_at IS NULL") == 0
 
 
 def _grade_head(db, scope_grade=None):
@@ -939,3 +970,26 @@ def test_grade_head_majority_tie_prefers_lower_grade(db):
         db, "SELECT id FROM grades WHERE name = '四年级' AND academic_year_id = :y", y=up.to_year_id
     )
     assert [r.g for r in _heads(db, up.to_year_id)] == [str(four)]
+
+
+def test_plan_new_class_seat_bounds():
+    from pydantic import ValidationError
+
+    from app.domain.years.plan import NewClassPlan
+
+    NewClassPlan(grade_name="三年级", name="x", seat_rows=12, seat_cols=12)
+    for kw in ({"seat_rows": 13}, {"seat_cols": 13}, {"seat_rows": 0}):
+        with pytest.raises(ValidationError):
+            NewClassPlan(grade_name="三年级", name="x", **kw)
+
+
+def test_cli_database_error_is_reported_not_traceback(db, monkeypatch):
+    from sqlalchemy.exc import OperationalError
+
+    def boom(*a, **k):
+        raise OperationalError("SELECT 1", {}, Exception("down"))
+
+    monkeypatch.setattr(years_cli.service, "latest_rollbackable", boom)
+    code, out = _run_cli(db, ["rollback"])
+    assert code == 1
+    assert out.startswith("失败:数据库操作失败") and "OperationalError" in out
