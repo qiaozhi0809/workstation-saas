@@ -9,13 +9,16 @@ from app.audit.service import deny
 from app.auth.deps import get_current_user
 from app.auth.service import contexts_of
 from app.db import get_db
-from app.domain.org import service
+from app.domain.org import service, staff
 from app.domain.org.schemas import (
+    AdminRole,
+    AdminRoleInput,
     ClassAdmin,
     ClassInput,
     GradeAdmin,
     GradeInput,
     SchoolInfo,
+    StaffInput,
     YearAdmin,
     YearUpdate,
 )
@@ -147,4 +150,61 @@ def delete_class(class_id: UUID, request: Request, user: Auth, bindings: Bind, d
     year = require_active_year(db, user.school_id)
     cls = service.get_class(db, user.school_id, year.id, class_id)
     service.delete_class(db, cls, user.id, clock.utc_now(), request)
+    return Response(status_code=204)
+
+
+@router.post("/classes/{class_id}/staff")
+def add_staff(
+    class_id: UUID, body: StaffInput, request: Request, user: Auth, bindings: Bind, db: Db
+) -> ClassAdmin:
+    _org(db, request, user, bindings)
+    year = require_active_year(db, user.school_id)
+    cls = service.get_class(db, user.school_id, year.id, class_id)
+    return staff.add_staff(db, cls, body, now=clock.utc_now(), actor_id=user.id, request=request)
+
+
+@router.delete("/staff/{assignment_id}", status_code=204)
+def end_staff(
+    assignment_id: UUID, request: Request, user: Auth, bindings: Bind, db: Db
+) -> Response:
+    _org(db, request, user, bindings)
+    staff.end_staff(
+        db, user.school_id, assignment_id, now=clock.utc_now(), actor_id=user.id, request=request
+    )
+    return Response(status_code=204)
+
+
+def _account_gate(
+    db: Session, request: Request, user: User, bindings: list[Binding], role: str
+) -> None:
+    # 校长 / 信息中心岗位等于账号管理权,任命与卸任另需 account.manage
+    if role in staff.ACCOUNT_ROLES:
+        ensure_admin(db, request, user.id, bindings, Perm.ACCOUNT_MANAGE, user.school_id)
+
+
+@router.get("/roles")
+def list_roles(request: Request, user: Auth, bindings: Bind, db: Db) -> list[AdminRole]:
+    _org(db, request, user, bindings)
+    year = require_active_year(db, user.school_id)
+    return staff.list_roles(db, user.school_id, year.id)
+
+
+@router.post("/roles", status_code=201)
+def add_role(
+    body: AdminRoleInput, request: Request, user: Auth, bindings: Bind, db: Db
+) -> AdminRole:
+    _org(db, request, user, bindings)
+    _account_gate(db, request, user, bindings, body.role)
+    year = require_active_year(db, user.school_id)
+    return staff.add_role(
+        db, user.school_id, year.id, body, now=clock.utc_now(), actor_id=user.id, request=request
+    )
+
+
+@router.delete("/roles/{binding_id}", status_code=204)
+def end_role(binding_id: UUID, request: Request, user: Auth, bindings: Bind, db: Db) -> Response:
+    _org(db, request, user, bindings)
+    bd = staff.get_role_binding(db, user.school_id, binding_id)
+    _account_gate(db, request, user, bindings, bd.role_type)
+    staff.end_role(db, user.school_id, bd, now=clock.utc_now(), actor_id=user.id, request=request)
     return Response(status_code=204)
