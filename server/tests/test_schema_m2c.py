@@ -60,14 +60,14 @@ def test_new_tables_exist(db):
 
 def test_mask_no_backfilled_in_mk_order(db):
     rows = db.execute(text("SELECT mk, mask_no FROM students ORDER BY mk")).all()
-    assert [r.mask_no for r in rows] == list(range(1, 11))
+    assert [r.mask_no for r in rows] == list(range(1, 23))
 
 
 def test_new_student_gets_next_mask_no(db):
     # 序列不随测试回滚,只能断言"大于种子且逐一递增"
     first = _new_student(db, "S9001")
     second = _new_student(db, "S9002")
-    assert first >= 11
+    assert first >= 23
     assert second == first + 1
 
 

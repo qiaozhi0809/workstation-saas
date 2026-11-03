@@ -58,6 +58,7 @@ def create_comment(
     student_id: UUID,
     data: CommentInput,
     request: Request,
+    response: Response,
     user: Annotated[User, Depends(get_current_user)],
     bindings: Annotated[list[Binding], Depends(get_bindings)],
     db: Annotated[Session, Depends(get_db)],
@@ -71,7 +72,7 @@ def create_comment(
         db, request, user.id, bindings, Perm.COMMENT_WRITE, scope,
         object_id=str(student_id), object_type="student",
     )  # fmt: skip
-    comment = service.create_comment(
+    comment, created = service.create_comment(
         db,
         student_id,
         enrollment,
@@ -90,7 +91,12 @@ def create_comment(
         object_id=str(student_id),
         request=request,
     )
-    out = service.comment_out(comment, user, year.id, bindings, scope)
+    if not created:
+        response.status_code = 200
+    author = user
+    if comment.created_by_user_id not in (None, user.id):
+        author = db.get(User, comment.created_by_user_id) or user
+    out = service.comment_out(comment, author, year.id, bindings, scope)
     db.commit()
     return out
 
