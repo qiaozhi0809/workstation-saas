@@ -13,6 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/sha
 import { Input } from '@/shared/components/ui/input'
 import { Label } from '@/shared/components/ui/label'
 import { PROTECTED_TAGS } from '@/shared/lib/tags'
+import { invalidateRosterQueries } from '@/roles/teacher/Students/invalidate'
 
 const MAX_TAGS = 30
 const MAX_LEN = 8
@@ -77,15 +78,18 @@ export default function TagPoolCard() {
     if (err) return setDialogError(err)
     setDraft(merge ? others : tags.map((t) => (t === from ? to : t)))
     if (alsoStudents) {
-      // 同一个标签连续改名,合成一条从最初名字出发的改名
-      const prev = renames.find((r) => r.to === from)
-      setRenames([...renames.filter((r) => r !== prev), { from: prev ? prev.from : from, to }])
+      // 指向 from 的改名(含合并进来的)一并改指 to;from 本身是池里原有的标签时,它的学生也要改成 to
+      const next = renames.map((r) => (r.to === from ? { ...r, to } : r))
+      if (pool.data.tags.includes(from)) next.push({ from, to })
+      setRenames(next.filter((r) => r.from !== r.to))
     }
     setRenaming(null)
   }
 
   const confirmDelete = () => {
     setDraft(tags.filter((t) => t !== deleting))
+    // 不能把学生改成池里已不存在的名字
+    setRenames(renames.filter((r) => r.to !== deleting))
     setDeleting(null)
   }
 
@@ -97,6 +101,7 @@ export default function TagPoolCard() {
       qc.setQueryData(['tag-pool'], saved)
       setDraft(null)
       setRenames([])
+      void invalidateRosterQueries(qc)
       toast('已保存')
     } catch (err) {
       setSaveError(err instanceof ApiError ? err.message : '保存失败,请重试')

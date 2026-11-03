@@ -17,23 +17,27 @@ export default function ImportAccountsDialog({ onClose, onImported }: {
 }) {
   const qc = useQueryClient()
   const fileRef = useRef<HTMLInputElement>(null)
+  const seq = useRef(0)
   const [csv, setCsv] = useState('')
   const [rows, setRows] = useState<ImportRow[] | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
-  const edit = (text: string) => { setCsv(text); setRows(null); setError('') }
+  const edit = (text: string) => { seq.current++; setCsv(text); setRows(null); setError(''); setBusy(false) }
 
   const preview = async (text: string) => {
+    const mine = ++seq.current
     setBusy(true)
     setError('')
     try {
-      setRows((await adminApi.importPreview(text)).rows)
+      const res = await adminApi.importPreview(text)
+      if (mine === seq.current) setRows(res.rows)
     } catch (err) {
+      if (mine !== seq.current) return
       setRows(null)
       setError(err instanceof ApiError ? err.message : '预览失败,请重试')
     } finally {
-      setBusy(false)
+      if (mine === seq.current) setBusy(false)
     }
   }
 

@@ -101,3 +101,20 @@ it('previews pasted text and offers the template download', async () => {
   fireEvent.click(screen.getByRole('button', { name: '预览' }))
   await waitFor(() => expect(adminApi.importPreview).toHaveBeenCalledWith(CSV))
 })
+
+it('discards a stale preview that resolves after a newer one', async () => {
+  let first!: (v: { rows: ImportRow[] }) => void
+  vi.mocked(adminApi.importPreview)
+    .mockImplementationOnce(() => new Promise((r) => { first = r }))
+    .mockResolvedValueOnce({ rows: [row({ login_name: 'newer01' })] })
+  await openImport()
+  fireEvent.change(screen.getByLabelText('粘贴 CSV 内容'), { target: { value: CSV } })
+  fireEvent.click(screen.getByRole('button', { name: '预览' }))
+  fireEvent.change(screen.getByLabelText('粘贴 CSV 内容'), { target: { value: CSV + '\n' } })
+  fireEvent.click(screen.getByRole('button', { name: '预览' }))
+  await screen.findByText('newer01')
+  first({ rows: [row({ login_name: 'stale01' })] })
+  await new Promise((r) => setTimeout(r, 20))
+  expect(screen.queryByText('stale01')).toBeNull()
+  expect(screen.getByText('newer01')).toBeInTheDocument()
+})

@@ -33,7 +33,8 @@ export default function AccountRow({ account: a, isSelf, onEdit, onReset, onFree
         <Badge variant={frozen ? 'danger' : 'success'}>{frozen ? '已冻结' : '在用'}</Badge>
       </td>
       <td className="whitespace-nowrap px-3 py-2">
-        <div className="flex gap-1">
+        <div className="flex flex-col items-start gap-0.5">
+          <div className="flex gap-1">
           <Button type="button" variant="ghost" size="sm" onClick={onEdit}>编辑</Button>
           <Button type="button" variant="ghost" size="sm" onClick={onReset}>重置密码</Button>
           {frozen ? (
@@ -44,9 +45,10 @@ export default function AccountRow({ account: a, isSelf, onEdit, onReset, onFree
                 aria-describedby={isSelf ? `self-hint-${a.id}` : undefined} onClick={onFreeze}>
                 冻结
               </Button>
-              {isSelf && <span id={`self-hint-${a.id}`} className="sr-only">{SELF_HINT}</span>}
             </>
           )}
+          </div>
+          {isSelf && !frozen && <span id={`self-hint-${a.id}`} className="text-xs text-muted-foreground">{SELF_HINT}</span>}
         </div>
       </td>
     </tr>

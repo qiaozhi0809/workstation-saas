@@ -37,6 +37,7 @@ export default function AccountsPage() {
   const [dialog, setDialog] = useState<Dialog>(null)
   const [freezing, setFreezing] = useState<Account | null>(null)
   const [freezeError, setFreezeError] = useState('')
+  const [freezeBusy, setFreezeBusy] = useState(false)
   // 临时密码只放这里,关闭即置空
   const [temp, setTemp] = useState<TempPassword[] | null>(null)
 
@@ -71,7 +72,9 @@ export default function AccountsPage() {
     }
   }
   const freeze = async () => {
-    if (!freezing) return
+    if (!freezing || freezeBusy) return
+    setFreezeError('')
+    setFreezeBusy(true)
     try {
       await adminApi.freeze(freezing.id)
       toast(`已冻结${freezing.display_name}`)
@@ -79,6 +82,8 @@ export default function AccountsPage() {
       refresh()
     } catch (err) {
       setFreezeError(err instanceof ApiError ? err.message : '冻结失败,请重试')
+    } finally {
+      setFreezeBusy(false)
     }
   }
 
@@ -161,7 +166,7 @@ export default function AccountsPage() {
           {freezeError && <p role="alert" className="mt-2 text-sm text-destructive">{freezeError}</p>}
           <div className="mt-4 flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={() => setFreezing(null)}>取消</Button>
-            <Button type="button" variant="destructive" onClick={() => void freeze()}>确认冻结</Button>
+            <Button type="button" variant="destructive" disabled={freezeBusy} onClick={() => void freeze()}>确认冻结</Button>
           </div>
         </Modal>
       )}

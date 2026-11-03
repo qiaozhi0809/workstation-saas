@@ -24,8 +24,10 @@ beforeEach(() => {
 })
 afterEach(cleanup)
 
+let client: QueryClient
 const renderPage = async () => {
-  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SettingsPage /></QueryClientProvider>)
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(<QueryClientProvider client={client}><SettingsPage /></QueryClientProvider>)
   await screen.findByRole('button', { name: '改名 近视' })
 }
 const list = () => screen.getByRole('list', { name: '标签池' })
@@ -154,4 +156,47 @@ it('shows the backend message when saving the switches fails', async () => {
   await renderPage()
   fireEvent.click(await screen.findByRole('button', { name: '保存开关' }))
   expect(await screen.findByText('保存开关失败(后端)')).toBeInTheDocument()
+})
+
+const rename = async (from: string, to: string) => {
+  fireEvent.click(screen.getByRole('button', { name: `改名 ${from}` }))
+  const dlg = await screen.findByRole('dialog')
+  fireEvent.change(within(dlg).getByLabelText('新名称'), { target: { value: to } })
+  fireEvent.click(within(dlg).getByRole('button', { name: '确定' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+}
+
+it('keeps both renames when a merged tag is renamed again', async () => {
+  vi.mocked(schoolApi.tagPool).mockResolvedValue({ tags: ['重点关注', '住校', '近视', '视力'] })
+  vi.mocked(adminApi.saveTagPool).mockResolvedValue({ tags: [] })
+  await renderPage()
+  await rename('视力', '近视') // 视力 合并进 近视
+  await rename('近视', '眼睛')
+  fireEvent.click(screen.getByRole('button', { name: '保存标签池' }))
+  await waitFor(() => expect(adminApi.saveTagPool).toHaveBeenCalled())
+  const { tags, renames } = vi.mocked(adminApi.saveTagPool).mock.calls[0][0]
+  expect(tags).toEqual(['重点关注', '住校', '眼睛'])
+  expect(renames).toHaveLength(2)
+  expect(renames).toEqual(expect.arrayContaining([{ from: '视力', to: '眼睛' }, { from: '近视', to: '眼睛' }]))
+})
+
+it('drops renames that point at a tag deleted afterwards', async () => {
+  vi.mocked(adminApi.saveTagPool).mockResolvedValue({ tags: [] })
+  await renderPage()
+  await rename('近视', '视力')
+  fireEvent.click(screen.getByRole('button', { name: '删除 视力' }))
+  fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: '删除' }))
+  fireEvent.click(screen.getByRole('button', { name: '保存标签池' }))
+  await waitFor(() => expect(adminApi.saveTagPool).toHaveBeenCalledWith({ tags: ['重点关注', '住校', '偏科'], renames: [] }))
+})
+
+it('invalidates student caches after saving the pool', async () => {
+  vi.mocked(adminApi.saveTagPool).mockResolvedValue({ tags: ['重点关注', '住校'] })
+  await renderPage()
+  const spy = vi.spyOn(client, 'invalidateQueries')
+  fireEvent.click(screen.getByRole('button', { name: '删除 偏科' }))
+  fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: '删除' }))
+  fireEvent.click(screen.getByRole('button', { name: '保存标签池' }))
+  await waitFor(() => expect(spy).toHaveBeenCalledWith({ queryKey: ['student-records'] }))
+  expect(spy).toHaveBeenCalledWith({ queryKey: ['class-students'] })
 })
