@@ -272,7 +272,7 @@ def test_current_year_class_forbidden(client, settings, db, past):
     db.flush()
     exam_id = exam.id
     assert get(client, settings, f"/exams/{exam_id}/scores").status_code == 403
-    assert failed_audits(db, PRINCIPAL, cur.id) == 3 or failed_audits(db, PRINCIPAL, exam_id) == 1
+    assert failed_audits(db, PRINCIPAL, cur.id) == 3
 
     # 学年参数:当前学年、随机 uuid 都是 404 YEAR_NOT_FOUND
     for year_id in (cur_year, uuid4()):

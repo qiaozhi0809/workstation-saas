@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from typing import NoReturn
 from uuid import UUID
 
 from fastapi import Request
@@ -39,7 +40,7 @@ def _visible_to(bindings: Sequence[Binding], cls: SchoolClass) -> bool:
 
 def _deny(
     db: Session, request: Request | None, user: User, object_type: str, object_id: UUID
-) -> None:
+) -> NoReturn:
     deny(
         db,
         user_id=user.id,
@@ -122,7 +123,6 @@ def _past_class_or_deny(
         or not _visible_to(bindings, cls)
     ):
         _deny(db, request, user, "class", class_id)
-    assert cls is not None
     return cls
 
 
@@ -184,7 +184,6 @@ def exam_scores(
     exam = db.get(Exam, exam_id)
     if exam is None:
         _deny(db, request, user, "exam", exam_id)
-    assert exam is not None
     cls = _past_class_or_deny(db, request, user, bindings, exam.class_id)
     # ids 先按 Student.mk 排序,同分并列时顺序才确定
     people = db.execute(
