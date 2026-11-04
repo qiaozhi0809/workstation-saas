@@ -346,6 +346,12 @@ test.describe('year upgrade', () => {
 for (const [width, height] of [[1280, 720], [1024, 768], [768, 1024]] as const) {
   test(`admin nav keeps every entry reachable without page overflow at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height })
+    // 长校名:导航不能被压缩,校名自己截断(种子校名太短,区分不出)
+    if (width < 1280) {
+      await page.route('**/api/v1/admin/school', (route) => route.request().method() === 'GET'
+        ? route.fulfill({ json: { name: '北京市海淀区中关村第一实验小学教育集团', address: null } })
+        : route.continue())
+    }
     await signIn(page, 'principal01')
     await expect(page).toHaveURL(/\/admin\/today/)
     const nav = page.getByRole('navigation', { name: '主导航' })
@@ -375,8 +381,10 @@ for (const [width, height] of [[1280, 720], [1024, 768], [768, 1024]] as const) 
     }
     const navBox = (await nav.boundingBox())!
     const bellBox = (await page.getByRole('button', { name: /^通知,\d+ 条未读$/ }).boundingBox())!
-    const lastEntry = (await nav.locator('a, button').last().boundingBox())!
-    expect(lastEntry.x + lastEntry.width).toBeLessThanOrEqual(bellBox.x)
+    // 入口之间不重叠、最后一个不压到右侧按钮(导航被压缩时,下拉的外层 wrapper 会缩、里面的按钮溢出去盖住相邻入口)
+    const boxes = await nav.locator('a, button').evaluateAll((els) => els.map((el) => { const r = el.getBoundingClientRect(); return [r.x, r.right] }))
+    for (let i = 1; i < boxes.length; i++) expect(boxes[i][0]).toBeGreaterThanOrEqual(boxes[i - 1][1] - 1)
+    expect(boxes[boxes.length - 1][1]).toBeLessThanOrEqual(bellBox.x)
     expect(navBox.x + navBox.width).toBeLessThanOrEqual(bellBox.x + 1)
     // 学校名在 1280 宽放得下,不被截成"示…"
     if (width === 1280) {

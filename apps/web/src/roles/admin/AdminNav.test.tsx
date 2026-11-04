@@ -142,12 +142,13 @@ describe('grouped nav (≥ 768)', () => {
   it('is data-driven: any page with a group lands in that group', () => {
     const pages: AdminPage[] = [
       { path: 'today', label: '今日关注', icon: Sun, perm: 'school.view', element: null },
-      { path: 'org', label: '组织架构', icon: Building2, perm: 'org.manage', element: null, group: 'manage' },
-      { path: 'accounts', label: '账号', icon: Users, perm: 'account.manage', element: null, group: 'manage' },
+      { path: 'x-one', label: '甲页', icon: Building2, perm: 'org.manage', element: null, group: 'system' },
+      { path: 'x-two', label: '乙页', icon: Users, perm: 'account.manage', element: null, group: 'system' },
     ]
     setPerms(['school.view', 'org.manage', 'account.manage'])
-    renderNav(pages, '/admin/today')
-    expect(top()).toEqual(['今日关注', '学校管理'])
+    renderNav(pages, '/admin/x-two')
+    expect(top()).toEqual(['今日关注', '系统']) // 虚构路径与页名:分组只由 group 字段决定
+    expect(screen.getByRole('button', { name: '系统' })).toHaveAttribute('aria-current', 'true')
   })
 
   it('shows pages without a group as plain links', () => {

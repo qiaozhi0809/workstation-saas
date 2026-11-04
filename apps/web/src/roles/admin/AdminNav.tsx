@@ -112,7 +112,8 @@ export default function AdminNav({ pages = ADMIN_PAGES }: { pages?: AdminPage[] 
     )
   }
   return (
-    <nav aria-label="主导航" className="relative flex min-w-0 items-center gap-0.5">
+    // shrink-0:校名过长时先截断校名(它自己 truncate),导航不能被压缩而盖到右侧按钮上
+    <nav aria-label="主导航" className="relative flex shrink-0 items-center gap-0.5">
       {buildEntries(pages, perms).map((e) => e.kind === 'link'
         ? <NavItem key={e.page.path} page={e.page} />
         : <GroupMenu key={e.group} group={e.group} pages={e.pages} />)}
