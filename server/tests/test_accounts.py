@@ -356,3 +356,17 @@ def test_freeze_succeeds_when_publish_redis_fails(client, settings, db, redis_cl
     uid = _user_id(db, "teacher02")
     res = client.post(f"{ACCOUNTS}/{uid}/freeze", headers=_admin(settings))
     assert res.status_code == 200
+
+
+def test_parent_tag_and_filter(client, settings):
+    h = _admin(settings)
+    res = client.get(ACCOUNTS, headers=h, params={"q": "13800000061"}).json()
+    assert [a["login_name"] for a in res["items"]] == ["13800000061"]
+    assert res["items"][0]["roles"] == [{"role": "parent", "label": "家长"}]
+    items = client.get(ACCOUNTS, headers=h, params={"role": "parent"}).json()["items"]
+    assert {a["login_name"] for a in items} == {"13800000061", "13800000062", "teacher04"}
+    teacher04 = next(a for a in items if a["login_name"] == "teacher04")
+    assert {"role": "parent", "label": "家长"} in teacher04["roles"]
+    assert any(r["role"] == "homeroom_teacher" for r in teacher04["roles"])
+    other = client.get(ACCOUNTS, headers=h, params={"role": "homeroom_teacher"}).json()["items"]
+    assert "13800000061" not in {a["login_name"] for a in other}

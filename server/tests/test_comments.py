@@ -72,6 +72,7 @@ def test_list_create_delete(client, settings, db):
         "created_by_name",
         "can_delete",
         "created_at",
+        "parent_visible",
     }
     assert items[0]["semester"] == "2026-2027 第一学期"
     assert items[0]["generated_by_ai"] is False
@@ -397,3 +398,51 @@ def test_duplicate_returns_original_author(client, settings, db):
     assert res2.status_code == 200
     assert res2.json()["id"] == res1.json()["id"]
     assert res2.json()["created_by_name"] == "甲老师"
+
+
+def _set_ai_review(db, on: bool):
+    from app.domain.school_settings.service import get_switches, save_switches
+
+    sw = get_switches(db, UUID(SCHOOL_ID))
+    save_switches(
+        db,
+        UUID(SCHOOL_ID),
+        UUID(TEACHER_USER_ID),
+        sw.model_copy(update={"ai_review_before_send": on}),
+    )
+
+
+def test_ai_comment_hidden_until_shared(client, settings, db):
+    h = auth(settings)
+    _set_ai_review(db, True)
+    ai = client.post(URL, json=BODY, headers=h).json()
+    hand = client.post(
+        URL, json={"content": "手写评语", "generated_by_ai": False}, headers=h
+    ).json()
+    assert ai["parent_visible"] is False and hand["parent_visible"] is True
+    listed = {i["id"]: i for i in client.get(URL, headers=h).json()["items"]}
+    assert listed[ai["id"]]["parent_visible"] is False
+
+    put = f"/api/v1/comments/{ai['id']}/parent-visible"
+    res = client.put(put, json={"visible": True}, headers=h)
+    assert res.status_code == 200 and res.json()["parent_visible"] is True
+    assert res.json()["id"] == ai["id"]
+    assert [a.object_id for a in _audits(db, "comment.share")] == [ai["id"]]
+    res = client.put(put, json={"visible": False}, headers=h)
+    assert res.json()["parent_visible"] is False
+    assert [a.object_id for a in _audits(db, "comment.unshare")] == [ai["id"]]
+
+    bad = client.put(put, json={"visible": True}, headers=auth(settings, SUBJECT_USER_ID))
+    assert bad.status_code == 403
+    assert client.put(put, headers=h).status_code == 400
+    missing = "/api/v1/comments/00000000-0000-0000-0000-000000000000/parent-visible"
+    assert client.put(missing, json={"visible": True}, headers=h).status_code == 404
+
+    _set_ai_review(db, False)
+    ai2 = client.post(URL, json={"content": "另一条 AI 评语", "generated_by_ai": True}, headers=h)
+    assert ai2.json()["parent_visible"] is True
+    _set_ai_review(db, True)
+    item = {"student_id": STUDENT_IDS[2], "content": "批量 AI"}
+    client.post(BULK, json={"items": [item], "generated_by_ai": True}, headers=h)
+    row = db.scalars(select(Comment).where(Comment.content == "批量 AI")).one()
+    assert row.parent_visible is False
