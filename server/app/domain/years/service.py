@@ -11,6 +11,7 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.audit.service import record
+from app.domain.parents.lifecycle import close_links_for, reopen_links
 from app.domain.years.plan import UpgradePlan
 from app.models import YearUpgrade
 
@@ -18,6 +19,7 @@ STALE = "UPGRADE_PLAN_STALE"
 INVALID = "UPGRADE_PLAN_INVALID"
 NOTHING_TO_ROLLBACK = "UPGRADE_NOTHING_TO_ROLLBACK"
 HAS_DATA = "UPGRADE_HAS_DATA"
+NOT_LATEST = "UPGRADE_NOT_LATEST"
 
 
 class UpgradeError(Exception):
@@ -558,6 +560,11 @@ def apply(
                 text("UPDATE enrollments SET status = :st, left_at = :now WHERE id = ANY(:ids)"),
                 {"st": status, "now": now, "ids": ids},
             )
+    # 毕业 / 转出的学生不再有在读注册:家长绑定转只读
+    closed = {*status_of["graduated"], *status_of["transferred"]}
+    parent_links_readonly = close_links_for(
+        db, [r.student_id for r in old_rows if r.id in closed], now
+    )
 
     # 5. 任职
     old_assignments = db.execute(
@@ -709,6 +716,7 @@ def apply(
         "old_assignment_ids": s(old_assignment_ids),
         "new_binding_ids": s(new_binding_ids),
         "old_binding_ids": s(old_binding_ids),
+        "parent_links_readonly": s(parent_links_readonly),
         "counts": counts,
     }
     up = YearUpgrade(
@@ -863,12 +871,19 @@ def rollback(
     actor_id: UUID | None = None,
     request: Request | None = None,
     via: str = "cli",
+    upgrade_id: UUID | None = None,
 ) -> YearUpgrade:
-    """回滚最近一次未回滚的升级;新学年已有数据时拒绝。"""
+    """回滚最近一次未回滚的升级;新学年已有数据时拒绝。给了 upgrade_id 但不是最近一次则拒绝。"""
     # 与 apply 串行,否则 rollback 可能在 apply 提交前就选定了要回滚的升级,随后与 apply
     # 互相等锁(死锁)或回滚掉已被后续升级用作起点的学年。
     _serialize_upgrades(db, school_id)
     up = latest_rollbackable(db, school_id, lock=True)
+    if upgrade_id is not None and upgrade_id != up.id:
+        raise UpgradeError(
+            NOT_LATEST,
+            "只能回滚最近一次学年升级,请刷新后重试",
+            {"latest_id": str(up.id)},
+        )
     sm = up.summary
     new_classes = _uuids(sm["new_class_ids"])
     new_enrollments = _uuids(sm["new_enrollment_ids"])
@@ -939,6 +954,7 @@ def rollback(
         "UPDATE role_bindings SET ended_at = NULL WHERE id = ANY(cast(:ids as uuid[]))",
         _uuids(sm["old_binding_ids"]),
     )
+    reopen_links(db, _uuids(sm.get("parent_links_readonly", [])))
     db.execute(
         text("UPDATE year_upgrades SET rolled_back_at = :now WHERE id = :id"),
         {"now": now, "id": up.id},

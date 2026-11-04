@@ -4,6 +4,7 @@ from uuid import UUID
 
 import jwt
 from jwt.warnings import InsecureKeyLengthWarning
+from sqlalchemy import func, select
 
 from app.auth import sessions
 from app.auth.tokens import decode_access_token, issue_access_token
@@ -243,3 +244,24 @@ def test_nth_failure_resets_ttl(client, settings, redis_client):
     redis_client.expire(key, 10)
     login(client, pw="wrong")
     assert redis_client.ttl(key) > settings.login_lock_seconds - 5
+
+
+def _parent_ctx(client, name):
+    return login(client, name).json()["user"]["contexts"]
+
+
+def test_parent_context(client, db):
+    from sqlalchemy import update
+
+    from app.models import RoleBinding
+
+    assert _parent_ctx(client, "13800000061") == ["parent"]
+    assert _parent_ctx(client, "teacher04") == ["teacher", "parent"]
+    token = login(client, "13800000061").json()["access_token"]
+    me = client.get("/api/v1/auth/me", headers=bearer(token)).json()
+    assert me["contexts"] == ["parent"]
+    # 只读不改绑定,仍有 parent;绑定结束后没有
+    uid = db.scalar(select(User.id).where(User.login_name == "13800000061"))
+    db.execute(update(RoleBinding).where(RoleBinding.user_id == uid).values(ended_at=func.now()))
+    db.flush()
+    assert _parent_ctx(client, "13800000061") == []

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app import clock
 from app.audit.service import record
 from app.domain.classes.service import class_scope_of
+from app.domain.parents.lifecycle import close_links_for
 from app.domain.roster.schemas import (
     SkippedRow,
     StudentImport,
@@ -261,6 +262,7 @@ def remove_student(
     enrollment.seat_row = None
     enrollment.seat_col = None
     db.flush()
+    close_links_for(db, [enrollment.student_id], enrollment.left_at)
     if not reflow_auto(db, cls, user_id):
         cls.seat_version = SchoolClass.seat_version + 1
     record_seat_change(db, cls, user_id, start_version)

@@ -145,12 +145,18 @@ def _dispatch(ns: argparse.Namespace, db: Session, school_id, out: TextIO) -> in
     # rollback
     if not ns.yes:
         up = service.latest_rollbackable(db, school_id)
+        if ns.upgrade_id is not None and ns.upgrade_id != up.id:
+            raise UpgradeError(
+                service.NOT_LATEST,
+                "只能回滚最近一次学年升级,请刷新后重试",
+                {"latest_id": str(up.id)},
+            )
         print(
             f"将回滚学年升级:{up.plan['new_year']['name']}(执行于 {up.executed_at:%Y-%m-%d %H:%M})",
             file=out,
         )
         print(CONFIRM_HINT, file=out)
         return 0
-    service.rollback(db, school_id, now=utc_now())
+    service.rollback(db, school_id, now=utc_now(), upgrade_id=ns.upgrade_id)
     print("已完成:学年升级已回滚", file=out)
     return 0

@@ -16,6 +16,7 @@ class Role(StrEnum):
 TEACHER_ROLES = frozenset({Role.homeroom_teacher, Role.subject_teacher, Role.assistant_teacher})
 ADMIN_ROLES = frozenset({Role.principal, Role.dean, Role.grade_head, Role.it_admin})
 LEADER_ROLES = frozenset({Role.principal, Role.dean, Role.grade_head})
+PARENT_ROLES = frozenset({Role.primary_parent, Role.secondary_parent})
 
 
 class Perm(StrEnum):
@@ -53,6 +54,7 @@ class Perm(StrEnum):
     NOTICE_SEND = "notice.send"
     GRADE_EXAM_WRITE = "exam.grade_write"
     YEAR_UPGRADE = "year.upgrade"
+    PARENT_MANAGE = "parent.manage"
 
 
 # Order matches ClassroomSummary.my_perms.
@@ -76,6 +78,7 @@ CLASSROOM_PERMS: tuple[Perm, ...] = (
     Perm.COMMENT_WRITE,
     Perm.AI_USE,
     Perm.AI_CLASS,
+    Perm.PARENT_MANAGE,
 )
 
 
@@ -156,6 +159,7 @@ ROLE_PERMS: dict[Role, frozenset[Perm]] = {
             Perm.COMMENT_WRITE,
             Perm.AI_USE,
             Perm.AI_CLASS,
+            Perm.PARENT_MANAGE,
         }
     ),
     Role.subject_teacher: frozenset(

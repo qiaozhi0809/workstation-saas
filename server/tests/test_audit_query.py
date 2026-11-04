@@ -31,6 +31,7 @@ GROUP_KEYS = [
     "settings",
     "year",
     "notice",
+    "parent",
     "denied",
 ]
 

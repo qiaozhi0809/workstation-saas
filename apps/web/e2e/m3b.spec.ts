@@ -40,9 +40,12 @@ async function recallNotice(request: APIRequestContext, token: string, id: strin
 // 保证前一次跑到一半被打断(升级后、回滚前)留下的新学年不会连锁拖垮后面的用例
 test.beforeAll(async ({ request }) => {
   const principal = await login(request, 'principal01')
-  const latest = await adminGet<{ rolled_back: boolean } | null>(request, principal, '/admin/years/upgrade/latest')
+  const latest = await adminGet<{ id: string; rolled_back: boolean } | null>(request, principal, '/admin/years/upgrade/latest')
   if (latest && !latest.rolled_back) {
-    const res = await request.post(`${API}/admin/years/upgrade/rollback`, { headers: { Authorization: `Bearer ${principal}` } })
+    const res = await request.post(`${API}/admin/years/upgrade/rollback`, {
+        headers: { Authorization: `Bearer ${principal}` },
+        data: { upgrade_id: latest.id },
+      })
     expect(res.ok(), await res.text()).toBeTruthy()
   }
 })

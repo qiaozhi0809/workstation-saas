@@ -19,7 +19,7 @@ from app.errors import ApiError
 from app.models import User
 from app.rbac.admin import admin_perms
 from app.rbac.bindings import Binding, load_bindings
-from app.rbac.roles import ADMIN_ROLES, TEACHER_ROLES
+from app.rbac.roles import ADMIN_ROLES, PARENT_ROLES, TEACHER_ROLES
 
 
 class UserBrief(BaseModel):
@@ -36,12 +36,14 @@ def contexts_of(bindings: list[Binding]) -> list[str]:
         result.append("teacher")
     if any(bd.role in ADMIN_ROLES for bd in bindings):
         result.append("admin")
+    if any(bd.role in PARENT_ROLES for bd in bindings):
+        result.append("parent")
     return result
 
 
 def user_brief(db: Session, user: User) -> UserBrief:
     year = active_academic_year(db, user.school_id)
-    bindings = load_bindings(db, user.id, year.id if year else None)
+    bindings = load_bindings(db, user.id, year.id if year else None, include_parents=True)
     return UserBrief(
         id=user.id,
         display_name=user.display_name,

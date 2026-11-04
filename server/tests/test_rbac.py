@@ -17,9 +17,9 @@ from app.rbac.bindings import (
     writable_subjects,
 )
 from app.rbac.guard import ensure
-from app.rbac.roles import ADMIN_ROLES, LEADER_ROLES, ROLE_PERMS, Perm, Role
+from app.rbac.roles import ADMIN_ROLES, CLASSROOM_PERMS, LEADER_ROLES, ROLE_PERMS, Perm, Role
 from tests.factories import bind, make_admin, make_class, make_user
-from tests.helpers import audit_rows
+from tests.helpers import audit_rows, auth
 from tests.seed_ids import CLASS_ID, GRADE_ID, SCHOOL_ID, TEACHER_USER_ID, YEAR_ID
 
 
@@ -141,6 +141,7 @@ def test_role_perms_full_matrix():
             Perm.COMMENT_WRITE,
             Perm.AI_USE,
             Perm.AI_CLASS,
+            Perm.PARENT_MANAGE,
         },
         Role.subject_teacher: {
             Perm.CLASS_READ,
@@ -347,3 +348,37 @@ def test_teacher_binding_without_year_ignored(db):
     bind(db, u.id, Role.subject_teacher, class_id=c)
     bs = load_bindings(db, u.id, UUID(YEAR_ID))
     assert sorted(bd.role for bd in bs) == [Role.dean, Role.subject_teacher]
+
+
+def test_parent_manage_homeroom_only():
+    holders = {r for r, perms in ROLE_PERMS.items() if Perm.PARENT_MANAGE in perms}
+    assert holders == {Role.homeroom_teacher}
+    assert CLASSROOM_PERMS[-1] == Perm.PARENT_MANAGE
+
+
+PARENT01_USER = "55555555-5555-5555-5555-555555555561"  # 种子家长,S0001 主家长
+
+
+def test_load_bindings_excludes_parents_by_default(db):
+    # 教师 / 管理端的判权不认家长绑定;只有身份语境(user_brief)显式要求才加载
+    assert load_bindings(db, UUID(PARENT01_USER), UUID(YEAR_ID)) == []
+    bs = load_bindings(db, UUID(PARENT01_USER), UUID(YEAR_ID), include_parents=True)
+    assert {bd.role for bd in bs} == {Role.primary_parent}
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/students/a0000001-0000-0000-0000-000000000001",
+        "/students/a0000001-0000-0000-0000-000000000001/growth-records",
+        "/students/a0000001-0000-0000-0000-000000000001/comments",
+        "/classes/44444444-4444-4444-4444-444444444444/classroom",
+        "/classes/44444444-4444-4444-4444-444444444444/students",
+        "/classes/44444444-4444-4444-4444-444444444444/attendance?date=2026-11-02",
+        "/classes/44444444-4444-4444-4444-444444444444/reviews",
+        "/classes/44444444-4444-4444-4444-444444444444/exams",
+    ],
+)
+def test_parent_token_forbidden_on_staff_endpoints(client, settings, path):
+    res = client.get(f"/api/v1{path}", headers=auth(settings, PARENT01_USER))
+    assert res.status_code == 403, path

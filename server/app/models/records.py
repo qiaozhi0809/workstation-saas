@@ -48,6 +48,7 @@ class Comment(Base):
     semester: Mapped[str] = mapped_column(Text)
     content: Mapped[str] = mapped_column(Text)
     generated_by_ai: Mapped[bool] = mapped_column(server_default=text("false"))
+    parent_visible: Mapped[bool] = mapped_column(server_default=text("true"))
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )

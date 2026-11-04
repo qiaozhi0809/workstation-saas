@@ -92,6 +92,18 @@ ACTION_LABELS: dict[str, str] = {
     # 通知
     "notice.send": "发送通知",
     "notice.recall": "撤回通知",
+    # 家长
+    "parent.manage": "管理家长",
+    "parent.create": "新建家长账号",
+    "parent.link": "关联家长",
+    "parent.primary": "设为主家长",
+    "parent.unlink": "解除家长关联",
+    "parent.reset": "重置家长密码",
+    "parent.view": "查看孩子信息",
+    "parent.archive": "归档家长账号",
+    "comment.share": "共享评语给家长",
+    "comment.unshare": "取消共享评语",
+    "student.parent_update": "家长修改家庭联系人",
     # 审计与其他权限(被拒访问的动作名就是权限点)
     "audit.read": "查看审计日志",
     "school.view": "查看全校概览",
@@ -109,6 +121,7 @@ _PREFIX_GROUPS: dict[str, tuple[str, ...]] = {
     "settings": ("settings.",),
     "year": ("year.",),
     "notice": ("notice.",),
+    "parent": ("parent.",),
 }
 
 _GROUP_NAMES: dict[str, str] = {
@@ -122,14 +135,21 @@ _GROUP_NAMES: dict[str, str] = {
     "settings": "学校设置",
     "year": "学年",
     "notice": "通知",
+    "parent": "家长",
 }
 
 
-def _by_prefix(prefixes: tuple[str, ...]) -> Callable[[str, bool], bool]:
-    return lambda action, success: action.startswith(prefixes)
+# 前缀属于别的组、但业务上归"家长"的动作:只落在家长组
+_PARENT_EXTRA = frozenset({"comment.share", "comment.unshare", "student.parent_update"})
+
+
+def _by_prefix(key: str, prefixes: tuple[str, ...]) -> Callable[[str, bool], bool]:
+    if key == "parent":
+        return lambda action, success: action.startswith(prefixes) or action in _PARENT_EXTRA
+    return lambda action, success: action.startswith(prefixes) and action not in _PARENT_EXTRA
 
 
 # (key, 中文名, 判定函数(action, success));顺序固定,denied 为所有 success=false
 GROUPS: list[tuple[str, str, Callable[[str, bool], bool]]] = [
-    (key, _GROUP_NAMES[key], _by_prefix(prefixes)) for key, prefixes in _PREFIX_GROUPS.items()
+    (key, _GROUP_NAMES[key], _by_prefix(key, prefixes)) for key, prefixes in _PREFIX_GROUPS.items()
 ] + [("denied", "被拒的访问", lambda action, success: not success)]

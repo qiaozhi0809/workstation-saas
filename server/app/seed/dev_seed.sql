@@ -264,3 +264,40 @@ CROSS JOIN generate_series('2026-10-12'::date, '2026-10-16'::date, '1 day') AS d
 -- 入班日拨回开学日(2026-09-01 学校时区零点):entered_at 默认取建库时刻,
 -- 10 月之后建库的环境里 2026-10 的考勤报告会因"入班日晚于记录日"而 expected=0
 UPDATE enrollments SET entered_at = '2026-08-31T16:00:00+00:00';
+
+-- M4a:家长账号(虚构姓名,密码均为 dev123,无需改密)
+-- 13800000061 李家长:S0001(三年二班)、S0017(四年一班)的主家长;
+-- 13800000062 周家长:S0001 的次要家长;teacher04 孙老师同时是 S0002 的主家长(不新建账号)
+INSERT INTO users (id, school_id, login_name, password_hash, display_name, phone, must_change_password) VALUES
+  ('55555555-5555-5555-5555-555555555561', '11111111-1111-1111-1111-111111111111',
+   '13800000061', crypt('dev123', gen_salt('bf', 10)), '李家长', '13800000061', false),
+  ('55555555-5555-5555-5555-555555555562', '11111111-1111-1111-1111-111111111111',
+   '13800000062', crypt('dev123', gen_salt('bf', 10)), '周家长', '13800000062', false);
+
+INSERT INTO parents (id, user_id, name, phone) VALUES
+  ('77777777-7777-7777-7777-777777777761', '55555555-5555-5555-5555-555555555561', '李家长', '13800000061'),
+  ('77777777-7777-7777-7777-777777777762', '55555555-5555-5555-5555-555555555562', '周家长', '13800000062'),
+  ('77777777-7777-7777-7777-777777777763', '55555555-5555-5555-5555-555555555541', '孙老师', '13800000004');
+
+INSERT INTO parent_links (parent_id, student_id, relation, is_primary)
+SELECT v.parent_id::uuid, s.id, v.relation, v.is_primary
+FROM (VALUES
+  ('77777777-7777-7777-7777-777777777761', 'S0001', '母亲', true),
+  ('77777777-7777-7777-7777-777777777761', 'S0017', '母亲', true),
+  ('77777777-7777-7777-7777-777777777762', 'S0001', '父亲', false),
+  ('77777777-7777-7777-7777-777777777763', 'S0002', '父亲', true)
+) AS v(parent_id, mk, relation, is_primary)
+JOIN students s ON s.mk = v.mk;
+
+INSERT INTO role_bindings (user_id, role_type, scope, academic_year_id)
+SELECT v.user_id::uuid, v.role_type, jsonb_build_object('student_id', s.id), NULL
+FROM (VALUES
+  ('55555555-5555-5555-5555-555555555561', 'primary_parent',   'S0001'),
+  ('55555555-5555-5555-5555-555555555561', 'primary_parent',   'S0017'),
+  ('55555555-5555-5555-5555-555555555562', 'secondary_parent', 'S0001'),
+  ('55555555-5555-5555-5555-555555555541', 'primary_parent',   'S0002')
+) AS v(user_id, role_type, mk)
+JOIN students s ON s.mk = v.mk;
+
+-- S0001 已有 M2c 种子里的"表扬"成长记录(f0000001);S0002 已有手写评语(parent_visible 默认 true)。
+-- 不再新增,避免改变 test_comments / test_growth 对种子条数的断言。
