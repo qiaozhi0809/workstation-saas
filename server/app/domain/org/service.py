@@ -12,6 +12,7 @@ from app.domain.org.schemas import (
     ClassInput,
     GradeAdmin,
     GradeInput,
+    PersonBrief,
     SchoolInfo,
     StaffBrief,
     SubjectTeachers,
@@ -462,3 +463,27 @@ def delete_class(
     )
     db.delete(cls)
     db.commit()
+
+
+PEOPLE_LIMIT = 20
+
+
+def list_people(db: Session, school_id: UUID, q: str | None) -> list[PersonBrief]:
+    """本校在职教师(有 teachers 行且 active),供任命选人;q 按姓名/登录名包含匹配。"""
+    sql = (
+        "SELECT u.id, u.display_name, u.login_name, t.subjects FROM users u "
+        "JOIN teachers t ON t.user_id = u.id "
+        "WHERE u.school_id = :sid AND u.status = 'active'"
+    )
+    params: dict[str, object] = {"sid": school_id, "lim": PEOPLE_LIMIT}
+    kw = (q or "").strip()
+    if kw:
+        sql += " AND (u.display_name ILIKE :kw ESCAPE '\\' OR u.login_name ILIKE :kw ESCAPE '\\')"
+        esc = kw.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        params["kw"] = f"%{esc}%"
+    sql += " ORDER BY u.display_name, u.login_name LIMIT :lim"
+    rows = db.execute(text(sql), params).all()
+    return [
+        PersonBrief(user_id=r[0], name=r[1], login_name=r[2], subjects=list(r[3] or []))
+        for r in rows
+    ]

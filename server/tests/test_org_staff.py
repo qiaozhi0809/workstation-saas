@@ -3,6 +3,7 @@ from uuid import UUID
 from sqlalchemy import text
 
 from app.models import RoleBinding, SchoolClass
+from tests.factories import make_teacher_account, make_user
 from tests.helpers import audit_rows, auth
 from tests.seed_ids import CLASS_ID, GRADE_ID, SCHOOL_ID, SUBJECT_USER_ID, TEACHER_USER_ID
 from tests.test_seating import payload
@@ -268,3 +269,70 @@ def test_end_role_takes_advisory_lock_for_account_roles(client, db, settings):
     lock_at = [i for i, s in enumerate(statements) if "pg_advisory_xact_lock" in s]
     count_at = [i for i, s in enumerate(statements) if "count(distinct" in s.lower()]
     assert len(lock_at) == 1 and count_at and lock_at[0] < count_at[0]
+
+
+def _people(client, settings, q=None, actor=DEAN):
+    params = {} if q is None else {"q": q}
+    return client.get(f"{API}/org/people", params=params, headers=auth(settings, actor))
+
+
+def test_people_requires_org_manage(client, db, settings):
+    assert _people(client, settings, actor=DEAN).status_code == 200
+    assert _people(client, settings, actor=TEACHER_USER_ID).status_code == 403
+    denied = [r for r in _actions(db, SCHOOL_ID, "org.manage") if not r.success]
+    assert len(denied) == 1
+
+
+def test_people_lists_active_teachers_only(client, db, settings):
+    frozen = make_teacher_account(db, SCHOOL_ID, "frozen_t")
+    frozen.display_name = "冻结老师"
+    frozen.status = "frozen"
+    no_row = make_user(db, "no_teacher_row", "无教师行")
+    no_row.school_id = UUID(SCHOOL_ID)
+    db.flush()
+    rows = _people(client, settings).json()
+    ids = {r["user_id"] for r in rows}
+    assert TEACHER_USER_ID in ids and str(frozen.id) not in ids and str(no_row.id) not in ids
+    for r in rows:
+        assert set(r) == {"user_id", "name", "login_name", "subjects"}
+        assert isinstance(r["subjects"], list)
+    names = [r["name"] for r in rows]
+    assert names == sorted(names)
+
+
+def test_people_other_school_excluded(client, db, settings):
+    sid = db.execute(text("INSERT INTO schools (name) VALUES ('别校') RETURNING id")).scalar_one()
+    other = make_teacher_account(db, sid, "other_school_t")
+    ids = {r["user_id"] for r in _people(client, settings).json()}
+    assert str(other.id) not in ids
+
+
+def test_people_query_and_subjects(client, db, settings):
+    u = make_teacher_account(db, SCHOOL_ID, "zz_find_me")
+    u.display_name = "查找甲"
+    db.execute(text("UPDATE teachers SET subjects = '{语文,数学}' WHERE user_id = :u"), {"u": u.id})
+    db.flush()
+    rows = _people(client, settings, "查找").json()
+    assert [r["user_id"] for r in rows] == [str(u.id)]
+    assert rows[0]["subjects"] == ["语文", "数学"] and rows[0]["login_name"] == "zz_find_me"
+    assert [r["user_id"] for r in _people(client, settings, "ZZ_FIND").json()] == [str(u.id)]
+    assert _people(client, settings, "zz_nomatch_xx").json() == []
+
+
+def test_people_query_escapes_like_wildcards(client, db, settings):
+    a = make_teacher_account(db, SCHOOL_ID, "wild_a%b")
+    make_teacher_account(db, SCHOOL_ID, "wild_axb")
+    make_teacher_account(db, SCHOOL_ID, "under_c")
+    make_teacher_account(db, SCHOOL_ID, "underXc")
+    assert [r["user_id"] for r in _people(client, settings, "a%b").json()] == [str(a.id)]
+    got = {r["login_name"] for r in _people(client, settings, "r_c").json()}
+    assert got == {"under_c"}
+    pct = _people(client, settings, "%").json()
+    assert [r["user_id"] for r in pct] == [str(a.id)]
+
+
+def test_people_max_20(client, db, settings):
+    for i in range(25):
+        make_teacher_account(db, SCHOOL_ID, f"bulk_{i:02d}")
+    assert len(_people(client, settings).json()) == 20
+    assert len(_people(client, settings, "bulk_").json()) == 20

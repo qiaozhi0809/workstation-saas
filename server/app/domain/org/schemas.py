@@ -99,3 +99,10 @@ class AdminRoleInput(BaseModel):
     user_id: UUID
     role: AdminRoleType
     grade_id: UUID | None = None
+
+
+class PersonBrief(BaseModel):
+    user_id: UUID
+    name: str
+    login_name: str
+    subjects: list[str]

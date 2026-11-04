@@ -17,6 +17,7 @@ from app.domain.org.schemas import (
     ClassInput,
     GradeAdmin,
     GradeInput,
+    PersonBrief,
     SchoolInfo,
     StaffInput,
     YearAdmin,
@@ -208,3 +209,11 @@ def end_role(binding_id: UUID, request: Request, user: Auth, bindings: Bind, db:
     _account_gate(db, request, user, bindings, bd.role_type)
     staff.end_role(db, user.school_id, bd, now=clock.utc_now(), actor_id=user.id, request=request)
     return Response(status_code=204)
+
+
+@router.get("/org/people")
+def list_people(
+    request: Request, user: Auth, bindings: Bind, db: Db, q: str | None = None
+) -> list[PersonBrief]:
+    _org(db, request, user, bindings)
+    return service.list_people(db, user.school_id, q)
