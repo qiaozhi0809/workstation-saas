@@ -71,7 +71,7 @@
 | M2d 桌椅排列 | ✅ 已完成(tag `v0.4.5-m2d-desks`) | 12 task,文件:[`docs/superpowers/plans/2026-11-03-M2d-桌椅排列.md`](docs/superpowers/plans/2026-11-03-M2d-桌椅排列.md)、[范围清单](docs/superpowers/plans/2026-11-03-M2d-范围清单.md) |
 | M3a 管理底座与看全校 | ✅ 已完成(tag `v0.5.0-m3a-admin-org`,合并后由协调会话打) | 18 task,管理端壳、组织架构、账号、学校设置、今日关注、全校看板;文件:[M3a 计划](docs/superpowers/plans/2026-11-03-M3a-管理底座与看全校.md) |
 | M3b 联考报表、通知与学年 | ✅ 已完成(tag `v0.5.1-m3b-reports-notify`,合并后由协调会话打) | 18 task(1–18):年级联考与成绩汇总、月度考勤报告、审计查询、AI 使用与配置、通知与 WebSocket 实时推送、学年升级向导、往年班级只读查看;文件:[M3b 计划](docs/superpowers/plans/2026-11-03-M3b-联考报表通知与学年.md);M3 整体范围:[范围清单](docs/superpowers/plans/2026-11-03-M3-范围清单.md) |
-| M4 家长角色 | ⏳ 未开始 | plan 待写 |
+| M4 家长角色 | ⏳ 计划已写,待审阅 | 拆 M4a 家长账号与看孩子(11 task)/ M4b 通知到家长与回执(7 task);文件:[范围清单](docs/superpowers/plans/2026-11-04-M4-范围清单.md)、[M4a 计划](docs/superpowers/plans/2026-11-04-M4a-家长账号与看孩子.md)、[M4b 计划](docs/superpowers/plans/2026-11-04-M4b-通知到家长与回执.md) |
 | M5 监控 + 部署 | ⏳ 未开始 | plan 待写 |
 
 ---
