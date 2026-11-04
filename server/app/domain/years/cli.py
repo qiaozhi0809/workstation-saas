@@ -31,6 +31,15 @@ _DATA_LABELS = {
     "comments": "评语 {} 条",
     "ai_chats": "AI 对话 {} 个",
     "new_students": "新增学生 {} 人",
+    "grade_exams": "年级联考 {} 场",
+    "class_boards": "看板改动 {} 处",
+    "seats": "座位调整 {} 个班",
+    "class_roles": "班干部变动 {} 人",
+    "transfers": "学生转出 {} 人",
+    "new_grades": "手动新建的年级 {} 个",
+    "new_classes": "手动新建的班级 {} 个",
+    "new_assignments": "手动添加的任职 {} 条",
+    "new_bindings": "手动添加的管理岗任命 {} 条",
 }
 
 

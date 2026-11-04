@@ -98,6 +98,39 @@ def test_replace_homeroom_ends_old_binding(client, db, settings):
     assert open_homerooms == 1
 
 
+def test_homeroom_unique_index_conflict_is_409_homeroom_taken(client, db, settings, monkeypatch):
+    """班级行锁之外的最后一道防线:并发请求抢先提交了班主任,本请求的"结束旧班主任"没看到它,
+    插入时撞上部分唯一索引 → 409 HOMEROOM_TAKEN(而不是 500),且什么都没写进去。"""
+    from app.domain.org import staff as staff_mod
+
+    real_text = staff_mod.text
+
+    def blind_to_open_homeroom(sql, *args, **kwargs):
+        # 让"找出当前在任班主任并结束它"这条查询读不到行,就像对方的提交对本事务尚不可见
+        if "ta.identity = 'homeroom'" in str(sql):
+            sql = f"{sql} AND false"
+        return real_text(sql, *args, **kwargs)
+
+    monkeypatch.setattr(staff_mod, "text", blind_to_open_homeroom)
+    res = _staff(client, settings, TEACHER04, "homeroom")
+    assert res.status_code == 409, res.text
+    err = res.json()["error"]
+    assert err["code"] == "HOMEROOM_TAKEN"
+    assert err["message"] == "该班已有班主任,请刷新后重试"
+
+    monkeypatch.undo()
+    open_homerooms = db.execute(
+        text(
+            "SELECT t.user_id FROM teacher_assignments ta JOIN teachers t ON t.id = ta.teacher_id"
+            " WHERE ta.class_id = :c AND ta.identity = 'homeroom' AND ta.ended_at IS NULL"
+        ),
+        {"c": CLASS_ID},
+    ).all()
+    assert [str(r.user_id) for r in open_homerooms] == [TEACHER_USER_ID]
+    assert CLASS_ID in [c["id"] for c in _my_classes(client, settings, TEACHER_USER_ID)]
+    assert CLASS_ID not in [c["id"] for c in _my_classes(client, settings, TEACHER04)]
+
+
 def test_duplicate_staff_rejected(client, settings):
     assert _staff(client, settings, TEACHER05, "subject", "语文").status_code == 200
     dup = _staff(client, settings, TEACHER05, "subject", "语文")

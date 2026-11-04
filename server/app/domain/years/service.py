@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
+from fastapi import Request
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
@@ -21,8 +22,9 @@ HAS_DATA = "UPGRADE_HAS_DATA"
 
 class UpgradeError(Exception):
     """方案不能用。`details` 指明出问题的位置:
-    `{"section": "classes"|"students"|"new_classes"|"new_year", "index": int, "field": str}`
-    (`new_year` 没有 index;STALE 可无 details;可附带其他说明键)。"""
+    `{"section": "classes"|"students"|"new_classes"|"grade_heads"|"new_year", "index": int,
+    "field": str}`(`new_year` 没有 index;`grade_heads` 的 field 是 `grade_name` 或
+    `user_ids`;STALE 可无 details;可附带其他说明键)。"""
 
     def __init__(self, code: str, message: str, details: dict[str, Any] | None = None):
         super().__init__(message)
@@ -163,6 +165,37 @@ def check_plan(db: Session, school_id: UUID, plan: UpgradePlan) -> PlanContext:
         tid = n.homeroom_teacher_id
         if tid is not None and tid not in ctx.teacher_names:
             raise _bad("new_classes", j, "homeroom_teacher_id", "找不到指定的班主任老师")
+
+    # 年级组长(显式指定时)
+    if plan.grade_heads is not None:
+        new_grades = {c.to_grade_name for c in plan.classes if c.action == "promote"}
+        new_grades |= {n.grade_name for n in plan.new_classes}
+        wanted_users = {u for gh in plan.grade_heads for u in gh.user_ids}
+        active_users: set[UUID] = set()
+        if wanted_users:
+            active_users = {
+                r.id
+                for r in db.execute(
+                    text(
+                        "SELECT id FROM users WHERE school_id = :s AND status = 'active'"
+                        " AND id = ANY(:ids)"
+                    ),
+                    {"s": school_id, "ids": list(wanted_users)},
+                )
+            }
+        seen_grades: set[str] = set()
+        for i, gh in enumerate(plan.grade_heads):
+            if gh.grade_name not in new_grades:
+                raise _bad(
+                    "grade_heads", i, "grade_name", f"新学年没有 {gh.grade_name},不能指定组长"
+                )
+            if gh.grade_name in seen_grades:
+                raise _bad("grade_heads", i, "grade_name", f"{gh.grade_name} 的组长列了两次")
+            seen_grades.add(gh.grade_name)
+            if any(u not in active_users for u in gh.user_ids):
+                raise _bad(
+                    "grade_heads", i, "user_ids", f"{gh.grade_name} 的组长里有不存在或已停用的账号"
+                )
 
     # 学生项
     by_class = {c.from_class_id: c for c in plan.classes}
@@ -313,14 +346,38 @@ def _uuids(raw: list[str]) -> list[UUID]:
     return [UUID(x) for x in raw]
 
 
-def apply(db: Session, school_id: UUID, plan: UpgradePlan, *, now: datetime) -> YearUpgrade:
+def _serialize_upgrades(db: Session, school_id: UUID) -> None:
+    """apply / rollback 的第一步:同校的学年升级与回滚串行。
+
+    先取事务级咨询锁(不依赖谓词,等锁期间行变了也不会被静默跳过),再锁进行中的学年行。
+    学年行用 FOR NO KEY UPDATE 而不是 FOR UPDATE:持班级行锁的写入方(任命、加学生)随后
+    插入带 academic_year_id 外键的行,外键会对学年行取 FOR KEY SHARE,与 FOR UPDATE 冲突,
+    而与 FOR NO KEY UPDATE 相容,锁顺序因此统一为"先班级、后学年",不再死锁。
+    """
+    db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:k)::bigint)"),
+        {"k": f"year-upgrade:{school_id}"},
+    )
+    db.execute(
+        text("SELECT id FROM academic_years WHERE school_id = :s AND is_active FOR NO KEY UPDATE"),
+        {"s": school_id},
+    ).all()
+
+
+def apply(
+    db: Session,
+    school_id: UUID,
+    plan: UpgradePlan,
+    *,
+    now: datetime,
+    actor_id: UUID | None = None,
+    request: Request | None = None,
+    via: str = "cli",
+) -> YearUpgrade:
     """在一个事务里执行升级并 commit;历史事件(考勤、点评、考试……)一行不动。"""
     from app.domain.years.suggest import grade_index  # suggest 反过来依赖本模块
 
-    db.execute(
-        text("SELECT id FROM academic_years WHERE school_id = :s AND is_active FOR UPDATE"),
-        {"s": school_id},
-    ).all()
+    _serialize_upgrades(db, school_id)
     # 同一学年的在读班也锁上(按 id 排序防死锁),与 lock_class 的名册写入串行
     db.execute(
         text(
@@ -450,6 +507,7 @@ def apply(db: Session, school_id: UUID, plan: UpgradePlan, *, now: datetime) -> 
         "left": 0,
     }
     new_enrollment_ids: list[UUID] = []
+    new_enrollment_roles: dict[str, str | None] = {}
     insert_enr = text(
         "INSERT INTO enrollments (student_id, class_id, academic_year_id, seat_row, seat_col,"
         " seat_locked, class_role, entered_at, status)"
@@ -478,21 +536,22 @@ def apply(db: Session, school_id: UUID, plan: UpgradePlan, *, now: datetime) -> 
             status_of["promoted"].append(r.id)
             counts["promoted"] += 1
         if target is not None:
-            new_enrollment_ids.append(
-                db.execute(
-                    insert_enr,
-                    {
-                        "st": r.student_id,
-                        "c": target,
-                        "y": new_year_id,
-                        "r": r.seat_row if keep_seat else None,
-                        "cl": r.seat_col if keep_seat else None,
-                        "lk": r.seat_locked if keep_seat else False,
-                        "role": r.class_role if keep_seat else None,
-                        "now": now,
-                    },
-                ).scalar_one()
-            )
+            role = r.class_role if keep_seat else None
+            new_id = db.execute(
+                insert_enr,
+                {
+                    "st": r.student_id,
+                    "c": target,
+                    "y": new_year_id,
+                    "r": r.seat_row if keep_seat else None,
+                    "cl": r.seat_col if keep_seat else None,
+                    "lk": r.seat_locked if keep_seat else False,
+                    "role": role,
+                    "now": now,
+                },
+            ).scalar_one()
+            new_enrollment_ids.append(new_id)
+            new_enrollment_roles[str(new_id)] = role
     for status, ids in status_of.items():
         if ids:
             db.execute(
@@ -607,10 +666,13 @@ def apply(db: Session, school_id: UUID, plan: UpgradePlan, *, now: datetime) -> 
     grade_successor = {
         old_g: grade_ids[min(v, key=lambda n: (-v[n], wanted[n], n))] for old_g, v in votes.items()
     }
+    explicit_heads = plan.grade_heads is not None
     for b in old_bindings:
         scope = dict(b.scope or {})
         if "class_id" in scope:
             continue
+        if b.role_type == "grade_head" and explicit_heads:
+            continue  # 显式指定了组长:旧绑定一个都不复制
         if scope.get("grade_id"):
             # 年级作用域的绑定跟届走;整个年级毕业(或不在方案里)则不复制
             target = grade_successor.get(UUID(scope["grade_id"]))
@@ -618,6 +680,18 @@ def apply(db: Session, school_id: UUID, plan: UpgradePlan, *, now: datetime) -> 
                 continue
             scope["grade_id"] = str(target)
         new_binding_ids.append(_insert_binding(db, b.user_id, b.role_type, scope, new_year_id, now))
+    for gh in plan.grade_heads or []:
+        for user_id in dict.fromkeys(gh.user_ids):  # 同一人在同一年级只建一条
+            new_binding_ids.append(
+                _insert_binding(
+                    db,
+                    user_id,
+                    "grade_head",
+                    {"grade_id": str(grade_ids[gh.grade_name])},
+                    new_year_id,
+                    now,
+                )
+            )
 
     # 7. 记录
     def s(values: list[UUID]) -> list[str]:
@@ -628,6 +702,7 @@ def apply(db: Session, school_id: UUID, plan: UpgradePlan, *, now: datetime) -> 
         "new_grade_ids": s(list(grade_ids.values())),
         "new_class_ids": s(new_class_ids),
         "new_enrollment_ids": s(new_enrollment_ids),
+        "new_enrollment_roles": new_enrollment_roles,
         "old_enrollment_ids": s([r.id for r in old_rows]),
         "old_class_ids": s(old_class_ids),
         "new_assignment_ids": s(new_assignment_ids),
@@ -649,12 +724,13 @@ def apply(db: Session, school_id: UUID, plan: UpgradePlan, *, now: datetime) -> 
     # 8. 审计
     record(
         db,
-        user_id=None,
+        user_id=actor_id,
         action="year.upgrade",
         success=True,
         object_type="academic_year",
         object_id=str(new_year_id),
-        extra={**counts, "via": "cli"},
+        request=request,
+        extra={**counts, "via": via},
     )
     db.commit()
     return up
@@ -690,8 +766,108 @@ def latest_rollbackable(db: Session, school_id: UUID, *, lock: bool = False) -> 
     return up
 
 
-def rollback(db: Session, school_id: UUID, *, now: datetime) -> YearUpgrade:
+def _edits_since_upgrade(
+    db: Session, up: YearUpgrade, new_classes: list[UUID], new_enrollments: list[UUID]
+) -> dict[str, int]:
+    """升级之后,新学年里被人动过的东西:看板、座位、班干部、转出、手动新建的年级 / 班级 / 任职 /
+    管理岗绑定、年级联考。非零才返回。"""
+    sm = up.summary
+    found: dict[str, int] = {}
+    cs = {"cs": new_classes}
+    # apply 不创建看板行,所以新班上有任何看板行都是升级后被人保存过的;不拿 updated_at 去比
+    # 应用时钟,免得库时钟与应用时钟有偏差时漏判。
+    boards = db.execute(
+        text("SELECT count(*) FROM class_boards WHERE class_id = ANY(cast(:cs as uuid[]))"), cs
+    ).scalar_one()
+    if boards:
+        found["class_boards"] = boards
+    seats = db.execute(
+        text(
+            "SELECT count(*) FROM classes WHERE id = ANY(cast(:cs as uuid[])) AND seat_version > 0"
+        ),
+        cs,
+    ).scalar_one()
+    if seats:
+        found["seats"] = seats
+    recorded: dict[str, str | None] | None = sm.get("new_enrollment_roles")
+    if recorded is not None:  # 没有这个键的旧升级记录跳过
+        changed = sum(
+            1
+            for r in db.execute(
+                text("SELECT id, class_role FROM enrollments WHERE id = ANY(cast(:es as uuid[]))"),
+                {"es": new_enrollments},
+            )
+            if recorded.get(str(r.id)) != r.class_role
+        )
+        if changed:
+            found["class_roles"] = changed
+    transfers = db.execute(
+        text(
+            "SELECT count(*) FROM enrollments"
+            " WHERE id = ANY(cast(:es as uuid[])) AND status <> 'active'"
+        ),
+        {"es": new_enrollments},
+    ).scalar_one()
+    if transfers:
+        found["transfers"] = transfers
+    # 升级之后在新学年里手动新建的年级 / 班级 / 任职 / 管理岗绑定:不在升级记录里,删学年时会
+    # 被级联静默抹掉(M3a 起组织架构页可以写这些)
+    year = {"y": UUID(sm["new_year_id"])}
+    for key, sql, ids in (
+        (
+            "new_grades",
+            "SELECT count(*) FROM grades WHERE academic_year_id = :y"
+            " AND NOT (id = ANY(cast(:ids as uuid[])))",
+            sm["new_grade_ids"],
+        ),
+        (
+            "new_classes",
+            "SELECT count(*) FROM classes WHERE academic_year_id = :y"
+            " AND NOT (id = ANY(cast(:ids as uuid[])))",
+            sm["new_class_ids"],
+        ),
+        (
+            "new_assignments",
+            "SELECT count(*) FROM teacher_assignments WHERE academic_year_id = :y"
+            " AND NOT (id = ANY(cast(:ids as uuid[])))",
+            sm["new_assignment_ids"],
+        ),
+        (
+            # 班级作用域的绑定总是跟着任职走(已由 new_assignments 计数),这里只数管理岗
+            "new_bindings",
+            "SELECT count(*) FROM role_bindings WHERE academic_year_id = :y"
+            " AND NOT (scope ? 'class_id') AND NOT (id = ANY(cast(:ids as uuid[])))",
+            sm["new_binding_ids"],
+        ),
+    ):
+        n = db.execute(text(sql), {**year, "ids": _uuids(ids)}).scalar_one()
+        if n:
+            found[key] = n
+    grade_exams = db.execute(
+        text(
+            "SELECT count(*) FROM grade_exams"
+            " WHERE academic_year_id = :y OR grade_id = ANY(cast(:gs as uuid[]))"
+        ),
+        {"y": UUID(sm["new_year_id"]), "gs": _uuids(sm["new_grade_ids"])},
+    ).scalar_one()
+    if grade_exams:
+        found["grade_exams"] = grade_exams
+    return found
+
+
+def rollback(
+    db: Session,
+    school_id: UUID,
+    *,
+    now: datetime,
+    actor_id: UUID | None = None,
+    request: Request | None = None,
+    via: str = "cli",
+) -> YearUpgrade:
     """回滚最近一次未回滚的升级;新学年已有数据时拒绝。"""
+    # 与 apply 串行,否则 rollback 可能在 apply 提交前就选定了要回滚的升级,随后与 apply
+    # 互相等锁(死锁)或回滚掉已被后续升级用作起点的学年。
+    _serialize_upgrades(db, school_id)
     up = latest_rollbackable(db, school_id, lock=True)
     sm = up.summary
     new_classes = _uuids(sm["new_class_ids"])
@@ -711,15 +887,17 @@ def rollback(db: Session, school_id: UUID, *, now: datetime) -> YearUpgrade:
         ).scalar_one()
         if n:
             found[table] = n
+    # 整个新学年里不在升级记录中的注册(含升级后手动新建的班里的学生)
     extra_students = db.execute(
         text(
-            "SELECT count(*) FROM enrollments WHERE class_id = ANY(cast(:cs as uuid[]))"
+            "SELECT count(*) FROM enrollments WHERE academic_year_id = :y"
             " AND NOT (id = ANY(cast(:es as uuid[])))"
         ),
-        {"cs": new_classes, "es": new_enrollments},
+        {"y": UUID(sm["new_year_id"]), "es": new_enrollments},
     ).scalar_one()
     if extra_students:
         found["new_students"] = extra_students
+    found.update(_edits_since_upgrade(db, up, new_classes, new_enrollments))
     if found:
         raise UpgradeError(HAS_DATA, "新学年已经产生数据,不能回滚", found)
 
@@ -767,12 +945,13 @@ def rollback(db: Session, school_id: UUID, *, now: datetime) -> YearUpgrade:
     )
     record(
         db,
-        user_id=None,
+        user_id=actor_id,
         action="year.rollback",
         success=True,
         object_type="academic_year",
         object_id=sm["new_year_id"],
-        extra={**sm["counts"], "via": "cli"},
+        request=request,
+        extra={**sm["counts"], "via": via},
     )
     db.commit()
     db.refresh(up)
