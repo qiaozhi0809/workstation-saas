@@ -5,6 +5,7 @@
 """
 
 import threading
+import time
 from collections.abc import Callable, Iterator
 from datetime import UTC, date, datetime
 from typing import Any
@@ -176,3 +177,81 @@ def test_two_rollbacks(clean):
     with Session(clean) as s:
         apply(s, SCHOOL, _plan(clean), now=datetime.now(UTC))
     assert _assert_consistent(clean) == "2027-2028"
+
+
+def _wait_until_blocked(engine: Engine) -> None:
+    """轮询 pg_blocking_pids,直到有会话被别的会话的锁挡住(确认对方已在等锁,不靠 sleep)。
+    pg_stat_activity.query 在等锁时可能还是上一条语句,所以不按语句文本过滤。"""
+    deadline = time.monotonic() + WAIT
+    with engine.connect() as conn:
+        while time.monotonic() < deadline:
+            n = conn.execute(
+                text(
+                    "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database()"
+                    " AND pid <> pg_backend_pid() AND cardinality(pg_blocking_pids(pid)) > 0"
+                )
+            ).scalar_one()
+            if n:
+                return
+            time.sleep(0.02)
+    raise AssertionError("没有等到任何会话被锁挡住")
+
+
+def test_apply_does_not_deadlock_with_a_class_locked_writer(clean):
+    """持班级行锁的写入方(任命、加学生)随后要往带学年外键的表里插行:apply 先锁了学年行
+    再去等班级锁时,二者不能互相等待(外键的 KEY SHARE 与学年行的 FOR UPDATE 会冲突)。"""
+    class_id = "44444444-4444-4444-4444-444444444444"
+    teacher04 = "66666666-6666-6666-6666-666666666641"
+    holding, release = threading.Event(), threading.Event()
+    result: dict[str, Any] = {}
+
+    def writer() -> None:
+        with Session(clean) as s:
+            try:
+                s.execute(text("SELECT id FROM classes WHERE id = :c FOR UPDATE"), {"c": class_id})
+                holding.set()
+                assert release.wait(WAIT)
+                s.execute(
+                    text(
+                        "INSERT INTO teacher_assignments"
+                        " (teacher_id, class_id, academic_year_id, identity)"
+                        " VALUES (:t, :c, :y, 'assistant')"
+                    ),
+                    {"t": teacher04, "c": class_id, "y": YEAR_ID},
+                )
+                s.commit()
+                result["writer"] = "ok"
+            except Exception as e:  # noqa: BLE001 — 结果交给断言
+                s.rollback()
+                result["writer"] = e
+
+    def upgrader() -> None:
+        with Session(clean) as s:
+            try:
+                result["apply"] = apply(s, SCHOOL, plan, now=datetime.now(UTC))
+            except Exception as e:  # noqa: BLE001
+                s.rollback()
+                result["apply"] = e
+
+    plan = _plan(clean)
+    tw = threading.Thread(target=writer)
+    tw.start()
+    assert holding.wait(WAIT)
+    tu = threading.Thread(target=upgrader)
+    tu.start()
+    _wait_until_blocked(clean)  # apply 已拿到学年行锁,正等班级锁
+    release.set()
+    tw.join(WAIT)
+    tu.join(WAIT)
+    try:
+        assert not tw.is_alive() and not tu.is_alive(), "线程没有在限时内结束(疑似死锁)"
+        assert result["writer"] == "ok", result["writer"]
+        assert not isinstance(result["apply"], Exception), result["apply"]
+        assert _assert_consistent(clean) == "2027-2028"
+    finally:
+        with Session(clean) as s:
+            s.execute(
+                text("DELETE FROM teacher_assignments WHERE teacher_id = :t AND class_id = :c"),
+                {"t": teacher04, "c": class_id},
+            )
+            s.commit()

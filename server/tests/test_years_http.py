@@ -169,6 +169,32 @@ def test_invalid_plan_details(client, db, settings):
     assert db.execute(text("SELECT count(*) FROM year_upgrades")).scalar_one() == 0
 
 
+def test_structural_errors_map_to_plan_invalid(client, settings):
+    """pydantic 结构校验失败也要给出 section/index/field,向导才能跳到对应行并标红。"""
+    plan = _suggest(client, settings)
+    good = {"grade_name": "四年级", "name": "四年三班", "seat_rows": 7, "seat_cols": 4}
+    bad = {"grade_name": "四年级", "name": "四年四班", "desk_size": 2, "seat_cols": 3}
+    plan["new_classes"] = [good, bad]
+    _bad(client, settings, plan, section="new_classes", index=1, field="seat_cols")
+
+    plan = _suggest(client, settings)
+    plan["students"] = [{"enrollment_id": str(uuid4()), "action": "repeat"}]
+    _bad(client, settings, plan, section="students", index=0, field="to")
+
+    plan = _suggest(client, settings)
+    plan["new_year"]["end_date"] = "2020-01-01"
+    res = _post(client, settings, "/preview", plan)
+    err = _error(res, 400, "UPGRADE_PLAN_INVALID")
+    assert err["details"]["section"] == "new_year"
+
+    # 同一条校验在执行端点上也一样
+    plan = _suggest(client, settings)
+    plan["new_classes"] = [bad]
+    res = _post(client, settings, "", plan)
+    err = _error(res, 400, "UPGRADE_PLAN_INVALID")
+    assert (err["details"]["section"], err["details"]["field"]) == ("new_classes", "seat_cols")
+
+
 def test_bad_request_body_is_400(client, settings):
     res = _post(client, settings, "/preview", {"version": 2})
     _error(res, 400, "BAD_REQUEST")

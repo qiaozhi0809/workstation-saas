@@ -1239,10 +1239,17 @@ def test_rollback_unchanged_new_year_succeeds(db):
     assert _snapshot(db) == before
 
 
+def test_rollback_board_check_does_not_depend_on_clocks(db):
+    """应用时钟比库时钟快时,升级后保存的看板也必须被发现(不能拿两个时钟互相比)。"""
+    apply(db, SCHOOL, _seed_plan(db), now=datetime.now(UTC) + timedelta(hours=1))
+    (new_cls,) = _active_classes(db)
+    _board_for(db, new_cls.id)
+    _rollback_blocked(db, class_boards=1)
+
+
 @pytest.mark.parametrize("kind", ["class_boards", "seats", "class_roles", "transfers"])
 def test_rollback_blocked_by_board_seat_role_transfer(db, kind):
-    # 执行时间取一小时前:看板行的 updated_at 是库里的事务时间,必须晚于它
-    up = apply(db, SCHOOL, _seed_plan(db), now=datetime.now(UTC) - timedelta(hours=1))
+    up = apply(db, SCHOOL, _seed_plan(db), now=datetime.now(UTC))
     (new_cls,) = _active_classes(db)
     new_enr = [UUID(x) for x in up.summary["new_enrollment_ids"]]
     if kind == "class_boards":

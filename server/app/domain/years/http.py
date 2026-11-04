@@ -5,11 +5,12 @@
 """
 
 from datetime import datetime
-from typing import Annotated, NoReturn
+from typing import Annotated, Any, NoReturn
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel
+from fastapi import APIRouter, Body, Depends, Request
+from fastapi.encoders import jsonable_encoder
+from pydantic import BaseModel, ValidationError
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -63,6 +64,45 @@ def _raise(e: UpgradeError) -> NoReturn:
     raise ApiError(_STATUS.get(e.code, 400), e.code, e.message, e.details) from e
 
 
+_SECTIONS = frozenset({"classes", "students", "new_classes", "grade_heads", "new_year"})
+
+
+def _parse_plan(raw: dict[str, Any]) -> UpgradePlan:
+    """把请求体解析成方案。结构校验失败时定位到 section / index / field 并按 400
+    `UPGRADE_PLAN_INVALID` 返回(与服务层校验同形),向导据此跳到对应步骤与行;
+    定位不到具体条目的(如 version 不对)仍是通用的 400 `BAD_REQUEST`。"""
+    try:
+        return UpgradePlan.model_validate(raw)
+    except ValidationError as exc:
+        errors = exc.errors()
+        loc = errors[0]["loc"]
+        if loc and loc[0] in _SECTIONS:
+            details: dict[str, Any] = {"section": loc[0]}
+            rest = list(loc[1:])
+            if loc[0] == "new_year":
+                details["field"] = str(rest[0]) if rest else ""
+            else:
+                if rest and isinstance(rest[0], int):
+                    details["index"] = rest.pop(0)
+                if rest:
+                    details["field"] = str(rest[0])
+                elif "每排座位数" in errors[0]["msg"]:
+                    details["field"] = "seat_cols"  # 模型级校验没有字段位置
+                elif loc[0] == "students":
+                    details["field"] = "to"  # repeat / leave 与 to 是否匹配
+                else:
+                    details["field"] = ""
+            message = str(errors[0]["msg"]).removeprefix("Value error, ")
+            raise ApiError(400, service.INVALID, message, details) from exc
+        safe = [{"type": e["type"], "loc": e["loc"], "msg": e["msg"]} for e in errors]
+        raise ApiError(
+            400, "BAD_REQUEST", "Invalid request", {"errors": jsonable_encoder(safe)}
+        ) from exc
+
+
+PlanBody = Annotated[dict[str, Any], Body()]
+
+
 def _guard(db: Session, request: Request, user: User, bindings: list[Binding]) -> None:
     ensure_admin(db, request, user.id, bindings, Perm.YEAR_UPGRADE, user.school_id)
 
@@ -113,11 +153,11 @@ def post_suggest(
 
 @router.post("/preview")
 def post_preview(
-    body: UpgradePlan, request: Request, user: Auth, bindings: Bind, db: Db
+    body: PlanBody, request: Request, user: Auth, bindings: Bind, db: Db
 ) -> UpgradePreview:
     _guard(db, request, user, bindings)
     try:
-        plan = _normalize_teacher_ids(db, user.school_id, body)
+        plan = _normalize_teacher_ids(db, user.school_id, _parse_plan(body))
         return service.preview(db, user.school_id, plan)
     except UpgradeError as e:
         _raise(e)
@@ -125,11 +165,11 @@ def post_preview(
 
 @router.post("", status_code=201)
 def post_upgrade(
-    body: UpgradePlan, request: Request, user: Auth, bindings: Bind, db: Db
+    body: PlanBody, request: Request, user: Auth, bindings: Bind, db: Db
 ) -> UpgradeDone:
     _guard(db, request, user, bindings)
     try:
-        plan = _normalize_teacher_ids(db, user.school_id, body)
+        plan = _normalize_teacher_ids(db, user.school_id, _parse_plan(body))
         up = service.apply(
             db,
             user.school_id,

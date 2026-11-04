@@ -346,6 +346,24 @@ def _uuids(raw: list[str]) -> list[UUID]:
     return [UUID(x) for x in raw]
 
 
+def _serialize_upgrades(db: Session, school_id: UUID) -> None:
+    """apply / rollback 的第一步:同校的学年升级与回滚串行。
+
+    先取事务级咨询锁(不依赖谓词,等锁期间行变了也不会被静默跳过),再锁进行中的学年行。
+    学年行用 FOR NO KEY UPDATE 而不是 FOR UPDATE:持班级行锁的写入方(任命、加学生)随后
+    插入带 academic_year_id 外键的行,外键会对学年行取 FOR KEY SHARE,与 FOR UPDATE 冲突,
+    而与 FOR NO KEY UPDATE 相容,锁顺序因此统一为"先班级、后学年",不再死锁。
+    """
+    db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:k)::bigint)"),
+        {"k": f"year-upgrade:{school_id}"},
+    )
+    db.execute(
+        text("SELECT id FROM academic_years WHERE school_id = :s AND is_active FOR NO KEY UPDATE"),
+        {"s": school_id},
+    ).all()
+
+
 def apply(
     db: Session,
     school_id: UUID,
@@ -359,10 +377,7 @@ def apply(
     """在一个事务里执行升级并 commit;历史事件(考勤、点评、考试……)一行不动。"""
     from app.domain.years.suggest import grade_index  # suggest 反过来依赖本模块
 
-    db.execute(
-        text("SELECT id FROM academic_years WHERE school_id = :s AND is_active FOR UPDATE"),
-        {"s": school_id},
-    ).all()
+    _serialize_upgrades(db, school_id)
     # 同一学年的在读班也锁上(按 id 排序防死锁),与 lock_class 的名册写入串行
     db.execute(
         text(
@@ -758,12 +773,10 @@ def _edits_since_upgrade(
     sm = up.summary
     found: dict[str, int] = {}
     cs = {"cs": new_classes}
+    # apply 不创建看板行,保存看板的 upsert 也不改 updated_at,所以新班上有任何看板行都是
+    # 升级后被人保存过的;不拿 updated_at 去比应用时钟,免得两个时钟有偏差时漏判。
     boards = db.execute(
-        text(
-            "SELECT count(*) FROM class_boards"
-            " WHERE class_id = ANY(cast(:cs as uuid[])) AND updated_at > :at"
-        ),
-        {**cs, "at": up.executed_at},
+        text("SELECT count(*) FROM class_boards WHERE class_id = ANY(cast(:cs as uuid[]))"), cs
     ).scalar_one()
     if boards:
         found["class_boards"] = boards
@@ -818,12 +831,9 @@ def rollback(
     via: str = "cli",
 ) -> YearUpgrade:
     """回滚最近一次未回滚的升级;新学年已有数据时拒绝。"""
-    # 与 apply 同样先锁进行中的学年行:两者因此串行,否则 rollback 可能在 apply 提交前就选定
-    # 了要回滚的升级,随后与 apply 互相等锁(死锁)或回滚掉已被后续升级用作起点的学年。
-    db.execute(
-        text("SELECT id FROM academic_years WHERE school_id = :s AND is_active FOR UPDATE"),
-        {"s": school_id},
-    ).all()
+    # 与 apply 串行,否则 rollback 可能在 apply 提交前就选定了要回滚的升级,随后与 apply
+    # 互相等锁(死锁)或回滚掉已被后续升级用作起点的学年。
+    _serialize_upgrades(db, school_id)
     up = latest_rollbackable(db, school_id, lock=True)
     sm = up.summary
     new_classes = _uuids(sm["new_class_ids"])
