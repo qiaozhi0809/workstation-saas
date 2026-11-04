@@ -147,7 +147,7 @@ export default function GradesPanel() {
           {classes.isError && <ErrorState title="班级加载失败" description={errMsg(classes.error)} onRetry={() => void classes.refetch()} />}
           {classes.data && classes.data.length === 0 && <EmptyState title="这个年级还没有班级" />}
           {classes.data && classes.data.length > 0 && (
-            <div className="overflow-x-auto">
+            <div className="relative overflow-x-auto">
               <table className="w-full min-w-[32rem] text-sm">
                 <thead>
                   <tr className="border-b text-left text-muted-foreground">

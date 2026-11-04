@@ -192,3 +192,18 @@ test('teacher01 gets a grade head role and can switch between teacher and admin 
   await expect(page).toHaveURL(/\/teacher/)
   await expect(page.getByRole('heading', { name: '三年二班' })).toBeVisible()
 })
+
+// 回归:组织架构页的班级表在 375 宽自己横向滚动,表头里的 sr-only 绝对定位元素不能撑宽整页
+test('org page does not overflow horizontally at 375px', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  await signIn(page, 'itadmin01')
+  await expect(page).toHaveURL(/\/admin/)
+  await page.goto('/admin/org')
+  await expect(page.getByRole('heading', { name: '组织架构' })).toBeVisible()
+  await expect(page.getByRole('table').first()).toBeVisible()
+  const { scroll, client } = await page.evaluate(() => ({
+    scroll: document.documentElement.scrollWidth,
+    client: document.documentElement.clientWidth,
+  }))
+  expect(scroll).toBeLessThanOrEqual(client)
+})
