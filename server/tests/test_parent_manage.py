@@ -399,3 +399,34 @@ def test_student_without_active_enrollment_forbidden(client, settings, db):
         client.get(_url("00000000-0000-0000-0000-000000000000"), headers=auth(settings)).status_code
         == 404
     )
+
+
+def test_reset_rejected_when_parent_has_other_class_child(client, settings, db):
+    from app.rbac.roles import Role
+    from tests.factories import bind, make_class, make_student, make_teacher_account
+
+    cls2 = make_class(db, "虚构二班")
+    s_other = str(make_student(db, cls2, "虚构学生", "mk-c-other"))
+    teacher2 = make_teacher_account(db)
+    bind(db, teacher2.id, Role.homeroom_teacher, class_id=cls2)
+    db.commit()
+    t2 = str(teacher2.id)
+    mine = _add(client, settings, S3, "13800000091").json()["parent"]
+    r17 = _add(client, settings, s_other, "13800000091", user=t2)
+    assert r17.status_code == 201, r17.text
+    other = r17.json()["parent"]
+    assert mine["user_id"] == other["user_id"]
+    before = _user(db, "13800000091").password_hash
+    for link, who in ((mine["link_id"], None), (other["link_id"], t2)):
+        headers = auth(settings) if who is None else auth(settings, who)
+        res = client.post(f"/api/v1/parent-links/{link}/reset-password", headers=headers)
+        assert res.status_code == 409 and res.json()["error"]["code"] == "PARENT_OTHER_CLASS"
+    assert _user(db, "13800000091").password_hash == before
+    denied = [a for a in _audits(db, "parent.reset") if a.success is False]
+    assert len(denied) == 2
+
+    solo = _add(client, settings, S4, "13800000092").json()["parent"]
+    res = client.post(
+        f"/api/v1/parent-links/{solo['link_id']}/reset-password", headers=auth(settings)
+    )
+    assert res.status_code == 200

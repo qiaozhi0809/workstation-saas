@@ -76,6 +76,16 @@ def authorize(
         )
 
 
+def _can_manage_student(db: Session, bindings: Sequence[Binding], student_id: UUID) -> bool:
+    cls = db.scalar(
+        select(SchoolClass)
+        .join(Enrollment, Enrollment.class_id == SchoolClass.id)
+        .where(Enrollment.student_id == student_id, Enrollment.status == "active")
+        .limit(1)
+    )
+    return cls is not None and can(bindings, Perm.PARENT_MANAGE, class_scope_of(cls))
+
+
 def _live_link_or_404(db: Session, link_id: UUID) -> ParentLink:
     link = db.get(ParentLink, link_id)
     if link is None or link.status == "ended":
@@ -439,6 +449,28 @@ def reset_parent_password(
         raise ApiError(409, "PARENT_ACCOUNT_SHARED", "该账号也是教职工账号,请联系信息中心重置")
     if user.status != "active":
         raise ApiError(409, "ACCOUNT_NOT_ACTIVE", "该账号已停用,不能重置密码")
+    sibling_students = db.scalars(
+        select(ParentLink.student_id).where(
+            ParentLink.parent_id == link.parent_id, ParentLink.status != "ended"
+        )
+    ).all()
+    if not all(_can_manage_student(db, bindings, sid) for sid in sibling_students):
+        record(
+            db,
+            user_id=actor.id,
+            action="parent.reset",
+            success=False,
+            object_type="user",
+            object_id=str(user.id),
+            request=request,
+            extra={"student_id": str(student.id), "link_id": str(link.id)},
+        )
+        db.commit()
+        raise ApiError(
+            409,
+            "PARENT_OTHER_CLASS",
+            "该家长还绑定了其他班级的孩子,请联系信息中心重置",
+        )
     temp = generate_temp_password()
     user.password_hash = hash_password(temp)
     user.must_change_password = True
