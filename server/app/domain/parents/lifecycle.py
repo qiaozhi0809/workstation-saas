@@ -11,9 +11,10 @@ from sqlalchemy.orm import Session
 
 from app.audit.service import record
 from app.auth import sessions
+from app.domain.parents.access import READONLY_DAYS
+from app.rbac.roles import PARENT_ROLES
 
-READONLY_DAYS = 365
-_PARENT_ROLES = ("primary_parent", "secondary_parent")
+_PARENT_ROLES = sorted(r.value for r in PARENT_ROLES)
 
 
 @dataclass(frozen=True)
