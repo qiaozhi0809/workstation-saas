@@ -22,7 +22,7 @@ export const today = (over: Partial<ParentToday> = {}): ParentToday => ({
   enrollment_id: 'e1',
   seat_map: {
     rows: 2, cols: 2, desk_size: 2, podium_left: 0, podium_right: 0,
-    occupied: [{ row: 1, col: 1 }, { row: 1, col: 2 }], mine: { row: 1, col: 2 },
+    occupied: [{ row: 1, col: 1 }, { row: 1, col: 2 }, { row: 2, col: 1 }], mine: { row: 1, col: 2 },
   },
   ...over,
 })

@@ -17,11 +17,12 @@ export default function TodayPage() {
   if (!q.data) return <LoadingState />
   const t = q.data
 
-  if (t.status === 'readonly') {
+  if (t.status === 'readonly' || child.status === 'readonly') {
     return (
       <div className="mx-auto max-w-2xl space-y-3 p-4">
         <section className="rounded-xl border bg-card p-4 text-sm text-card-foreground">
-          孩子已于 {child.left_on} 毕业 / 离校,可以继续查看在校期间的成长与成绩,账号将于 {child.archive_on} 归档
+          {child.left_on ? `孩子已于 ${child.left_on} 毕业 / 离校` : '孩子已毕业 / 离校'}
+          ,可以继续查看在校期间的成长与成绩{child.archive_on ? `,账号将于 ${child.archive_on} 归档` : ''}
         </section>
       </div>
     )
@@ -39,7 +40,7 @@ export default function TodayPage() {
           <p className="mt-1 text-base font-semibold">{t.class_info.class_name}</p>
           <dl className="mt-2 space-y-1">
             <div className="flex gap-3"><dt className="w-14 shrink-0 text-muted-foreground">班主任</dt><dd>{t.class_info.homeroom_name ?? '暂无'}</dd></div>
-            {t.class_info.teachers.map((x) => (
+            {(t.class_info.teachers ?? []).map((x) => (
               <div key={`${x.subject}-${x.name}`} className="flex gap-3"><dt className="w-14 shrink-0 text-muted-foreground">{x.subject}</dt><dd>{x.name}</dd></div>
             ))}
           </dl>

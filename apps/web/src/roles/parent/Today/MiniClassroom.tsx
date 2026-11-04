@@ -5,9 +5,11 @@ import type { MiniSeatMap, ParentChild } from '@/shared/types/parent'
 export default function MiniClassroom({ map, enrollmentId, child }: {
   map: MiniSeatMap | null; enrollmentId: string | null; child: ParentChild
 }) {
-  const empty = !map || map.occupied.length === 0
+  const occupied = map?.occupied ?? []
+  // 孩子自己没有座位时整张图不画:别人的座位匿名,没有高亮的图没有意义
+  const empty = !map || !map.mine || occupied.length === 0
   const built = !empty && enrollmentId
-    ? seatsFromMiniMap(map, { enrollment_id: enrollmentId, name: child.name, gender: child.gender })
+    ? seatsFromMiniMap({ ...map, occupied }, { enrollment_id: enrollmentId, name: child.name, gender: child.gender })
     : null
   return (
     <section aria-label="班级座位" className="rounded-xl border bg-card p-4 text-card-foreground">

@@ -107,3 +107,17 @@ it('titles the page with the child name', async () => {
   const main = await screen.findByRole('main')
   expect(await within(main).findByRole('heading', { name: '王小一的档案' })).toBeInTheDocument()
 })
+
+it('leaves edit mode and writes nothing to the other child when switching mid-edit', async () => {
+  vi.mocked(parentApi.children).mockResolvedValue([child(), child({ student_id: 's2', name: '王小二' })])
+  vi.mocked(parentApi.profile).mockImplementation(async (sid) => ({ ...full(), id: sid, name: sid === 's1' ? '王小一' : '王小二' }))
+  open()
+  fireEvent.click(await screen.findByRole('button', { name: '编辑联系人' }))
+  fireEvent.change(screen.getByRole('textbox', { name: '联系人1电话' }), { target: { value: '13900000000' } })
+  fireEvent.change(screen.getByRole('combobox', { name: '切换孩子' }), { target: { value: 's2' } })
+  expect(await screen.findByRole('heading', { name: '王小二的档案' })).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '保存' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '编辑联系人' }))
+  expect(screen.getByRole('textbox', { name: '联系人1电话' })).toHaveValue('13800000001')
+  expect(parentApi.saveContacts).not.toHaveBeenCalled()
+})

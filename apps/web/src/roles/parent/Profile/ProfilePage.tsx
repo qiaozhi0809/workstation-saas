@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { parentApi } from '@/shared/api/parent'
 import { toast } from '@/shared/components/Toast'
@@ -30,6 +30,8 @@ export default function ProfilePage() {
   const sid = child?.student_id ?? ''
   const qc = useQueryClient()
   const [editing, setEditing] = useState(false)
+  // 切换孩子时退出编辑,免得把 A 的联系人写到 B
+  useEffect(() => { setEditing(false) }, [sid])
   const q = useQuery({ queryKey: ['parent', sid, 'profile'], queryFn: () => parentApi.profile(sid), enabled: !!child })
   if (!child) return null
   if (q.isError) return <ErrorState title="档案加载失败" onRetry={() => void q.refetch()} retrying={q.isFetching} />
@@ -65,7 +67,7 @@ export default function ProfilePage() {
         </dl>
         <h3 className="mb-1 mt-3 text-sm font-medium">联系人</h3>
         {editing ? (
-          <ContactsForm initial={contacts} onSave={save} onCancel={() => setEditing(false)} />
+          <ContactsForm key={sid} initial={contacts} onSave={save} onCancel={() => setEditing(false)} />
         ) : (
           <>
             {contacts.length === 0 ? (
@@ -75,10 +77,10 @@ export default function ProfilePage() {
                 {contacts.map((c, i) => (
                   <li key={i} className="rounded-md border p-2">
                     <div className="flex flex-wrap items-center justify-between gap-x-2">
-                      <span><span className="font-medium">{c.name}</span> <span className="text-muted-foreground">{c.relation}</span></span>
-                      <span>{c.phone}</span>
+                      <span className="min-w-0 break-words"><span className="font-medium">{c.name}</span> <span className="text-muted-foreground">{c.relation}</span></span>
+                      <span className="break-all">{c.phone}</span>
                     </div>
-                    {c.job && <div className="text-muted-foreground">{c.job}</div>}
+                    {c.job && <div className="break-words text-muted-foreground">{c.job}</div>}
                   </li>
                 ))}
               </ul>

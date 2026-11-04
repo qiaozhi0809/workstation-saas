@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { createContext, useContext, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { parentApi } from '@/shared/api/parent'
@@ -13,9 +13,9 @@ const remember = (id: string) => {
   try { localStorage.setItem(KEY, id) } catch { /* 无存储环境:只靠地址栏 */ }
 }
 
-/** 当前孩子:?child= → 上次记住的 → 列表第一个;不在列表里的 id 自动换成第一个并改写地址栏 */
-export function useChild() {
-  const list = useQuery({ queryKey: ['parent', 'children'], queryFn: parentApi.children })
+/** 当前孩子:?child= → 上次记住的 → 列表第一个;不在列表里的 id 自动换成第一个并改写地址栏。active=false 时不发请求、不改地址栏 */
+export function useChildState(active = true) {
+  const list = useQuery({ queryKey: ['parent', 'children'], queryFn: parentApi.children, enabled: active })
   const [params] = useSearchParams()
   const location = useLocation()
   const navigate = useNavigate()
@@ -23,7 +23,7 @@ export function useChild() {
   const withChild = (id: string) => {
     const n = new URLSearchParams(location.search)
     n.set('child', id)
-    return { pathname: location.pathname, search: `?${n.toString()}` }
+    return { pathname: location.pathname, search: `?${n.toString()}`, hash: location.hash }
   }
   const children = list.data
   const wanted = params.get('child') ?? remembered()
@@ -31,7 +31,7 @@ export function useChild() {
   const id = child?.student_id ?? null
 
   useEffect(() => {
-    if (!id) return
+    if (!id || !active) return
     remember(id)
     // /parent 本身由 ParentIndex 带着 child 跳转,这里不插手
     if (params.get('child') !== id && !/^\/parent\/?$/.test(location.pathname)) navigate(withChild(id), { replace: true })
@@ -41,4 +41,16 @@ export function useChild() {
   const select = (next: string) => navigate(withChild(next))
 
   return { list, children: children ?? [], child, select }
+}
+
+export type ChildState = ReturnType<typeof useChildState>
+
+/** 布局只算一次,子页从这里读 */
+export const ChildContext = createContext<ChildState | null>(null)
+
+/** 子页取当前孩子:在 ParentLayout 之内读它提供的值;单独渲染时(没有布局)自己算 */
+export function useChild(): ChildState {
+  const shared = useContext(ChildContext)
+  const own = useChildState(!shared)
+  return shared ?? own
 }

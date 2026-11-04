@@ -98,10 +98,40 @@ it('shows a retryable error when the child list fails', async () => {
   expect(await screen.findByText('三年二班')).toBeInTheDocument()
 })
 
-it('sends a non-parent account away from /parent', () => {
+it('sends a non-parent account away from /parent', async () => {
   useAuthStoreAsTeacher()
   renderParent()
+  expect(await screen.findByText('teacher home')).toBeInTheDocument()
   expect(parentApi.children).not.toHaveBeenCalled()
+})
+
+it('still works when localStorage throws', async () => {
+  vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('denied') })
+  vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('denied') })
+  renderParent('/parent/today')
+  await waitFor(() => expect(where()).toBe('/parent/today?child=s1'))
+  fireEvent.change(await screen.findByRole('combobox', { name: '切换孩子' }), { target: { value: 's2' } })
+  await waitFor(() => expect(where()).toBe('/parent/today?child=s2'))
+  vi.restoreAllMocks()
+})
+
+it('marks a read-only child in the switcher', async () => {
+  vi.mocked(parentApi.children).mockResolvedValue([child(), child({ student_id: 's2', name: '王小二', status: 'readonly' })])
+  renderParent('/parent/today?child=s1')
+  expect(await screen.findByRole('option', { name: '王小二(已毕业/离校)' })).toBeInTheDocument()
+  expect(screen.getByRole('option', { name: '王小一' })).toBeInTheDocument()
+})
+
+it('adds a small tag after the name of a single read-only child', async () => {
+  vi.mocked(parentApi.children).mockResolvedValue([child({ status: 'readonly', left_on: '2026-07-10', archive_on: '2027-07-10' })])
+  renderParent('/parent/today?child=s1')
+  expect(await screen.findByText('已毕业/离校')).toBeInTheDocument()
+})
+
+it('asks for the child list only once across layout and page', async () => {
+  renderParent('/parent/today?child=s1')
+  await screen.findByRole('region', { name: '今日出勤' })
+  expect(parentApi.children).toHaveBeenCalledTimes(1)
 })
 
 import { useAuthStore } from '@/shared/stores/auth'

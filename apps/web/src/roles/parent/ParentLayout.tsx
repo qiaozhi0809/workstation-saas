@@ -13,7 +13,7 @@ import { useAuthStore } from '@/shared/stores/auth'
 import ThemeToggle from '@/theme/ThemeToggle'
 import ChildSwitcher from './ChildSwitcher'
 import ParentNav from './ParentNav'
-import { useChild } from './useChild'
+import { ChildContext, useChild, useChildState } from './useChild'
 
 const QUERY = '(min-width: 768px)'
 
@@ -34,7 +34,8 @@ export default function ParentLayout() {
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
   const wide = useWide()
-  const { list, children, child, select } = useChild()
+  const state = useChildState()
+  const { list, children, child, select } = state
 
   const logout = () => {
     const refreshToken = useAuthStore.getState().refreshToken
@@ -49,7 +50,7 @@ export default function ParentLayout() {
     body = list.isPending
       ? <LoadingState />
       : <EmptyState title="还没有绑定孩子,请联系班主任" className="justify-center p-6" />
-  } else body = <Outlet />
+  } else body = <ChildContext.Provider value={state}><Outlet /></ChildContext.Provider>
 
   return (
     <AppShell
