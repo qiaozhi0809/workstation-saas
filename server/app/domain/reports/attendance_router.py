@@ -75,7 +75,7 @@ def export_attendance(
     )
     db.commit()
     # UTF-8 BOM 让 Excel 正确识别中文
-    body = "﻿" + service.export_csv(report)
+    body = "\ufeff" + service.export_csv(report)
     return Response(
         content=body.encode("utf-8"),
         media_type="text/csv; charset=utf-8",

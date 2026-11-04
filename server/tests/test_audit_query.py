@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 
 import app as app_pkg
 from app.audit.labels import ACTION_LABELS, GROUPS
-from app.models import Exam, SchoolClass, Student, User
+from app.models import Exam, School, SchoolClass, Student, User
 from app.models.audit import AuditLog
 from app.rbac.roles import Perm
 from tests.helpers import auth
@@ -212,7 +212,7 @@ def test_object_label(client, settings, db):
         exam.name,
         None,
         None,
-        None,
+        db.get(School, UUID(SCHOOL_ID)).name,  # school 也能解析名称
         None,
     ]
 
@@ -351,3 +351,47 @@ def test_groups_cover_known_actions():
 )
 def test_group_of(action, group):
     assert [k for k, _, p in GROUPS if k != "denied" and p(action, True)] == [group]
+
+
+def test_object_label_school_and_grade_exam(client, settings, db):
+    from datetime import date
+
+    from app.models import GradeExam
+    from tests.seed_ids import GRADE_ID, YEAR_ID
+
+    ge = GradeExam(
+        school_id=UUID(SCHOOL_ID),
+        academic_year_id=UUID(YEAR_ID),
+        grade_id=UUID(GRADE_ID),
+        name="三年级期中联考",
+        exam_type="期中",
+        date=date(2026, 11, 1),
+        subjects=[],
+    )
+    db.add(ge)
+    db.flush()
+    _add(db, "2026-11-01T01:00:00", "attendance.export", object_type="school", object_id=SCHOOL_ID)
+    _add(
+        db,
+        "2026-11-01T02:00:00",
+        "exam.grade_update",
+        object_type="grade_exam",
+        object_id=str(ge.id),
+    )
+    rows = _items(_get(client, settings, {"from": "2026-11-01", "to": "2026-11-01"}))
+    assert [r["object_label"] for r in reversed(rows)] == [
+        db.get(School, UUID(SCHOOL_ID)).name,
+        "三年级期中联考",
+    ]
+
+
+def test_date_out_of_range_is_400(client, settings):
+    for params in (
+        {"to": "9999-12-31"},
+        {"from": "0001-01-01"},
+        {"from": "1969-12-31"},
+        {"to": "2101-01-01"},
+    ):
+        assert _get(client, settings, params).status_code == 400, params
+    ok = {"from": "1970-01-01", "to": "2100-12-31"}
+    assert _get(client, settings, ok).status_code == 200

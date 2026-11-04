@@ -38,7 +38,7 @@ def _client_ip(request: Request | None) -> str | None:
     networks = settings.trusted_networks if settings is not None else []
     if not any(peer in net for net in networks):
         return str(peer)
-    header = request.headers.get("x-forwarded-for")
+    header = ",".join(request.headers.getlist("x-forwarded-for"))
     if not header:
         return str(peer)
     for part in reversed(header.split(",")):

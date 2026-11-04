@@ -22,6 +22,7 @@ from app.rbac.bindings import Binding, Scope, can
 from app.rbac.roles import LEADER_ROLES, Perm
 
 MONTH_PATTERN = r"^\d{4}-(0[1-9]|1[0-2])$"
+MIN_YEAR, MAX_YEAR = 1970, 2100  # 与 ai_admin 一致;范围外的月份 date() 会溢出
 STATUSES = ("leave", "absent", "late")
 
 
@@ -70,8 +71,8 @@ def resolve_month(db: Session, school_id: UUID, month: str | None) -> str:
     if month is None:
         today = clock.utc_now().astimezone(school_tz(db, school_id)).date()
         return f"{today.year:04d}-{today.month:02d}"
-    if not re.fullmatch(MONTH_PATTERN, month):
-        raise ApiError(422, "VALIDATION_ERROR", "月份格式应为 YYYY-MM")
+    if not re.fullmatch(MONTH_PATTERN, month) or not MIN_YEAR <= int(month[:4]) <= MAX_YEAR:
+        raise ApiError(400, "BAD_REQUEST", "月份格式应为 YYYY-MM")
     return month
 
 
@@ -324,10 +325,18 @@ def _rate_text(rate: float | None) -> str:
     return "" if rate is None else f"{rate * 100:.1f}%"
 
 
+_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _safe_cell(text: str) -> str:
+    """文本单元格以公式字符开头时加 ' 前缀,防止 Excel 当作公式执行(数字 / 百分比格不经此函数)。"""
+    return "'" + text if text.startswith(_FORMULA_PREFIXES) else text
+
+
 def _csv_row(grade: str, name: str, c: AttendanceCounts) -> list[str | int]:
     return [
-        grade,
-        name,
+        _safe_cell(grade),
+        _safe_cell(name),
         c.days,
         c.expected,
         c.present,

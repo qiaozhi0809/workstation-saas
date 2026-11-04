@@ -11,10 +11,11 @@ from sqlalchemy.orm import Session
 from app.audit.labels import ACTION_LABELS, GROUPS
 from app.domain.schools.service import local_day_start_utc, school_tz
 from app.errors import ApiError
-from app.models import Exam, SchoolClass, Student, User
+from app.models import Exam, GradeExam, School, SchoolClass, Student, User
 from app.models.audit import AuditLog
 
 PAGE_SIZE = 50
+MIN_DATE, MAX_DATE = date(1970, 1, 1), date(2100, 12, 31)  # 范围外的日期换算时区会溢出
 
 # object_type -> (模型, 名称列);audit 里 user 与 account 指同一张用户表
 _LABEL_SOURCES: dict[str, tuple[Any, Any]] = {
@@ -23,6 +24,8 @@ _LABEL_SOURCES: dict[str, tuple[Any, Any]] = {
     "user": (User, User.display_name),
     "account": (User, User.display_name),
     "exam": (Exam, Exam.name),
+    "school": (School, School.name),
+    "grade_exam": (GradeExam, GradeExam.name),
 }
 
 
@@ -101,7 +104,14 @@ def _apply_group(stmt, group: str):
     raise ApiError(400, "INVALID_GROUP", "未知的审计分组")
 
 
+def _check_date(day: date | None) -> None:
+    if day is not None and not MIN_DATE <= day <= MAX_DATE:
+        raise ApiError(400, "BAD_REQUEST", "日期超出范围")
+
+
 def _filtered(db: Session, school_id: UUID, f: AuditFilters):
+    _check_date(f.date_from)
+    _check_date(f.date_to)
     stmt = select(AuditLog)
     tz = school_tz(db, school_id)
     if f.date_from is not None:

@@ -66,8 +66,9 @@ def test_record_stores_ip_only_when_valid_inet(db):
     assert str(ok.ip) == "127.0.0.1" and ok.user_agent == "pytest-ua"
 
 
-def _proxied_request(peer: str, xff: str | None, proxies: list[str]) -> Request:
-    headers = [(b"x-forwarded-for", xff.encode())] if xff is not None else []
+def _proxied_request(peer: str, xff: str | list[str] | None, proxies: list[str]) -> Request:
+    lines = [xff] if isinstance(xff, str) else (xff or [])
+    headers = [(b"x-forwarded-for", line.encode()) for line in lines]
     app = SimpleNamespace(
         state=SimpleNamespace(settings=Settings(_env_file=None, trusted_proxies=proxies))
     )
@@ -155,3 +156,13 @@ def test_ai_generate_audit_uses_trusted_proxy_ip(client, settings, db):
         r.read()
     rows = generate_audits(db, chat["id"])
     assert len(rows) == 1 and str(rows[0].ip) == "203.0.113.9"
+
+
+def test_ip_multiple_xff_header_lines():
+    trusted = ["127.0.0.1", "10.0.0.0/8"]
+    # 分开追加的两行等价于 "198.51.100.1, 203.0.113.9, 10.0.0.5":右往左取 203.0.113.9
+    req = _proxied_request("127.0.0.1", ["198.51.100.1, 203.0.113.9", "10.0.0.5"], trusted)
+    assert _client_ip(req) == "203.0.113.9"
+    # 只看第一行会得到伪造的 198.51.100.1;最后一行是客户端自带时,以最右的不可信值为准
+    req = _proxied_request("127.0.0.1", ["198.51.100.1", "203.0.113.9"], trusted)
+    assert _client_ip(req) == "203.0.113.9"

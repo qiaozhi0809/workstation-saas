@@ -1,3 +1,5 @@
+import csv
+import io
 from datetime import date
 
 from sqlalchemy import select, text
@@ -134,6 +136,15 @@ def test_invalid_month_rejected(client, settings):
         assert get_report(client, settings, month=bad).status_code == 400
     assert get_detail(client, settings, C31, month="2026-00").status_code == 400
     assert get_export(client, settings, month="2026-13").status_code == 400
+
+
+def test_month_year_out_of_range_rejected(client, settings):
+    for bad in ("0000-01", "9999-12", "1969-12", "2101-01"):
+        assert get_report(client, settings, month=bad).status_code == 400, bad
+        assert get_detail(client, settings, C31, month=bad).status_code == 400, bad
+        assert get_export(client, settings, month=bad).status_code == 400, bad
+    assert get_report(client, settings, month="2100-12").status_code == 200
+    assert get_report(client, settings, month="1970-01").status_code == 200
 
 
 def test_expected_counts_daily_roster(client, db, settings, monkeypatch):
@@ -349,3 +360,21 @@ def test_export_empty_rate_cell(client, db, settings, monkeypatch):
     lines = get_export(client, settings, month="2026-11").content.decode("utf-8-sig").splitlines()
     assert lines[1] == "三年级,三年一班,0,0,0,0,0,0,"
     assert lines[-1] == "合计,,0,0,0,0,0,0,"
+
+
+def test_export_neutralizes_formula_cells(client, db, settings, monkeypatch):
+    freeze(monkeypatch, NOW)
+    enrolled_since_september(db)
+    make_class(db, '=HYPERLINK("x")')
+    make_class(db, "@cmd")
+    make_class(db, "+1")
+    make_class(db, "-1")
+    db.flush()
+    text_ = get_export(client, settings, month="2026-10").content.decode("utf-8-sig")
+    rows = list(csv.reader(io.StringIO(text_)))
+    names = [r[1] for r in rows]
+    assert '\'=HYPERLINK("x")' in names
+    assert {"'@cmd", "'+1", "'-1"} <= set(names)
+    assert not any(n.startswith(("=", "@", "+", "-")) for n in names)
+    assert "三年一班" in names  # 普通名字不加前缀
+    assert all(not r[8].startswith("'") for r in rows[1:])  # 百分比 / 数字格不加
