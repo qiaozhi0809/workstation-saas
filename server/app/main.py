@@ -1,3 +1,7 @@
+import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import APIRouter, FastAPI
 from redis import Redis
 from sqlalchemy import create_engine
@@ -23,15 +27,31 @@ from app.domain.students.router import router as students_router
 from app.domain.todos.router import router as todos_router
 from app.errors import install_error_handlers
 from app.logging import configure_logging
+from app.ws.hub import Hub
+from app.ws.router import router as ws_router  # M3b 段 A
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     configure_logging(settings.log_level)
-    app = FastAPI(title="workstation-saas")
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        task = asyncio.create_task(app.state.hub.run(app.state.settings.redis_url))
+        await asyncio.wait_for(app.state.hub.subscribed.wait(), 10)
+        try:
+            yield
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+    app = FastAPI(title="workstation-saas", lifespan=lifespan)
     app.state.settings = settings
     app.state.engine = create_engine(settings.database_url, pool_pre_ping=True)
     app.state.redis = Redis.from_url(settings.redis_url, decode_responses=True)
+    app.state.hub = Hub()
+    app.state.ws_auth_timeout = 5.0
+    app.state.ws_ping_interval = 25.0
     app.state.ai_transport = None  # None = 真实网络;测试里注入假传输
     install_error_handlers(app)
 
@@ -59,5 +79,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     router.include_router(accounts_router)  # M3a 段 E
     router.include_router(school_settings_router)  # M3a 段 E
     router.include_router(org_router)  # M3a 段 D
+    router.include_router(ws_router)  # M3b 段 A
     app.include_router(router)
     return app

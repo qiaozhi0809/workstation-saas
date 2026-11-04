@@ -27,6 +27,7 @@ from app.errors import ApiError
 from app.models import Grade, RoleBinding, SchoolClass, User
 from app.rbac.admin import account_admin_count
 from app.rbac.roles import Role
+from app.ws.hub import publish
 
 PAGE_SIZE = 50
 
@@ -343,6 +344,7 @@ def freeze(
     )
     db.commit()
     sessions.revoke_all(redis, user.id)
+    publish(redis, [user.id], {"type": "session.revoked"})
     return account_view(db, user, year_id)
 
 

@@ -326,3 +326,21 @@ def test_reset_clears_login_lock(client, settings, db):
     )
     temp = res.json()["temp_password"]
     assert _login(client, "teacher02", temp).status_code == 200
+
+
+def test_freeze_publishes_session_revoked_only_when_accepted(client, settings, db, monkeypatch):
+    from app.domain.accounts import service
+
+    calls: list = []
+    monkeypatch.setattr(service, "publish", lambda redis, ids, event: calls.append((ids, event)))
+    principal = auth(settings, "55555555-5555-5555-5555-555555555543")
+    # 被拒的冻结不发布
+    assert client.post(f"{ACCOUNTS}/{IT_ADMIN}/freeze", headers=_admin(settings)).status_code == 409
+    monkeypatch.setattr(service, "account_admin_count", lambda db, school_id, **kw: 1)
+    res = client.post(f"{ACCOUNTS}/{IT_ADMIN}/freeze", headers=principal)
+    assert res.json()["error"]["code"] == "LAST_ADMIN"
+    assert calls == []
+    # 成功的冻结在提交后发布一次
+    uid = _user_id(db, "teacher02")
+    assert client.post(f"{ACCOUNTS}/{uid}/freeze", headers=principal).status_code == 200
+    assert calls == [([uid], {"type": "session.revoked"})]
