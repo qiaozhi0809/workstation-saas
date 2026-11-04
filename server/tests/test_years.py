@@ -1,7 +1,7 @@
 import io
 import json
 from contextlib import contextmanager
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
@@ -130,6 +130,7 @@ def test_suggest_for_seed(db):
     )
     assert c.from_name == "三年二班" and c.teacher_name == "张老师"
     assert plan.students == [] and plan.new_classes == []
+    assert plan.grade_heads == []  # 无组长:空数组(显式),不是 None
 
 
 def test_plan_model_rules():
@@ -971,6 +972,7 @@ def test_grade_head_follows_majority_grade(db):
         strict=True,
     ):
         c.to_grade_name, c.to_name = g, n
+    plan.grade_heads = None  # 旧规则:跟届
     _grade_head(db)
     up = apply(db, SCHOOL, plan, now=NOW)
     four = _scalar(
@@ -985,6 +987,7 @@ def test_grade_head_majority_tie_prefers_lower_grade(db):
     plan.classes.sort(key=lambda c: c.from_name)
     plan.classes[0].to_grade_name, plan.classes[0].to_name = "五年级", "五年一班"
     plan.classes[1].to_grade_name, plan.classes[1].to_name = "四年级", "四年二班"
+    plan.grade_heads = None  # 旧规则:跟届
     _grade_head(db)
     up = apply(db, SCHOOL, plan, now=NOW)
     four = _scalar(
@@ -1068,3 +1071,268 @@ def test_new_class_created_with_auto_layout(db):
         text("SELECT seat_layout, desk_size, room FROM classes WHERE name = '一班' AND active")
     ).one()
     assert tuple(row) == ("auto", 2, "")
+
+
+# ---------------------------------------------------------------- M3b 段 F:座位数、组长、回滚检查
+
+
+@pytest.mark.parametrize(
+    "desk,cols,ok",
+    [
+        (2, 3, False),  # 双人桌必须偶数
+        (2, 4, True),
+        (2, 12, True),
+        (2, 14, False),
+        (1, 1, False),  # 单人桌至少 2
+        (1, 2, True),
+        (1, 3, True),
+        (1, 12, True),
+        (3, 15, False),  # 三人桌最多 12
+        (3, 4, False),
+        (3, 3, True),
+        (3, 12, True),
+    ],
+)
+def test_new_class_seat_cols_range(desk, cols, ok):
+    from pydantic import ValidationError
+
+    from app.domain.years.plan import NewClassPlan
+
+    if ok:
+        NewClassPlan(grade_name="一年级", name="一班", desk_size=desk, seat_cols=cols)
+        return
+    with pytest.raises(ValidationError) as ei:
+        NewClassPlan(grade_name="一年级", name="一班", desk_size=desk, seat_cols=cols)
+    assert "每排座位数不合规" in str(ei.value)
+
+
+def _gh(grade_name, *user_ids):
+    from app.domain.years.plan import GradeHeadPlan
+
+    return GradeHeadPlan(grade_name=grade_name, user_ids=list(user_ids))
+
+
+def _new_year_heads(db, up):
+    return db.execute(
+        text(
+            "SELECT b.user_id, g.name AS grade FROM role_bindings b"
+            " JOIN grades g ON g.id = (b.scope->>'grade_id')::uuid"
+            " WHERE b.role_type = 'grade_head' AND b.academic_year_id = :y AND b.ended_at IS NULL"
+            " ORDER BY g.name, b.user_id"
+        ),
+        {"y": up.to_year_id},
+    ).all()
+
+
+def test_grade_heads_explicit(db):
+    from tests.factories import make_admin
+
+    head = make_admin(db, None, "grade_head")  # 三年级组长(旧学年)
+    dean = make_admin(db, None, "dean")
+    # grade_heads 为 None:旧规则,组长跟届到四年级
+    before = _snapshot(db)
+    up = apply(db, SCHOOL, _plan(db), now=NOW)
+    assert [(r.user_id, r.grade) for r in _new_year_heads(db, up)] == [(head.id, "四年级")]
+    rollback(db, SCHOOL, now=NOW)
+    assert _snapshot(db) == before
+
+    # 显式指定:只有被列出的人是新学年四年级组长,旧组长不再跟届
+    plan = _plan(db)
+    plan.grade_heads = [_gh("四年级", dean.id, dean.id)]  # 同一人重复列出只建一条
+    up = apply(db, SCHOOL, plan, now=NOW)
+    assert [(r.user_id, r.grade) for r in _new_year_heads(db, up)] == [(dean.id, "四年级")]
+    assert (
+        db.execute(
+            text("SELECT count(*) FROM role_bindings WHERE user_id = :u AND academic_year_id = :y"),
+            {"u": head.id, "y": up.to_year_id},
+        ).scalar_one()
+        == 0
+    )
+    # 校级绑定(主任)照旧复制
+    assert (
+        db.execute(
+            text(
+                "SELECT count(*) FROM role_bindings WHERE user_id = :u AND role_type = 'dean'"
+                " AND ended_at IS NULL"
+            ),
+            {"u": dean.id},
+        ).scalar_one()
+        == 1
+    )
+    rollback(db, SCHOOL, now=NOW)
+    assert _snapshot(db) == before
+
+
+def test_grade_heads_empty_list_means_no_heads(db):
+    from tests.factories import make_admin
+
+    make_admin(db, None, "grade_head")
+    plan = _plan(db)
+    plan.grade_heads = []
+    up = apply(db, SCHOOL, plan, now=NOW)
+    assert _new_year_heads(db, up) == []
+
+
+def test_grade_heads_validation(db):
+    from tests.factories import make_admin
+
+    dean = make_admin(db, None, "dean")
+    frozen = make_admin(db, None, "dean")
+    db.execute(text("UPDATE users SET status = 'frozen' WHERE id = :u"), {"u": frozen.id})
+    plan = _plan(db)
+    plan.new_classes.append(_new_class("五年级", "五年一班"))
+
+    def check(heads, **details):
+        plan.grade_heads = heads
+        _expect(db, plan, "UPGRADE_PLAN_INVALID", section="grade_heads", **details)
+
+    check([_gh("四年级", dean.id), _gh("六年级", dean.id)], index=1, field="grade_name")
+    check([_gh("三年级", dean.id)], index=0, field="grade_name")  # 新学年不会出现的年级
+    check([_gh("四年级", dean.id), _gh("四年级", dean.id)], index=1, field="grade_name")
+    check([_gh("四年级", uuid4())], index=0, field="user_ids")  # 不存在的账号
+    check([_gh("四年级", frozen.id)], index=0, field="user_ids")  # 非 active
+    # 新建班带来的年级也算
+    plan.grade_heads = [_gh("四年级", dean.id), _gh("五年级", dean.id)]
+    validate(db, SCHOOL, plan)
+    # 别的学校的账号
+    other = db.execute(
+        text("INSERT INTO schools (name) VALUES ('别校') RETURNING id"),
+    ).scalar_one()
+    stranger = make_admin(db, other, "dean")
+    check([_gh("四年级", stranger.id)], index=0, field="user_ids")
+
+
+def _board_for(db, class_id):
+    from app.domain.classroom.schemas import Board
+    from app.domain.classroom.service import save_board
+
+    save_board(
+        db,
+        class_id,
+        Board(
+            left_title="今日课程",
+            left_text="语文",
+            right_title="今日事项",
+            right_text="",
+            countdown_label=None,
+            countdown_date=None,
+        ),
+        UUID(SUBJECT_USER_ID),
+    )
+
+
+def _rollback_blocked(db, **details):
+    with pytest.raises(UpgradeError) as ei:
+        rollback(db, SCHOOL, now=NOW)
+    assert ei.value.code == "UPGRADE_HAS_DATA"
+    assert ei.value.details == details
+    assert _active_year(db).name == "2027-2028"
+
+
+def test_rollback_unchanged_new_year_succeeds(db):
+    before = _snapshot(db)
+    up = apply(db, SCHOOL, _seed_plan(db, leave=STUDENT_IDS[8]), now=datetime.now(UTC))
+    # 把一个有班干部的学生的新注册记录原样写回(不改值)不算改动
+    db.execute(text("UPDATE enrollments SET class_role = class_role WHERE class_id IS NOT NULL"))
+    done = rollback(db, SCHOOL, now=NOW)
+    assert done.id == up.id
+    assert _snapshot(db) == before
+
+
+@pytest.mark.parametrize("kind", ["class_boards", "seats", "class_roles", "transfers"])
+def test_rollback_blocked_by_board_seat_role_transfer(db, kind):
+    # 执行时间取一小时前:看板行的 updated_at 是库里的事务时间,必须晚于它
+    up = apply(db, SCHOOL, _seed_plan(db), now=datetime.now(UTC) - timedelta(hours=1))
+    (new_cls,) = _active_classes(db)
+    new_enr = [UUID(x) for x in up.summary["new_enrollment_ids"]]
+    if kind == "class_boards":
+        _board_for(db, new_cls.id)
+    elif kind == "seats":
+        db.execute(text("UPDATE classes SET seat_version = 1 WHERE id = :c"), {"c": new_cls.id})
+    elif kind == "class_roles":
+        db.execute(
+            text("UPDATE enrollments SET class_role = '劳动委员' WHERE id = :e"), {"e": new_enr[9]}
+        )
+    else:
+        db.execute(
+            text("UPDATE enrollments SET status = 'transferred' WHERE id = :e"), {"e": new_enr[9]}
+        )
+    _rollback_blocked(db, **{kind: 1})
+
+
+def test_rollback_class_role_cleared_counts_as_change(db):
+    up = apply(db, SCHOOL, _plan(db), now=NOW)
+    roles = up.summary["new_enrollment_roles"]
+    assert sorted(v for v in roles.values() if v) == sorted(["学习委员", "体育委员", "班长"])
+    assert len(roles) == 10
+    banzhang = next(k for k, v in roles.items() if v == "班长")
+    db.execute(text("UPDATE enrollments SET class_role = NULL WHERE id = :e"), {"e": banzhang})
+    _rollback_blocked(db, class_roles=1)
+
+
+def test_rollback_skips_class_roles_for_old_upgrade_records(db):
+    up = apply(db, SCHOOL, _plan(db), now=NOW)
+    summary = dict(up.summary)
+    summary.pop("new_enrollment_roles")
+    up.summary = summary
+    db.flush()
+    banzhang = _scalar(
+        db, "SELECT id FROM enrollments WHERE class_role = '班长' AND status = 'active'"
+    )
+    db.execute(text("UPDATE enrollments SET class_role = NULL WHERE id = :e"), {"e": banzhang})
+    rollback(db, SCHOOL, now=NOW)  # 旧升级记录没有这个键:跳过 class_roles,不拦
+
+
+SUBJECTS_JSON = json.dumps([{"name": "语文", "full": 100}], ensure_ascii=False)
+
+
+def _grade_exam_in_new_year(db):
+    year = _active_year(db).id
+    grade = _scalar(db, "SELECT id FROM grades WHERE academic_year_id = :y", y=year)
+    return db.execute(
+        text(
+            "INSERT INTO grade_exams (school_id, academic_year_id, grade_id, name, exam_type,"
+            " date, subjects) VALUES (:s, :y, :g, '期中联考', '期中', '2027-11-10',"
+            " CAST(:sub AS jsonb)) RETURNING id"
+        ),
+        {"s": SCHOOL_ID, "y": year, "g": grade, "sub": SUBJECTS_JSON},
+    ).scalar_one()
+
+
+def test_rollback_blocked_by_grade_exams(db):
+    apply(db, SCHOOL, _plan(db), now=NOW)
+    _grade_exam_in_new_year(db)
+    _rollback_blocked(db, grade_exams=1)
+
+
+def test_rollback_blocked_by_class_exam_under_grade_exam(db):
+    apply(db, SCHOOL, _plan(db), now=NOW)
+    ge = _grade_exam_in_new_year(db)
+    (new_cls,) = _active_classes(db)
+    db.execute(
+        text(
+            "INSERT INTO exams (class_id, academic_year_id, name, exam_type, date, subjects,"
+            " grade_exam_id) VALUES (:c, :y, '期中联考', '期中', '2027-11-10',"
+            " CAST(:sub AS jsonb), :ge)"
+        ),
+        {"c": new_cls.id, "y": _active_year(db).id, "ge": ge, "sub": SUBJECTS_JSON},
+    )
+    # 班级考试由既有的 exams 计数,联考本身再计一次
+    _rollback_blocked(db, exams=1, grade_exams=1)
+
+
+def test_cli_rollback_labels_for_new_has_data_keys(db):
+    up = apply(db, SCHOOL, _plan(db), now=datetime.now(UTC) - timedelta(hours=1))
+    (new_cls,) = _active_classes(db)
+    _board_for(db, new_cls.id)
+    db.execute(text("UPDATE classes SET seat_version = 1 WHERE id = :c"), {"c": new_cls.id})
+    new_enr = [UUID(x) for x in up.summary["new_enrollment_ids"]]
+    db.execute(
+        text("UPDATE enrollments SET status = 'transferred' WHERE id = :e"), {"e": new_enr[9]}
+    )
+    _grade_exam_in_new_year(db)
+    code, out = _run_cli(db, ["rollback", "--yes"])
+    assert code == 1
+    for line in ("年级联考 1 场", "看板改动 1 处", "座位调整 1 个班", "学生转出 1 人"):
+        assert f"  {line}" in out
+    assert "class_boards" not in out and "grade_exams" not in out and "transfers" not in out

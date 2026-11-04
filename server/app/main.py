@@ -26,6 +26,7 @@ from app.domain.school_settings.router import router as school_settings_router  
 from app.domain.seating.router import router as seating_router
 from app.domain.students.router import router as students_router
 from app.domain.todos.router import router as todos_router
+from app.domain.years.http import router as years_router  # M3b 段 F
 from app.errors import install_error_handlers
 from app.logging import configure_logging
 from app.ws.hub import Hub
@@ -84,5 +85,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     router.include_router(school_settings_router)  # M3a 段 E
     router.include_router(org_router)  # M3a 段 D
     router.include_router(ws_router)  # M3b 段 A
+    router.include_router(years_router)  # M3b 段 F
     app.include_router(router)
     return app
