@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
-vi.mock('@/shared/api/client', () => ({ refreshAccessToken: vi.fn() }))
+vi.mock('@/shared/api/client', () => ({ tryRefreshAccessToken: vi.fn() }))
 
-import { refreshAccessToken } from '@/shared/api/client'
+import { tryRefreshAccessToken } from '@/shared/api/client'
+import type { RefreshResult } from '@/shared/api/client'
 import { createRealtimeClient, realtimeUrl, type RealtimeEvent } from './client'
 
 class FakeWS {
@@ -34,7 +35,7 @@ const last = () => FakeWS.instances[FakeWS.instances.length - 1]
 beforeEach(() => {
   vi.useFakeTimers()
   FakeWS.instances = []
-  vi.mocked(refreshAccessToken).mockReset()
+  vi.mocked(tryRefreshAccessToken).mockReset()
 })
 afterEach(() => vi.useRealTimers())
 
@@ -111,17 +112,17 @@ it('退避封顶 30 秒', () => {
 })
 
 it('4401:刷新成功后立即再连', async () => {
-  vi.mocked(refreshAccessToken).mockResolvedValue(true)
+  vi.mocked(tryRefreshAccessToken).mockResolvedValue('ok')
   const { c } = mkClient()
   c.start(); last().open()
   last().drop(4401)
   await vi.advanceTimersByTimeAsync(0)
-  expect(refreshAccessToken).toHaveBeenCalledTimes(1)
+  expect(tryRefreshAccessToken).toHaveBeenCalledTimes(1)
   expect(FakeWS.instances).toHaveLength(2)
 })
 
 it('4401:刷新失败则停止', async () => {
-  vi.mocked(refreshAccessToken).mockResolvedValue(false)
+  vi.mocked(tryRefreshAccessToken).mockResolvedValue('rejected')
   const { c } = mkClient()
   c.start(); last().drop(4401)
   await vi.advanceTimersByTimeAsync(60_000)
@@ -169,7 +170,7 @@ it('断线等待重连期间 stop 清掉定时器', () => {
 })
 
 it('4401 刷新成功后再连又 4401(期间无 ready):不再刷新、不再连', async () => {
-  vi.mocked(refreshAccessToken).mockResolvedValue(true)
+  vi.mocked(tryRefreshAccessToken).mockResolvedValue('ok')
   const { c } = mkClient()
   c.start(); last().open()
   last().drop(4401)
@@ -177,30 +178,78 @@ it('4401 刷新成功后再连又 4401(期间无 ready):不再刷新、不再连
   expect(FakeWS.instances).toHaveLength(2)
   last().drop(4401)
   await vi.advanceTimersByTimeAsync(60_000)
-  expect(refreshAccessToken).toHaveBeenCalledTimes(1)
+  expect(tryRefreshAccessToken).toHaveBeenCalledTimes(1)
   expect(FakeWS.instances).toHaveLength(2)
 })
 
 it('ready 后清零 4401 标志:之后再遇 4401 可再刷新', async () => {
-  vi.mocked(refreshAccessToken).mockResolvedValue(true)
+  vi.mocked(tryRefreshAccessToken).mockResolvedValue('ok')
   const { c } = mkClient()
   c.start(); last().drop(4401)
   await vi.advanceTimersByTimeAsync(0)
   last().open(); last().msg({ type: 'ready' })
   last().drop(4401)
   await vi.advanceTimersByTimeAsync(0)
-  expect(refreshAccessToken).toHaveBeenCalledTimes(2)
+  expect(tryRefreshAccessToken).toHaveBeenCalledTimes(2)
   expect(FakeWS.instances).toHaveLength(3)
 })
 
 it('4401 刷新进行中 stop 再 start:刷新完成后只有一个活动 socket', async () => {
-  let resolve!: (v: boolean) => void
-  vi.mocked(refreshAccessToken).mockReturnValue(new Promise<boolean>((r) => { resolve = r }))
+  let resolve!: (v: RefreshResult) => void
+  vi.mocked(tryRefreshAccessToken).mockReturnValue(new Promise<RefreshResult>((r) => { resolve = r }))
   const { c } = mkClient()
   c.start(); last().drop(4401)
   c.stop(); c.start()
   expect(FakeWS.instances).toHaveLength(2)
-  resolve(true)
+  resolve('ok')
   await vi.advanceTimersByTimeAsync(0)
   expect(FakeWS.instances).toHaveLength(2)
+})
+
+it('keeps reconnecting after network error during refresh', async () => {
+  vi.mocked(tryRefreshAccessToken).mockResolvedValueOnce('network').mockResolvedValueOnce('ok')
+  const { c, events } = mkClient()
+  c.start(); last().open()
+  last().drop(4401)
+  await vi.advanceTimersByTimeAsync(0)
+  expect(tryRefreshAccessToken).toHaveBeenCalledTimes(1)
+  expect(FakeWS.instances).toHaveLength(1)            // 网络错误:不立即连,按退避排下一次
+  await vi.advanceTimersByTimeAsync(999); expect(FakeWS.instances).toHaveLength(1)
+  await vi.advanceTimersByTimeAsync(1); expect(FakeWS.instances).toHaveLength(2)
+  last().open(); last().drop(4401)                    // 再次 4401:不受 refreshedSinceReady 限制,可再试刷新
+  await vi.advanceTimersByTimeAsync(0)
+  expect(tryRefreshAccessToken).toHaveBeenCalledTimes(2)
+  expect(FakeWS.instances).toHaveLength(3)            // ok:立即重连
+  last().open(); last().msg({ type: 'ready' })
+  expect(events).toEqual([{ type: 'reconnected' }])
+})
+
+it('network error during refresh backs off further on repeated failures', async () => {
+  vi.mocked(tryRefreshAccessToken).mockResolvedValue('network')
+  const { c } = mkClient()
+  c.start(); last().drop(4401)
+  await vi.advanceTimersByTimeAsync(1000); expect(FakeWS.instances).toHaveLength(2)
+  last().drop(4401)
+  await vi.advanceTimersByTimeAsync(1999); expect(FakeWS.instances).toHaveLength(2)
+  await vi.advanceTimersByTimeAsync(1); expect(FakeWS.instances).toHaveLength(3)
+})
+
+it('stops after refresh rejected', async () => {
+  vi.mocked(tryRefreshAccessToken).mockResolvedValue('rejected')
+  const { c } = mkClient()
+  c.start(); last().open()
+  last().drop(4401)
+  await vi.advanceTimersByTimeAsync(60_000)
+  expect(tryRefreshAccessToken).toHaveBeenCalledTimes(1)
+  expect(FakeWS.instances).toHaveLength(1)
+})
+
+it('stop during the retry wait after a network refresh error cancels the reconnect', async () => {
+  vi.mocked(tryRefreshAccessToken).mockResolvedValue('network')
+  const { c } = mkClient()
+  c.start(); last().drop(4401)
+  await vi.advanceTimersByTimeAsync(0)
+  c.stop()
+  await vi.advanceTimersByTimeAsync(60_000)
+  expect(FakeWS.instances).toHaveLength(1)
 })

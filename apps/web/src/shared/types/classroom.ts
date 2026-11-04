@@ -18,6 +18,7 @@ export type ClassPerm =
   | 'comment.write'
   | 'ai.use'
   | 'ai.class'
+  | 'parent.manage'
 
 export interface Board {
   left_title: string

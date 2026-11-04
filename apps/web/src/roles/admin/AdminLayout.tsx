@@ -6,6 +6,7 @@ import { Toaster } from '@/shared/components/Toast'
 import AccountMenu from '@/shared/components/layout/AccountMenu'
 import AppShell from '@/shared/components/layout/AppShell'
 import NoticeBell from '@/shared/components/layout/NoticeBell'
+import { switchTargets } from '@/shared/components/layout/switchTargets'
 import { RealtimeProvider } from '@/shared/realtime/RealtimeProvider'
 import { useAuthStore } from '@/shared/stores/auth'
 import ThemeToggle from '@/theme/ThemeToggle'
@@ -28,8 +29,6 @@ export default function AdminLayout({ pages = ADMIN_PAGES }: { pages?: AdminPage
     navigate('/login', { replace: true })
   }
 
-  const switchTo = user?.contexts.includes('teacher') ? { label: '切换到教师端', to: '/teacher', context: 'teacher' as const } : undefined
-
   return (
     <RealtimeProvider>
       <AppShell
@@ -40,7 +39,7 @@ export default function AdminLayout({ pages = ADMIN_PAGES }: { pages?: AdminPage
           <>
             <NoticeBell />
             <ThemeToggle />
-            <AccountMenu name={user?.display_name} onLogout={logout} switchTo={switchTo} preferences={false} />
+            <AccountMenu name={user?.display_name} onLogout={logout} switchTo={switchTargets(user?.contexts, 'admin')} preferences={false} />
           </>
         )}
         overlays={<Toaster />}
