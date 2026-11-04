@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.orm import Session
 
 from app.auth.deps import get_current_user
@@ -8,7 +8,6 @@ from app.config import Settings, settings_dep
 from app.db import get_db
 from app.domain.ai_admin import service
 from app.domain.ai_admin.schemas import AiConfigSave, AiConfigView, AiTestResult, AiUsage
-from app.domain.reports.attendance import MONTH_PATTERN
 from app.models import User
 from app.rbac.admin import ensure_admin
 from app.rbac.bindings import Binding
@@ -21,7 +20,6 @@ DbDep = Annotated[Session, Depends(get_db)]
 UserDep = Annotated[User, Depends(get_current_user)]
 BindingsDep = Annotated[list[Binding], Depends(get_bindings)]
 SettingsDep = Annotated[Settings, Depends(settings_dep)]
-Month = Annotated[str | None, Query(pattern=MONTH_PATTERN)]
 
 
 @router.get("/usage")
@@ -31,7 +29,7 @@ def get_usage(
     bindings: BindingsDep,
     db: DbDep,
     settings: SettingsDep,
-    month: Month = None,
+    month: str | None = None,
 ) -> AiUsage:
     ensure_admin(db, request, user.id, bindings, Perm.AI_USAGE, settings.school_id)
     resolved = service.resolve_month(db, settings.school_id, month)

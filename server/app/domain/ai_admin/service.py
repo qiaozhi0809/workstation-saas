@@ -4,10 +4,12 @@ from datetime import date
 from uuid import UUID
 
 import httpx
+import structlog
 from fastapi import Request
-from sqlalchemy import Integer, cast, func, select
+from sqlalchemy import Integer, case, cast, func, select
 from sqlalchemy.orm import Session
 
+from app import clock
 from app.ai.client import AIUpstreamError, ChatMessage, Delta
 from app.ai.providers import PRESETS
 from app.ai.settings import (
@@ -20,7 +22,6 @@ from app.ai.settings import (
 )
 from app.ai.templates import TEMPLATES
 from app.audit.service import record
-from app.clock import utc_now
 from app.domain.ai_admin.schemas import (
     AiConfigSave,
     AiConfigView,
@@ -37,7 +38,10 @@ from app.errors import ApiError
 from app.models import User
 from app.models.audit import AuditLog
 
+log = structlog.get_logger()
+
 TOP_TEMPLATES = 3
+MIN_YEAR, MAX_YEAR = 1970, 2100
 TEST_TIMEOUT = 10.0
 DELETED_USER = "(已删除账号)"
 
@@ -45,9 +49,9 @@ DELETED_USER = "(已删除账号)"
 def resolve_month(db: Session, school_id: UUID, month: str | None) -> str:
     """缺省为学校时区的本月;格式必须是 YYYY-MM。"""
     if month is None:
-        today = utc_now().astimezone(school_tz(db, school_id)).date()
+        today = clock.utc_now().astimezone(school_tz(db, school_id)).date()
         return f"{today.year:04d}-{today.month:02d}"
-    if not re.fullmatch(MONTH_PATTERN, month):
+    if not re.fullmatch(MONTH_PATTERN, month) or not MIN_YEAR <= int(month[:4]) <= MAX_YEAR:
         raise ApiError(400, "BAD_REQUEST", "月份格式应为 YYYY-MM")
     return month
 
@@ -57,14 +61,19 @@ def _label(template_id: str) -> str:
     return t.title if t is not None else template_id
 
 
+def _token(text_value):
+    """token 数只认 9 位以内的非负整数文本;null、浮点、乱码一律不计(不让一行脏审计拖垮整页)。"""
+    return case((text_value.regexp_match(r"^[0-9]{1,9}$"), cast(text_value, Integer)), else_=None)
+
+
 def usage(db: Session, school_id: UUID, month: str) -> AiUsage:
     tz = school_tz(db, school_id)
     year, mon = int(month[:4]), int(month[5:])
     start = local_day_start_utc(date(year, mon, 1), tz)
     end = local_day_start_utc(date(year + (mon == 12), mon % 12 + 1, 1), tz)
     template = AuditLog.extra["template"].as_string()
-    prompt = cast(AuditLog.extra["prompt_tokens"].as_string(), Integer)
-    completion = cast(AuditLog.extra["completion_tokens"].as_string(), Integer)
+    prompt = _token(AuditLog.extra["prompt_tokens"].as_string())
+    completion = _token(AuditLog.extra["completion_tokens"].as_string())
     stmt = (
         select(
             AuditLog.user_id,
@@ -238,4 +247,7 @@ def test_config(
         return AiTestResult(ok=False, message=e.message)
     except TimeoutError:
         return AiTestResult(ok=False, message="连接超时,请检查服务地址或稍后再试")
+    except Exception as e:  # 例如 Key 含非 ASCII 字符导致请求头编码失败;不记录、不回显 Key
+        log.warning("ai_test_failed", error_type=type(e).__name__)
+        return AiTestResult(ok=False, message="连不上 AI 服务,请检查服务地址和 API Key")
     return AiTestResult(ok=True, message="连接成功")

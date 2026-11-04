@@ -16,7 +16,6 @@ DEAN = "55555555-5555-5555-5555-555555555544"
 GRADE_HEAD3 = "55555555-5555-5555-5555-555555555545"
 IT_ADMIN = "55555555-5555-5555-5555-555555555546"
 TEACHER = "55555555-5555-5555-5555-555555555555"
-NOW = "2026-10-20T02:00:00+00:00"
 KEY = "sk-test-0000-secret"
 
 
@@ -113,11 +112,11 @@ def test_usage_month_boundary_school_tz(client, db, settings):
 
 
 def test_usage_defaults_to_current_month(client, db, settings, monkeypatch):
-    freeze(monkeypatch, "2026-10-31T17:00:00+00:00")  # 本地 11-01 01:00
-    _gen(db, PRINCIPAL, "2026-10-31T16:30:00+00:00")
+    freeze(monkeypatch, "2031-03-31T17:00:00+00:00")  # 本地 2031-04-01 01:00,与真实月份无关
+    _gen(db, PRINCIPAL, "2031-03-31T16:30:00+00:00")
     res = _usage(client, settings)
     assert res.status_code == 200
-    assert res.json()["month"] == "2026-11"
+    assert res.json()["month"] == "2031-04"
     assert res.json()["total"]["calls"] == 1
 
 
@@ -131,7 +130,7 @@ def test_usage_explicit_month_and_empty(client, settings):
 
 
 def test_usage_invalid_month(client, settings):
-    for bad in ("2026-13", "2026-1", "abc", "2026-10-01"):
+    for bad in ("2026-13", "2026-1", "abc", "2026-10-01", "0000-01", "9999-12", "1969-12"):
         assert _usage(client, settings, month=bad).status_code == 400
 
 
@@ -241,6 +240,7 @@ def test_config_test_connection(client, db, settings):
 
 
 def test_permissions(client, settings):
+    client.app.state.ai_transport = sse_transport(["连接成功"])  # 不碰真实网络
     for user, usage_ok, config_ok in (
         (PRINCIPAL, True, True),
         (DEAN, True, False),
@@ -278,3 +278,22 @@ def test_config_test_connection_timeout(client, settings, monkeypatch):
     res = client.post(TEST, json=_body(), headers=auth(settings, IT_ADMIN))
     assert res.status_code == 200
     assert res.json()["ok"] is False and "超时" in res.json()["message"]
+
+
+def test_usage_ignores_junk_token_values(client, db, settings):
+    _gen(db, PRINCIPAL, "2026-10-05T02:00:00+00:00", pt=10, ct=20)
+    for pt, ct in ((12.0, "abc"), ("junk", None), (99999999999999, -5), ([1], {"a": 1})):
+        _gen(db, PRINCIPAL, "2026-10-06T02:00:00+00:00", pt=pt, ct=ct)
+    res = _usage(client, settings, month="2026-10")
+    assert res.status_code == 200, res.text
+    row = res.json()["rows"][0]
+    assert (row["calls"], row["prompt_tokens"], row["completion_tokens"]) == (5, 10, 20)
+
+
+def test_config_test_non_ascii_key(client, settings):
+    client.app.state.ai_transport = sse_transport(["好"])
+    key = "sk-全角密钥"
+    res = client.post(TEST, json=_body(api_key=key), headers=auth(settings, IT_ADMIN))
+    assert res.status_code == 200
+    assert res.json()["ok"] is False and res.json()["message"]
+    assert key not in res.text
