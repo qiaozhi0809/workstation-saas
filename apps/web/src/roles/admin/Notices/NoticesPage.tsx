@@ -114,7 +114,7 @@ export default function NoticesPage() {
     <div className="mx-auto w-full max-w-6xl space-y-4 p-4 md:p-6">
       <h1 className="text-xl font-semibold">通知</h1>
       <div className="grid items-start gap-4 md:grid-cols-2">
-        {scope.isError ? (
+        {scope.isError && !scope.data ? (
           <ErrorState title="加载失败" onRetry={() => void scope.refetch()} retrying={scope.isFetching} />
         ) : !scope.data ? (
           <LoadingState />

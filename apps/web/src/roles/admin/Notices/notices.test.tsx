@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { adminApi } from '@/shared/api/admin'
 import { ApiError } from '@/shared/api/client'
@@ -192,6 +192,28 @@ describe('发通知:编写', () => {
     fireEvent.click((await confirmDialog()).getByRole('button', { name: '确认发送' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('没有可发送的人')
     expect(screen.getByLabelText('标题')).toHaveValue('  期中考试通知  ')
+  })
+})
+
+describe('发通知:今日关注刷新失败', () => {
+  it('keeps the draft when a background refetch of today fails', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><NoticesPage /></QueryClientProvider>)
+    await fill()
+    // 后台重取失败:查询进入 error 状态但旧数据仍在
+    act(() => {
+      client.getQueryCache().find({ queryKey: ['admin', 'today'] })!
+        .setState({ status: 'error', error: new Error('boom'), fetchStatus: 'idle' })
+    })
+    expect(client.getQueryState(['admin', 'today'])?.data).toBeDefined()
+    expect(screen.getByLabelText('标题')).toHaveValue('  期中考试通知  ')
+    expect(screen.queryByText('加载失败')).not.toBeInTheDocument()
+  })
+
+  it('still shows the error state when today never loaded', async () => {
+    vi.mocked(adminApi.today).mockRejectedValue(new Error('boom'))
+    renderPage()
+    expect(await screen.findByText('加载失败')).toBeInTheDocument()
   })
 })
 
