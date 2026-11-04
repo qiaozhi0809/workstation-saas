@@ -347,5 +347,6 @@ def test_rollback_requires_latest_id(client, db, settings):
         _rollback(client, settings, upgrade_id=first["upgrade_id"]), 409, "UPGRADE_NOT_LATEST"
     )
     assert err["details"] == {"latest_id": second.json()["upgrade_id"]}
+    assert _latest(client, settings)["rolled_back"] is False  # 被拒后最新一次仍未回滚
     ok = _rollback(client, settings, upgrade_id=second.json()["upgrade_id"])
     assert ok.status_code == 200, ok.text

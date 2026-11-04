@@ -3,9 +3,11 @@
 import io
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 from sqlalchemy import text
 
+from app.auth import sessions
 from app.cli import build_parser, parent_archive
 
 PARENT02 = "55555555-5555-5555-5555-555555555562"
@@ -44,12 +46,20 @@ def _state(db):
     ).one()
 
 
-def test_parent_archive_dry_run(db, redis_client):
+def test_parent_archive_dry_run(db, settings, redis_client):
     _age(db)
+    token = sessions.issue_refresh(redis_client, settings, UUID(PARENT02))
     before = _state(db)
     code, out = _run(db, redis_client, ["--dry-run"])
     assert code == 0 and out.strip() == "已归档绑定 1 条,账号 1 个"
     assert _state(db) == before
+    assert redis_client.get(sessions.refresh_key(token)) is not None
+    assert (
+        db.execute(
+            text("SELECT count(*) FROM audit_logs WHERE action = 'parent.archive'")
+        ).scalar_one()
+        == 0
+    )
     code, out = _run(db, redis_client, [])
     assert code == 0 and out.strip() == "已归档绑定 1 条,账号 1 个"
     assert _state(db).u == "archived"

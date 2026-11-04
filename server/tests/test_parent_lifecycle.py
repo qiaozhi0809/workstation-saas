@@ -3,6 +3,7 @@
 from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
 
+import pytest
 from sqlalchemy import text
 
 from app.auth import sessions
@@ -131,3 +132,30 @@ def test_archive_last_child_archives_account(client, settings, db, redis_client)
     assert login.status_code == 401
     again = archive_expired(db, SCHOOL, NOW, redis_client)
     assert (again.links, again.users) == (0, 0)
+
+
+@pytest.mark.parametrize("days,archived", [(364, 0), (365, 1), (366, 1)])
+def test_archive_boundary(db, days, archived):
+    _age(db, PARENT01, "S0017", days)
+    res = archive_expired(db, SCHOOL, NOW)
+    assert (res.links, res.users) == (archived, 0)
+    assert _link(db, PARENT01, "S0017").status == ("ended" if archived else "readonly")
+
+
+def test_archive_teacher_parent_keeps_account(db):
+    _age(db, TEACHER04, "S0002")
+    res = archive_expired(db, SCHOOL, NOW)
+    assert (res.links, res.users) == (1, 0)
+    assert _link(db, TEACHER04, "S0002").status == "ended"
+    assert (
+        db.execute(text("SELECT status FROM users WHERE id = :u"), {"u": TEACHER04}).scalar_one()
+        == "active"
+    )
+    open_teacher = db.execute(
+        text(
+            "SELECT count(*) FROM role_bindings WHERE user_id = :u AND ended_at IS NULL"
+            " AND role_type = 'homeroom_teacher'"
+        ),
+        {"u": TEACHER04},
+    ).scalar_one()
+    assert open_teacher == 1

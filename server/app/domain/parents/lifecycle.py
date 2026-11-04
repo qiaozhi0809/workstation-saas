@@ -2,7 +2,7 @@
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import UUID
 
 from redis import Redis
@@ -68,10 +68,10 @@ def archive_expired(
             "UPDATE parent_links pl SET status = 'ended', ended_at = :now, readonly_since = NULL"
             " FROM parents p, students s"
             " WHERE p.id = pl.parent_id AND s.id = pl.student_id AND s.school_id = :school"
-            " AND pl.status = 'readonly' AND pl.readonly_since + make_interval(days => :d) <= :now"
+            " AND pl.status = 'readonly' AND pl.readonly_since <= :cutoff"
             " RETURNING p.user_id, pl.student_id"
         ),
-        {"now": now, "school": school_id, "d": READONLY_DAYS},
+        {"now": now, "school": school_id, "cutoff": now - timedelta(days=READONLY_DAYS)},
     ).all()
     for r in links:
         db.execute(
@@ -91,8 +91,6 @@ def archive_expired(
         {"ids": list({r.user_id for r in links})},
     ).all()
     for u in users:
-        if redis is not None and not dry_run:
-            sessions.revoke_all(redis, u.id)
         record(
             db,
             user_id=None,
@@ -104,4 +102,7 @@ def archive_expired(
         )
     if not dry_run:
         db.commit()
+        if redis is not None:
+            for u in users:
+                sessions.revoke_all(redis, u.id)
     return ArchiveResult(links=len(links), users=len(users))
