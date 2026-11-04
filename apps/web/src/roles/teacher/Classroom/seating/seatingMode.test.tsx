@@ -509,7 +509,7 @@ it('disables mentor seating without exam scores', async () => {
 it('runs mentor seating from the bar', async () => {
   vi.mocked(examsApi.gradebook).mockResolvedValue({ exams: [{
     id: 'x1', name: '月考', exam_type: '月考' as const, date: '2026-10-20', subjects: [{ name: '语文', full: 100 }],
-    created_by_me: true, progress: { entered: 3, total: 3 },
+    grade_exam_id: null, created_by_me: true, progress: { entered: 3, total: 3 },
     scores: { e1: { 语文: 90 }, e2: { 语文: 80 }, e3: { 语文: 70 } },
   }] })
   setup({ mode: '排座' })

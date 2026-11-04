@@ -21,7 +21,7 @@ vi.mock('@/shared/components/charts/TrendLine', () => ({
 
 const profile: StudentProfile = { id: 's1', mk: 'S0001', name: '王小一', class_id: 'c1', enrollment_id: 'e1' }
 const subjects = [{ name: '语文', full: 100 }, { name: '数学', full: 100 }]
-const base = { exam_type: '月考' as const, subjects, created_by_me: true, progress: { entered: 3, total: 3 } }
+const base = { exam_type: '月考' as const, subjects, grade_exam_id: null, created_by_me: true, progress: { entered: 3, total: 3 } }
 const book: Gradebook = {
   exams: [
     { ...base, id: 'x1', name: '九月月考', date: '2026-09-20',

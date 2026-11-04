@@ -21,7 +21,7 @@ function makeExam(
   })
   return {
     id, name, exam_type: '期中', date, subjects, scores,
-    created_by_me: true, progress: { entered: ids.length, total: ids.length },
+    grade_exam_id: null, created_by_me: true, progress: { entered: ids.length, total: ids.length },
   }
 }
 
@@ -41,7 +41,7 @@ function exam2(id: string, scores: Record<string, Record<string, ScoreValue>>, s
   return {
     id, name: id, exam_type: '月考', date: '2026-01-01',
     subjects: subs.map((name) => ({ name, full: 100 })), scores,
-    created_by_me: true, progress: { entered: 0, total: 0 },
+    grade_exam_id: null, created_by_me: true, progress: { entered: 0, total: 0 },
   }
 }
 const empty = exam2('empty', {})

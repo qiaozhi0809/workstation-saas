@@ -1,6 +1,9 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 import { useAuthStore } from '@/shared/stores/auth'
+import type { GradeExamInput, NoticeInput, UpgradePlan } from '@/shared/types/admin'
 import { adminApi } from './admin'
+import { noticesApi } from './notices'
+import { ApiError } from './client'
 import { authApi } from './auth'
 import { schoolApi } from './school'
 
@@ -35,6 +38,15 @@ const sw = {
   parent_rank: false, parent_negative_review: false, teacher_review_frequency: false,
   monitor: false, parent_monitor: false, ai_review_before_send: true, star_of_week: true, birthdays: true,
 }
+
+const geB: GradeExamInput = { grade_id: 'g1', name: '期中联考', exam_type: '期中', date: '2026-11-01', subjects: [{ name: '语文', full: 100 }] }
+const noticeB: NoticeInput = { title: '开会', content: '明天开会', target: { kind: 'school' } }
+const aiB = { provider: 'p', base_url: 'https://x', model: 'm', temperature: 0.5, mask_forced: true, api_key: null }
+const planB: UpgradePlan = {
+  version: 1, from_year_id: 'y1', new_year: { name: '2027', start_date: '2027-09-01', end_date: '2028-07-01' },
+  classes: [], students: [], new_classes: [], grade_heads: null,
+}
+const upB = { name: '2027', start_date: '2027-09-01', end_date: '2028-07-01' }
 
 const cases: [string, () => Promise<unknown>, string, string, unknown?][] = [
   ['school', () => adminApi.school(), 'GET', '/admin/school'],
@@ -75,6 +87,51 @@ const cases: [string, () => Promise<unknown>, string, string, unknown?][] = [
   ['today', () => adminApi.today(), 'GET', '/admin/today'],
   ['board none', () => adminApi.board(), 'GET', '/admin/board'],
   ['board grade', () => adminApi.board('g1'), 'GET', '/admin/board?grade_id=g1'],
+  ['gradeExams none', () => adminApi.gradeExams(), 'GET', '/admin/grade-exams'],
+  ['gradeExams grade', () => adminApi.gradeExams('g1'), 'GET', '/admin/grade-exams?grade_id=g1'],
+  ['createGradeExam', () => adminApi.createGradeExam(geB), 'POST', '/admin/grade-exams', geB],
+  ['updateGradeExam', () => adminApi.updateGradeExam('ge1', geB), 'PUT', '/admin/grade-exams/ge1', geB],
+  ['deleteGradeExam', () => adminApi.deleteGradeExam('ge1'), 'DELETE', '/admin/grade-exams/ge1'],
+  ['syncGradeExam', () => adminApi.syncGradeExam('ge1'), 'POST', '/admin/grade-exams/ge1/sync'],
+  ['scoreReport', () => adminApi.scoreReport('ge1'), 'GET', '/admin/reports/scores?grade_exam_id=ge1'],
+  ['scoreStudents all', () => adminApi.scoreStudents('ge1'), 'GET', '/admin/reports/scores/students?grade_exam_id=ge1'],
+  ['scoreStudents class', () => adminApi.scoreStudents('ge1', 'c1'), 'GET',
+    '/admin/reports/scores/students?grade_exam_id=ge1&class_id=c1'],
+  ['attendanceReport month', () => adminApi.attendanceReport('2026-11'), 'GET', '/admin/reports/attendance?month=2026-11'],
+  ['attendanceReport grade', () => adminApi.attendanceReport('2026-11', 'g1'), 'GET',
+    '/admin/reports/attendance?month=2026-11&grade_id=g1'],
+  ['attendanceClass', () => adminApi.attendanceClass('2026-11', 'c1'), 'GET',
+    '/admin/reports/attendance/class?month=2026-11&class_id=c1'],
+  ['auditActions', () => adminApi.auditActions(), 'GET', '/admin/audit/actions'],
+  ['audit empty', () => adminApi.audit({}), 'GET', '/admin/audit'],
+  ['audit full', () => adminApi.audit({
+    from: '2026-11-01', to: '2026-11-30', user_id: 'u1', group: 'grade', action: 'exam.grade_create',
+    object_type: 'grade_exam', object_id: 'ge1', success: false, page: 2,
+  }), 'GET', '/admin/audit?from=2026-11-01&to=2026-11-30&user_id=u1&group=grade&action=exam.grade_create&object_type=grade_exam&object_id=ge1&success=false&page=2'],
+  ['audit success true', () => adminApi.audit({ success: true }), 'GET', '/admin/audit?success=true'],
+  ['aiUsage', () => adminApi.aiUsage('2026-11'), 'GET', '/admin/ai/usage?month=2026-11'],
+  ['aiConfig', () => adminApi.aiConfig(), 'GET', '/admin/ai/config'],
+  ['saveAiConfig', () => adminApi.saveAiConfig(aiB), 'PUT', '/admin/ai/config', aiB],
+  ['clearAiConfig', () => adminApi.clearAiConfig(), 'DELETE', '/admin/ai/config'],
+  ['testAiConfig', () => adminApi.testAiConfig(aiB), 'POST', '/admin/ai/config/test', aiB],
+  ['sendNotice', () => adminApi.sendNotice(noticeB), 'POST', '/admin/notices', noticeB],
+  ['sentNotices', () => adminApi.sentNotices(2), 'GET', '/admin/notices?page=2'],
+  ['noticeRecipients', () => adminApi.noticeRecipients('n1'), 'GET', '/admin/notices/n1/recipients'],
+  ['recallNotice', () => adminApi.recallNotice('n1'), 'POST', '/admin/notices/n1/recall'],
+  ['noticePeople', () => adminApi.noticePeople('张'), 'GET', '/admin/notices/people?q=%E5%BC%A0'],
+  ['upgradeSuggest', () => adminApi.upgradeSuggest(upB), 'POST', '/admin/years/upgrade/suggest', upB],
+  ['upgradePreview', () => adminApi.upgradePreview(planB), 'POST', '/admin/years/upgrade/preview', planB],
+  ['upgradeApply', () => adminApi.upgradeApply(planB), 'POST', '/admin/years/upgrade', planB],
+  ['upgradeLatest', () => adminApi.upgradeLatest(), 'GET', '/admin/years/upgrade/latest'],
+  ['upgradeRollback', () => adminApi.upgradeRollback(), 'POST', '/admin/years/upgrade/rollback'],
+  ['historyYears', () => adminApi.historyYears(), 'GET', '/admin/history/years'],
+  ['historyClasses', () => adminApi.historyClasses('y0'), 'GET', '/admin/history/classes?year_id=y0'],
+  ['historyStudents', () => adminApi.historyStudents('c1'), 'GET', '/admin/history/classes/c1/students'],
+  ['historyExams', () => adminApi.historyExams('c1'), 'GET', '/admin/history/classes/c1/exams'],
+  ['historyScores', () => adminApi.historyScores('e1'), 'GET', '/admin/history/exams/e1/scores'],
+  ['notices inbox', () => noticesApi.inbox(3), 'GET', '/notices?page=3'],
+  ['notices read', () => noticesApi.read('n1'), 'POST', '/notices/n1/read'],
+  ['notices readAll', () => noticesApi.readAll(), 'POST', '/notices/read-all'],
   ['tagPool', () => schoolApi.tagPool(), 'GET', '/school/tag-pool'],
   ['me', () => authApi.me(), 'GET', '/auth/me'],
   ['changePassword', () => authApi.changePassword({ old_password: 'a', new_password: 'b', refresh_token: 'r' }),
@@ -96,4 +153,36 @@ it('auth store: setUser 与 lastContext 持久字段', () => {
   useAuthStore.getState().setLastContext('admin')
   expect(useAuthStore.getState().lastContext).toBe('admin')
   expect(JSON.parse(localStorage.getItem('ws-auth') ?? '{}').state.lastContext).toBe('admin')
+})
+
+it('exportScoreReport: GET 带 Bearer,令牌不进 URL,返回 Blob', async () => {
+  fetchMock.mockImplementation(async () => new Response('a,b', { status: 200 }))
+  const blob = await adminApi.exportScoreReport('ge1')
+  expect(Object.prototype.toString.call(blob)).toBe('[object Blob]')  // jsdom 与 undici 的 Blob 类不同,不能用 instanceof
+  expect(await blob.text()).toBe('a,b')
+  const [url, init] = fetchMock.mock.calls[0]
+  expect(url).toBe('/api/v1/admin/reports/scores/export?grade_exam_id=ge1')
+  expect(init.method).toBe('GET')
+  expect(init.headers.Authorization).toBe('Bearer a')
+  expect(url).not.toContain('token')
+})
+
+it('exportAttendance: 查询串与 Bearer', async () => {
+  fetchMock.mockImplementation(async () => new Response('a,b', { status: 200 }))
+  const blob = await adminApi.exportAttendance('2026-11', 'g1')
+  expect(Object.prototype.toString.call(blob)).toBe('[object Blob]')  // jsdom 与 undici 的 Blob 类不同,不能用 instanceof
+  expect(await blob.text()).toBe('a,b')
+  const [url, init] = fetchMock.mock.calls[0]
+  expect(url).toBe('/api/v1/admin/reports/attendance/export?month=2026-11&grade_id=g1')
+  expect(init.method).toBe('GET')
+  expect(init.headers.Authorization).toBe('Bearer a')
+  await adminApi.exportAttendance('2026-11')
+  expect(fetchMock.mock.calls[1][0]).toBe('/api/v1/admin/reports/attendance/export?month=2026-11')
+})
+
+it('导出方法非 2xx 抛 ApiError', async () => {
+  fetchMock.mockImplementation(async () =>
+    new Response(JSON.stringify({ error: { code: 'FORBIDDEN', message: 'no' } }), { status: 403 }))
+  await expect(adminApi.exportScoreReport('ge1')).rejects.toBeInstanceOf(ApiError)
+  await expect(adminApi.exportAttendance('2026-11')).rejects.toMatchObject({ status: 403, code: 'FORBIDDEN' })
 })

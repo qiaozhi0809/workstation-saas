@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { AlertCircle, GraduationCap, Loader2 } from 'lucide-react'
 import { authApi } from '@/shared/api/auth'
 import { ApiError } from '@/shared/api/client'
@@ -21,11 +21,14 @@ const FALLBACK = '登录失败,请稍后再试'
 
 export default function LoginPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const setTokens = useAuthStore((s) => s.setTokens)
   const [loginName, setLoginName] = useState('')
   const [password, setPassword] = useState('')
   const [pending, setPending] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(
+    () => (location.state as { message?: string } | null)?.message ?? null,
+  )
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault()

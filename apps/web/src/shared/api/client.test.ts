@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { useAuthStore } from '@/shared/stores/auth'
-import { api, ApiError } from './client'
+import { api, ApiError, refreshAccessToken } from './client'
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -130,4 +130,18 @@ it('logs out and throws UNAUTHORIZED when the retry after a successful refresh i
   await expect(api('GET', '/auth/me')).rejects.toMatchObject({ status: 401, code: 'UNAUTHORIZED' })
   expect(fetchMock).toHaveBeenCalledTimes(3)
   expect(useAuthStore.getState().accessToken).toBeNull()
+})
+
+it('refreshAccessToken: 无刷新令牌返回 false;成功更新 access', async () => {
+  useAuthStore.setState({ refreshToken: null })
+  expect(await refreshAccessToken()).toBe(false)
+  useAuthStore.setState({ refreshToken: 'ref' })
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(json({ access_token: 'n2', expires_at: 'x' })))
+  expect(await refreshAccessToken()).toBe(true)
+  expect(useAuthStore.getState().accessToken).toBe('n2')
+})
+
+it('refreshAccessToken: 刷新失败返回 false', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(json({ error: { code: 'X', message: 'x' } }, 401)))
+  expect(await refreshAccessToken()).toBe(false)
 })

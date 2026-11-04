@@ -23,7 +23,7 @@ const SUBJECTS = ['语文', '数学', '英语', '道法', '科学'].map((name) =
 
 const exam = (id: string, name: string, over: Partial<Exam> = {}): Exam => ({
   id, name, exam_type: '月考', date: '2026-10-20',
-  subjects: SUBJECTS.slice(0, 2), created_by_me: true,
+  subjects: SUBJECTS.slice(0, 2), grade_exam_id: null, created_by_me: true,
   progress: { entered: 10, total: 10 }, ...over,
 })
 const E1 = exam('e1', '十月月考')

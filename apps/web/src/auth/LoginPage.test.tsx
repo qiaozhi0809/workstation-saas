@@ -168,3 +168,12 @@ it('revokes the refresh token when discarding a login without identity', async (
   await screen.findByRole('alert')
   expect(authApi.logout).toHaveBeenCalledWith('r')
 })
+
+it('shows the message carried in navigation state (e.g. account disabled)', () => {
+  render(
+    <MemoryRouter initialEntries={[{ pathname: '/login', state: { message: '你的账号已被停用' } }]}>
+      <LoginPage />
+    </MemoryRouter>,
+  )
+  expect(screen.getByText('你的账号已被停用')).toBeInTheDocument()
+})

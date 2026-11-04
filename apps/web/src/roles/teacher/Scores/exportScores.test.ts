@@ -13,7 +13,7 @@ vi.mock('@/shared/lib/csv', async (orig) => ({ ...(await orig<typeof import('@/s
 const exam: Exam = {
   id: 'x1', name: '十月月考', exam_type: '月考', date: '2026-10-20',
   subjects: [{ name: '语文', full: 100 }, { name: '数学', full: 100 }],
-  created_by_me: true, progress: { entered: 3, total: 4 },
+  grade_exam_id: null, created_by_me: true, progress: { entered: 3, total: 4 },
 }
 const seat = (n: number, name: string, no: string | null): StudentSeat => ({
   enrollment_id: `e${n}`, student_id: `s${n}`, name, mk: `S${n}`, seat_row: null, seat_col: null,

@@ -105,7 +105,7 @@ it('marks reviews of students no longer in the class as transferred out', async 
 
 const exam = (id: string, date: string, scores: Record<string, number>): GradebookExam => ({
   id, name: `考试${id}`, exam_type: '月考', date, subjects: [{ name: '语文', full: 100 }],
-  created_by_me: true, progress: { entered: 3, total: 3 },
+  grade_exam_id: null, created_by_me: true, progress: { entered: 3, total: 3 },
   scores: Object.fromEntries(Object.entries(scores).map(([e, v]) => [e, { 语文: v }])),
 })
 
