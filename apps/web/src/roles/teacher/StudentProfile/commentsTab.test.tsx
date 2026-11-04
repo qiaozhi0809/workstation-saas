@@ -18,7 +18,7 @@ const profile: StudentProfile = { id: 's1', mk: 'S0001', name: '王小一', clas
 
 const cm = (over: Partial<Comment>): Comment => ({
   id: 'm1', semester: '2026-2027 第一学期', content: '学习认真,进步明显', generated_by_ai: false, current_year: true,
-  created_by_name: '李老师', can_delete: true, created_at: '2026-10-30T08:00:00Z', ...over,
+  created_by_name: '李老师', can_delete: true, created_at: '2026-10-30T08:00:00Z', parent_visible: false, ...over,
 })
 
 function Loc() {

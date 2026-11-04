@@ -1,7 +1,7 @@
 import type { ExamType, SubjectFull } from './grades'
 import type { StudentSeat } from './student'
 
-export type Context = 'teacher' | 'admin'
+export type Context = 'teacher' | 'admin' | 'parent'
 export type AdminPerm =
   | 'school.view' // 计算得出:有校长 / 主任 / 年级组长任一身份(能看业务数据)
   | 'org.manage' | 'account.manage' | 'settings.manage' | 'audit.read'

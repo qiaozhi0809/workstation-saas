@@ -79,3 +79,22 @@ it('sends an old-shape persisted user (no contexts) to /login without crashing',
   expect(screen.getByText('login page')).toBeInTheDocument()
   expect(useAuthStore.getState().accessToken).toBeNull()
 })
+
+it('lets a parent account into a parent-context route and sends others to their first context', () => {
+  const mk = (contexts: ('teacher' | 'parent')[]) => {
+    useAuthStore.getState().setTokens('a', 'r', { id: 'u', display_name: 't', contexts, admin_perms: [], must_change_password: false })
+    return render(
+      <MemoryRouter initialEntries={['/parent']}>
+        <Routes>
+          <Route path="/teacher" element={<div>teacher home</div>} />
+          <Route path="/parent" element={<ProtectedRoute context="parent"><div>parent area</div></ProtectedRoute>} />
+        </Routes>
+      </MemoryRouter>,
+    )
+  }
+  mk(['parent'])
+  expect(screen.getByText('parent area')).toBeInTheDocument()
+  cleanup()
+  mk(['teacher'])
+  expect(screen.getByText('teacher home')).toBeInTheDocument()
+})

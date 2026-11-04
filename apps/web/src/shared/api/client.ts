@@ -15,38 +15,46 @@ export class ApiError extends Error {
   }
 }
 
-let refreshing: Promise<boolean> | null = null
+/** 刷新结果:network = 请求没到服务端(可稍后重试);rejected = 服务端不认(401/403 等明确拒绝、令牌已被换掉);5xx 与网络异常同算 network */
+export type RefreshResult = 'ok' | 'rejected' | 'network'
 
-async function doRefresh(refreshToken: string): Promise<boolean> {
+let refreshing: Promise<RefreshResult> | null = null
+
+async function doRefresh(refreshToken: string): Promise<RefreshResult> {
   try {
     const res = await fetch(`${BASE}/auth/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refresh_token: refreshToken }),
     })
-    if (!res.ok) return false
+    if (res.status >= 500) return 'network'   // 服务端暂不可用(重启、网关 502/503/504):不是令牌的问题
+    if (!res.ok) return 'rejected'
     const data = (await res.json()) as { access_token?: string }
-    if (!data.access_token) return false
-    if (useAuthStore.getState().refreshToken !== refreshToken) return false
+    if (!data.access_token) return 'rejected'
+    if (useAuthStore.getState().refreshToken !== refreshToken) return 'rejected'
     useAuthStore.getState().updateAccess(data.access_token)
-    return true
+    return 'ok'
   } catch {
-    return false
+    return 'network'
   }
 }
 
-function refreshOnce(refreshToken: string): Promise<boolean> {
+function refreshOnce(refreshToken: string): Promise<RefreshResult> {
   refreshing ??= doRefresh(refreshToken).finally(() => {
     refreshing = null
   })
   return refreshing
 }
 
-/** 用 store 里的刷新令牌换新 access(复用 refreshOnce 的并发合并);无刷新令牌返回 false */
-export async function refreshAccessToken(): Promise<boolean> {
+/** 用 store 里的刷新令牌换新 access(复用 refreshOnce 的并发合并);无刷新令牌算 rejected */
+export async function tryRefreshAccessToken(): Promise<RefreshResult> {
   const { refreshToken } = useAuthStore.getState()
-  if (!refreshToken) return false
+  if (!refreshToken) return 'rejected'
   return refreshOnce(refreshToken)
+}
+
+export async function refreshAccessToken(): Promise<boolean> {
+  return (await tryRefreshAccessToken()) === 'ok'
 }
 
 function send(
@@ -98,7 +106,9 @@ export async function authedFetch(
   if (res.status === 401 && !NO_REFRESH_PATHS.includes(path)) {
     const { refreshToken } = useAuthStore.getState()
     if (!refreshToken) throw sessionExpired()
-    if (!(await refreshOnce(refreshToken))) throw sessionExpired()
+    const refreshed = await refreshOnce(refreshToken)
+    if (refreshed === 'network') return res   // 弱网 / 服务端暂不可用:保留登录态,这次请求按原 401 失败,下次请求再试刷新
+    if (refreshed !== 'ok') throw sessionExpired()
     res = await send(method, path, body, signal)
     if (res.status === 401) throw sessionExpired()
   }

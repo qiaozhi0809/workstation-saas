@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Navigate, useNavigate } from 'react-router-dom'
 import { AlertCircle, GraduationCap, Loader2 } from 'lucide-react'
 import { authApi } from '@/shared/api/auth'
 import { ApiError } from '@/shared/api/client'
@@ -23,6 +23,9 @@ const FALLBACK = '登录失败,请稍后再试'
 export default function LoginPage() {
   const navigate = useNavigate()
   const setTokens = useAuthStore((s) => s.setTokens)
+  const accessToken = useAuthStore((s) => s.accessToken)
+  const signedInUser = useAuthStore((s) => s.user)
+  const lastContext = useAuthStore((s) => s.lastContext)
   const [loginName, setLoginName] = useState('')
   const [password, setPassword] = useState('')
   const [pending, setPending] = useState(false)
@@ -50,6 +53,9 @@ export default function LoginPage() {
       setPending(false)
     }
   }
+
+  // 已登录再打开 /login:直接去首页,不再显示登录表单(旧形状存档没有 contexts:照常显示表单,不崩)
+  if (accessToken && signedInUser && Array.isArray(signedInUser.contexts) && signedInUser.contexts.length > 0) return <Navigate to={homeFor(signedInUser, lastContext)} replace />
 
   return (
     <div className="relative grid min-h-full place-items-center bg-muted/40 px-4 pb-8 pt-16">

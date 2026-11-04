@@ -51,6 +51,7 @@ export interface ClassroomMapProps {
   attendanceBoard?: AttendanceBoardData   // 给了就把左翼最靠近中央的一扇窗换成出勤小牌;mini / 不给时窗户照旧
   onAttendanceBoardVisibleChange?: (visible: boolean) => void   // 小牌在适应(锁定)视图下是否完整落在舞台内
   views?: Record<string, SeatView>       // enrollment_id → 外观
+  highlight?: string[]                   // 仅 mini:这些注册 id 的座位画强调描边并显示姓名,其余占用座位只画桌面;其他模式忽略
   effects?: ClassroomEffects
   presenting?: boolean
   renderHoverCard?: (seat: StudentSeat) => ReactNode

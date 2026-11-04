@@ -116,10 +116,35 @@ function EmptySeat({ row, col, layout, mark, onEmptySeatClick }: {
   )
 }
 
+// mini 模式的占用座位:只有高亮的显示形象、姓名和描边(role=img,不可点);其余只画椅背,不进可访问树
+const MiniSeat = memo(function MiniSeat({ row, col, seat, layout, lit }: { row: number; col: number; seat: Seat; layout: Layout; lit: boolean }) {
+  const s = layout.seat(row, col), h = layout.head(row, col), key = `${row}-${col}`
+  if (!lit) {
+    return (
+      <g data-seat={key} className="cr-seat" aria-hidden="true">
+        <ChairBack x={s.x} y={s.y} />
+      </g>
+    )
+  }
+  const where = row === 0 ? `讲台${col < 0 ? '左' : '右'}侧` : `第${row}排第${col}座`
+  return (
+    <g data-seat={key} data-enrollment={seat.enrollment_id} className="cr-seat" role="img" aria-label={`${seat.name}的座位，${where}`}>
+      <StudentFigure x={h.x} y={h.y} gender={genderOf(seat.gender)} seed={seat.avatar_seed ?? seat.student_id}
+        color={groupColor(layout.group(row, col))} pose="sit" />
+      <ChairBack x={s.x} y={s.y} />
+      <g transform={`translate(${s.x} ${s.y})`}>
+        <NameTag name={fitName(seat.name)} />
+        <Selected />
+      </g>
+    </g>
+  )
+})
+
 const NO_VIEW: SeatView = {}
 
 interface Props {
   layout: Layout; cells: MapCell[]; interactive: boolean
+  mini?: boolean; highlight?: ReadonlySet<string>
   views?: ClassroomMapProps['views']; effects?: ClassroomEffects
   onSeatClick?: ClassroomMapProps['onSeatClick']; onEmptySeatClick?: ClassroomMapProps['onEmptySeatClick']
   turnedId: string | null; onHover: OnHover; dragKey: string | null; overKey: string | null
@@ -127,12 +152,18 @@ interface Props {
 
 // 每格一个 <g data-seat>:学生 + 椅背 + 彩带 + 名字 + 锁标 / 贴纸 / 角标 + 选中框;桌椅本体在 DeskLayer
 export default function SeatLayer({
-  layout, cells, interactive, views, effects, onSeatClick, onEmptySeatClick, turnedId, onHover, dragKey, overKey,
+  layout, cells, interactive, mini, highlight, views, effects, onSeatClick, onEmptySeatClick, turnedId, onHover, dragKey, overKey,
 }: Props) {
   const markOf = (key: string): DragMark => (key === dragKey ? 'dragging' : key === overKey ? 'drop-on' : undefined)
   return (
     <g className="cr-seats">
-      {cells.map(({ row, col, seat }) => seat ? (
+      {cells.map(({ row, col, seat }) => mini ? (
+        seat ? (
+          <MiniSeat key={`${row}-${col}`} row={row} col={col} seat={seat} layout={layout} lit={!!highlight?.has(seat.enrollment_id)} />
+        ) : (
+          <g key={`${row}-${col}`} data-seat={`${row}-${col}`} className="cr-seat" aria-hidden="true" />
+        )
+      ) : seat ? (
         <OccupiedSeat key={`${row}-${col}`} row={row} col={col} seat={seat} layout={layout}
           pose={poseOf(seat.enrollment_id, turnedId === seat.enrollment_id, effects)} mark={markOf(`${row}-${col}`)}
           view={views?.[seat.enrollment_id] ?? NO_VIEW} onHover={onHover}

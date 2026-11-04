@@ -1,7 +1,7 @@
 import type { Context } from '@/shared/types/admin'
 import type { User } from '@/shared/types/user'
 
-const HOME: Record<Context, string> = { teacher: '/teacher', admin: '/admin' }
+const HOME: Record<Context, string> = { teacher: '/teacher', admin: '/admin', parent: '/parent' }
 
 export const contextHome = (c: Context): string => HOME[c]
 

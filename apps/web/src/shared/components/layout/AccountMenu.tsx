@@ -10,16 +10,15 @@ import ChangePasswordDialog from './ChangePasswordDialog'
 export default function AccountMenu({ name, onLogout, switchTo, preferences = true }: {
   name: string | undefined
   onLogout(): void
-  switchTo?: { label: string; to: string; context: Context }
+  switchTo?: { label: string; to: string; context: Context }[]
   /** 是否显示"我的偏好"(教师端专有),默认显示 */
   preferences?: boolean
 }) {
   const navigate = useNavigate()
   const [pwOpen, setPwOpen] = useState(false)
-  const onSwitch = () => {
-    if (!switchTo) return
-    useAuthStore.getState().setLastContext(switchTo.context)
-    navigate(switchTo.to)
+  const onSwitch = (s: { to: string; context: Context }) => {
+    useAuthStore.getState().setLastContext(s.context)
+    navigate(s.to)
   }
   return (
     <>
@@ -41,7 +40,7 @@ export default function AccountMenu({ name, onLogout, switchTo, preferences = tr
         {/* 排座有未保存修改时,站内跳转由教室页的路由守卫确认 */}
         {preferences && <MenuLinkItem to="/teacher/preferences">我的偏好</MenuLinkItem>}
         <MenuItem onSelect={() => setPwOpen(true)}>修改密码</MenuItem>
-        {switchTo && <MenuItem onSelect={onSwitch}>{switchTo.label}</MenuItem>}
+        {switchTo?.map((s) => <MenuItem key={s.context} onSelect={() => onSwitch(s)}>{s.label}</MenuItem>)}
         <MenuItem onSelect={onLogout}>退出登录</MenuItem>
       </Menu>
       <ChangePasswordDialog open={pwOpen} onClose={() => setPwOpen(false)} />

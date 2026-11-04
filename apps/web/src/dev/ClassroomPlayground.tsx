@@ -48,6 +48,7 @@ export default function ClassroomPlayground() {
   const [last, setLast] = useState('')
   const [draggable, setDraggable] = useState(false)
   const [stage, setStage] = useState(0)
+  const [lit, setLit] = useState(false)
   const seq = useRef(0)
   const viewport = useRef<ClassroomViewportHandle>(null)
 
@@ -58,6 +59,8 @@ export default function ClassroomPlayground() {
     idle: idle ? Object.fromEntries(seats.map((s) => [s.enrollment_id, idle])) : {},
     teacher: action, pickedId: picked, spotlightId: picked, floats,
   }), [seats, idle, action, picked, floats])
+  // mini + highlight:高亮第一个座位的学生(家长端"孩子的座位"效果)
+  const highlight = useMemo(() => (lit && seats[0] ? [seats[0].enrollment_id] : undefined), [lit, seats])
   const views = useMemo(() => (withViews ? sampleViews(seats) : undefined), [withViews, seats])
 
   const fire = (tone: FloatFx['tone']) => {
@@ -122,6 +125,9 @@ export default function ClassroomPlayground() {
         <Field label="">
           <input type="checkbox" checked={draggable} onChange={(e) => setDraggable(e.target.checked)} />允许拖拽
         </Field>
+        <Field label="">
+          <input type="checkbox" checked={lit} onChange={(e) => setLit(e.target.checked)} />mini 高亮首座(需选 mini 模式)
+        </Field>
         <Field label="舞台">
           <select value={stage} onChange={(e) => setStage(Number(e.target.value))} className="rounded border px-1">
             {STAGES.map((s, i) => <option key={s.label} value={i}>{s.label}</option>)}
@@ -137,7 +143,7 @@ export default function ClassroomPlayground() {
           style={size ? { width: size.w, height: size.h } : undefined}>
           <ClassroomMap
             rows={rows} cols={cols} seats={seats} mode={mode} presenting={presenting} viewportRef={viewport}
-            teacher={{ figure, label: '张老师 · 班主任' }} board={SAMPLE_BOARD} views={views} effects={effects}
+            teacher={{ figure, label: '张老师 · 班主任' }} board={SAMPLE_BOARD} views={views} highlight={highlight} effects={effects}
             onSeatClick={(s) => setLast(`点击:${s.name}`)}
             onEmptySeatClick={(c) => setLast(`空座:${c.row}排${c.col}列`)}
             onSeatDrop={draggable ? (from, to) => {

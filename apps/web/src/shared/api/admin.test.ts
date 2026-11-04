@@ -123,7 +123,7 @@ const cases: [string, () => Promise<unknown>, string, string, unknown?][] = [
   ['upgradePreview', () => adminApi.upgradePreview(planB), 'POST', '/admin/years/upgrade/preview', planB],
   ['upgradeApply', () => adminApi.upgradeApply(planB), 'POST', '/admin/years/upgrade', planB],
   ['upgradeLatest', () => adminApi.upgradeLatest(), 'GET', '/admin/years/upgrade/latest'],
-  ['upgradeRollback', () => adminApi.upgradeRollback(), 'POST', '/admin/years/upgrade/rollback'],
+  ['upgradeRollback', () => adminApi.upgradeRollback('up1'), 'POST', '/admin/years/upgrade/rollback', { upgrade_id: 'up1' }],
   ['historyYears', () => adminApi.historyYears(), 'GET', '/admin/history/years'],
   ['historyClasses', () => adminApi.historyClasses('y0'), 'GET', '/admin/history/classes?year_id=y0'],
   ['historyStudents', () => adminApi.historyStudents('c1'), 'GET', '/admin/history/classes/c1/students'],
