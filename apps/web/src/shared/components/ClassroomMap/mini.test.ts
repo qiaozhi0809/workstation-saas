@@ -31,3 +31,10 @@ it('highlights nobody when the child has no seat', () => {
   expect(highlight).toEqual([])
   expect(seats.every((s) => s.name === '')).toBe(true)
 })
+
+it('still draws the child when the map forgot to list their seat as occupied', () => {
+  const { seats, highlight } = seatsFromMiniMap({ ...map, mine: { row: 3, col: 3 } }, child)
+  expect(seats).toHaveLength(4)
+  expect(seats.find((s) => s.enrollment_id === 'e-child')).toMatchObject({ seat_row: 3, seat_col: 3 })
+  expect(highlight).toEqual(['e-child'])
+})

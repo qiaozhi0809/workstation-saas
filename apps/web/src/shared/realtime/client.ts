@@ -100,6 +100,7 @@ export function createRealtimeClient(opts: RealtimeOptions): { start(): void; st
           }
         })
       } else {
+        refreshedSinceReady = false   // 非令牌原因的断线:之后再遇 4401 允许重新刷新
         scheduleReconnect()
       }
     }

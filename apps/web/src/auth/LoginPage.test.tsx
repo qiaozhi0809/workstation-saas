@@ -220,3 +220,10 @@ it('stays on the login form when there is a token but no user yet', () => {
   render(<MemoryRouter><LoginPage /></MemoryRouter>)
   expect(screen.getByLabelText('登录名')).toBeInTheDocument()
 })
+
+it('stays on the login form when the signed-in user has no identity', () => {
+  const user: User = { id: 'u', display_name: 't', contexts: [], admin_perms: [], must_change_password: false }
+  useAuthStore.setState({ accessToken: 'a', refreshToken: 'r', user, lastContext: null })
+  render(<MemoryRouter initialEntries={['/login']}><LoginPage /></MemoryRouter>)
+  expect(screen.getByLabelText('登录名')).toBeInTheDocument()
+})

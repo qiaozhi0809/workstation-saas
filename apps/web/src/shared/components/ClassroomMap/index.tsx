@@ -203,7 +203,7 @@ export default function ClassroomMap({
     <div ref={stageRef} className={`${stageCls}${busy ? ' cr-grabbing' : ''}`} data-pan={mini || vp.fitted ? undefined : ''} {...stageHandlers}>
       <div className="cr-canvas absolute left-0 top-0" style={{ transform: `translate(${x}px, ${y}px) scale(${s})`, transformOrigin: '0 0' }}>
         <Scene L={L} mini={mini} highlight={lit} rows={rows} board={board} attendanceBoard={mini ? undefined : attendanceBoard} figure={teacher.figure} label={teacher.label}
-          views={views} effects={effects} interactive={mode !== 'overview'} cells={cells} podCells={podCells} placed={placed}
+          views={views} effects={mini ? undefined : effects} interactive={mode !== 'overview'} cells={cells} podCells={podCells} placed={placed}
           onSeatClick={onSeatClick && !mini ? seatClick : undefined} onEmptySeatClick={onEmptySeatClick && !mini ? emptyClick : undefined}
           turnedId={active?.id ?? null} onHover={onHover}
           dragKey={drag ? `${drag.from.row}-${drag.from.col}` : null} overKey={drag?.over ?? null} />

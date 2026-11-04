@@ -157,6 +157,8 @@ describe('mini map highlight', () => {
     // 其余占用座位只画桌面:没有学生形象
     expect(container.querySelectorAll('[data-pose]')).toHaveLength(1)
     expect(q(container, '.cr-selected')).not.toBeNull()
+    // 属性里也不泄露别人的身份(aria-label、title、data-*)
+    expect(container.innerHTML).not.toMatch(/王小一|张小三|data-enrollment="e[13]"/)
   })
 
   it('does not make any seat clickable or hoverable', () => {
