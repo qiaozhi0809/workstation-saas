@@ -1,11 +1,15 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { useState } from 'react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { Link, MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
-import { beforeEach, vi } from 'vitest'
+import { Link, MemoryRouter, Route, RouterProvider, Routes, createMemoryRouter, useLocation } from 'react-router-dom'
+import { afterEach, beforeEach, vi } from 'vitest'
 import { authApi } from '@/shared/api/auth'
 import { classesApi } from '@/shared/api/classes'
 import { classroomApi } from '@/shared/api/classroom'
+import { noticesApi } from '@/shared/api/notices'
 import { studentsApi } from '@/shared/api/students'
+import ProtectedRoute from '@/shared/components/ProtectedRoute'
+import { useRealtimeEvent } from '@/shared/realtime/useRealtimeEvent'
 import { useAuthStore } from '@/shared/stores/auth'
 import { useTeacherStore } from '@/shared/stores/teacher'
 import type { ClassView } from '@/shared/types/class'
@@ -16,6 +20,17 @@ vi.mock('@/shared/api/classes', () => ({ classesApi: { mine: vi.fn() } }))
 vi.mock('@/shared/api/auth', () => ({ authApi: { logout: vi.fn() } }))
 vi.mock('@/shared/api/classroom', () => ({ classroomApi: { summary: vi.fn() } }))
 vi.mock('@/shared/api/students', () => ({ studentsApi: { detail: vi.fn() } }))
+vi.mock('@/shared/api/notices', () => ({ noticesApi: { inbox: vi.fn(), read: vi.fn(), readAll: vi.fn() } }))
+
+const h = vi.hoisted(() => ({ made: [] as { opts: { onEvent(e: unknown): void }; start: () => void; stop: () => void }[] }))
+vi.mock('@/shared/realtime/client', async (orig) => ({
+  ...(await orig<typeof import('@/shared/realtime/client')>()),
+  createRealtimeClient: (opts: { onEvent(e: unknown): void }) => {
+    const c = { opts, start: vi.fn(), stop: vi.fn() }
+    h.made.push(c)
+    return c
+  },
+}))
 
 const cls = (id: string, name: string, role: ClassView['role']): ClassView =>
   ({ id, name, grade_name: '三年级', seat_rows: 6, seat_cols: 4, desk_size: 2, seat_layout: 'manual', seat_order: 'row', podium_left: 0, podium_right: 0, room: '', role })
@@ -48,6 +63,8 @@ const openAccount = () => fireEvent.click(screen.getByRole('button', { name: '�
 
 beforeEach(() => {
   vi.clearAllMocks()
+  h.made.length = 0
+  vi.mocked(noticesApi.inbox).mockResolvedValue({ items: [], total: 0, unread: 1 })
   vi.mocked(classroomApi.summary).mockResolvedValue(summaryFixture())
   useTeacherStore.setState({ classId: null, unsaved: { seating: false, scores: false } })
   useAuthStore.setState({
@@ -279,4 +296,69 @@ it('offers 切换到管理端 only to dual-identity users', async () => {
   await screen.findByText('三年二班')
   openAccount()
   expect(screen.getByRole('menuitem', { name: '切换到管理端' })).toBeInTheDocument()
+})
+
+afterEach(cleanup)
+
+// 缺口 B-1:RealtimeProvider 必须真的挂在壳里,布局内的订阅者才收得到事件
+function Probe() {
+  const [seen, setSeen] = useState<string[]>([])
+  useRealtimeEvent('notice.new', (e) => setSeen((s) => [...s, e.title]))
+  return <div data-testid="probe">{seen.join('|')}</div>
+}
+
+const renderRouted = (entry: string, user = { id: 'u1', display_name: '王老师', contexts: ['teacher'] as const, admin_perms: [], must_change_password: false }) => {
+  useAuthStore.setState({ user: { ...user, contexts: [...user.contexts] } })
+  const router = createMemoryRouter([
+    {
+      path: '/teacher',
+      element: <ProtectedRoute context="teacher"><TeacherLayout /></ProtectedRoute>,
+      children: [{ path: 'classroom', element: <Probe /> }],
+    },
+    { path: '/change-password', element: <div>改密码页</div> },
+  ], { initialEntries: [entry] })
+  render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  )
+  return router
+}
+
+it('delivers realtime events to the bell and to subscribers inside the teacher shell', async () => {
+  vi.mocked(classesApi.mine).mockResolvedValue({ items: [cls('a', '三年二班', 'homeroom_teacher')] })
+  renderRouted('/teacher/classroom')
+  expect(await screen.findByRole('button', { name: '通知,1 条未读' })).toBeInTheDocument()
+  expect(h.made).toHaveLength(1)
+  vi.mocked(noticesApi.inbox).mockResolvedValue({ items: [], total: 0, unread: 2 })
+  await act(async () => {
+    h.made[0].opts.onEvent({ type: 'notice.new', id: 'n1', title: '周五放假', from_name: '陈校长', created_at: '2026-11-04T01:00:00Z' })
+  })
+  expect(screen.getByTestId('probe')).toHaveTextContent('周五放假')
+  expect(await screen.findByRole('button', { name: '通知,2 条未读' })).toBeInTheDocument()
+  expect(screen.getByText('新通知:周五放假')).toBeInTheDocument()
+})
+
+it('stops the realtime client when the teacher shell unmounts', async () => {
+  vi.mocked(classesApi.mine).mockResolvedValue({ items: [cls('a', '三年二班', 'homeroom_teacher')] })
+  renderRouted('/teacher/classroom')
+  await screen.findByRole('button', { name: '通知,1 条未读' })
+  cleanup()
+  expect(h.made[0].start).toHaveBeenCalledTimes(1)
+  expect(h.made[0].stop).toHaveBeenCalled()
+})
+
+it('opens no realtime connection on /change-password', async () => {
+  renderRouted('/teacher/classroom', { id: 'u1', display_name: '王老师', contexts: ['teacher'], admin_perms: [], must_change_password: true })
+  expect(await screen.findByText('改密码页')).toBeInTheDocument()
+  await waitFor(() => expect(h.made).toHaveLength(0))
+  expect(noticesApi.inbox).not.toHaveBeenCalled()
+})
+
+it('puts the notice bell before the theme toggle in the top bar', async () => {
+  vi.mocked(classesApi.mine).mockResolvedValue({ items: [cls('a', '三年二班', 'homeroom_teacher')] })
+  renderLayout()
+  const bell = await screen.findByRole('button', { name: '通知,1 条未读' })
+  const theme = screen.getByRole('button', { name: /^主题:/ })
+  expect(bell.compareDocumentPosition(theme) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 })

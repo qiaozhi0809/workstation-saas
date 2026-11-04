@@ -7,7 +7,9 @@ import { classroomApi } from '@/shared/api/classroom'
 import { Toaster } from '@/shared/components/Toast'
 import AccountMenu from '@/shared/components/layout/AccountMenu'
 import AppShell from '@/shared/components/layout/AppShell'
+import NoticeBell from '@/shared/components/layout/NoticeBell'
 import { NativeSelect } from '@/shared/components/ui/native-select'
+import { RealtimeProvider } from '@/shared/realtime/RealtimeProvider'
 import { useAuthStore } from '@/shared/stores/auth'
 import { confirmLeave, useTeacherStore } from '@/shared/stores/teacher'
 import ThemeToggle from '@/theme/ThemeToggle'
@@ -64,6 +66,7 @@ export default function TeacherLayout() {
 
   const actions = (
     <>
+      <NoticeBell />
       <ThemeToggle />
       <AccountMenu
         name={user?.display_name}
@@ -74,19 +77,21 @@ export default function TeacherLayout() {
   )
 
   return (
-    <AppShell
-      home="/teacher/classroom"
-      context={context}
-      nav={<TeacherNav />}
-      actions={actions}
-      overlays={
-        <>
-          {studentId && <StudentProfileDrawer key={studentId} studentId={studentId} />}
-          <Toaster />
-        </>
-      }
-    >
-      <Outlet />
-    </AppShell>
+    <RealtimeProvider>
+      <AppShell
+        home="/teacher/classroom"
+        context={context}
+        nav={<TeacherNav />}
+        actions={actions}
+        overlays={
+          <>
+            {studentId && <StudentProfileDrawer key={studentId} studentId={studentId} />}
+            <Toaster />
+          </>
+        }
+      >
+        <Outlet />
+      </AppShell>
+    </RealtimeProvider>
   )
 }
