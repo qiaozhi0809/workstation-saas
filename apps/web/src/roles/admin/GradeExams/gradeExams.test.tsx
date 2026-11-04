@@ -5,21 +5,21 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { adminApi } from '@/shared/api/admin'
 import { ApiError } from '@/shared/api/client'
 import { toast } from '@/shared/components/Toast'
-import type { GradeAdmin, GradeExam } from '@/shared/types/admin'
+import type { BoardView, GradeExam } from '@/shared/types/admin'
 import GradeExamsPage from './GradeExamsPage'
 
 vi.mock('@/shared/api/admin', () => ({
   adminApi: {
-    grades: vi.fn(), gradeExams: vi.fn(), createGradeExam: vi.fn(), updateGradeExam: vi.fn(),
+    grades: vi.fn(), board: vi.fn(), gradeExams: vi.fn(), createGradeExam: vi.fn(), updateGradeExam: vi.fn(),
     deleteGradeExam: vi.fn(), syncGradeExam: vi.fn(),
   },
 }))
 vi.mock('@/shared/components/Toast', () => ({ toast: vi.fn() }))
 
-const grade = (id: string, name: string, order: number): GradeAdmin =>
-  ({ id, name, stage: '小学', effective_stage: '小学', display_order: order, class_count: 2 })
-const G3 = grade('g3', '三年级', 3)
-const G4 = grade('g4', '四年级', 4)
+const boardOf = (...grades: { id: string; name: string }[]): BoardView =>
+  ({ grades, grade_id: null, classes: [] })
+const G3 = { id: 'g3', name: '三年级' }
+const G4 = { id: 'g4', name: '四年级' }
 
 const exam = (over: Partial<GradeExam> = {}): GradeExam => ({
   id: 'ge1', grade_id: 'g3', grade_name: '三年级', name: '十月联考', exam_type: '月考', date: '2026-10-20',
@@ -33,7 +33,7 @@ const exam = (over: Partial<GradeExam> = {}): GradeExam => ({
 
 beforeEach(() => {
   vi.resetAllMocks()
-  vi.mocked(adminApi.grades).mockResolvedValue([G3, G4])
+  vi.mocked(adminApi.board).mockResolvedValue(boardOf(G3, G4))
   vi.mocked(adminApi.gradeExams).mockImplementation(async (gid) => (gid === 'g4' ? [] : [exam()]))
 })
 afterEach(cleanup)
@@ -66,6 +66,16 @@ it('lists the exams of the selected grade tab with per-class progress', async ()
   fireEvent.click(screen.getByRole('tab', { name: '四年级' }))
   await waitFor(() => expect(adminApi.gradeExams).toHaveBeenCalledWith('g4'))
   expect(await screen.findByText('四年级还没有联考')).toBeInTheDocument()
+})
+
+it('shows the grade tabs from the board even when /admin/grades is forbidden (grade head)', async () => {
+  vi.mocked(adminApi.grades).mockRejectedValue(new ApiError(403, 'FORBIDDEN', 'forbidden'))
+  vi.mocked(adminApi.board).mockResolvedValue(boardOf(G3))
+  await renderPage()
+  expect(screen.getByRole('tab', { name: '三年级' })).toBeInTheDocument()
+  expect(screen.queryByRole('tab', { name: '四年级' })).toBeNull()
+  expect(adminApi.board).toHaveBeenCalledWith(null)
+  expect(adminApi.grades).not.toHaveBeenCalled()
 })
 
 it('offers to create the missing classes and calls sync', async () => {

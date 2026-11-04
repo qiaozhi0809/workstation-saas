@@ -72,12 +72,13 @@ function ExamRow({ exam, onEdit, onDelete }: { exam: GradeExam; onEdit(): void; 
 
 export default function GradeExamsPage() {
   const qc = useQueryClient()
-  const grades = useQuery({ queryKey: ['admin', 'grades'], queryFn: adminApi.grades })
+  // 年级列表取自看板(school.view,按调用者可见年级裁剪);/admin/grades 需要 org.manage,年级组长会 403
+  const board = useQuery({ queryKey: ['admin', 'board', null], queryFn: () => adminApi.board(null) })
   const [sel, setSel] = useState<string | null>(null)
   const [dialog, setDialog] = useState<Dialog | null>(null)
   const [delError, setDelError] = useState<string | null>(null)
 
-  const list = grades.data ?? []
+  const list = board.data?.grades ?? []
   const gradeId = sel && list.some((g) => g.id === sel) ? sel : (list[0]?.id ?? null)
   const gradeName = list.find((g) => g.id === gradeId)?.name ?? ''
   const exams = useQuery({
@@ -95,8 +96,8 @@ export default function GradeExamsPage() {
     onError: (e) => setDelError(errMsg(e)),
   })
 
-  if (grades.isError) return <ErrorState title="加载失败" onRetry={() => void grades.refetch()} retrying={grades.isFetching} className="p-6" />
-  if (!grades.data) return <LoadingState />
+  if (board.isError) return <ErrorState title="加载失败" onRetry={() => void board.refetch()} retrying={board.isFetching} className="p-6" />
+  if (!board.data) return <LoadingState />
 
   let body
   if (gradeId === null) body = <EmptyState title="还没有年级" />
