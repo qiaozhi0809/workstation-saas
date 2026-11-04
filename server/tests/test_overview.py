@@ -8,9 +8,12 @@ from app.models import (
     Attendance,
     AttendanceDay,
     Enrollment,
+    Exam,
     Grade,
+    GradeExam,
     Review,
     SchoolClass,
+    Score,
     Student,
     User,
 )
@@ -443,3 +446,147 @@ def test_leader_classroom_my_perms_has_no_write_perms(client, db, settings, monk
 def test_me_classes_excludes_unassigned_classes_for_principal(client, db, settings):
     res = client.get("/api/v1/me/classes", headers=auth(settings, PRINCIPAL))
     assert res.json()["items"] == []
+
+
+_AT = datetime(2026, 10, 1, 8, 0, tzinfo=UTC)
+
+
+def _grade_exam(db, grade_id, name, day, created, subjects=("语文", "数学")):
+    ge = GradeExam(
+        school_id=UUID(SCHOOL_ID),
+        academic_year_id=UUID(YEAR_ID),
+        grade_id=UUID(grade_id),
+        name=name,
+        exam_type="期中",
+        date=day,
+        subjects=[{"name": s, "full": 100} for s in subjects],
+        created_at=created,
+    )
+    db.add(ge)
+    db.flush()
+    return ge
+
+
+def _class_exam(db, class_id, ge, scores):
+    """scores: [(学生 mk, 科目)];每行记一个有分数的格子。"""
+    exam = Exam(
+        class_id=UUID(class_id),
+        academic_year_id=UUID(YEAR_ID),
+        name=ge.name,
+        exam_type=ge.exam_type,
+        date=ge.date,
+        subjects=ge.subjects,
+        grade_exam_id=ge.id,
+    )
+    db.add(exam)
+    db.flush()
+    for mk, subject in scores:
+        db.add(
+            Score(
+                exam_id=exam.id,
+                enrollment_id=enrollment_by_mk(db, mk).id,
+                subject=subject,
+                value=90,
+            )
+        )
+    db.flush()
+
+
+def test_grade_exam_card_matches_grade_exam_progress(client, db, settings, monkeypatch):
+    """今日关注的联考进度与联考管理页共用 grade_exams.service.progress,不各算一份。"""
+    from app.domain.grade_exams.service import progress
+
+    freeze(monkeypatch, NOW)
+    ge = _grade_exam(db, GRADE_ID, "三年级期中联考", date(2026, 10, 10), _AT)
+    mks = ["S0011", "S0012", "S0013"]
+    _class_exam(db, C31, ge, [(m, "语文") for m in mks] + [("S0011", "数学")])
+    card = get_today(client, settings, GRADE_HEAD3).json()["grade_exam"]
+    rows = progress(db, ge)
+    assert rows and card["entered"] == sum(r.entered for r in rows) == 4
+    assert card["expected"] == sum(r.expected for r in rows)
+
+
+def test_today_notice_and_grade_exam_cards(client, db, settings, monkeypatch):
+    freeze(monkeypatch, NOW)
+    # 无联考 / 无通知
+    body = get_today(client, settings).json()
+    assert body["grade_exam"] is None and body["my_notices"] == []
+
+    old = _grade_exam(db, GRADE_ID, "三年级月考", date(2026, 9, 20), _AT)
+    new3 = _grade_exam(db, GRADE_ID, "三年级期中联考", date(2026, 10, 10), _AT)
+    new4 = _grade_exam(db, G4, "四年级期中联考", date(2026, 10, 12), _AT)
+    _class_exam(db, C31, old, [("S0011", "语文")])  # 旧联考的分数不计
+    # 三年一班 6 人:语文 6 格 + 数学 2 格 + 联考外科目 1 格;三年二班没有班级考试,不计
+    mks = ["S0011", "S0012", "S0013", "S0014", "S0015", "S0016"]
+    _class_exam(
+        db,
+        C31,
+        new3,
+        [(m, "语文") for m in mks] + [("S0011", "数学"), ("S0012", "数学"), ("S0011", "英语")],
+    )
+    body = get_today(client, settings).json()
+    assert body["grade_exam"] == {
+        "id": str(new4.id),
+        "name": "四年级期中联考",
+        "grade_name": "四年级",
+        "entered": 0,
+        "expected": 0,
+    }
+    gh = get_today(client, settings, GRADE_HEAD3).json()
+    assert gh["grade_exam"] == {
+        "id": str(new3.id),
+        "name": "三年级期中联考",
+        "grade_name": "三年级",
+        "entered": 8,
+        "expected": 12,
+    }
+    # 同日期按创建时间取最近一场
+    tie = _grade_exam(db, GRADE_ID, "三年级补考", date(2026, 10, 10), _AT.replace(minute=5))
+    assert get_today(client, settings, GRADE_HEAD3).json()["grade_exam"]["id"] == str(tie.id)
+    # 信息中心没有 school.view
+    assert get_today(client, settings, IT_ADMIN).status_code == 403
+
+    # 我发的通知:最近 3 条未撤回
+    ids = []
+    for n in range(4):
+        freeze(monkeypatch, f"2026-10-14T0{n}:00:00+00:00")
+        res = client.post(
+            "/api/v1/admin/notices",
+            json={
+                "title": f"通知{n}",
+                "content": "内容",
+                "target": {"kind": "class", "class_id": CLASS_ID},
+            },
+            headers=auth(settings, PRINCIPAL),
+        )
+        assert res.status_code == 201, res.text
+        ids.append(res.json()["id"])
+    client.post(f"/api/v1/notices/{ids[3]}/read", headers=auth(settings, T01))
+    client.post(f"/api/v1/notices/{ids[2]}/read", headers=auth(settings, T01))
+    client.post(f"/api/v1/admin/notices/{ids[2]}/recall", headers=auth(settings, PRINCIPAL))
+    freeze(monkeypatch, NOW)
+    mine = get_today(client, settings).json()["my_notices"]
+    assert [n["id"] for n in mine] == [ids[3], ids[1], ids[0]]
+    assert [(n["title"], n["recipients"], n["read"]) for n in mine] == [
+        ("通知3", 3, 1),
+        ("通知1", 3, 0),
+        ("通知0", 3, 0),
+    ]
+    assert mine[0]["created_at"].startswith("2026-10-14T03:00:00")
+    assert get_today(client, settings, DEAN).json()["my_notices"] == []
+
+
+def test_today_my_notices_without_visible_classes(client, db, settings, monkeypatch):
+    freeze(monkeypatch, NOW)
+    db.execute(update(SchoolClass).values(active=False))
+    db.flush()
+    res = client.post(
+        "/api/v1/admin/notices",
+        json={"title": "空校", "content": "内容", "target": {"kind": "school"}},
+        headers=auth(settings, PRINCIPAL),
+    )
+    assert res.status_code == 201, res.text
+    body = get_today(client, settings).json()
+    assert body["totals"]["classes"] == 0
+    assert body["grade_exam"] is None
+    assert [n["title"] for n in body["my_notices"]] == ["空校"]

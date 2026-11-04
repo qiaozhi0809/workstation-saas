@@ -21,6 +21,7 @@ from app.domain.exams.router import router as exams_router
 from app.domain.grade_exams.router import router as grade_exams_router  # M3b 段 C
 from app.domain.growth.router import router as growth_router
 from app.domain.history.router import router as history_router  # M3b 段 H
+from app.domain.notices.router import router as notices_router  # M3b 段 E
 from app.domain.org.router import router as org_router  # M3a 段 D
 from app.domain.overview.router import router as overview_router  # M3a 段 F
 from app.domain.preferences.router import router as preferences_router
@@ -96,6 +97,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     router.include_router(attendance_report_router)  # M3b 段 D
     router.include_router(audit_query_router)  # M3b 段 D
     router.include_router(ai_admin_router)  # M3b 段 D
+    router.include_router(notices_router)  # M3b 段 E
     router.include_router(years_router)  # M3b 段 F
     router.include_router(history_router)  # M3b 段 H
     app.include_router(router)

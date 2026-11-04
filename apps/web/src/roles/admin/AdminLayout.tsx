@@ -5,6 +5,8 @@ import { authApi } from '@/shared/api/auth'
 import { Toaster } from '@/shared/components/Toast'
 import AccountMenu from '@/shared/components/layout/AccountMenu'
 import AppShell from '@/shared/components/layout/AppShell'
+import NoticeBell from '@/shared/components/layout/NoticeBell'
+import { RealtimeProvider } from '@/shared/realtime/RealtimeProvider'
 import { useAuthStore } from '@/shared/stores/auth'
 import ThemeToggle from '@/theme/ThemeToggle'
 import AdminNav from './AdminNav'
@@ -29,19 +31,22 @@ export default function AdminLayout({ pages = ADMIN_PAGES }: { pages?: AdminPage
   const switchTo = user?.contexts.includes('teacher') ? { label: '切换到教师端', to: '/teacher', context: 'teacher' as const } : undefined
 
   return (
-    <AppShell
-      home="/admin"
-      context={school.data ? <span className="truncate font-medium">{school.data.name}</span> : undefined}
-      nav={<AdminNav pages={pages} />}
-      actions={(
-        <>
-          <ThemeToggle />
-          <AccountMenu name={user?.display_name} onLogout={logout} switchTo={switchTo} preferences={false} />
-        </>
-      )}
-      overlays={<Toaster />}
-    >
-      <Outlet />
-    </AppShell>
+    <RealtimeProvider>
+      <AppShell
+        home="/admin"
+        context={school.data ? <span className="truncate font-medium">{school.data.name}</span> : undefined}
+        nav={<AdminNav pages={pages} />}
+        actions={(
+          <>
+            <NoticeBell />
+            <ThemeToggle />
+            <AccountMenu name={user?.display_name} onLogout={logout} switchTo={switchTo} preferences={false} />
+          </>
+        )}
+        overlays={<Toaster />}
+      >
+        <Outlet />
+      </AppShell>
+    </RealtimeProvider>
   )
 }

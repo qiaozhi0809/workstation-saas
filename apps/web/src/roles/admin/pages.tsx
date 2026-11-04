@@ -34,6 +34,10 @@ import AiUsagePage from './Ai/AiUsagePage'
 import AuditPage from './Audit/AuditPage'
 // ── 段 D(审计 / AI):import 追加在此行之上 ──
 
+import { Megaphone } from 'lucide-react'
+import NoticesPage from './Notices/NoticesPage'
+// ── 段 E(通知):import 追加在此行之上 ──
+
 import { GraduationCap } from 'lucide-react'
 import UpgradePage from './Upgrade/UpgradePage'
 // ── M3b 段 F(学年升级):import 追加在此行之上 ──
@@ -84,6 +88,9 @@ export const ADMIN_PAGES: AdminPage[] = [
   { path: 'ai/usage', label: 'AI 使用', icon: Sparkles, perm: 'ai.usage', element: <AiUsagePage /> },
   { path: 'ai/config', label: 'AI 配置', icon: KeyRound, perm: 'settings.manage', element: <AiConfigPage /> },
   // ── audit-ai:追加在此行之上 ──
+
+  { path: 'notices', label: '通知', icon: Megaphone, perm: 'notice.send', element: <NoticesPage /> },
+  // ── notices:追加在此行之上 ──
 
   { path: 'upgrade', label: '学年升级', icon: GraduationCap, perm: 'year.upgrade', element: <UpgradePage /> },
   // ── upgrade:追加在此行之上 ──

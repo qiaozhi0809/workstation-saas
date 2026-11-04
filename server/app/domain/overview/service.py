@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session
 from app import clock
 from app.audit.service import deny
 from app.domain.classes.service import class_scope_of
+from app.domain.grade_exams.service import progress
+from app.domain.notices.service import recent_sent
 from app.domain.overview.schemas import (
     Absentee,
     BoardClass,
@@ -19,6 +21,8 @@ from app.domain.overview.schemas import (
     ClassWeek,
     DetailAbsentee,
     GradeBrief,
+    GradeExamCard,
+    MyNotice,
     TeacherCount,
     TodayView,
     Totals,
@@ -38,6 +42,7 @@ from app.models import (
     AttendanceDay,
     Enrollment,
     Grade,
+    GradeExam,
     Review,
     SchoolClass,
     Student,
@@ -185,6 +190,45 @@ def _today_and_start(db: Session, school_id: UUID):
     return today, local_day_start_utc(week_monday(today), tz)
 
 
+MY_NOTICES = 3
+
+
+def _my_notices(db: Session, user: User) -> list[MyNotice]:
+    return [
+        MyNotice(
+            id=n.id, title=n.title, created_at=n.created_at, recipients=n.recipients, read=n.read
+        )
+        for n in recent_sent(db, user, MY_NOTICES)
+    ]
+
+
+def _grade_exam_card(
+    db: Session, year_id: UUID, visible: list[VisibleClass], grades: list[Grade]
+) -> GradeExamCard | None:
+    """调用者可见年级内当前学年日期最近的一场联考(日期降序、再按创建时间降序)。
+
+    进度口径与联考管理页同一份(grade_exams.service.progress),只对调用者可见的班求和。"""
+    grade_ids = [g.id for g in grades]
+    if not grade_ids:
+        return None
+    ge = db.scalars(
+        select(GradeExam)
+        .where(GradeExam.academic_year_id == year_id, GradeExam.grade_id.in_(grade_ids))
+        .order_by(GradeExam.date.desc(), GradeExam.created_at.desc(), GradeExam.id)
+        .limit(1)
+    ).first()
+    if ge is None:
+        return None
+    visible_ids = {v.cls.id for v in visible}
+    rows = [r for r in progress(db, ge) if r.class_id in visible_ids]
+    entered = sum(r.entered for r in rows)
+    expected = sum(r.expected for r in rows)
+    grade_name = next(g.name for g in grades if g.id == ge.grade_id)
+    return GradeExamCard(
+        id=ge.id, name=ge.name, grade_name=grade_name, entered=entered, expected=expected
+    )
+
+
 def today_view(db: Session, user: User, bindings: Sequence[Binding]) -> TodayView:
     year = require_active_year(db, user.school_id)
     visible = _visible(db, bindings, year.id, year.school_id)
@@ -209,6 +253,8 @@ def today_view(db: Session, user: User, bindings: Sequence[Binding]) -> TodayVie
             absentees=[],
             unconfirmed=[],
             week_reviews=WeekReviews(classes=[], bottom=[], teachers=[]),
+            grade_exam=None,
+            my_notices=_my_notices(db, user),
         )
 
     students = _student_counts(db, ids)
@@ -310,6 +356,10 @@ def today_view(db: Session, user: User, bindings: Sequence[Binding]) -> TodayVie
             if v.cls.id not in confirmed
         ],
         week_reviews=WeekReviews(classes=classes, bottom=bottom, teachers=teachers),
+        grade_exam=_grade_exam_card(
+            db, year.id, visible, _visible_grades(db, bindings, year.id, visible)
+        ),
+        my_notices=_my_notices(db, user),
     )
 
 
