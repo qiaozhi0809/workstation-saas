@@ -54,8 +54,8 @@ export default function LoginPage() {
     }
   }
 
-  // 已登录再打开 /login:直接去首页,不再显示登录表单
-  if (accessToken && signedInUser && signedInUser.contexts.length > 0) return <Navigate to={homeFor(signedInUser, lastContext)} replace />
+  // 已登录再打开 /login:直接去首页,不再显示登录表单(旧形状存档没有 contexts:照常显示表单,不崩)
+  if (accessToken && signedInUser && Array.isArray(signedInUser.contexts) && signedInUser.contexts.length > 0) return <Navigate to={homeFor(signedInUser, lastContext)} replace />
 
   return (
     <div className="relative grid min-h-full place-items-center bg-muted/40 px-4 pb-8 pt-16">

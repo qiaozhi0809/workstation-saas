@@ -221,6 +221,12 @@ it('stays on the login form when there is a token but no user yet', () => {
   expect(screen.getByLabelText('登录名')).toBeInTheDocument()
 })
 
+it('shows the login form instead of crashing for an old-shape persisted user (no contexts)', () => {
+  useAuthStore.setState({ accessToken: 'a', refreshToken: 'r', user: { id: 'u', display_name: 't' } as unknown as User })
+  render(<MemoryRouter initialEntries={['/login']}><LoginPage /></MemoryRouter>)
+  expect(screen.getByLabelText('登录名')).toBeInTheDocument()
+})
+
 it('stays on the login form when the signed-in user has no identity', () => {
   const user: User = { id: 'u', display_name: 't', contexts: [], admin_perms: [], must_change_password: false }
   useAuthStore.setState({ accessToken: 'a', refreshToken: 'r', user, lastContext: null })
