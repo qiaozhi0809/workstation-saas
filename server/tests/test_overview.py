@@ -1,16 +1,25 @@
 from datetime import UTC, date, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import delete, event, select
+from sqlalchemy import delete, event, select, update
 
 from app.domain.overview.service import board_view
-from app.models import Attendance, AttendanceDay, Enrollment, Review, Student, User
+from app.models import (
+    Attendance,
+    AttendanceDay,
+    Enrollment,
+    Grade,
+    Review,
+    SchoolClass,
+    Student,
+    User,
+)
 from app.models.audit import AuditLog
 from app.rbac.bindings import load_bindings
 from app.rbac.roles import Role
-from tests.factories import bind, make_class, make_student
+from tests.factories import bind, make_admin, make_class, make_student
 from tests.helpers import auth, freeze
-from tests.seed_ids import CLASS_ID, GRADE_ID, YEAR_ID
+from tests.seed_ids import CLASS_ID, GRADE_ID, SCHOOL_ID, YEAR_ID
 
 NOW = "2026-10-14T02:00:00+00:00"  # 学校时区 2026-10-14(周三)10:00,本周一 = 10-12
 TODAY = date(2026, 10, 14)
@@ -377,4 +386,36 @@ def test_board_class_detail_grade_head_scope(client, db, settings, monkeypatch):
 def test_board_class_detail_it_admin_and_missing(client, db, settings, monkeypatch):
     freeze(monkeypatch, NOW)
     assert get_detail(client, settings, C31, IT_ADMIN).status_code == 403
-    assert get_detail(client, settings, uuid4()).status_code == 404
+    missing = uuid4()
+    assert get_detail(client, settings, missing).status_code == 403
+    row = db.scalars(
+        select(AuditLog).where(AuditLog.user_id == UUID(PRINCIPAL), AuditLog.success.is_(False))
+    ).one()
+    assert (row.action, row.object_id) == ("school.view", str(missing))
+
+
+def test_board_class_detail_inactive_class_forbidden(client, db, settings, monkeypatch):
+    freeze(monkeypatch, NOW)
+    cid = make_class(db, "三年八班")
+    db.execute(update(SchoolClass).where(SchoolClass.id == cid).values(active=False))
+    db.flush()
+    assert get_detail(client, settings, cid).status_code == 403
+
+
+def test_grade_head_of_empty_grade(client, db, settings, monkeypatch):
+    freeze(monkeypatch, NOW)
+    g5 = Grade(
+        school_id=UUID(SCHOOL_ID),
+        academic_year_id=UUID(YEAR_ID),
+        name="五年级",
+        display_order=5,
+    )
+    db.add(g5)
+    db.flush()
+    user = make_admin(db, SCHOOL_ID, Role.grade_head.value, grade=g5.id)
+    today = get_today(client, settings, user.id).json()
+    assert today["scope_label"] == "五年级"
+    assert (today["totals"]["classes"], today["totals"]["students"]) == (0, 0)
+    board = get_board(client, settings, user.id).json()
+    assert board["grades"] == [{"id": str(g5.id), "name": "五年级"}]
+    assert (board["grade_id"], board["classes"]) == (str(g5.id), [])

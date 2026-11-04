@@ -32,7 +32,6 @@ from app.domain.schools.service import (
     week_monday,
 )
 from app.domain.students.schemas import StudentSeat
-from app.errors import ApiError
 from app.models import (
     AcademicYear,
     Attendance,
@@ -100,6 +99,24 @@ def _visible(
         for cls, grade, name in rows
         if can(_leader_bindings(bindings), Perm.CLASS_READ, class_scope_of(cls))
     ]
+
+
+def _visible_grades(
+    db: Session, bindings: Sequence[Binding], year_id: UUID, visible: list[VisibleClass]
+) -> list[Grade]:
+    """可见班所在的年级,加上领导绑定的年级(即使该年级当前没有在读班)。"""
+    found = {v.grade.id: v.grade for v in visible}
+    bound = {
+        b.scope.grade_id
+        for b in _leader_bindings(bindings)
+        if b.scope.grade_id is not None and b.scope.grade_id not in found
+    }
+    if bound:
+        for g in db.scalars(
+            select(Grade).where(Grade.id.in_(bound), Grade.academic_year_id == year_id)
+        ):
+            found[g.id] = g
+    return sorted(found.values(), key=lambda g: (g.display_order, g.name))
 
 
 def visible_classes(db: Session, bindings: Sequence[Binding], year) -> list[SchoolClass]:
@@ -179,7 +196,8 @@ def today_view(db: Session, user: User, bindings: Sequence[Binding]) -> TodayVie
     if can(_leader_bindings(bindings), Perm.CLASS_READ, Scope(school_id=year.school_id)):
         scope_label = "全校"
     else:
-        scope_label = "、".join(dict.fromkeys(v.grade.name for v in visible))
+        grades = _visible_grades(db, bindings, year.id, visible)
+        scope_label = "、".join(g.name for g in grades)
 
     if not ids:
         return TodayView(
@@ -392,7 +410,7 @@ def board_view(
 ) -> BoardView:
     year = require_active_year(db, user.school_id)
     visible = _visible(db, bindings, year.id, year.school_id)
-    grades = list(dict.fromkeys((v.grade.id, v.grade.name) for v in visible))
+    grades = [(g.id, g.name) for g in _visible_grades(db, bindings, year.id, visible)]
     if grade_id is None:
         grade_id = grades[0][0] if grades else None
     elif grade_id not in {g[0] for g in grades}:
@@ -422,16 +440,6 @@ def board_class_detail(
     request: Request | None = None,
 ) -> BoardClassDetail:
     year = require_active_year(db, user.school_id)
-    exists = db.scalars(
-        select(SchoolClass.id).where(
-            SchoolClass.id == class_id,
-            SchoolClass.school_id == year.school_id,
-            SchoolClass.academic_year_id == year.id,
-            SchoolClass.active.is_(True),
-        )
-    ).first()
-    if exists is None:
-        raise ApiError(404, "NOT_FOUND", "班级不存在")
     picked = [v for v in _visible(db, bindings, year.id, year.school_id) if v.cls.id == class_id]
     if not picked:
         deny(
