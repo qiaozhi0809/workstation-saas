@@ -1,12 +1,12 @@
 import json
 from datetime import UTC, date, datetime, timedelta
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import select, text
 
 from app.domain.parents.lifecycle import close_links_for
 from app.domain.school_settings.service import get_switches, save_switches
-from app.models import Comment, Enrollment, Exam, Review, Student
+from app.models import Comment, Enrollment, Exam, Review, Score, Student
 from app.models.audit import AuditLog
 from app.models.parents import ParentLink
 from tests.helpers import auth
@@ -72,13 +72,11 @@ def test_children_list(client, settings, db):
     res = get(client, settings, "/children")
     assert res.status_code == 200
     items = res.json()
-    by_name = {c["name"]: c for c in items}
     assert len(items) == 2
     names = {c["class_name"] for c in items}
     assert names == {"三年二班", "四年一班"}
     assert all(c["status"] == "active" and c["is_primary"] for c in items)
     assert all(c["left_on"] is None and c["archive_on"] is None for c in items)
-    assert by_name
 
 
 def test_other_child_forbidden(client, settings, db):
@@ -254,11 +252,14 @@ def test_exam_of_other_class_forbidden(client, settings, db):
     s1 = sid(db, "S0001")
     res = get(client, settings, f"/children/{s1}/exams/{other.id}")
     assert res.status_code == 403
-    assert db.scalars(
+    row = db.scalars(
         select(AuditLog).where(
-            AuditLog.action == "parent.view", AuditLog.object_id == str(other.id)
+            AuditLog.action == "parent.view",
+            AuditLog.object_id == str(s1),
+            AuditLog.success.is_(False),
         )
-    ).all()
+    ).one()
+    assert row.object_type == "student" and row.extra == {"exam_id": str(other.id)}
     assert str(other.id) not in [
         e["id"] for e in get(client, settings, f"/children/{s1}/exams").json()
     ]
@@ -312,6 +313,7 @@ def test_readonly_child(client, settings, db):
     assert (
         body["status"] == "readonly" and body["seat_map"] is None and body["enrollment_id"] is None
     )
+    assert body["attendance"] is None and body["attendance_confirmed"] is False
     assert body["class_info"]["class_name"] == "四年一班"
     child = next(
         c
@@ -339,3 +341,130 @@ def test_expired_readonly_forbidden_without_cli(client, settings, db):
     assert [c["class_name"] for c in get(client, settings, "/children").json()] == ["三年二班"]
     assert get(client, settings, f"/children/{s17}/today").status_code == 403
     assert denials(db, s17) == 1
+
+
+T04 = "55555555-5555-5555-5555-555555555541"  # 孙老师,同时是 S0002 的主家长
+
+
+def test_removed_child_still_readable(client, settings, db):
+    s2 = sid(db, "S0002")
+    add_review(db, "S0002", 2, "历史点评")
+    db.execute(
+        text("UPDATE enrollments SET status = 'removed', left_at = now() WHERE student_id = :s"),
+        {"s": s2},
+    )
+    close_links_for(db, [s2], datetime.now(UTC))
+    db.flush()
+    kids = get(client, settings, "/children", user=T04).json()
+    assert [(k["class_name"], k["status"]) for k in kids] == [("三年二班", "readonly")]
+    assert get(client, settings, f"/children/{s2}/profile", user=T04).status_code == 200
+    assert get(client, settings, f"/children/{s2}/today", user=T04).status_code == 200
+    exams = get(client, settings, f"/children/{s2}/exams", user=T04).json()
+    assert {e["id"] for e in exams} == set(EXAM_IDS)
+    detail = get(client, settings, f"/children/{s2}/exams/{EXAM_IDS[1]}", user=T04)
+    assert detail.status_code == 200 and detail.json()["total"] is not None
+    items = get(client, settings, f"/children/{s2}/reviews", user=T04).json()["items"]
+    assert "历史点评" in [r["reason_text"] for r in items]
+
+
+def test_reviews_cursor_paging(client, settings, db):
+    s1 = sid(db, "S0001")
+    base = datetime.now(UTC) - timedelta(hours=1)
+    for i in range(35):
+        db.add(
+            Review(
+                op_id=uuid4(),
+                enrollment_id=eid(db, "S0001"),
+                class_id=UUID(CLASS_ID),
+                category="individual",
+                reason_text=f"点评{i}",
+                score_delta=1,
+                given_by_user_id=UUID(T01),
+                given_at=base + timedelta(seconds=i),
+            )
+        )
+    db.flush()
+    path = f"/children/{s1}/reviews"
+    p1 = get(client, settings, path).json()
+    assert len(p1["items"]) == 30 and p1["next_cursor"]
+    p2 = get(client, settings, path, cursor=p1["next_cursor"]).json()
+    assert len(p2["items"]) == 5 and p2["next_cursor"] is None
+    texts = [r["reason_text"] for r in p1["items"] + p2["items"]]
+    assert texts == [f"点评{i}" for i in range(34, -1, -1)]
+    res = get(client, settings, path, cursor="not-a-cursor")
+    assert res.status_code == 400 and res.json()["error"]["code"] == "BAD_REQUEST"
+
+
+def test_growth_records_content(client, settings, db):
+    s1 = sid(db, "S0001")
+    items = get(client, settings, f"/children/{s1}/growth-records").json()["items"]
+    assert [i["type"] for i in items] == ["谈话", "表扬"]
+    assert [i["date"] for i in items] == ["2026-10-28", "2026-10-20"]
+    year_name = db.scalar(text("SELECT name FROM academic_years WHERE id = :y"), {"y": YEAR_ID})
+    for i in items:
+        assert set(i) == {"id", "type", "date", "content", "year_name", "created_by_name"}
+        assert i["year_name"] == year_name and i["created_by_name"] == "张老师"
+
+
+def test_secondary_put_denied_with_audit(client, settings, db):
+    s1 = sid(db, "S0001")
+    res = client.put(
+        f"/api/v1/parent/children/{s1}/contacts",
+        json={"contacts": []},
+        headers=auth(settings, ZHOU),
+    )
+    assert res.status_code == 403 and denials(db, s1) == 1
+
+
+def test_exam_detail_with_other_childs_id(client, settings, db):
+    s2 = sid(db, "S0002")
+    res = get(client, settings, f"/children/{s2}/exams/{EXAM_IDS[0]}")
+    assert res.status_code == 403 and denials(db, s2) == 1
+
+
+def test_teacher_without_parent_identity_forbidden(client, settings, db):
+    s1 = sid(db, "S0001")
+    assert get(client, settings, "/children", user=T01).json() == []
+    assert get(client, settings, f"/children/{s1}/today", user=T01).status_code == 403
+    assert denials(db, s1) == 1
+
+
+def _band_exam(db, count: int) -> Exam:
+    exam = Exam(
+        class_id=UUID(CLASS_ID),
+        academic_year_id=UUID(YEAR_ID),
+        name="段位边界",
+        exam_type="月考",
+        date=date(2026, 10, 2),
+        subjects=[{"name": "语文", "full": 100}],
+    )
+    db.add(exam)
+    db.flush()
+    for n in range(1, count + 1):
+        db.add(
+            Score(
+                exam_id=exam.id, enrollment_id=eid(db, f"S{n:04d}"), subject="语文", value=101 - n
+            )
+        )
+    db.flush()
+    return exam
+
+
+def test_band_boundary(client, settings, db):
+    s1 = sid(db, "S0001")
+    nine = _band_exam(db, 9)
+    body = get(client, settings, f"/children/{s1}/exams/{nine.id}").json()
+    assert body["ranked"] == 9 and body["band"] is None
+    db.add(Score(exam_id=nine.id, enrollment_id=eid(db, "S0010"), subject="语文", value=1))
+    db.flush()
+    body = get(client, settings, f"/children/{s1}/exams/{nine.id}").json()
+    assert body["ranked"] == 10 and body["band"] == "前 10%"
+
+
+def test_class_info_content(client, settings, db):
+    s1 = sid(db, "S0001")
+    info = get(client, settings, f"/children/{s1}/today").json()["class_info"]
+    assert info["class_name"] == "三年二班" and info["homeroom_name"] == "张老师"
+    assert {"subject": "语文", "name": "张老师"} in info["teachers"]
+    assert "数学" in [t["subject"] for t in info["teachers"]]
+    assert all(t["subject"] for t in info["teachers"])

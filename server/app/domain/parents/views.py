@@ -16,7 +16,7 @@ from sqlalchemy import func, select, tuple_
 from sqlalchemy.orm import Session
 
 from app.ai.stats import exam_table
-from app.audit.service import deny, record
+from app.audit.service import record
 from app.domain.attendance.service import day_view
 from app.domain.exams.schemas import ExamType, SubjectFull
 from app.domain.growth.service import list_records
@@ -206,12 +206,8 @@ class ParentExamDetail(BaseModel):
 # ---- 取数小工具 ----
 
 
-def _local_date(moment: datetime, db: Session, school_id: UUID) -> date:
-    return moment.astimezone(school_tz(db, school_id)).date()
-
-
 def _enrollment_rows(db: Session, student_ids: Sequence[UUID]) -> dict[UUID, list[Row]]:
-    """这些学生的全部未删除注册,每人按学年、入班时间从新到旧;一次查完。"""
+    """这些学生自己的全部注册(含已移出的 removed),每人按学年、入班时间从新到旧;一次查完。"""
     out: dict[UUID, list[Row]] = defaultdict(list)
     if not student_ids:
         return out
@@ -220,7 +216,7 @@ def _enrollment_rows(db: Session, student_ids: Sequence[UUID]) -> dict[UUID, lis
         .join(SchoolClass, SchoolClass.id == Enrollment.class_id)
         .join(Grade, Grade.id == SchoolClass.grade_id)
         .join(AcademicYear, AcademicYear.id == Enrollment.academic_year_id)
-        .where(Enrollment.student_id.in_(student_ids), Enrollment.status != "removed")
+        .where(Enrollment.student_id.in_(student_ids))
         .order_by(AcademicYear.start_date.desc(), Enrollment.entered_at.desc(), Enrollment.id)
     ).all()
     for e, c, g, y in rows:
@@ -356,7 +352,7 @@ def today(
 
     attendance: ParentAttendance | None = None
     confirmed = False
-    if shown is not None:
+    if shown is not None and status == "active":
         view = day_view(db, shown[1].id, day)
         confirmed = view.confirmed_at is not None
         rec = next((i for i in view.items if i.enrollment_id == shown[0].id), None)
@@ -414,7 +410,7 @@ def _query_reviews(
         select(Review, User.display_name)
         .join(Enrollment, Enrollment.id == Review.enrollment_id)
         .outerjoin(User, User.id == Review.given_by_user_id)
-        .where(*conds, *extra, Enrollment.status != "removed")
+        .where(*conds, *extra)
         .order_by(Review.given_at.desc(), Review.id.desc())
     )
     if limit is not None:
@@ -598,21 +594,25 @@ def exam_detail(
     mine = {r[1].id: r[0] for r in reversed(_enrollment_rows(db, [student_id])[student_id])}
     exam = db.get(Exam, exam_id)
     if exam is None or exam.class_id not in mine:
-        deny(
+        record(
             db,
             user_id=user.id,
             action="parent.view",
-            object_type="exam",
-            object_id=str(exam_id),
+            success=False,
+            object_type="student",
+            object_id=str(student_id),
             request=request,
+            extra={"exam_id": str(exam_id)},
         )
+        db.commit()
+        raise ApiError(403, "FORBIDDEN", "没有权限访问该资源")
     my_enrollment = mine[exam.class_id].id
     year_name = db.scalars(
         select(AcademicYear.name).where(AcademicYear.id == exam.academic_year_id)
     ).one()
     class_name = db.scalars(select(SchoolClass.name).where(SchoolClass.id == exam.class_id)).one()
 
-    # 与 M3b 往年班级成绩同一口径:班里全部未删除的注册
+    # 与 M3b 往年班级成绩同一口径:班里全部未删除的注册;孩子自己被移出时也要有一行
     ids = list(
         db.scalars(
             select(Enrollment.id)
@@ -621,6 +621,8 @@ def exam_detail(
             .order_by(Student.mk)
         )
     )
+    if my_enrollment not in ids:
+        ids.append(my_enrollment)
     scores: dict[UUID, dict[str, float | None]] = {}
     for eid, subject, value in db.execute(
         select(Score.enrollment_id, Score.subject, Score.value).where(Score.exam_id == exam.id)
