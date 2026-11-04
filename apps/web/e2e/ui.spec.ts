@@ -31,6 +31,8 @@ test('skip link moves focus to main content', async ({ page }) => {
 
 test('keyboard focus is visible', async ({ page }) => {
   await page.goto('/login')
+  // 等表单渲染出来再按 Tab:load 事件之后 React 还没挂载时没有可聚焦元素,Tab 落空(负载高时偶发)
+  await expect(page.getByLabel('登录名')).toBeVisible()
   await page.keyboard.press('Tab')
   const focused = page.locator(':focus')
   const ring = await focused.evaluate((el) => {
