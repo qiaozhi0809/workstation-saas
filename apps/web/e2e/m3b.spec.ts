@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
+import { openAdminPage } from './helpers/nav'
 import {
   adminGet, clearScores, deleteE2eExams, deleteE2eGradeExams, login, putScores, rosterEnrollmentIds,
 } from './helpers/api'
@@ -115,7 +116,7 @@ test.describe('grade exam', () => {
   test('dean creates a grade exam, teachers score it, report compares classes and exports', async ({ page, browser, request }) => {
     await signIn(page, 'dean01')
     await expect(page).toHaveURL(/\/admin\/today/)
-    await page.getByRole('link', { name: '年级联考' }).first().click()
+    await openAdminPage(page, '年级联考', '联考与报表')
     await expect(page.getByRole('heading', { name: '年级联考' })).toBeVisible()
     await page.getByRole('button', { name: '新建联考' }).click()
     const form = page.getByRole('dialog', { name: '新建联考' })
@@ -189,7 +190,7 @@ async function classExamId(request: APIRequestContext, token: string, classId: s
 test('principal reads the 2026-10 attendance report that matches the seed, with export and print', async ({ page }) => {
   await signIn(page, 'principal01')
   await expect(page).toHaveURL(/\/admin\/today/)
-  await page.getByRole('link', { name: '考勤报告' }).first().click()
+  await openAdminPage(page, '考勤报告', '联考与报表')
   await expect(page.getByRole('heading', { name: '月度考勤报告' })).toBeVisible()
   for (let i = 0; i < 240 && !(await page.getByText('2026年10月', { exact: true }).isVisible()); i++) {
     await page.getByRole('button', { name: '上一月' }).click()
@@ -227,7 +228,7 @@ test('it admin finds audit entries by group and saves + tests the fake AI servic
   try {
     await signIn(page, 'itadmin01')
     await expect(page).toHaveURL(/\/admin/)
-    await page.getByRole('link', { name: '审计日志' }).first().click()
+    await openAdminPage(page, '审计日志', '系统')
     await expect(page.getByRole('heading', { name: '审计日志' })).toBeVisible()
     // 默认区间的结束日取浏览器本地日期,而后端按学校时区(上海)算日界:浏览器时区落后于上海时今天的记录会被排除。
     // 用例把结束日放宽到两天后,不依赖跑测试的机器所在时区(台账 L43)
@@ -240,7 +241,7 @@ test('it admin finds audit entries by group and saves + tests the fake AI servic
     await expect(rows.filter({ hasText: '发送通知' }).first()).toBeVisible()
 
     // AI 配置:沿用假服务地址;换地址必须同时填 Key,这里一并填假值
-    await page.getByRole('link', { name: 'AI 配置' }).first().click()
+    await openAdminPage(page, 'AI 配置', '系统')
     await expect(page.getByLabel('接口地址')).toHaveValue(FAKE_LLM)
     await page.getByLabel('接口地址').fill(FAKE_LLM)
     await page.getByLabel('模型').fill('fake-model')
@@ -285,7 +286,7 @@ test.describe('year upgrade', () => {
 
     await signIn(page, 'principal01')
     await expect(page).toHaveURL(/\/admin\/today/)
-    await page.getByRole('link', { name: '学年升级' }).first().click()
+    await openAdminPage(page, '学年升级', '学校管理')
     await expect(page.getByRole('heading', { name: '学年升级' })).toBeVisible()
     await expect(page.getByText('最近一次升级')).toBeVisible() // 重跑时库里可能已有一条"已回滚"的旧记录,所以不断言空状态
 
@@ -318,7 +319,7 @@ test.describe('year upgrade', () => {
     expect(heads).not.toContain('韩组长')
 
     // 往年班级:上一学年的三年二班,名单 + 一场考试的成绩,没有任何写入口
-    await page.getByRole('link', { name: '往年班级' }).first().click()
+    await openAdminPage(page, '往年班级', '学校管理')
     await expect(page.getByRole('heading', { name: '往年班级' })).toBeVisible()
     await expect(page.getByLabel('学年')).toContainText('2026-2027')
     await page.getByRole('link', { name: /三年二班/ }).click()
@@ -330,14 +331,46 @@ test.describe('year upgrade', () => {
     await expect(page.getByRole('button', { name: /新建|添加|编辑|删除|保存|导入|导出|考勤|点评|排座/ })).toHaveCount(0)
 
     // 回滚 → 回到原学年,往年班级回到空状态
-    await page.getByRole('link', { name: '学年升级' }).first().click()
+    await openAdminPage(page, '学年升级', '学校管理')
     await page.getByRole('button', { name: '回滚', exact: true }).click()
     await page.getByRole('button', { name: '确认回滚' }).click()
     await expect(page.getByText('已回滚,新学年的班级与注册记录已删除')).toBeVisible()
     await expect(page.getByText('已回滚', { exact: true })).toBeVisible()
-    await page.getByRole('link', { name: '往年班级' }).first().click()
+    await openAdminPage(page, '往年班级', '学校管理')
     await expect(page.getByText('还没有往年数据')).toBeVisible()
     const years = await adminGet<{ name: string; is_active: boolean }[]>(request, await login(request, 'principal01'), '/admin/years')
     expect(years.find((y) => y.is_active)?.name).toBe('2026-2027')
   })
 })
+
+for (const [width, height] of [[1280, 720], [1024, 768], [768, 1024]] as const) {
+  test(`admin nav keeps every entry reachable without page overflow at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height })
+    await signIn(page, 'principal01')
+    await expect(page).toHaveURL(/\/admin\/today/)
+    const nav = page.getByRole('navigation', { name: '主导航' })
+    // 直接显示的:今日关注、全校看板、通知;其余都收在三个下拉里
+    for (const name of ['今日关注', '全校看板', '通知']) await expect(nav.getByRole('link', { name })).toBeVisible()
+    const groups: Record<string, string[]> = {
+      学校管理: ['组织架构', '账号', '学校设置', '学年升级', '往年班级'],
+      联考与报表: ['年级联考', '成绩汇总', '考勤报告'],
+      系统: ['审计日志', 'AI 使用', 'AI 配置'],
+    }
+    for (const [group, items] of Object.entries(groups)) {
+      await nav.getByRole('button', { name: group }).click()
+      const menu = page.getByRole('menu', { name: group })
+      for (const item of items) await expect(menu.getByRole('menuitem', { name: item })).toBeVisible()
+      await page.keyboard.press('Escape')
+      await expect(page.getByRole('menu')).toHaveCount(0)
+    }
+    await openAdminPage(page, '成绩汇总', '联考与报表')
+    await expect(page).toHaveURL(/\/admin\/reports\/scores/)
+    await expect(nav.getByRole('button', { name: '联考与报表' })).toHaveAttribute('aria-current', 'true')
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0)
+    // 学校名在 1280 宽放得下,不被截成"示…"
+    if (width === 1280) {
+      const name = page.locator('header span.truncate').first()
+      expect(await name.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0)
+    }
+  })
+}

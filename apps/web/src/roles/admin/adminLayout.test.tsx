@@ -68,14 +68,6 @@ it('lists only the pages the user may use and lands on the first of them', async
   expect(within(nav).getAllByRole('link').map((l) => l.getAttribute('href'))).toEqual(['/admin/accounts'])
 })
 
-it('keeps the nav a positioned scroller so its sr-only labels cannot widen the page', async () => {
-  setUser(['admin'], ['account.manage'])
-  renderAt('/admin')
-  await screen.findByText('accounts page')
-  // sr-only 标签是 absolute;导航不是定位祖先时它们逃出 overflow-x-auto 的裁剪,窄屏下整页出现横向滚动
-  expect(screen.getByRole('navigation', { name: '主导航' })).toHaveClass('relative', 'overflow-x-auto')
-})
-
 it('shows the school name for an org.manage admin', async () => {
   setUser(['admin'], ['org.manage'])
   renderAt('/admin')
