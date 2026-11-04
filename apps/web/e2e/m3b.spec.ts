@@ -19,17 +19,41 @@ async function signIn(page: Page, name: string) {
 const bell = (page: Page) => page.getByRole('button', { name: /^通知,\d+ 条未读$/ })
 const unreadOf = async (page: Page) => Number(/通知,(\d+) 条未读/.exec((await bell(page).getAttribute('aria-label')) ?? '')?.[1])
 
-// 本文件的用例互相独立;改到的数据在用例里或 afterEach 里还原。通知只能撤回不能删,留在库里的都是"已撤回"。
+// 本文件的用例各自准备自己的数据,改到的数据在用例里或 afterEach 里还原。通知只能撤回不能删,留在库里的都是"已撤回"。
 // 学年升级用例放最后,结束时回滚;与其他 spec 的隔离由 playwright.config.ts 的 project 依赖链保证。
 test.describe.configure({ mode: 'serial' })
 
-test('notice reaches an open classroom without refresh, shows read count, and recall is reflected', async ({ page, browser }) => {
+/** 校长发一条全校通知(经 API),返回通知 id;recallNotice 撤回(重复撤回是幂等的)。 */
+async function sendSchoolNotice(request: APIRequestContext, token: string, title: string): Promise<string> {
+  const res = await request.post(`${API}/admin/notices`, {
+    headers: { Authorization: `Bearer ${token}` },
+    data: { title, content: '审计用例的占位通知,发出后立刻撤回。', target: { kind: 'school' } },
+  })
+  expect(res.ok(), await res.text()).toBeTruthy()
+  return ((await res.json()) as { id: string }).id
+}
+async function recallNotice(request: APIRequestContext, token: string, id: string): Promise<void> {
+  const res = await request.post(`${API}/admin/notices/${id}/recall`, { headers: { Authorization: `Bearer ${token}` } })
+  expect(res.ok(), await res.text()).toBeTruthy()
+}
+// 保证前一次跑到一半被打断(升级后、回滚前)留下的新学年不会连锁拖垮后面的用例
+test.beforeAll(async ({ request }) => {
+  const principal = await login(request, 'principal01')
+  const latest = await adminGet<{ rolled_back: boolean } | null>(request, principal, '/admin/years/upgrade/latest')
+  if (latest && !latest.rolled_back) {
+    const res = await request.post(`${API}/admin/years/upgrade/rollback`, { headers: { Authorization: `Bearer ${principal}` } })
+    expect(res.ok(), await res.text()).toBeTruthy()
+  }
+})
+
+test('notice reaches an open classroom without refresh, shows read count, and recall is reflected', async ({ page, browser, request }) => {
   const title = `E2E通知${Date.now().toString(36)}`
   const teacherCtx = await browser.newContext({ baseURL: BASE_URL })
   const teacher = await teacherCtx.newPage()
   try {
     await signIn(teacher, 'teacher01')
     await expect(teacher.getByRole('heading', { name: '三年二班' })).toBeVisible()
+    await teacher.waitForLoadState('networkidle') // 收件箱加载前铃铛显示 0 条未读,等它取回再读基数
     await expect(bell(teacher)).toBeVisible()
     const before = await unreadOf(teacher)
 
@@ -41,11 +65,14 @@ test('notice reaches an open classroom without refresh, shows read count, and re
     await page.getByLabel('正文').fill('明天下午三点开全体教师会,请准时参加。')
     await expect(page.getByLabel('发给')).toHaveValue('school')
     await page.getByRole('button', { name: '发送', exact: true }).click()
-    await page.getByRole('button', { name: '确认发送' }).click()
+    // toast 只停几秒:在点"确认发送"之前就开始等,不要等推送到了才开始看
+    await Promise.all([
+      expect(teacher.getByText(`新通知:${title}`)).toBeVisible(),
+      page.getByRole('button', { name: '确认发送' }).click(),
+    ])
     await expect(page.getByRole('status').filter({ hasText: /已发给 \d+ 人/ })).toBeVisible()
 
-    // 老师页面不刷新:toast 出现,铃铛未读 +1
-    await expect(teacher.getByText(`新通知:${title}`)).toBeVisible()
+    // 老师页面不刷新:铃铛未读 +1
     await expect(bell(teacher)).toHaveAttribute('aria-label', `通知,${before + 1} 条未读`)
 
     // 点开铃铛读这条通知 → 未读回落;校长"我发出的"已读数 +1
@@ -64,6 +91,10 @@ test('notice reaches an open classroom without refresh, shows read count, and re
     await expect(teacher.getByRole('button', { name: new RegExp(title) }).getByText('此通知已撤回')).toBeVisible()
   } finally {
     await teacherCtx.close()
+    // 中途失败时别留下一条未撤回的全校通知(收件人的未读数会被污染)
+    const principal = await login(request, 'principal01')
+    const sentList = await adminGet<{ items: { id: string; title: string; recalled_at: string | null }[] }>(request, principal, '/admin/notices?page=1')
+    for (const n of sentList.items.filter((x) => x.title === title && !x.recalled_at)) await recallNotice(request, principal, n.id)
   }
 })
 
@@ -160,7 +191,7 @@ test('principal reads the 2026-10 attendance report that matches the seed, with 
   await expect(page).toHaveURL(/\/admin\/today/)
   await page.getByRole('link', { name: '考勤报告' }).first().click()
   await expect(page.getByRole('heading', { name: '月度考勤报告' })).toBeVisible()
-  for (let i = 0; i < 24 && !(await page.getByText('2026年10月', { exact: true }).isVisible()); i++) {
+  for (let i = 0; i < 240 && !(await page.getByText('2026年10月', { exact: true }).isVisible()); i++) {
     await page.getByRole('button', { name: '上一月' }).click()
   }
   await expect(page.getByText('2026年10月', { exact: true })).toBeVisible()
@@ -183,7 +214,10 @@ test('principal reads the 2026-10 attendance report that matches the seed, with 
 
 test('it admin finds audit entries by group and saves + tests the fake AI service', async ({ page, request }) => {
   const it = await login(request, 'itadmin01')
+  const principal = await login(request, 'principal01')
   const loginName = `e2e_audit_${Date.now().toString(36)}`
+  // 自己发一条通知再撤回,让"通知"分组里一定有记录,不依赖用例 1 先跑
+  await recallNotice(request, principal, await sendSchoolNotice(request, principal, `E2E审计通知${Date.now().toString(36)}`))
   const created = await request.post(`${API}/admin/accounts`, {
     headers: { Authorization: `Bearer ${it}` },
     data: { login_name: loginName, display_name: '审计测试', employee_no: null, phone: null, subjects: [] },
@@ -212,8 +246,7 @@ test('it admin finds audit entries by group and saves + tests the fake AI servic
     await page.getByLabel('模型').fill('fake-model')
     await page.getByLabel('API Key').fill('test-key')
     await page.getByRole('button', { name: '测试连接' }).click()
-    await expect(page.getByRole('status').filter({ hasText: /./ }).first()).toBeVisible()
-    await expect(page.getByRole('status').filter({ hasText: /成功|可用|正常|通过|OK/i }).first()).toBeVisible()
+    await expect(page.getByRole('status').filter({ hasText: '连接成功' })).toBeVisible()
     await page.getByRole('button', { name: '保存', exact: true }).click()
     await expect(page.getByText('已保存')).toBeVisible()
   } finally {

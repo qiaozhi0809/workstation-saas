@@ -38,7 +38,7 @@ def get_export(client, settings, user=PRINCIPAL, **params):
 
 
 def enrolled_since_september(db):
-    """种子的 entered_at 是建库时刻;报表按进班日算,这里统一拨回开学日。"""
+    """报表按进班日算:种子已把 entered_at 拨回开学日,这里仍显式写一遍,让用例不依赖种子细节。"""
     db.execute(text("UPDATE enrollments SET entered_at = '2026-08-31T16:00:00+00:00'"))
     db.flush()
 
