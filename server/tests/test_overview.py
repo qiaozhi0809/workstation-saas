@@ -419,3 +419,27 @@ def test_grade_head_of_empty_grade(client, db, settings, monkeypatch):
     board = get_board(client, settings, user.id).json()
     assert board["grades"] == [{"id": str(g5.id), "name": "五年级"}]
     assert (board["grade_id"], board["classes"]) == (str(g5.id), [])
+
+
+def test_leader_classroom_my_perms_has_no_write_perms(client, db, settings, monkeypatch):
+    freeze(monkeypatch, NOW)
+    for user in (PRINCIPAL, GRADE_HEAD3):
+        res = client.get(f"/api/v1/classes/{CLASS_ID}/classroom", headers=auth(settings, user))
+        assert res.status_code == 200
+        perms = set(res.json()["my_perms"])
+        assert perms == {
+            "attendance.read",
+            "review.read",
+            "exam.read",
+            "score.export",
+            "student.export",
+            "growth.read",
+            "comment.read",
+        }
+        writes = {p for p in perms if not p.endswith(".read") and not p.endswith(".export")}
+        assert writes == set()
+
+
+def test_me_classes_excludes_unassigned_classes_for_principal(client, db, settings):
+    res = client.get("/api/v1/me/classes", headers=auth(settings, PRINCIPAL))
+    assert res.json()["items"] == []
