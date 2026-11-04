@@ -165,7 +165,7 @@ it('rejects an invalid full mark and an empty name locally', async () => {
 
 it('edits an exam keeping its grade and shows the backend message on 409', async () => {
   vi.mocked(adminApi.updateGradeExam).mockRejectedValue(
-    new ApiError(409, 'EXAM_HAS_SCORES', '去掉的科目「数学」已经有分数', { subject: '数学' }))
+    new ApiError(409, 'EXAM_HAS_SCORES', '「数学」已有成绩,不能去掉', { subject: '数学' }))
   await renderPage()
   fireEvent.click(within(row()).getByRole('button', { name: '编辑' }))
   const dlg = await screen.findByRole('dialog')
@@ -175,5 +175,16 @@ it('edits an exam keeping its grade and shows the backend message on 409', async
   await waitFor(() => expect(adminApi.updateGradeExam).toHaveBeenCalledWith('ge1', {
     grade_id: 'g3', name: '十月联考', exam_type: '月考', date: '2026-10-20', subjects: [{ name: '语文', full: 100 }],
   }))
-  expect(await within(dlg).findByRole('alert')).toHaveTextContent('去掉的科目「数学」已经有分数')
+  expect(await within(dlg).findByRole('alert')).toHaveTextContent('「数学」已有成绩,不能去掉')
+})
+
+it('shows the subject-naming message when lowering full below recorded scores (409)', async () => {
+  vi.mocked(adminApi.updateGradeExam).mockRejectedValue(
+    new ApiError(409, 'SCORE_ABOVE_FULL', '「语文」的满分不能低于已录入的最高分', { subject: '语文' }))
+  await renderPage()
+  fireEvent.click(within(row()).getByRole('button', { name: '编辑' }))
+  const dlg = await screen.findByRole('dialog')
+  fireEvent.change(within(dlg).getByLabelText('科目 1 满分'), { target: { value: '90' } })
+  fireEvent.click(within(dlg).getByRole('button', { name: '保存' }))
+  expect(await within(dlg).findByRole('alert')).toHaveTextContent('「语文」的满分不能低于已录入的最高分')
 })

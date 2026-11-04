@@ -258,12 +258,17 @@ def update(
     scored = _scored_subjects(db, [e.id for e in exams], removed)
     for name in removed:  # 按联考原有科目顺序,报第一个
         if name in scored:
-            raise ApiError(409, "EXAM_HAS_SCORES", "该科目已有成绩,不能去掉", {"subject": name})
+            raise ApiError(
+                409, "EXAM_HAS_SCORES", f"「{name}」已有成绩,不能去掉", {"subject": name}
+            )
     for e in exams:
         below = subject_full_below_scores(db, e, body.subjects)
         if below is not None:
             raise ApiError(
-                409, "SCORE_ABOVE_FULL", "满分不能低于已录入的最高分", {"subject": below}
+                409,
+                "SCORE_ABOVE_FULL",
+                f"「{below}」的满分不能低于已录入的最高分",
+                {"subject": below},
             )
     subjects = [s.model_dump() for s in body.subjects]
     ge.name, ge.exam_type, ge.date, ge.subjects = body.name, body.exam_type, body.date, subjects

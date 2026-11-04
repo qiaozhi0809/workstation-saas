@@ -186,6 +186,7 @@ def test_remove_scored_subject_rejected(client, db, settings):
     assert r.status_code == 409
     err = r.json()["error"]
     assert err["code"] == "EXAM_HAS_SCORES" and err["details"] == {"subject": "数学"}
+    assert "数学" in err["message"]
     assert db.get(GradeExam, UUID(out["id"])).subjects[1]["name"] == "数学"
     assert all(len(e.subjects) == 2 for e in _class_exams(db, out["id"]))
     assert len(db.scalars(select(Score)).all()) >= 1
@@ -206,6 +207,7 @@ def test_lower_full_below_scores_rejected(client, db, settings):
     assert r.status_code == 409
     err = r.json()["error"]
     assert err["code"] == "SCORE_ABOVE_FULL" and err["details"] == {"subject": "语文"}
+    assert "语文" in err["message"]
     ok = _body(subjects=[{"name": "语文", "full": 95}, {"name": "数学", "full": 100}])
     assert (
         client.put(f"{API}/{out['id']}", json=ok, headers=auth(settings, DEAN)).status_code == 200
@@ -315,6 +317,7 @@ def test_remove_subject_with_only_absent_rows_rejected(client, db, settings):
     assert r.status_code == 409
     err = r.json()["error"]
     assert err["code"] == "EXAM_HAS_SCORES" and err["details"] == {"subject": "数学"}
+    assert "数学" in err["message"]
 
 
 def test_class_exam_out_has_grade_exam_id(client, db, settings):
