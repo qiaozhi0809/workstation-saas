@@ -138,3 +138,49 @@ def test_temp_password_shape():
         assert not set(pw) & set("IlOo01")
         assert pw.isascii() and pw.isalnum()
         check_policy(pw)
+
+
+def _fail_key(settings, name="teacher01"):
+    return f"ws:login_fail:{settings.school_id}:{name}"
+
+
+def test_wrong_old_password_locks_after_max_failures(client, settings, redis_client):
+    t = login(client).json()
+    a, r = t["access_token"], t["refresh_token"]
+    for _ in range(settings.login_max_failures):
+        res = _change(client, a, r, "wrong-old", "abcd1234")
+        assert res.status_code == 400
+        assert res.json()["error"]["code"] == "WRONG_PASSWORD"
+    assert redis_client.ttl(_fail_key(settings)) > settings.login_lock_seconds - 5
+    res = _change(client, a, r, "wrong-old", "abcd1234")
+    assert res.status_code == 429
+    assert res.json()["error"]["code"] == "ACCOUNT_LOCKED"
+
+
+def test_correct_old_password_also_locked(client, settings):
+    t = login(client).json()
+    a, r = t["access_token"], t["refresh_token"]
+    for _ in range(settings.login_max_failures):
+        _change(client, a, r, "wrong-old", "abcd1234")
+    res = _change(client, a, r, "dev123", "abcd1234")
+    assert res.status_code == 429
+    assert res.json()["error"]["code"] == "ACCOUNT_LOCKED"
+
+
+def test_successful_change_clears_failure_count(client, settings, redis_client):
+    t = login(client).json()
+    a, r = t["access_token"], t["refresh_token"]
+    for _ in range(settings.login_max_failures - 1):
+        _change(client, a, r, "wrong-old", "abcd1234")
+    assert redis_client.get(_fail_key(settings)) is not None
+    assert _change(client, a, r, "dev123", "abcd1234").status_code == 200
+    assert redis_client.get(_fail_key(settings)) is None
+
+
+def test_login_lock_blocks_change_password(client, settings):
+    t = login(client).json()
+    for _ in range(settings.login_max_failures):
+        login(client, pw="wrong")
+    res = _change(client, t["access_token"], t["refresh_token"], "dev123", "abcd1234")
+    assert res.status_code == 429
+    assert res.json()["error"]["code"] == "ACCOUNT_LOCKED"
