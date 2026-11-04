@@ -481,7 +481,7 @@ describe('latest upgrade and rollback', () => {
   it('lists Chinese items when rollback is blocked by data', async () => {
     api.upgradeLatest.mockResolvedValue(latest)
     api.upgradeRollback.mockRejectedValue(new ApiError(409, 'UPGRADE_HAS_DATA', '新学年已经产生数据,不能回滚', {
-      class_boards: 3, seats: 2, class_roles: 1, transfers: 4, grade_exams: 2, attendances: 5, new_students: 6, mystery: 7,
+      class_boards: 3, seats: 2, class_roles: 1, transfers: 4, grade_exams: 2, attendances: 5, new_students: 6, new_grades: 1, new_classes: 2, new_assignments: 3, new_bindings: 4, mystery: 7,
     }))
     renderPage()
     expect(await screen.findByText(/2026-2027 → 2027-2028,执行于/)).toBeInTheDocument()
@@ -489,7 +489,7 @@ describe('latest upgrade and rollback', () => {
     expect(screen.getByText('回滚会删除新学年的班级与注册记录,往年数据不受影响')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '确认回滚' }))
     expect(await screen.findByText('年级联考 2 场')).toBeInTheDocument()
-    for (const t of ['看板改动 3 处', '座位调整 2 个班', '班干部变动 1 人', '学生转出 4 人', '考勤记录 5 条', '新增学生 6 人', 'mystery: 7'])
+    for (const t of ['看板改动 3 处', '座位调整 2 个班', '班干部变动 1 人', '学生转出 4 人', '考勤记录 5 条', '新增学生 6 人', '手动新建的年级 1 个', '手动新建的班级 2 个', '手动添加的任职 3 条', '手动添加的管理岗任命 4 条', 'mystery: 7'])
       expect(screen.getByText(t)).toBeInTheDocument()
   })
 

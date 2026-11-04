@@ -1247,6 +1247,56 @@ def test_rollback_board_check_does_not_depend_on_clocks(db):
     _rollback_blocked(db, class_boards=1)
 
 
+@pytest.mark.parametrize(
+    "kind", ["new_grades", "new_classes", "new_assignments", "new_bindings", "new_students"]
+)
+def test_rollback_blocked_by_data_added_to_new_year_by_hand(db, kind):
+    """升级之后管理员在新学年里手动新建的年级 / 班级 / 任职 / 管理岗绑定 / 学生:
+    它们不在升级记录里,删学年时会被级联静默抹掉,所以回滚必须拒绝并点名。"""
+    apply(db, SCHOOL, _seed_plan(db), now=datetime.now(UTC))
+    year = _active_year(db)
+    (new_cls,) = _active_classes(db)
+    grade_id = db.execute(
+        text("SELECT grade_id FROM classes WHERE id = :c"), {"c": new_cls.id}
+    ).scalar_one()
+    if kind == "new_grades":
+        db.execute(
+            text(
+                "INSERT INTO grades (school_id, academic_year_id, name, display_order)"
+                " VALUES (:s, :y, '六年级', 6)"
+            ),
+            {"s": SCHOOL, "y": year.id},
+        )
+        expected = {"new_grades": 1}
+    elif kind == "new_classes":
+        make_class(db, "四年三班", grade_id=grade_id, year_id=year.id)
+        expected = {"new_classes": 1}
+    elif kind == "new_assignments":
+        db.execute(
+            text(
+                "INSERT INTO teacher_assignments"
+                " (teacher_id, class_id, academic_year_id, identity)"
+                " VALUES (:t, :c, :y, 'assistant')"
+            ),
+            {"t": TEACHER_IDS["teacher02"], "c": new_cls.id, "y": year.id},
+        )
+        expected = {"new_assignments": 1}
+    elif kind == "new_bindings":
+        db.execute(
+            text(
+                "INSERT INTO role_bindings (user_id, role_type, scope, academic_year_id)"
+                " VALUES (:u, 'grade_head', jsonb_build_object('grade_id', CAST(:g AS text)), :y)"
+            ),
+            {"u": SUBJECT_USER_ID, "g": grade_id, "y": year.id},
+        )
+        expected = {"new_bindings": 1}
+    else:
+        extra_cls = make_class(db, "四年三班", grade_id=grade_id, year_id=year.id)
+        make_student(db, extra_cls, "新来的", "S9001", year_id=year.id)
+        expected = {"new_classes": 1, "new_students": 1}
+    _rollback_blocked(db, **expected)
+
+
 @pytest.mark.parametrize("kind", ["class_boards", "seats", "class_roles", "transfers"])
 def test_rollback_blocked_by_board_seat_role_transfer(db, kind):
     up = apply(db, SCHOOL, _seed_plan(db), now=datetime.now(UTC))
@@ -1338,8 +1388,22 @@ def test_cli_rollback_labels_for_new_has_data_keys(db):
         text("UPDATE enrollments SET status = 'transferred' WHERE id = :e"), {"e": new_enr[9]}
     )
     _grade_exam_in_new_year(db)
+    db.execute(
+        text(
+            "INSERT INTO grades (school_id, academic_year_id, name, display_order)"
+            " SELECT :s, academic_year_id, '六年级', 6 FROM classes WHERE id = :c"
+        ),
+        {"s": SCHOOL, "c": new_cls.id},
+    )
     code, out = _run_cli(db, ["rollback", "--yes"])
     assert code == 1
-    for line in ("年级联考 1 场", "看板改动 1 处", "座位调整 1 个班", "学生转出 1 人"):
+    for line in (
+        "年级联考 1 场",
+        "看板改动 1 处",
+        "座位调整 1 个班",
+        "学生转出 1 人",
+        "手动新建的年级 1 个",
+    ):
         assert f"  {line}" in out
     assert "class_boards" not in out and "grade_exams" not in out and "transfers" not in out
+    assert "new_grades" not in out

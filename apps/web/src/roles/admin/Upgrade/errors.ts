@@ -49,6 +49,10 @@ const DATA_LABELS: Record<string, string> = {
   comments: '评语 {} 条',
   ai_chats: 'AI 对话 {} 个',
   new_students: '新增学生 {} 人',
+  new_grades: '手动新建的年级 {} 个',
+  new_classes: '手动新建的班级 {} 个',
+  new_assignments: '手动添加的任职 {} 条',
+  new_bindings: '手动添加的管理岗任命 {} 条',
 }
 
 export function dataLines(details: unknown): string[] {

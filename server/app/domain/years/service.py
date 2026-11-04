@@ -769,7 +769,8 @@ def latest_rollbackable(db: Session, school_id: UUID, *, lock: bool = False) -> 
 def _edits_since_upgrade(
     db: Session, up: YearUpgrade, new_classes: list[UUID], new_enrollments: list[UUID]
 ) -> dict[str, int]:
-    """升级之后,新学年里被人动过的东西:看板、座位、班干部、转出、年级联考。非零才返回。"""
+    """升级之后,新学年里被人动过的东西:看板、座位、班干部、转出、手动新建的年级 / 班级 / 任职 /
+    管理岗绑定、年级联考。非零才返回。"""
     sm = up.summary
     found: dict[str, int] = {}
     cs = {"cs": new_classes}
@@ -809,6 +810,39 @@ def _edits_since_upgrade(
     ).scalar_one()
     if transfers:
         found["transfers"] = transfers
+    # 升级之后在新学年里手动新建的年级 / 班级 / 任职 / 管理岗绑定:不在升级记录里,删学年时会
+    # 被级联静默抹掉(M3a 起组织架构页可以写这些)
+    year = {"y": UUID(sm["new_year_id"])}
+    for key, sql, ids in (
+        (
+            "new_grades",
+            "SELECT count(*) FROM grades WHERE academic_year_id = :y"
+            " AND NOT (id = ANY(cast(:ids as uuid[])))",
+            sm["new_grade_ids"],
+        ),
+        (
+            "new_classes",
+            "SELECT count(*) FROM classes WHERE academic_year_id = :y"
+            " AND NOT (id = ANY(cast(:ids as uuid[])))",
+            sm["new_class_ids"],
+        ),
+        (
+            "new_assignments",
+            "SELECT count(*) FROM teacher_assignments WHERE academic_year_id = :y"
+            " AND NOT (id = ANY(cast(:ids as uuid[])))",
+            sm["new_assignment_ids"],
+        ),
+        (
+            # 班级作用域的绑定总是跟着任职走(已由 new_assignments 计数),这里只数管理岗
+            "new_bindings",
+            "SELECT count(*) FROM role_bindings WHERE academic_year_id = :y"
+            " AND NOT (scope ? 'class_id') AND NOT (id = ANY(cast(:ids as uuid[])))",
+            sm["new_binding_ids"],
+        ),
+    ):
+        n = db.execute(text(sql), {**year, "ids": _uuids(ids)}).scalar_one()
+        if n:
+            found[key] = n
     grade_exams = db.execute(
         text(
             "SELECT count(*) FROM grade_exams"
@@ -853,12 +887,13 @@ def rollback(
         ).scalar_one()
         if n:
             found[table] = n
+    # 整个新学年里不在升级记录中的注册(含升级后手动新建的班里的学生)
     extra_students = db.execute(
         text(
-            "SELECT count(*) FROM enrollments WHERE class_id = ANY(cast(:cs as uuid[]))"
+            "SELECT count(*) FROM enrollments WHERE academic_year_id = :y"
             " AND NOT (id = ANY(cast(:es as uuid[])))"
         ),
-        {"cs": new_classes, "es": new_enrollments},
+        {"y": UUID(sm["new_year_id"]), "es": new_enrollments},
     ).scalar_one()
     if extra_students:
         found["new_students"] = extra_students
