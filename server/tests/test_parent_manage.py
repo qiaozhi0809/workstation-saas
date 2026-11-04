@@ -325,6 +325,48 @@ def test_phone_invalid_and_ambiguous(client, settings, db):
     assert res.status_code == 400
 
 
+def test_shared_account_with_nonparent_binding(client, settings, db):
+    p = _add(client, settings, S3, "13800000071").json()["parent"]
+    assert p["shared_account"] is False
+    db.add(RoleBinding(user_id=_user(db, "13800000071").id, role_type="it_admin", scope={}))
+    db.flush()
+    listed = client.get(_url(S3), headers=auth(settings)).json()
+    assert [x["shared_account"] for x in listed] == [True]
+    before = _user(db, "13800000071").password_hash
+    res = client.post(f"/api/v1/parent-links/{p['link_id']}/reset-password", headers=auth(settings))
+    assert res.status_code == 409 and res.json()["error"]["code"] == "PARENT_ACCOUNT_SHARED"
+    assert _user(db, "13800000071").password_hash == before
+
+
+def test_ended_nonparent_binding_not_shared(client, settings, db):
+    _add(client, settings, S3, "13800000072")
+    db.add(
+        RoleBinding(
+            user_id=_user(db, "13800000072").id,
+            role_type="it_admin",
+            scope={},
+            ended_at=datetime.now(UTC),
+        )
+    )
+    db.flush()
+    listed = client.get(_url(S3), headers=auth(settings)).json()
+    assert listed[0]["shared_account"] is False
+
+
+@pytest.mark.parametrize("raw", ["138 0000 0073", "138-0000-0073", " 138 - 0000 0073 "])
+def test_phone_normalized(client, settings, db, raw):
+    res = _add(client, settings, S3, raw)
+    assert res.status_code == 201, res.text
+    assert res.json()["parent"]["phone"] == "13800000073"
+    assert _user(db, "13800000073") is not None
+
+
+@pytest.mark.parametrize("bad", ["00000000000", "02012345678", "1" * 200, "12800000073"])
+def test_phone_rule_and_overlong_rejected(client, settings, db, bad):
+    res = _add(client, settings, S3, bad)
+    assert res.status_code == 400 and res.json()["error"]["code"] == "PHONE_INVALID", bad
+
+
 @pytest.mark.parametrize("who", [SUBJECT_USER_ID, PRINCIPAL, TEACHER04])
 def test_non_homeroom_forbidden(client, settings, db, who):
     res = _add(client, settings, S3, "13800000084", user=who)

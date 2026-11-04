@@ -33,7 +33,7 @@ SettingsDep = Annotated[Settings, Depends(settings_dep)]
 def list_parents(
     student_id: UUID, request: Request, user: UserDep, bindings: BindingsDep, db: DbDep
 ) -> list[ParentOfStudent]:
-    student = manage.lock_student(db, user.school_id, student_id)
+    student = manage.get_student(db, user.school_id, student_id)
     manage.authorize(db, request, user, bindings, student)
     return manage.list_parents(db, student)
 

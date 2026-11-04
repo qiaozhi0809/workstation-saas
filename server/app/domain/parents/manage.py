@@ -30,7 +30,8 @@ from app.rbac.bindings import Binding, can
 from app.rbac.roles import PARENT_ROLES, Perm, Role
 
 MAX_PARENTS = 4
-_PHONE_RE = re.compile(r"^[0-9]{11}$")
+_PHONE_RE = re.compile(r"^1[3-9][0-9]{9}$")
+_PHONE_SEP_RE = re.compile(r"[\s-]")
 _PARENT_ROLE_VALUES = sorted(r.value for r in PARENT_ROLES)
 
 
@@ -38,11 +39,16 @@ def _role_for(is_primary: bool) -> str:
     return (Role.primary_parent if is_primary else Role.secondary_parent).value
 
 
-def lock_student(db: Session, school_id: UUID, student_id: UUID) -> Student:
-    student = db.scalar(select(Student).where(Student.id == student_id).with_for_update())
+def get_student(db: Session, school_id: UUID, student_id: UUID, *, lock: bool = False) -> Student:
+    stmt = select(Student).where(Student.id == student_id)
+    student = db.scalar(stmt.with_for_update() if lock else stmt)
     if student is None or student.school_id != school_id:
         raise ApiError(404, "NOT_FOUND", "学生不存在")
     return student
+
+
+def lock_student(db: Session, school_id: UUID, student_id: UUID) -> Student:
+    return get_student(db, school_id, student_id, lock=True)
 
 
 def authorize(
@@ -94,6 +100,29 @@ def open_link(
     return _live_link_or_404(db, link_id), student
 
 
+def _shared_user_ids(db: Session, user_ids: Sequence[UUID]) -> set[UUID]:
+    """同时是教职工账号的用户:有 teachers 行,或有未结束的非家长 role_binding。"""
+    ids = list(user_ids)
+    rows = db.execute(
+        text(
+            "SELECT user_id FROM teachers WHERE user_id = ANY(:ids)"
+            " UNION SELECT user_id FROM role_bindings WHERE user_id = ANY(:ids)"
+            " AND ended_at IS NULL AND NOT (role_type = ANY(:roles))"
+        ),
+        {"ids": ids, "roles": _PARENT_ROLE_VALUES},
+    )
+    return {r.user_id for r in rows}
+
+
+def _lock_user(db: Session, user_id: UUID) -> User | None:
+    return db.scalar(
+        select(User)
+        .where(User.id == user_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+
+
 def _views(db: Session, links: Sequence[ParentLink]) -> list[ParentOfStudent]:
     if not links:
         return []
@@ -103,13 +132,7 @@ def _views(db: Session, links: Sequence[ParentLink]) -> list[ParentOfStudent]:
         .where(Parent.id.in_([lk.parent_id for lk in links]))
     ).all()
     by_parent = {p.id: (p, u) for p, u in rows}
-    staff = {
-        r.user_id
-        for r in db.execute(
-            text("SELECT user_id FROM teachers WHERE user_id = ANY(:ids)"),
-            {"ids": [u.id for _, u in rows]},
-        )
-    }
+    staff = _shared_user_ids(db, [u.id for _, u in rows])
     out = []
     for lk in links:
         parent, user = by_parent[lk.parent_id]
@@ -219,10 +242,14 @@ def add_parent(
 ) -> ParentCreated:
     student = lock_student(db, actor.school_id, student_id)
     authorize(db, request, actor, bindings, student)
-    if not _PHONE_RE.fullmatch(body.phone):
-        raise ApiError(400, "PHONE_INVALID", "手机号应为 11 位数字")
-    phone = body.phone
+    phone = _PHONE_SEP_RE.sub("", body.phone)
+    if not _PHONE_RE.fullmatch(phone):
+        raise ApiError(400, "PHONE_INVALID", "手机号应为 11 位中国大陆手机号")
     user = _find_account(db, actor.school_id, phone)
+    if user is not None:  # 锁用户行后再确认仍是 active(防并发停用/归档)
+        locked = _lock_user(db, user.id)
+        if locked is None or locked.status != "active":
+            raise ApiError(409, "PHONE_TAKEN_INACTIVE", "这个手机号的账号已停用,请联系信息中心")
     parent = (
         db.scalar(select(Parent).where(Parent.user_id == user.id)) if user is not None else None
     )
@@ -368,6 +395,7 @@ def unlink(
             heir = min(rest, key=lambda lk: (lk.created_at, lk.id))
             _set_flag(db, heir, True)
             _set_binding_role(db, _user_of(db, heir), student.id, True)
+    _lock_user(db, user_id)  # 锁序:学生行 → 用户行,在改完 link 之后
     archived = archive_orphan_accounts(db, [user_id])
     record(
         db,
@@ -407,7 +435,7 @@ def reset_parent_password(
     link, student = open_link(db, request, actor, bindings, link_id)
     user = db.get(User, _user_of(db, link))
     assert user is not None
-    if _views(db, [link])[0].shared_account:
+    if user.id in _shared_user_ids(db, [user.id]):
         raise ApiError(409, "PARENT_ACCOUNT_SHARED", "该账号也是教职工账号,请联系信息中心重置")
     if user.status != "active":
         raise ApiError(409, "ACCOUNT_NOT_ACTIVE", "该账号已停用,不能重置密码")

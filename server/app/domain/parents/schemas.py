@@ -11,7 +11,7 @@ def _strip(value: object) -> object:
 
 
 class ParentInput(BaseModel):
-    phone: Annotated[str, BeforeValidator(_strip), Field(max_length=32)]
+    phone: Annotated[str, BeforeValidator(_strip)]
     name: Annotated[str, BeforeValidator(_strip), Field(min_length=1, max_length=20)]
     relation: ParentRelation
 
