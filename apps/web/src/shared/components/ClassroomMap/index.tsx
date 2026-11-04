@@ -43,7 +43,7 @@ function buildCells(L: Layout, seats: Seat[]): MapCell[] {
 }
 
 type SceneProps = Pick<ClassroomMapProps, 'rows' | 'board' | 'attendanceBoard' | 'views' | 'effects' | 'onSeatClick' | 'onEmptySeatClick'> & {
-  L: Layout; mini: boolean; interactive: boolean; cells: MapCell[]; podCells: MapCell[]; placed: Seat[]
+  L: Layout; mini: boolean; highlight?: ReadonlySet<string>; interactive: boolean; cells: MapCell[]; podCells: MapCell[]; placed: Seat[]
   figure: 'female' | 'male'; label: string
   turnedId: string | null; onHover: OnHover; dragKey: string | null; overKey: string | null
 }
@@ -82,10 +82,10 @@ const Scene = memo(function Scene({ L, mini, rows, board, attendanceBoard, figur
       {podCells.length > 0 && (
         <>
           <DeskLayer layout={L} cells={podCells} views={seat.views} />
-          <SeatLayer layout={L} effects={effects} {...seat} cells={podCells} />
+          <SeatLayer layout={L} mini={mini} effects={effects} {...seat} cells={podCells} />
         </>
       )}
-      <SeatLayer layout={L} effects={effects} {...seat} />
+      <SeatLayer layout={L} mini={mini} effects={effects} {...seat} />
       <Spotlight at={spot} />
       <Floats items={effects?.floats ?? NO_FLOATS} layout={L} seats={placed} />
     </svg>
@@ -98,7 +98,7 @@ const NO_HOVER: HoverState = { mouse: null, focus: null, last: 'mouse' }
 
 // 纯展示:props 进、回调出。舞台(滚轮 / 平移)→ 变换画布 → svg;悬停卡与拖拽影子是舞台内的 HTML
 export default function ClassroomMap({
-  rows, cols, deskSize = 2, podium, seats, mode = 'daily', teacher = DEFAULT_TEACHER, board, attendanceBoard, onAttendanceBoardVisibleChange, views, effects, presenting,
+  rows, cols, deskSize = 2, podium, seats, mode = 'daily', teacher = DEFAULT_TEACHER, board, attendanceBoard, onAttendanceBoardVisibleChange, views, highlight, effects, presenting,
   renderHoverCard, onSeatClick, onEmptySeatClick, onSeatDrop, viewportRef, zoomControls = false,
 }: ClassroomMapProps) {
   const mini = mode === 'mini'
@@ -111,6 +111,7 @@ export default function ClassroomMap({
   const cells = useMemo(() => allCells.filter((c) => c.row !== 0), [allCells])
   const podCells = useMemo(() => allCells.filter((c) => c.row === 0), [allCells])
   const cellMap = useMemo(() => new Map(allCells.map((c) => [`${c.row}-${c.col}`, c])), [allCells])
+  const lit = useMemo(() => (mini ? new Set(highlight) : undefined), [mini, highlight])
   const placed = useMemo(() => allCells.flatMap((c) => (c.seat ? [c.seat] : [])), [allCells])
   const content = useMemo(() => ({ w: L.width, h: L.height, safeW: L.safe.w, core: L.core }), [L])
 
@@ -201,9 +202,9 @@ export default function ClassroomMap({
   return (
     <div ref={stageRef} className={`${stageCls}${busy ? ' cr-grabbing' : ''}`} data-pan={mini || vp.fitted ? undefined : ''} {...stageHandlers}>
       <div className="cr-canvas absolute left-0 top-0" style={{ transform: `translate(${x}px, ${y}px) scale(${s})`, transformOrigin: '0 0' }}>
-        <Scene L={L} mini={mini} rows={rows} board={board} attendanceBoard={mini ? undefined : attendanceBoard} figure={teacher.figure} label={teacher.label}
+        <Scene L={L} mini={mini} highlight={lit} rows={rows} board={board} attendanceBoard={mini ? undefined : attendanceBoard} figure={teacher.figure} label={teacher.label}
           views={views} effects={effects} interactive={mode !== 'overview'} cells={cells} podCells={podCells} placed={placed}
-          onSeatClick={onSeatClick ? seatClick : undefined} onEmptySeatClick={onEmptySeatClick ? emptyClick : undefined}
+          onSeatClick={onSeatClick && !mini ? seatClick : undefined} onEmptySeatClick={onEmptySeatClick && !mini ? emptyClick : undefined}
           turnedId={active?.id ?? null} onHover={onHover}
           dragKey={drag ? `${drag.from.row}-${drag.from.col}` : null} overKey={drag?.over ?? null} />
       </div>

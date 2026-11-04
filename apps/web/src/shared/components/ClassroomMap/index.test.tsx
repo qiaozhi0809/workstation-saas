@@ -138,3 +138,49 @@ describe('desk types and podium seats', () => {
     expect(screen.getByRole('button', { name: '空座 2排3列' })).toBeInTheDocument()
   })
 })
+
+describe('mini map highlight', () => {
+  const crowd = [
+    seat({}),
+    seat({ enrollment_id: 'e2', student_id: 's2', name: '李小二', seat_col: 2 }),
+    seat({ enrollment_id: 'e3', student_id: 's3', name: '张小三', seat_row: 2, seat_col: 1 }),
+  ]
+
+  it('shows only the highlighted seat name and exposes only that seat', () => {
+    const { container } = render(<ClassroomMap rows={2} cols={2} seats={crowd} mode="mini" highlight={['e2']} />)
+    expect(screen.getByText('李小二')).toBeInTheDocument()
+    expect(screen.queryByText('王小一')).toBeNull()
+    expect(screen.queryByText('张小三')).toBeNull()
+    expect(screen.getAllByRole('img', { name: /的座位/ })).toHaveLength(1)
+    expect(screen.getByRole('img', { name: '李小二的座位，第1排第2座' })).toBeInTheDocument()
+    expect(screen.queryAllByRole('button')).toHaveLength(0)
+    // 其余占用座位只画桌面:没有学生形象
+    expect(container.querySelectorAll('[data-pose]')).toHaveLength(1)
+    expect(q(container, '.cr-selected')).not.toBeNull()
+  })
+
+  it('does not make any seat clickable or hoverable', () => {
+    const onClick = vi.fn()
+    const { container } = render(<ClassroomMap rows={2} cols={2} seats={crowd} mode="mini" highlight={['e2']}
+      onSeatClick={onClick} onEmptySeatClick={onClick} />)
+    fireEvent.click(container.querySelector('[data-seat="1-2"]')!)
+    fireEvent.mouseEnter(container.querySelector('[data-seat="1-2"]')!)
+    expect(onClick).not.toHaveBeenCalled()
+    expect(container.querySelector('[data-seat="1-1"]')).toHaveAttribute('aria-hidden', 'true')
+  })
+
+  it('names podium-side seats by side', () => {
+    render(<ClassroomMap rows={2} cols={2} podium={{ left: 1, right: 0 }} mode="mini" highlight={['e9']}
+      seats={[seat({ enrollment_id: 'e9', name: '赵小九', seat_row: 0, seat_col: -1 })]} />)
+    expect(screen.getByRole('img', { name: '赵小九的座位，讲台左侧' })).toBeInTheDocument()
+  })
+
+  it('ignores highlight outside mini mode', () => {
+    const { container, rerender } = render(<ClassroomMap rows={2} cols={2} seats={crowd} onSeatClick={vi.fn()} />)
+    const before = container.innerHTML
+    rerender(<ClassroomMap rows={2} cols={2} seats={crowd} onSeatClick={vi.fn()} highlight={['e2']} />)
+    expect(container.innerHTML).toBe(before)
+    expect(screen.getByText('王小一')).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /，第/ })).toHaveLength(3)
+  })
+})
