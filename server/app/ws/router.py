@@ -46,7 +46,7 @@ async def _handshake(websocket: WebSocket, scope: SessionScope) -> UUID | None:
         first = await asyncio.wait_for(
             websocket.receive_json(), websocket.app.state.ws_auth_timeout
         )
-    except (TimeoutError, WebSocketDisconnect, ValueError):
+    except Exception:
         return None
     if not isinstance(first, dict) or first.get("type") != "auth":
         return None

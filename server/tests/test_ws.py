@@ -1,3 +1,4 @@
+import time
 from contextlib import contextmanager
 from datetime import timedelta
 from uuid import UUID
@@ -106,3 +107,81 @@ def test_frozen_user_socket_closed(ws_client, settings, db):
         with pytest.raises(WebSocketDisconnect) as exc:
             ws.receive_json()
         assert exc.value.code == 4403
+
+
+def _wait(cond, timeout=5.0):
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        if cond():
+            return True
+        time.sleep(0.02)
+    return False
+
+
+def test_subscriber_reconnects_after_redis_error(ws_client, settings, db, redis_client):
+    uid = _uid(db, "teacher01")
+    with ws_client.websocket_connect(PATH) as ws:
+        ws.send_json({"type": "auth", "token": _token(settings, uid)})
+        assert ws.receive_json() == {"type": "ready"}
+        redis_client.execute_command("CLIENT", "KILL", "TYPE", "pubsub")  # 订阅连接被服务端踢掉
+        assert _wait(lambda: redis_client.pubsub_numsub("ws:events")[0][1] == 1)
+        publish(redis_client, [uid], {"type": "notice.recalled", "id": "after"})
+        assert ws.receive_json() == {"type": "notice.recalled", "id": "after"}
+
+
+def test_ping_sent(ws_client, settings, db):
+    ws_client.app.state.ws_ping_interval = 0.1
+    uid = _uid(db, "teacher01")
+    with ws_client.websocket_connect(PATH) as ws:
+        ws.send_json({"type": "auth", "token": _token(settings, uid)})
+        assert ws.receive_json() == {"type": "ready"}
+        assert ws.receive_json() == {"type": "ping"}
+
+
+def test_frozen_user_rejected_at_auth(ws_client, settings, db):
+    uid = _uid(db, "teacher01")
+    token = _token(settings, uid)
+    db.get(User, uid).status = "frozen"
+    db.flush()
+    with ws_client.websocket_connect(PATH) as ws:
+        ws.send_json({"type": "auth", "token": token})
+        with pytest.raises(WebSocketDisconnect) as exc:
+            ws.receive_json()
+        assert exc.value.code == 4401
+
+
+def test_non_json_first_frame_closed(ws_client):
+    with ws_client.websocket_connect(PATH) as ws:
+        ws.send_bytes(b"\xff\x00")
+        with pytest.raises(WebSocketDisconnect) as exc:
+            ws.receive_json()
+        assert exc.value.code == 4401
+    with ws_client.websocket_connect(PATH) as ws:
+        ws.send_text("not json")
+        with pytest.raises(WebSocketDisconnect) as exc:
+            ws.receive_json()
+        assert exc.value.code == 4401
+
+
+def test_messages_after_auth_ignored(ws_client, settings, db, redis_client):
+    uid = _uid(db, "teacher01")
+    with ws_client.websocket_connect(PATH) as ws:
+        ws.send_json({"type": "auth", "token": _token(settings, uid)})
+        assert ws.receive_json() == {"type": "ready"}
+        ws.send_json({"type": "auth", "token": "x"})
+        ws.send_text("junk")
+        publish(redis_client, [uid], {"type": "notice.recalled", "id": "n"})
+        assert ws.receive_json() == {"type": "notice.recalled", "id": "n"}
+
+
+def test_two_sockets_of_one_user_and_unregister(ws_client, settings, db, redis_client):
+    uid = _uid(db, "teacher01")
+    hub = ws_client.app.state.hub
+    with ws_client.websocket_connect(PATH) as w1, ws_client.websocket_connect(PATH) as w2:
+        for ws in (w1, w2):
+            ws.send_json({"type": "auth", "token": _token(settings, uid)})
+            assert ws.receive_json() == {"type": "ready"}
+        publish(redis_client, [uid], {"type": "notice.recalled", "id": "n"})
+        assert w1.receive_json() == w2.receive_json() == {"type": "notice.recalled", "id": "n"}
+        assert len(hub._sockets[uid]) == 2
+    assert _wait(lambda: uid not in hub._sockets)

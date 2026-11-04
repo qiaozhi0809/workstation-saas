@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -38,8 +39,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         task = asyncio.create_task(app.state.hub.run(app.state.settings.redis_url))
-        await asyncio.wait_for(app.state.hub.subscribed.wait(), 10)
         try:
+            try:
+                await asyncio.wait_for(app.state.hub.subscribed.wait(), 3)
+            except TimeoutError:
+                logging.getLogger(__name__).warning("ws hub not subscribed yet; continuing")
             yield
         finally:
             task.cancel()
