@@ -144,11 +144,13 @@ it('lays out the eight switches in three groups with their notes', async () => {
 it('saves the switches and says 已保存', async () => {
   vi.mocked(adminApi.saveSwitches).mockResolvedValue({ ...SW, star_of_week: false, parent_rank: true })
   await renderPage()
+  const spy = vi.spyOn(client, 'invalidateQueries')
   fireEvent.click(await screen.findByRole('switch', { name: '本周之星' }))
   fireEvent.click(screen.getByRole('switch', { name: '家长可见排名' }))
   fireEvent.click(screen.getByRole('button', { name: '保存开关' }))
   await waitFor(() => expect(adminApi.saveSwitches).toHaveBeenCalledWith({ ...SW, star_of_week: false, parent_rank: true }))
   expect(toast).toHaveBeenCalledWith('已保存')
+  expect(spy).toHaveBeenCalledWith({ queryKey: ['classroom'] })
 })
 
 it('shows the backend message when saving the switches fails', async () => {

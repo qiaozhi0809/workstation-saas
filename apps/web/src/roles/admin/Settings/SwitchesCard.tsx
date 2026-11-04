@@ -51,6 +51,8 @@ export default function SwitchesCard() {
       const saved = await adminApi.saveSwitches({ ...value, parent_monitor: false })
       qc.setQueryData(['admin', 'switches'], saved)
       setDraft(null)
+      // 教室概况带着开关,让老师端不刷新页面也能生效
+      void qc.invalidateQueries({ queryKey: ['classroom'] })
       toast('已保存')
     } catch (err) {
       setError(err instanceof ApiError ? err.message : '保存失败,请重试')

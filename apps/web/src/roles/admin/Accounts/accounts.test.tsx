@@ -89,7 +89,7 @@ it('copies the temp password', async () => {
   vi.mocked(adminApi.resetPassword).mockResolvedValue({ temp_password: 'Ab3Cd5Ef7G' })
   renderPage()
   await screen.findByText('王芳')
-  fireEvent.click(screen.getAllByRole('button', { name: '重置密码' })[2])
+  fireEvent.click(within(screen.getByRole('row', { name: /王芳/ })).getByRole('button', { name: '重置密码' }))
   await screen.findByText('Ab3Cd5Ef7G')
   fireEvent.click(screen.getByRole('button', { name: '复制' }))
   await waitFor(() => expect(writeText).toHaveBeenCalledWith('Ab3Cd5Ef7G'))
@@ -99,7 +99,7 @@ it('shows the reset password once and clears it on close', async () => {
   vi.mocked(adminApi.resetPassword).mockResolvedValue({ temp_password: 'Rt8Yu2Op6N' })
   renderPage()
   await screen.findByText('王芳')
-  fireEvent.click(screen.getAllByRole('button', { name: '重置密码' })[1])
+  fireEvent.click(within(screen.getByRole('row', { name: /李明/ })).getByRole('button', { name: '重置密码' }))
   expect(await screen.findByText('Rt8Yu2Op6N')).toBeInTheDocument()
   expect(adminApi.resetPassword).toHaveBeenCalledWith('u1')
   fireEvent.click(screen.getAllByRole('button', { name: '关闭' })[0])
@@ -214,4 +214,19 @@ it('clears an old freeze error on the next attempt and ignores double clicks', a
   expect(adminApi.freeze).toHaveBeenCalledTimes(2)
   release()
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+})
+
+it('hides reset password on your own row', async () => {
+  renderPage()
+  await screen.findByText('陈校长')
+  expect(within(screen.getByRole('row', { name: /陈校长/ })).queryByRole('button', { name: '重置密码' })).toBeNull()
+  expect(within(screen.getByRole('row', { name: /王芳/ })).getByRole('button', { name: '重置密码' })).toBeInTheDocument()
+})
+
+it('shows the backend message if resetting is still refused', async () => {
+  vi.mocked(adminApi.resetPassword).mockRejectedValue(new ApiError(409, 'CANNOT_RESET_SELF', '不能重置自己的密码,请用修改密码'))
+  renderPage()
+  await screen.findByText('王芳')
+  fireEvent.click(within(screen.getByRole('row', { name: /王芳/ })).getByRole('button', { name: '重置密码' }))
+  await waitFor(() => expect(toast).toHaveBeenCalledWith('不能重置自己的密码,请用修改密码'))
 })

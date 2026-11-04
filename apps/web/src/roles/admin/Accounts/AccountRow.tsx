@@ -36,7 +36,7 @@ export default function AccountRow({ account: a, isSelf, onEdit, onReset, onFree
         <div className="flex flex-col items-start gap-0.5">
           <div className="flex gap-1">
           <Button type="button" variant="ghost" size="sm" onClick={onEdit}>编辑</Button>
-          <Button type="button" variant="ghost" size="sm" onClick={onReset}>重置密码</Button>
+          {!isSelf && <Button type="button" variant="ghost" size="sm" onClick={onReset}>重置密码</Button>}
           {frozen ? (
             <Button type="button" variant="ghost" size="sm" onClick={onUnfreeze}>解冻</Button>
           ) : (
