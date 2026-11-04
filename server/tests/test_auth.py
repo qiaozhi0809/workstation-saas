@@ -178,3 +178,68 @@ def test_revoke_all_counts_only_live_tokens(client, redis_client):
     redis_client.delete(sessions.refresh_key(tokens[0]))  # 单键过期,集合里残留
     assert sessions.revoke_all(redis_client, UUID(TEACHER_USER_ID)) == 2
     assert redis_client.smembers(f"ws:user_refresh:{TEACHER_USER_ID}") == set()
+
+
+def test_unknown_and_frozen_user_still_verify(client, db, monkeypatch):
+    import app.auth.service as svc
+
+    calls = []
+    real = svc.verify_password
+
+    def spy(plain, hashed):
+        calls.append(hashed)
+        return real(plain, hashed)
+
+    monkeypatch.setattr(svc, "verify_password", spy)
+    assert login(client, name="nobody", pw="x").status_code == 401
+    assert len(calls) == 1
+    assert calls[0] == svc._DUMMY_HASH
+    calls.clear()
+    db.query(User).filter(User.login_name == "teacher01").update({"status": "frozen"})
+    db.flush()
+    res = login(client)
+    assert res.status_code == 401
+    assert res.json()["error"]["code"] == "INVALID_CREDENTIALS"
+    assert len(calls) == 1
+    calls.clear()
+    db.query(User).filter(User.login_name == "teacher01").update({"status": "active"})
+    db.flush()
+    assert login(client, pw="wrong").status_code == 401
+    assert len(calls) == 1
+
+
+def test_locked_login_has_retry_after(client, settings):
+    for _ in range(settings.login_max_failures):
+        login(client, pw="wrong")
+    res = login(client)
+    assert res.status_code == 429
+    assert 1 <= int(res.headers["Retry-After"]) <= settings.login_lock_seconds
+
+
+def test_first_failure_sets_ttl_atomically(client, settings, redis_client, monkeypatch):
+    key = f"ws:login_fail:{SCHOOL_ID}:teacher01"
+    flags = []
+    real_pipeline = redis_client.pipeline
+
+    def spy_pipeline(transaction=True, shard_hint=None):
+        flags.append(transaction)
+        return real_pipeline(transaction=transaction, shard_hint=shard_hint)
+
+    def forbidden(*_a, **_k):
+        raise AssertionError("incr/expire must run inside the transaction pipeline")
+
+    monkeypatch.setattr(redis_client, "pipeline", spy_pipeline)
+    monkeypatch.setattr(redis_client, "incr", forbidden)
+    monkeypatch.setattr(redis_client, "expire", forbidden)
+    assert login(client, pw="wrong").status_code == 401
+    assert flags == [True]
+    assert 0 < redis_client.ttl(key) <= settings.login_lock_seconds
+
+
+def test_nth_failure_resets_ttl(client, settings, redis_client):
+    key = f"ws:login_fail:{SCHOOL_ID}:teacher01"
+    for _ in range(settings.login_max_failures - 1):
+        login(client, pw="wrong")
+    redis_client.expire(key, 10)
+    login(client, pw="wrong")
+    assert redis_client.ttl(key) > settings.login_lock_seconds - 5

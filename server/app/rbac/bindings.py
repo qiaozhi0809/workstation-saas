@@ -6,7 +6,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.models import RoleBinding
-from app.rbac.roles import ROLE_PERMS, Perm, Role
+from app.rbac.roles import ROLE_PERMS, TEACHER_ROLES, Perm, Role
 
 # Most specific first.
 _SCOPE_FIELDS = ("student_id", "class_id", "grade_id", "school_id")
@@ -45,6 +45,9 @@ def _scope_from_json(raw: dict) -> Scope:
 
 
 def load_bindings(db: Session, user_id: UUID, active_year_id: UUID | None) -> list[Binding]:
+    # 教师岗位(班主任/任课/副班主任)按学年任职,与 list_my_classes 只认当前学年一致:
+    # academic_year_id 为 NULL 的教师绑定不加载,避免它绕过学年边界拿到班级权限。
+    # 管理岗(校长、教导主任、年级组长、信息中心)的学校/年级作用域绑定允许 NULL 学年,照旧加载。
     year_ok = RoleBinding.academic_year_id.is_(None)
     if active_year_id is not None:
         year_ok = or_(year_ok, RoleBinding.academic_year_id == active_year_id)
@@ -65,6 +68,7 @@ def load_bindings(db: Session, user_id: UUID, active_year_id: UUID | None) -> li
             _subject_from_json(r.scope or {}),
         )
         for r in rows
+        if not (Role(r.role_type) in TEACHER_ROLES and r.academic_year_id is None)
     ]
 
 

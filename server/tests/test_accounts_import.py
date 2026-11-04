@@ -153,3 +153,21 @@ def test_malformed_csv_is_400_not_500(client, settings, db):
         res = _post(client, settings, tail, huge)
         assert res.status_code == 400
         assert res.json()["error"]["code"] == "IMPORT_INVALID"
+
+
+def test_import_hashes_once_in_batch(client, settings, db, monkeypatch):
+    import app.domain.accounts.service as svc
+
+    calls = []
+    real = svc.hash_passwords
+
+    def spy(plains):
+        calls.append(len(plains))
+        return real(plains)
+
+    monkeypatch.setattr(svc, "hash_passwords", spy)
+    text = "\n".join([HEADER, "bat_a,甲老师,,,", "bat_b,乙老师,,,", "bat_c,丙老师,,,"])
+    res = _post(client, settings, "import", text)
+    assert res.status_code == 201
+    assert calls == [3]
+    assert [c["login_name"] for c in res.json()["created"]] == ["bat_a", "bat_b", "bat_c"]

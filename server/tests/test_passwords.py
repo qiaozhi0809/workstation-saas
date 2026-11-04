@@ -23,3 +23,14 @@ def test_too_long_password():
     with pytest.raises(PasswordTooLong):
         hash_password("中" * 25)
     assert verify_password("中" * 25, hash_password("中" * 24)) is False
+
+
+def test_hash_passwords_parallel_order():
+    from app.auth.passwords import hash_passwords
+
+    plains = [f"pw-{i}-abc" for i in range(10)]
+    hashed = hash_passwords(plains)
+    assert len(hashed) == 10
+    for plain, h in zip(plains, hashed, strict=True):
+        assert verify_password(plain, h)
+    assert hash_passwords([]) == []

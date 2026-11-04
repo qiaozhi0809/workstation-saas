@@ -184,3 +184,13 @@ def test_login_lock_blocks_change_password(client, settings):
     res = _change(client, t["access_token"], t["refresh_token"], "dev123", "abcd1234")
     assert res.status_code == 429
     assert res.json()["error"]["code"] == "ACCOUNT_LOCKED"
+
+
+def test_locked_change_password_has_retry_after(client, settings):
+    t = login(client).json()
+    a, r = t["access_token"], t["refresh_token"]
+    for _ in range(settings.login_max_failures):
+        _change(client, a, r, "wrong-old", "abcd1234")
+    res = _change(client, a, r, "wrong-old", "abcd1234")
+    assert res.status_code == 429
+    assert 1 <= int(res.headers["Retry-After"]) <= settings.login_lock_seconds

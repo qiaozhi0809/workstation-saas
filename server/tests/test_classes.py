@@ -56,3 +56,16 @@ def test_non_teacher_roles_are_ignored(client, db, settings):
     u = make_user(db, "t_parent")
     bind(db, u.id, Role.primary_parent, student_id=UUID("a0000001-0000-0000-0000-000000000001"))
     assert client.get("/api/v1/me/classes", headers=auth(settings, u.id)).json()["items"] == []
+
+
+def test_null_year_binding_no_roster(client, db, settings):
+    u = make_user(db, "t_nullyear")
+    bind(db, u.id, Role.subject_teacher, class_id=UUID(CLASS_ID), year_id=None)
+    h = auth(settings, u.id)
+    assert client.get("/api/v1/me/classes", headers=h).json()["items"] == []
+    roster = client.get(f"/api/v1/classes/{CLASS_ID}/students", headers=h)
+    assert roster.status_code == 403
+    bind(db, u.id, Role.subject_teacher, class_id=UUID(CLASS_ID))
+    items = client.get("/api/v1/me/classes", headers=h).json()["items"]
+    assert [i["id"] for i in items] == [CLASS_ID]
+    assert client.get(f"/api/v1/classes/{CLASS_ID}/students", headers=h).status_code == 200
