@@ -9,14 +9,38 @@ from app.errors import ApiError
 from app.models.audit import AuditLog
 
 
-def _client_ip(request: Request | None) -> str | None:
-    """仅当 host 是合法 IP 时返回(ip 列为 inet);TestClient 的 "testclient" 等返回 None。"""
-    if request is None or request.client is None:
-        return None
+def _parse_ip(value: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
     try:
-        return str(ipaddress.ip_address(request.client.host))
+        return ipaddress.ip_address(value.strip())
     except ValueError:
         return None
+
+
+def _client_ip(request: Request | None) -> str | None:
+    """仅返回合法 IP(ip 列为 inet);TestClient 的 "testclient" 等返回 None。
+
+    直连地址在 WS_TRUSTED_PROXIES 内时,取 X-Forwarded-For 从右往左第一个不可信的合法 IP;
+    头里有非法值或全是可信地址时回退直连地址,绝不抛错。
+    """
+    if request is None or request.client is None:
+        return None
+    peer = _parse_ip(request.client.host)
+    if peer is None:
+        return None
+    settings = getattr(getattr(request.scope.get("app"), "state", None), "settings", None)
+    networks = settings.trusted_networks if settings is not None else []
+    if not any(peer in net for net in networks):
+        return str(peer)
+    header = request.headers.get("x-forwarded-for")
+    if not header:
+        return str(peer)
+    for part in reversed(header.split(",")):
+        addr = _parse_ip(part)
+        if addr is None:
+            return str(peer)
+        if not any(addr in net for net in networks):
+            return str(addr)
+    return str(peer)
 
 
 def record(

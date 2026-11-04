@@ -1,10 +1,12 @@
+from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
 from sqlalchemy import select
 from starlette.requests import Request
 
-from app.audit.service import deny, record
+from app.audit.service import _client_ip, deny, record
+from app.config import Settings
 from app.errors import ApiError
 from app.models.audit import AuditLog
 from tests.seed_ids import TEACHER_USER_ID
@@ -62,3 +64,38 @@ def test_record_stores_ip_only_when_valid_inet(db):
     ok = db.scalars(select(AuditLog).where(AuditLog.object_id == "ip-ok")).one()
     assert bad.ip is None and bad.user_agent == "pytest-ua"
     assert str(ok.ip) == "127.0.0.1" and ok.user_agent == "pytest-ua"
+
+
+def _proxied_request(peer: str, xff: str | None, proxies: list[str]) -> Request:
+    headers = [(b"x-forwarded-for", xff.encode())] if xff is not None else []
+    app = SimpleNamespace(
+        state=SimpleNamespace(settings=Settings(_env_file=None, trusted_proxies=proxies))
+    )
+    return Request({"type": "http", "client": (peer, 50000), "headers": headers, "app": app})
+
+
+def test_ip_from_trusted_proxy():
+    trusted = ["127.0.0.1", "10.0.0.0/8"]
+    # 右往左:10.0.0.5 可信跳过,取第一个不可信的 203.0.113.9(最左的伪造值不会被采信)
+    req = _proxied_request("127.0.0.1", "198.51.100.1, 203.0.113.9, 10.0.0.5", trusted)
+    assert _client_ip(req) == "203.0.113.9"
+    # 单个值
+    assert _client_ip(_proxied_request("10.1.2.3", "203.0.113.7", trusted)) == "203.0.113.7"
+    # 全是可信地址:回退直连地址
+    assert _client_ip(_proxied_request("127.0.0.1", "10.0.0.5, 10.0.0.6", trusted)) == "127.0.0.1"
+    # 没有该头:直连地址
+    assert _client_ip(_proxied_request("127.0.0.1", None, trusted)) == "127.0.0.1"
+    # IPv6
+    assert _client_ip(_proxied_request("127.0.0.1", "2001:db8::1", trusted)) == "2001:db8::1"
+
+
+def test_ip_ignores_xff_from_untrusted():
+    xff = "203.0.113.9"
+    assert _client_ip(_proxied_request("198.51.100.20", xff, [])) == "198.51.100.20"
+    assert _client_ip(_proxied_request("198.51.100.20", xff, ["10.0.0.0/8"])) == "198.51.100.20"
+
+
+def test_ip_bad_xff():
+    trusted = ["127.0.0.1"]
+    for bad in ("garbage", "203.0.113.9, garbage", "", "unknown", "300.1.1.1"):
+        assert _client_ip(_proxied_request("127.0.0.1", bad, trusted)) == "127.0.0.1"
