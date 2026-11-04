@@ -1,16 +1,16 @@
 import { useEffect, useState } from 'react'
-import { Building2, ChevronDown, ClipboardList, Settings, type LucideIcon } from 'lucide-react'
+import { ChevronDown, Cog, FileBarChart2, FolderKanban, type LucideIcon } from 'lucide-react'
 import { NavLink, useLocation } from 'react-router-dom'
 import Menu, { MenuLinkItem } from '@/shared/components/overlay/Menu'
 import { cn } from '@/shared/lib/utils'
 import { useAuthStore } from '@/shared/stores/auth'
 import { ADMIN_PAGES, type AdminGroup, type AdminPage } from './pages'
 
-/** 组的名字与图标;哪些页面属于哪个组由 pages.tsx 里每页的 group 决定 */
+/** 组的名字与图标;哪些页面属于哪个组由 pages.tsx 里每页的 group 决定。图标不与组内页面的图标重复(768–1023 宽只显示图标) */
 const GROUPS: Record<AdminGroup, { label: string; icon: LucideIcon }> = {
-  manage: { label: '学校管理', icon: Building2 },
-  reports: { label: '联考与报表', icon: ClipboardList },
-  system: { label: '系统', icon: Settings },
+  manage: { label: '学校管理', icon: FolderKanban },
+  reports: { label: '联考与报表', icon: FileBarChart2 },
+  system: { label: '系统', icon: Cog },
 }
 
 type Entry = { kind: 'link'; page: AdminPage } | { kind: 'group'; group: AdminGroup; pages: AdminPage[] }
@@ -53,36 +53,37 @@ function useWide(): boolean {
 }
 
 const ITEM_BASE = 'flex h-9 shrink-0 items-center gap-1.5 rounded-md px-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:px-3'
-const state = (active: boolean) => (active ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground')
+const itemState = (active: boolean) => (active ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground')
 
 // 宽屏里 768–1023 只放得下图标(名字进 title 与读屏),≥ 1024 才显示文字
 const WIDE_LABEL = 'sr-only lg:not-sr-only'
 
-function Link({ page, labelClass = WIDE_LABEL }: { page: AdminPage; labelClass?: string }) {
+function NavItem({ page, labelClass = WIDE_LABEL }: { page: AdminPage; labelClass?: string }) {
   const { path, label, icon: Icon } = page
   return (
-    <NavLink to={`/admin/${path}`} title={label} className={({ isActive }) => cn(ITEM_BASE, state(isActive))}>
+    <NavLink to={`/admin/${path}`} title={label} className={({ isActive }) => cn(ITEM_BASE, itemState(isActive))}>
       <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
       <span className={labelClass}>{label}</span>
     </NavLink>
   )
 }
 
-function GroupMenu({ group, pages, routes, pathname }: { group: AdminGroup; pages: AdminPage[]; routes: string[]; pathname: string }) {
+function GroupMenu({ group, pages }: { group: AdminGroup; pages: AdminPage[] }) {
   const { label, icon: Icon } = GROUPS[group]
-  // hidden 的子页(班级信息、往年单班)也算本组的路由,所以用 routes(本组全部页面的路径)判断
-  const active = routes.some((path) => underPath(pathname, path))
+  const { pathname } = useLocation()
+  // 按前缀匹配:hidden 的子页(班级信息 org/classes/:id、往年单班 history/classes/:id)都在可见父页的路径之下,自然算本组
+  const active = pages.some((p) => underPath(pathname, p.path))
   return (
     <Menu
       label={label}
       side="bottom"
       align="start"
-      triggerProps={{ variant: 'ghost', className: cn(ITEM_BASE, 'h-9 font-medium', state(active)), 'aria-current': active ? 'true' : undefined, title: label }}
+      triggerProps={{ variant: 'ghost', className: cn(ITEM_BASE, itemState(active)), 'aria-current': active ? 'true' : undefined, title: label }}
       trigger={
         <>
           <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
           <span className={WIDE_LABEL}>{label}</span>
-          <ChevronDown className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <ChevronDown className="h-4 w-4 shrink-0" aria-hidden="true" />
         </>
       }
     >
@@ -100,23 +101,21 @@ function GroupMenu({ group, pages, routes, pathname }: { group: AdminGroup; page
 export default function AdminNav({ pages = ADMIN_PAGES }: { pages?: AdminPage[] }) {
   const perms = useAuthStore((s) => s.user?.admin_perms)
   const wide = useWide()
-  const { pathname } = useLocation()
 
   if (!wide) {
     const links = pages.filter((p) => !p.hidden && perms?.includes(p.perm))
     // relative:sr-only 标签是 absolute,导航不是定位祖先时它们逃出 overflow-x-auto 的裁剪,窄屏下整页出现横向滚动
     return (
       <nav aria-label="主导航" className="relative flex min-w-0 items-center gap-0.5 overflow-x-auto">
-        {links.map((page) => <Link key={page.path} page={page} labelClass="sr-only" />)}
+        {links.map((page) => <NavItem key={page.path} page={page} labelClass="sr-only" />)}
       </nav>
     )
   }
   return (
     <nav aria-label="主导航" className="relative flex min-w-0 items-center gap-0.5">
       {buildEntries(pages, perms).map((e) => e.kind === 'link'
-        ? <Link key={e.page.path} page={e.page} />
-        : <GroupMenu key={e.group} group={e.group} pages={e.pages} pathname={pathname}
-          routes={pages.filter((p) => p.group === e.group).map((p) => p.path)} />)}
+        ? <NavItem key={e.page.path} page={e.page} />
+        : <GroupMenu key={e.group} group={e.group} pages={e.pages} />)}
     </nav>
   )
 }

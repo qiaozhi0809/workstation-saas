@@ -367,6 +367,17 @@ for (const [width, height] of [[1280, 720], [1024, 768], [768, 1024]] as const) 
     await expect(page).toHaveURL(/\/admin\/reports\/scores/)
     await expect(nav.getByRole('button', { name: '联考与报表' })).toHaveAttribute('aria-current', 'true')
     expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0)
+    // 文字标签:≥ 1024 显示,768–1023 只剩图标(sr-only,宽高 1px);导航不能压到右侧的铃铛 / 主题 / 账号按钮上
+    for (const label of ['今日关注', '联考与报表']) {
+      const box = await nav.getByText(label, { exact: true }).boundingBox()
+      if (width >= 1024) expect(box!.width).toBeGreaterThan(20)
+      else expect(box!.width).toBeLessThanOrEqual(1)
+    }
+    const navBox = (await nav.boundingBox())!
+    const bellBox = (await page.getByRole('button', { name: /^通知,\d+ 条未读$/ }).boundingBox())!
+    const lastEntry = (await nav.locator('a, button').last().boundingBox())!
+    expect(lastEntry.x + lastEntry.width).toBeLessThanOrEqual(bellBox.x)
+    expect(navBox.x + navBox.width).toBeLessThanOrEqual(bellBox.x + 1)
     // 学校名在 1280 宽放得下,不被截成"示…"
     if (width === 1280) {
       const name = page.locator('header span.truncate').first()

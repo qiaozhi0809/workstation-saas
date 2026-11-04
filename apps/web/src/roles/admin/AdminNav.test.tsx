@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { Building2, Sun, Users } from 'lucide-react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -26,15 +26,29 @@ const nav = () => screen.getByRole('navigation', { name: '主导航' })
 /** 顶层入口:直接显示的链接与组按钮,按 DOM 顺序 */
 const top = () => Array.from(nav().querySelectorAll('a, button')).map((el) => el.textContent?.trim())
 
-const mockNarrow = () => vi.stubGlobal('matchMedia', (q: string) => ({
-  matches: false, media: q, addEventListener: vi.fn(), removeEventListener: vi.fn(), addListener: vi.fn(), removeListener: vi.fn(),
-}))
+/** 按 min-width 查询串与当前宽度求值的 matchMedia;resize 会通知已订阅的监听器 */
+function mockViewport(width: number) {
+  let w = width
+  const listeners = new Set<() => void>()
+  const removed = vi.fn()
+  vi.stubGlobal('matchMedia', (q: string) => {
+    const min = Number(/min-width:\s*(\d+)px/.exec(q)?.[1] ?? 0)
+    return {
+      get matches() { return w >= min },
+      media: q,
+      addEventListener: (_: string, fn: () => void) => { listeners.add(fn) },
+      removeEventListener: (_: string, fn: () => void) => { removed(); listeners.delete(fn) },
+    }
+  })
+  return { listeners, removed, resize: (n: number) => { w = n; act(() => listeners.forEach((f) => f())) } }
+}
 
 beforeEach(() => setPerms(PERMS.principal))
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); useAuthStore.getState().logout() })
 
 describe('grouped nav (≥ 768)', () => {
   it('shows direct links and three groups for a principal, in page order', () => {
+    mockViewport(768) // 恰好 768 就是宽屏
     renderNav()
     expect(top()).toEqual(['今日关注', '全校看板', '学校管理', '联考与报表', '系统', '通知'])
     for (const g of ['学校管理', '联考与报表', '系统']) {
@@ -146,7 +160,7 @@ describe('grouped nav (≥ 768)', () => {
 
 describe('narrow nav (< 768)', () => {
   it('keeps the flat, scrollable icon row with every entry as a link and no dropdowns', () => {
-    mockNarrow()
+    mockViewport(500)
     renderNav()
     const el = nav()
     expect(within(el).queryAllByRole('button')).toHaveLength(0)
@@ -156,5 +170,19 @@ describe('narrow nav (< 768)', () => {
       '/admin/notices', '/admin/upgrade', '/admin/history',
     ])
     expect(el).toHaveClass('relative', 'overflow-x-auto')
+  })
+
+  it('switches layout when the viewport crosses 768 and unsubscribes on unmount', () => {
+    const vp = mockViewport(1024)
+    const { unmount } = renderNav()
+    expect(within(nav()).getAllByRole('button')).toHaveLength(3)
+    vp.resize(600)
+    expect(within(nav()).queryAllByRole('button')).toHaveLength(0)
+    expect(within(nav()).getAllByRole('link')).toHaveLength(14)
+    vp.resize(900)
+    expect(within(nav()).getAllByRole('button')).toHaveLength(3)
+    unmount()
+    expect(vp.removed).toHaveBeenCalled()
+    expect(vp.listeners.size).toBe(0)
   })
 })
