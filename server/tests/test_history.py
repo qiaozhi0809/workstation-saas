@@ -240,6 +240,30 @@ def test_roster_and_scores_readonly(client, settings, db, past):
             assert r.status_code == 405, (method, path)
 
 
+def test_dean_reads_class_endpoints(client, settings, db, past):
+    """教导主任(学校作用域)与校长一样能读往年班的名单、考试与成绩。"""
+    r = get(client, settings, f"/classes/{CLASS_ID}/students", user=DEAN)
+    assert r.status_code == 200
+    students = r.json()["students"]
+    assert len(students) == 13
+    assert "删除生" not in {s["name"] for s in students}
+    assert {s["name"]: s["status"] for s in students}["转出生"] == "transferred"
+    assert r.json() == get(client, settings, f"/classes/{CLASS_ID}/students").json()
+
+    r = get(client, settings, f"/classes/{CLASS_ID}/exams", user=DEAN)
+    assert r.status_code == 200
+    assert [e["id"] for e in r.json()] == [EXAM_IDS[1], EXAM_IDS[0]]
+
+    r = get(client, settings, f"/exams/{EXAM_IDS[0]}/scores", user=DEAN)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["exam"]["id"] == EXAM_IDS[0]
+    assert len(body["students"]) == 13
+    top = body["students"][0]
+    assert top["name"] == "转出生" and top["total"] == 300 and top["class_rank"] == 1
+    assert body == get(client, settings, f"/exams/{EXAM_IDS[0]}/scores").json()
+
+
 def test_grade_head_sees_none(client, settings, db, past):
     r = get(client, settings, "/classes", user=GRADE_HEAD3, year_id=YEAR_ID)
     assert r.status_code == 200 and r.json() == []

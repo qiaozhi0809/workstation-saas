@@ -146,13 +146,31 @@ describe('往年班级列表页', () => {
     expect(await screen.findByRole('heading', { level: 1, name: '2025-2026 学年 高二1班' })).toBeInTheDocument()
     expect(adminApi.historyStudents).toHaveBeenCalledWith('c3')
   })
+
+  it('从较早学年的班返回时回到原来那个学年的列表', async () => {
+    setup()
+    fireEvent.change(await screen.findByRole('combobox', { name: '学年' }), { target: { value: 'y24' } })
+    fireEvent.click(await screen.findByRole('link', { name: /初三1班/ }))
+    expect(await screen.findByRole('heading', { level: 1, name: '2024-2025 学年 初三1班' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('link', { name: '← 往年班级' }))
+    expect(await screen.findByRole('heading', { level: 1, name: '往年班级' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: '学年' })).toHaveValue('y24')
+    expect(await screen.findByRole('link', { name: /初三1班/ })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /高二1班/ })).toBeNull()
+  })
+
+  it('?year= 指向已不存在的学年时回到最近一个往年', async () => {
+    setup('/admin/history?year=gone')
+    expect(await screen.findByRole('link', { name: /高二1班/ })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: '学年' })).toHaveValue('y25')
+  })
 })
 
 describe('往年单班页', () => {
   it('标题显示学年名与班名,返回链接回列表', async () => {
     setup('/admin/history/classes/c1?year=y25')
     expect(await screen.findByRole('heading', { level: 1, name: '2025-2026 学年 高一1班' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: '← 往年班级' })).toHaveAttribute('href', '/admin/history')
+    expect(screen.getByRole('link', { name: '← 往年班级' })).toHaveAttribute('href', '/admin/history?year=y25')
   })
 
   it('缺少 year 参数时标题退化为往年班级且不请求学年数据', async () => {

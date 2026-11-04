@@ -125,7 +125,7 @@ export default function HistoryClassPage() {
     <div className="flex flex-col gap-4 p-4 md:p-6">
       <header className="flex flex-col gap-3">
         <div className="flex flex-col gap-1">
-          <Link to="/admin/history" className="w-fit rounded-sm text-sm text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">← 往年班级</Link>
+          <Link to={yearId ? `/admin/history?year=${encodeURIComponent(yearId)}` : '/admin/history'} className="w-fit rounded-sm text-sm text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">← 往年班级</Link>
           <h1 className="text-xl font-semibold">{title}</h1>
         </div>
         <SegmentedTabs<Tab> label="内容" className="w-fit" value={tab} onChange={setTab} items={TABS} />

@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { adminApi } from '@/shared/api/admin'
 import { ApiError } from '@/shared/api/client'
 import { EmptyState } from '@/shared/components/feedback/EmptyState'
@@ -19,7 +19,8 @@ function groupByGrade(classes: HistoryClass[]) {
 }
 
 export default function HistoryPage() {
-  const [picked, setPicked] = useState<string | null>(null)
+  // 从单班页返回时带 ?year=,回到原来那个学年
+  const [picked, setPicked] = useState<string | null>(useSearchParams()[0].get('year'))
   const years = useQuery({ queryKey: ['history', 'years'], queryFn: () => adminApi.historyYears() })
   // 选中的学年若已不在列表里(例如刚被回滚),回到最近一个往年
   const stillThere = picked !== null && years.data?.some((y) => y.id === picked)
