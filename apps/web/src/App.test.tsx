@@ -1,8 +1,9 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import { vi } from 'vitest'
 import { classesApi } from '@/shared/api/classes'
 import { classroomApi } from '@/shared/api/classroom'
 import { studentsApi } from '@/shared/api/students'
+import { noticesApi } from '@/shared/api/notices'
 import { useAuthStore } from '@/shared/stores/auth'
 import { useTeacherStore } from '@/shared/stores/teacher'
 import { summaryFixture } from '@/roles/teacher/Classroom/pageTestUtils'
@@ -11,8 +12,17 @@ import App from './App'
 vi.mock('@/shared/api/classes', () => ({ classesApi: { mine: vi.fn() } }))
 vi.mock('@/shared/api/classroom', () => ({ classroomApi: { summary: vi.fn() } }))
 vi.mock('@/shared/api/students', () => ({ studentsApi: { detail: vi.fn(), listInClass: vi.fn() } }))
+vi.mock('@/shared/api/notices', () => ({ noticesApi: { inbox: vi.fn(), read: vi.fn(), readAll: vi.fn() } }))
+vi.mock('@/shared/realtime/client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/shared/realtime/client')>()),
+  createRealtimeClient: () => ({ start: vi.fn(), stop: vi.fn() }),
+}))
 
 describe('App routing', () => {
+  beforeEach(() => {
+    vi.mocked(noticesApi.inbox).mockResolvedValue({ items: [], total: 0, unread: 0 })
+  })
+
   it('redirects / to the login page', () => {
     window.history.pushState({}, '', '/')
     render(<App />)
@@ -37,7 +47,7 @@ describe('App routing', () => {
     window.history.pushState({}, '', '/teacher/students/a%20b')
     render(<App />)
     await waitFor(() => expect(window.location.pathname + window.location.search).toBe('/teacher/classroom?student=a%20b'))
-    useAuthStore.setState({ accessToken: null, refreshToken: null, user: null })
+    act(() => useAuthStore.setState({ accessToken: null, refreshToken: null, user: null }))
   })
 
   describe('AI routes', () => {
@@ -48,7 +58,7 @@ describe('App routing', () => {
       useTeacherStore.setState({ classId: 'c1' })
       useAuthStore.setState({ accessToken: 'at', refreshToken: 'rt', user: { id: 'u1', display_name: '王老师', contexts: ['teacher'], admin_perms: [], must_change_password: false } })
     })
-    afterEach(() => useAuthStore.setState({ accessToken: null, refreshToken: null, user: null }))
+    afterEach(() => act(() => useAuthStore.setState({ accessToken: null, refreshToken: null, user: null })))
 
     it('routes /teacher/ai and /teacher/ai/:chatId', async () => {
       vi.mocked(classroomApi.summary).mockResolvedValue(summaryFixture({ my_perms: ['ai.use'] }))
