@@ -20,6 +20,12 @@ async function signIn(page: Page, name: string, password = 'dev123') {
 
 // 本文件的用例会建账号、改任职 / 管理岗、改学校开关:每个用例前后兜底还原(账号只冻结不删除,登录名带随机后缀避免重跑撞名)。
 // 与其他 spec 的隔离由 playwright.config.ts 的 project 依赖链保证。
+async function saveSwitches(page: Page) {
+  const saved = page.waitForResponse((r) => r.url().includes('/admin/settings/switches') && r.request().method() === 'PUT')
+  await page.getByRole('button', { name: '保存' }).last().click()
+  expect((await saved).ok()).toBeTruthy()
+}
+
 const created: string[] = []
 async function cleanup(request: APIRequestContext) {
   const it = await login(request, 'itadmin01')
@@ -131,21 +137,23 @@ test('turning off star of the week in settings hides it on the teacher blackboar
     await expect(page).toHaveURL(/\/admin/)
     await page.goto('/admin/settings')
     await page.getByRole('switch', { name: '本周之星' }).uncheck()
-    await page.getByRole('button', { name: '保存' }).last().click()
-    await expect(page.getByText('已保存')).toBeVisible()
+    await saveSwitches(page)
 
+    // 等点评汇总取回再断言"榜单为空",否则榜单还没加载时也是空的
+    const summary = teacherPage.waitForResponse((r) => r.url().includes('/reviews/summary'))
     await teacherPage.reload()
+    await summary
     await expect(teacherPage.getByRole('heading', { name: '三年二班' })).toBeVisible()
     await expect(teacherPage.getByText(STAR_ROW)).toHaveCount(0)
 
     await page.getByRole('switch', { name: '本周之星' }).check()
-    await page.getByRole('button', { name: '保存' }).last().click()
-    await expect(page.getByText('已保存').last()).toBeVisible()
+    await saveSwitches(page)
     await teacherPage.reload()
     await expect(teacherPage.getByText(STAR_ROW).first()).toBeVisible()
     await ctx.close()
   } finally {
-    await request.post(`${API}/classes/${CLASS_3_2}/reviews/${opId}/revoke`, { headers: { Authorization: `Bearer ${teacher}` } })
+    const revoked = await request.post(`${API}/classes/${CLASS_3_2}/reviews/${opId}/revoke`, { headers: { Authorization: `Bearer ${teacher}` } })
+    expect(revoked.ok(), await revoked.text()).toBeTruthy()
   }
 })
 
