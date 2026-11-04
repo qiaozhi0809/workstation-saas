@@ -55,9 +55,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     router.include_router(comments_router)
     router.include_router(roster_router)
     router.include_router(ai_router)
-    router.include_router(org_router)  # M3a 段 D
     router.include_router(overview_router)  # M3a 段 F
     router.include_router(accounts_router)  # M3a 段 E
     router.include_router(school_settings_router)  # M3a 段 E
+    router.include_router(org_router)  # M3a 段 D
     app.include_router(router)
     return app
