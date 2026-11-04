@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
+import httpx
 from sqlalchemy import select
 
 from app.models import User
@@ -297,3 +298,83 @@ def test_config_test_non_ascii_key(client, settings):
     assert res.status_code == 200
     assert res.json()["ok"] is False and res.json()["message"]
     assert key not in res.text
+
+
+class _NoCall:
+    """被调用即失败的假传输:用来证明没有发出任何请求。"""
+
+    def __init__(self):
+        self.calls = 0
+        self.transport = httpx.MockTransport(self._handler)
+
+    def _handler(self, request: httpx.Request) -> httpx.Response:
+        self.calls += 1
+        return httpx.Response(500)
+
+
+def _stored(db, settings):
+    from app.ai.settings import load_ai_config
+
+    return load_ai_config(db, settings.school_id, settings.master_key_bytes)
+
+
+def test_key_required_when_origin_or_provider_changes(client, db, settings):
+    assert _put(client, settings, _body()).status_code == 200
+    before = _stored(db, settings)
+
+    # 换站点(host / scheme / port 任一不同)
+    for url in (
+        "https://evil.example.com",
+        "http://api.deepseek.com",
+        "https://api.deepseek.com:8443/v1",
+    ):
+        res = _put(client, settings, _body(base_url=url, api_key=None))
+        assert res.status_code == 400, url
+        err = res.json()["error"]
+        assert err["code"] == "AI_KEY_REQUIRED"
+        assert err["message"] == "更换服务商或服务地址后需重新填写 API Key"
+    # 只换服务商
+    res = _put(client, settings, _body(provider="custom", api_key=None))
+    assert res.status_code == 400 and res.json()["error"]["code"] == "AI_KEY_REQUIRED"
+    after = _stored(db, settings)
+    assert after == before and after.api_key == KEY
+
+    # 同站点只改路径 / 大小写 / 末尾斜杠 / 显式默认端口:沿用 Key
+    for i, url in enumerate(
+        (
+            "https://api.deepseek.com/v4",
+            "HTTPS://API.DEEPSEEK.COM/",
+            "https://api.deepseek.com:443/v1",
+        )
+    ):
+        res = _put(client, settings, _body(base_url=url, api_key=None, model=f"m{i}"))
+        assert res.status_code == 200, (url, res.text)
+        assert res.json()["key_set"] is True
+    kept = _stored(db, settings)
+    assert kept.api_key == KEY and kept.base_url == "https://api.deepseek.com:443/v1"
+
+    # 换站点但给了新 Key:可以
+    res = _put(
+        client, settings, _body(base_url="https://api.example.org/v1", api_key="sk-new-1111")
+    )
+    assert res.status_code == 200
+    assert _stored(db, settings).api_key == "sk-new-1111"
+
+
+def test_config_test_key_required_makes_no_request(client, db, settings):
+    h = auth(settings, IT_ADMIN)
+    _put(client, settings, _body())
+    spy = _NoCall()
+    client.app.state.ai_transport = spy.transport
+    for changed in ({"base_url": "https://evil.example.com"}, {"provider": "custom"}):
+        res = client.post(TEST, json=_body(api_key=None, **changed), headers=h)
+        assert res.status_code == 200
+        assert res.json() == {"ok": False, "message": "更换服务商或服务地址后需重新填写 API Key"}
+    assert spy.calls == 0
+
+    # 换站点但带了新 Key:正常发请求
+    client.app.state.ai_transport = sse_transport(["好"])
+    res = client.post(
+        TEST, json=_body(base_url="https://evil.example.com", api_key="sk-new-1111"), headers=h
+    )
+    assert res.json()["ok"] is True

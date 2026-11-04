@@ -1,6 +1,7 @@
 import asyncio
 import re
 from datetime import date
+from urllib.parse import urlsplit
 from uuid import UUID
 
 import httpx
@@ -157,11 +158,36 @@ def config_view(db: Session, school_id: UUID, key: bytes) -> AiConfigView:
     )
 
 
+KEY_CHANGED_HINT = "更换服务商或服务地址后需重新填写 API Key"
+
+
+def _origin(base_url: str) -> tuple[str, str, int | None]:
+    """scheme + host + port;忽略路径、末尾斜杠和大小写,默认端口视同显式端口。"""
+    try:
+        u = urlsplit(base_url.strip())
+        port = u.port
+    except ValueError:
+        return (base_url.strip().lower(), "", None)
+    scheme = u.scheme.lower()
+    return (scheme, (u.hostname or "").lower(), port or {"http": 80, "https": 443}.get(scheme))
+
+
+class KeyRequired(ApiError):
+    def __init__(self, message: str) -> None:
+        super().__init__(400, "AI_KEY_REQUIRED", message)
+
+
 def _effective(db: Session, school_id: UUID, key: bytes, body: AiConfigSave) -> AIConfig:
-    """api_key 为 null 时沿用库里已存的 Key;没有则 400。"""
+    """api_key 为 null 时沿用库里已存的 Key;没有、或服务商/服务地址已变则抛 KeyRequired。
+
+    Key 只发给存它时的那个服务商与站点,换了就必须重新填,避免把旧 Key 发到新地址。"""
     api_key = body.api_key
     if api_key is None:
         old = load_ai_config(db, school_id, key)
+        if old is not None and (
+            old.provider != body.provider or _origin(old.base_url) != _origin(body.base_url)
+        ):
+            raise KeyRequired(KEY_CHANGED_HINT)
         api_key = old.api_key if old else None
     return AIConfig(
         provider=body.provider,
@@ -238,7 +264,10 @@ def test_config(
     body: AiConfigSave,
     transport: httpx.AsyncBaseTransport | None,
 ) -> AiTestResult:
-    cfg = _effective(db, school_id, key, body)
+    try:
+        cfg = _effective(db, school_id, key, body)
+    except KeyRequired as e:
+        return AiTestResult(ok=False, message=e.message)
     if cfg.api_key is None:
         return AiTestResult(ok=False, message="请填写 API Key")
     try:

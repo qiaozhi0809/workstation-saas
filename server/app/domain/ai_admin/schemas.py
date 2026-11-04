@@ -65,7 +65,7 @@ class AiConfigSave(BaseModel):
     @field_validator("base_url")
     @classmethod
     def _http_url(cls, v: str) -> str:
-        if not v.startswith(("http://", "https://")) or len(v.split("://", 1)[1]) == 0:
+        if not v.lower().startswith(("http://", "https://")) or len(v.split("://", 1)[1]) == 0:
             raise ValueError("base_url 必须以 http:// 或 https:// 开头")
         return v
 
