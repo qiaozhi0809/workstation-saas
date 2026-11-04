@@ -261,3 +261,68 @@ def test_unfreeze_keeps_must_change_password(client, settings, db):
     client.post(f"{ACCOUNTS}/{uid}/freeze", headers=h)
     back = client.post(f"{ACCOUNTS}/{uid}/unfreeze", headers=h).json()
     assert back["status"] == "active" and back["must_change_password"] is True
+
+
+def test_freeze_takes_last_admin_lock(client, settings, db):
+    from sqlalchemy import event
+
+    seen: list[str] = []
+    conn = db.connection()
+
+    def spy(conn_, cursor, statement, parameters, context, executemany):
+        if "pg_advisory_xact_lock" in statement:
+            seen.append(str(parameters))
+
+    event.listen(conn, "before_cursor_execute", spy)
+    try:
+        principal = auth(settings, "55555555-5555-5555-5555-555555555543")
+        res = client.post(f"{ACCOUNTS}/{IT_ADMIN}/freeze", headers=principal)
+    finally:
+        event.remove(conn, "before_cursor_execute", spy)
+    assert res.status_code == 200
+    assert len(seen) == 1 and "last-admin:11111111-1111-1111-1111-111111111111" in seen[0]
+
+
+def test_freeze_last_admin_rejected(client, settings, db, monkeypatch):
+    from app.domain.accounts import service
+
+    monkeypatch.setattr(service, "account_admin_count", lambda db, school_id, **kw: 1)
+    principal = auth(settings, "55555555-5555-5555-5555-555555555543")
+    res = client.post(f"{ACCOUNTS}/{IT_ADMIN}/freeze", headers=principal)
+    assert res.status_code == 409
+    assert res.json()["error"]["code"] == "LAST_ADMIN"
+    assert db.get(User, _user_id(db, "itadmin01")).status == "active"
+    # 非管理员目标不受影响
+    ok = client.post(f"{ACCOUNTS}/{_user_id(db, 'teacher02')}/freeze", headers=principal)
+    assert ok.status_code == 200
+
+
+def test_login_name_unique_index_is_case_insensitive(db):
+    import pytest
+    from sqlalchemy.exc import IntegrityError
+
+    from tests.factories import make_user
+
+    make_user(db, "CaseUser")
+    with pytest.raises(IntegrityError), db.begin_nested():
+        make_user(db, "caseuser")
+
+
+def test_cannot_reset_self(client, settings, db):
+    res = client.post(f"{ACCOUNTS}/{IT_ADMIN}/reset-password", headers=_admin(settings))
+    assert res.status_code == 409
+    assert res.json()["error"]["code"] == "CANNOT_RESET_SELF"
+    assert res.json()["error"]["message"] == "不能重置自己的密码，请用修改密码"
+    assert db.get(User, IT_ADMIN).must_change_password is False
+    assert _login(client, "itadmin01").status_code == 200
+
+
+def test_reset_clears_login_lock(client, settings, db):
+    for _ in range(settings.login_max_failures):
+        assert _login(client, "teacher02", "wrong-pass").status_code == 401
+    assert _login(client, "teacher02").status_code == 429
+    res = client.post(
+        f"{ACCOUNTS}/{_user_id(db, 'teacher02')}/reset-password", headers=_admin(settings)
+    )
+    temp = res.json()["temp_password"]
+    assert _login(client, "teacher02", temp).status_code == 200

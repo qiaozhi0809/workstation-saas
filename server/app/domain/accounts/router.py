@@ -135,7 +135,9 @@ def reset_password(
     _guard(db, request, user, bindings, settings)
     target = service.get_account_or_404(db, settings.school_id, account_id)
     response.headers["Cache-Control"] = "no-store"
-    return TempPassword(temp_password=service.reset_password(db, redis, user, target, request))
+    return TempPassword(
+        temp_password=service.reset_password(db, redis, settings, user, target, request)
+    )
 
 
 @router.post("/{account_id}/freeze")

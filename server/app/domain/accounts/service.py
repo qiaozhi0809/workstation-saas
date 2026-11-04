@@ -11,6 +11,8 @@ from sqlalchemy.orm import Session
 from app.audit.service import record
 from app.auth import sessions
 from app.auth.passwords import generate_temp_password, hash_password
+from app.auth.service import _fail_key
+from app.config import Settings
 from app.domain.accounts.importer import MAX_ROWS, parse_csv
 from app.domain.accounts.schemas import (
     Account,
@@ -23,6 +25,7 @@ from app.domain.accounts.schemas import (
 )
 from app.errors import ApiError
 from app.models import Grade, RoleBinding, SchoolClass, User
+from app.rbac.admin import account_admin_count
 from app.rbac.roles import Role
 
 PAGE_SIZE = 50
@@ -269,8 +272,15 @@ def update_account(
 
 
 def reset_password(
-    db: Session, redis: Redis, actor: User, user: User, request: Request | None
+    db: Session,
+    redis: Redis,
+    settings: Settings,
+    actor: User,
+    user: User,
+    request: Request | None,
 ) -> str:
+    if actor.id == user.id:
+        raise ApiError(409, "CANNOT_RESET_SELF", "不能重置自己的密码，请用修改密码")
     temp = generate_temp_password()
     user.password_hash = hash_password(temp)
     user.must_change_password = True
@@ -285,7 +295,23 @@ def reset_password(
     )
     db.commit()
     sessions.revoke_all(redis, user.id)
+    redis.delete(_fail_key(settings, user.login_name))
     return temp
+
+
+def _is_account_admin(db: Session, user_id: UUID) -> bool:
+    return (
+        db.scalar(
+            select(func.count())
+            .select_from(RoleBinding)
+            .where(
+                RoleBinding.user_id == user_id,
+                RoleBinding.ended_at.is_(None),
+                RoleBinding.role_type.in_([Role.principal.value, Role.it_admin.value]),
+            )
+        )
+        or 0
+    ) > 0
 
 
 def freeze(
@@ -298,6 +324,13 @@ def freeze(
 ) -> Account:
     if actor.id == user.id:
         raise ApiError(409, "CANNOT_FREEZE_SELF", "不能冻结自己的账号")
+    db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:k)::bigint)"),
+        {"k": f"last-admin:{user.school_id}"},
+    )
+    if user.status == "active" and _is_account_admin(db, user.id):
+        if account_admin_count(db, user.school_id) - 1 < 1:
+            raise ApiError(409, "LAST_ADMIN", "不能冻结最后一个能管账号的人")
     user.status = "frozen"
     record(
         db,
