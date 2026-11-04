@@ -103,7 +103,7 @@ it('shows no rank line when both rank and band are empty', async () => {
   expect(screen.queryByTestId('rank-line')).toBeNull()
 })
 
-it('shows 缺考 for a null score and dashes for missing class stats and total', async () => {
+it('shows a dash for a null score and for for missing class stats and total', async () => {
   vi.mocked(parentApi.exam).mockResolvedValue(detail({
     subjects: [{ name: '英语', full: 100, score: null, class_avg: null, class_max: null }],
     total: null,
@@ -111,8 +111,9 @@ it('shows 缺考 for a null score and dashes for missing class stats and total',
   open()
   await openExam()
   const row = await screen.findByRole('row', { name: /英语/ })
-  expect(within(row).getByText('缺考')).toBeInTheDocument()
-  expect(within(row).getAllByText('—')).toHaveLength(2)
+  expect(within(row).getAllByText('—')).toHaveLength(3)
+  expect(within(row).queryByText('缺考')).toBeNull()
+  expect(screen.getByText('“—”表示暂无成绩')).toBeInTheDocument()
   expect(screen.getByText('总分 —')).toBeInTheDocument()
 })
 
@@ -138,7 +139,7 @@ it('resets the opened exam when switching child and still works for a read-only 
   expect(parentApi.exams).toHaveBeenCalledWith('s2')
 })
 
-it('treats undefined values like null', async () => {
+it('treats undefined values like null (dash, never 缺考)', async () => {
   vi.mocked(parentApi.exam).mockResolvedValue({
     ...detail(),
     subjects: [{ name: '英语', full: 100, score: undefined, class_avg: undefined, class_max: undefined }],
@@ -147,8 +148,9 @@ it('treats undefined values like null', async () => {
   open()
   await openExam()
   const row = await screen.findByRole('row', { name: /英语/ })
-  expect(within(row).getByText('缺考')).toBeInTheDocument()
-  expect(within(row).getAllByText('—')).toHaveLength(2)
+  expect(within(row).getAllByText('—')).toHaveLength(3)
+  expect(within(row).queryByText('缺考')).toBeNull()
+  expect(screen.getByText('“—”表示暂无成绩')).toBeInTheDocument()
   expect(screen.getByText('总分 —')).toBeInTheDocument()
   expect(screen.queryByTestId('rank-line')).toBeNull()
 })
