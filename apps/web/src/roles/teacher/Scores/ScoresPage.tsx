@@ -10,9 +10,9 @@ import { Badge } from '@/shared/components/ui/badge'
 import { Button } from '@/shared/components/ui/button'
 import type { Exam } from '@/shared/types/grades'
 import ClassGate, { type ClassContext } from '../ClassGate'
-import ExamForm from './ExamForm'
+import ExamForm, { GRADE_EXAM_MANAGED } from './ExamForm'
 import { exportScores } from './exportScores'
-import ExamList from './ExamList'
+import ExamList, { GRADE_EXAM_LABEL } from './ExamList'
 import HeaderImport from './HeaderImport'
 import ScoreGrid from './ScoreGrid'
 import { useScoreAutosave, type SaveStatus } from './useScoreAutosave'
@@ -48,7 +48,7 @@ function ScoresBody({ ctx }: { ctx: ClassContext }) {
 
   const items = exams.data.items
   const current = items.find((x) => x.id === params.get('exam')) ?? items[0]
-  const canEdit = canWrite && !!current && (canAllSubjects || current.created_by_me)
+  const canEdit = canWrite && !!current && !current.grade_exam_id && (canAllSubjects || current.created_by_me)
 
   const modal = form && (
     <ExamForm
@@ -125,7 +125,9 @@ function ExamSection({ ctx, exam, onEdit }: { ctx: ClassContext; exam: Exam; onE
       <header className="flex flex-wrap items-center gap-3">
         <h2 className="text-lg font-semibold">{exam.name}</h2>
         <Badge variant="neutral">{exam.exam_type}</Badge>
+        {exam.grade_exam_id && <Badge variant="info">{GRADE_EXAM_LABEL}</Badge>}
         <span className="text-sm text-muted-foreground">{exam.date}</span>
+        {exam.grade_exam_id && <span className="text-sm text-muted-foreground">{GRADE_EXAM_MANAGED}</span>}
         <div role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
           {save.status !== 'idle' && <span>{STATUS_TEXT[save.status]}</span>}
           {save.status === 'error' && <Button variant="outline" size="sm" onClick={save.retry}>重试</Button>}

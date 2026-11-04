@@ -19,6 +19,11 @@ import AccountsPage from './Accounts/AccountsPage'
 import SettingsPage from './Settings/SettingsPage'
 // ── 段 E(账号 / 设置):import 追加在此行之上 ──
 
+import { BarChart3, ClipboardList } from 'lucide-react'
+import GradeExamsPage from './GradeExams/GradeExamsPage'
+import ScoresReportPage from './Reports/ScoresReportPage'
+// ── 段 C(联考 / 成绩汇总):import 追加在此行之上 ──
+
 export interface AdminPage {
   path: string
   label: string
@@ -29,7 +34,7 @@ export interface AdminPage {
   hidden?: boolean
 }
 
-// 导航顺序即数组顺序:today、board、org、accounts、settings。
+// 导航顺序即数组顺序:today、board、org、accounts、settings、grade-exams、reports/scores。
 // 每段只在自己的锚点处追加(一个元素一行,末尾带逗号),不动别人的行。
 export const ADMIN_PAGES: AdminPage[] = [
   { path: 'today', label: '今日关注', icon: Sun, perm: 'school.view', element: <TodayPage /> },
@@ -48,4 +53,8 @@ export const ADMIN_PAGES: AdminPage[] = [
 
   { path: 'settings', label: '学校设置', icon: Settings, perm: 'settings.manage', element: <SettingsPage /> },
   // ── settings:追加在此行之上 ──
+
+  { path: 'grade-exams', label: '年级联考', icon: ClipboardList, perm: 'exam.grade_write', element: <GradeExamsPage /> },
+  { path: 'reports/scores', label: '成绩汇总', icon: BarChart3, perm: 'school.view', element: <ScoresReportPage /> },
+  // ── 段 C(联考 / 成绩汇总):追加在此行之上 ──
 ]
