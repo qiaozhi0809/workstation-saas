@@ -3,6 +3,8 @@ import { NativeSelect } from '@/shared/components/ui/native-select'
 import { cn } from '@/shared/lib/utils'
 import type { Exam } from '@/shared/types/grades'
 
+export const GRADE_EXAM_LABEL = '年级联考'
+
 /**
  * 考试列表(服务端按新到旧返回)。≥ lg 是左栏列表,窄屏变成顶部的下拉选择。
  */
@@ -16,7 +18,9 @@ export default function ExamList({ exams, currentId, onSelect }: {
       <label className="flex flex-col gap-1 text-sm lg:hidden">
         <span className="text-muted-foreground">选择考试</span>
         <NativeSelect value={currentId ?? ''} onChange={(e) => onSelect(e.target.value)}>
-          {exams.map((x) => <option key={x.id} value={x.id}>{x.name}({x.date})</option>)}
+          {exams.map((x) => (
+            <option key={x.id} value={x.id}>{x.name}({x.date}){x.grade_exam_id ? ` · ${GRADE_EXAM_LABEL}` : ''}</option>
+          ))}
         </NativeSelect>
       </label>
       <nav aria-label="考试列表" className="hidden lg:block">
@@ -38,7 +42,10 @@ export default function ExamList({ exams, currentId, onSelect }: {
                 >
                   <span className="flex items-center justify-between gap-2">
                     <span className="truncate font-medium text-foreground">{x.name}</span>
-                    <Badge variant="neutral" className="shrink-0">{x.exam_type}</Badge>
+                    <span className="flex shrink-0 items-center gap-1">
+                      {x.grade_exam_id && <Badge variant="info">{GRADE_EXAM_LABEL}</Badge>}
+                      <Badge variant="neutral">{x.exam_type}</Badge>
+                    </span>
                   </span>
                   <span className="text-xs text-muted-foreground">{x.date} · {x.subjects.length} 科</span>
                   <span className="flex items-center gap-2">

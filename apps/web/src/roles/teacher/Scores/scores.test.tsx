@@ -12,6 +12,7 @@ import type { ClassView } from '@/shared/types/class'
 import type { ClassPerm } from '@/shared/types/classroom'
 import type { Exam } from '@/shared/types/grades'
 import { classFixture, summaryFixture } from '../Classroom/pageTestUtils'
+import ExamForm from './ExamForm'
 import ScoresPage from './ScoresPage'
 
 vi.mock('@/shared/api/classes', () => ({ classesApi: { mine: vi.fn() } }))
@@ -234,4 +235,43 @@ it('limits the new subject name to 10 characters', async () => {
   setup()
   fireEvent.click(await screen.findByRole('button', { name: '新建考试' }))
   expect(await screen.findByLabelText('新科目名称')).toHaveAttribute('maxlength', '10')
+})
+
+const LINKED = exam('e9', '十一月联考', { date: '2026-11-03', grade_exam_id: 'ge1' })
+const MANAGED_HINT = '这是年级联考,由教导处修改'
+
+it('tags a grade exam in the list and hides edit and delete for it', async () => {
+  setup({ exams: [LINKED, E1] })
+  const l = await list()
+  expect(l.getByRole('button', { name: /十一月联考/ })).toHaveTextContent('年级联考')
+  expect(l.getByRole('button', { name: /十月月考/ })).not.toHaveTextContent('年级联考')
+  expect(screen.queryByRole('button', { name: '编辑考试' })).toBeNull()
+  expect(screen.queryByRole('button', { name: '删除考试' })).toBeNull()
+  expect(screen.getByText(MANAGED_HINT)).toBeInTheDocument()
+  // 换到普通考试,编辑入口回来、提示消失
+  fireEvent.click(l.getByRole('button', { name: /十月月考/ }))
+  expect(await screen.findByRole('button', { name: '编辑考试' })).toBeInTheDocument()
+  expect(screen.queryByText(MANAGED_HINT)).toBeNull()
+})
+
+it('marks a grade exam in the narrow select too', async () => {
+  setup({ exams: [LINKED, E1] })
+  await list()
+  expect(screen.getByRole('option', { name: '十一月联考(2026-11-03) · 年级联考' })).toBeInTheDocument()
+})
+
+it('refuses to open the edit form for a grade exam', async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  vi.mocked(examsApi.subjects).mockResolvedValue({ items: SUBJECTS })
+  render(
+    <QueryClientProvider client={client}>
+      <ExamForm classId="c1" exam={LINKED} today="2026-11-04" mySubjects={[]} canAllSubjects
+        onClose={vi.fn()} onSaved={vi.fn()} />
+    </QueryClientProvider>,
+  )
+  const dlg = within(await screen.findByRole('dialog'))
+  expect(dlg.getByText(MANAGED_HINT)).toBeInTheDocument()
+  expect(dlg.queryByRole('button', { name: '保存' })).toBeNull()
+  expect(dlg.queryByRole('button', { name: '删除考试' })).toBeNull()
+  expect(dlg.queryByLabelText('考试名称')).toBeNull()
 })

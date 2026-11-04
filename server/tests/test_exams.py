@@ -283,3 +283,64 @@ def test_homeroom_update_keeps_requested_subject_order(client, settings):
     got = client.get(EXAMS, headers=auth(settings)).json()["items"]
     mine = next(e for e in got if e["id"] == exam["id"])
     assert [s["name"] for s in mine["subjects"]] == ["语文", "数学"]
+
+
+def _grade_linked_exam(client, settings, db):
+    dean = "55555555-5555-5555-5555-555555555544"
+    r = client.post(
+        "/api/v1/admin/grade-exams",
+        json={
+            "grade_id": "33333333-3333-3333-3333-333333333333",
+            "name": "期中联考",
+            "exam_type": "期中",
+            "date": "2026-11-10",
+            "subjects": [{"name": "语文", "full": 100}, {"name": "数学", "full": 100}],
+        },
+        headers=auth(settings, dean),
+    )
+    assert r.status_code == 201, r.text
+    cls = next(c for c in r.json()["classes"] if c["class_id"] == CLASS_ID)
+    return r.json()["id"], cls["exam_id"]
+
+
+def test_teacher_cannot_edit_grade_linked_exam(client, settings, db):
+    grade_exam_id, exam_id = _grade_linked_exam(client, settings, db)
+    url = f"{EXAMS}/{exam_id}"
+    r = client.put(
+        url,
+        json={
+            "name": "我改的名字",
+            "exam_type": "期中",
+            "date": "2026-11-10",
+            "subjects": [{"name": "语文", "full": 100}],
+        },
+        headers=auth(settings),
+    )
+    assert r.status_code == 409
+    err = r.json()["error"]
+    assert err["code"] == "EXAM_MANAGED_BY_GRADE" and err["message"] == "这是年级联考,由教导处修改"
+    r = client.delete(url, headers=auth(settings))
+    assert r.status_code == 409 and r.json()["error"]["code"] == "EXAM_MANAGED_BY_GRADE"
+    got = client.get(EXAMS, headers=auth(settings)).json()["items"]
+    linked = next(e for e in got if e["id"] == exam_id)
+    assert linked["name"] == "期中联考" and linked["grade_exam_id"] == grade_exam_id
+    # 没有编辑权限的人仍先看到 403,而不是 409
+    r = client.delete(url, headers=auth(settings, ASSISTANT_USER_ID))
+    assert r.status_code == 403
+    # 班级自己的考试不受影响
+    r = client.put(f"{EXAMS}/{EXAM_IDS[0]}", json=_body(name="自己的考试"), headers=auth(settings))
+    assert r.status_code == 200
+
+
+def test_teacher_can_still_enter_scores(client, settings, db):
+    _, exam_id = _grade_linked_exam(client, settings, db)
+    enrollment = str(enrollment_of(db, STUDENT_IDS[0]))
+    cells = [
+        {"enrollment_id": enrollment, "subject": "语文", "value": 91.5},
+        {"enrollment_id": enrollment, "subject": "数学", "value": 88.0},
+    ]
+    r = client.put(f"{EXAMS}/{exam_id}/scores", json={"cells": cells}, headers=auth(settings))
+    assert r.status_code == 200 and r.json() == {"updated": 2}
+    items = client.get(EXAMS, headers=auth(settings)).json()["items"]
+    linked = next(e for e in items if e["id"] == exam_id)
+    assert linked["progress"] == {"entered": 1, "total": 10}
