@@ -19,6 +19,11 @@ import AccountsPage from './Accounts/AccountsPage'
 import SettingsPage from './Settings/SettingsPage'
 // ── 段 E(账号 / 设置):import 追加在此行之上 ──
 
+import { BarChart3, ClipboardList } from 'lucide-react'
+import GradeExamsPage from './GradeExams/GradeExamsPage'
+import ScoresReportPage from './Reports/ScoresReportPage'
+// ── 段 C(联考 / 成绩汇总):import 追加在此行之上 ──
+
 import { CalendarCheck } from 'lucide-react'
 import AttendanceReportPage from './Reports/AttendanceReportPage'
 // ── 段 D(报表 / 考勤):import 追加在此行之上 ──
@@ -63,6 +68,10 @@ export const ADMIN_PAGES: AdminPage[] = [
 
   { path: 'settings', label: '学校设置', icon: Settings, perm: 'settings.manage', element: <SettingsPage /> },
   // ── settings:追加在此行之上 ──
+
+  { path: 'grade-exams', label: '年级联考', icon: ClipboardList, perm: 'exam.grade_write', element: <GradeExamsPage /> },
+  { path: 'reports/scores', label: '成绩汇总', icon: BarChart3, perm: 'school.view', element: <ScoresReportPage /> },
+  // ── 段 C(联考 / 成绩汇总):追加在此行之上 ──
 
   { path: 'reports/attendance', label: '考勤报告', icon: CalendarCheck, perm: 'school.view', element: <AttendanceReportPage /> },
   // ── reports-attendance:追加在此行之上 ──
