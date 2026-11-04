@@ -848,7 +848,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.28,<1" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
-    { name = "pydantic-settings", specifier = ">=2.6" },
+    { name = "pydantic-settings", specifier = ">=2.7" },
     { name = "pyjwt", specifier = ">=2.10" },
     { name = "redis", specifier = ">=5.2" },
     { name = "sqlalchemy", specifier = ">=2.0.36,<2.2" },

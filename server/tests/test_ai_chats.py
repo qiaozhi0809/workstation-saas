@@ -201,9 +201,9 @@ def test_follow_up_and_regenerate(client, settings, db):
     assert [m["role"] for m in got["messages"]] == ["user", "assistant", "user", "assistant"]
     assert got["messages"][2]["content"] == "再短一点"
     first_sent = db.scalars(
-        select(AiMessage.sent).where(
-            AiMessage.chat_id == UUID(chat["id"]), AiMessage.role == "user"
-        )
+        select(AiMessage.sent)
+        .where(AiMessage.chat_id == UUID(chat["id"]), AiMessage.role == "user")
+        .order_by(AiMessage.created_at)
     ).first()
     second = rec[1]["messages"]
     assert [m["role"] for m in second] == ["system", "user", "assistant", "user"]

@@ -158,6 +158,36 @@ def test_ai_generate_audit_uses_trusted_proxy_ip(client, settings, db):
     assert len(rows) == 1 and str(rows[0].ip) == "203.0.113.9"
 
 
+def test_ai_run_item_audit_uses_trusted_proxy_ip(client, settings, db):
+    from starlette.testclient import TestClient
+
+    from tests.helpers import auth
+    from tests.seed_ids import STUDENT_IDS
+    from tests.test_ai_batch import comments_body
+    from tests.test_ai_chats import CHATS, configure_ai, create, generate_audits, set_transport
+
+    configure_ai(db, settings)
+    set_transport(client, ["进步很大"])
+    chat = create(client, settings, comments_body(STUDENT_IDS[:1]))
+    client.app.state.settings = Settings(
+        _env_file=None,
+        database_url=settings.database_url,
+        redis_url=settings.redis_url,
+        jwt_secret=settings.jwt_secret,
+        trusted_proxies=["10.0.0.0/8"],
+    )
+    proxied = TestClient(client.app, client=("10.0.0.1", 50000))
+    with proxied.stream(
+        "POST",
+        f"{CHATS}/{chat['id']}/items/{chat['items'][0]['id']}/run",
+        headers={**auth(settings), "X-Forwarded-For": "203.0.113.9"},
+    ) as r:
+        assert r.status_code == 200
+        r.read()
+    rows = generate_audits(db, chat["id"])
+    assert len(rows) == 1 and str(rows[0].ip) == "203.0.113.9"
+
+
 def test_ip_multiple_xff_header_lines():
     trusted = ["127.0.0.1", "10.0.0.0/8"]
     # 分开追加的两行等价于 "198.51.100.1, 203.0.113.9, 10.0.0.5":右往左取 203.0.113.9
