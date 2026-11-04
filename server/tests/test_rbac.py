@@ -17,7 +17,7 @@ from app.rbac.bindings import (
     writable_subjects,
 )
 from app.rbac.guard import ensure
-from app.rbac.roles import ADMIN_ROLES, LEADER_ROLES, ROLE_PERMS, Perm, Role
+from app.rbac.roles import ADMIN_ROLES, CLASSROOM_PERMS, LEADER_ROLES, ROLE_PERMS, Perm, Role
 from tests.factories import bind, make_admin, make_class, make_user
 from tests.helpers import audit_rows
 from tests.seed_ids import CLASS_ID, GRADE_ID, SCHOOL_ID, TEACHER_USER_ID, YEAR_ID
@@ -141,6 +141,7 @@ def test_role_perms_full_matrix():
             Perm.COMMENT_WRITE,
             Perm.AI_USE,
             Perm.AI_CLASS,
+            Perm.PARENT_MANAGE,
         },
         Role.subject_teacher: {
             Perm.CLASS_READ,
@@ -347,3 +348,9 @@ def test_teacher_binding_without_year_ignored(db):
     bind(db, u.id, Role.subject_teacher, class_id=c)
     bs = load_bindings(db, u.id, UUID(YEAR_ID))
     assert sorted(bd.role for bd in bs) == [Role.dean, Role.subject_teacher]
+
+
+def test_parent_manage_homeroom_only():
+    holders = {r for r, perms in ROLE_PERMS.items() if Perm.PARENT_MANAGE in perms}
+    assert holders == {Role.homeroom_teacher}
+    assert CLASSROOM_PERMS[-1] == Perm.PARENT_MANAGE
