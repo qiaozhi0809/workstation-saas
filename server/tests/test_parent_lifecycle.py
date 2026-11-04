@@ -159,3 +159,21 @@ def test_archive_teacher_parent_keeps_account(db):
         {"u": TEACHER04},
     ).scalar_one()
     assert open_teacher == 1
+
+
+def test_archive_keeps_staff_account_without_current_binding(db):
+    # 老师这学年没有任职(教师绑定都已结束),但仍是教职工账号:家长绑定归档不能连带归档账号
+    db.execute(
+        text(
+            "UPDATE role_bindings SET ended_at = :t WHERE user_id = :u"
+            " AND role_type NOT IN ('primary_parent', 'secondary_parent')"
+        ),
+        {"t": NOW - timedelta(days=30), "u": TEACHER04},
+    )
+    _age(db, TEACHER04, "S0002")
+    res = archive_expired(db, SCHOOL, NOW)
+    assert (res.links, res.users) == (1, 0)
+    assert (
+        db.execute(text("SELECT status FROM users WHERE id = :u"), {"u": TEACHER04}).scalar_one()
+        == "active"
+    )
