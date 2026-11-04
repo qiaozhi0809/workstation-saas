@@ -129,7 +129,14 @@ def change_password(
     keep_token: str,
     request: Request | None = None,
 ) -> None:
+    # 与登录共用失败计数:已登录的人也不能无限次试旧密码
+    fail_key = _fail_key(settings, user.login_name)
+    if int(redis.get(fail_key) or 0) >= settings.login_max_failures:
+        raise ApiError(429, "ACCOUNT_LOCKED", "尝试次数过多,请稍后再试")
     if not verify_password(old, user.password_hash):
+        failures = redis.incr(fail_key)
+        if failures == 1 or failures == settings.login_max_failures:
+            redis.expire(fail_key, settings.login_lock_seconds)
         raise ApiError(400, "WRONG_PASSWORD", "旧密码不正确")
     check_policy(new, old=old)
     user.password_hash = hash_password(new)
@@ -144,4 +151,5 @@ def change_password(
         request=request,
     )
     db.commit()
+    redis.delete(fail_key)
     sessions.revoke_all(redis, user.id, keep=keep_token)
