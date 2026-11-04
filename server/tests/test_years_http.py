@@ -26,8 +26,13 @@ def _post(client, settings, path, body=None, actor=DEAN):
     return client.post(f"{API}{path}", json=body, headers=auth(settings, actor))
 
 
-def _rollback(client, settings, actor=DEAN):
-    return client.post(f"{API}/rollback", headers=auth(settings, actor))
+def _rollback(client, settings, actor=DEAN, upgrade_id=None):
+    if upgrade_id is None:  # 默认带上最近一次升级的 id(没有时随便给一个)
+        latest = client.get(f"{API}/latest", headers=auth(settings, DEAN)).json()
+        upgrade_id = latest["id"] if latest else str(uuid4())
+    return client.post(
+        f"{API}/rollback", json={"upgrade_id": str(upgrade_id)}, headers=auth(settings, actor)
+    )
 
 
 def _latest(client, settings, actor=DEAN):
@@ -326,3 +331,21 @@ def test_unknown_homeroom_id_still_rejected(client, settings):
     plan["classes"][0]["homeroom_teacher_id"] = str(uuid4())
     err = _error(_post(client, settings, "/preview", plan), 400, "UPGRADE_PLAN_INVALID")
     assert err["details"]["field"] == "homeroom_teacher_id"
+
+
+def test_rollback_requires_latest_id(client, db, settings):
+    first = _post(client, settings, "", _suggest(client, settings)).json()
+    # 缺请求体:校验失败(本项目的统一错误外壳把 FastAPI 的 422 映射为 400 BAD_REQUEST)
+    res = client.post(f"{API}/rollback", headers=auth(settings, DEAN))
+    assert res.status_code == 400 and res.json()["error"]["code"] == "BAD_REQUEST", res.text
+    # 第二次升级后,第一次的 id 不再是最近一次
+    nxt = {"name": "2028-2029", "start_date": "2028-09-01", "end_date": "2029-07-15"}
+    plan2 = client.post(f"{API}/suggest", json=nxt, headers=auth(settings, DEAN)).json()
+    second = _post(client, settings, "", plan2)
+    assert second.status_code == 201, second.text
+    err = _error(
+        _rollback(client, settings, upgrade_id=first["upgrade_id"]), 409, "UPGRADE_NOT_LATEST"
+    )
+    assert err["details"] == {"latest_id": second.json()["upgrade_id"]}
+    ok = _rollback(client, settings, upgrade_id=second.json()["upgrade_id"])
+    assert ok.status_code == 200, ok.text

@@ -39,6 +39,7 @@ _STATUS = {
     service.STALE: 409,
     service.NOTHING_TO_ROLLBACK: 409,
     service.HAS_DATA: 409,
+    service.NOT_LATEST: 409,
     "NO_ACTIVE_YEAR": 409,
 }
 
@@ -54,6 +55,10 @@ class UpgradeLatest(BaseModel):
     from_year_name: str
     to_year_name: str
     rolled_back: bool
+
+
+class RollbackInput(BaseModel):
+    upgrade_id: UUID
 
 
 class Ok(BaseModel):
@@ -208,11 +213,17 @@ def get_latest(request: Request, user: Auth, bindings: Bind, db: Db) -> UpgradeL
 
 
 @router.post("/rollback")
-def post_rollback(request: Request, user: Auth, bindings: Bind, db: Db) -> Ok:
+def post_rollback(body: RollbackInput, request: Request, user: Auth, bindings: Bind, db: Db) -> Ok:
     _guard(db, request, user, bindings)
     try:
         service.rollback(
-            db, user.school_id, now=clock.utc_now(), actor_id=user.id, request=request, via="http"
+            db,
+            user.school_id,
+            now=clock.utc_now(),
+            actor_id=user.id,
+            request=request,
+            via="http",
+            upgrade_id=body.upgrade_id,
         )
     except UpgradeError as e:
         _raise(e)

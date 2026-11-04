@@ -9,8 +9,10 @@ from datetime import date
 from pathlib import Path
 from typing import TextIO
 from urllib.parse import urlparse
+from uuid import UUID
 
 import httpx
+from redis import Redis
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -26,6 +28,7 @@ from app.ai.settings import (
     save_ai_config,
 )
 from app.audit.service import record
+from app.clock import utc_now
 from app.config import get_settings
 
 SEED_SCHOOL_ID = "11111111-1111-1111-1111-111111111111"
@@ -186,6 +189,23 @@ def ai_config(
     return 0
 
 
+def parent_archive(
+    ns: argparse.Namespace,
+    *,
+    db_factory: Callable[[], AbstractContextManager[Session]],
+    redis: Redis | None,
+    out: TextIO,
+) -> int:
+    from app.domain.parents.lifecycle import archive_expired
+
+    with db_factory() as db:
+        res = archive_expired(db, get_settings().school_id, utc_now(), redis, dry_run=ns.dry_run)
+        if ns.dry_run:
+            db.rollback()
+    print(f"已归档绑定 {res.links} 条,账号 {res.users} 个", file=out)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="app.cli")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -204,6 +224,8 @@ def build_parser() -> argparse.ArgumentParser:
     mask = s.add_mutually_exclusive_group()
     mask.add_argument("--mask-forced", dest="mask_forced", action="store_true", default=None)
     mask.add_argument("--no-mask-forced", dest="mask_forced", action="store_false")
+    pa = sub.add_parser("parent-archive", help="归档只读满一年的家长绑定与账号")
+    pa.add_argument("--dry-run", action="store_true", help="只统计,不改数据")
     yu = sub.add_parser("year-upgrade", help="学年升级:生成方案、预览、执行、回滚")
     ya = yu.add_subparsers(dest="action", required=True)
     ys = ya.add_parser("suggest", help="按现有班级生成升级方案 JSON")
@@ -215,9 +237,9 @@ def build_parser() -> argparse.ArgumentParser:
     yp = ya.add_parser("apply", help="执行方案")
     yp.add_argument("plan")
     yp.add_argument("--yes", action="store_true", help="确认执行")
-    ya.add_parser("rollback", help="回滚最近一次升级").add_argument(
-        "--yes", action="store_true", help="确认回滚"
-    )
+    yr = ya.add_parser("rollback", help="回滚最近一次升级")
+    yr.add_argument("--yes", action="store_true", help="确认回滚")
+    yr.add_argument("--upgrade-id", type=UUID, help="要回滚的升级 id;不是最近一次则拒绝")
     return parser
 
 
@@ -230,6 +252,17 @@ def main() -> None:
         try:
             code = ai_config(ns, db_factory=sessionmaker(bind=engine), stdin=sys.stdin)
         finally:
+            engine.dispose()
+        sys.exit(code)
+    elif ns.command == "parent-archive":
+        engine = create_engine(get_settings().database_url)
+        redis = Redis.from_url(get_settings().redis_url, decode_responses=True)
+        try:
+            code = parent_archive(
+                ns, db_factory=sessionmaker(bind=engine), redis=redis, out=sys.stdout
+            )
+        finally:
+            redis.close()
             engine.dispose()
         sys.exit(code)
     elif ns.command == "year-upgrade":
