@@ -292,3 +292,49 @@ export async function reviewTotal(request: APIRequestContext, token: string, cla
   const { items } = (await res.json()) as { items: { enrollment_id: string; total: number }[] }
   return items.find((i) => i.enrollment_id === enrollmentId)?.total ?? 0
 }
+
+const adminHeaders = authHeaders
+
+/** 管理端账号的 GET/请求助手:返回响应体,失败直接断言。 */
+export async function adminGet<T>(request: APIRequestContext, token: string, path: string): Promise<T> {
+  const res = await request.get(`${API}${path}`, { headers: adminHeaders(token) })
+  expect(res.ok(), await res.text()).toBeTruthy()
+  return (await res.json()) as T
+}
+
+export async function currentUserId(request: APIRequestContext, token: string): Promise<string> {
+  return (await adminGet<{ id: string }>(request, token, '/auth/me')).id
+}
+
+/** 学校设置里的功能开关(完整对象)。 */
+export async function getSwitches(request: APIRequestContext, token: string): Promise<Record<string, boolean>> {
+  return adminGet<Record<string, boolean>>(request, token, '/admin/settings/switches')
+}
+
+export async function putSwitches(request: APIRequestContext, token: string, value: Record<string, boolean>): Promise<void> {
+  const res = await request.put(`${API}/admin/settings/switches`, { headers: adminHeaders(token), data: value })
+  expect(res.ok(), await res.text()).toBeTruthy()
+}
+
+/** 结束某用户在某班的全部在任任职(用例自建任职的兜底清理)。 */
+export async function endStaffOfUser(request: APIRequestContext, token: string, classId: string, userId: string): Promise<void> {
+  const cls = await adminGet<{
+    homeroom: { assignment_id: string; user_id: string } | null
+    assistants: { assignment_id: string; user_id: string }[]
+    subjects: { teachers: { assignment_id: string; user_id: string }[] }[]
+  }>(request, token, `/admin/classes/${classId}`)
+  const all = [cls.homeroom, ...cls.assistants, ...cls.subjects.flatMap((s) => s.teachers)].filter((x) => x !== null)
+  for (const s of all.filter((x) => x.user_id === userId)) {
+    const res = await request.delete(`${API}/admin/staff/${s.assignment_id}`, { headers: adminHeaders(token) })
+    expect(res.ok(), await res.text()).toBeTruthy()
+  }
+}
+
+/** 卸任某用户的全部管理岗位(用例自加的岗位兜底清理)。 */
+export async function endRolesOfUser(request: APIRequestContext, token: string, userId: string): Promise<void> {
+  const roles = await adminGet<{ binding_id: string; user_id: string }[]>(request, token, '/admin/roles')
+  for (const r of roles.filter((x) => x.user_id === userId)) {
+    const res = await request.delete(`${API}/admin/roles/${r.binding_id}`, { headers: adminHeaders(token) })
+    expect(res.ok(), await res.text()).toBeTruthy()
+  }
+}
