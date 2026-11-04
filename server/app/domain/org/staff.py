@@ -3,9 +3,11 @@ from uuid import UUID
 
 from fastapi import Request
 from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.audit.service import record
+from app.domain.org import service
 from app.domain.org.schemas import AdminRole, AdminRoleInput, ClassAdmin, StaffInput
 from app.domain.org.service import class_admin
 from app.errors import ApiError
@@ -20,6 +22,7 @@ _BINDING_ROLE = {
 }
 ADMIN_ROLE_ORDER = (Role.principal, Role.dean, Role.grade_head, Role.it_admin)
 ACCOUNT_ROLES = frozenset({Role.principal.value, Role.it_admin.value})
+_HOMEROOM_INDEX = "teacher_assignments_one_homeroom"
 
 
 def _bad_user() -> ApiError:
@@ -61,6 +64,7 @@ def add_staff(
     actor_id: UUID,
     request: Request | None = None,
 ) -> ClassAdmin:
+    service.lock_class(db, cls)
     subject = body.subject or None
     if body.identity == "subject":
         if subject is None or len(subject) > 10:
@@ -79,6 +83,29 @@ def add_staff(
     ).first()
     if duplicate:
         raise ApiError(409, "ALREADY_ASSIGNED", "该教师已在此班担任同一职务")
+    try:
+        _write_staff(db, cls, body, teacher_id, subject, params, now, actor_id, request)
+    except IntegrityError as exc:
+        # 班级行锁之外的最后一道防线:同班只能有一位在任班主任(部分唯一索引)
+        diag = getattr(exc.orig, "diag", None)
+        if getattr(diag, "constraint_name", None) != _HOMEROOM_INDEX:
+            raise
+        db.rollback()
+        raise ApiError(409, "HOMEROOM_TAKEN", "该班已有班主任,请刷新后重试") from exc
+    return class_admin(db, cls)
+
+
+def _write_staff(
+    db: Session,
+    cls: SchoolClass,
+    body: StaffInput,
+    teacher_id: UUID,
+    subject: str | None,
+    params: dict[str, object],
+    now: datetime,
+    actor_id: UUID,
+    request: Request | None,
+) -> None:
     if body.identity == "homeroom":
         old = db.execute(
             text(
@@ -132,7 +159,6 @@ def add_staff(
         },
     )
     db.commit()
-    return class_admin(db, cls)
 
 
 def end_staff(

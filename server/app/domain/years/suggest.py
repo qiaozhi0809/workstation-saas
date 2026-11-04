@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.domain.years.plan import ClassPlan, NewYear, UpgradePlan
+from app.domain.years.plan import ClassPlan, GradeHeadPlan, NewYear, UpgradePlan
 from app.domain.years.service import UpgradeError
 
 # 每条链按顺序;最后一个是毕业年级。下一年级保持同一种写法。
@@ -62,7 +62,8 @@ def suggest(db: Session, school_id: UUID, name: str, start: date, end: date) -> 
         raise UpgradeError("NO_ACTIVE_YEAR", "学校还没有进行中的学年")
     rows = db.execute(
         text(
-            "SELECT c.id, c.name, g.name AS grade_name, ta.teacher_id, u.display_name"
+            "SELECT c.id, c.name, g.id AS grade_id, g.name AS grade_name, g.display_order,"
+            " ta.teacher_id, u.display_name"
             " FROM classes c JOIN grades g ON g.id = c.grade_id"
             " LEFT JOIN LATERAL ("
             "   SELECT teacher_id FROM teacher_assignments"
@@ -77,8 +78,14 @@ def suggest(db: Session, school_id: UUID, name: str, start: date, end: date) -> 
         {"y": year.id},
     ).all()
     classes: list[ClassPlan] = []
+    votes: dict[UUID, dict[str, int]] = {}  # 旧年级 → {新年级名: 升级班数}
+    orders: dict[str, int] = {}
     for r in rows:
         nxt, graduating = next_grade(r.grade_name)
+        if nxt:
+            v = votes.setdefault(r.grade_id, {})
+            v[nxt] = v.get(nxt, 0) + 1
+            orders.setdefault(nxt, grade_index(nxt) or r.display_order + 1)
         if graduating:
             classes.append(ClassPlan(from_class_id=r.id, from_name=r.name, action="graduate"))
             continue
@@ -101,4 +108,34 @@ def suggest(db: Session, school_id: UUID, name: str, start: date, end: date) -> 
         classes=classes,
         students=[],
         new_classes=[],
+        grade_heads=_suggest_grade_heads(db, school_id, year.id, votes, orders),
     )
+
+
+def _suggest_grade_heads(
+    db: Session,
+    school_id: UUID,
+    year_id: UUID,
+    votes: dict[UUID, dict[str, int]],
+    orders: dict[str, int],
+) -> list[GradeHeadPlan]:
+    """按跟届规则(与 apply 一致:该年级升级班里占多数的目标年级)预填新学年的年级组长。"""
+    # 与 apply 的 grade_successor 同一规则:票数多者胜,并列取 display_order 小、再取名字小
+    successor = {g: min(v, key=lambda n: (-v[n], orders[n], n)) for g, v in votes.items()}
+    heads: dict[str, set[UUID]] = {}
+    for r in db.execute(
+        text(
+            "SELECT b.user_id, g.id AS grade_id FROM role_bindings b"
+            " JOIN users u ON u.id = b.user_id AND u.school_id = :s AND u.status = 'active'"
+            " JOIN grades g ON g.id::text = b.scope->>'grade_id' AND g.academic_year_id = :y"
+            " WHERE b.role_type = 'grade_head' AND b.ended_at IS NULL"
+        ),
+        {"s": school_id, "y": year_id},
+    ):
+        new_name = successor.get(r.grade_id)
+        if new_name is not None:  # 整个年级毕业(或没有升级班)的不列
+            heads.setdefault(new_name, set()).add(r.user_id)
+    return [
+        GradeHeadPlan(grade_name=name, user_ids=sorted(heads[name], key=str))
+        for name in sorted(heads, key=lambda n: (grade_index(n) or 999, n))
+    ]

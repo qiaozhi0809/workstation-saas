@@ -24,6 +24,10 @@ import GradeExamsPage from './GradeExams/GradeExamsPage'
 import ScoresReportPage from './Reports/ScoresReportPage'
 // ── 段 C(联考 / 成绩汇总):import 追加在此行之上 ──
 
+import { GraduationCap } from 'lucide-react'
+import UpgradePage from './Upgrade/UpgradePage'
+// ── M3b 段 F(学年升级):import 追加在此行之上 ──
+
 import { History } from 'lucide-react'
 import HistoryPage from './History/HistoryPage'
 import HistoryClassPage from './History/HistoryClassPage'
@@ -62,6 +66,9 @@ export const ADMIN_PAGES: AdminPage[] = [
   { path: 'grade-exams', label: '年级联考', icon: ClipboardList, perm: 'exam.grade_write', element: <GradeExamsPage /> },
   { path: 'reports/scores', label: '成绩汇总', icon: BarChart3, perm: 'school.view', element: <ScoresReportPage /> },
   // ── 段 C(联考 / 成绩汇总):追加在此行之上 ──
+
+  { path: 'upgrade', label: '学年升级', icon: GraduationCap, perm: 'year.upgrade', element: <UpgradePage /> },
+  // ── upgrade:追加在此行之上 ──
 
   { path: 'history', label: '往年班级', icon: History, perm: 'school.view', element: <HistoryPage /> },
   { path: 'history/classes/:id', label: '往年班级', icon: History, perm: 'school.view', element: <HistoryClassPage />, hidden: true },
