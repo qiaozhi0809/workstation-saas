@@ -26,10 +26,12 @@ from app.domain.accounts.schemas import (
 from app.errors import ApiError
 from app.models import Grade, RoleBinding, SchoolClass, User
 from app.rbac.admin import account_admin_count
-from app.rbac.roles import Role
+from app.rbac.roles import PARENT_ROLES, Role
 from app.ws.hub import publish
 
 PAGE_SIZE = 50
+
+_PARENT_ROLE_VALUES = [r.value for r in PARENT_ROLES]
 
 _SCHOOL_LABELS = {
     Role.principal.value: "校长",
@@ -74,7 +76,13 @@ def role_tags(
         if grade_ids
         else {}
     )
+    parents: set[UUID] = set()
     for b in bindings:
+        if b.role_type in _PARENT_ROLE_VALUES:
+            if b.user_id not in parents:
+                parents.add(b.user_id)
+                result[b.user_id].append(RoleTag(role="parent", label="家长"))
+            continue
         label = _label(b, classes, grades)
         if label is not None:
             result[b.user_id].append(RoleTag(role=b.role_type, label=label))
@@ -161,11 +169,16 @@ def list_accounts(
     if status:
         conds.append(User.status == status)
     if role:
+        role_cond = (
+            RoleBinding.role_type.in_(_PARENT_ROLE_VALUES)
+            if role == "parent"
+            else RoleBinding.role_type == role
+        )
         conds.append(
             exists().where(
                 and_(
                     RoleBinding.user_id == User.id,
-                    RoleBinding.role_type == role,
+                    role_cond,
                     RoleBinding.ended_at.is_(None),
                     _binding_year_ok(year_id),
                 )

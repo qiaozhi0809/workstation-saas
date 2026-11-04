@@ -12,7 +12,7 @@ import CommentsTab from './CommentsTab'
 import ProfileActions from './ProfileActions'
 
 vi.mock('@/shared/api/classroom', () => ({ classroomApi: { summary: vi.fn() } }))
-vi.mock('@/shared/api/comments', () => ({ commentsApi: { list: vi.fn(), create: vi.fn(), remove: vi.fn() } }))
+vi.mock('@/shared/api/comments', () => ({ commentsApi: { list: vi.fn(), create: vi.fn(), remove: vi.fn(), setParentVisible: vi.fn() } }))
 
 const profile: StudentProfile = { id: 's1', mk: 'S0001', name: '王小一', class_id: 'c1', enrollment_id: 'e1' }
 
@@ -167,4 +167,35 @@ it('header: AI 写评语 jumps to the comment template', async () => {
   setup(<ProfileActions profile={profile} />, ['ai.class', 'comment.write'])
   fireEvent.click(await screen.findByRole('button', { name: 'AI 写评语' }))
   expect(screen.getByTestId('loc')).toHaveTextContent('/teacher/ai?tpl=comment1&stu=s1')
+})
+
+it('toggles 给家长看 via setParentVisible and updates the display', async () => {
+  vi.mocked(commentsApi.list).mockResolvedValue({ items: [cm({ parent_visible: false })] })
+  vi.mocked(commentsApi.setParentVisible).mockResolvedValue(cm({ parent_visible: true }))
+  setup(<CommentsTab profile={profile} />, ['comment.read', 'comment.write'])
+  const sw = await screen.findByRole('switch', { name: '给家长看' })
+  expect(sw).toHaveAttribute('aria-checked', 'false')
+  vi.mocked(commentsApi.list).mockResolvedValue({ items: [cm({ parent_visible: true })] })
+  fireEvent.click(sw)
+  await waitFor(() => expect(commentsApi.setParentVisible).toHaveBeenCalledWith('m1', true))
+  await waitFor(() => expect(screen.getByRole('switch', { name: '给家长看' })).toHaveAttribute('aria-checked', 'true'))
+})
+
+it('hints that unconfirmed AI comments are hidden from parents', async () => {
+  vi.mocked(commentsApi.list).mockResolvedValue({
+    items: [
+      cm({ id: 'a', generated_by_ai: true, parent_visible: false }),
+      cm({ id: 'b', generated_by_ai: true, parent_visible: true }),
+      cm({ id: 'c', generated_by_ai: false, parent_visible: false }),
+    ],
+  })
+  setup(<CommentsTab profile={profile} />, ['comment.read', 'comment.write'])
+  await screen.findAllByRole('listitem')
+  expect(screen.getAllByText('AI 生成,需确认后才给家长看')).toHaveLength(1)
+})
+
+it('disables the toggle without comment.write', async () => {
+  vi.mocked(commentsApi.list).mockResolvedValue({ items: [cm({})] })
+  setup(<CommentsTab profile={profile} />, ['comment.read'])
+  expect(await screen.findByRole('switch', { name: '给家长看' })).toBeDisabled()
 })

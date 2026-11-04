@@ -2,7 +2,7 @@ import { useCallback, useMemo, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
 /** 档案抽屉的页签,顺序即显示顺序;StudentProfileDrawer 用同一份列表。 */
-export const PROFILE_TABS = ['概览', '档案', '成绩', '成长记录', '评语'] as const
+export const PROFILE_TABS = ['概览', '档案', '成绩', '成长记录', '评语', '家长'] as const
 export type ProfileTab = (typeof PROFILE_TABS)[number]
 
 const isTab = (v: string | null): v is ProfileTab => PROFILE_TABS.some((t) => t === v)

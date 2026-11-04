@@ -14,6 +14,7 @@ from app.domain.comments.schemas import (
     CommentBulkResult,
     CommentInput,
     CommentOut,
+    ParentVisibleInput,
 )
 from app.domain.schools.service import active_academic_year, require_active_year, school_today
 from app.domain.students.service import find_enrolled_student
@@ -137,6 +138,39 @@ def create_bulk(
     )
     db.commit()
     return CommentBulkResult(created=created)
+
+
+@router.put("/comments/{comment_id}/parent-visible")
+def set_parent_visible(
+    comment_id: UUID,
+    data: ParentVisibleInput,
+    request: Request,
+    user: Annotated[User, Depends(get_current_user)],
+    bindings: Annotated[list[Binding], Depends(get_bindings)],
+    db: Annotated[Session, Depends(get_db)],
+) -> CommentOut:
+    year = require_active_year(db, user.school_id)
+    comment = db.get(Comment, comment_id)
+    if comment is None:
+        raise ApiError(404, "NOT_FOUND", "评语不存在")
+    cls = get_class_or_404(db, comment.class_id)
+    scope = class_scope_of(cls)
+    ensure(
+        db, request, user.id, bindings, Perm.COMMENT_WRITE, scope,
+        object_id=str(comment_id), object_type="comment",
+    )  # fmt: skip
+    out = service.set_parent_visible(
+        db,
+        user,
+        comment,
+        data.visible,
+        request,
+        bindings=bindings,
+        current_year_id=year.id,
+        scope=scope,
+    )
+    db.commit()
+    return out
 
 
 @router.delete("/comments/{comment_id}", status_code=204)
