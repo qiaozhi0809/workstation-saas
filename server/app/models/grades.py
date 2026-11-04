@@ -12,6 +12,26 @@ _UUID_PK = {"server_default": text("gen_random_uuid()")}
 _NOW = {"server_default": text("now()")}
 
 
+class GradeExam(Base):
+    __tablename__ = "grade_exams"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, **_UUID_PK)
+    school_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("schools.id", ondelete="CASCADE"))
+    academic_year_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("academic_years.id", ondelete="CASCADE")
+    )
+    grade_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("grades.id", ondelete="CASCADE"))
+    name: Mapped[str] = mapped_column(Text)
+    exam_type: Mapped[str] = mapped_column(Text)
+    date: Mapped[date]
+    subjects: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(**_NOW)
+    updated_at: Mapped[datetime] = mapped_column(**_NOW)
+
+
 class Exam(Base):
     __tablename__ = "exams"
 
@@ -24,6 +44,9 @@ class Exam(Base):
     exam_type: Mapped[str] = mapped_column(Text)
     date: Mapped[date]
     subjects: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
+    grade_exam_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("grade_exams.id", ondelete="CASCADE")
+    )
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )
