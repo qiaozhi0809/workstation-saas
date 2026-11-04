@@ -13,6 +13,16 @@ import type { AiConfigSave, AiConfigView } from '@/shared/types/admin'
 import ConfirmBox from '../Org/ConfirmBox'
 
 const DEFAULT_TEMPERATURE = 0.7
+const KEY_RENEW_NOTICE = '更换服务商或服务地址后需重新填写 API Key'
+
+/** 只比 scheme + host + port(大小写不敏感,默认端口等同显式端口,忽略路径);解析不了就比原字符串 */
+function sameOrigin(a: string, b: string): boolean {
+  try {
+    return new URL(a.trim()).origin.toLowerCase() === new URL(b.trim()).origin.toLowerCase()
+  } catch {
+    return a.trim() === b.trim()
+  }
+}
 
 function ConfigForm({ view }: { view: AiConfigView }) {
   const qc = useQueryClient()
@@ -27,6 +37,12 @@ function ConfigForm({ view }: { view: AiConfigView }) {
   const [busy, setBusy] = useState<'' | 'test' | 'save' | 'clear'>('')
   const [confirmClear, setConfirmClear] = useState(false)
   const [clearError, setClearError] = useState('')
+
+  // 已存了配置,换服务商或换服务地址的主机时,旧 Key 不能沿用
+  const keyEmpty = apiKey.trim() === ''
+  const needKeyRenew = view.key_set && !view.key_undecryptable && keyEmpty
+    && view.provider !== null && view.base_url !== null
+    && (provider !== view.provider || !sameOrigin(baseUrl, view.base_url))
 
   const current = view.providers.find((p) => p.id === provider)
   const models = current?.models ?? []
@@ -47,6 +63,7 @@ function ConfigForm({ view }: { view: AiConfigView }) {
     if (!/^https?:\/\//.test(baseUrl.trim())) return fail('接口地址要以 http:// 或 https:// 开头')
     if (!model.trim()) return fail('请填写模型')
     if (temperature.trim() === '' || !Number.isFinite(t) || t < 0 || t > 2) return fail('温度需要在 0 到 2 之间')
+    if (needKeyRenew) { setError(''); return null } // 页面上已经有常驻提示
     if (!key && (!view.key_set || view.key_undecryptable)) return fail('请填写 API Key')
     setError('')
     return {
@@ -109,6 +126,11 @@ function ConfigForm({ view }: { view: AiConfigView }) {
         {view.key_undecryptable && (
           <p role="alert" className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
             已保存的 API Key 无法解密,请重新输入 API Key 后保存。
+          </p>
+        )}
+        {needKeyRenew && (
+          <p role="alert" className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
+            {KEY_RENEW_NOTICE}
           </p>
         )}
         <div className="grid gap-3 sm:grid-cols-2">

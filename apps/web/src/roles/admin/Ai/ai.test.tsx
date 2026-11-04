@@ -186,6 +186,69 @@ describe('AI 配置', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 
+  const NOTICE = '更换服务商或服务地址后需重新填写 API Key'
+
+  it('改了地址的主机且 Key 留空时提示,保存和测试连接都不发请求', async () => {
+    await renderConfig()
+    expect(screen.queryByText(NOTICE)).toBeNull()
+    fireEvent.change(screen.getByLabelText('接口地址'), { target: { value: 'https://other.example/v1' } })
+    expect(screen.getByText(NOTICE)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    fireEvent.click(screen.getByRole('button', { name: '测试连接' }))
+    expect(adminApi.saveAiConfig).not.toHaveBeenCalled()
+    expect(adminApi.testAiConfig).not.toHaveBeenCalled()
+    // 改回去,提示消失
+    fireEvent.change(screen.getByLabelText('接口地址'), { target: { value: 'https://api.deepseek.example/v1' } })
+    expect(screen.queryByText(NOTICE)).toBeNull()
+  })
+
+  it('填了 Key 后提示消失,保存带上填的 Key', async () => {
+    vi.mocked(adminApi.saveAiConfig).mockResolvedValue(view())
+    await renderConfig()
+    fireEvent.change(screen.getByLabelText('接口地址'), { target: { value: 'https://other.example/v1' } })
+    expect(screen.getByText(NOTICE)).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('API Key'), { target: { value: 'test-key-456' } })
+    expect(screen.queryByText(NOTICE)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(adminApi.saveAiConfig).toHaveBeenCalledWith(expect.objectContaining({
+      base_url: 'https://other.example/v1', api_key: 'test-key-456',
+    })))
+  })
+
+  it('只改路径不提示,保存时 api_key 仍为 null', async () => {
+    vi.mocked(adminApi.saveAiConfig).mockResolvedValue(view())
+    await renderConfig()
+    fireEvent.change(screen.getByLabelText('接口地址'), { target: { value: 'https://api.deepseek.example/v2/' } })
+    expect(screen.queryByText(NOTICE)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(adminApi.saveAiConfig).toHaveBeenCalledWith(expect.objectContaining({
+      base_url: 'https://api.deepseek.example/v2/', api_key: null,
+    })))
+  })
+
+  it('换服务商(自动填地址)且 Key 留空时提示', async () => {
+    await renderConfig()
+    fireEvent.change(screen.getByLabelText('服务商'), { target: { value: 'qwen' } })
+    expect(screen.getByText(NOTICE)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    expect(adminApi.saveAiConfig).not.toHaveBeenCalled()
+  })
+
+  it('主机大小写和默认端口写法不同不算换地址', async () => {
+    await renderConfig()
+    fireEvent.change(screen.getByLabelText('接口地址'), { target: { value: 'HTTPS://API.deepseek.example:443/v1' } })
+    expect(screen.queryByText(NOTICE)).toBeNull()
+    fireEvent.change(screen.getByLabelText('接口地址'), { target: { value: 'https://api.deepseek.example:8443/v1' } })
+    expect(screen.getByText(NOTICE)).toBeInTheDocument()
+  })
+
+  it('后端返回需要重填 Key 时照常显示它的话', async () => {
+    vi.mocked(adminApi.saveAiConfig).mockRejectedValue(new ApiError(400, 'AI_KEY_REQUIRED', NOTICE))
+    await renderConfig()
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    expect(await screen.findByText(NOTICE)).toBeInTheDocument()
+  })
+
   it('Key 无法解密时提示重新填写', async () => {
     vi.mocked(adminApi.aiConfig).mockResolvedValue(view({ key_undecryptable: true }))
     await renderConfig()
