@@ -11,6 +11,11 @@ import AdminHome from '@/roles/admin/AdminHome'
 import AdminLayout from '@/roles/admin/AdminLayout'
 import { ADMIN_PAGES } from '@/roles/admin/pages'
 import RequirePerm from '@/roles/admin/RequirePerm'
+import ParentLayout, { ParentIndex } from '@/roles/parent/ParentLayout'
+import GradesPage from '@/roles/parent/Grades/GradesPage'
+import GrowthPage from '@/roles/parent/Growth/GrowthPage'
+import ProfilePage from '@/roles/parent/Profile/ProfilePage'
+import TodayPage from '@/roles/parent/Today/TodayPage'
 import TeacherLayout from '@/roles/teacher/TeacherLayout'
 import ClassroomPage from '@/roles/teacher/Classroom/ClassroomPage'
 import AnalysisPage from '@/roles/teacher/Analysis/AnalysisPage'
@@ -55,7 +60,13 @@ const routes = createRoutesFromElements(
       <Route index element={<AdminHome />} />
       {ADMIN_PAGES.map((p) => <Route key={p.path} path={p.path} element={<RequirePerm perm={p.perm}>{p.element}</RequirePerm>} />)}
     </Route>
-    <Route path="/parent" element={<EmptyState title="家长端(M4)" className="h-full justify-center p-6" />} />
+    <Route path="/parent" element={<ProtectedRoute context="parent"><ParentLayout /></ProtectedRoute>}>
+      <Route index element={<ParentIndex />} />
+      <Route path="today" element={<TodayPage />} />
+      <Route path="growth" element={<GrowthPage />} />
+      <Route path="grades" element={<GradesPage />} />
+      <Route path="profile" element={<ProfilePage />} />
+    </Route>
     <Route path="/" element={<Navigate to="/login" replace />} />
     <Route
       path="*"

@@ -25,6 +25,7 @@ from app.domain.notices.router import router as notices_router  # M3b 段 E
 from app.domain.org.router import router as org_router  # M3a 段 D
 from app.domain.overview.router import router as overview_router  # M3a 段 F
 from app.domain.parents.manage_router import router as parent_manage_router  # M4a 段 C
+from app.domain.parents.views_router import router as parent_views_router  # M4a 段 D
 from app.domain.preferences.router import router as preferences_router
 from app.domain.reports.attendance_router import router as attendance_report_router  # M3b 段 D
 from app.domain.reports.router import router as reports_router  # M3b 段 C
@@ -102,5 +103,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     router.include_router(years_router)  # M3b 段 F
     router.include_router(history_router)  # M3b 段 H
     router.include_router(parent_manage_router)  # M4a 段 C
+    router.include_router(parent_views_router)  # M4a 段 D
     app.include_router(router)
     return app
