@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AlertCircle, GraduationCap, Loader2 } from 'lucide-react'
 import { authApi } from '@/shared/api/auth'
@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader } from '@/sh
 import { Input } from '@/shared/components/ui/input'
 import { Label } from '@/shared/components/ui/label'
 import ThemeToggle from '@/theme/ThemeToggle'
-import { takeLoginFlash } from './flash'
+import { clearLoginFlash, peekLoginFlash } from './flash'
 import { homeFor } from './home'
 
 const MESSAGES: Record<string, string> = {
@@ -26,7 +26,9 @@ export default function LoginPage() {
   const [loginName, setLoginName] = useState('')
   const [password, setPassword] = useState('')
   const [pending, setPending] = useState(false)
-  const [error, setError] = useState<string | null>(takeLoginFlash)
+  const [error, setError] = useState<string | null>(peekLoginFlash)
+
+  useEffect(() => { clearLoginFlash() }, [])
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault()

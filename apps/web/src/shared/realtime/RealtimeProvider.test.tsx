@@ -1,7 +1,7 @@
 import { act, render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, expect, it, vi } from 'vitest'
-import { takeLoginFlash } from '@/auth/flash'
+import { peekLoginFlash } from '@/auth/flash'
 import { useAuthStore } from '@/shared/stores/auth'
 import type { RealtimeEvent } from './client'
 
@@ -85,7 +85,7 @@ it('session.revoked:登出并跳登录页', () => {
   expect(useAuthStore.getState().accessToken).toBeNull()
   expect(screen.getByText('login-page')).toBeInTheDocument()
   expect(h.made[0].stop).toHaveBeenCalled()
-  expect(takeLoginFlash()).toBe('你的账号已被停用')
+  expect(peekLoginFlash()).toBe('你的账号已被停用')
 })
 
 it('一个订阅者抛错不影响其余订阅者', () => {
