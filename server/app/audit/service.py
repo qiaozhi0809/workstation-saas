@@ -10,10 +10,17 @@ from app.models.audit import AuditLog
 
 
 def _parse_ip(value: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+    """合法 IP 或 None;带 scope id 的 IPv6(fe80::1%eth0)视为非法,IPv4 映射的 IPv6 归一成 IPv4。"""
+    value = value.strip()
+    if "%" in value:
+        return None
     try:
-        return ipaddress.ip_address(value.strip())
+        addr = ipaddress.ip_address(value)
     except ValueError:
         return None
+    if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
+        return addr.ipv4_mapped
+    return addr
 
 
 def _client_ip(request: Request | None) -> str | None:
