@@ -52,7 +52,15 @@ beforeEach(() => {
   vi.mocked(adminApi.scoreReport).mockResolvedValue(SUMMARY)
   vi.mocked(adminApi.scoreStudents).mockResolvedValue({ students: STUDENTS })
 })
-afterEach(cleanup)
+const saved: [string, PropertyDescriptor | undefined][] = []
+afterEach(() => {
+  cleanup()
+  vi.restoreAllMocks()
+  for (const [k, d] of saved.splice(0)) {
+    if (d) Object.defineProperty(URL, k, d)
+    else delete (URL as unknown as Record<string, unknown>)[k]
+  }
+})
 
 const renderPage = async (url = '/admin/reports/scores') => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -92,6 +100,15 @@ it('switches to pass rate and good rate shown as percentages with one decimal', 
   fireEvent.click(screen.getByRole('tab', { name: '优秀率' }))
   expect(within(classRow('三年一班')).getAllByRole('cell').map((c) => c.textContent)).toEqual(['25.0%', '—', '—'])
   expect(within(classRow('三年二班')).getAllByRole('cell').map((c) => c.textContent)).toEqual(['10.0%', '33.3%', '—'])
+})
+
+it('maps cells by subject name when a class lists its subjects in a different order', async () => {
+  const swapped = structuredClone(SUMMARY)
+  swapped.classes[0].subjects.reverse()
+  vi.mocked(adminApi.scoreReport).mockResolvedValue(swapped)
+  await renderPage()
+  // 一班:语文 82.3,数学无数据,与表头顺序(语文、数学)对应,而不是跟着数组顺序走
+  expect(within(classRow('三年一班')).getAllByRole('cell').map((c) => c.textContent)).toEqual(['82.3', '—', '160.0'])
 })
 
 it('puts max, min and participant count in the cell tooltip', async () => {
@@ -134,7 +151,11 @@ it('exports the csv with the grade exam name as file name', async () => {
   vi.mocked(adminApi.exportScoreReport).mockResolvedValue(new Blob(['x'], { type: 'text/csv' }))
   const create = vi.fn(() => 'blob:fake')
   const revoke = vi.fn()
-  Object.assign(URL, { createObjectURL: create, revokeObjectURL: revoke })
+  // jsdom 没有这两个方法:先备份再定义,afterEach 还原
+  for (const [k, fn] of [['createObjectURL', create], ['revokeObjectURL', revoke]] as const) {
+    saved.push([k, Object.getOwnPropertyDescriptor(URL, k)])
+    Object.defineProperty(URL, k, { configurable: true, writable: true, value: fn })
+  }
   const names: string[] = []
   const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
     names.push(this.download)
@@ -145,8 +166,8 @@ it('exports the csv with the grade exam name as file name', async () => {
   await waitFor(() => expect(click).toHaveBeenCalledTimes(1))
   expect(names).toEqual(['十一月联考-成绩汇总.csv'])
   expect(create).toHaveBeenCalledTimes(1)
-  expect(revoke).toHaveBeenCalledWith('blob:fake')
-  click.mockRestore()
+  // 释放被延后到下一轮事件循环
+  await waitFor(() => expect(revoke).toHaveBeenCalledWith('blob:fake'))
 })
 
 it('tells the user when the export fails', async () => {

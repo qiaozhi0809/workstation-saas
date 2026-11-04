@@ -25,7 +25,8 @@ function saveBlob(filename: string, blob: Blob): void {
   document.body.appendChild(a)
   a.click()
   a.remove()
-  URL.revokeObjectURL(url)
+  // 等浏览器开始处理下载再释放
+  setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 
 function StudentSection({ examId, classId, className, subjects }: {

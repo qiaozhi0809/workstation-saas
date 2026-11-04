@@ -21,6 +21,14 @@ const totalText = (t: TotalStat, view: ScoreView) => (view === 'avg' ? fmtAvg(t.
 
 const cell = 'px-3 py-2 text-right tabular-nums'
 
+// 按科目名取统计,不依赖数组顺序与表头一致
+const byName = (stats: SubjectStat[], name: string) => stats.find((s) => s.subject === name)
+
+function StatCell({ stat, view }: { stat: SubjectStat | undefined; view: ScoreView }) {
+  if (!stat) return <td className={cell}>{DASH}</td>
+  return <td title={tip(stat)} className={cell}>{subjectText(stat, view)}</td>
+}
+
 export default function ScoreClassTable({ summary, view, openClassId, onToggle }: {
   summary: ScoreSummary
   view: ScoreView
@@ -50,18 +58,14 @@ export default function ScoreClassTable({ summary, view, openClassId, onToggle }
                     {c.class_name}
                   </button>
                 </th>
-                {c.subjects.map((s) => (
-                  <td key={s.subject} title={tip(s)} className={cell}>{subjectText(s, view)}</td>
-                ))}
+                {summary.subjects.map((h) => <StatCell key={h.name} stat={byName(c.subjects, h.name)} view={view} />)}
                 <td title={tip(c.total)} className={cell}>{totalText(c.total, view)}</td>
               </tr>
             )
           })}
           <tr className="bg-muted/30 font-medium">
             <th scope="row" className="px-3 py-2 text-left">全年级</th>
-            {summary.grade.subjects.map((s) => (
-              <td key={s.subject} title={tip(s)} className={cell}>{subjectText(s, view)}</td>
-            ))}
+            {summary.subjects.map((h) => <StatCell key={h.name} stat={byName(summary.grade.subjects, h.name)} view={view} />)}
             <td title={tip(summary.grade.total)} className={cell}>{totalText(summary.grade.total, view)}</td>
           </tr>
         </tbody>
