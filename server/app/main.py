@@ -20,6 +20,7 @@ from app.domain.growth.router import router as growth_router
 from app.domain.org.router import router as org_router  # M3a 段 D
 from app.domain.overview.router import router as overview_router  # M3a 段 F
 from app.domain.preferences.router import router as preferences_router
+from app.domain.reports.attendance_router import router as attendance_report_router  # M3b 段 D
 from app.domain.reviews.router import router as reviews_router
 from app.domain.roster.router import router as roster_router
 from app.domain.school_settings.router import router as school_settings_router  # M3a 段 E
@@ -84,5 +85,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     router.include_router(school_settings_router)  # M3a 段 E
     router.include_router(org_router)  # M3a 段 D
     router.include_router(ws_router)  # M3b 段 A
+    router.include_router(attendance_report_router)  # M3b 段 D
     app.include_router(router)
     return app
