@@ -40,7 +40,7 @@ from app.ai.requests import (
 )
 from app.ai.settings import is_ready, load_ai_config
 from app.ai.templates import CATEGORIES, PERM_ORDER, TEMPLATES
-from app.audit.service import record
+from app.audit.service import _client_ip, record
 from app.auth.deps import get_current_user
 from app.config import Settings, settings_dep
 from app.db import SessionScope, get_db, session_scope
@@ -344,7 +344,7 @@ def ai_chat_reply(
             redis=redis,
             lock_key=lock_key(chat.id),
             lock_token=token,
-            ip=request.client.host if request.client and _is_ip(request.client.host) else None,
+            ip=_client_ip(request),
             user_agent=request.headers.get("user-agent"),
         )
         return StreamingResponse(
@@ -369,7 +369,7 @@ def _gen_context(request: Request, user: User, cls, chat, cfg, scope, redis, tok
         redis=redis,
         lock_key=lock_key(chat.id),
         lock_token=token,
-        ip=request.client.host if request.client and _is_ip(request.client.host) else None,
+        ip=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
 
@@ -413,13 +413,3 @@ def ai_chat_run_item(
     except BaseException:
         release_lock(redis, lock_key(chat.id), token)
         raise
-
-
-def _is_ip(host: str) -> bool:
-    import ipaddress
-
-    try:
-        ipaddress.ip_address(host)
-    except ValueError:
-        return False
-    return True

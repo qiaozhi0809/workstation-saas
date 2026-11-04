@@ -24,6 +24,16 @@ import GradeExamsPage from './GradeExams/GradeExamsPage'
 import ScoresReportPage from './Reports/ScoresReportPage'
 // ── 段 C(联考 / 成绩汇总):import 追加在此行之上 ──
 
+import { CalendarCheck } from 'lucide-react'
+import AttendanceReportPage from './Reports/AttendanceReportPage'
+// ── 段 D(报表 / 考勤):import 追加在此行之上 ──
+
+import { KeyRound, ScrollText, Sparkles } from 'lucide-react'
+import AiConfigPage from './Ai/AiConfigPage'
+import AiUsagePage from './Ai/AiUsagePage'
+import AuditPage from './Audit/AuditPage'
+// ── 段 D(审计 / AI):import 追加在此行之上 ──
+
 import { GraduationCap } from 'lucide-react'
 import UpgradePage from './Upgrade/UpgradePage'
 // ── M3b 段 F(学年升级):import 追加在此行之上 ──
@@ -66,6 +76,14 @@ export const ADMIN_PAGES: AdminPage[] = [
   { path: 'grade-exams', label: '年级联考', icon: ClipboardList, perm: 'exam.grade_write', element: <GradeExamsPage /> },
   { path: 'reports/scores', label: '成绩汇总', icon: BarChart3, perm: 'school.view', element: <ScoresReportPage /> },
   // ── 段 C(联考 / 成绩汇总):追加在此行之上 ──
+
+  { path: 'reports/attendance', label: '考勤报告', icon: CalendarCheck, perm: 'school.view', element: <AttendanceReportPage /> },
+  // ── reports-attendance:追加在此行之上 ──
+
+  { path: 'audit', label: '审计日志', icon: ScrollText, perm: 'audit.read', element: <AuditPage /> },
+  { path: 'ai/usage', label: 'AI 使用', icon: Sparkles, perm: 'ai.usage', element: <AiUsagePage /> },
+  { path: 'ai/config', label: 'AI 配置', icon: KeyRound, perm: 'settings.manage', element: <AiConfigPage /> },
+  // ── audit-ai:追加在此行之上 ──
 
   { path: 'upgrade', label: '学年升级', icon: GraduationCap, perm: 'year.upgrade', element: <UpgradePage /> },
   // ── upgrade:追加在此行之上 ──
