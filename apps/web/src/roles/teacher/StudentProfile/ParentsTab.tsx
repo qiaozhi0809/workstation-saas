@@ -59,10 +59,14 @@ function AddForm({ studentId, full, onSecret }: { studentId: string; full: boole
   const [name, setName] = useState('')
   const [relation, setRelation] = useState<ParentRelation>('母亲')
   const add = useMutation({
-    mutationFn: () => parentLinksApi.create(studentId, { phone: phone.trim(), name: name.trim(), relation }),
-    onSuccess: (res) => {
+    // 临时密码只交给对话框,不留在 mutation 状态 / MutationCache 里
+    mutationFn: async () => {
+      const res = await parentLinksApi.create(studentId, { phone: phone.trim(), name: name.trim(), relation })
       if (res.temp_password) onSecret({ phone: res.parent.phone, password: res.temp_password, reset: false })
-      else toast('该手机号已有账号,已绑定到这个孩子,家长用原来的密码登录')
+      return { existing: !res.temp_password }
+    },
+    onSuccess: ({ existing }) => {
+      if (existing) toast('该手机号已有账号,已绑定到这个孩子,家长用原来的密码登录')
       setPhone('')
       setName('')
       return queryClient.invalidateQueries({ queryKey: ['student-parents', studentId] })
@@ -101,8 +105,10 @@ function ParentRow({ p, studentId, onSecret }: { p: ParentOfStudent; studentId: 
     onError: (err) => toast(errMsg(err, '解绑失败,请重试')),
   })
   const reset = useMutation({
-    mutationFn: () => parentLinksApi.resetPassword(p.link_id),
-    onSuccess: (res) => onSecret({ phone: p.phone, password: res.temp_password, reset: true }),
+    mutationFn: async () => {
+      const res = await parentLinksApi.resetPassword(p.link_id)
+      onSecret({ phone: p.phone, password: res.temp_password, reset: true })
+    },
     onError: (err) => toast(errMsg(err, '重置失败,请重试')),
   })
   const busy = primary.isPending || unlink.isPending || reset.isPending

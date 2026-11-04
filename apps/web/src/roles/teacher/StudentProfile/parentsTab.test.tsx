@@ -92,10 +92,12 @@ it('new account shows a one-time password dialog that is gone after closing and 
   await waitFor(() => expect(writeText).toHaveBeenCalledWith('Abc12345'))
   // 密码不进 query 缓存、storage、console
   expect(JSON.stringify(client.getQueryCache().getAll().map((q) => q.state.data))).not.toContain('Abc12345')
+  expect(JSON.stringify(client.getMutationCache().getAll().map((m) => m.state.data))).not.toContain('Abc12345')
   expect(JSON.stringify({ ...localStorage })).not.toContain('Abc12345')
   expect(log).not.toHaveBeenCalled()
   fireEvent.click(within(dlg).getByRole('button', { name: '关闭' }))
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  expect(screen.queryByText(/Abc12345/)).not.toBeInTheDocument()
   unmount()
   mount(<ParentsTab profile={profile} />)
   await screen.findByText('王妈妈')
