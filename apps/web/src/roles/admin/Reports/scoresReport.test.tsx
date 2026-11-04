@@ -185,6 +185,17 @@ it('shows an empty state when there is no grade exam', async () => {
   expect(adminApi.scoreReport).not.toHaveBeenCalled()
 })
 
+it('shows an empty state instead of the table when the grade exam has no class exams', async () => {
+  vi.mocked(adminApi.scoreReport).mockResolvedValue({ ...SUMMARY, classes: [] })
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(<QueryClientProvider client={client}><MemoryRouter><ScoresReportPage /></MemoryRouter></QueryClientProvider>)
+  expect(await screen.findByText('暂无班级考试')).toBeInTheDocument()
+  expect(screen.queryByRole('table', { name: '班级成绩汇总' })).not.toBeInTheDocument()
+  expect(screen.queryByText('加载失败')).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '导出 CSV' })).toBeDisabled()
+  expect(screen.getByLabelText('选择联考')).toHaveValue('ge2')
+})
+
 it('opens the exam named in ?exam= instead of the latest one', async () => {
   await renderPage('/admin/reports/scores?exam=ge1')
   expect(screen.getByLabelText('选择联考')).toHaveValue('ge1')

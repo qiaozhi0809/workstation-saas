@@ -80,7 +80,9 @@ export default function ScoresReportPage() {
   else if (summary.isError) {
     body = <ErrorState title="成绩汇总加载失败" onRetry={() => void summary.refetch()} retrying={summary.isFetching} />
   } else if (!summary.data) body = <LoadingState />
-  else {
+  else if (summary.data.classes.length === 0) {
+    body = <EmptyState title="暂无班级考试" description="这场联考还没有关联的班级考试,可在“年级联考”里同步班级" />
+  } else {
     const s = summary.data
     const open = s.classes.find((c) => c.class_id === openClass)
     body = (
@@ -112,7 +114,7 @@ export default function ScoresReportPage() {
             </NativeSelect>
           </label>
         )}
-        <Button className="ml-auto" variant="outline" disabled={!current || exporting} onClick={() => void exportCsv()}>
+        <Button className="ml-auto" variant="outline" disabled={!current || exporting || summary.data?.classes.length === 0} onClick={() => void exportCsv()}>
           导出 CSV
         </Button>
       </header>
