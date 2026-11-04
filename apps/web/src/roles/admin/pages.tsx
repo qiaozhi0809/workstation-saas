@@ -23,6 +23,12 @@ import { CalendarCheck } from 'lucide-react'
 import AttendanceReportPage from './Reports/AttendanceReportPage'
 // ── 段 D(报表 / 考勤):import 追加在此行之上 ──
 
+import { KeyRound, ScrollText, Sparkles } from 'lucide-react'
+import AiConfigPage from './Ai/AiConfigPage'
+import AiUsagePage from './Ai/AiUsagePage'
+import AuditPage from './Audit/AuditPage'
+// ── 段 D(审计 / AI):import 追加在此行之上 ──
+
 export interface AdminPage {
   path: string
   label: string
@@ -55,4 +61,9 @@ export const ADMIN_PAGES: AdminPage[] = [
 
   { path: 'reports/attendance', label: '考勤报告', icon: CalendarCheck, perm: 'school.view', element: <AttendanceReportPage /> },
   // ── reports-attendance:追加在此行之上 ──
+
+  { path: 'audit', label: '审计日志', icon: ScrollText, perm: 'audit.read', element: <AuditPage /> },
+  { path: 'ai/usage', label: 'AI 使用', icon: Sparkles, perm: 'ai.usage', element: <AiUsagePage /> },
+  { path: 'ai/config', label: 'AI 配置', icon: KeyRound, perm: 'settings.manage', element: <AiConfigPage /> },
+  // ── audit-ai:追加在此行之上 ──
 ]
