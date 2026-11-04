@@ -18,6 +18,7 @@ READONLY_DAYS = 365
 
 
 def effective_status(link: ParentLink, now: datetime) -> Literal["active", "readonly"] | None:
+    """`now` 必须是带时区的 datetime(与库里 timestamptz 比较,naive 会 TypeError)。"""
     if link.status == "active":
         return "active"
     if link.status == "readonly" and link.readonly_since is not None:

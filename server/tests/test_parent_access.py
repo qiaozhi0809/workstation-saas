@@ -40,7 +40,7 @@ def _student_id(db, mk: str) -> UUID:
     return db.scalar(select(Student.id).where(Student.mk == mk))
 
 
-def _mk_link(db, *, primary=True, status="active", since=None, student=STUDENT_IDS[2]):
+def _mk_link(db, *, primary=True, status="active", since=None, ended=None, student=STUDENT_IDS[2]):
     user = make_user(db, "pa_" + status + str(primary), "测试家长")
     parent = Parent(user_id=user.id, name="测试家长")
     db.add(parent)
@@ -51,6 +51,7 @@ def _mk_link(db, *, primary=True, status="active", since=None, student=STUDENT_I
         is_primary=primary,
         status=status,
         readonly_since=since,
+        ended_at=ended,
     )
     db.add(link)
     db.flush()
@@ -117,3 +118,15 @@ def test_parent_bindings_roles(db):
     assert [b.role for b in primary] == [Role.primary_parent]
     assert [b.role for b in secondary] == [Role.secondary_parent]
     assert primary[0].scope.student_id == _student_id(db, "S0001")
+
+
+def test_child_link_or_deny_ended_and_expired(db):
+    sid = UUID(STUDENT_IDS[2])
+    for status, since, ended in (
+        ("ended", None, NOW),
+        ("readonly", NOW - timedelta(days=365), None),
+    ):
+        user, _ = _mk_link(db, status=status, since=since, ended=ended)
+        with pytest.raises(ApiError) as exc:
+            child_link_or_deny(db, None, user, sid, now=NOW)
+        assert exc.value.status == 403
