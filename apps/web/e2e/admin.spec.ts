@@ -4,6 +4,8 @@ import { adminGet, currentUserId, endRolesOfUser, endStaffOfUser, getSwitches, l
 
 const API = '/api/v1'
 const BASE_URL = process.env.E2E_BASE_URL ?? 'http://localhost:5173'
+// 黑板上的"本周之星"标题永远在,开关只清空榜单:有人上榜时榜单行是 ★分数
+const STAR_ROW = /^★\d+$/
 const GRADE3 = '33333333-3333-3333-3333-333333333333'
 const GRADE4 = '33333333-3333-3333-3333-333333333334'
 const CLASS_3_1 = '44444444-4444-4444-4444-444444444441'
@@ -123,7 +125,7 @@ test('turning off star of the week in settings hides it on the teacher blackboar
     const teacherPage = await ctx.newPage()
     await signIn(teacherPage, 'teacher01')
     await expect(teacherPage.getByRole('heading', { name: '三年二班' })).toBeVisible()
-    await expect(teacherPage.getByText('本周之星').first()).toBeVisible()
+    await expect(teacherPage.getByText(STAR_ROW).first()).toBeVisible()
 
     await signIn(page, 'itadmin01')
     await expect(page).toHaveURL(/\/admin/)
@@ -134,13 +136,13 @@ test('turning off star of the week in settings hides it on the teacher blackboar
 
     await teacherPage.reload()
     await expect(teacherPage.getByRole('heading', { name: '三年二班' })).toBeVisible()
-    await expect(teacherPage.getByText('本周之星')).toHaveCount(0)
+    await expect(teacherPage.getByText(STAR_ROW)).toHaveCount(0)
 
     await page.getByRole('switch', { name: '本周之星' }).check()
     await page.getByRole('button', { name: '保存' }).last().click()
     await expect(page.getByText('已保存').last()).toBeVisible()
     await teacherPage.reload()
-    await expect(teacherPage.getByText('本周之星').first()).toBeVisible()
+    await expect(teacherPage.getByText(STAR_ROW).first()).toBeVisible()
     await ctx.close()
   } finally {
     await request.post(`${API}/classes/${CLASS_3_2}/reviews/${opId}/revoke`, { headers: { Authorization: `Bearer ${teacher}` } })
