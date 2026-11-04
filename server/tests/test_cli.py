@@ -51,7 +51,7 @@ def test_parent_archive_dry_run(db, settings, redis_client):
     token = sessions.issue_refresh(redis_client, settings, UUID(PARENT02))
     before = _state(db)
     code, out = _run(db, redis_client, ["--dry-run"])
-    assert code == 0 and out.strip() == "已归档绑定 1 条,账号 1 个"
+    assert code == 0 and out.strip() == "将归档绑定 1 条,账号 1 个"
     assert _state(db) == before
     assert redis_client.get(sessions.refresh_key(token)) is not None
     assert (

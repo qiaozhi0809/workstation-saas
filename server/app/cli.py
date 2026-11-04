@@ -202,7 +202,8 @@ def parent_archive(
         res = archive_expired(db, get_settings().school_id, utc_now(), redis, dry_run=ns.dry_run)
         if ns.dry_run:
             db.rollback()
-    print(f"已归档绑定 {res.links} 条,账号 {res.users} 个", file=out)
+    verb = "将归档" if ns.dry_run else "已归档"
+    print(f"{verb}绑定 {res.links} 条,账号 {res.users} 个", file=out)
     return 0
 
 

@@ -6,7 +6,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.models import RoleBinding
-from app.rbac.roles import ROLE_PERMS, TEACHER_ROLES, Perm, Role
+from app.rbac.roles import PARENT_ROLES, ROLE_PERMS, TEACHER_ROLES, Perm, Role
 
 # Most specific first.
 _SCOPE_FIELDS = ("student_id", "class_id", "grade_id", "school_id")
@@ -44,7 +44,17 @@ def _scope_from_json(raw: dict) -> Scope:
     return Scope(**{f: UUID(raw[f]) if raw.get(f) else None for f in _SCOPE_FIELDS})
 
 
-def load_bindings(db: Session, user_id: UUID, active_year_id: UUID | None) -> list[Binding]:
+def load_bindings(
+    db: Session,
+    user_id: UUID,
+    active_year_id: UUID | None,
+    *,
+    include_parents: bool = False,
+) -> list[Binding]:
+    # 家长绑定默认不加载:教师 / 管理端所有接口经 get_bindings 判权,家长不能借学生作用域的
+    # 绑定走进这些接口(会绕过学校开关、"家长可见"过滤与 parent.view 审计)。
+    # 家长只走 /parent/*,那里用 domain/parents/access.py 按绑定行判定。
+    # 只有身份语境(user_brief → contexts_of)需要看到家长绑定,显式传 include_parents=True。
     # 教师岗位(班主任/任课/副班主任)按学年任职,与 list_my_classes 只认当前学年一致:
     # academic_year_id 为 NULL 的教师绑定不加载,避免它绕过学年边界拿到班级权限。
     # 管理岗(校长、教导主任、年级组长、信息中心)的学校/年级作用域绑定允许 NULL 学年,照旧加载。
@@ -69,6 +79,7 @@ def load_bindings(db: Session, user_id: UUID, active_year_id: UUID | None) -> li
         )
         for r in rows
         if not (Role(r.role_type) in TEACHER_ROLES and r.academic_year_id is None)
+        and (include_parents or Role(r.role_type) not in PARENT_ROLES)
     ]
 
 

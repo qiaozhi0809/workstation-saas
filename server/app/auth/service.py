@@ -43,7 +43,7 @@ def contexts_of(bindings: list[Binding]) -> list[str]:
 
 def user_brief(db: Session, user: User) -> UserBrief:
     year = active_academic_year(db, user.school_id)
-    bindings = load_bindings(db, user.id, year.id if year else None)
+    bindings = load_bindings(db, user.id, year.id if year else None, include_parents=True)
     return UserBrief(
         id=user.id,
         display_name=user.display_name,
