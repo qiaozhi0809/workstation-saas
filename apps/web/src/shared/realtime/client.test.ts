@@ -161,3 +161,40 @@ it('断线等待重连期间 stop 清掉定时器', () => {
   vi.advanceTimersByTime(60_000)
   expect(FakeWS.instances).toHaveLength(1)
 })
+
+it('4401 刷新成功后再连又 4401(期间无 ready):不再刷新、不再连', async () => {
+  vi.mocked(refreshAccessToken).mockResolvedValue(true)
+  const { c } = mkClient()
+  c.start(); last().open()
+  last().drop(4401)
+  await vi.advanceTimersByTimeAsync(0)
+  expect(FakeWS.instances).toHaveLength(2)
+  last().drop(4401)
+  await vi.advanceTimersByTimeAsync(60_000)
+  expect(refreshAccessToken).toHaveBeenCalledTimes(1)
+  expect(FakeWS.instances).toHaveLength(2)
+})
+
+it('ready 后清零 4401 标志:之后再遇 4401 可再刷新', async () => {
+  vi.mocked(refreshAccessToken).mockResolvedValue(true)
+  const { c } = mkClient()
+  c.start(); last().drop(4401)
+  await vi.advanceTimersByTimeAsync(0)
+  last().open(); last().msg({ type: 'ready' })
+  last().drop(4401)
+  await vi.advanceTimersByTimeAsync(0)
+  expect(refreshAccessToken).toHaveBeenCalledTimes(2)
+  expect(FakeWS.instances).toHaveLength(3)
+})
+
+it('4401 刷新进行中 stop 再 start:刷新完成后只有一个活动 socket', async () => {
+  let resolve!: (v: boolean) => void
+  vi.mocked(refreshAccessToken).mockReturnValue(new Promise<boolean>((r) => { resolve = r }))
+  const { c } = mkClient()
+  c.start(); last().drop(4401)
+  c.stop(); c.start()
+  expect(FakeWS.instances).toHaveLength(2)
+  resolve(true)
+  await vi.advanceTimersByTimeAsync(0)
+  expect(FakeWS.instances).toHaveLength(2)
+})

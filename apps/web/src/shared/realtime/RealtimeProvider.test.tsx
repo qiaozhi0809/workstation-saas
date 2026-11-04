@@ -84,3 +84,11 @@ it('session.revoked:登出并跳登录页', () => {
   expect(useAuthStore.getState().accessToken).toBeNull()
   expect(screen.getByText('login-page')).toBeInTheDocument()
 })
+
+it('一个订阅者抛错不影响其余订阅者', () => {
+  const ok = vi.fn()
+  const bad = () => { throw new Error('boom') }
+  render(wrap(<><Probe onNew={bad} /><Probe onNew={ok} /></>))
+  act(() => h.made[0].opts.onEvent(newEv))
+  expect(ok).toHaveBeenCalledWith(newEv)
+})

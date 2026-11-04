@@ -29,6 +29,8 @@ export function createRealtimeClient(opts: RealtimeOptions): { start(): void; st
   let everDropped = false
   let attempt = 0
   let ready = false
+  let gen = 0              // start/stop 递增,作废进行中的刷新回调
+  let refreshedSinceReady = false
 
   const emit = (e: RealtimeEvent) => { if (active) opts.onEvent(e) }
 
@@ -55,6 +57,7 @@ export function createRealtimeClient(opts: RealtimeOptions): { start(): void; st
       if (msg.type === 'ready') {
         ready = true
         attempt = 0
+        refreshedSinceReady = false
         if (everDropped) emit({ type: 'reconnected' })
         return
       }
@@ -77,8 +80,11 @@ export function createRealtimeClient(opts: RealtimeOptions): { start(): void; st
         emit({ type: 'session.revoked' })
       } else if (e.code === 4401) {
         // 令牌失效:刷新成功后立即再连,失败则停止
+        if (refreshedSinceReady) { finish(); return }   // 刷新过仍被拒:停止,避免紧循环
+        refreshedSinceReady = true
+        const myGen = gen
         void refreshAccessToken().then((ok) => {
-          if (!active || terminal) return
+          if (!active || terminal || gen !== myGen) return
           if (ok) connect()
           else finish()
         })
@@ -95,11 +101,14 @@ export function createRealtimeClient(opts: RealtimeOptions): { start(): void; st
     start() {
       if (active) return
       active = true
+      gen += 1
       terminal = false
+      refreshedSinceReady = false
       connect()
     },
     stop() {
       active = false
+      gen += 1
       if (timer) { clearTimeout(timer); timer = null }
       const sock = ws
       ws = null

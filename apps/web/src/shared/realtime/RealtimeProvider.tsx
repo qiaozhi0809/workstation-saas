@@ -29,7 +29,9 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
           useAuthStore.getState().logout()
           navRef.current('/login', { replace: true, state: { message: REVOKED_MESSAGE } })
         }
-        for (const fn of [...subs.current]) fn(e)
+        for (const fn of [...subs.current]) {
+          try { fn(e) } catch (err) { console.error('realtime subscriber failed', err) }
+        }
       },
     })
     client.start()
