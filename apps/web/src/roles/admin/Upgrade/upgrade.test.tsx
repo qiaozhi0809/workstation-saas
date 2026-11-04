@@ -741,6 +741,7 @@ describe('rollback of a stale card', () => {
     fireEvent.click(screen.getByRole('button', { name: '确认回滚' }))
     await waitFor(() => expect(api.upgradeLatest).toHaveBeenCalledTimes(2))
     expect(api.upgradeRollback).toHaveBeenCalledWith('up1')
+    expect(await screen.findByText('只能回滚最近一次升级')).toBeInTheDocument()   // toast 显示后端的 message
   })
 })
 

@@ -174,3 +174,24 @@ it('refreshAccessToken: 网络错误返回 false', async () => {
   vi.stubGlobal('fetch', vi.fn().mockRejectedValueOnce(new TypeError('Failed to fetch')))
   expect(await refreshAccessToken()).toBe(false)
 })
+
+it('tryRefreshAccessToken: 5xx 与网络异常同算 network,401/403 算 rejected', async () => {
+  for (const status of [502, 503, 504]) {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(json({}, status)))
+    expect(await tryRefreshAccessToken()).toBe('network')
+  }
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(json({}, 403)))
+  expect(await tryRefreshAccessToken()).toBe('rejected')
+})
+
+it('keeps the session when the refresh hits a network error or 503; the request fails with its original 401', async () => {
+  for (const refreshOutcome of [() => Promise.reject(new TypeError('Failed to fetch')), () => Promise.resolve(json({}, 503))]) {
+    useAuthStore.setState({ accessToken: 'old', refreshToken: 'ref' })
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(json({ error: { code: 'TOKEN_EXPIRED', message: 'x' } }, 401))
+      .mockImplementationOnce(refreshOutcome))
+    await expect(api('GET', '/auth/me')).rejects.toMatchObject({ status: 401, code: 'TOKEN_EXPIRED' })
+    expect(useAuthStore.getState().refreshToken).toBe('ref')
+    expect(useAuthStore.getState().user).not.toBeNull()
+  }
+})

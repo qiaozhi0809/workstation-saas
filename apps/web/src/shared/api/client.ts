@@ -15,7 +15,7 @@ export class ApiError extends Error {
   }
 }
 
-/** 刷新结果:network = 请求没到服务端(可稍后重试);rejected = 服务端不认(令牌已失效 / 已被换掉) */
+/** 刷新结果:network = 请求没到服务端(可稍后重试);rejected = 服务端不认(401/403 等明确拒绝、令牌已被换掉);5xx 与网络异常同算 network */
 export type RefreshResult = 'ok' | 'rejected' | 'network'
 
 let refreshing: Promise<RefreshResult> | null = null
@@ -27,6 +27,7 @@ async function doRefresh(refreshToken: string): Promise<RefreshResult> {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refresh_token: refreshToken }),
     })
+    if (res.status >= 500) return 'network'   // 服务端暂不可用(重启、网关 502/503/504):不是令牌的问题
     if (!res.ok) return 'rejected'
     const data = (await res.json()) as { access_token?: string }
     if (!data.access_token) return 'rejected'
@@ -105,7 +106,9 @@ export async function authedFetch(
   if (res.status === 401 && !NO_REFRESH_PATHS.includes(path)) {
     const { refreshToken } = useAuthStore.getState()
     if (!refreshToken) throw sessionExpired()
-    if ((await refreshOnce(refreshToken)) !== 'ok') throw sessionExpired()
+    const refreshed = await refreshOnce(refreshToken)
+    if (refreshed === 'network') return res   // 弱网 / 服务端暂不可用:保留登录态,这次请求按原 401 失败,下次请求再试刷新
+    if (refreshed !== 'ok') throw sessionExpired()
     res = await send(method, path, body, signal)
     if (res.status === 401) throw sessionExpired()
   }

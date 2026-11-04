@@ -30,7 +30,10 @@ export default function UpgradeLatestCard({ onRolledBack }: { onRolledBack?(): v
     },
     // 没有可回滚的升级 / 卡片上的不是最近一次:信息已经过时,重取
     onError: (e) => {
-      if (e instanceof ApiError && (e.code === 'UPGRADE_NOTHING_TO_ROLLBACK' || e.code === 'UPGRADE_NOT_LATEST')) void qc.invalidateQueries({ queryKey: ['upgrade', 'latest'] })
+      if (e instanceof ApiError && (e.code === 'UPGRADE_NOTHING_TO_ROLLBACK' || e.code === 'UPGRADE_NOT_LATEST')) {
+        void qc.invalidateQueries({ queryKey: ['upgrade', 'latest'] })
+        if (e.code === 'UPGRADE_NOT_LATEST') toast(e.message)
+      }
     },
   })
   const up = latest.data
