@@ -307,19 +307,18 @@ def send(
         request=request,
         extra={"target": _audit_target(body), "recipients": len(recipients)},
     )
+    # 提交会让 ORM 对象过期;先取好负载与响应,提交后立刻发布,不再触发刷新查询
+    event = {
+        "type": "notice.new",
+        "id": str(notice.id),
+        "title": notice.title,
+        "from_name": sender.display_name,
+        "created_at": notice.created_at.isoformat(),
+    }
+    view = _sent_view(notice, len(recipients), 0)
     db.commit()
-    publish(
-        redis,
-        recipients,
-        {
-            "type": "notice.new",
-            "id": str(notice.id),
-            "title": notice.title,
-            "from_name": sender.display_name,
-            "created_at": notice.created_at.isoformat(),
-        },
-    )
-    return _sent_view(notice, len(recipients), 0)
+    publish(redis, recipients, event)
+    return view
 
 
 def _audit_target(body: NoticeInput) -> dict:
@@ -389,8 +388,13 @@ def recall(
     recipients = list(
         db.scalars(select(NoticeRecipient.user_id).where(NoticeRecipient.notice_id == notice.id))
     )
-    if notice.recalled_at is None:
-        notice.recalled_at = now
+    # 原子地抢占撤回:并发的两次撤回只有一次影响到行,审计与推送只发生一次
+    won = db.execute(
+        update(Notice)
+        .where(Notice.id == notice.id, Notice.recalled_at.is_(None))
+        .values(recalled_at=now)
+    ).rowcount
+    if won:
         record(
             db,
             user_id=sender.id,
@@ -400,10 +404,14 @@ def recall(
             object_id=str(notice.id),
             request=request,
         )
-        db.commit()
-        publish(redis, recipients, {"type": "notice.recalled", "id": str(notice.id)})
+    db.refresh(notice)
     counts = _counts(db, [notice.id])
-    return _sent_view(notice, *counts.get(notice.id, (0, 0)))
+    view = _sent_view(notice, *counts.get(notice.id, (0, 0)))
+    nid = str(notice.id)
+    if won:
+        db.commit()
+        publish(redis, recipients, {"type": "notice.recalled", "id": nid})
+    return view
 
 
 # ---- 候选人 ----
