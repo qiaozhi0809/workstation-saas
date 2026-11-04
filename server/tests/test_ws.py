@@ -185,3 +185,24 @@ def test_two_sockets_of_one_user_and_unregister(ws_client, settings, db, redis_c
         assert w1.receive_json() == w2.receive_json() == {"type": "notice.recalled", "id": "n"}
         assert len(hub._sockets[uid]) == 2
     assert _wait(lambda: uid not in hub._sockets)
+
+
+def test_publish_is_best_effort_on_redis_error(redis_client, monkeypatch, caplog):
+    from redis.exceptions import ConnectionError as RedisConnectionError
+
+    def boom(*args, **kwargs):
+        raise RedisConnectionError("secret-detail")
+
+    monkeypatch.setattr(redis_client, "publish", boom)
+    with caplog.at_level("WARNING"):
+        result = publish(redis_client, [UUID(ADMIN)], {"type": "notice.new"})
+    assert result is None
+    assert "ConnectionError" in caplog.text
+    assert "secret-detail" not in caplog.text
+    assert ADMIN not in caplog.text
+
+
+def test_publish_swallows_unserializable_event(redis_client):
+    from datetime import datetime
+
+    assert publish(redis_client, [UUID(ADMIN)], {"type": "x", "at": datetime(2026, 1, 1)}) is None

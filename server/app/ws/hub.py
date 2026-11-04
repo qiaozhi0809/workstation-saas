@@ -18,8 +18,11 @@ CLOSE_REVOKED = 4403
 
 
 def publish(redis: Redis, user_ids: Iterable[UUID], event: dict) -> None:
-    """业务代码在事务提交之后调用。"""
-    redis.publish(CHANNEL, json.dumps({"user_ids": [str(u) for u in user_ids], "event": event}))
+    """尽力而为:业务代码仍须在事务提交之后调用;序列化或 Redis 出错只记警告,绝不抛出。"""
+    try:
+        redis.publish(CHANNEL, json.dumps({"user_ids": [str(u) for u in user_ids], "event": event}))
+    except Exception as exc:
+        log.warning("ws publish failed: %s", type(exc).__name__)
 
 
 class Hub:

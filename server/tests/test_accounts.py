@@ -344,3 +344,15 @@ def test_freeze_publishes_session_revoked_only_when_accepted(client, settings, d
     uid = _user_id(db, "teacher02")
     assert client.post(f"{ACCOUNTS}/{uid}/freeze", headers=principal).status_code == 200
     assert calls == [([uid], {"type": "session.revoked"})]
+
+
+def test_freeze_succeeds_when_publish_redis_fails(client, settings, db, redis_client, monkeypatch):
+    from redis.exceptions import ConnectionError as RedisConnectionError
+
+    def boom(*args, **kwargs):
+        raise RedisConnectionError("down")
+
+    monkeypatch.setattr(redis_client, "publish", boom)
+    uid = _user_id(db, "teacher02")
+    res = client.post(f"{ACCOUNTS}/{uid}/freeze", headers=_admin(settings))
+    assert res.status_code == 200
