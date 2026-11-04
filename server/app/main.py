@@ -17,6 +17,7 @@ from app.domain.classroom.router import router as classroom_router
 from app.domain.comments.router import router as comments_router
 from app.domain.exams.router import router as exams_router
 from app.domain.growth.router import router as growth_router
+from app.domain.history.router import router as history_router  # M3b 段 H
 from app.domain.org.router import router as org_router  # M3a 段 D
 from app.domain.overview.router import router as overview_router  # M3a 段 F
 from app.domain.preferences.router import router as preferences_router
@@ -86,5 +87,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     router.include_router(org_router)  # M3a 段 D
     router.include_router(ws_router)  # M3b 段 A
     router.include_router(years_router)  # M3b 段 F
+    router.include_router(history_router)  # M3b 段 H
     app.include_router(router)
     return app

@@ -23,6 +23,11 @@ import { GraduationCap } from 'lucide-react'
 import UpgradePage from './Upgrade/UpgradePage'
 // ── M3b 段 F(学年升级):import 追加在此行之上 ──
 
+import { History } from 'lucide-react'
+import HistoryPage from './History/HistoryPage'
+import HistoryClassPage from './History/HistoryClassPage'
+// ── 段 H(往年班级):import 追加在此行之上 ──
+
 export interface AdminPage {
   path: string
   label: string
@@ -55,4 +60,8 @@ export const ADMIN_PAGES: AdminPage[] = [
 
   { path: 'upgrade', label: '学年升级', icon: GraduationCap, perm: 'year.upgrade', element: <UpgradePage /> },
   // ── upgrade:追加在此行之上 ──
+
+  { path: 'history', label: '往年班级', icon: History, perm: 'school.view', element: <HistoryPage /> },
+  { path: 'history/classes/:id', label: '往年班级', icon: History, perm: 'school.view', element: <HistoryClassPage />, hidden: true },
+  // ── history:追加在此行之上 ──
 ]
