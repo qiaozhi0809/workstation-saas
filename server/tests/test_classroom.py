@@ -185,3 +185,8 @@ def test_class_role_body_requires_key(client, db, settings):
     res = client.put(url, json={}, headers=auth(settings))
     assert res.status_code == 400
     assert client.get(SUMMARY, headers=auth(settings)).status_code == 200
+
+
+def test_summary_switches_default_all_on(client, settings):
+    body = client.get(SUMMARY, headers=auth(settings)).json()
+    assert body["switches"] == {"star_of_week": True, "birthdays": True}

@@ -70,6 +70,11 @@ class YearInfo(BaseModel):
     end_date: date
 
 
+class ClassroomSwitches(BaseModel):
+    star_of_week: bool
+    birthdays: bool
+
+
 class ClassroomSummary(BaseModel):
     today: date
     timezone: str
@@ -81,3 +86,4 @@ class ClassroomSummary(BaseModel):
     my_perms: list[str]
     my_subjects: list[str]
     board: Board
+    switches: ClassroomSwitches | None = None

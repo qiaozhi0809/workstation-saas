@@ -2,7 +2,9 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { ApiError } from '@/shared/api/client'
+import { schoolApi } from '@/shared/api/school'
 import { studentsApi } from '@/shared/api/students'
+import { DEFAULT_TAG_POOL } from '@/shared/lib/tags'
 import type { ClassView } from '@/shared/types/class'
 import type { StudentSeat } from '@/shared/types/student'
 import { rec } from './fixtures'
@@ -11,6 +13,7 @@ import StudentForm, { nextStudentNo } from './StudentForm'
 vi.mock('@/shared/api/students', () => ({
   studentsApi: { create: vi.fn(), update: vi.fn(), remove: vi.fn() },
 }))
+vi.mock('@/shared/api/school', () => ({ schoolApi: { tagPool: vi.fn() } }))
 vi.mock('@/shared/components/Toast', () => ({ toast: vi.fn() }))
 
 const cls: ClassView = { id: 'c1', name: '三年二班', grade_name: '三年级', seat_rows: 2, seat_cols: 2, desk_size: 2, seat_layout: 'manual', seat_order: 'row', podium_left: 0, podium_right: 0, room: '', role: 'homeroom_teacher' }
@@ -38,6 +41,7 @@ const renderForm = (props: Partial<React.ComponentProps<typeof StudentForm>> = {
 
 beforeEach(() => {
   vi.resetAllMocks()
+  vi.mocked(schoolApi.tagPool).mockResolvedValue({ tags: DEFAULT_TAG_POOL })
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
 })
 
@@ -282,4 +286,26 @@ it('also invalidates my-classes after adding so the classroom map sees new seats
   fireEvent.change(screen.getByLabelText('联系人1姓名'), { target: { value: '赵父' } })
   fireEvent.click(screen.getByRole('button', { name: '保存' }))
   await waitFor(() => expect(spy).toHaveBeenCalledWith({ queryKey: ['my-classes'] }))
+})
+
+const tagChips = () => screen.getAllByRole('button').filter((b) => b.hasAttribute('aria-pressed')).map((b) => b.textContent)
+
+it('offers the school tag pool from the API', async () => {
+  vi.mocked(schoolApi.tagPool).mockResolvedValue({ tags: ['重点关注', '住校', '自定义A'] })
+  renderForm()
+  await waitFor(() => expect(tagChips()).toEqual(['重点关注', '住校', '自定义A']))
+})
+
+it('falls back to the default pool while loading and when loading fails', async () => {
+  vi.mocked(schoolApi.tagPool).mockRejectedValue(new ApiError(500, 'X', '失败'))
+  renderForm()
+  expect(tagChips()).toEqual(DEFAULT_TAG_POOL)
+  await waitFor(() => expect(schoolApi.tagPool).toHaveBeenCalled())
+  expect(tagChips()).toEqual(DEFAULT_TAG_POOL)
+})
+
+it('keeps a student tag that is no longer in the pool as a chip', async () => {
+  vi.mocked(schoolApi.tagPool).mockResolvedValue({ tags: ['重点关注', '住校'] })
+  renderForm({ record: rec({ enrollment_id: 'e3', tags: ['近视'] }) })
+  await waitFor(() => expect(tagChips()).toEqual(['重点关注', '住校', '近视']))
 })
