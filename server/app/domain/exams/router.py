@@ -114,6 +114,7 @@ def update_exam(
     )
     exam = service.get_visible_exam(db, cls, exam_id, bindings, lock=True)
     service.ensure_exam_owner(db, request, user.id, bindings, cls, exam)
+    service.ensure_not_grade_managed(exam)
     return service.update_exam(db, cls, exam, data, user.id, bindings, request)
 
 
@@ -139,6 +140,7 @@ def delete_exam(
     exam = service.get_visible_exam(db, cls, exam_id, bindings, lock=True)
     service.ensure_exam_owner(db, request, user.id, bindings, cls, exam)
     service.ensure_exam_deletable(db, request, user.id, bindings, cls, exam)
+    service.ensure_not_grade_managed(exam)
     service.delete_exam(db, cls, exam, user.id, bindings, request)
     return Response(status_code=204)
 

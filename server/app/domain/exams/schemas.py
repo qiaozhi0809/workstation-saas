@@ -39,6 +39,7 @@ class ExamOut(BaseModel):
     subjects: list[SubjectFull]
     created_by_me: bool
     progress: Progress
+    grade_exam_id: UUID | None = None
 
 
 ScoreValue = float | None
