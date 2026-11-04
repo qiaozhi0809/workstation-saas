@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
@@ -61,6 +62,22 @@ class WeekReviews(BaseModel):
     teachers: list[TeacherCount]
 
 
+class GradeExamCard(BaseModel):
+    id: UUID
+    name: str
+    grade_name: str
+    entered: int
+    expected: int
+
+
+class MyNotice(BaseModel):
+    id: UUID
+    title: str
+    created_at: datetime
+    recipients: int
+    read: int
+
+
 class TodayView(BaseModel):
     date: str
     scope_label: str
@@ -68,6 +85,8 @@ class TodayView(BaseModel):
     absentees: list[Absentee]
     unconfirmed: list[Unconfirmed]
     week_reviews: WeekReviews
+    grade_exam: GradeExamCard | None = None
+    my_notices: list[MyNotice] = []
 
 
 class GradeBrief(BaseModel):

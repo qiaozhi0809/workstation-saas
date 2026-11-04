@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app import clock
 from app.audit.service import deny
 from app.domain.classes.service import class_scope_of
+from app.domain.notices.service import recent_sent
 from app.domain.overview.schemas import (
     Absentee,
     BoardClass,
@@ -19,6 +20,8 @@ from app.domain.overview.schemas import (
     ClassWeek,
     DetailAbsentee,
     GradeBrief,
+    GradeExamCard,
+    MyNotice,
     TeacherCount,
     TodayView,
     Totals,
@@ -37,9 +40,12 @@ from app.models import (
     Attendance,
     AttendanceDay,
     Enrollment,
+    Exam,
     Grade,
+    GradeExam,
     Review,
     SchoolClass,
+    Score,
     Student,
     User,
 )
@@ -185,6 +191,69 @@ def _today_and_start(db: Session, school_id: UUID):
     return today, local_day_start_utc(week_monday(today), tz)
 
 
+MY_NOTICES = 3
+
+
+def _my_notices(db: Session, user: User) -> list[MyNotice]:
+    return [
+        MyNotice(
+            id=n.id, title=n.title, created_at=n.created_at, recipients=n.recipients, read=n.read
+        )
+        for n in recent_sent(db, user, MY_NOTICES)
+    ]
+
+
+def _grade_exam_card(
+    db: Session, year_id: UUID, visible: list[VisibleClass], grades: list[Grade]
+) -> GradeExamCard | None:
+    """调用者可见年级内当前学年日期最近的一场联考(日期降序、再按创建时间降序)。
+
+    进度口径(供联考进度对齐):只统计 exams.grade_exam_id = 该联考、且班级可见的班级考试;
+    entered = 这些班在读学生(enrollments.status='active')在该联考科目上已有的 scores 行数
+    (缺考也是一行,算已录入);expected = 这些班在读人数 × 联考科目数。"""
+    grade_ids = [g.id for g in grades]
+    if not grade_ids:
+        return None
+    ge = db.scalars(
+        select(GradeExam)
+        .where(GradeExam.academic_year_id == year_id, GradeExam.grade_id.in_(grade_ids))
+        .order_by(GradeExam.date.desc(), GradeExam.created_at.desc(), GradeExam.id)
+        .limit(1)
+    ).first()
+    if ge is None:
+        return None
+    visible_ids = [v.cls.id for v in visible]
+    class_ids = list(
+        db.scalars(
+            select(Exam.class_id).where(Exam.grade_exam_id == ge.id, Exam.class_id.in_(visible_ids))
+        )
+    )
+    names = [s["name"] for s in ge.subjects]
+    entered = expected = 0
+    if class_ids:
+        entered = (
+            db.scalar(
+                select(func.count())
+                .select_from(Score)
+                .join(Exam, Exam.id == Score.exam_id)
+                .join(Enrollment, Enrollment.id == Score.enrollment_id)
+                .where(
+                    Exam.grade_exam_id == ge.id,
+                    Exam.class_id.in_(class_ids),
+                    Enrollment.class_id == Exam.class_id,
+                    Enrollment.status == "active",
+                    Score.subject.in_(names),
+                )
+            )
+            or 0
+        )
+        expected = sum(_student_counts(db, class_ids).values()) * len(names)
+    grade_name = next(g.name for g in grades if g.id == ge.grade_id)
+    return GradeExamCard(
+        id=ge.id, name=ge.name, grade_name=grade_name, entered=entered, expected=expected
+    )
+
+
 def today_view(db: Session, user: User, bindings: Sequence[Binding]) -> TodayView:
     year = require_active_year(db, user.school_id)
     visible = _visible(db, bindings, year.id, year.school_id)
@@ -209,6 +278,8 @@ def today_view(db: Session, user: User, bindings: Sequence[Binding]) -> TodayVie
             absentees=[],
             unconfirmed=[],
             week_reviews=WeekReviews(classes=[], bottom=[], teachers=[]),
+            grade_exam=None,
+            my_notices=_my_notices(db, user),
         )
 
     students = _student_counts(db, ids)
@@ -310,6 +381,10 @@ def today_view(db: Session, user: User, bindings: Sequence[Binding]) -> TodayVie
             if v.cls.id not in confirmed
         ],
         week_reviews=WeekReviews(classes=classes, bottom=bottom, teachers=teachers),
+        grade_exam=_grade_exam_card(
+            db, year.id, visible, _visible_grades(db, bindings, year.id, visible)
+        ),
+        my_notices=_my_notices(db, user),
     )
 
 
