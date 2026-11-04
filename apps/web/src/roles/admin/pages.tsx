@@ -19,6 +19,10 @@ import AccountsPage from './Accounts/AccountsPage'
 import SettingsPage from './Settings/SettingsPage'
 // ── 段 E(账号 / 设置):import 追加在此行之上 ──
 
+import { Megaphone } from 'lucide-react'
+import NoticesPage from './Notices/NoticesPage'
+// ── 段 E(通知):import 追加在此行之上 ──
+
 export interface AdminPage {
   path: string
   label: string
@@ -48,4 +52,7 @@ export const ADMIN_PAGES: AdminPage[] = [
 
   { path: 'settings', label: '学校设置', icon: Settings, perm: 'settings.manage', element: <SettingsPage /> },
   // ── settings:追加在此行之上 ──
+
+  { path: 'notices', label: '通知', icon: Megaphone, perm: 'notice.send', element: <NoticesPage /> },
+  // ── notices:追加在此行之上 ──
 ]
