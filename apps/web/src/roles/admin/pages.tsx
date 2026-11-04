@@ -57,7 +57,7 @@ export interface AdminPage {
   hidden?: boolean
 }
 
-// 导航顺序即数组顺序:today、board、org、accounts、settings。
+// 导航顺序即数组顺序:today、board、org、accounts、settings、grade-exams、reports/scores、reports/attendance、audit、ai/usage、ai/config、notices、upgrade、history。
 // 每段只在自己的锚点处追加(一个元素一行,末尾带逗号),不动别人的行。
 export const ADMIN_PAGES: AdminPage[] = [
   { path: 'today', label: '今日关注', icon: Sun, perm: 'school.view', element: <TodayPage /> },
