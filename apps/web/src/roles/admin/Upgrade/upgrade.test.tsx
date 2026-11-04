@@ -505,6 +505,17 @@ describe('latest upgrade and rollback', () => {
     expect(screen.getByText('已回滚')).toBeInTheDocument()
   })
 
+  it('invalidates cached past-year data after a rollback', async () => {
+    api.upgradeLatest.mockResolvedValue(latest)
+    api.upgradeRollback.mockResolvedValue({ ok: true })
+    renderPage()
+    await screen.findByText(/2026-2027 → 2027-2028,执行于/)
+    qc.setQueryData(['history', 'years'], [{ id: 'y1', name: '2026-2027' }])
+    fireEvent.click(screen.getByRole('button', { name: '回滚' }))
+    fireEvent.click(screen.getByRole('button', { name: '确认回滚' }))
+    await waitFor(() => expect(qc.getQueryState(['history', 'years'])?.isInvalidated).toBe(true))
+  })
+
   it('disables rollback when already rolled back', async () => {
     api.upgradeLatest.mockResolvedValue({ ...latest, rolled_back: true })
     renderPage()
