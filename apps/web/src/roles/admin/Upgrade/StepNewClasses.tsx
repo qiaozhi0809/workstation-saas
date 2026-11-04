@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Button } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
 import { NativeSelect } from '@/shared/components/ui/native-select'
@@ -11,6 +12,19 @@ import type { StepProps } from './StepClasses'
 const num = (v: string) => {
   const n = parseInt(v, 10)
   return Number.isNaN(n) ? 0 : n
+}
+
+/** 数字输入:编辑中允许暂时为空;只有合法数字才写进方案,失焦后恢复成方案里的值 */
+function NumInput({ label, value, invalid, onCommit }: { label: string; value: number; invalid?: boolean; onCommit(n: number): void }) {
+  const [text, setText] = useState<string | null>(null)
+  return (
+    <Input aria-label={label} type="number" min={1} max={12} aria-invalid={invalid || undefined} value={text ?? String(value)}
+      onChange={(e) => {
+        setText(e.target.value)
+        if (/^\d+$/.test(e.target.value)) onCommit(parseInt(e.target.value, 10))
+      }}
+      onBlur={() => setText(null)} />
+  )
 }
 
 export default function StepNewClasses({ plan, edit, problem, nameOf, remember }: StepProps) {
@@ -57,12 +71,10 @@ export default function StepNewClasses({ plan, edit, problem, nameOf, remember }
                   </NativeSelect>
                 </label>
                 <label className="grid gap-1"><span className="text-muted-foreground">行数</span>
-                  <Input aria-label={`${k} 行数`} type="number" min={1} max={12} value={n.seat_rows} aria-invalid={hit('seat_rows')}
-                    onChange={(e) => patch(i, { seat_rows: num(e.target.value) })} />
+                  <NumInput label={`${k} 行数`} value={n.seat_rows} invalid={!!hit('seat_rows')} onCommit={(v) => patch(i, { seat_rows: v })} />
                 </label>
                 <label className="grid gap-1"><span className="text-muted-foreground">列数</span>
-                  <Input aria-label={`${k} 列数`} type="number" min={1} max={12} value={n.seat_cols} aria-invalid={hit('seat_cols')}
-                    onChange={(e) => patch(i, { seat_cols: num(e.target.value) })} />
+                  <NumInput label={`${k} 列数`} value={n.seat_cols} invalid={!!hit('seat_cols')} onCommit={(v) => patch(i, { seat_cols: v })} />
                 </label>
                 <label className="grid gap-1"><span className="text-muted-foreground">座位方式</span>
                   <NativeSelect aria-label={`${k} 座位方式`} aria-invalid={hit('seat_layout')} value={n.seat_layout}
@@ -71,7 +83,7 @@ export default function StepNewClasses({ plan, edit, problem, nameOf, remember }
                   </NativeSelect>
                 </label>
               </div>
-              {bad && problem && <p role="alert" className="text-sm text-destructive">{problem.message}</p>}
+              {bad && problem && <p className="text-sm text-destructive">{problem.message}</p>}
             </li>
           )
         })}

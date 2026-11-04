@@ -13,7 +13,7 @@ import { toRequest } from './planOps'
 
 function Counts({ c }: { c: ClassPreview }) {
   const parts = [
-    ['随班', c.follow], ['留级转入', c.repeat_in], ['留级转出', c.repeat_out], ['离校', c.leave], ['毕业', c.graduate],
+    ['随班', c.follow ?? 0], ['留级转入', c.repeat_in ?? 0], ['留级转出', c.repeat_out ?? 0], ['离校', c.leave ?? 0], ['毕业', c.graduate ?? 0],
   ] as const
   return (
     <span className="text-xs text-muted-foreground">
@@ -52,7 +52,7 @@ export default function StepPreview({ plan, onApplied, onError }: {
         <>
           <p className="text-sm">新学年:<span className="font-medium">{pv.new_year}</span></p>
           <ul className="grid gap-2">
-            {pv.classes.map((c, i) => (
+            {(pv.classes ?? []).map((c, i) => (
               <li key={i} className="grid gap-0.5 rounded-md border px-3 py-2 text-sm">
                 <span>{describeClass(c)}</span>
                 <Counts c={c} />
@@ -61,7 +61,7 @@ export default function StepPreview({ plan, onApplied, onError }: {
           </ul>
           {(pv.warnings ?? []).length > 0 && (
             <ul className="grid gap-1 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm">
-              {pv.warnings.map((w) => <li key={w}>警告:{w}</li>)}
+              {pv.warnings.map((w, i) => <li key={i}>警告:{w}</li>)}
             </ul>
           )}
           <div>

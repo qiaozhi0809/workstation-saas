@@ -31,7 +31,11 @@ export default function UpgradePage() {
   const [askDiscard, setAskDiscard] = useState(false)
 
   const classes = useQuery({ queryKey: ['admin', 'classes', null], queryFn: () => adminApi.classes(), enabled: plan !== null })
+  const years = useQuery({ queryKey: ['admin', 'years'], queryFn: adminApi.years, enabled: plan !== null })
   const roles = useQuery({ queryKey: ['admin', 'roles'], queryFn: adminApi.roles, enabled: plan !== null })
+  // 草稿里的方案基于的学年已不是进行中的学年
+  const activeYear = years.data?.find((y) => y.is_active)
+  const draftOld = plan !== null && activeYear !== undefined && activeYear.id !== plan.from_year_id
   const gradeOf = (id: string) => classes.data?.find((c) => c.id === id)?.grade_name ?? null
   const headNames = new Map((roles.data ?? []).filter((r) => r.role === 'grade_head').map((r) => [r.user_id, r.display_name]))
   const nameOf = (id: string | null | undefined) => (id ? (draft.ui.names[id] ?? headNames.get(id) ?? null) : null)
@@ -102,23 +106,23 @@ export default function UpgradePage() {
           ))}
         </ol>
       </nav>
-      {stale && (
+      {(stale || draftOld) && (
         <div role="alert" className="flex flex-wrap items-center gap-3 rounded-md border border-destructive px-3 py-2 text-sm text-destructive">
-          <span>方案已过期,请重新生成</span>
+          <span>{stale ? '方案已过期,请重新生成' : '草稿基于旧学年,请重新生成'}</span>
           <Button size="sm" variant="outline" disabled={suggest.isPending} onClick={() => suggest.mutate()}>重新生成</Button>
         </div>
       )}
-      {problem && <p role="alert" className="text-sm text-destructive">方案校验未通过,请修改标红的位置{problem.section === null ? `:${problem.message}` : ''}</p>}
+      {problem && <p role="alert" className="text-sm text-destructive">方案校验未通过,请修改标红的位置:{problem.message}</p>}
       {notice && <p role="alert" className="text-sm text-destructive">{notice}</p>}
       <Card>
         <CardContent className={cn('pt-6')}>
           {step === 'year' && (
             <StepYear year={draft.year} hasPlan={plan !== null} busy={suggest.isPending} problem={problem}
-              onChange={d.setYear} onSuggest={() => (plan ? setAskRegen(true) : suggest.mutate())} />
+              onChange={(patch) => { setProblem(null); d.setYear(patch) }} onSuggest={() => (plan ? setAskRegen(true) : suggest.mutate())} />
           )}
           {stepProps && step === 'classes' && <StepClasses {...stepProps} gradeOf={gradeOf} />}
           {stepProps && step === 'students' && (
-            <StepStudents plan={stepProps.plan} edit={edit} problem={problem} gradeOf={gradeOf}
+            <StepStudents plan={stepProps.plan} edit={edit} problem={problem} gradeOf={gradeOf} markedClass={draft.ui.studentClasses}
               classId={draft.ui.studentClassId} onClassChange={(id) => d.setUi({ studentClassId: id })}
               onMark={(eid, cid) => d.setUi({ studentClasses: { ...draft.ui.studentClasses, [eid]: cid } })} />
           )}
@@ -130,7 +134,7 @@ export default function UpgradePage() {
       <div className="flex flex-wrap items-center gap-2">
         <Button variant="outline" disabled={idx <= 0} onClick={() => goto(STEPS[idx - 1].key)}>上一步</Button>
         <Button variant="outline" disabled={plan === null || idx >= STEPS.length - 1} onClick={() => goto(STEPS[idx + 1].key)}>下一步</Button>
-        <Button variant="ghost" className="ml-auto" disabled={plan === null && draft.year.name === ''} onClick={() => setAskDiscard(true)}>放弃草稿</Button>
+        <Button variant="ghost" className="ml-auto" disabled={plan === null && !draft.year.name && !draft.year.start_date && !draft.year.end_date} onClick={() => setAskDiscard(true)}>放弃草稿</Button>
       </div>
       <ConfirmBox open={askRegen} title="重新生成建议" confirmLabel="覆盖并重新生成" onConfirm={regenerate} onClose={() => setAskRegen(false)}>
         <p>重新生成会覆盖当前草稿里的所有改动</p>

@@ -47,12 +47,31 @@ export function gradeNames(plan: UpgradePlan): string[] {
   return out
 }
 
-/** 年级组长与新学年的年级对齐:去掉失效的行,补上新年级的空行。null(旧规则)保持不变 */
+/**
+ * 年级组长与新学年的年级对齐:去掉失效的行,补上新年级的空行。null(旧规则)保持不变。
+ * 恰好一个旧年级名消失、恰好一个新年级名出现时,视为改名,组长迁移到新名。
+ */
 export function syncGradeHeads(plan: UpgradePlan): UpgradePlan {
   if (!Array.isArray(plan.grade_heads)) return plan
-  const prev = new Map(plan.grade_heads.map((g) => [g.grade_name, g.user_ids]))
-  const heads: GradeHeadPlan[] = gradeNames(plan).map((g) => ({ grade_name: g, user_ids: prev.get(g) ?? [] }))
+  const grades = gradeNames(plan)
+  const prev = new Map<string, string[]>()
+  plan.grade_heads.forEach((g) => prev.set(g.grade_name.trim(), g.user_ids))
+  const removed = [...prev.keys()].filter((k) => !grades.includes(k))
+  const added = grades.filter((g) => !prev.has(g))
+  const renamed = removed.length === 1 && added.length === 1 ? { from: removed[0], to: added[0] } : null
+  const heads: GradeHeadPlan[] = grades.map((g) => ({
+    grade_name: g,
+    user_ids: prev.get(g) ?? (renamed?.to === g ? (prev.get(renamed.from) ?? []) : []),
+  }))
   return { ...plan, grade_heads: heads }
+}
+
+/** 年级名变化后,有组长没能沿用(会被丢掉)吗 */
+export function lostGradeHeads(plan: UpgradePlan): boolean {
+  if (!Array.isArray(plan.grade_heads)) return false
+  const grades = gradeNames(plan)
+  const kept = new Set((syncGradeHeads(plan).grade_heads ?? []).flatMap((h) => h.user_ids))
+  return plan.grade_heads.some((h) => !grades.includes(h.grade_name.trim()) && h.user_ids.some((id) => !kept.has(id)))
 }
 
 export function setGradeHead(plan: UpgradePlan, grade: string, userIds: string[]): UpgradePlan {
@@ -74,7 +93,14 @@ export function removeNewClass(plan: UpgradePlan, i: number): UpgradePlan {
 
 /** 发给后端的方案:补齐必填字段;grade_heads 只在有数组时与年级对齐,null 表示沿用旧规则 */
 export function toRequest(plan: UpgradePlan): UpgradePlan {
-  return syncGradeHeads(normalizePlan(plan))
+  const n = normalizePlan(plan)
+  const trim = (v: string | null | undefined) => (typeof v === 'string' ? v.trim() : v)
+  return syncGradeHeads({
+    ...n,
+    // 年级名 / 班名统一去掉首尾空格,保证 grade_heads 与 classes / new_classes 里的写法一致
+    classes: n.classes.map((c) => ({ ...c, to_grade_name: trim(c.to_grade_name), to_name: trim(c.to_name) })),
+    new_classes: n.new_classes.map((x) => ({ ...x, grade_name: x.grade_name.trim(), name: x.name.trim() })),
+  })
 }
 
 export const targetKey = (to: UpgradeStudentPlan['to']): string =>
@@ -86,11 +112,11 @@ export interface Target { key: string; label: string; to: NonNullable<UpgradeStu
 export function repeatTargets(plan: UpgradePlan, grade: string | null): Target[] {
   const out: Target[] = []
   plan.classes.forEach((c) => {
-    if (c.action === 'promote' && (grade === null || c.to_grade_name === grade))
+    if (c.action === 'promote' && (grade === null || c.to_grade_name?.trim() === grade))
       out.push({ key: `s:${c.from_class_id}`, label: `${c.to_grade_name ?? ''} ${c.to_name ?? ''}(${c.from_name ?? '原班'}的继任班)`, to: { successor_of: c.from_class_id } })
   })
   plan.new_classes.forEach((n, j) => {
-    if (grade === null || n.grade_name === grade)
+    if (grade === null || n.grade_name.trim() === grade)
       out.push({ key: `n:${j}`, label: `新建班${j + 1} ${n.grade_name} ${n.name}`, to: { new_class: j } })
   })
   return out

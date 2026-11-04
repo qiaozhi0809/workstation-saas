@@ -27,6 +27,10 @@ export default function UpgradeLatestCard() {
       toast('已回滚,新学年的班级与注册记录已删除')
       void refreshYearData(qc)
     },
+    // 没有可回滚的升级:卡片上的信息已经过时,重取
+    onError: (e) => {
+      if (e instanceof ApiError && e.code === 'UPGRADE_NOTHING_TO_ROLLBACK') void qc.invalidateQueries({ queryKey: ['upgrade', 'latest'] })
+    },
   })
   const up = latest.data
   const err = rollback.error

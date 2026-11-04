@@ -1,9 +1,12 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
+import { useAuthStore } from '@/shared/stores/auth'
 import type { UpgradePlan } from '@/shared/types/admin'
 import type { StepKey } from './errors'
 import { normalizePlan } from './planOps'
 
 export const DRAFT_KEY = 'ws-upgrade-draft'
+/** 草稿存档结构版本;读到别的版本(或没有)一律丢弃 */
+const DRAFT_VERSION = 2
 
 export const STEPS: { key: StepKey; label: string }[] = [
   { key: 'year', label: '新学年' },
@@ -37,13 +40,18 @@ const emptyDraft = (): Draft => ({
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 
-function read(): Draft {
+function read(owner: string | null): Draft {
   const base = emptyDraft()
   try {
     const raw = window.localStorage.getItem(DRAFT_KEY)
     if (!raw) return base
     const d: unknown = JSON.parse(raw)
-    if (!isObj(d)) return base
+    const planOk = (p: unknown) => isObj(p) && Array.isArray(p.classes) && typeof p.from_year_id === 'string'
+    // 结构不对、版本不对、别人的草稿:丢弃并清掉
+    if (!isObj(d) || d.v !== DRAFT_VERSION || (d.owner ?? null) !== owner || (d.plan != null && !planOk(d.plan))) {
+      drop()
+      return base
+    }
     const year = isObj(d.year) ? d.year : {}
     const ui = isObj(d.ui) ? d.ui : {}
     const plan = isObj(d.plan) ? normalizePlan(d.plan as unknown as UpgradePlan) : null
@@ -63,12 +71,13 @@ function read(): Draft {
       },
     }
   } catch {
+    drop()
     return base
   }
 }
 
-function write(d: Draft) {
-  try { window.localStorage.setItem(DRAFT_KEY, JSON.stringify(d)) } catch { /* 存不下就只留在内存里 */ }
+function write(d: Draft, owner: string | null) {
+  try { window.localStorage.setItem(DRAFT_KEY, JSON.stringify({ v: DRAFT_VERSION, owner, ...d })) } catch { /* 存不下就只留在内存里 */ }
 }
 
 function drop() {
@@ -77,27 +86,39 @@ function drop() {
 
 /** 升级方案草稿:每次改动写入 localStorage(读写都容错),执行成功或放弃后清除 */
 export function useUpgradeDraft() {
-  const [draft, setDraft] = useState<Draft>(read)
+  const owner = useAuthStore((s) => s.user?.id ?? null)
+  const [draft, setDraft] = useState<Draft>(() => read(owner))
+  // 当前草稿放在 ref 里:连续多次更新互相可见,存档在事件处理里做,不放进 setState 更新函数
+  const current = useRef(draft)
 
   const update = useCallback((fn: (d: Draft) => Draft) => {
-    setDraft((prev) => {
-      const next = fn(prev)
-      write(next)
-      return next
-    })
-  }, [])
+    const next = fn(current.current)
+    if (next === current.current) return
+    current.current = next
+    write(next, owner)
+    setDraft(next)
+  }, [owner])
 
   return {
     draft,
     setStep: useCallback((step: StepKey) => update((d) => ({ ...d, step })), [update]),
-    setYear: useCallback((patch: Partial<Draft['year']>) => update((d) => ({ ...d, year: { ...d.year, ...patch } })), [update]),
+    // 方案已经生成时,学年名称和日期同步写进 plan.new_year
+    setYear: useCallback((patch: Partial<Draft['year']>) => update((d) => ({
+      ...d,
+      year: { ...d.year, ...patch },
+      plan: d.plan ? { ...d.plan, new_year: { ...d.plan.new_year, ...patch } } : d.plan,
+    })), [update]),
     setPlan: useCallback((plan: UpgradePlan | null) => update((d) => ({ ...d, plan })), [update]),
     editPlan: useCallback((fn: (p: UpgradePlan) => UpgradePlan) =>
       update((d) => (d.plan ? { ...d, plan: fn(d.plan) } : d)), [update]),
     setUi: useCallback((patch: Partial<Draft['ui']>) => update((d) => ({ ...d, ui: { ...d.ui, ...patch } })), [update]),
     rememberNames: useCallback((names: Record<string, string>) =>
       update((d) => ({ ...d, ui: { ...d.ui, names: { ...d.ui.names, ...names } } })), [update]),
-    clear: useCallback(() => { drop(); setDraft(emptyDraft()) }, []),
+    clear: useCallback(() => {
+      drop()
+      current.current = emptyDraft()
+      setDraft(current.current)
+    }, []),
   }
 }
 

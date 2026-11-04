@@ -69,7 +69,7 @@ export default function StepClasses({ plan, edit, problem, nameOf, remember, gra
             ) : (
               <p className="text-sm text-muted-foreground">这个班毕业,学生不再进入新学年</p>
             )}
-            {bad && problem && <p role="alert" className="text-sm text-destructive">{problem.message}</p>}
+            {bad && problem && <p className="text-sm text-destructive">{problem.message}</p>}
           </li>
         )
       })}

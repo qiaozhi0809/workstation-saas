@@ -11,9 +11,9 @@ export function describeClass(c: ClassPreview): string {
   const teacher = `班主任:${c.teacher_name ?? '未定'}`
   switch (action) {
     case 'promote':
-      return `${c.from_name} → ${c.to_label},${teacher},随班 ${c.follow} 人`
+      return `${c.from_name} → ${c.to_label},${teacher},随班 ${c.follow ?? 0} 人`
     case 'graduate':
-      return `${c.from_name} 毕业,毕业 ${c.graduate} 人`
+      return `${c.from_name} 毕业,毕业 ${c.graduate ?? 0} 人`
     case 'new':
       return `新建班 ${c.to_label}(${c.from_name}),${teacher}`
     case null:

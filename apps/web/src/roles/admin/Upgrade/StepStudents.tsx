@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { studentsApi } from '@/shared/api/students'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
+import { Button } from '@/shared/components/ui/button'
 import { NativeSelect } from '@/shared/components/ui/native-select'
 import { cn } from '@/shared/lib/utils'
 import { rowHit } from './errors'
@@ -10,11 +11,13 @@ import type { StepProps } from './StepClasses'
 
 type Mode = 'follow' | 'repeat' | 'leave'
 
-export default function StepStudents({ plan, edit, problem, classId, onClassChange, onMark, gradeOf }: Pick<StepProps, 'plan' | 'edit' | 'problem'> & {
+export default function StepStudents({ plan, edit, problem, classId, onClassChange, onMark, gradeOf, markedClass }: Pick<StepProps, 'plan' | 'edit' | 'problem'> & {
   classId: string | null
   onClassChange(id: string): void
   onMark(enrollmentId: string, classId: string): void
   gradeOf(classId: string): string | null
+  /** 标了例外的学生 enrollment_id → 他所在的旧班 */
+  markedClass: Record<string, string>
 }) {
   const current = classId && plan.classes.some((c) => c.from_class_id === classId) ? classId : (plan.classes[0]?.from_class_id ?? null)
   const list = useQuery({
@@ -25,6 +28,11 @@ export default function StepStudents({ plan, edit, problem, classId, onClassChan
   if (current === null) return <p className="text-sm text-muted-foreground">当前学年没有进行中的班级</p>
   const grade = gradeOf(current)
   const targets = repeatTargets(plan, grade)
+  // 方案里有、当前班名单里没有的例外行(且不属于别的班):否则用户看不见也删不掉
+  const listed = new Set((list.data?.items ?? []).map((x) => x.enrollment_id))
+  const orphans = list.data
+    ? plan.students.map((s, i) => ({ s, i })).filter(({ s }) => !listed.has(s.enrollment_id) && (markedClass[s.enrollment_id] ?? current) === current)
+    : []
   const find = (eid: string) => plan.students.findIndex((s) => s.enrollment_id === eid)
 
   const setMode = (eid: string, name: string, mode: Mode) => {
@@ -52,7 +60,7 @@ export default function StepStudents({ plan, edit, problem, classId, onClassChan
         </NativeSelect>
         {grade && <span className="text-muted-foreground">{grade}</span>}
       </label>
-      {problem?.section === 'students' && <p role="alert" className="text-sm text-destructive">{problem.message}</p>}
+      {problem?.section === 'students' && <p className="text-sm text-destructive">{problem.message}</p>}
       {targets.length === 0 && <p className="text-sm text-muted-foreground">没有同年级的目标班,暂时不能标留级;可先在"新建班级"里添加。</p>}
       {list.isLoading && <LoadingState />}
       {list.isError && <ErrorState title="学生加载失败" onRetry={() => void list.refetch()} />}
@@ -62,7 +70,8 @@ export default function StepStudents({ plan, edit, problem, classId, onClassChan
           const row = i >= 0 ? plan.students[i] : null
           const mode: Mode = row ? row.action : 'follow'
           const key = row?.action === 'repeat' ? targetKey(row.to) : ''
-          const bad = i >= 0 && rowHit(problem, 'students', i)
+          const staleTarget = row?.action === 'repeat' && !targets.some((x) => x.key === key)
+          const bad = (i >= 0 && rowHit(problem, 'students', i)) || staleTarget
           return (
             <li key={s.enrollment_id} data-invalid={bad || undefined}
               className={cn('flex flex-wrap items-center gap-3 rounded-md border px-3 py-2', bad && 'border-destructive')}>
@@ -84,6 +93,27 @@ export default function StepStudents({ plan, edit, problem, classId, onClassChan
           )
         })}
       </ul>
+      {orphans.length > 0 && (
+        <section className="grid gap-1" aria-label="不在当前名单中的例外">
+          <h3 className="text-sm font-medium">不在当前名单中的例外</h3>
+          <p className="text-xs text-muted-foreground">这些学生已不在上面的名单里(如已转班或退学),可能让方案校验失败,请移除或核对。</p>
+          <ul className="grid gap-1">
+            {orphans.map(({ s, i }) => {
+              const label = s.name ?? s.enrollment_id.slice(0, 8)
+              const bad = rowHit(problem, 'students', i)
+              return (
+                <li key={s.enrollment_id} data-invalid={bad || undefined}
+                  className={cn('flex flex-wrap items-center gap-3 rounded-md border px-3 py-2 text-sm', bad && 'border-destructive')}>
+                  <span className="font-medium">{label}</span>
+                  <span className="text-muted-foreground">{s.action === 'repeat' ? '留级' : '离校'}</span>
+                  <Button variant="ghost" size="sm" aria-label={`移除 ${label}`}
+                    onClick={() => edit((pl) => ({ ...pl, students: pl.students.filter((x) => x.enrollment_id !== s.enrollment_id) }))}>移除</Button>
+                </li>
+              )
+            })}
+          </ul>
+        </section>
+      )}
     </div>
   )
 }

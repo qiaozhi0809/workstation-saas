@@ -30,7 +30,7 @@ export default function StepYear({ year, hasPlan, busy, problem, onChange, onSug
             value={year.end_date} onChange={(e) => onChange({ end_date: e.target.value })} />
         </Field>
       </div>
-      {problem?.section === 'new_year' && <p role="alert" className="text-sm text-destructive">{problem.message}</p>}
+      {problem?.section === 'new_year' && <p className="text-sm text-destructive">{problem.message}</p>}
       {year.start_date !== '' && year.end_date !== '' && year.start_date >= year.end_date && (
         <p className="text-sm text-destructive">结束日期须晚于开学日期</p>
       )}
