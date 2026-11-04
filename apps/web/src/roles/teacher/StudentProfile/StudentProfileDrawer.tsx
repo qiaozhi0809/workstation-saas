@@ -51,7 +51,7 @@ export default function StudentProfileDrawer({ studentId }: { studentId: string 
           <ProfileActions profile={data} />
           <SegmentedTabs<ProfileTab> label="档案分区" variant="underline" items={tabItems} value={tab} onChange={(t) => open(studentId, t)} />
           <div role="tabpanel" aria-label={tab}>
-            {tab === '概览' && <OverviewTab student={data} />}
+            {(tab === '概览' || (tab === '家长' && !canManageParents)) && <OverviewTab student={data} />}
             {tab === '档案' && <ArchiveTab student={data} />}
             {tab === '成绩' && <ScoresTab profile={data} />}
             {tab === '成长记录' && <GrowthTab profile={data} />}

@@ -109,6 +109,7 @@ function ParentRow({ p, studentId, onSecret }: { p: ParentOfStudent; studentId: 
       const res = await parentLinksApi.resetPassword(p.link_id)
       onSecret({ phone: p.phone, password: res.temp_password, reset: true })
     },
+    onSuccess: refresh,
     onError: (err) => toast(errMsg(err, '重置失败,请重试')),
   })
   const busy = primary.isPending || unlink.isPending || reset.isPending
