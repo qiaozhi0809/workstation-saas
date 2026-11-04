@@ -1,7 +1,7 @@
 import { defineConfig } from '@playwright/test'
 
-// classroom / grades / students / ai / profile / desks / admin 七个 spec 会改共享种子数据(考勤、点评、座位、考试成绩、学生名单、AI 对话、评语、成长记录、桌椅排列、账号 / 任职 / 学校设置开关),
-// 其余 spec 在同一个班级上只读断言。改数据的 project 串成一条链(mutating → grades → students → ai → profile → desks → admin),
+// classroom / grades / students / ai / profile / desks / admin / m3b 八个 spec 会改共享种子数据(考勤、点评、座位、考试成绩、学生名单、AI 对话、评语、成长记录、桌椅排列、账号 / 任职 / 学校设置开关),
+// 其余 spec 在同一个班级上只读断言。改数据的 project 串成一条链(mutating → grades → students → ai → profile → desks → admin → m3b),
 // 各自单独跑完、互不交叠(都改座位、名单,并行会互相踩);只读 project 最后再并行,避免读到改到一半的数据。
 // 上游 project 失败会让下游 project 全部跳过(不会显示为失败),排查时先看最早失败的 project。
 // 不用 retries:干扰要靠隔离消除,不是靠重跑掩盖。
@@ -12,6 +12,7 @@ const AI = 'ai.spec.ts'
 const PROFILE = 'profile.spec.ts'
 const DESKS = 'desks.spec.ts'
 const ADMIN = 'admin.spec.ts'
+const M3B = 'm3b.spec.ts'
 
 export default defineConfig({
   testDir: './e2e',
@@ -28,6 +29,8 @@ export default defineConfig({
     { name: 'profile', testMatch: PROFILE, dependencies: ['ai'] },
     { name: 'desks', testMatch: DESKS, dependencies: ['profile'] },
     { name: 'admin', testMatch: ADMIN, dependencies: ['desks'] },
-    { name: 'readonly', testIgnore: [MUTATING, GRADES, STUDENTS, AI, PROFILE, DESKS, ADMIN], dependencies: ['admin'] },
+    // m3b 含学年升级用例(结束时回滚)、联考(结束时删除)、通知(只撤回,不删),放在 admin 之后、只读 project 之前
+    { name: 'm3b', testMatch: M3B, dependencies: ['admin'] },
+    { name: 'readonly', testIgnore: [MUTATING, GRADES, STUDENTS, AI, PROFILE, DESKS, ADMIN, M3B], dependencies: ['m3b'] },
   ],
 })

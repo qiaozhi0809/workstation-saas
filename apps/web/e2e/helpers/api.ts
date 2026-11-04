@@ -338,3 +338,34 @@ export async function endRolesOfUser(request: APIRequestContext, token: string, 
     expect(res.ok(), await res.text()).toBeTruthy()
   }
 }
+
+/** 把某场(联考关联的)班级考试里指定科目的分数全部清掉(value:null 即删除这格);考试不存在就什么也不做。 */
+export async function clearScores(
+  request: APIRequestContext,
+  token: string,
+  classId: string,
+  examName: string,
+  subjects: string[],
+): Promise<void> {
+  const headers = authHeaders(token)
+  const list = await request.get(`${API}/classes/${classId}/exams`, { headers })
+  expect(list.ok()).toBeTruthy()
+  const exam = ((await list.json()) as { items: ExamSummary[] }).items.find((x) => x.name === examName)
+  if (!exam) return
+  const roster = await rosterEnrollmentIds(request, token, classId)
+  const cells = roster.flatMap((id) => subjects.map((subject) => ({ enrollment_id: id, subject, value: null })))
+  const res = await request.put(`${API}/classes/${classId}/exams/${exam.id}/scores`, { headers, data: { cells } })
+  expect(res.ok(), await res.text()).toBeTruthy()
+}
+
+/** 删除名字以 E2E 开头的年级联考(分数要先用 clearScores 清掉,否则 409)。 */
+export async function deleteE2eGradeExams(request: APIRequestContext, token: string): Promise<void> {
+  const headers = authHeaders(token)
+  const res = await request.get(`${API}/admin/grade-exams`, { headers })
+  expect(res.ok(), await res.text()).toBeTruthy()
+  const items = (await res.json()) as ExamSummary[]
+  for (const exam of items.filter((x) => x.name.startsWith('E2E'))) {
+    const del = await request.delete(`${API}/admin/grade-exams/${exam.id}`, { headers })
+    expect(del.ok(), await del.text()).toBeTruthy()
+  }
+}
