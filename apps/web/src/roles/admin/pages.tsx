@@ -3,6 +3,10 @@ import type { LucideIcon } from 'lucide-react'
 import type { AdminPerm } from '@/shared/types/admin'
 // 第 2 波各段只在自己的锚点处追加 import,不动别人的行;锚点之间留空行以免 git 合并冲突。
 
+import { LayoutGrid, Sun } from 'lucide-react'
+import BoardPage from './Board/BoardPage'
+import ClassViewPage from './Board/ClassViewPage'
+import TodayPage from './Today/TodayPage'
 // ── 段 F(今日 / 看板):import 追加在此行之上 ──
 
 import { Building2 } from 'lucide-react'
@@ -25,8 +29,11 @@ export interface AdminPage {
 // 导航顺序即数组顺序:today、board、org、accounts、settings。
 // 每段只在自己的锚点处追加(一个元素一行,末尾带逗号),不动别人的行。
 export const ADMIN_PAGES: AdminPage[] = [
+  { path: 'today', label: '今日关注', icon: Sun, perm: 'school.view', element: <TodayPage /> },
   // ── today:追加在此行之上 ──
 
+  { path: 'board', label: '全校看板', icon: LayoutGrid, perm: 'school.view', element: <BoardPage /> },
+  { path: 'classes/:id', label: '班级', icon: LayoutGrid, perm: 'school.view', element: <ClassViewPage />, hidden: true },
   // ── board:追加在此行之上 ──
 
   { path: 'org', label: '组织架构', icon: Building2, perm: 'org.manage', element: <OrgPage /> },
