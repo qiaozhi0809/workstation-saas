@@ -468,3 +468,106 @@ def test_class_info_content(client, settings, db):
     assert {"subject": "语文", "name": "张老师"} in info["teachers"]
     assert "数学" in [t["subject"] for t in info["teachers"]]
     assert all(t["subject"] for t in info["teachers"])
+
+
+def _remove(db, mk: str) -> UUID:
+    s = sid(db, mk)
+    db.execute(
+        text("UPDATE enrollments SET status = 'removed', left_at = now() WHERE student_id = :s"),
+        {"s": s},
+    )
+    close_links_for(db, [s], datetime.now(UTC))
+    db.flush()
+    return s
+
+
+def _exam_on(db, day: date, name: str) -> Exam:
+    exam = Exam(
+        class_id=UUID(CLASS_ID),
+        academic_year_id=UUID(YEAR_ID),
+        name=name,
+        exam_type="月考",
+        date=day,
+        subjects=[{"name": "语文", "full": 100}],
+    )
+    db.add(exam)
+    db.flush()
+    return exam
+
+
+def test_removed_child_exam_cutoff(client, settings, db):
+    from app.domain.schools.service import school_today
+
+    s2 = _remove(db, "S0002")
+    end_day = school_today(db, UUID(SCHOOL_ID))
+    same_day = _exam_on(db, end_day, "结束日当天")
+    later = _exam_on(db, end_day + timedelta(days=5), "移出之后")
+    names = [e["name"] for e in get(client, settings, f"/children/{s2}/exams", user=T04).json()]
+    assert "结束日当天" in names and "移出之后" not in names
+    assert get(client, settings, f"/children/{s2}/exams/{same_day.id}", user=T04).status_code == 200
+    res = get(client, settings, f"/children/{s2}/exams/{later.id}", user=T04)
+    assert res.status_code == 403
+    row = db.scalars(
+        select(AuditLog).where(
+            AuditLog.action == "parent.view",
+            AuditLog.object_id == str(s2),
+            AuditLog.success.is_(False),
+        )
+    ).one()
+    assert row.extra == {"exam_id": str(later.id)}
+    # 在读的孩子不截止
+    s1 = sid(db, "S0001")
+    assert "移出之后" in [e["name"] for e in get(client, settings, f"/children/{s1}/exams").json()]
+
+
+def test_removed_child_exam_detail_ranked(client, settings, db):
+    s2 = _remove(db, "S0002")
+    body = get(client, settings, f"/children/{s2}/exams/{EXAM_IDS[1]}", user=T04).json()
+    # 班级名单口径排除 removed(9 人),孩子自己补一行,所以 ranked 仍是 10
+    assert body["ranked"] == 10 and body["total"] == 270
+
+
+def test_revoked_review_excluded(client, settings, db):
+    s1 = sid(db, "S0001")
+    add_review(db, "S0001", 5, "已撤销")
+    add_review(db, "S0001", 1, "有效")
+    db.execute(text("UPDATE reviews SET revoked_at = now() WHERE reason_text = '已撤销'"))
+    db.flush()
+    items = get(client, settings, f"/children/{s1}/reviews").json()["items"]
+    assert [r["reason_text"] for r in items] == ["有效"]
+    today = get(client, settings, f"/children/{s1}/today").json()
+    assert [r["reason_text"] for r in today["reviews"]] == ["有效"]
+    assert today["week_points"] == 1
+
+
+def test_today_with_past_date(client, settings, db):
+    from app.domain.schools.service import local_day_start_utc, school_today, school_tz
+
+    s1 = sid(db, "S0001")
+    day = school_today(db, UUID(SCHOOL_ID)) - timedelta(days=3)
+    db.execute(
+        text(
+            "INSERT INTO attendances (enrollment_id, class_id, date, status, reason)"
+            " VALUES (:e, :c, :d, 'absent', '事假')"
+        ),
+        {"e": eid(db, "S0001"), "c": CLASS_ID, "d": day},
+    )
+    db.add(
+        Review(
+            op_id=uuid4(),
+            enrollment_id=eid(db, "S0001"),
+            class_id=UUID(CLASS_ID),
+            category="individual",
+            reason_text="那天的点评",
+            score_delta=2,
+            given_by_user_id=UUID(T01),
+            given_at=local_day_start_utc(day, school_tz(db, UUID(SCHOOL_ID))) + timedelta(hours=12),
+        )
+    )
+    db.flush()
+    body = get(client, settings, f"/children/{s1}/today", date=day.isoformat()).json()
+    assert body["date"] == day.isoformat()
+    assert body["attendance"] == {"status": "absent", "reason": "事假"}
+    assert [r["reason_text"] for r in body["reviews"]] == ["那天的点评"]
+    now_body = get(client, settings, f"/children/{s1}/today").json()
+    assert now_body["reviews"] == [] and now_body["attendance"] is None

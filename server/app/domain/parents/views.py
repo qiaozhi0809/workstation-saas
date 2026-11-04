@@ -550,11 +550,30 @@ def _exam_item(exam: Exam, year_name: str, class_name: str) -> ParentExamItem:
     )
 
 
+def _class_cutoffs(db: Session, school_id: UUID, rows: Sequence[Row]) -> dict[UUID, date | None]:
+    """每个班里孩子可看考试的截止日(学校本地日期):该班没有在读注册、且有结束日时,
+    取最晚的 left_at;在读或没有结束日(如毕业)不截止。"""
+    tz = school_tz(db, school_id)
+    by_class: dict[UUID, list[Enrollment]] = defaultdict(list)
+    for e, c, _, _ in rows:
+        by_class[c.id].append(e)
+    out: dict[UUID, date | None] = {}
+    for cid, ens in by_class.items():
+        ends = [e.left_at for e in ens]
+        if any(e.status == "active" for e in ens) or any(x is None for x in ends):
+            out[cid] = None
+        else:
+            out[cid] = max(x for x in ends if x is not None).astimezone(tz).date()
+    return out
+
+
 def exams(
     db: Session, request: Request | None, user: User, student_id: UUID, now: datetime
 ) -> list[ParentExamItem]:
     child_link_or_deny(db, request, user, student_id, now=now)
-    class_ids = {r[1].id for r in _enrollment_rows(db, [student_id])[student_id]}
+    enroll = _enrollment_rows(db, [student_id])[student_id]
+    cutoffs = _class_cutoffs(db, user.school_id, enroll)
+    class_ids = {r[1].id for r in enroll}
     if not class_ids:
         return []
     rows = db.execute(
@@ -564,7 +583,11 @@ def exams(
         .where(Exam.class_id.in_(class_ids))
         .order_by(Exam.date.desc(), Exam.created_at.desc(), Exam.id)
     ).all()
-    return [_exam_item(e, y, c) for e, y, c in rows]
+    return [
+        _exam_item(e, y, c)
+        for e, y, c in rows
+        if cutoffs.get(e.class_id) is None or e.date <= cutoffs[e.class_id]
+    ]
 
 
 def _round1(x: float) -> float:
@@ -591,9 +614,15 @@ def exam_detail(
 ) -> ParentExamDetail:
     child_link_or_deny(db, request, user, student_id, now=now)
     switches = get_switches(db, user.school_id)
-    mine = {r[1].id: r[0] for r in reversed(_enrollment_rows(db, [student_id])[student_id])}
+    enroll = _enrollment_rows(db, [student_id])[student_id]
+    mine = {r[1].id: r[0] for r in reversed(enroll)}
+    cutoffs = _class_cutoffs(db, user.school_id, enroll)
     exam = db.get(Exam, exam_id)
-    if exam is None or exam.class_id not in mine:
+    if (
+        exam is None
+        or exam.class_id not in mine
+        or (cutoffs[exam.class_id] is not None and exam.date > cutoffs[exam.class_id])
+    ):
         record(
             db,
             user_id=user.id,
