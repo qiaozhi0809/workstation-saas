@@ -435,9 +435,21 @@ def update_class(
     return class_admin(db, cls)
 
 
+def lock_class(db: Session, cls: SchoolClass) -> None:
+    """锁住班级行直到事务结束:任命班主任与删班因此串行。
+    锁拿到后班级行可能已被并发改动,ORM 对象刷新到最新;班级已被并发删除则按不存在处理。"""
+    found = db.execute(
+        text("SELECT id FROM classes WHERE id = :c FOR UPDATE"), {"c": cls.id}
+    ).first()
+    if found is None:
+        raise ApiError(404, "NOT_FOUND", "班级不存在")
+    db.refresh(cls)
+
+
 def delete_class(
     db: Session, cls: SchoolClass, user_id: UUID, now: datetime, request: Request | None
 ) -> None:
+    lock_class(db, cls)
     for table in _CLASS_DATA_TABLES:
         found = db.execute(
             text(f"SELECT 1 FROM {table} WHERE class_id = :c LIMIT 1"), {"c": cls.id}
