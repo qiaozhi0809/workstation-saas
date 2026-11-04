@@ -219,6 +219,49 @@ def test_grade_head_sees_own_grade_only(client, db, settings, ge):
     assert _get(client, settings, user=PRINCIPAL, grade_exam_id=other["id"]).status_code == 200
 
 
+def _without_classes(client, db, settings, grade_id=GRADE_ID):
+    """联考存在但没有任何关联班级考试(班级考试被清空)。"""
+    out = _create(client, settings, grade_id)
+    for exam in db.scalars(select(Exam).where(Exam.grade_exam_id == UUID(out["id"]))).all():
+        db.delete(exam)
+    db.flush()
+    return out
+
+
+def test_zero_class_grade_exam_gives_empty_report_to_grade_viewers(client, db, settings):
+    out = _without_classes(client, db, settings)
+    for uid in (PRINCIPAL, DEAN, GRADE_HEAD):
+        body = _get(client, settings, user=uid, grade_exam_id=out["id"])
+        assert body.status_code == 200, body.text
+        data = body.json()
+        assert data["classes"] == []
+        assert data["grade"]["total"] == {
+            "full": 200,
+            "count": 0,
+            "avg": None,
+            "max": None,
+            "min": None,
+        }
+        assert [s["subject"] for s in data["grade"]["subjects"]] == ["语文", "数学"]
+        assert all(s["count"] == 0 and s["missing"] == 0 for s in data["grade"]["subjects"])
+        assert _rows(client, settings, out, user=uid) == []
+    exported = _get(client, settings, "/export", user=GRADE_HEAD, grade_exam_id=out["id"])
+    assert exported.status_code == 200
+    lines = exported.content.decode("utf-8-sig").splitlines()
+    assert lines == ["班级,学号,姓名,语文,数学,总分,班级名次,年级名次"]
+
+
+def test_zero_class_grade_exam_still_forbidden_outside_the_grade(client, db, settings):
+    other = _without_classes(client, db, settings, GRADE4_ID)
+    for path in ("", "/students", "/export"):
+        r = _get(client, settings, path, user=GRADE_HEAD, grade_exam_id=other["id"])
+        assert r.status_code == 403
+    for uid in (TEACHER_USER_ID, IT_ADMIN):
+        for path in ("", "/students", "/export"):
+            r = _get(client, settings, path, user=uid, grade_exam_id=other["id"])
+            assert r.status_code == 403
+
+
 def test_teacher_and_it_admin_forbidden(client, settings, ge):
     for uid in (TEACHER_USER_ID, IT_ADMIN):
         for path in ("", "/students", "/export"):

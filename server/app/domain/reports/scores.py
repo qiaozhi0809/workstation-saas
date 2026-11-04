@@ -25,7 +25,7 @@ from app.domain.reports.schemas import (
     TotalStat,
 )
 from app.models import Enrollment, Exam, Grade, GradeExam, SchoolClass, Score, Student, User
-from app.rbac.bindings import Binding, can
+from app.rbac.bindings import Binding, Scope, can
 from app.rbac.roles import LEADER_ROLES, Perm
 
 READ_ACTION = Perm.EXAM_READ.value
@@ -56,7 +56,8 @@ def _load(
     action: str,
     request: Request | None,
 ) -> _Report:
-    """Batch-load the report; 403 + audit when no linked class is visible to the caller."""
+    """Batch-load the report; 403 + audit when no linked class is visible to the caller
+    (a grade exam with no linked class at all is an empty report for whoever can see the grade)."""
     ge = get_grade_exam(db, user.school_id, grade_exam_id)
     classes = list(
         db.scalars(
@@ -68,7 +69,9 @@ def _load(
     )
     leaders = [b for b in bindings if b.role in LEADER_ROLES]  # 兼任班主任等不扩大可见范围
     visible = [c for c in classes if can(leaders, Perm.EXAM_READ, class_scope_of(c))]
-    if not visible:
+    # 没有可见班:联考已关联班级但都看不到 → 403;联考没有任何班级时,看整个年级的人拿到空报表
+    grade_viewer = can(leaders, Perm.EXAM_READ, Scope(school_id=ge.school_id, grade_id=ge.grade_id))
+    if not visible and (classes or not grade_viewer):
         deny(
             db,
             user_id=user.id,
