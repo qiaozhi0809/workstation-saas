@@ -87,6 +87,7 @@ def _outs(
             subjects=_visible_of(e, visible),
             created_by_me=e.created_by_user_id == user_id,
             progress=Progress(entered=entered[e.id], total=total),
+            grade_exam_id=e.grade_exam_id,
         )
         for e in exams
     ]
@@ -189,6 +190,31 @@ def _check_subjects_allowed(cls: SchoolClass, data: ExamInput, bindings: Sequenc
             )
 
 
+def subject_full_below_scores(
+    db: Session, exam: Exam, subjects: Sequence[SubjectFull]
+) -> str | None:
+    """First subject whose new full mark is below the highest score already entered, or None."""
+    for s in subjects:
+        top = db.scalar(
+            select(func.max(Score.value))
+            .join(Enrollment, Enrollment.id == Score.enrollment_id)
+            .where(
+                Score.exam_id == exam.id,
+                Score.subject == s.name,
+                Enrollment.status == "active",
+            )
+        )
+        if top is not None and s.full < top:
+            return s.name
+    return None
+
+
+def ensure_not_grade_managed(exam: Exam) -> None:
+    """Exams fanned out from a grade-wide exam are edited only through the grade exam."""
+    if exam.grade_exam_id is not None:
+        raise ApiError(409, "EXAM_MANAGED_BY_GRADE", "这是年级联考,由教导处修改")
+
+
 def create_exam(
     db: Session,
     cls: SchoolClass,
@@ -235,20 +261,9 @@ def update_exam(
 ) -> ExamOut:
     _check_subjects_allowed(cls, data, bindings)
     writable = writable_subjects(bindings, class_scope_of(cls))
-    for s in data.subjects:
-        top = db.scalar(
-            select(func.max(Score.value))
-            .join(Enrollment, Enrollment.id == Score.enrollment_id)
-            .where(
-                Score.exam_id == exam.id,
-                Score.subject == s.name,
-                Enrollment.status == "active",
-            )
-        )
-        if top is not None and s.full < top:
-            raise ApiError(
-                400, "FULL_BELOW_SCORES", "满分不能低于已录入的最高分", {"subject": s.name}
-            )
+    below = subject_full_below_scores(db, exam, data.subjects)
+    if below is not None:
+        raise ApiError(400, "FULL_BELOW_SCORES", "满分不能低于已录入的最高分", {"subject": below})
     requested = {s.name: s.model_dump() for s in data.subjects}
     existing = list(exam.subjects)
     # 只有可写科目参与增删;不可写(看不见)的科目原样保留在原位置

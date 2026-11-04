@@ -16,11 +16,14 @@ from app.domain.classes.router import router as classes_router
 from app.domain.classroom.router import router as classroom_router
 from app.domain.comments.router import router as comments_router
 from app.domain.exams.router import router as exams_router
+from app.domain.grade_exams.router import router as grade_exams_router  # M3b 段 C
 from app.domain.growth.router import router as growth_router
+from app.domain.history.router import router as history_router  # M3b 段 H
 from app.domain.notices.router import router as notices_router  # M3b 段 E
 from app.domain.org.router import router as org_router  # M3a 段 D
 from app.domain.overview.router import router as overview_router  # M3a 段 F
 from app.domain.preferences.router import router as preferences_router
+from app.domain.reports.router import router as reports_router  # M3b 段 C
 from app.domain.reviews.router import router as reviews_router
 from app.domain.roster.router import router as roster_router
 from app.domain.school_settings.router import router as school_settings_router  # M3a 段 E
@@ -85,6 +88,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     router.include_router(school_settings_router)  # M3a 段 E
     router.include_router(org_router)  # M3a 段 D
     router.include_router(ws_router)  # M3b 段 A
+    router.include_router(grade_exams_router)  # M3b 段 C
+    router.include_router(reports_router)  # M3b 段 C
     router.include_router(notices_router)  # M3b 段 E
+    router.include_router(history_router)  # M3b 段 H
     app.include_router(router)
     return app

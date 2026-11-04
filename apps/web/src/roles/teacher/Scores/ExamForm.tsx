@@ -37,7 +37,24 @@ function errorText(e: unknown): string {
 const FULL_MSG = '满分须为 1–1000 的整数'
 const validFull = (n: number) => Number.isInteger(n) && n >= 1 && n <= 1000
 
+export const GRADE_EXAM_MANAGED = '这是年级联考,由教导处修改'
+
+/** 关联年级联考的考试由教导处统一维护;老师端不给编辑 / 删除入口 */
 export default function ExamForm(props: Props) {
+  if (props.exam?.grade_exam_id) {
+    return (
+      <Modal open onClose={props.onClose} className="max-w-sm" title={props.exam.name}>
+        <div className="flex flex-col gap-4 text-sm">
+          <p>{GRADE_EXAM_MANAGED}</p>
+          <div className="flex justify-end"><Button type="button" variant="outline" onClick={props.onClose}>知道了</Button></div>
+        </div>
+      </Modal>
+    )
+  }
+  return <EditableExamForm {...props} />
+}
+
+function EditableExamForm(props: Props) {
   const subjects = useQuery({
     queryKey: ['class-subjects', props.classId],
     queryFn: () => examsApi.subjects(props.classId),
