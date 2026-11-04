@@ -55,9 +55,13 @@ export interface AdminPage {
   element: ReactNode
   /** 只注册路由,不进导航 */
   hidden?: boolean
+  /** 导航分组:同组的页面收进一个下拉;没标的直接显示成链接。组的名字与图标见 AdminNav */
+  group?: AdminGroup
 }
 
-// 导航顺序即数组顺序:today、board、org、accounts、settings。
+export type AdminGroup = 'manage' | 'reports' | 'system'
+
+// 导航顺序即数组顺序;标了 group 的页面按数组顺序收进同一个下拉(组放在它第一个页面的位置),按权限过滤后只剩一项的组退化成普通链接。
 // 每段只在自己的锚点处追加(一个元素一行,末尾带逗号),不动别人的行。
 export const ADMIN_PAGES: AdminPage[] = [
   { path: 'today', label: '今日关注', icon: Sun, perm: 'school.view', element: <TodayPage /> },
@@ -67,35 +71,35 @@ export const ADMIN_PAGES: AdminPage[] = [
   { path: 'classes/:id', label: '班级', icon: LayoutGrid, perm: 'school.view', element: <ClassViewPage />, hidden: true },
   // ── board:追加在此行之上 ──
 
-  { path: 'org', label: '组织架构', icon: Building2, perm: 'org.manage', element: <OrgPage /> },
-  { path: 'org/classes/:id', label: '班级信息', icon: Building2, perm: 'org.manage', element: <ClassInfoPage />, hidden: true },
+  { path: 'org', label: '组织架构', icon: Building2, perm: 'org.manage', element: <OrgPage />, group: 'manage' },
+  { path: 'org/classes/:id', label: '班级信息', icon: Building2, perm: 'org.manage', element: <ClassInfoPage />, hidden: true, group: 'manage' },
   // ── org:追加在此行之上 ──
 
-  { path: 'accounts', label: '账号', icon: Users, perm: 'account.manage', element: <AccountsPage /> },
+  { path: 'accounts', label: '账号', icon: Users, perm: 'account.manage', element: <AccountsPage />, group: 'manage' },
   // ── accounts:追加在此行之上 ──
 
-  { path: 'settings', label: '学校设置', icon: Settings, perm: 'settings.manage', element: <SettingsPage /> },
+  { path: 'settings', label: '学校设置', icon: Settings, perm: 'settings.manage', element: <SettingsPage />, group: 'manage' },
   // ── settings:追加在此行之上 ──
 
-  { path: 'grade-exams', label: '年级联考', icon: ClipboardList, perm: 'exam.grade_write', element: <GradeExamsPage /> },
-  { path: 'reports/scores', label: '成绩汇总', icon: BarChart3, perm: 'school.view', element: <ScoresReportPage /> },
+  { path: 'grade-exams', label: '年级联考', icon: ClipboardList, perm: 'exam.grade_write', element: <GradeExamsPage />, group: 'reports' },
+  { path: 'reports/scores', label: '成绩汇总', icon: BarChart3, perm: 'school.view', element: <ScoresReportPage />, group: 'reports' },
   // ── 段 C(联考 / 成绩汇总):追加在此行之上 ──
 
-  { path: 'reports/attendance', label: '考勤报告', icon: CalendarCheck, perm: 'school.view', element: <AttendanceReportPage /> },
+  { path: 'reports/attendance', label: '考勤报告', icon: CalendarCheck, perm: 'school.view', element: <AttendanceReportPage />, group: 'reports' },
   // ── reports-attendance:追加在此行之上 ──
 
-  { path: 'audit', label: '审计日志', icon: ScrollText, perm: 'audit.read', element: <AuditPage /> },
-  { path: 'ai/usage', label: 'AI 使用', icon: Sparkles, perm: 'ai.usage', element: <AiUsagePage /> },
-  { path: 'ai/config', label: 'AI 配置', icon: KeyRound, perm: 'settings.manage', element: <AiConfigPage /> },
+  { path: 'audit', label: '审计日志', icon: ScrollText, perm: 'audit.read', element: <AuditPage />, group: 'system' },
+  { path: 'ai/usage', label: 'AI 使用', icon: Sparkles, perm: 'ai.usage', element: <AiUsagePage />, group: 'system' },
+  { path: 'ai/config', label: 'AI 配置', icon: KeyRound, perm: 'settings.manage', element: <AiConfigPage />, group: 'system' },
   // ── audit-ai:追加在此行之上 ──
 
   { path: 'notices', label: '通知', icon: Megaphone, perm: 'notice.send', element: <NoticesPage /> },
   // ── notices:追加在此行之上 ──
 
-  { path: 'upgrade', label: '学年升级', icon: GraduationCap, perm: 'year.upgrade', element: <UpgradePage /> },
+  { path: 'upgrade', label: '学年升级', icon: GraduationCap, perm: 'year.upgrade', element: <UpgradePage />, group: 'manage' },
   // ── upgrade:追加在此行之上 ──
 
-  { path: 'history', label: '往年班级', icon: History, perm: 'school.view', element: <HistoryPage /> },
-  { path: 'history/classes/:id', label: '往年班级', icon: History, perm: 'school.view', element: <HistoryClassPage />, hidden: true },
+  { path: 'history', label: '往年班级', icon: History, perm: 'school.view', element: <HistoryPage />, group: 'manage' },
+  { path: 'history/classes/:id', label: '往年班级', icon: History, perm: 'school.view', element: <HistoryClassPage />, hidden: true, group: 'manage' },
   // ── history:追加在此行之上 ──
 ]

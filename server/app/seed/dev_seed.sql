@@ -260,3 +260,7 @@ FROM (VALUES
   ('44444444-4444-4444-4444-444444444442'::uuid, '55555555-5555-5555-5555-555555555542')
 ) AS c(id, marker)
 CROSS JOIN generate_series('2026-10-12'::date, '2026-10-16'::date, '1 day') AS d;
+
+-- 入班日拨回开学日(2026-09-01 学校时区零点):entered_at 默认取建库时刻,
+-- 10 月之后建库的环境里 2026-10 的考勤报告会因"入班日晚于记录日"而 expected=0
+UPDATE enrollments SET entered_at = '2026-08-31T16:00:00+00:00';

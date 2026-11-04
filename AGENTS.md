@@ -70,7 +70,7 @@
 | M2c AI 与学年 | ✅ 已完成(tag `v0.4.0-m2c-ai-year`,合并后由协调会话打) | 24 task,文件:[`docs/superpowers/plans/2026-11-02-M2c-AI与学年.md`](docs/superpowers/plans/2026-11-02-M2c-AI与学年.md)、[范围清单](docs/superpowers/plans/2026-11-02-M2c-范围清单.md) |
 | M2d 桌椅排列 | ✅ 已完成(tag `v0.4.5-m2d-desks`) | 12 task,文件:[`docs/superpowers/plans/2026-11-03-M2d-桌椅排列.md`](docs/superpowers/plans/2026-11-03-M2d-桌椅排列.md)、[范围清单](docs/superpowers/plans/2026-11-03-M2d-范围清单.md) |
 | M3a 管理底座与看全校 | ✅ 已完成(tag `v0.5.0-m3a-admin-org`,合并后由协调会话打) | 18 task,管理端壳、组织架构、账号、学校设置、今日关注、全校看板;文件:[M3a 计划](docs/superpowers/plans/2026-11-03-M3a-管理底座与看全校.md) |
-| M3b 联考报表、通知与学年 | ⏳ 计划待审阅 | 文件:[M3b 计划](docs/superpowers/plans/2026-11-03-M3b-联考报表通知与学年.md);M3 整体范围:[范围清单](docs/superpowers/plans/2026-11-03-M3-范围清单.md)、[M3a 计划](docs/superpowers/plans/2026-11-03-M3a-管理底座与看全校.md)、[M3b 计划](docs/superpowers/plans/2026-11-03-M3b-联考报表通知与学年.md) |
+| M3b 联考报表、通知与学年 | ✅ 已完成(tag `v0.5.1-m3b-reports-notify`,合并后由协调会话打) | 18 task(1–18):年级联考与成绩汇总、月度考勤报告、审计查询、AI 使用与配置、通知与 WebSocket 实时推送、学年升级向导、往年班级只读查看;文件:[M3b 计划](docs/superpowers/plans/2026-11-03-M3b-联考报表通知与学年.md);M3 整体范围:[范围清单](docs/superpowers/plans/2026-11-03-M3-范围清单.md) |
 | M4 家长角色 | ⏳ 未开始 | plan 待写 |
 | M5 监控 + 部署 | ⏳ 未开始 | plan 待写 |
 
@@ -164,7 +164,7 @@ Step N+(1-k): Commit          → git add && git commit
 |---|---|---|
 | 后端单元/集成 | pytest + testcontainers(真 Postgres / 真 Redis) | `cd server && uv run pytest` |
 | 前端单元 | Vitest + Testing Library | `cd apps/web && npm run test` |
-| 前端 E2E | Playwright | `cd apps/web && npm run e2e` |
+| 前端 E2E | Playwright(project 链 mutating → … → admin → m3b → readonly) | `cd apps/web && npm run e2e` |
 | 后端 Lint | ruff | `uv run ruff check . && uv run ruff format --check .` |
 | 前端 Lint | ESLint + Prettier | `npm run lint` |
 
