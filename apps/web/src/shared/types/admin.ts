@@ -1,3 +1,4 @@
+import type { ExamType, SubjectFull } from './grades'
 import type { StudentSeat } from './student'
 
 export type Context = 'teacher' | 'admin'
@@ -70,6 +71,8 @@ export interface TodayView {
     bottom: { class_id: string; class_name: string; student_id: string; name: string; net: number }[]
     teachers: { user_id: string; display_name: string; count: number }[]
   }
+  grade_exam?: { id: string; name: string; grade_name: string; entered: number; expected: number } | null
+  my_notices?: { id: string; title: string; created_at: string; recipients: number; read: number }[]
 }
 export interface BoardClass {
   id: string; name: string; room: string; homeroom_name: string | null
@@ -79,3 +82,142 @@ export interface BoardClass {
   metrics: { students: number; present: number; leave: number; absent: number; late: number; confirmed: boolean; week_net: number }
 }
 export interface BoardView { grades: { id: string; name: string }[]; grade_id: string | null; classes: BoardClass[] }
+
+// ---- M3b:年级联考 ----
+export interface GradeExamClass { class_id: string; class_name: string; exam_id: string; entered: number; expected: number }
+export interface GradeExam {
+  id: string; grade_id: string; grade_name: string
+  name: string; exam_type: ExamType; date: string; subjects: SubjectFull[]
+  classes: GradeExamClass[]
+  missing_classes: { class_id: string; class_name: string }[]
+}
+export interface GradeExamInput { grade_id: string; name: string; exam_type: ExamType; date: string; subjects: SubjectFull[] }
+
+// ---- 成绩汇总 ----
+export interface SubjectStat {
+  subject: string; full: number
+  count: number; missing: number
+  avg: number | null; max: number | null; min: number | null
+  pass_rate: number | null; good_rate: number | null
+}
+export interface TotalStat { full: number; count: number; avg: number | null; max: number | null; min: number | null }
+export interface ScoreSummary {
+  grade_exam: { id: string; name: string; date: string; grade_name: string }
+  subjects: SubjectFull[]
+  classes: { class_id: string; class_name: string; subjects: SubjectStat[]; total: TotalStat }[]
+  grade: { subjects: SubjectStat[]; total: TotalStat }
+}
+export interface ScoreStudentRow {
+  student_id: string; name: string; student_no: string | null; class_id: string; class_name: string
+  scores: Record<string, number | null>; total: number | null
+  class_rank: number | null; grade_rank: number | null
+}
+
+// ---- 月度考勤报告 ----
+export interface AttendanceCounts { days: number; expected: number; present: number; leave: number; absent: number; late: number; rate: number | null }
+export interface AttendanceReport {
+  month: string; scope_label: string
+  classes: ({ class_id: string; class_name: string; grade_name: string } & AttendanceCounts)[]
+  total: AttendanceCounts
+}
+export interface AttendanceClassDetail {
+  month: string; class_id: string; class_name: string; days: number
+  students: { student_id: string; name: string; student_no: string | null; leave: number; absent: number; late: number }[]
+}
+
+// ---- 审计 ----
+export interface AuditRow {
+  id: string; at: string
+  user_id: string | null; user_name: string | null
+  action: string; action_label: string
+  object_type: string | null; object_id: string | null; object_label: string | null
+  ip: string | null; success: boolean; extra: Record<string, unknown> | null
+}
+export interface AuditActions { groups: { key: string; label: string; actions: { action: string; label: string }[] }[] }
+
+// ---- AI 使用与配置 ----
+export interface AiUsageRow {
+  user_id: string; display_name: string; calls: number; failed: number
+  prompt_tokens: number; completion_tokens: number
+  top_templates: { template: string; label: string; count: number }[]
+}
+export interface AiUsage {
+  month: string; rows: AiUsageRow[]
+  total: { calls: number; failed: number; prompt_tokens: number; completion_tokens: number }
+}
+export interface AiConfigView {
+  provider: string | null; base_url: string | null; model: string | null; temperature: number | null
+  mask_forced: boolean; key_set: boolean; key_undecryptable: boolean
+  providers: { id: string; label: string; base_url: string; models: string[] }[]
+}
+export interface AiConfigSave {
+  provider: string; base_url: string; model: string; temperature: number; mask_forced: boolean
+  api_key: string | null
+}
+
+// ---- 通知 ----
+export type NoticeTarget =
+  | { kind: 'school' }
+  | { kind: 'grade'; grade_id: string }
+  | { kind: 'class'; class_id: string }
+  | { kind: 'users'; user_ids: string[] }
+export interface NoticeInput { title: string; content: string; target: NoticeTarget }
+export interface NoticeSent {
+  id: string; title: string; content: string; target_label: string
+  created_at: string; recalled_at: string | null; recipients: number; read: number
+}
+export interface InboxItem {
+  id: string; title: string; content: string | null; from_name: string | null
+  created_at: string; read_at: string | null; recalled: boolean
+}
+export interface Inbox { items: InboxItem[]; total: number; unread: number }
+export interface NoticePerson { user_id: string; name: string; tags: string[] }
+export interface NoticeRecipients {
+  read: { user_id: string; name: string; read_at: string }[]
+  unread: { user_id: string; name: string }[]
+}
+
+// ---- 学年升级 ----
+export interface UpgradeClassPlan {
+  from_class_id: string; from_name?: string | null
+  action: 'promote' | 'graduate'
+  to_grade_name?: string | null; to_name?: string | null
+  homeroom_teacher_id?: string | null; teacher_name?: string | null
+  keep_teachers: boolean
+}
+export interface UpgradeStudentPlan {
+  enrollment_id: string; name?: string | null
+  action: 'repeat' | 'leave'
+  to?: { successor_of?: string | null; new_class?: number | null } | null
+}
+export interface UpgradeNewClassPlan {
+  grade_name: string; name: string; homeroom_teacher_id?: string | null
+  seat_rows: number; seat_cols: number; desk_size: 1 | 2 | 3; seat_layout: 'auto' | 'manual'
+}
+export interface GradeHeadPlan { grade_name: string; user_ids: string[] }
+export interface UpgradePlan {
+  version: 1
+  from_year_id: string
+  new_year: { name: string; start_date: string; end_date: string }
+  classes: UpgradeClassPlan[]
+  students: UpgradeStudentPlan[]
+  new_classes: UpgradeNewClassPlan[]
+  grade_heads?: GradeHeadPlan[] | null
+}
+export interface ClassPreview {
+  from_name: string; action: 'promote' | 'graduate' | 'new' | string
+  to_label: string; teacher_name: string | null
+  follow: number; repeat_in: number; repeat_out: number; leave: number; graduate: number
+}
+export interface UpgradePreview { new_year: string; classes: ClassPreview[]; new_classes: string[]; warnings: string[] }
+export interface UpgradeLatest { id: string; executed_at: string; from_year_name: string; to_year_name: string; rolled_back: boolean }
+
+// ---- 往年班级只读查看 ----
+export interface HistoryYear { id: string; name: string; start_date: string; end_date: string }
+export interface HistoryClass { class_id: string; class_name: string; grade_name: string; homeroom_name: string | null; students: number }
+export interface HistoryStudent { student_id: string; name: string; student_no: string | null; status: string }
+export interface HistoryExam { id: string; name: string; exam_type: ExamType; date: string; subjects: SubjectFull[] }
+export interface HistoryScores {
+  exam: HistoryExam
+  students: { student_id: string; name: string; student_no: string | null; scores: Record<string, number | null>; total: number | null; class_rank: number | null }[]
+}

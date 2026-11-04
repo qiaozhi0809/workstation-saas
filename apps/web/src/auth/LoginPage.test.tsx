@@ -1,3 +1,4 @@
+import { StrictMode } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -6,6 +7,7 @@ import { ApiError } from '@/shared/api/client'
 import type { LoginResponse } from '@/shared/types/api'
 import { useAuthStore } from '@/shared/stores/auth'
 import type { User } from '@/shared/types/user'
+import { peekLoginFlash, setLoginFlash } from './flash'
 import LoginPage from './LoginPage'
 
 vi.mock('@/shared/api/auth', () => ({ authApi: { login: vi.fn(), logout: vi.fn() } }))
@@ -167,4 +169,18 @@ it('revokes the refresh token when discarding a login without identity', async (
   await loginAs({ contexts: [] })
   await screen.findByRole('alert')
   expect(authApi.logout).toHaveBeenCalledWith('r')
+})
+
+it('shows the one-shot flash once, then clears it', () => {
+  setLoginFlash('你的账号已被停用')
+  render(<MemoryRouter><LoginPage /></MemoryRouter>)
+  expect(screen.getByText('你的账号已被停用')).toBeInTheDocument()
+  expect(peekLoginFlash()).toBeNull()
+})
+
+it('StrictMode 下仍显示提示,之后已清除', () => {
+  setLoginFlash('你的账号已被停用')
+  render(<StrictMode><MemoryRouter><LoginPage /></MemoryRouter></StrictMode>)
+  expect(screen.getByText('你的账号已被停用')).toBeInTheDocument()
+  expect(peekLoginFlash()).toBeNull()
 })

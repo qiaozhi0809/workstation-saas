@@ -23,7 +23,7 @@ vi.mock('@/shared/components/Toast', () => ({ toast: vi.fn() }))
 const EXAM: Exam = {
   id: 'e1', name: '十月月考', exam_type: '月考', date: '2026-10-20',
   subjects: [{ name: '语文', full: 100 }, { name: '数学', full: 100 }],
-  created_by_me: true, progress: { entered: 3, total: 3 },
+  grade_exam_id: null, created_by_me: true, progress: { entered: 3, total: 3 },
 }
 // e1 王小一 80/70;e2 李小二 50/缺考;e3 张小三 无记录
 const SHEET: ScoreSheet = {

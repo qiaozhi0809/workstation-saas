@@ -6,6 +6,7 @@ export interface SubjectFull { name: string; full: number }
 export interface Exam {
   id: string; name: string; exam_type: ExamType; date: string
   subjects: SubjectFull[]
+  grade_exam_id: string | null
   created_by_me: boolean
   progress: { entered: number; total: number }
 }

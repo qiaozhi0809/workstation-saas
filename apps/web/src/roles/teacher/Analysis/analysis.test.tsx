@@ -20,7 +20,7 @@ vi.mock('@/shared/api/students')
 const subjects = [{ name: '语文', full: 100 }, { name: '数学', full: 100 }]
 function exam(id: string, name: string, date: string, scores: GradebookExam['scores']): GradebookExam {
   return {
-    id, name, exam_type: '月考', date, subjects, created_by_me: true,
+    id, name, exam_type: '月考', date, subjects, grade_exam_id: null, created_by_me: true,
     progress: { entered: 3, total: 3 }, scores,
   }
 }

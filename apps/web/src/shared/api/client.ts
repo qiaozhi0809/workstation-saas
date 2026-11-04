@@ -42,6 +42,13 @@ function refreshOnce(refreshToken: string): Promise<boolean> {
   return refreshing
 }
 
+/** 用 store 里的刷新令牌换新 access(复用 refreshOnce 的并发合并);无刷新令牌返回 false */
+export async function refreshAccessToken(): Promise<boolean> {
+  const { refreshToken } = useAuthStore.getState()
+  if (!refreshToken) return false
+  return refreshOnce(refreshToken)
+}
+
 function send(
   method: string,
   path: string,

@@ -35,7 +35,7 @@ const roster: StudentSeat[] = NAMES.map((name, i) => ({
 function exam(id: string, date: string, ranks: Record<string, number> | null): GradebookExam {
   return {
     id, name: `考试${id}`, exam_type: '月考', date, subjects: [{ name: '语文', full: 100 }],
-    created_by_me: true, progress: { entered: 10, total: 10 },
+    grade_exam_id: null, created_by_me: true, progress: { entered: 10, total: 10 },
     scores: ranks ? Object.fromEntries(Object.entries(ranks).map(([e, r]) => [e, { 语文: 101 - r }])) : {},
   }
 }
