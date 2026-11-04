@@ -1,8 +1,9 @@
+from datetime import date
 from uuid import UUID
 
 from sqlalchemy import select
 
-from app.models import Enrollment, Exam, GradeExam, Score
+from app.models import AcademicYear, Enrollment, Exam, GradeExam, Score
 from tests.helpers import audit_rows, auth
 from tests.seed_ids import CLASS_ID, GRADE_ID, SCHOOL_ID, TEACHER_USER_ID
 
@@ -275,7 +276,45 @@ def test_get_unknown_or_other_school_is_404(client, settings):
     assert client.delete(f"{API}/{missing}", headers=h).status_code == 404
     assert client.post(f"{API}/{missing}/sync", headers=h).status_code == 404
     unknown_grade = _body("99999999-9999-9999-9999-999999999999")
-    assert client.post(API, json=unknown_grade, headers=h).status_code in (403, 404)
+    r = client.post(API, json=unknown_grade, headers=h)
+    assert r.status_code == 404 and r.json()["error"]["code"] == "NOT_FOUND"
+
+
+def test_past_year_grade_exam_is_404(client, db, settings):
+    out = _create(client, settings)
+    ge = db.get(GradeExam, UUID(out["id"]))
+    old = AcademicYear(
+        school_id=UUID(SCHOOL_ID),
+        name="2025-2026",
+        start_date=date(2025, 9, 1),
+        end_date=date(2026, 7, 15),
+        is_active=False,
+    )
+    db.add(old)
+    db.flush()
+    ge.academic_year_id = old.id
+    db.flush()
+    h = auth(settings, DEAN)
+    assert client.get(API, headers=h).json() == []
+    for r in (
+        client.put(f"{API}/{out['id']}", json=_body(), headers=h),
+        client.delete(f"{API}/{out['id']}", headers=h),
+        client.post(f"{API}/{out['id']}/sync", headers=h),
+    ):
+        assert r.status_code == 404 and r.json()["error"]["code"] == "NOT_FOUND"
+
+
+def test_remove_subject_with_only_absent_rows_rejected(client, db, settings):
+    out = _create(client, settings)
+    _score(db, _exam_of(db, out["id"], CLASS_ID).id, CLASS_ID, "数学", None)  # 只有缺考
+    r = client.put(
+        f"{API}/{out['id']}",
+        json=_body(subjects=[{"name": "语文", "full": 100}]),
+        headers=auth(settings, DEAN),
+    )
+    assert r.status_code == 409
+    err = r.json()["error"]
+    assert err["code"] == "EXAM_HAS_SCORES" and err["details"] == {"subject": "数学"}
 
 
 def test_class_exam_out_has_grade_exam_id(client, db, settings):

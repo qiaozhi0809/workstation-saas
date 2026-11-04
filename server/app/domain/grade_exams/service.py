@@ -16,7 +16,7 @@ from app.domain.grade_exams.schemas import (
     GradeExamOut,
     MissingClass,
 )
-from app.domain.schools.service import require_active_year
+from app.domain.schools.service import active_academic_year, require_active_year
 from app.errors import ApiError
 from app.models import AcademicYear, Enrollment, Exam, Grade, GradeExam, SchoolClass, Score, User
 from app.rbac.bindings import Binding, Scope, can
@@ -39,6 +39,9 @@ def get_grade_exam(
     else:
         ge = db.get(GradeExam, grade_exam_id)
     if ge is None or ge.school_id != school_id:
+        raise ApiError(404, "NOT_FOUND", "联考不存在")
+    year = active_academic_year(db, school_id)
+    if year is None or ge.academic_year_id != year.id:  # 往年联考视为不存在
         raise ApiError(404, "NOT_FOUND", "联考不存在")
     return ge
 
@@ -139,9 +142,7 @@ def grade_exam_out(db: Session, ge: GradeExam) -> GradeExamOut:
     )
 
 
-def _visible_grade_ids(
-    db: Session, bindings: Sequence[Binding], year: AcademicYear
-) -> set[UUID] | None:
+def _visible_grade_ids(bindings: Sequence[Binding], year: AcademicYear) -> set[UUID] | None:
     """school.view 可见的年级:None = 全校;否则只含领导身份绑定的年级。"""
     leaders = [b for b in bindings if b.role in LEADER_ROLES]
     if can(leaders, Perm.CLASS_READ, Scope(school_id=year.school_id)):
@@ -157,7 +158,7 @@ def list_grade_exams(
         .where(GradeExam.school_id == year.school_id, GradeExam.academic_year_id == year.id)
         .order_by(GradeExam.date.desc(), GradeExam.created_at.desc(), GradeExam.id)
     )
-    visible = _visible_grade_ids(db, bindings, year)
+    visible = _visible_grade_ids(bindings, year)
     if visible is not None:
         stmt = stmt.where(GradeExam.grade_id.in_(visible))
     if grade_id is not None:
