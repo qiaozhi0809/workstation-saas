@@ -64,15 +64,25 @@ class NewClassPlan(BaseModel):
     name: str = Field(min_length=1)
     homeroom_teacher_id: UUID | None = None
     seat_rows: int = Field(default=7, ge=1, le=12)
-    seat_cols: int = Field(default=4, ge=1, le=12)
+    seat_cols: int = 4
     desk_size: Literal[1, 2, 3] = 2
     seat_layout: Literal["auto", "manual"] = "auto"
 
     @model_validator(mode="after")
     def _cols_fit_desk(self) -> "NewClassPlan":
-        if self.seat_cols % self.desk_size != 0:
-            raise ValueError("seat_cols 必须是 desk_size 的整数倍")
+        # 单人桌 2..12;双人桌 2..12 且为偶数;三人桌 3..12 且为 3 的倍数
+        low = 3 if self.desk_size == 3 else 2
+        step = self.desk_size if self.desk_size > 1 else 1
+        if not low <= self.seat_cols <= 12 or self.seat_cols % step != 0:
+            raise ValueError("每排座位数不合规")
         return self
+
+
+class GradeHeadPlan(BaseModel):
+    """新学年某个年级的组长(账号);`grade_name` 是新学年的年级名。"""
+
+    grade_name: str
+    user_ids: list[UUID]
 
 
 class UpgradePlan(BaseModel):
@@ -82,3 +92,5 @@ class UpgradePlan(BaseModel):
     classes: list[ClassPlan]
     students: list[StudentPlan] = []
     new_classes: list[NewClassPlan] = []
+    # None = 旧规则(组长跟届);数组 = 新学年每个年级的组长,未列出的年级没有组长
+    grade_heads: list[GradeHeadPlan] | None = None
