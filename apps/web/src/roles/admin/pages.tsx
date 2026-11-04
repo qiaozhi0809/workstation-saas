@@ -9,6 +9,9 @@ import ClassViewPage from './Board/ClassViewPage'
 import TodayPage from './Today/TodayPage'
 // ── 段 F(今日 / 看板):import 追加在此行之上 ──
 
+import { Building2 } from 'lucide-react'
+import ClassInfoPage from './Org/ClassInfoPage'
+import OrgPage from './Org/OrgPage'
 // ── 段 D(组织架构):import 追加在此行之上 ──
 
 import { Settings, Users } from 'lucide-react'
@@ -36,6 +39,8 @@ export const ADMIN_PAGES: AdminPage[] = [
   { path: 'classes/:id', label: '班级', icon: LayoutGrid, perm: 'school.view', element: <ClassViewPage />, hidden: true },
   // ── board:追加在此行之上 ──
 
+  { path: 'org', label: '组织架构', icon: Building2, perm: 'org.manage', element: <OrgPage /> },
+  { path: 'org/classes/:id', label: '班级信息', icon: Building2, perm: 'org.manage', element: <ClassInfoPage />, hidden: true },
   // ── org:追加在此行之上 ──
 
   { path: 'accounts', label: '账号', icon: Users, perm: 'account.manage', element: <AccountsPage /> },

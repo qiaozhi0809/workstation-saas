@@ -31,9 +31,13 @@ PRESETS: dict[Stage, list[SubjectFull]] = {
 }
 
 
+STAGE_KEY: dict[str, Stage] = {"小学": "primary", "初中": "junior", "高中": "senior"}
+
+
 def _preset_for(db: Session, cls: SchoolClass) -> list[SubjectFull]:
     grade = db.get(Grade, cls.grade_id)
-    return [s.model_copy() for s in PRESETS[stage_of(grade.name if grade else "")]]
+    stage = STAGE_KEY.get(grade.stage) if grade and grade.stage else None
+    return [s.model_copy() for s in PRESETS[stage or stage_of(grade.name if grade else "")]]
 
 
 def class_subjects(db: Session, cls: SchoolClass) -> list[SubjectFull]:
