@@ -12,6 +12,7 @@ from app.models.classroom import (
 )
 from app.models.grades import Exam, GradeExam, Score
 from app.models.notices import Notice, NoticeRecipient
+from app.models.parents import Parent, ParentLink
 from app.models.rbac import RoleBinding
 from app.models.records import Comment, GrowthRecord
 from app.models.school import AcademicYear, Grade, School, SchoolClass, SchoolSetting
@@ -37,6 +38,8 @@ __all__ = [
     "GrowthRecord",
     "Notice",
     "NoticeRecipient",
+    "Parent",
+    "ParentLink",
     "Review",
     "RoleBinding",
     "School",
