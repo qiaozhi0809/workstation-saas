@@ -6,6 +6,7 @@ import { ApiError } from '@/shared/api/client'
 import type { LoginResponse } from '@/shared/types/api'
 import { useAuthStore } from '@/shared/stores/auth'
 import type { User } from '@/shared/types/user'
+import { setLoginFlash, takeLoginFlash } from './flash'
 import LoginPage from './LoginPage'
 
 vi.mock('@/shared/api/auth', () => ({ authApi: { login: vi.fn(), logout: vi.fn() } }))
@@ -169,11 +170,9 @@ it('revokes the refresh token when discarding a login without identity', async (
   expect(authApi.logout).toHaveBeenCalledWith('r')
 })
 
-it('shows the message carried in navigation state (e.g. account disabled)', () => {
-  render(
-    <MemoryRouter initialEntries={[{ pathname: '/login', state: { message: '你的账号已被停用' } }]}>
-      <LoginPage />
-    </MemoryRouter>,
-  )
+it('shows the one-shot flash once, then clears it', () => {
+  setLoginFlash('你的账号已被停用')
+  render(<MemoryRouter><LoginPage /></MemoryRouter>)
   expect(screen.getByText('你的账号已被停用')).toBeInTheDocument()
+  expect(takeLoginFlash()).toBeNull()
 })

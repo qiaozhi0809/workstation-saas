@@ -1,6 +1,7 @@
 import { act, render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, expect, it, vi } from 'vitest'
+import { takeLoginFlash } from '@/auth/flash'
 import { useAuthStore } from '@/shared/stores/auth'
 import type { RealtimeEvent } from './client'
 
@@ -50,7 +51,7 @@ it('登录后创建并 start 客户端,卸载时 stop', () => {
   expect(h.made[0].stop).toHaveBeenCalled()
 })
 
-it('未登录不创建客户端;登出时 stop', () => {
+it('未登录不创建客户端', () => {
   useAuthStore.setState({ accessToken: null, refreshToken: null, user: null })
   render(wrap(<div />))
   expect(h.made).toHaveLength(0)
@@ -83,6 +84,8 @@ it('session.revoked:登出并跳登录页', () => {
   act(() => h.made[0].opts.onEvent({ type: 'session.revoked' }))
   expect(useAuthStore.getState().accessToken).toBeNull()
   expect(screen.getByText('login-page')).toBeInTheDocument()
+  expect(h.made[0].stop).toHaveBeenCalled()
+  expect(takeLoginFlash()).toBe('你的账号已被停用')
 })
 
 it('一个订阅者抛错不影响其余订阅者', () => {

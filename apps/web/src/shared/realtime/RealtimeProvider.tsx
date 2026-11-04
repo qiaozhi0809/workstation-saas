@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { setLoginFlash } from '@/auth/flash'
 import { useAuthStore } from '@/shared/stores/auth'
 import { createRealtimeClient, realtimeUrl, type RealtimeEvent } from './client'
 import { RealtimeContext, type RealtimeSubscribe } from './context'
@@ -26,8 +27,9 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
       getToken: () => useAuthStore.getState().accessToken,
       onEvent: (e) => {
         if (e.type === 'session.revoked') {
+          setLoginFlash(REVOKED_MESSAGE)
           useAuthStore.getState().logout()
-          navRef.current('/login', { replace: true, state: { message: REVOKED_MESSAGE } })
+          navRef.current('/login', { replace: true })
         }
         for (const fn of [...subs.current]) {
           try { fn(e) } catch (err) { console.error('realtime subscriber failed', err) }
