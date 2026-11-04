@@ -54,7 +54,7 @@ function AddForm({ profile, canUseAi }: { profile: StudentProfile; canUseAi: boo
   )
 }
 
-function CommentList({ profile, timezone }: { profile: StudentProfile; timezone: string }) {
+function CommentList({ profile, timezone, canWrite }: { profile: StudentProfile; timezone: string; canWrite: boolean }) {
   const queryClient = useQueryClient()
   const { data, error, refetch, isFetching } = useQuery({
     queryKey: ['comments', profile.id],
@@ -64,6 +64,12 @@ function CommentList({ profile, timezone }: { profile: StudentProfile; timezone:
     mutationFn: (id: string) => commentsApi.remove(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['comments', profile.id] }),
     onError: (err) => toast(err instanceof ApiError ? err.message : '删除失败,请重试'),
+  })
+
+  const share = useMutation({
+    mutationFn: ({ id, visible }: { id: string; visible: boolean }) => commentsApi.setParentVisible(id, visible),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['comments', profile.id] }),
+    onError: (err) => toast(err instanceof ApiError ? err.message : '操作失败,请重试'),
   })
 
   if (error) return <ErrorState title="评语加载失败" onRetry={() => void refetch()} retrying={isFetching} />
@@ -86,6 +92,15 @@ function CommentList({ profile, timezone }: { profile: StudentProfile; timezone:
               )}
             </div>
           </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <button type="button" role="switch" aria-checked={c.parent_visible} aria-label="给家长看"
+              disabled={!canWrite || share.isPending} onClick={() => share.mutate({ id: c.id, visible: !c.parent_visible })}
+              className={`relative h-5 w-9 shrink-0 rounded-full transition-colors disabled:opacity-50 ${c.parent_visible ? 'bg-primary' : 'bg-muted-foreground/40'}`}>
+              <span className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-background transition-transform ${c.parent_visible ? 'translate-x-4' : ''}`} />
+            </button>
+            <span aria-hidden="true">给家长看</span>
+            {c.generated_by_ai && !c.parent_visible && <span className="text-warning">AI 生成,需确认后才给家长看</span>}
+          </div>
           {/* 评语是纯文本,按文本渲染并保留换行 */}
           <p className="mt-1 whitespace-pre-wrap break-words text-foreground">{c.content}</p>
         </li>
@@ -107,7 +122,7 @@ export default function CommentsTab({ profile }: { profile: StudentProfile }) {
   return (
     <section>
       {perms.includes('comment.write') && <AddForm profile={profile} canUseAi={perms.includes('ai.class')} />}
-      <CommentList profile={profile} timezone={summary.data.timezone} />
+      <CommentList profile={profile} timezone={summary.data.timezone} canWrite={perms.includes('comment.write')} />
     </section>
   )
 }
