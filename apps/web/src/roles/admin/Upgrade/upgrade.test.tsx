@@ -501,6 +501,7 @@ describe('latest upgrade and rollback', () => {
     fireEvent.click(screen.getByRole('button', { name: '回滚' }))
     fireEvent.click(screen.getByRole('button', { name: '确认回滚' }))
     await waitFor(() => expect(api.upgradeLatest).toHaveBeenCalledTimes(2))
+    expect(api.upgradeRollback).toHaveBeenCalledWith('up1')
     await waitFor(() => expect(screen.getByRole('button', { name: '回滚' })).toBeDisabled())
     expect(screen.getByText('已回滚')).toBeInTheDocument()
   })
@@ -727,6 +728,19 @@ describe('review: rollback with nothing to roll back', () => {
     fireEvent.click(screen.getByRole('button', { name: '确认回滚' }))
     expect(await screen.findByText('没有可以回滚的学年升级')).toBeInTheDocument()
     await waitFor(() => expect(api.upgradeLatest).toHaveBeenCalledTimes(2))
+  })
+})
+
+describe('rollback of a stale card', () => {
+  it('reloads the latest card when the upgrade is no longer the latest', async () => {
+    api.upgradeLatest.mockResolvedValueOnce(latest).mockResolvedValue({ ...latest, id: 'up2' })
+    api.upgradeRollback.mockRejectedValue(new ApiError(409, 'UPGRADE_NOT_LATEST', '只能回滚最近一次升级', { latest_id: 'up2' }))
+    renderPage()
+    await screen.findByText(/2026-2027 → 2027-2028,执行于/)
+    fireEvent.click(screen.getByRole('button', { name: '回滚' }))
+    fireEvent.click(screen.getByRole('button', { name: '确认回滚' }))
+    await waitFor(() => expect(api.upgradeLatest).toHaveBeenCalledTimes(2))
+    expect(api.upgradeRollback).toHaveBeenCalledWith('up1')
   })
 })
 

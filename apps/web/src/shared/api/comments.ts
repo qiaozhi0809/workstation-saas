@@ -10,5 +10,7 @@ export const commentsApi = {
     api<Comment>('POST', `/students/${enc(studentId)}/comments`, body),
   bulk: (classId: string, body: CommentBulk) =>
     api<{ created: number }>('POST', `/classes/${enc(classId)}/comments/bulk`, body),
+  setParentVisible: (id: string, visible: boolean) =>
+    api<Comment>('PUT', `/comments/${enc(id)}/parent-visible`, { visible }),
   remove: (id: string) => api<void>('DELETE', `/comments/${enc(id)}`),
 }

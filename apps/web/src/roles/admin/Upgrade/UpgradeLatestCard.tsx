@@ -21,16 +21,16 @@ export default function UpgradeLatestCard({ onRolledBack }: { onRolledBack?(): v
   const [open, setOpen] = useState(false)
   const latest = useQuery({ queryKey: ['upgrade', 'latest'], queryFn: adminApi.upgradeLatest })
   const rollback = useMutation({
-    mutationFn: adminApi.upgradeRollback,
+    mutationFn: (upgradeId: string) => adminApi.upgradeRollback(upgradeId),
     onSuccess: () => {
       setOpen(false)
       onRolledBack?.()
       toast('已回滚,新学年的班级与注册记录已删除')
       void refreshYearData(qc)
     },
-    // 没有可回滚的升级:卡片上的信息已经过时,重取
+    // 没有可回滚的升级 / 卡片上的不是最近一次:信息已经过时,重取
     onError: (e) => {
-      if (e instanceof ApiError && e.code === 'UPGRADE_NOTHING_TO_ROLLBACK') void qc.invalidateQueries({ queryKey: ['upgrade', 'latest'] })
+      if (e instanceof ApiError && (e.code === 'UPGRADE_NOTHING_TO_ROLLBACK' || e.code === 'UPGRADE_NOT_LATEST')) void qc.invalidateQueries({ queryKey: ['upgrade', 'latest'] })
     },
   })
   const up = latest.data
@@ -53,7 +53,7 @@ export default function UpgradeLatestCard({ onRolledBack }: { onRolledBack?(): v
           )}
       </CardContent>
       <ConfirmBox open={open} title="回滚学年升级" confirmLabel="确认回滚" busy={rollback.isPending}
-        error={err ? (hasData ? err.message : errMsg(err)) : null} onConfirm={() => rollback.mutate()} onClose={close}>
+        error={err ? (hasData ? err.message : errMsg(err)) : null} onConfirm={() => { if (up) rollback.mutate(up.id) }} onClose={close}>
         <p>回滚会删除新学年的班级与注册记录,往年数据不受影响</p>
         {hasData && (
           <ul className="list-disc pl-5 text-destructive">

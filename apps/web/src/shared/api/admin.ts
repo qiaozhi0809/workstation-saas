@@ -128,7 +128,8 @@ export const adminApi = {
   upgradeApply: (plan: UpgradePlan) =>
     api<{ upgrade_id: string; new_year_id: string }>('POST', '/admin/years/upgrade', plan),
   upgradeLatest: () => api<UpgradeLatest | null>('GET', '/admin/years/upgrade/latest'),
-  upgradeRollback: () => api<{ ok: true }>('POST', '/admin/years/upgrade/rollback'),
+  upgradeRollback: (upgradeId: string) =>
+    api<{ ok: true }>('POST', '/admin/years/upgrade/rollback', { upgrade_id: upgradeId }),
   // ---- 往年班级(只读) ----
   historyYears: () => api<HistoryYear[]>('GET', '/admin/history/years'),
   historyClasses: (yearId: string) =>

@@ -10,6 +10,7 @@ import AppShell from '@/shared/components/layout/AppShell'
 import NoticeBell from '@/shared/components/layout/NoticeBell'
 import { NativeSelect } from '@/shared/components/ui/native-select'
 import { RealtimeProvider } from '@/shared/realtime/RealtimeProvider'
+import { switchTargets } from '@/shared/components/layout/switchTargets'
 import { useAuthStore } from '@/shared/stores/auth'
 import { confirmLeave, useTeacherStore } from '@/shared/stores/teacher'
 import ThemeToggle from '@/theme/ThemeToggle'
@@ -71,7 +72,7 @@ export default function TeacherLayout() {
       <AccountMenu
         name={user?.display_name}
         onLogout={logout}
-        switchTo={user?.contexts.includes('admin') ? { label: '切换到管理端', to: '/admin', context: 'admin' as const } : undefined}
+        switchTo={switchTargets(user?.contexts, 'teacher')}
       />
     </>
   )

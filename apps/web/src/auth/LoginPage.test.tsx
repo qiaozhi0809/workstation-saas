@@ -184,3 +184,39 @@ it('StrictMode 下仍显示提示,之后已清除', () => {
   expect(screen.getByText('你的账号已被停用')).toBeInTheDocument()
   expect(peekLoginFlash()).toBeNull()
 })
+
+it('redirects an already signed-in user to the home of the last context', () => {
+  const user: User = { id: 'u', display_name: 't', contexts: ['teacher', 'parent'], admin_perms: [], must_change_password: false }
+  useAuthStore.setState({ accessToken: 'a', refreshToken: 'r', user, lastContext: 'parent' })
+  render(
+    <MemoryRouter initialEntries={['/login']}>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/parent" element={<div>parent home</div>} />
+        <Route path="/teacher" element={<div>teacher home</div>} />
+      </Routes>
+    </MemoryRouter>,
+  )
+  expect(screen.getByText('parent home')).toBeInTheDocument()
+  expect(screen.queryByLabelText('登录名')).toBeNull()
+})
+
+it('redirects a signed-in user who must change the password to /change-password', () => {
+  const user: User = { id: 'u', display_name: 't', contexts: ['parent'], admin_perms: [], must_change_password: true }
+  useAuthStore.setState({ accessToken: 'a', refreshToken: 'r', user, lastContext: null })
+  render(
+    <MemoryRouter initialEntries={['/login']}>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/change-password" element={<div>change pw</div>} />
+      </Routes>
+    </MemoryRouter>,
+  )
+  expect(screen.getByText('change pw')).toBeInTheDocument()
+})
+
+it('stays on the login form when there is a token but no user yet', () => {
+  useAuthStore.setState({ accessToken: 'a', refreshToken: 'r', user: null })
+  render(<MemoryRouter><LoginPage /></MemoryRouter>)
+  expect(screen.getByLabelText('登录名')).toBeInTheDocument()
+})

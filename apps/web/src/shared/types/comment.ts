@@ -11,6 +11,8 @@ export interface Comment {
   created_by_name: string | null
   can_delete: boolean
   created_at: string
+  /** 家长端是否可见 */
+  parent_visible: boolean
 }
 
 export interface CommentInput {

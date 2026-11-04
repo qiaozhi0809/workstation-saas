@@ -30,7 +30,7 @@ it('changes the password from the account menu and closes', async () => {
 })
 
 it('switchTo records the last context before navigating', () => {
-  render(<MemoryRouter><AccountMenu name="王老师" onLogout={() => {}} switchTo={{ label: '切换到管理端', to: '/admin', context: 'admin' }} /></MemoryRouter>)
+  render(<MemoryRouter><AccountMenu name="王老师" onLogout={() => {}} switchTo={[{ label: '切换到管理端', to: '/admin', context: 'admin' }]} /></MemoryRouter>)
   fireEvent.click(screen.getByRole('button', { name: '账号菜单' }))
   fireEvent.click(screen.getByRole('menuitem', { name: '切换到管理端' }))
   expect(useAuthStore.getState().lastContext).toBe('admin')
@@ -55,4 +55,23 @@ it('links the rule hint to the new password input', async () => {
   fireEvent.click(screen.getByRole('button', { name: '账号菜单' }))
   fireEvent.click(screen.getByRole('menuitem', { name: '修改密码' }))
   expect(await screen.findByLabelText('新密码')).toHaveAccessibleDescription('至少 8 位,字母、数字、符号中至少两种')
+})
+
+it('lists every other context as a switch item and records the chosen one', () => {
+  const switchTo = [
+    { label: '切换到教师端', to: '/teacher', context: 'teacher' as const },
+    { label: '切换到家长端', to: '/parent', context: 'parent' as const },
+  ]
+  render(<MemoryRouter><AccountMenu name="王老师" onLogout={() => {}} switchTo={switchTo} /></MemoryRouter>)
+  fireEvent.click(screen.getByRole('button', { name: '账号菜单' }))
+  expect(screen.getByRole('menuitem', { name: '切换到教师端' })).toBeInTheDocument()
+  expect(screen.queryByRole('menuitem', { name: '切换到管理端' })).toBeNull()
+  fireEvent.click(screen.getByRole('menuitem', { name: '切换到家长端' }))
+  expect(useAuthStore.getState().lastContext).toBe('parent')
+})
+
+it('shows no switch item without other contexts', () => {
+  render(<MemoryRouter><AccountMenu name="王老师" onLogout={() => {}} /></MemoryRouter>)
+  fireEvent.click(screen.getByRole('button', { name: '账号菜单' }))
+  expect(screen.queryByRole('menuitem', { name: /切换到/ })).toBeNull()
 })

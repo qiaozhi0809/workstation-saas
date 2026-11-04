@@ -1,4 +1,4 @@
-import { refreshAccessToken } from '@/shared/api/client'
+import { tryRefreshAccessToken } from '@/shared/api/client'
 
 export type RealtimeEvent =
   | { type: 'notice.new'; id: string; title: string; from_name: string | null; created_at: string }
@@ -37,6 +37,12 @@ export function createRealtimeClient(opts: RealtimeOptions): { start(): void; st
   const finish = () => {
     terminal = true
     if (timer) { clearTimeout(timer); timer = null }
+  }
+
+  const scheduleReconnect = () => {
+    const delay = BACKOFF_S[Math.min(attempt, BACKOFF_S.length - 1)]
+    attempt += 1
+    timer = setTimeout(() => { timer = null; connect() }, delay * 1000)
   }
 
   const connect = () => {
@@ -79,19 +85,22 @@ export function createRealtimeClient(opts: RealtimeOptions): { start(): void; st
         finish()
         emit({ type: 'session.revoked' })
       } else if (e.code === 4401) {
-        // 令牌失效:刷新成功后立即再连,失败则停止
-        if (refreshedSinceReady) { finish(); return }   // 刷新过仍被拒:停止,避免紧循环
-        refreshedSinceReady = true
+        // 令牌失效:刷新成功立即再连;被拒停止;网络错误按退避表再连(下次仍 4401 可再试刷新)
+        if (refreshedSinceReady) { finish(); return }   // 刷新成功后仍被拒:停止,避免紧循环
         const myGen = gen
-        void refreshAccessToken().then((ok) => {
+        void tryRefreshAccessToken().then((result) => {
           if (!active || terminal || gen !== myGen) return
-          if (ok) connect()
-          else finish()
+          if (result === 'ok') {
+            refreshedSinceReady = true
+            connect()
+          } else if (result === 'rejected') {
+            finish()
+          } else {
+            scheduleReconnect()
+          }
         })
       } else {
-        const delay = BACKOFF_S[Math.min(attempt, BACKOFF_S.length - 1)]
-        attempt += 1
-        timer = setTimeout(() => { timer = null; connect() }, delay * 1000)
+        scheduleReconnect()
       }
     }
     sock.onerror = () => { /* 随后会触发 close,在那里处理重连 */ }
