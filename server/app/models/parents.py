@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, Text, text
+from sqlalchemy import ForeignKey, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -29,6 +29,9 @@ class Parent(Base):
 
 class ParentLink(Base):
     __tablename__ = "parent_links"
+    __table_args__ = (
+        UniqueConstraint("parent_id", "student_id", name="parent_links_parent_id_student_id_key"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, **_UUID_PK)
     parent_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("parents.id", ondelete="CASCADE"))
