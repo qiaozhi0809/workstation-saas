@@ -35,10 +35,14 @@ function CommentsTab({ sid }: { sid: string }) {
 
 export default function GrowthPage() {
   const { child } = useChild()
+  if (!child) return null
+  // key 随孩子变:切换后页签回到"成长记录"
+  return <GrowthTabs key={child.student_id} sid={child.student_id} />
+}
+
+function GrowthTabs({ sid }: { sid: string }) {
   const [tab, setTab] = useState<TabId>('growth')
   const refs = useRef<Record<string, HTMLButtonElement | null>>({})
-  if (!child) return null
-  const sid = child.student_id
 
   const onKey = (e: KeyboardEvent, i: number) => {
     const d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0
@@ -74,7 +78,7 @@ export default function GrowthPage() {
           </button>
         ))}
       </div>
-      <div role="tabpanel" id="growth-panel" aria-labelledby={`growth-tab-${tab}`}>
+      <div role="tabpanel" tabIndex={0} id="growth-panel" aria-labelledby={`growth-tab-${tab}`}>
         {tab === 'growth' && <GrowthTab sid={sid} />}
         {tab === 'comments' && <CommentsTab sid={sid} />}
         {tab === 'reviews' && <ReviewHistory sid={sid} />}

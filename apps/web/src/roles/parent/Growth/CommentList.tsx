@@ -1,4 +1,7 @@
+import { formatInTz } from '@/shared/lib/date'
 import type { ParentComment } from '@/shared/types/parent'
+
+const SCHOOL_TZ = 'Asia/Shanghai'
 
 /** 按学期分组,保持接口给出的先后顺序 */
 export default function CommentList({ comments }: { comments: ParentComment[] }) {
@@ -17,7 +20,7 @@ export default function CommentList({ comments }: { comments: ParentComment[] })
             {g.items.map((c) => (
               <li key={c.id} className="rounded-xl border bg-card p-3 text-sm text-card-foreground">
                 <p className="break-words whitespace-pre-wrap">{c.content}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{c.created_at.slice(0, 10)}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{formatInTz(c.created_at, SCHOOL_TZ).slice(0, 10)}</p>
               </li>
             ))}
           </ul>

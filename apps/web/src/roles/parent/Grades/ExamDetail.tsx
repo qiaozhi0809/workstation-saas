@@ -3,7 +3,7 @@ import { parentApi } from '@/shared/api/parent'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
 
-const num = (v: number | null) => (v === null ? '—' : String(v))
+const num = (v: number | null | undefined) => (v == null ? '—' : String(v))
 
 export default function ExamDetail({ sid, examId }: { sid: string; examId: string }) {
   const q = useQuery({ queryKey: ['parent', sid, 'exam', examId], queryFn: () => parentApi.exam(sid, examId) })
@@ -28,7 +28,7 @@ export default function ExamDetail({ sid, examId }: { sid: string; examId: strin
               <tr key={s.name}>
                 <th scope="row" className="whitespace-nowrap px-3 py-2 font-medium">{s.name}</th>
                 <td className="whitespace-nowrap px-3 py-2 tabular-nums">
-                  {s.score === null ? <span className="text-muted-foreground">缺考</span> : `${s.score} / ${s.full}`}
+                  {s.score == null ? <span className="text-muted-foreground">缺考</span> : `${s.score} / ${s.full}`}
                 </td>
                 <td className="px-3 py-2 tabular-nums">{num(s.class_avg)}</td>
                 <td className="px-3 py-2 tabular-nums">{num(s.class_max)}</td>
@@ -37,8 +37,8 @@ export default function ExamDetail({ sid, examId }: { sid: string; examId: strin
           </tbody>
         </table>
       </div>
-      <p className="font-semibold">总分 {d.total === null ? '—' : `${d.total} / ${d.total_full}`}</p>
-      {d.class_rank !== null ? (
+      <p className="font-semibold">总分 {d.total == null ? '—' : `${d.total} / ${d.total_full}`}</p>
+      {d.class_rank != null ? (
         <p data-testid="rank-line">班级第 {d.class_rank} 名 / 共 {d.ranked} 人</p>
       ) : d.band ? (
         <p data-testid="rank-line">班级{d.band}</p>

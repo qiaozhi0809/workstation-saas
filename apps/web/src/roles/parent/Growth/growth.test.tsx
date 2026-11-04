@@ -63,8 +63,8 @@ it('lists growth records by date descending with a year divider where the year c
   expect(await screen.findByText('内容b')).toBeInTheDocument()
   const texts = screen.getAllByText(/^内容/).map((e) => e.textContent)
   expect(texts).toEqual(['内容b', '内容c', '内容a'])
-  const seps = screen.getAllByRole('separator')
-  expect(seps.map((s) => s.textContent)).toEqual(['2025-2026学年', '2024-2025学年'])
+  expect(screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent)).toEqual(['2025-2026学年', '2024-2025学年'])
+  expect(within(screen.getByRole('region', { name: '2025-2026学年' })).getAllByText(/^内容/)).toHaveLength(2)
   expect(screen.getByText('获奖')).toBeInTheDocument()
 })
 
@@ -139,4 +139,46 @@ it('shows a loading state then a retryable error', async () => {
   vi.mocked(parentApi.growth).mockRejectedValue(new Error('x'))
   open()
   expect(await screen.findByRole('button', { name: '重试' })).toBeInTheDocument()
+})
+
+it('does not loop after a failed next page and offers a manual retry', async () => {
+  let trigger: (() => void) | undefined
+  vi.stubGlobal('IntersectionObserver', class {
+    constructor(cb: (e: { isIntersecting: boolean }[]) => void) { trigger = () => cb([{ isIntersecting: true }]) }
+    observe() {} disconnect() {} unobserve() {}
+  })
+  vi.mocked(parentApi.reviews)
+    .mockResolvedValueOnce({ items: [rev('1')], next_cursor: 'c1' })
+    .mockRejectedValueOnce(new Error('x'))
+    .mockResolvedValueOnce({ items: [rev('2')], next_cursor: null })
+  open()
+  await goTab('点评')
+  await screen.findByText('点评1')
+  trigger!()
+  expect(await screen.findByText('加载更多失败')).toBeInTheDocument()
+  await new Promise((r) => setTimeout(r, 50))
+  expect(parentApi.reviews).toHaveBeenCalledTimes(2)
+  fireEvent.click(screen.getByRole('button', { name: '加载更多' }))
+  expect(await screen.findByText('点评2')).toBeInTheDocument()
+  expect(parentApi.reviews).toHaveBeenCalledTimes(3)
+})
+
+it('shows dates in school time, not the UTC date', async () => {
+  vi.mocked(parentApi.reviews).mockResolvedValue({ items: [rev('1', { given_at: '2026-10-01T20:00:00Z' })], next_cursor: null })
+  vi.mocked(parentApi.comments).mockResolvedValue({
+    items: [{ id: 'm1', semester: '2025-2026 第一学期', content: '好', created_at: '2026-01-10T20:00:00Z' }],
+  })
+  open()
+  await goTab('评语')
+  expect(await screen.findByText('2026-01-11')).toBeInTheDocument()
+  await goTab('点评')
+  expect(await screen.findByText(/2026-10-02/)).toBeInTheDocument()
+})
+
+it('goes back to the growth tab when the child changes', async () => {
+  vi.mocked(parentApi.children).mockResolvedValue([child(), child({ student_id: 's2', name: '王小二' })])
+  open()
+  await goTab('评语')
+  fireEvent.change(await screen.findByRole('combobox', { name: '切换孩子' }), { target: { value: 's2' } })
+  await waitFor(() => expect(screen.getByRole('tab', { name: '成长记录' })).toHaveAttribute('aria-selected', 'true'))
 })

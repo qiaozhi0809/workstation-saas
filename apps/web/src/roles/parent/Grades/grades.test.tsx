@@ -137,3 +137,18 @@ it('resets the opened exam when switching child and still works for a read-only 
   await waitFor(() => expect(screen.queryByRole('region', { name: '各科成绩' })).toBeNull())
   expect(parentApi.exams).toHaveBeenCalledWith('s2')
 })
+
+it('treats undefined values like null', async () => {
+  vi.mocked(parentApi.exam).mockResolvedValue({
+    ...detail(),
+    subjects: [{ name: '英语', full: 100, score: undefined, class_avg: undefined, class_max: undefined }],
+    total: undefined, class_rank: undefined, band: undefined,
+  } as unknown as ParentExamDetail)
+  open()
+  await openExam()
+  const row = await screen.findByRole('row', { name: /英语/ })
+  expect(within(row).getByText('缺考')).toBeInTheDocument()
+  expect(within(row).getAllByText('—')).toHaveLength(2)
+  expect(screen.getByText('总分 —')).toBeInTheDocument()
+  expect(screen.queryByTestId('rank-line')).toBeNull()
+})
