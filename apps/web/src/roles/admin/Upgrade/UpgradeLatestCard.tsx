@@ -16,7 +16,7 @@ const when = (iso: string) => {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString('zh-CN', { hour12: false })
 }
 
-export default function UpgradeLatestCard() {
+export default function UpgradeLatestCard({ onRolledBack }: { onRolledBack?(): void }) {
   const qc = useQueryClient()
   const [open, setOpen] = useState(false)
   const latest = useQuery({ queryKey: ['upgrade', 'latest'], queryFn: adminApi.upgradeLatest })
@@ -24,6 +24,7 @@ export default function UpgradeLatestCard() {
     mutationFn: adminApi.upgradeRollback,
     onSuccess: () => {
       setOpen(false)
+      onRolledBack?.()
       toast('已回滚,新学年的班级与注册记录已删除')
       void refreshYearData(qc)
     },

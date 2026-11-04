@@ -92,7 +92,7 @@ export default function UpgradePage() {
   return (
     <div className="grid gap-4 p-4">
       <h1 className="text-xl font-semibold">学年升级</h1>
-      <UpgradeLatestCard />
+      <UpgradeLatestCard onRolledBack={() => setDone(false)} />
       {done && <p role="status" className="rounded-md border border-success/40 bg-success/10 px-3 py-2 text-sm">升级已执行,新学年已生效</p>}
       <nav aria-label="升级步骤">
         <ol className="flex flex-wrap gap-2">
@@ -128,7 +128,7 @@ export default function UpgradePage() {
           )}
           {stepProps && step === 'newClasses' && <StepNewClasses {...stepProps} />}
           {stepProps && step === 'people' && <StepPeople {...stepProps} />}
-          {plan && step === 'preview' && <StepPreview plan={plan} onApplied={applied} onError={handleError} />}
+          {plan && step === 'preview' && <StepPreview plan={plan} blocked={stale || draftOld} onApplied={applied} onError={handleError} />}
         </CardContent>
       </Card>
       <div className="flex flex-wrap items-center gap-2">
@@ -140,7 +140,7 @@ export default function UpgradePage() {
         <p>重新生成会覆盖当前草稿里的所有改动</p>
       </ConfirmBox>
       <ConfirmBox open={askDiscard} title="放弃草稿" confirmLabel="确认放弃"
-        onConfirm={() => { d.clear(); setProblem(null); setStale(false); setNotice(null); setAskDiscard(false) }}
+        onConfirm={() => { d.clear(); setProblem(null); setStale(false); setNotice(null); setDone(false); setAskDiscard(false) }}
         onClose={() => setAskDiscard(false)}>
         <p>草稿方案将被清除,无法恢复</p>
       </ConfirmBox>

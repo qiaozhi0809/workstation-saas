@@ -64,8 +64,9 @@ beforeEach(() => {
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.clearAllMocks(); useAuthStore.setState({ user: null }) })
 
+let qc: QueryClient
 const renderPage = () => render(
-  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+  <QueryClientProvider client={(qc = new QueryClient({ defaultOptions: { queries: { retry: false } } }))}>
     <UpgradePage />
   </QueryClientProvider>,
 )
@@ -488,7 +489,7 @@ describe('latest upgrade and rollback', () => {
     expect(screen.getByText('回滚会删除新学年的班级与注册记录,往年数据不受影响')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '确认回滚' }))
     expect(await screen.findByText('年级联考 2 场')).toBeInTheDocument()
-    for (const t of ['看板改动 3 处', '座位调整 2 处', '班干部变动 1 处', '学生转出 4 人', '考勤记录 5 条', '新增学生 6 人', 'mystery: 7'])
+    for (const t of ['看板改动 3 处', '座位调整 2 个班', '班干部变动 1 人', '学生转出 4 人', '考勤记录 5 条', '新增学生 6 人', 'mystery: 7'])
       expect(screen.getByText(t)).toBeInTheDocument()
   })
 
@@ -750,5 +751,122 @@ describe('review: new class rows', () => {
     step('预览')
     await waitFor(() => expect(api.upgradePreview).toHaveBeenCalled())
     expect(lastPreviewBody().new_classes[0].seat_cols).toBe(6)
+  })
+})
+
+describe('final review polish', () => {
+  it('reuses the class-students query key and has no preview query', async () => {
+    renderPage()
+    await generate()
+    step('学生例外')
+    await screen.findByLabelText('周小乐 去向')
+    expect(qc.getQueryData(['class-students', 'c1'])).toBeDefined()
+    expect(qc.getQueryCache().findAll({ queryKey: ['upgrade', 'students'] })).toHaveLength(0)
+    step('预览')
+    await screen.findByRole('button', { name: '执行升级' })
+    expect(qc.getQueryCache().findAll({ queryKey: ['upgrade', 'preview'] })).toHaveLength(0)
+  })
+
+  it('requests the preview again on every entry and after a plan change', async () => {
+    renderPage()
+    await generate()
+    step('预览')
+    await screen.findByRole('button', { name: '执行升级' })
+    expect(api.upgradePreview).toHaveBeenCalledTimes(1)
+    step('班级去向')
+    fireEvent.change(screen.getByLabelText('三年一班 新班名'), { target: { value: '三班' } })
+    step('预览')
+    await waitFor(() => expect(api.upgradePreview).toHaveBeenCalledTimes(2))
+    expect(lastPreviewBody().classes[0].to_name).toBe('三班')
+  })
+
+  it('hints, without changing the value, when seat_cols does not fit the desk size', async () => {
+    renderPage()
+    await generate()
+    step('新建班级')
+    fireEvent.click(screen.getByRole('button', { name: '新增班级' }))
+    expect(screen.queryByText(/每排座位数需为/)).toBeNull()
+    expect(screen.getByLabelText('新建班1 列数')).toHaveAttribute('min', '2')
+    fireEvent.change(screen.getByLabelText('新建班1 每桌人数'), { target: { value: '3' } })
+    expect(screen.getByText('每排座位数需为 3 到 12 之间 3 的倍数')).toBeInTheDocument()
+    expect(screen.getByLabelText('新建班1 列数')).toHaveValue(4)
+    fireEvent.change(screen.getByLabelText('新建班1 列数'), { target: { value: '6' } })
+    expect(screen.queryByText(/每排座位数需为/)).toBeNull()
+    fireEvent.change(screen.getByLabelText('新建班1 每桌人数'), { target: { value: '2' } })
+    fireEvent.change(screen.getByLabelText('新建班1 列数'), { target: { value: '5' } })
+    expect(screen.getByText('每排座位数需为 2 到 12 之间的偶数')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('新建班1 每桌人数'), { target: { value: '1' } })
+    expect(screen.queryByText(/每排座位数需为/)).toBeNull()
+  })
+
+  it('hides the done banner after discarding a new draft', async () => {
+    api.upgradeApply.mockResolvedValue({ upgrade_id: 'up1', new_year_id: 'y2' })
+    renderPage()
+    await generate()
+    step('预览')
+    fireEvent.click(await screen.findByRole('button', { name: '执行升级' }))
+    fireEvent.click(screen.getByRole('button', { name: '确认执行' }))
+    await screen.findByText('升级已执行,新学年已生效')
+    fireEvent.change(screen.getByLabelText('开学日期'), { target: { value: '2028-09-01' } })
+    fireEvent.click(screen.getByRole('button', { name: '放弃草稿' }))
+    fireEvent.click(screen.getByRole('button', { name: '确认放弃' }))
+    await waitFor(() => expect(screen.queryByText('升级已执行,新学年已生效')).toBeNull())
+  })
+
+  it('hides the done banner after a successful rollback', async () => {
+    api.upgradeApply.mockResolvedValue({ upgrade_id: 'up1', new_year_id: 'y2' })
+    api.upgradeLatest.mockResolvedValue(latest)
+    api.upgradeRollback.mockResolvedValue({ ok: true })
+    renderPage()
+    await generate()
+    step('预览')
+    fireEvent.click(await screen.findByRole('button', { name: '执行升级' }))
+    fireEvent.click(screen.getByRole('button', { name: '确认执行' }))
+    await screen.findByText('升级已执行,新学年已生效')
+    fireEvent.click(await screen.findByRole('button', { name: '回滚' }))
+    fireEvent.click(screen.getByRole('button', { name: '确认回滚' }))
+    await waitFor(() => expect(screen.queryByText('升级已执行,新学年已生效')).toBeNull())
+  })
+
+  it('disables apply when the draft is based on an old year', async () => {
+    const first = renderPage()
+    await generate()
+    step('预览')
+    await screen.findByRole('button', { name: '执行升级' })
+    first.unmount()
+    api.years.mockResolvedValue([activeYear('y2')])
+    renderPage()
+    await screen.findByText('草稿基于旧学年,请重新生成')
+    expect(await screen.findByRole('button', { name: '执行升级' })).toBeDisabled()
+  })
+
+  it('disables apply after a stale answer', async () => {
+    api.upgradeApply.mockRejectedValue(new ApiError(409, 'UPGRADE_PLAN_STALE', '过期'))
+    renderPage()
+    await generate()
+    step('预览')
+    fireEvent.click(await screen.findByRole('button', { name: '执行升级' }))
+    fireEvent.click(screen.getByRole('button', { name: '确认执行' }))
+    await screen.findByText('方案已过期,请重新生成')
+    expect(screen.getByRole('button', { name: '执行升级' })).toBeDisabled()
+  })
+
+  it('says how many repeat marks were removed with a deleted new class', async () => {
+    renderPage()
+    await generate()
+    step('新建班级')
+    fireEvent.click(screen.getByRole('button', { name: '新增班级' }))
+    fireEvent.change(screen.getByLabelText('新建班1 年级名'), { target: { value: '三年级' } })
+    fireEvent.change(screen.getByLabelText('新建班1 班名'), { target: { value: '二班' } })
+    step('学生例外')
+    fireEvent.change(await screen.findByLabelText('周小乐 去向'), { target: { value: 'repeat' } })
+    fireEvent.change(screen.getByLabelText('周小乐 留级目标'), { target: { value: 'n:0' } })
+    step('新建班级')
+    expect(screen.queryByText(/留级标记已一并移除/)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '删除新建班1' }))
+    expect(screen.getByRole('status')).toHaveTextContent('1 名学生的留级标记已一并移除')
+    step('预览')
+    await waitFor(() => expect(api.upgradePreview).toHaveBeenCalled())
+    expect(lastPreviewBody().students).toEqual([])
   })
 })

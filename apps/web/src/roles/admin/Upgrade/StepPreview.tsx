@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
 import { adminApi } from '@/shared/api/admin'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
@@ -22,8 +22,10 @@ function Counts({ c }: { c: ClassPreview }) {
   )
 }
 
-export default function StepPreview({ plan, onApplied, onError }: {
+export default function StepPreview({ plan, blocked, onApplied, onError }: {
   plan: UpgradePlan
+  /** 方案已过期:不能再执行 */
+  blocked: boolean
   onApplied(): void
   /** 返回 true 表示已作为方案问题 / 过期处理(跳转或提示) */
   onError(e: unknown): boolean
@@ -32,9 +34,10 @@ export default function StepPreview({ plan, onApplied, onError }: {
   const [confirm, setConfirm] = useState(false)
   const handle = useRef(onError)
   useEffect(() => { handle.current = onError })
-  const preview = useQuery({
-    queryKey: ['upgrade', 'preview', body], queryFn: () => adminApi.upgradePreview(body), retry: false, gcTime: 0,
-  })
+  // 每次进入预览、方案变化后各请求一次
+  const preview = useMutation({ mutationFn: (p: UpgradePlan) => adminApi.upgradePreview(p) })
+  const { mutate: runPreview } = preview
+  useEffect(() => { runPreview(body) }, [body, runPreview])
   useEffect(() => { if (preview.error) handle.current(preview.error) }, [preview.error])
   const apply = useMutation({
     mutationFn: () => adminApi.upgradeApply(body),
@@ -44,9 +47,9 @@ export default function StepPreview({ plan, onApplied, onError }: {
   const pv = preview.data
   return (
     <div className="grid gap-3">
-      {preview.isLoading && <LoadingState />}
+      {preview.isPending && <LoadingState />}
       {preview.isError && !problemOf(preview.error) && !isStale(preview.error) && (
-        <ErrorState title="预览失败" description={errMsg(preview.error)} onRetry={() => void preview.refetch()} />
+        <ErrorState title="预览失败" description={errMsg(preview.error)} onRetry={() => runPreview(body)} />
       )}
       {pv && (
         <>
@@ -65,7 +68,7 @@ export default function StepPreview({ plan, onApplied, onError }: {
             </ul>
           )}
           <div>
-            <Button onClick={() => setConfirm(true)}>执行升级</Button>
+            <Button disabled={blocked} onClick={() => setConfirm(true)}>执行升级</Button>
           </div>
         </>
       )}

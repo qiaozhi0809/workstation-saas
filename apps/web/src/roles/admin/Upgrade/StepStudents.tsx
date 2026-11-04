@@ -21,7 +21,7 @@ export default function StepStudents({ plan, edit, problem, classId, onClassChan
 }) {
   const current = classId && plan.classes.some((c) => c.from_class_id === classId) ? classId : (plan.classes[0]?.from_class_id ?? null)
   const list = useQuery({
-    queryKey: ['upgrade', 'students', current],
+    queryKey: ['class-students', current],
     queryFn: () => studentsApi.listInClass(current!),
     enabled: current !== null,
   })

@@ -36,8 +36,8 @@ export const fieldHit = (p: Problem | null, section: Section, index: number, fie
 // 对照 server/app/domain/years/cli.py::_DATA_LABELS 与回滚新增的几类
 const DATA_LABELS: Record<string, string> = {
   class_boards: '看板改动 {} 处',
-  seats: '座位调整 {} 处',
-  class_roles: '班干部变动 {} 处',
+  seats: '座位调整 {} 个班',
+  class_roles: '班干部变动 {} 人',
   transfers: '学生转出 {} 人',
   grade_exams: '年级联考 {} 场',
   attendances: '考勤记录 {} 条',
