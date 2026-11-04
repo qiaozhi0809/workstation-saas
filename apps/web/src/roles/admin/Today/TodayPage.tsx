@@ -6,7 +6,9 @@ import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { weekdayCN } from '@/shared/lib/date'
 import { AbsenteeList } from './AbsenteeList'
+import { GradeExamCard } from './GradeExamCard'
 import { KpiRow } from './KpiRow'
+import { NoticeCard } from './NoticeCard'
 import { UnconfirmedList } from './UnconfirmedList'
 import { WeekReviews } from './WeekReviews'
 
@@ -34,6 +36,12 @@ export default function TodayPage() {
         <p className="text-sm text-muted-foreground">{`${d.date} ${weekdayCN(d.date)}`}</p>
       </header>
       <KpiRow totals={d.totals} />
+      {(d.grade_exam || (d.my_notices?.length ?? 0) > 0) && (
+        <div className="grid gap-4 md:grid-cols-2">
+          <GradeExamCard exam={d.grade_exam} />
+          <NoticeCard notices={d.my_notices} />
+        </div>
+      )}
       <Section title="今日缺勤与请假"><AbsenteeList items={d.absentees} onOpen={open} /></Section>
       <Section title="还没确认考勤的班级"><UnconfirmedList items={d.unconfirmed} /></Section>
       <Section title="本周点评"><WeekReviews data={d.week_reviews} /></Section>

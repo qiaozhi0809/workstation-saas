@@ -113,4 +113,46 @@ describe('今日关注页', () => {
     fireEvent.click(screen.getByRole('button', { name: '重试' }))
     expect(await screen.findByRole('heading', { level: 1, name: '今日关注 · 全校' })).toBeInTheDocument()
   })
+
+  describe('联考与通知两张卡', () => {
+    const exam = { id: 'ge1', name: '期中联考', grade_name: '三年级', entered: 1, expected: 4 }
+    const notices = [
+      { id: 'n1', title: '期中考试通知', created_at: '2026-11-04T01:00:00Z', recipients: 8, read: 6 },
+      { id: 'n2', title: '周五放假', created_at: '2026-11-03T01:00:00Z', recipients: 0, read: 0 },
+    ]
+
+    it('联考卡:联考名、年级、录分进度与成绩汇总链接', async () => {
+      setup(view({ grade_exam: exam }))
+      const card = (await screen.findByRole('region', { name: '年级联考' }))
+      expect(within(card).getByText('期中联考')).toBeInTheDocument()
+      expect(within(card).getByText('三年级')).toBeInTheDocument()
+      expect(within(card).getByText('已录 1 / 4')).toBeInTheDocument()
+      const bar = within(card).getByRole('progressbar', { name: '录分进度' })
+      expect(bar).toHaveAttribute('aria-valuenow', '25')
+      expect(within(card).getByRole('link', { name: '查看成绩汇总' })).toHaveAttribute('href', '/admin/reports/scores')
+    })
+
+    it('通知卡:最近几条与已读率,去发通知链接', async () => {
+      setup(view({ my_notices: notices }))
+      const card = (await screen.findByRole('region', { name: '我发出的通知' }))
+      expect(within(card).getByText('期中考试通知')).toBeInTheDocument()
+      expect(within(card).getByText('已读 6 / 8(75%)')).toBeInTheDocument()
+      expect(within(card).getByText('周五放假')).toBeInTheDocument()
+      expect(within(card).getByText('已读 0 / 0')).toBeInTheDocument()
+      expect(within(card).getByRole('link', { name: '去发通知' })).toHaveAttribute('href', '/admin/notices')
+    })
+
+    it('字段缺失、为 null 或空数组时两张卡都不显示', async () => {
+      const first = setup(view())
+      await screen.findByRole('heading', { level: 1, name: '今日关注 · 全校' })
+      expect(screen.queryByRole('region', { name: '年级联考' })).toBeNull()
+      expect(screen.queryByRole('region', { name: '我发出的通知' })).toBeNull()
+      first.unmount()
+      setup(view({ grade_exam: null, my_notices: [] }))
+      await screen.findByRole('heading', { level: 1, name: '今日关注 · 全校' })
+      expect(screen.queryByRole('region', { name: '年级联考' })).toBeNull()
+      expect(screen.queryByRole('region', { name: '我发出的通知' })).toBeNull()
+      expect(screen.queryByRole('link', { name: '去发通知' })).toBeNull()
+    })
+  })
 })
