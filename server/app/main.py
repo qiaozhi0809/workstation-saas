@@ -11,6 +11,7 @@ from app.auth.router import router as auth_router
 from app.config import Settings, get_settings
 from app.domain.accounts.router import router as accounts_router  # M3a 段 E
 from app.domain.ai.router import router as ai_router
+from app.domain.ai_admin.router import router as ai_admin_router  # M3b 段 D
 from app.domain.attendance.router import router as attendance_router
 from app.domain.audit_query.router import router as audit_query_router  # M3b 段 D
 from app.domain.classes.router import router as classes_router
@@ -88,5 +89,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     router.include_router(ws_router)  # M3b 段 A
     router.include_router(attendance_report_router)  # M3b 段 D
     router.include_router(audit_query_router)  # M3b 段 D
+    router.include_router(ai_admin_router)  # M3b 段 D
     app.include_router(router)
     return app
