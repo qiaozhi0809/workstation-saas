@@ -72,7 +72,7 @@ describe('通知铃铛', () => {
     server = { items: [item('1', { read_at: '2026-11-04T02:00:00Z' })], total: 1, unread: 0 }
     renderBell()
     const bell = await screen.findByRole('button', { name: '通知,0 条未读' })
-    expect(bell).toHaveTextContent('')
+    expect(within(bell).queryByText(/\d/)).toBeNull()
   })
 
   it('caps the badge at 99+', async () => {
