@@ -437,13 +437,16 @@ def update_class(
 
 def lock_class(db: Session, cls: SchoolClass) -> None:
     """锁住班级行直到事务结束:任命班主任与删班因此串行。
-    锁拿到后班级行可能已被并发改动,ORM 对象刷新到最新;班级已被并发删除则按不存在处理。"""
+    锁拿到后班级行可能已被并发改动,ORM 对象刷新到最新;班级已被并发删除、或已被学年升级
+    停用(升级持有全部在读班的锁,排在它后面的写入拿到锁时这个班已是往年的班)都按不存在处理。"""
     found = db.execute(
         text("SELECT id FROM classes WHERE id = :c FOR UPDATE"), {"c": cls.id}
     ).first()
     if found is None:
         raise ApiError(404, "NOT_FOUND", "班级不存在")
     db.refresh(cls)
+    if not cls.active:
+        raise ApiError(404, "NOT_FOUND", "班级不存在")
 
 
 def delete_class(

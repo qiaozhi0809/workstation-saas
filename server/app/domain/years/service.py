@@ -773,8 +773,8 @@ def _edits_since_upgrade(
     sm = up.summary
     found: dict[str, int] = {}
     cs = {"cs": new_classes}
-    # apply 不创建看板行,保存看板的 upsert 也不改 updated_at,所以新班上有任何看板行都是
-    # 升级后被人保存过的;不拿 updated_at 去比应用时钟,免得两个时钟有偏差时漏判。
+    # apply 不创建看板行,所以新班上有任何看板行都是升级后被人保存过的;不拿 updated_at 去比
+    # 应用时钟,免得库时钟与应用时钟有偏差时漏判。
     boards = db.execute(
         text("SELECT count(*) FROM class_boards WHERE class_id = ANY(cast(:cs as uuid[]))"), cs
     ).scalar_one()

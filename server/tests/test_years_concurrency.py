@@ -179,9 +179,9 @@ def test_two_rollbacks(clean):
     assert _assert_consistent(clean) == "2027-2028"
 
 
-def _wait_until_blocked(engine: Engine) -> None:
-    """轮询 pg_blocking_pids,直到有会话被别的会话的锁挡住(确认对方已在等锁,不靠 sleep)。
-    pg_stat_activity.query 在等锁时可能还是上一条语句,所以不按语句文本过滤。"""
+def _wait_until_blocked(engine: Engine, count: int = 1) -> None:
+    """轮询 pg_blocking_pids,直到至少 count 个会话被别的会话的锁挡住(确认对方已在等锁,不靠
+    sleep)。pg_stat_activity.query 在等锁时可能还是上一条语句,所以不按语句文本过滤。"""
     deadline = time.monotonic() + WAIT
     with engine.connect() as conn:
         while time.monotonic() < deadline:
@@ -191,7 +191,7 @@ def _wait_until_blocked(engine: Engine) -> None:
                     " AND pid <> pg_backend_pid() AND cardinality(pg_blocking_pids(pid)) > 0"
                 )
             ).scalar_one()
-            if n:
+            if n >= count:
                 return
             time.sleep(0.02)
     raise AssertionError("没有等到任何会话被锁挡住")
@@ -255,3 +255,72 @@ def test_apply_does_not_deadlock_with_a_class_locked_writer(clean):
                 {"t": teacher04, "c": class_id},
             )
             s.commit()
+
+
+def test_staff_write_queued_behind_apply_fails_and_rollback_still_works(clean):
+    """apply 持班级锁期间进来的"任命班主任"在 apply 提交后才拿到锁,此时这个班已是旧学年的
+    停用班:必须失败,不能给旧班写进新的在任班主任(否则之后 rollback 恢复旧任职会撞唯一索引)。"""
+    from app.clock import utc_now
+    from app.domain.org import staff
+    from app.domain.org.schemas import StaffInput
+    from app.errors import ApiError
+    from app.models import SchoolClass
+
+    class_id = UUID("44444444-4444-4444-4444-444444444444")
+    teacher05_user = UUID("55555555-5555-5555-5555-555555555542")
+    principal = UUID("55555555-5555-5555-5555-555555555543")
+    plan = _plan(clean)
+    result: dict[str, Any] = {}
+
+    holder = Session(clean)
+    holder.execute(text("SELECT id FROM classes WHERE id = :c FOR UPDATE"), {"c": class_id})
+
+    def upgrader() -> None:
+        with Session(clean) as s:
+            try:
+                result["apply"] = apply(s, SCHOOL, plan, now=datetime.now(UTC))
+            except Exception as e:  # noqa: BLE001 — 结果交给断言
+                s.rollback()
+                result["apply"] = e
+
+    def assigner() -> None:
+        with Session(clean) as s:
+            cls = s.get(SchoolClass, class_id)  # 路由先取到的班(此时还是在读班)
+            try:
+                staff.add_staff(
+                    s,
+                    cls,
+                    StaffInput(user_id=teacher05_user, identity="homeroom"),
+                    now=utc_now(),
+                    actor_id=principal,
+                )
+                result["assign"] = "ok"
+            except Exception as e:  # noqa: BLE001
+                s.rollback()
+                result["assign"] = e
+
+    tu = threading.Thread(target=upgrader)
+    tu.start()
+    _wait_until_blocked(clean, 1)  # apply 排在第一个,等 holder 的班级锁
+    ta = threading.Thread(target=assigner)
+    ta.start()
+    _wait_until_blocked(clean, 2)  # 任命排在第二个
+    holder.rollback()
+    holder.close()
+    tu.join(WAIT)
+    ta.join(WAIT)
+    assert not tu.is_alive() and not ta.is_alive(), "线程没有在限时内结束(疑似死锁)"
+    assert not isinstance(result["apply"], Exception), result["apply"]
+    assign = result["assign"]
+    assert isinstance(assign, ApiError) and assign.status == 404, assign
+    with Session(clean) as s:  # 旧班里没有被写进新的在任班主任
+        n = s.execute(
+            text(
+                "SELECT count(*) FROM teacher_assignments WHERE class_id = :c"
+                " AND identity = 'homeroom' AND ended_at IS NULL"
+            ),
+            {"c": class_id},
+        ).scalar_one()
+        assert n == 0
+        rollback(s, SCHOOL, now=datetime.now(UTC))  # 且回滚不会撞唯一索引
+    assert _assert_consistent(clean) == "2026-2027"
