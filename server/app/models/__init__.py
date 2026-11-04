@@ -10,7 +10,8 @@ from app.models.classroom import (
     Todo,
     UserPreference,
 )
-from app.models.grades import Exam, Score
+from app.models.grades import Exam, GradeExam, Score
+from app.models.notices import Notice, NoticeRecipient
 from app.models.rbac import RoleBinding
 from app.models.records import Comment, GrowthRecord
 from app.models.school import AcademicYear, Grade, School, SchoolClass, SchoolSetting
@@ -32,7 +33,10 @@ __all__ = [
     "Enrollment",
     "Exam",
     "Grade",
+    "GradeExam",
     "GrowthRecord",
+    "Notice",
+    "NoticeRecipient",
     "Review",
     "RoleBinding",
     "School",
