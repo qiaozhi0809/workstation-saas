@@ -128,7 +128,9 @@ def test_archive_last_child_archives_account(client, settings, db, redis_client)
         text("SELECT user_id, object_id FROM audit_logs WHERE action = 'parent.archive'")
     ).one()
     assert row.user_id is None and row.object_id == PARENT02
-    login = client.post("/api/v1/auth/login", json={"login_name": "parent02", "password": SENTINEL})
+    login = client.post(
+        "/api/v1/auth/login", json={"login_name": "13800000062", "password": SENTINEL}
+    )
     assert login.status_code == 401
     again = archive_expired(db, SCHOOL, NOW, redis_client)
     assert (again.links, again.users) == (0, 0)

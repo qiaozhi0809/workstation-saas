@@ -270,9 +270,9 @@ UPDATE enrollments SET entered_at = '2026-08-31T16:00:00+00:00';
 -- 13800000062 周家长:S0001 的次要家长;teacher04 孙老师同时是 S0002 的主家长(不新建账号)
 INSERT INTO users (id, school_id, login_name, password_hash, display_name, phone, must_change_password) VALUES
   ('55555555-5555-5555-5555-555555555561', '11111111-1111-1111-1111-111111111111',
-   'parent01', crypt('dev123', gen_salt('bf', 10)), '李家长', '13800000061', false),
+   '13800000061', crypt('dev123', gen_salt('bf', 10)), '李家长', '13800000061', false),
   ('55555555-5555-5555-5555-555555555562', '11111111-1111-1111-1111-111111111111',
-   'parent02', crypt('dev123', gen_salt('bf', 10)), '周家长', '13800000062', false);
+   '13800000062', crypt('dev123', gen_salt('bf', 10)), '周家长', '13800000062', false);
 
 INSERT INTO parents (id, user_id, name, phone) VALUES
   ('77777777-7777-7777-7777-777777777761', '55555555-5555-5555-5555-555555555561', '李家长', '13800000061'),

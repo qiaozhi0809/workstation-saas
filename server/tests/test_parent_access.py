@@ -68,17 +68,17 @@ def test_effective_status_expiry(db):
 
 
 def test_my_links_filters_ended_and_expired(db):
-    user = _user(db, "parent01")
+    user = _user(db, "13800000061")
     assert len(my_links(db, user.id, NOW)) == 2
-    link = _link_of(db, "parent01", "S0017")
+    link = _link_of(db, "13800000061", "S0017")
     link.status = "readonly"
     link.readonly_since = NOW - timedelta(days=READONLY_DAYS)
     db.flush()
-    assert [lk.id for lk in my_links(db, user.id, NOW)] == [_link_of(db, "parent01", "S0001").id]
+    assert [lk.id for lk in my_links(db, user.id, NOW)] == [_link_of(db, "13800000061", "S0001").id]
 
 
 def test_child_link_or_deny_own_child(db):
-    user = _user(db, "parent01")
+    user = _user(db, "13800000061")
     sid = _student_id(db, "S0001")
     link = child_link_or_deny(db, None, user, sid, now=NOW)
     assert link.student_id == sid
@@ -86,7 +86,7 @@ def test_child_link_or_deny_own_child(db):
 
 
 def test_child_link_or_deny_other_child(db):
-    user = _user(db, "parent01")
+    user = _user(db, "13800000061")
     other = _student_id(db, "S0002")
     with pytest.raises(ApiError) as exc:
         child_link_or_deny(db, None, user, other, now=NOW)
@@ -100,7 +100,7 @@ def test_child_link_or_deny_other_child(db):
 
 
 def test_write_requires_active_primary(db):
-    secondary = _user(db, "parent02")
+    secondary = _user(db, "13800000062")
     sid = _student_id(db, "S0001")
     assert child_link_or_deny(db, None, secondary, sid, now=NOW).student_id == sid
     with pytest.raises(ApiError) as exc:
@@ -113,8 +113,8 @@ def test_write_requires_active_primary(db):
 
 
 def test_parent_bindings_roles(db):
-    primary = parent_bindings(_link_of(db, "parent01", "S0001"))
-    secondary = parent_bindings(_link_of(db, "parent02", "S0001"))
+    primary = parent_bindings(_link_of(db, "13800000061", "S0001"))
+    secondary = parent_bindings(_link_of(db, "13800000062", "S0001"))
     assert [b.role for b in primary] == [Role.primary_parent]
     assert [b.role for b in secondary] == [Role.secondary_parent]
     assert primary[0].scope.student_id == _student_id(db, "S0001")

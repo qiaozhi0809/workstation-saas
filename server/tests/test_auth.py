@@ -255,13 +255,13 @@ def test_parent_context(client, db):
 
     from app.models import RoleBinding
 
-    assert _parent_ctx(client, "parent01") == ["parent"]
+    assert _parent_ctx(client, "13800000061") == ["parent"]
     assert _parent_ctx(client, "teacher04") == ["teacher", "parent"]
-    token = login(client, "parent01").json()["access_token"]
+    token = login(client, "13800000061").json()["access_token"]
     me = client.get("/api/v1/auth/me", headers=bearer(token)).json()
     assert me["contexts"] == ["parent"]
     # 只读不改绑定,仍有 parent;绑定结束后没有
-    uid = db.scalar(select(User.id).where(User.login_name == "parent01"))
+    uid = db.scalar(select(User.id).where(User.login_name == "13800000061"))
     db.execute(update(RoleBinding).where(RoleBinding.user_id == uid).values(ended_at=func.now()))
     db.flush()
-    assert _parent_ctx(client, "parent01") == []
+    assert _parent_ctx(client, "13800000061") == []
