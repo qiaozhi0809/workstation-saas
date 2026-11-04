@@ -8,7 +8,14 @@ from sqlalchemy.orm import Session
 
 from app.audit.service import record
 from app.domain.classes.service import class_scope_of
-from app.domain.classroom.schemas import Board, ClassRoleUpdated, ClassroomSummary, YearInfo
+from app.domain.classroom.schemas import (
+    Board,
+    ClassRoleUpdated,
+    ClassroomSummary,
+    ClassroomSwitches,
+    YearInfo,
+)
+from app.domain.school_settings.service import get_switches
 from app.domain.schools.service import school_today, school_tz, week_monday, week_no
 from app.domain.students.service import require_enrollment
 from app.models import AcademicYear, ClassBoard, School, SchoolClass
@@ -75,6 +82,7 @@ def build_summary(
 ) -> ClassroomSummary:
     scope = class_scope_of(cls)
     today = school_today(db, cls.school_id)
+    switches = get_switches(db, cls.school_id)
     return ClassroomSummary(
         today=today,
         timezone=school_tz(db, cls.school_id).key,
@@ -88,4 +96,7 @@ def build_summary(
         my_perms=[p.value for p in CLASSROOM_PERMS if can(bindings, p, scope)],
         my_subjects=subjects_in_class(bindings, cls.id),
         board=get_board(db, cls.id),
+        switches=ClassroomSwitches(
+            star_of_week=switches.star_of_week, birthdays=switches.birthdays
+        ),
     )
