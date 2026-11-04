@@ -6,11 +6,12 @@ import { toast } from '@/shared/components/Toast'
 import { Button } from '@/shared/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card'
 import { Input } from '@/shared/components/ui/input'
-import type { Account, ClassAdmin, StaffBrief, StaffInput } from '@/shared/types/admin'
+import type { ClassAdmin, StaffBrief, StaffInput } from '@/shared/types/admin'
 import ConfirmBox from './ConfirmBox'
 import { errMsg } from './errMsg'
 import Field from './Field'
 import PersonPicker from './PersonPicker'
+import type { OrgPerson } from './orgApi'
 
 type Identity = StaffInput['identity']
 const TITLE: Record<Identity, string> = { homeroom: '班主任', assistant: '副班主任', subject: '任课老师' }
@@ -27,7 +28,7 @@ function Person({ s, label, onEnd }: { s: StaffBrief; label: string; onEnd(): vo
 export default function StaffEditor({ cls }: { cls: ClassAdmin }) {
   const qc = useQueryClient()
   const [adding, setAdding] = useState<Identity | null>(null)
-  const [picked, setPicked] = useState<Account | null>(null)
+  const [picked, setPicked] = useState<OrgPerson | null>(null)
   const [subject, setSubject] = useState('')
   const [confirmReplace, setConfirmReplace] = useState(false)
   const [ending, setEnding] = useState<StaffBrief | null>(null)
@@ -52,7 +53,7 @@ export default function StaffEditor({ cls }: { cls: ClassAdmin }) {
   const submit = () => {
     if (!adding || !picked) return
     if (adding === 'homeroom' && cls.homeroom && !confirmReplace) { setConfirmReplace(true); return }
-    add.mutate({ user_id: picked.id, identity: adding, subject: adding === 'subject' ? subject.trim() : null })
+    add.mutate({ user_id: picked.user_id, identity: adding, subject: adding === 'subject' ? subject.trim() : null })
   }
   const ready = !!picked && (adding !== 'subject' || subject.trim() !== '')
   const open = (i: Identity) => { setError(null); setAdding(i) }
@@ -115,7 +116,7 @@ export default function StaffEditor({ cls }: { cls: ClassAdmin }) {
 
       <ConfirmBox open={confirmReplace} title="更换班主任" confirmLabel="确认更换" error={error} busy={add.isPending}
         onConfirm={submit} onClose={close}>
-        <p>{`原班主任 ${cls.homeroom?.display_name ?? ''} 将卸任,新班主任为 ${picked?.display_name ?? ''}。`}</p>
+        <p>{`原班主任 ${cls.homeroom?.display_name ?? ''} 将卸任,新班主任为 ${picked?.name ?? ''}。`}</p>
       </ConfirmBox>
 
       <ConfirmBox open={ending !== null} title="确认卸任" confirmLabel="确认卸任" error={error} busy={end.isPending}

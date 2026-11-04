@@ -1,27 +1,30 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { adminApi } from '@/shared/api/admin'
 import { Input } from '@/shared/components/ui/input'
 import { cn } from '@/shared/lib/utils'
-import type { Account } from '@/shared/types/admin'
+import { orgApi, type OrgPerson } from './orgApi'
 
-/** 搜索账号选人:只列在用账号,显示姓名、登录名、任教科目 */
-export default function PersonPicker({ value, onChange }: { value: Account | null; onChange(a: Account): void }) {
+/** 搜索选人:后端只返回在用教师账号,显示姓名、登录名、任教科目 */
+export default function PersonPicker({ value, onChange }: { value: OrgPerson | null; onChange(a: OrgPerson): void }) {
+  const [text, setText] = useState('')
   const [q, setQ] = useState('')
-  const filters = { q: q.trim(), status: 'active' }
-  const res = useQuery({ queryKey: ['admin', 'accounts', filters], queryFn: () => adminApi.accounts(filters) })
-  const items = (res.data?.items ?? []).filter((a) => a.status === 'active')
+  useEffect(() => {
+    const t = setTimeout(() => setQ(text.trim()), 250)
+    return () => clearTimeout(t)
+  }, [text])
+  const res = useQuery({ queryKey: ['admin', 'org', 'people', q], queryFn: () => orgApi.people(q) })
+  const items = res.data ?? []
   return (
     <div className="grid gap-2">
-      <Input aria-label="搜索账号" placeholder="搜索姓名或登录名" value={q} onChange={(e) => setQ(e.target.value)} />
+      <Input aria-label="搜索账号" placeholder="搜索姓名或登录名" value={text} onChange={(e) => setText(e.target.value)} />
       <ul className="grid max-h-56 gap-1 overflow-y-auto">
         {items.map((a) => (
-          <li key={a.id}>
-            <button type="button" aria-pressed={value?.id === a.id}
+          <li key={a.user_id}>
+            <button type="button" aria-pressed={value?.user_id === a.user_id}
               className={cn('flex w-full flex-wrap items-center gap-x-3 rounded-md border px-3 py-2 text-left text-sm hover:bg-accent',
-                value?.id === a.id && 'border-primary bg-accent')}
+                value?.user_id === a.user_id && 'border-primary bg-accent')}
               onClick={() => onChange(a)}>
-              <span className="font-medium">{a.display_name}</span>
+              <span className="font-medium">{a.name}</span>
               <span className="text-muted-foreground">{a.login_name}</span>
               {a.subjects.length > 0 && <span className="text-muted-foreground">{a.subjects.join('、')}</span>}
             </button>

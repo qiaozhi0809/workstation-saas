@@ -8,11 +8,12 @@ import { toast } from '@/shared/components/Toast'
 import { Button } from '@/shared/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card'
 import { NativeSelect } from '@/shared/components/ui/native-select'
-import type { Account, AdminRole, AdminRoleInput, AdminRoleType } from '@/shared/types/admin'
+import type { AdminRole, AdminRoleInput, AdminRoleType } from '@/shared/types/admin'
 import ConfirmBox from './ConfirmBox'
 import { errMsg } from './errMsg'
 import Field from './Field'
 import PersonPicker from './PersonPicker'
+import type { OrgPerson } from './orgApi'
 
 const ROLES: { role: AdminRoleType; title: string }[] = [
   { role: 'principal', title: '校长 / 副校长' },
@@ -26,7 +27,7 @@ export default function AdminRolesCard() {
   const roles = useQuery({ queryKey: ['admin', 'roles'], queryFn: adminApi.roles })
   const grades = useQuery({ queryKey: ['admin', 'grades'], queryFn: adminApi.grades })
   const [adding, setAdding] = useState<AdminRoleType | null>(null)
-  const [picked, setPicked] = useState<Account | null>(null)
+  const [picked, setPicked] = useState<OrgPerson | null>(null)
   const [gradeId, setGradeId] = useState('')
   const [ending, setEnding] = useState<AdminRole | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -88,7 +89,7 @@ export default function AdminRolesCard() {
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={close}>取消</Button>
             <Button disabled={!ready || add.isPending}
-              onClick={() => adding && picked && add.mutate({ user_id: picked.id, role: adding, grade_id: adding === 'grade_head' ? effectiveGrade : null })}>
+              onClick={() => adding && picked && add.mutate({ user_id: picked.user_id, role: adding, grade_id: adding === 'grade_head' ? effectiveGrade : null })}>
               添加
             </Button>
           </div>

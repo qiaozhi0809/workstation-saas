@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { adminApi } from '@/shared/api/admin'
+import { orgApi } from './orgApi'
 import { ApiError } from '@/shared/api/client'
 import type { AdminRole, ClassAdmin, GradeAdmin, YearAdmin } from '@/shared/types/admin'
 import OrgPage from './OrgPage'
@@ -12,10 +13,12 @@ vi.mock('@/shared/api/admin', () => ({
     school: vi.fn(), saveSchool: vi.fn(), years: vi.fn(), saveYear: vi.fn(),
     grades: vi.fn(), createGrade: vi.fn(), updateGrade: vi.fn(), deleteGrade: vi.fn(),
     classes: vi.fn(), createClass: vi.fn(), deleteClass: vi.fn(),
-    roles: vi.fn(), addRole: vi.fn(), endRole: vi.fn(), accounts: vi.fn(),
+    roles: vi.fn(), addRole: vi.fn(), endRole: vi.fn(),
   },
 }))
+vi.mock('./orgApi', () => ({ orgApi: { people: vi.fn() } }))
 const api = vi.mocked(adminApi)
+const org = vi.mocked(orgApi)
 
 const year: YearAdmin = { id: 'y1', name: '2026-2027学年', start_date: '2026-09-01', end_date: '2027-07-10', term2_start: '2027-02-20', is_active: true }
 const grade = (id: string, name: string, order: number, n = 1): GradeAdmin =>
@@ -36,7 +39,7 @@ beforeEach(() => {
   api.grades.mockImplementation(() => Promise.resolve(grades))
   api.classes.mockResolvedValue([cls])
   api.roles.mockResolvedValue([itRole])
-  api.accounts.mockResolvedValue({ items: [], total: 0 })
+  org.people.mockResolvedValue([])
 })
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 
