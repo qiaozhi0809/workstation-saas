@@ -1,5 +1,9 @@
+import { formatInTz } from '@/shared/lib/date'
 import { cn } from '@/shared/lib/utils'
 import type { ParentReview } from '@/shared/types/parent'
+
+// 家长端数据没有学校时区字段,与点评历史同一口径
+const SCHOOL_TZ = 'Asia/Shanghai'
 
 export default function ReviewList({ reviews, weekPoints }: { reviews: ParentReview[] | null; weekPoints: number | null }) {
   const items = reviews ?? []
@@ -20,7 +24,7 @@ export default function ReviewList({ reviews, weekPoints }: { reviews: ParentRev
               </span>
               <div className="min-w-0 text-sm">
                 <p className="break-words">{r.reason_text}</p>
-                <p className="text-xs text-muted-foreground">{[r.subject, r.given_by_name].filter(Boolean).join(' · ')}</p>
+                <p className="text-xs text-muted-foreground">{[formatInTz(r.given_at, SCHOOL_TZ).slice(11), r.subject, r.given_by_name].filter(Boolean).join(' · ')}</p>
               </div>
             </li>
           ))}

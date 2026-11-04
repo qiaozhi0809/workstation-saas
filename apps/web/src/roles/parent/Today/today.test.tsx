@@ -57,6 +57,9 @@ it('lists today reviews with signs and says so when there are none', async () =>
   expect(within(list).getByText('+2')).toHaveClass('text-success')
   expect(within(list).getByText('-1')).toHaveClass('text-destructive')
   expect(within(list).getByText('积极发言')).toBeInTheDocument()
+  // 每条带时间(学校时区):01:00Z → 09:00
+  expect(within(list).getByText('09:00 · 数学 · 李老师')).toBeInTheDocument()
+  expect(within(list).getByText('10:00')).toBeInTheDocument()
   unmount()
   vi.mocked(parentApi.today).mockResolvedValue(today({ reviews: [] }))
   open()
