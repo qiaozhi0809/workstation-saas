@@ -87,7 +87,7 @@ def test_load_excludes_ended_and_other_year(db):
     u = make_user(db, "t_rbac")
     c = make_class(db, "三年三班")
     bind(db, u.id, Role.subject_teacher, class_id=c, ended=True)
-    bind(db, u.id, Role.subject_teacher, class_id=c, year_id=None)
+    bind(db, u.id, Role.dean, school_id=SCHOOL_ID, year_id=None)
     assert [x.academic_year_id for x in load_bindings(db, u.id, UUID(YEAR_ID))] == [None]
     other_year = uuid4()
     assert len(load_bindings(db, u.id, other_year)) == 1
@@ -334,3 +334,16 @@ def test_account_admin_count(db):
     assert account_admin_count(db, UUID(SCHOOL_ID)) == base + 1
     db.execute(update(RoleBinding).where(RoleBinding.user_id == p.id).values(ended_at=func.now()))
     assert account_admin_count(db, UUID(SCHOOL_ID)) == base
+
+
+def test_teacher_binding_without_year_ignored(db):
+    # 教师绑定必须带学年;NULL 学年的教师绑定不加载,管理岗的 NULL 学年绑定照旧
+    u = make_user(db, "t_noyear")
+    c = make_class(db, "三年四班")
+    bind(db, u.id, Role.subject_teacher, class_id=c, year_id=None)
+    bind(db, u.id, Role.dean, school_id=SCHOOL_ID, year_id=None)
+    bs = load_bindings(db, u.id, UUID(YEAR_ID))
+    assert [bd.role for bd in bs] == [Role.dean]
+    bind(db, u.id, Role.subject_teacher, class_id=c)
+    bs = load_bindings(db, u.id, UUID(YEAR_ID))
+    assert sorted(bd.role for bd in bs) == [Role.dean, Role.subject_teacher]

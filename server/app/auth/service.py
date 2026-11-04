@@ -73,6 +73,28 @@ def _fail_key(settings: Settings, login_name: str) -> str:
     return f"ws:login_fail:{settings.school_id}:{login_name}"
 
 
+# 用户不存在 / 已冻结时也跑一次同成本的 bcrypt 校验,抹平响应时间差
+_DUMMY_HASH = hash_password("dummy-password-for-timing-9f3a1c")
+
+
+def _retry_after(redis: Redis, settings: Settings, key: str) -> dict[str, str]:
+    ttl = redis.ttl(key)
+    seconds = settings.login_lock_seconds if ttl is None or ttl < 0 else max(1, ttl)
+    return {"Retry-After": str(seconds)}
+
+
+def _record_failure(redis: Redis, settings: Settings, key: str) -> int:
+    # INCR 与 EXPIRE NX 在同一个 MULTI/EXEC 里,避免进程在两步之间崩溃留下永不过期的计数
+    pipe = redis.pipeline(transaction=True)
+    pipe.incr(key)
+    pipe.expire(key, settings.login_lock_seconds, nx=True)
+    failures = int(pipe.execute()[0])
+    if failures == settings.login_max_failures:
+        # 达到上限时重新计时,保证锁定满整个窗口
+        redis.expire(key, settings.login_lock_seconds)
+    return failures
+
+
 def login(
     db: Session, redis: Redis, settings: Settings, login_name: str, password: str
 ) -> LoginResult:
@@ -80,14 +102,18 @@ def login(
     fail_key = _fail_key(settings, login_name)
     failures = int(redis.get(fail_key) or 0)
     if failures >= settings.login_max_failures:
-        raise ApiError(429, "ACCOUNT_LOCKED", "登录失败次数过多,请稍后再试")
+        raise ApiError(
+            429,
+            "ACCOUNT_LOCKED",
+            "登录失败次数过多,请稍后再试",
+            headers=_retry_after(redis, settings, fail_key),
+        )
 
     user = get_user_by_login(db, settings.school_id, login_name)
-    if user is None or user.status != "active" or not verify_password(password, user.password_hash):
-        failures = redis.incr(fail_key)
-        if failures == 1 or failures == settings.login_max_failures:
-            # 首次失败开计数窗口;达到上限时重新计时,保证锁定满整个窗口
-            redis.expire(fail_key, settings.login_lock_seconds)
+    hashed = user.password_hash if user is not None and user.status == "active" else _DUMMY_HASH
+    password_ok = verify_password(password, hashed)
+    if user is None or user.status != "active" or not password_ok:
+        _record_failure(redis, settings, fail_key)
         raise ApiError(401, "INVALID_CREDENTIALS", "登录名或密码不正确")
 
     redis.delete(fail_key)
@@ -132,11 +158,14 @@ def change_password(
     # 与登录共用失败计数:已登录的人也不能无限次试旧密码
     fail_key = _fail_key(settings, user.login_name)
     if int(redis.get(fail_key) or 0) >= settings.login_max_failures:
-        raise ApiError(429, "ACCOUNT_LOCKED", "尝试次数过多,请稍后再试")
+        raise ApiError(
+            429,
+            "ACCOUNT_LOCKED",
+            "尝试次数过多,请稍后再试",
+            headers=_retry_after(redis, settings, fail_key),
+        )
     if not verify_password(old, user.password_hash):
-        failures = redis.incr(fail_key)
-        if failures == 1 or failures == settings.login_max_failures:
-            redis.expire(fail_key, settings.login_lock_seconds)
+        _record_failure(redis, settings, fail_key)
         raise ApiError(400, "WRONG_PASSWORD", "旧密码不正确")
     check_policy(new, old=old)
     user.password_hash = hash_password(new)

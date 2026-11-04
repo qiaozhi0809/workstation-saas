@@ -54,3 +54,16 @@ def test_unhandled_exception_is_500_with_envelope():
     assert res.status_code == 500
     assert res.json() == {"error": {"code": "INTERNAL", "message": "服务器内部错误"}}
     assert "secret detail" not in res.text
+
+
+def test_api_error_headers():
+    app = create_app()
+
+    @app.get("/slow")
+    def slow():
+        raise ApiError(429, "SLOW", "slow down", headers={"Retry-After": "7"})
+
+    res = TestClient(app).get("/slow")
+    assert res.status_code == 429
+    assert res.headers["Retry-After"] == "7"
+    assert res.json()["error"]["code"] == "SLOW"

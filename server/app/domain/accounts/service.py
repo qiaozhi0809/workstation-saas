@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.audit.service import record
 from app.auth import sessions
-from app.auth.passwords import generate_temp_password, hash_password
+from app.auth.passwords import generate_temp_password, hash_password, hash_passwords
 from app.auth.service import _fail_key
 from app.config import Settings
 from app.domain.accounts.importer import MAX_ROWS, parse_csv
@@ -194,11 +194,11 @@ def _existing_logins(db: Session, school_id: UUID) -> set[str]:
     }
 
 
-def _insert_user(db: Session, school_id: UUID, data: AccountCreate, temp_password: str) -> User:
+def _insert_user(db: Session, school_id: UUID, data: AccountCreate, password_hash: str) -> User:
     user = User(
         school_id=school_id,
         login_name=data.login_name,
-        password_hash=hash_password(temp_password),
+        password_hash=password_hash,
         display_name=data.display_name,
         phone=data.phone,
         must_change_password=True,
@@ -225,7 +225,7 @@ def create_account(
     temp = generate_temp_password()
     try:
         with db.begin_nested():
-            user = _insert_user(db, school_id, data, temp)
+            user = _insert_user(db, school_id, data, hash_password(temp))
     except IntegrityError:
         raise ApiError(409, "LOGIN_TAKEN", "登录名已被使用") from None
     record(
@@ -384,8 +384,9 @@ def import_accounts(
             {"rows": [r.model_dump() for r in errors]},
         )
     created: list[ImportedAccount] = []
-    for r in rows:
-        temp = generate_temp_password()
+    temps = [generate_temp_password() for _ in rows]
+    hashes = hash_passwords(temps)
+    for r, temp, pw_hash in zip(rows, temps, hashes, strict=True):
         data = AccountCreate(
             login_name=r.login_name,
             display_name=r.display_name,
@@ -395,7 +396,7 @@ def import_accounts(
         )
         try:
             with db.begin_nested():
-                _insert_user(db, school_id, data, temp)
+                _insert_user(db, school_id, data, pw_hash)
         except IntegrityError:
             db.rollback()
             bad = r.model_copy(update={"error": "登录名已被使用"})

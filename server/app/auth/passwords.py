@@ -1,6 +1,9 @@
+import os
 import secrets
 import string
 import unicodedata
+from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor
 
 import bcrypt
 
@@ -22,6 +25,14 @@ def normalize_password(plain: str) -> bytes:
 
 def hash_password(plain: str) -> str:
     return bcrypt.hashpw(normalize_password(plain), bcrypt.gensalt(rounds=10)).decode("ascii")
+
+
+def hash_passwords(plains: Sequence[str]) -> list[str]:
+    """并行哈希,结果与输入同序;bcrypt 计算时释放 GIL,线程池即可吃满多核。"""
+    if not plains:
+        return []
+    with ThreadPoolExecutor(max_workers=min(8, os.cpu_count() or 1)) as pool:
+        return list(pool.map(hash_password, plains))
 
 
 def verify_password(plain: str, hashed: str) -> bool:
