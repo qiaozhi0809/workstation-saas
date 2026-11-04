@@ -2,12 +2,15 @@ from collections.abc import Sequence
 from datetime import date
 from uuid import UUID
 
+from fastapi import Request
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
+from app.audit.service import record
 from app.domain.classes.service import class_scope_of
 from app.domain.comments.schemas import CommentOut
+from app.domain.school_settings.service import get_switches
 from app.errors import ApiError
 from app.models import AcademicYear, Comment, Enrollment, SchoolClass, User
 from app.rbac.bindings import Binding, Scope, can
@@ -39,6 +42,7 @@ def _out(comment: Comment, author: str | None, current_year_id: UUID, can_del: b
         created_by_name=author,
         can_delete=can_del,
         created_at=comment.created_at,
+        parent_visible=comment.parent_visible,
     )
 
 
@@ -69,6 +73,45 @@ def list_comments(
         )
         for c, a in rows
     ]
+
+
+def _default_parent_visible(db: Session, school_id: UUID, generated_by_ai: bool) -> bool:
+    """AI 生成的评语在"发给家长前先审阅"开着时默认不给家长看。开关每次现读。"""
+    return not (generated_by_ai and get_switches(db, school_id).ai_review_before_send)
+
+
+def set_parent_visible(
+    db: Session,
+    actor: User,
+    comment: Comment,
+    visible: bool,
+    request: Request | None,
+    *,
+    bindings: Sequence[Binding],
+    current_year_id: UUID,
+    scope: Scope,
+) -> CommentOut:
+    """调用方已校验该评语所在班的 comment.write;不提交。"""
+    comment.parent_visible = visible
+    record(
+        db,
+        user_id=actor.id,
+        action="comment.share" if visible else "comment.unshare",
+        success=True,
+        object_type="comment",
+        object_id=str(comment.id),
+        request=request,
+    )
+    author = actor
+    if comment.created_by_user_id not in (None, actor.id):
+        author = db.get(User, comment.created_by_user_id) or actor
+    name = author.display_name if comment.created_by_user_id is not None else None
+    return _out(
+        comment,
+        name,
+        current_year_id,
+        can_delete_comment(comment, current_year_id, bindings, scope),
+    )
 
 
 def _insert_ignoring_duplicates(db: Session, values: dict) -> Comment | None:
@@ -107,6 +150,7 @@ def create_comment(
             "semester": semester,
             "content": content,
             "generated_by_ai": generated_by_ai,
+            "parent_visible": _default_parent_visible(db, user.school_id, generated_by_ai),
             "created_by_user_id": user.id,
         },
     )
@@ -158,6 +202,7 @@ def create_bulk(
     if any(i.student_id not in enrollments for i in items):
         raise ApiError(400, "AI_FIELD_INVALID", "有学生不在本班", {"field": "items"})
     semester = semester_of(year, today)
+    visible = _default_parent_visible(db, user.school_id, generated_by_ai)
     created = 0
     for i in items:
         row = _insert_ignoring_duplicates(
@@ -170,6 +215,7 @@ def create_bulk(
                 "semester": semester,
                 "content": i.content,
                 "generated_by_ai": generated_by_ai,
+                "parent_visible": visible,
                 "created_by_user_id": user.id,
             },
         )

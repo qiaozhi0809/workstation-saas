@@ -143,7 +143,7 @@ def test_upgrade_and_rollback_on_full_seed(client, db, settings):
     assert accounts.status_code == 200 and accounts.json()["total"] == accounts_before["total"]
     by_login = {a["login_name"]: a for a in accounts.json()["items"]}
     assert {r["label"] for r in by_login["gradehead03"]["roles"]} == {"四年级 组长"}
-    assert {r["label"] for r in by_login["teacher04"]["roles"]} == {"四年一班 班主任"}
+    assert {r["label"] for r in by_login["teacher04"]["roles"]} == {"四年一班 班主任", "家长"}
 
     rollback(db, SCHOOL, now=datetime.now(UTC))
     # 升级记录本身留作历史(标为已回滚),其余逐表恢复原样

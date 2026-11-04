@@ -35,3 +35,8 @@ class CommentOut(BaseModel):
     created_by_name: str | None
     can_delete: bool
     created_at: datetime
+    parent_visible: bool
+
+
+class ParentVisibleInput(BaseModel):
+    visible: bool
