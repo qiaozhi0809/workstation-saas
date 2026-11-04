@@ -8,7 +8,7 @@ export default function AdminNav({ pages = ADMIN_PAGES }: { pages?: AdminPage[] 
   const perms = useAuthStore((s) => s.user?.admin_perms)
   const links = pages.filter((p) => !p.hidden && perms?.includes(p.perm))
   return (
-    <nav aria-label="主导航" className="flex min-w-0 items-center gap-0.5 overflow-x-auto">
+    <nav aria-label="主导航" className="relative flex min-w-0 items-center gap-0.5 overflow-x-auto">
       {links.map(({ path, label, icon: Icon }) => (
         <NavLink
           key={path}
