@@ -61,10 +61,10 @@ export function createRealtimeClient(opts: RealtimeOptions): { start(): void; st
         if (everDropped) emit({ type: 'reconnected' })
         return
       }
-      if (!ready) return
+      // 服务端认证通过即 register,通知事件可能早于 ready 到达,照常转发
       if (msg.type === 'notice.new' || msg.type === 'notice.recalled') {
         emit(msg as unknown as RealtimeEvent)
-      } else if (msg.type === 'session.revoked') {
+      } else if (ready && msg.type === 'session.revoked') {
         finish()
         emit({ type: 'session.revoked' })
         sock.close()

@@ -57,11 +57,17 @@ it('连上先发 auth;start 幂等', () => {
   expect(last().url).not.toContain('tok')
 })
 
-it('ready 前事件不转发;ready 后转发;ping 与未知忽略', () => {
+it('ready 前的通知事件照常转发(服务端认证后即 register);ping 与未知忽略', () => {
   const { c, events } = mkClient()
   c.start(); last().open()
+  last().msg({ type: 'ping' })
   last().msg({ type: 'notice.new', id: '0', title: 't', from_name: null, created_at: 'x' })
-  expect(events).toEqual([])
+  last().msg({ type: 'notice.recalled', id: '0' })
+  expect(events).toEqual([
+    { type: 'notice.new', id: '0', title: 't', from_name: null, created_at: 'x' },
+    { type: 'notice.recalled', id: '0' },
+  ])
+  events.length = 0
   last().msg({ type: 'ready' })
   last().msg({ type: 'ping' })
   last().msg({ type: 'whatever' })
