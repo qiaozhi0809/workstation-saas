@@ -28,7 +28,7 @@ function RosterTab({ classId }: { classId: string }) {
   if (q.data.students.length === 0) return <EmptyState title="这个班没有学生记录" />
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[20rem] text-sm">
+      <table aria-label="名单" className="w-full min-w-[20rem] text-sm">
         <thead>
           <tr className="border-b text-left text-muted-foreground">
             <th className="py-2 pr-3 font-medium">学号</th><th className="py-2 pr-3 font-medium">姓名</th>
@@ -60,7 +60,7 @@ function ScoresTable({ examId }: { examId: string }) {
   const { exam, students } = q.data
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[32rem] text-sm">
+      <table aria-label="成绩表" className="w-full min-w-[32rem] text-sm">
         <thead>
           <tr className="border-b text-left text-muted-foreground">
             <th className="py-2 pr-3 font-medium">学号</th><th className="py-2 pr-3 font-medium">姓名</th>
@@ -130,7 +130,7 @@ export default function HistoryClassPage() {
         </div>
         <SegmentedTabs<Tab> label="内容" className="w-fit" value={tab} onChange={setTab} items={TABS} />
       </header>
-      {tab === 'roster' ? <RosterTab classId={id} /> : <ScoresTab classId={id} />}
+      {tab === 'roster' ? <RosterTab key={id} classId={id} /> : <ScoresTab key={id} classId={id} />}
     </div>
   )
 }

@@ -21,7 +21,9 @@ function groupByGrade(classes: HistoryClass[]) {
 export default function HistoryPage() {
   const [picked, setPicked] = useState<string | null>(null)
   const years = useQuery({ queryKey: ['history', 'years'], queryFn: () => adminApi.historyYears() })
-  const yearId = picked ?? years.data?.[0]?.id ?? ''
+  // 选中的学年若已不在列表里(例如刚被回滚),回到最近一个往年
+  const stillThere = picked !== null && years.data?.some((y) => y.id === picked)
+  const yearId = (stillThere ? picked : years.data?.[0]?.id) ?? ''
   const classes = useQuery({
     queryKey: ['history', 'classes', yearId],
     queryFn: () => adminApi.historyClasses(yearId),
