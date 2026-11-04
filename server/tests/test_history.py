@@ -31,13 +31,14 @@ def get(client, settings, path, user=PRINCIPAL, **params):
 
 
 def add_extra_students(db) -> dict[str, UUID]:
-    """三年二班补三名学生,覆盖:已转出(有满分成绩)、转出且无学号、在读但没有任何成绩。"""
+    """三年二班补四名学生,覆盖:已转出(有满分成绩)、转出且无学号、在读但没有任何成绩、被老师删除(有满分成绩,不得出现)。"""
     out = {}
     out["transferred"] = make_student(
         db, UUID(CLASS_ID), "转出生", "S9001", student_no="2025099", gender="男"
     )
     out["no_no"] = make_student(db, UUID(CLASS_ID), "无学号生", "S9002")
     out["no_score"] = make_student(db, UUID(CLASS_ID), "无分生", "S9003", student_no="2026099")
+    out["removed"] = make_student(db, UUID(CLASS_ID), "删除生", "S9004", student_no="2026098")
     db.execute(
         text(
             "UPDATE enrollments SET status = 'transferred', left_at = now()"
@@ -45,22 +46,31 @@ def add_extra_students(db) -> dict[str, UUID]:
         ),
         {"ids": [out["transferred"], out["no_no"]]},
     )
-    enr = db.scalars(select(Enrollment.id).where(Enrollment.student_id == out["transferred"])).one()
-    for subject in ("语文", "数学", "英语"):
-        db.execute(
-            text(
-                "INSERT INTO scores (exam_id, enrollment_id, subject, value)"
-                " VALUES (:x, :e, :s, 100)"
-            ),
-            {"x": EXAM_IDS[0], "e": enr, "s": subject},
-        )
+    db.execute(
+        text("UPDATE enrollments SET status = 'removed', left_at = now() WHERE student_id = :s"),
+        {"s": out["removed"]},
+    )
+    for key in ("transferred", "removed"):
+        enr = db.scalars(select(Enrollment.id).where(Enrollment.student_id == out[key])).one()
+        for subject in ("语文", "数学", "英语"):
+            db.execute(
+                text(
+                    "INSERT INTO scores (exam_id, enrollment_id, subject, value)"
+                    " VALUES (:x, :e, :s, 100)"
+                ),
+                {"x": EXAM_IDS[0], "e": enr, "s": subject},
+            )
     db.flush()
     return out
 
 
 def class_sizes(db) -> dict[UUID, int]:
-    """升级前每个班注册过的人数(所有状态)。"""
-    rows = db.execute(text("SELECT class_id, count(*) FROM enrollments GROUP BY class_id")).all()
+    """升级前每个班注册过的人数(含转出,不含老师删除的)。"""
+    rows = db.execute(
+        text(
+            "SELECT class_id, count(*) FROM enrollments WHERE status <> 'removed' GROUP BY class_id"
+        )
+    ).all()
     return {cid: n for cid, n in rows}
 
 
@@ -154,6 +164,7 @@ def test_roster_and_scores_readonly(client, settings, db, past):
         None,
     ]
     assert students[-1]["name"] == "无学号生"
+    assert "删除生" not in {s["name"] for s in students}
     by_name = {s["name"]: s for s in students}
     assert by_name["转出生"]["status"] == "transferred"
     assert by_name["无学号生"]["status"] == "transferred"
@@ -186,7 +197,7 @@ def test_roster_and_scores_readonly(client, settings, db, past):
             text(
                 "SELECT e.id, e.student_id FROM enrollments e"
                 " JOIN students s ON s.id = e.student_id"
-                " WHERE e.class_id = :c ORDER BY s.mk"
+                " WHERE e.class_id = :c AND e.status <> 'removed' ORDER BY s.mk"
             ),
             {"c": CLASS_ID},
         ).all()

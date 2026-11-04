@@ -20,7 +20,7 @@ from app.domain.history.schemas import (
     HistoryYear,
 )
 from app.domain.overview.service import SCHOOL_VIEW
-from app.domain.schools.service import require_active_year
+from app.domain.schools.service import active_academic_year
 from app.errors import ApiError
 from app.models import AcademicYear, Enrollment, Exam, Grade, SchoolClass, Score, Student, User
 from app.rbac.bindings import Binding, can
@@ -83,7 +83,7 @@ def past_classes(
         .outerjoin(_teachers, _teachers.c.id == SchoolClass.homeroom_teacher_id)
         .outerjoin(User, User.id == _teachers.c.user_id)
         .where(SchoolClass.school_id == user.school_id, SchoolClass.academic_year_id == year.id)
-        .order_by(Grade.display_order, SchoolClass.name)
+        .order_by(Grade.display_order, Grade.name, SchoolClass.name, SchoolClass.id)
     ).all()
     visible = [(cls, grade, name) for cls, grade, name in rows if _visible_to(bindings, cls)]
     counts: dict[UUID, int] = {}
@@ -91,7 +91,10 @@ def past_classes(
         counts = dict(
             db.execute(
                 select(Enrollment.class_id, func.count())
-                .where(Enrollment.class_id.in_([c.id for c, _, _ in visible]))
+                .where(
+                    Enrollment.class_id.in_([c.id for c, _, _ in visible]),
+                    Enrollment.status != "removed",
+                )
                 .group_by(Enrollment.class_id)
             ).all()
         )
@@ -116,10 +119,11 @@ def _past_class_or_deny(
 ) -> SchoolClass:
     """班存在、属于本校、不属于当前学年、调用者可见;任一不满足一律 403 + 审计。"""
     cls = db.get(SchoolClass, class_id)
+    current = active_academic_year(db, user.school_id)
     if (
         cls is None
         or cls.school_id != user.school_id
-        or cls.academic_year_id == require_active_year(db, user.school_id).id
+        or (current is not None and cls.academic_year_id == current.id)
         or not _visible_to(bindings, cls)
     ):
         _deny(db, request, user, "class", class_id)
@@ -137,7 +141,7 @@ def class_students(
     rows = db.execute(
         select(Student.id, Student.name, Student.student_no, Enrollment.status)
         .join(Enrollment, Enrollment.student_id == Student.id)
-        .where(Enrollment.class_id == cls.id)
+        .where(Enrollment.class_id == cls.id, Enrollment.status != "removed")
         .order_by(Student.student_no.asc().nulls_last(), Student.mk)
     ).all()
     return HistoryRoster(
@@ -169,7 +173,7 @@ def class_exams(
     exams = db.scalars(
         select(Exam)
         .where(Exam.class_id == cls.id)
-        .order_by(Exam.date.desc(), Exam.created_at.desc())
+        .order_by(Exam.date.desc(), Exam.created_at.desc(), Exam.id)
     ).all()
     return [_to_exam(e) for e in exams]
 
@@ -189,7 +193,7 @@ def exam_scores(
     people = db.execute(
         select(Enrollment.id, Student.id, Student.name, Student.student_no)
         .join(Student, Student.id == Enrollment.student_id)
-        .where(Enrollment.class_id == cls.id)
+        .where(Enrollment.class_id == cls.id, Enrollment.status != "removed")
         .order_by(Student.mk)
     ).all()
     by_enrollment = {eid: (sid, name, no) for eid, sid, name, no in people}
