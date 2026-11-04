@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app import clock
 from app.audit.service import deny
 from app.domain.classes.service import class_scope_of
+from app.domain.grade_exams.service import progress
 from app.domain.notices.service import recent_sent
 from app.domain.overview.schemas import (
     Absentee,
@@ -40,12 +41,10 @@ from app.models import (
     Attendance,
     AttendanceDay,
     Enrollment,
-    Exam,
     Grade,
     GradeExam,
     Review,
     SchoolClass,
-    Score,
     Student,
     User,
 )
@@ -208,9 +207,7 @@ def _grade_exam_card(
 ) -> GradeExamCard | None:
     """调用者可见年级内当前学年日期最近的一场联考(日期降序、再按创建时间降序)。
 
-    进度口径(供联考进度对齐):只统计 exams.grade_exam_id = 该联考、且班级可见的班级考试;
-    entered = 这些班在读学生(enrollments.status='active')在该联考科目上已有的 scores 行数
-    (缺考也是一行,算已录入);expected = 这些班在读人数 × 联考科目数。"""
+    进度口径与联考管理页同一份(grade_exams.service.progress),只对调用者可见的班求和。"""
     grade_ids = [g.id for g in grades]
     if not grade_ids:
         return None
@@ -222,32 +219,10 @@ def _grade_exam_card(
     ).first()
     if ge is None:
         return None
-    visible_ids = [v.cls.id for v in visible]
-    class_ids = list(
-        db.scalars(
-            select(Exam.class_id).where(Exam.grade_exam_id == ge.id, Exam.class_id.in_(visible_ids))
-        )
-    )
-    names = [s["name"] for s in ge.subjects]
-    entered = expected = 0
-    if class_ids:
-        entered = (
-            db.scalar(
-                select(func.count())
-                .select_from(Score)
-                .join(Exam, Exam.id == Score.exam_id)
-                .join(Enrollment, Enrollment.id == Score.enrollment_id)
-                .where(
-                    Exam.grade_exam_id == ge.id,
-                    Exam.class_id.in_(class_ids),
-                    Enrollment.class_id == Exam.class_id,
-                    Enrollment.status == "active",
-                    Score.subject.in_(names),
-                )
-            )
-            or 0
-        )
-        expected = sum(_student_counts(db, class_ids).values()) * len(names)
+    visible_ids = {v.cls.id for v in visible}
+    rows = [r for r in progress(db, ge) if r.class_id in visible_ids]
+    entered = sum(r.entered for r in rows)
+    expected = sum(r.expected for r in rows)
     grade_name = next(g.name for g in grades if g.id == ge.grade_id)
     return GradeExamCard(
         id=ge.id, name=ge.name, grade_name=grade_name, entered=entered, expected=expected

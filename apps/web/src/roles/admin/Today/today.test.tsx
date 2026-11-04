@@ -129,7 +129,7 @@ describe('今日关注页', () => {
       expect(within(card).getByText('已录 1 / 4')).toBeInTheDocument()
       const bar = within(card).getByRole('progressbar', { name: '录分进度' })
       expect(bar).toHaveAttribute('aria-valuenow', '25')
-      expect(within(card).getByRole('link', { name: '查看成绩汇总' })).toHaveAttribute('href', '/admin/reports/scores')
+      expect(within(card).getByRole('link', { name: '查看成绩汇总' })).toHaveAttribute('href', '/admin/reports/scores?exam=ge1')
     })
 
     it('通知卡:最近几条与已读率,去发通知链接', async () => {

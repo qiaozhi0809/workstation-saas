@@ -19,7 +19,7 @@ export function GradeExamCard({ exam }: { exam: TodayView['grade_exam'] }) {
         </div>
         <span className="text-sm text-muted-foreground">{`已录 ${exam.entered} / ${exam.expected}`}</span>
       </div>
-      <Link to="/admin/reports/scores" className="text-sm font-medium text-primary underline-offset-4 hover:underline">查看成绩汇总</Link>
+      <Link to={`/admin/reports/scores?exam=${encodeURIComponent(exam.id)}`} className="text-sm font-medium text-primary underline-offset-4 hover:underline">查看成绩汇总</Link>
     </section>
   )
 }

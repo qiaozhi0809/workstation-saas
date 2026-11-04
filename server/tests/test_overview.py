@@ -492,6 +492,20 @@ def _class_exam(db, class_id, ge, scores):
     db.flush()
 
 
+def test_grade_exam_card_matches_grade_exam_progress(client, db, settings, monkeypatch):
+    """今日关注的联考进度与联考管理页共用 grade_exams.service.progress,不各算一份。"""
+    from app.domain.grade_exams.service import progress
+
+    freeze(monkeypatch, NOW)
+    ge = _grade_exam(db, GRADE_ID, "三年级期中联考", date(2026, 10, 10), _AT)
+    mks = ["S0011", "S0012", "S0013"]
+    _class_exam(db, C31, ge, [(m, "语文") for m in mks] + [("S0011", "数学")])
+    card = get_today(client, settings, GRADE_HEAD3).json()["grade_exam"]
+    rows = progress(db, ge)
+    assert rows and card["entered"] == sum(r.entered for r in rows) == 4
+    assert card["expected"] == sum(r.expected for r in rows)
+
+
 def test_today_notice_and_grade_exam_cards(client, db, settings, monkeypatch):
     freeze(monkeypatch, NOW)
     # 无联考 / 无通知
