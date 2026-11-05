@@ -19,7 +19,7 @@ vi.mock('@/shared/realtime/client', async (orig) => ({
     return c
   },
 }))
-vi.mock('@/shared/api/notices', () => ({ noticesApi: { inbox: vi.fn(), read: vi.fn(), readAll: vi.fn() } }))
+vi.mock('@/shared/api/notices', () => ({ noticesApi: { inbox: vi.fn(), read: vi.fn(), readAll: vi.fn(), ack: vi.fn() } }))
 
 const item = (id: string, over: Partial<InboxItem> = {}): InboxItem => ({
   id, title: `通知${id}`, content: `正文${id}`, from_name: '陈校长',
@@ -156,13 +156,60 @@ describe('通知铃铛', () => {
     expect(await screen.findByText('暂无通知')).toBeInTheDocument()
   })
 
-  it('does not call read for a recalled notice', async () => {
+  it('renders a recalled notice as plain text, not a button, and never calls read', async () => {
     server = { items: [item('1', { content: null, recalled: true })], total: 1, unread: 0 }
     renderBell()
     fireEvent.click(await screen.findByRole('button', { name: '通知,0 条未读' }))
     const list = await screen.findByRole('dialog', { name: '通知' })
     expect(within(list).getByText('此通知已撤回')).toBeInTheDocument()
-    fireEvent.click(within(list).getByRole('button', { name: /通知1/ }))
+    expect(within(list).getByText('通知1')).toBeInTheDocument()
+    expect(within(list).queryByRole('button', { name: /通知1/ })).toBeNull()
     expect(noticesApi.read).not.toHaveBeenCalled()
+  })
+
+  it('shows no ack form for a notice without ack', async () => {
+    renderBell()
+    fireEvent.click(await screen.findByRole('button', { name: '通知,2 条未读' }))
+    const list = await screen.findByRole('dialog', { name: '通知' })
+    fireEvent.click(within(list).getByRole('button', { name: /通知1/ }))
+    expect(within(list).getByText('正文1')).toBeInTheDocument()
+    expect(within(list).queryByRole('button', { name: '已知晓' })).toBeNull()
+  })
+
+  it('shows the ack form (not nested in the title button) and marks 已回执 after submit', async () => {
+    server = { items: [item('1', { ack: { kind: 'confirm' }, can_ack: true })], total: 1, unread: 1 }
+    vi.mocked(noticesApi.ack).mockResolvedValue(undefined)
+    renderBell()
+    fireEvent.click(await screen.findByRole('button', { name: '通知,1 条未读' }))
+    const list = await screen.findByRole('dialog', { name: '通知' })
+    expect(within(list).queryByRole('button', { name: '已知晓' })).toBeNull()
+    fireEvent.click(within(list).getByRole('button', { name: /通知1/ }))
+    const ackBtn = within(list).getByRole('button', { name: '已知晓' })
+    expect(ackBtn.parentElement!.closest('button')).toBeNull()
+    // 先等展开引起的标已读与重取落定,再看回执本身是否让铃铛的收件箱重取
+    await waitFor(() => expect(noticesApi.read).toHaveBeenCalledWith('1'))
+    await waitFor(() => expect(within(screen.getByRole('button', { name: /^通知,/ })).queryByText('1')).toBeNull())
+    const before = vi.mocked(noticesApi.inbox).mock.calls.length
+    fireEvent.click(ackBtn)
+    await waitFor(() => expect(noticesApi.ack).toHaveBeenCalledWith('1', { choice: null, note: null }))
+    expect(await within(list).findByText(/已回执/)).toBeInTheDocument()
+    await waitFor(() => expect(vi.mocked(noticesApi.inbox).mock.calls.length).toBeGreaterThan(before))
+  })
+
+  it('keeps each notice\'s ack state separate (key by id)', async () => {
+    server = {
+      items: [
+        item('1', { ack: { kind: 'confirm' }, can_ack: true, my_ack: { choice: null, note: null, acked_at: '2026-11-04T03:00:00Z' } }),
+        item('2', { ack: { kind: 'confirm' }, can_ack: true }),
+      ], total: 2, unread: 2,
+    }
+    renderBell()
+    fireEvent.click(await screen.findByRole('button', { name: '通知,2 条未读' }))
+    const list = await screen.findByRole('dialog', { name: '通知' })
+    fireEvent.click(within(list).getByRole('button', { name: /通知1/ }))
+    expect(within(list).getByText(/已回执/)).toBeInTheDocument()
+    fireEvent.click(within(list).getByRole('button', { name: /通知2/ }))
+    expect(within(list).queryByText(/已回执/)).toBeNull()
+    expect(within(list).getByRole('button', { name: '已知晓' })).toBeInTheDocument()
   })
 })

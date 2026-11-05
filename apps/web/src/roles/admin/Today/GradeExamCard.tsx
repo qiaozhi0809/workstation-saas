@@ -6,7 +6,7 @@ export function GradeExamCard({ exam }: { exam: TodayView['grade_exam'] }) {
   if (!exam) return null
   const pct = exam.expected > 0 ? Math.min(100, Math.round((exam.entered / exam.expected) * 100)) : 0
   return (
-    <section aria-label="年级联考" className="flex flex-col gap-3 rounded-lg border bg-card p-4">
+    <section aria-label="年级联考" className="flex flex-col gap-3 rounded-lg border bg-card p-4 md:only:col-span-2">
       <h2 className="text-base font-semibold">年级联考</h2>
       <div className="flex flex-wrap items-baseline gap-x-2">
         <span className="font-medium">{exam.name}</span>

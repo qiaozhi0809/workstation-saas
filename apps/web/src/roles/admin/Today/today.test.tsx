@@ -132,6 +132,12 @@ describe('今日关注页', () => {
       expect(within(card).getByRole('link', { name: '查看成绩汇总' })).toHaveAttribute('href', '/admin/reports/scores?exam=ge1')
     })
 
+    it('联考卡:只有一张卡时占满整行(md:only:col-span-2)', async () => {
+      setup(view({ grade_exam: exam, my_notices: [] }))
+      const card = await screen.findByRole('region', { name: '年级联考' })
+      expect(card.className).toContain('md:only:col-span-2')
+    })
+
     it('通知卡:最近几条与已读率,去发通知链接', async () => {
       setup(view({ my_notices: notices }))
       const card = (await screen.findByRole('region', { name: '我发出的通知' }))

@@ -6,16 +6,25 @@ import { ApiError } from '@/shared/api/client'
 import { Button } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
 import { NativeSelect } from '@/shared/components/ui/native-select'
-import type { BoardView, NoticePerson } from '@/shared/types/admin'
+import { cn } from '@/shared/lib/utils'
+import { kindsFor } from './targetKinds'
+import type { Audience, NoticeOptions, NoticePerson } from '@/shared/types/admin'
 
 export type TargetKind = 'school' | 'grade' | 'class' | 'users'
 export const MAX_USERS = 200
 
-const KIND_LABEL: Record<TargetKind, string> = {
-  school: '全校老师', grade: '某个年级', class: '某个班', users: '指定的人',
+const KIND_LABEL: Record<Audience, Record<TargetKind, string>> = {
+  teachers: { school: '全校老师', grade: '某个年级', class: '某个班', users: '指定的人' },
+  parents: { school: '全校家长', grade: '某个年级', class: '某个班', users: '指定的人' },
 }
 
-function PeoplePicker({ users, onChange }: { users: NoticePerson[]; onChange(next: NoticePerson[]): void }) {
+function PeoplePicker({ users, onChange, unavailable, unavailableMessage }: {
+  users: NoticePerson[]
+  onChange(next: NoticePerson[]): void
+  /** 发送返回 409 时,已不可选的 user_id */
+  unavailable: ReadonlySet<string>
+  unavailableMessage: string
+}) {
   const [search, setSearch] = useState('')
   const [q, setQ] = useState('')
   useEffect(() => {
@@ -25,6 +34,7 @@ function PeoplePicker({ users, onChange }: { users: NoticePerson[]; onChange(nex
   const found = useQuery({ queryKey: ['notices', 'people', q], queryFn: () => adminApi.noticePeople(q) })
   const chosen = new Set(users.map((u) => u.user_id))
   const full = users.length >= MAX_USERS
+  const badIds = users.filter((u) => unavailable.has(u.user_id)).map((u) => u.user_id)
 
   return (
     <div className="flex flex-col gap-2">
@@ -59,8 +69,11 @@ function PeoplePicker({ users, onChange }: { users: NoticePerson[]; onChange(nex
       {users.length > 0 && (
         <ul aria-label="已选择的人" className="flex flex-wrap gap-1.5">
           {users.map((u) => (
-            <li key={u.user_id} className="inline-flex items-center gap-1 rounded-full bg-muted py-0.5 pl-2.5 pr-1 text-sm">
+            <li key={u.user_id}
+              className={cn('inline-flex items-center gap-1 rounded-full bg-muted py-0.5 pl-2.5 pr-1 text-sm',
+                unavailable.has(u.user_id) && 'bg-destructive/10 text-destructive')}>
               {u.name}
+              {unavailable.has(u.user_id) && <span className="text-xs">已不可选</span>}
               <button type="button" aria-label={`移除 ${u.name}`}
                 className="rounded-full p-0.5 hover:bg-background focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 onClick={() => onChange(users.filter((x) => x.user_id !== u.user_id))}>
@@ -70,36 +83,44 @@ function PeoplePicker({ users, onChange }: { users: NoticePerson[]; onChange(nex
           ))}
         </ul>
       )}
+      {unavailableMessage && <p role="alert" className="text-sm text-destructive">{unavailableMessage}</p>}
+      {badIds.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" variant="outline" size="sm"
+            onClick={() => onChange(users.filter((u) => !unavailable.has(u.user_id)))}>
+            去掉这些人
+          </Button>
+        </div>
+      )}
     </div>
   )
 }
 
-/** 通知对象:全校 / 年级 / 班 / 指定的人。年级、班取自"看全校"接口返回的可见范围,不会列出看不到的年级 */
+/** 通知对象:全校 / 年级 / 班 / 指定的人(家长对象没有"指定的人")。年级、班取自 noticeOptions,不会列出发不了的年级 */
 export default function TargetPicker({
-  schoolWide, kind, onKind, board, boardError, onRetryBoard, gradeId, onGrade, classId, onClass, users, onUsers,
+  audience, options, kind, onKind, gradeId, onGrade, classId, onClass, users, onUsers, unavailable, unavailableMessage,
 }: {
-  /** 发送人是否有学校作用域:否(年级组长)则没有"全校老师"选项 */
-  schoolWide: boolean
+  audience: Audience
+  /** 发送人可选的范围;school_wide=false(年级组长)则没有"全校"选项 */
+  options: NoticeOptions
   kind: TargetKind
   onKind(k: TargetKind): void
-  /** 当前年级下的看板视图;切换年级加载期间,classes 为空 */
-  board: BoardView | undefined
-  boardError: boolean
-  onRetryBoard(): void
   gradeId: string
   onGrade(id: string): void
   classId: string
   onClass(id: string): void
   users: NoticePerson[]
   onUsers(next: NoticePerson[]): void
+  unavailable: ReadonlySet<string>
+  unavailableMessage: string
 }) {
-  const kinds: TargetKind[] = [...(schoolWide ? (['school'] as const) : []), 'grade', 'class', 'users']
-  const needsBoard = kind === 'grade' || kind === 'class'
+  const kinds = kindsFor(audience, options.school_wide)
+  const needsGrade = kind === 'grade' || kind === 'class'
   const gradeSelect = (
     <label className="flex items-center gap-1.5 text-sm">
       <span className="w-12 shrink-0">年级</span>
       <NativeSelect aria-label="年级" className="min-w-0 flex-1" value={gradeId} onChange={(e) => onGrade(e.target.value)}>
-        {(board?.grades ?? []).map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+        {options.grades.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
       </NativeSelect>
     </label>
   )
@@ -109,26 +130,22 @@ export default function TargetPicker({
       <label className="flex items-center gap-1.5 text-sm">
         <span className="w-12 shrink-0">发给</span>
         <NativeSelect aria-label="发给" className="min-w-0 flex-1" value={kind} onChange={(e) => onKind(e.target.value as TargetKind)}>
-          {kinds.map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
+          {kinds.map((k) => <option key={k} value={k}>{KIND_LABEL[audience][k]}</option>)}
         </NativeSelect>
       </label>
-      {needsBoard && boardError && (
-        <p role="alert" className="flex items-center gap-2 text-sm text-destructive">
-          可选的年级和班级加载失败
-          <Button type="button" variant="outline" size="sm" onClick={onRetryBoard}>重试</Button>
-        </p>
-      )}
-      {needsBoard && !boardError && gradeSelect}
-      {kind === 'class' && !boardError && (
+      {needsGrade && gradeSelect}
+      {kind === 'class' && (
         <label className="flex items-center gap-1.5 text-sm">
           <span className="w-12 shrink-0">班级</span>
           <NativeSelect aria-label="班级" className="min-w-0 flex-1" value={classId} onChange={(e) => onClass(e.target.value)}>
             <option value="">请选择班级</option>
-            {(board?.classes ?? []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            {options.classes.filter((c) => c.grade_id === gradeId).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </NativeSelect>
         </label>
       )}
-      {kind === 'users' && <PeoplePicker users={users} onChange={onUsers} />}
+      {kind === 'users' && (
+        <PeoplePicker users={users} onChange={onUsers} unavailable={unavailable} unavailableMessage={unavailableMessage} />
+      )}
     </div>
   )
 }

@@ -9,16 +9,17 @@ import Modal from '@/shared/components/overlay/Modal'
 import { toast } from '@/shared/components/Toast'
 import { Badge } from '@/shared/components/ui/badge'
 import { Button } from '@/shared/components/ui/button'
+import AckStatsDialog from '@/shared/components/notices/AckStatsDialog'
 import { formatInTz } from '@/shared/lib/date'
+import { localTz } from '@/shared/lib/time'
 import type { NoticeSent } from '@/shared/types/admin'
 import NoticeComposer from './NoticeComposer'
 import RecipientsDialog from './RecipientsDialog'
 
 const PAGE_SIZE = 20
 
-function SentList() {
+function SentList({ page, setPage }: { page: number; setPage(p: number): void }) {
   const qc = useQueryClient()
-  const [page, setPage] = useState(1)
   const [viewing, setViewing] = useState<NoticeSent | null>(null)
   const [recalling, setRecalling] = useState<NoticeSent | null>(null)
   const [busy, setBusy] = useState(false)
@@ -28,7 +29,7 @@ function SentList() {
     queryFn: () => adminApi.sentNotices(page),
     placeholderData: keepPreviousData,
   })
-  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+  const tz = localTz()
 
   const recall = async () => {
     if (!recalling || busy) return
@@ -70,7 +71,11 @@ function SentList() {
                   {n.title}
                 </button>
                 <span className="text-xs text-muted-foreground">{`${n.target_label} · ${formatInTz(n.created_at, tz)}`}</span>
-                <span className="text-xs">{`已读 ${n.read} / ${n.recipients}`}</span>
+                <span className="flex flex-wrap items-center gap-x-2 text-xs">
+                  {n.audience === 'parents' && <Badge variant="neutral">家长</Badge>}
+                  <span>{`已读 ${n.read} / ${n.recipients}`}</span>
+                  {n.ack.kind !== 'none' && <span>{`回执 ${n.acked} / ${n.recipients}`}</span>}
+                </span>
               </div>
               {n.recalled_at ? (
                 <Badge variant="neutral">已撤回</Badge>
@@ -91,7 +96,9 @@ function SentList() {
           <Button type="button" variant="outline" size="sm" disabled={page >= pages} onClick={() => setPage(page + 1)}>下一页</Button>
         </div>
       )}
-      {viewing && <RecipientsDialog notice={viewing} onClose={() => setViewing(null)} />}
+      {viewing && (viewing.ack.kind !== 'none'
+        ? <AckStatsDialog noticeId={viewing.id} onClose={() => setViewing(null)} />
+        : <RecipientsDialog notice={viewing} onClose={() => setViewing(null)} />)}
       {recalling && (
         <Modal open onClose={() => setRecalling(null)} title="撤回通知" description="撤回后收件人将看不到通知内容。">
           <p className="text-sm">{`确认撤回「${recalling.title}」?`}</p>
@@ -107,21 +114,23 @@ function SentList() {
 }
 
 export default function NoticesPage() {
-  // 与今日关注同一个 key:scope_label 为"全校"即学校作用域;年级组长是年级名,没有"全校老师"选项
-  const scope = useQuery({ queryKey: ['admin', 'today'], queryFn: adminApi.today })
+  // 对象选项(L44):school_wide 决定有没有"全校",年级 / 班级是发送人能发的范围
+  const opts = useQuery({ queryKey: ['notices', 'options'], queryFn: adminApi.noticeOptions })
+  // "我发出的"的页码提升到这里:发送成功后回到第 1 页(L49)
+  const [page, setPage] = useState(1)
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-4 p-4 md:p-6">
       <h1 className="text-xl font-semibold">通知</h1>
       <div className="grid items-start gap-4 md:grid-cols-2">
-        {scope.isError && !scope.data ? (
-          <ErrorState title="加载失败" onRetry={() => void scope.refetch()} retrying={scope.isFetching} />
-        ) : !scope.data ? (
+        {opts.isError && !opts.data ? (
+          <ErrorState title="加载失败" onRetry={() => void opts.refetch()} retrying={opts.isFetching} />
+        ) : !opts.data ? (
           <LoadingState />
         ) : (
-          <NoticeComposer schoolWide={scope.data.scope_label === '全校'} />
+          <NoticeComposer options={opts.data} onSent={() => setPage(1)} />
         )}
-        <SentList />
+        <SentList page={page} setPage={setPage} />
       </div>
     </div>
   )
