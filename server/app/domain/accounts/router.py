@@ -52,10 +52,10 @@ def list_accounts(
     bindings: BindingsDep,
     db: DbDep,
     settings: SettingsDep,
-    q: str | None = None,
+    q: Annotated[str | None, Query(max_length=50)] = None,
     role: str | None = None,
     status: str | None = None,
-    page: Annotated[int, Query(ge=1)] = 1,
+    page: Annotated[int, Query(ge=1, le=1000)] = 1,
 ) -> AccountPage:
     year_id = _guard(db, request, user, bindings, settings)
     return service.list_accounts(db, settings.school_id, year_id, q, role, status, page)

@@ -5,20 +5,31 @@ from uuid import UUID
 
 from fastapi import Request
 from redis import Redis
-from sqlalchemy import CompoundSelect, Select, func, select, union, update
+from sqlalchemy import CompoundSelect, Select, exists, func, select, union, update
 from sqlalchemy.orm import Session
 
+from app import clock
 from app.audit.service import deny, record
+from app.domain.classes.service import get_class_or_404
 from app.domain.notices.schemas import (
+    AckSpec,
+    ChoiceAck,
+    ClassNoticeInput,
     ClassTarget,
+    ConfirmAck,
     GradeTarget,
     Inbox,
     InboxItem,
+    MyAck,
+    NoAck,
     NoticeInput,
+    NoticeOptions,
     NoticePerson,
     NoticeRecipients,
     NoticeSent,
     NoticeSentPage,
+    OptionClass,
+    OptionGrade,
     ReadRecipient,
     SchoolTarget,
     UnreadRecipient,
@@ -26,7 +37,20 @@ from app.domain.notices.schemas import (
 )
 from app.domain.schools.service import require_active_year
 from app.errors import ApiError
-from app.models import AcademicYear, Grade, Notice, NoticeRecipient, RoleBinding, SchoolClass, User
+from app.models import (
+    AcademicYear,
+    Enrollment,
+    Grade,
+    Notice,
+    NoticeRecipient,
+    NoticeStudent,
+    Parent,
+    ParentLink,
+    RoleBinding,
+    SchoolClass,
+    Student,
+    User,
+)
 from app.rbac.bindings import Binding, Scope, can
 from app.rbac.guard import ensure
 from app.rbac.roles import ADMIN_ROLES, ROLE_PERMS, TEACHER_ROLES, Perm, Role
@@ -157,15 +181,16 @@ def _deny_send(db: Session, request: Request | None, sender: User, object_id: st
     )
 
 
-def resolve_recipients(
+def _authorize_scope(
     db: Session,
     sender: User,
     bindings: Sequence[Binding],
-    target: SchoolTarget | GradeTarget | ClassTarget | UsersTarget,
+    target: SchoolTarget | GradeTarget | ClassTarget,
     year: AcademicYear,
-    request: Request | None = None,
-) -> tuple[list[UUID], str]:
-    """返回 (收件人, target_label);无权限 403,班 / 年级不存在:学校作用域 404,其余 403。"""
+    request: Request | None,
+) -> Grade | SchoolClass | None:
+    """school / grade / class 目标的存在性与作用域判定(老师对象与家长对象共用);
+    无权限 403,班 / 年级不存在:学校作用域 404,其余 403。返回年级或班(学校目标返回 None)。"""
     wide = _school_wide(bindings, year.school_id)
     if isinstance(target, SchoolTarget):
         ensure(
@@ -178,8 +203,8 @@ def resolve_recipients(
             object_id=str(year.school_id),
             object_type="school",
         )
-        ids, label = _school_ids(year.id), "全校老师"
-    elif isinstance(target, GradeTarget):
+        return None
+    if isinstance(target, GradeTarget):
         grade = db.get(Grade, target.grade_id)
         if grade is None or grade.academic_year_id != year.id or grade.school_id != year.school_id:
             if not wide:
@@ -195,30 +220,81 @@ def resolve_recipients(
             object_id=str(grade.id),
             object_type="grade",
         )
-        ids, label = _grade_ids_select(db, year.id, [grade.id]), f"{grade.name}老师"
-    elif isinstance(target, ClassTarget):
-        cls = db.get(SchoolClass, target.class_id)
-        if (
-            cls is None
-            or not cls.active
-            or cls.academic_year_id != year.id
-            or cls.school_id != year.school_id
-        ):
-            if not wide:
-                _deny_send(db, request, sender, str(target.class_id), "class")
-            raise ApiError(404, "NOT_FOUND", "班级不存在")
-        ensure(
-            db,
-            request,
-            sender.id,
-            bindings,
-            Perm.NOTICE_SEND,
-            Scope(school_id=year.school_id, grade_id=cls.grade_id, class_id=cls.id),
-            object_id=str(cls.id),
-            object_type="class",
+        return grade
+    cls = db.get(SchoolClass, target.class_id)
+    if (
+        cls is None
+        or not cls.active
+        or cls.academic_year_id != year.id
+        or cls.school_id != year.school_id
+    ):
+        if not wide:
+            _deny_send(db, request, sender, str(target.class_id), "class")
+        raise ApiError(404, "NOT_FOUND", "班级不存在")
+    ensure(
+        db,
+        request,
+        sender.id,
+        bindings,
+        Perm.NOTICE_SEND,
+        Scope(school_id=year.school_id, grade_id=cls.grade_id, class_id=cls.id),
+        object_id=str(cls.id),
+        object_type="class",
+    )
+    return cls
+
+
+def _unavailable_ids(
+    db: Session,
+    sender: User,
+    bindings: Sequence[Binding],
+    picked: set[UUID],
+    year: AcademicYear,
+) -> set[UUID]:
+    """L46:只返回"发送人不越权也能确认原本可选"的账号,其余一律交给调用方按越权处理。
+    学校作用域:本校账号,曾有过教师 / 管理岗绑定(任何学年、含已结束),现已非 active 或无当前绑定;
+    从未有过教师 / 管理岗绑定的账号(纯家长等)不算,避免借 409 探出谁是家长。
+    年级组长:仅本年级当前学年仍有绑定(在读班教师绑定或本年级组长岗)但账号已冻结的人。"""
+    if not picked:
+        return set()
+    if not _school_wide(bindings, year.school_id):
+        grades = sorted(_send_grades(bindings), key=str)
+        return set(
+            db.scalars(
+                select(User.id).where(
+                    User.id.in_(picked),
+                    User.school_id == sender.school_id,
+                    User.status != "active",
+                    User.id.in_(_grade_ids_select(db, year.id, grades)),
+                )
+            )
         )
-        ids, label = _teacher_ids(year.id, [cls.id]), f"{cls.name}老师"
-    else:
+    ever_staff = exists().where(
+        RoleBinding.user_id == User.id,
+        RoleBinding.role_type.in_([r.value for r in (TEACHER_ROLES | ADMIN_ROLES)]),
+    )
+    return set(
+        db.scalars(
+            select(User.id).where(
+                User.id.in_(picked),
+                User.school_id == sender.school_id,
+                ever_staff,
+                (User.status != "active") | User.id.not_in(_school_ids(year.id)),
+            )
+        )
+    )
+
+
+def resolve_recipients(
+    db: Session,
+    sender: User,
+    bindings: Sequence[Binding],
+    target: SchoolTarget | GradeTarget | ClassTarget | UsersTarget,
+    year: AcademicYear,
+    request: Request | None = None,
+) -> tuple[list[UUID], str]:
+    """返回 (收件人, target_label);无权限 403,班 / 年级不存在:学校作用域 404,其余 403。"""
+    if isinstance(target, UsersTarget):
         picked = set(target.user_ids)
         allowed = set(
             db.scalars(
@@ -227,31 +303,188 @@ def resolve_recipients(
                 .with_only_columns(User.id)
             )
         )
-        if allowed != picked:
+        missing = picked - allowed
+        if missing:
+            gone = _unavailable_ids(db, sender, bindings, missing, year)
+            if gone == missing:
+                raise ApiError(
+                    409,
+                    "RECIPIENT_UNAVAILABLE",
+                    f"有 {len(gone)} 位已不能接收通知,请去掉后重发",
+                    {"user_ids": sorted(str(u) for u in gone)},
+                )
             _deny_send(db, request, sender, str(year.school_id), "school")
         return list(target.user_ids), f"指定 {len(target.user_ids)} 人"
 
+    scope = _authorize_scope(db, sender, bindings, target, year, request)
+    if isinstance(target, SchoolTarget):
+        ids, label = _school_ids(year.id), "全校老师"
+    elif isinstance(target, GradeTarget):
+        ids, label = _grade_ids_select(db, year.id, [scope.id]), f"{scope.name}老师"
+    else:
+        ids, label = _teacher_ids(year.id, [scope.id]), f"{scope.name}老师"
     users = db.scalars(
         _active_users(sender, ids).with_only_columns(User.id).order_by(User.id)
     ).all()
     return list(users), label
 
 
+def resolve_parent_recipients(
+    db: Session,
+    sender: User,
+    bindings: Sequence[Binding],
+    target: SchoolTarget | GradeTarget | ClassTarget | UsersTarget,
+    year: AcademicYear,
+    request: Request | None = None,
+) -> tuple[list[UUID], list[tuple[UUID, UUID]], int, str]:
+    """家长对象:返回 (收件人, [(student_id, parent_user_id)], students_without_parent, label)。
+
+    范围内的学生 = 当前学年在读班里 status='active' 的注册;每个学生取主家长
+    (is_primary、status='active'、notify_enabled、账号 active 且同校)。
+    全部用显式 SQL 判定,不经过 load_bindings / effective_status(家长绑定的作用域是学生,
+    混进教师判权会越权)。发送人自己是主家长的学生跳过,不计入 students_without_parent。"""
+    if isinstance(target, UsersTarget):
+        raise ApiError(400, "TARGET_INVALID", "家长对象只能选全校、年级或班级")
+    scope = _authorize_scope(db, sender, bindings, target, year, request)
+    return _parent_recipients_in_scope(db, sender, target, scope, year)
+
+
+def _parent_recipients_in_scope(
+    db: Session,
+    sender: User,
+    target: SchoolTarget | GradeTarget | ClassTarget,
+    scope: Grade | SchoolClass | None,
+    year: AcademicYear,
+) -> tuple[list[UUID], list[tuple[UUID, UUID]], int, str]:
+    """范围已判过权;按范围取在读学生的主家长(resolve_parent_recipients 与班级公告共用)。"""
+    in_scope = (
+        select(Enrollment.student_id)
+        .join(SchoolClass, SchoolClass.id == Enrollment.class_id)
+        .join(Student, Student.id == Enrollment.student_id)
+        .where(
+            Enrollment.status == "active",
+            Enrollment.academic_year_id == year.id,
+            SchoolClass.academic_year_id == year.id,
+            SchoolClass.school_id == year.school_id,
+            SchoolClass.active.is_(True),
+            Student.school_id == year.school_id,
+        )
+    )
+    if isinstance(target, GradeTarget):
+        in_scope = in_scope.where(SchoolClass.grade_id == scope.id)
+        label = f"{scope.name}家长"
+    elif isinstance(target, ClassTarget):
+        in_scope = in_scope.where(SchoolClass.id == scope.id)
+        label = f"{scope.name}家长"
+    else:
+        label = "全校家长"
+    student_ids = set(db.scalars(in_scope))
+    if not student_ids:
+        return [], [], 0, label
+    primary = db.execute(
+        select(ParentLink.student_id, Parent.user_id)
+        .join(Parent, Parent.id == ParentLink.parent_id)
+        .join(User, User.id == Parent.user_id)
+        .where(
+            ParentLink.student_id.in_(student_ids),
+            ParentLink.is_primary.is_(True),
+            ParentLink.status == "active",
+            ParentLink.notify_enabled.is_(True),
+            User.status == "active",
+            User.school_id == sender.school_id,
+        )
+        .order_by(ParentLink.student_id)
+    ).all()
+    own_children = set(
+        db.scalars(
+            select(ParentLink.student_id)
+            .join(Parent, Parent.id == ParentLink.parent_id)
+            .where(
+                ParentLink.student_id.in_(student_ids),
+                ParentLink.is_primary.is_(True),
+                ParentLink.status == "active",
+                Parent.user_id == sender.id,
+            )
+        )
+    )
+    pairs = [(sid, uid) for sid, uid in primary if uid != sender.id]
+    covered = {sid for sid, _ in primary} | own_children
+    without = len(student_ids - covered)
+    recipients = sorted({uid for _, uid in pairs}, key=str)
+    return recipients, pairs, without, label
+
+
+def send_options(
+    db: Session, sender: User, bindings: Sequence[Binding], year: AcademicYear
+) -> NoticeOptions:
+    """L44:调用者能发的当前学年年级与在读班;学校作用域 = 全部,年级组长 = 自己的年级。"""
+    wide = _school_wide(bindings, year.school_id)
+    grade_q = select(Grade).where(
+        Grade.academic_year_id == year.id, Grade.school_id == year.school_id
+    )
+    if not wide:
+        grade_q = grade_q.where(Grade.id.in_(_send_grades(bindings)))
+    grades = db.scalars(grade_q.order_by(Grade.display_order, Grade.name, Grade.id)).all()
+    grade_ids = [g.id for g in grades]
+    classes = (
+        db.execute(
+            select(SchoolClass)
+            .join(Grade, Grade.id == SchoolClass.grade_id)
+            .where(
+                SchoolClass.academic_year_id == year.id,
+                SchoolClass.school_id == year.school_id,
+                SchoolClass.active.is_(True),
+                SchoolClass.grade_id.in_(grade_ids),
+            )
+            .order_by(Grade.display_order, Grade.name, SchoolClass.name, SchoolClass.id)
+        )
+        .scalars()
+        .all()
+        if grade_ids
+        else []
+    )
+    return NoticeOptions(
+        school_wide=wide,
+        grades=[OptionGrade(id=g.id, name=g.name) for g in grades],
+        classes=[OptionClass(id=c.id, name=c.name, grade_id=c.grade_id) for c in classes],
+    )
+
+
 # ---- 发送 / 撤回 ----
 
 
-def _counts(db: Session, notice_ids: Sequence[UUID]) -> dict[UUID, tuple[int, int]]:
+def _counts(db: Session, notice_ids: Sequence[UUID]) -> dict[UUID, tuple[int, int, int]]:
     if not notice_ids:
         return {}
     rows = db.execute(
-        select(NoticeRecipient.notice_id, func.count(), func.count(NoticeRecipient.read_at))
+        select(
+            NoticeRecipient.notice_id,
+            func.count(),
+            func.count(NoticeRecipient.read_at),
+            func.count(NoticeRecipient.acked_at),
+        )
         .where(NoticeRecipient.notice_id.in_(notice_ids))
         .group_by(NoticeRecipient.notice_id)
     ).all()
-    return {nid: (total, read) for nid, total, read in rows}
+    return {nid: (total, read, acked) for nid, total, read, acked in rows}
 
 
-def _sent_view(notice: Notice, recipients: int, read: int) -> NoticeSent:
+def ack_spec(notice: Notice) -> AckSpec:
+    if notice.ack_kind == "confirm":
+        return ConfirmAck(kind="confirm")
+    if notice.ack_kind == "choice":
+        return ChoiceAck(
+            kind="choice", options=list(notice.ack_options or []), allow_note=notice.ack_allow_note
+        )
+    return NoAck(kind="none")
+
+
+def without_parent_of(notice: Notice) -> int:
+    """发送那一刻记下的"没有可通知主家长的学生数"(notices.students_without_parent 列)。"""
+    return notice.students_without_parent
+
+
+def _sent_view(notice: Notice, recipients: int, read: int, acked: int = 0) -> NoticeSent:
     return NoticeSent(
         id=notice.id,
         title=notice.title,
@@ -261,12 +494,34 @@ def _sent_view(notice: Notice, recipients: int, read: int) -> NoticeSent:
         recalled_at=notice.recalled_at,
         recipients=recipients,
         read=read,
+        audience=notice.audience,
+        ack=ack_spec(notice),
+        ack_deadline=notice.ack_deadline,
+        acked=acked,
+        students_without_parent=without_parent_of(notice),
     )
 
 
 def sent_views(db: Session, notices: Sequence[Notice]) -> list[NoticeSent]:
     counts = _counts(db, [n.id for n in notices])
-    return [_sent_view(n, *counts.get(n.id, (0, 0))) for n in notices]
+    return [_sent_view(n, *counts.get(n.id, (0, 0, 0))) for n in notices]
+
+
+def _ack_columns(body: NoticeInput, now: datetime) -> dict:
+    """回执设置 → notices 列;截止时间须带时区且晚于现在。"""
+    ack = body.ack
+    deadline = body.ack_deadline
+    if deadline is not None:
+        if deadline.tzinfo is None or deadline.utcoffset() is None:
+            raise ApiError(400, "BAD_REQUEST", "截止时间需要带时区")
+        if deadline <= now:
+            raise ApiError(400, "BAD_REQUEST", "截止时间必须晚于现在")
+    if ack.kind == "none":
+        return {"require_ack": False, "ack_kind": "none", "ack_deadline": None}
+    cols = {"require_ack": True, "ack_kind": ack.kind, "ack_deadline": deadline}
+    if ack.kind == "choice":
+        cols |= {"ack_options": list(ack.options), "ack_allow_note": ack.allow_note}
+    return cols
 
 
 def send(
@@ -281,7 +536,16 @@ def send(
 ) -> NoticeSent:
     """收件人在此刻确定并落库;先提交,再发布 notice.new(发布失败不影响已发出的通知)。"""
     year = require_active_year(db, sender.school_id)
-    recipients, label = resolve_recipients(db, sender, bindings, body.target, year, request)
+    pairs: list[tuple[UUID, UUID]] = []
+    target = body.target.model_dump(mode="json")
+    if body.audience == "parents":
+        recipients, pairs, without, label = resolve_parent_recipients(
+            db, sender, bindings, body.target, year, request
+        )
+    else:
+        without = 0
+        recipients, label = resolve_recipients(db, sender, bindings, body.target, year, request)
+    ack_cols = _ack_columns(body, now)  # 先判权(上面),再校验回执设置与截止时间
     if not recipients:
         raise ApiError(400, "NO_RECIPIENTS", "没有可接收的人")
     notice = Notice(
@@ -289,14 +553,19 @@ def send(
         from_user_id=sender.id,
         title=body.title,
         content=body.content,
-        target=body.target.model_dump(mode="json"),
+        target=target,
         target_label=label,
-        require_ack=False,
+        students_without_parent=without,
+        audience=body.audience,
         created_at=now,
+        **ack_cols,
     )
     db.add(notice)
     db.flush()
     db.add_all(NoticeRecipient(notice_id=notice.id, user_id=uid) for uid in recipients)
+    db.add_all(
+        NoticeStudent(notice_id=notice.id, student_id=sid, parent_user_id=uid) for sid, uid in pairs
+    )
     record(
         db,
         user_id=sender.id,
@@ -305,7 +574,12 @@ def send(
         object_type="notice",
         object_id=str(notice.id),
         request=request,
-        extra={"target": _audit_target(body), "recipients": len(recipients)},
+        extra={
+            "target": _audit_target(body),
+            "recipients": len(recipients),
+            "audience": body.audience,
+            "ack": body.ack.kind,
+        },
     )
     # 提交会让 ORM 对象过期;先取好负载与响应,提交后立刻发布,不再触发刷新查询
     event = {
@@ -319,6 +593,150 @@ def send(
     db.commit()
     publish(redis, recipients, event)
     return view
+
+
+def _class_for_notice(
+    db: Session,
+    request: Request | None,
+    user: User,
+    bindings: Sequence[Binding],
+    class_id: UUID,
+) -> SchoolClass:
+    """班级公告的判权:本校的班 + 该班作用域内的 class.notice(家长绑定不在 bindings 里,一律 403)。
+    停用的班 / 非当前学年的班对有权限的人 404。"""
+    cls = get_class_or_404(db, class_id)
+    if cls.school_id != user.school_id:
+        raise ApiError(404, "NOT_FOUND", "班级不存在")
+    ensure(
+        db,
+        request,
+        user.id,
+        bindings,
+        Perm.CLASS_NOTICE,
+        Scope(school_id=cls.school_id, grade_id=cls.grade_id, class_id=cls.id),
+        object_id=str(cls.id),
+    )
+    year = require_active_year(db, user.school_id)
+    if not cls.active or cls.academic_year_id != year.id:
+        raise ApiError(404, "NOT_FOUND", "班级不存在")
+    return cls
+
+
+def send_class_notice(
+    db: Session,
+    redis: Redis,
+    sender: User,
+    bindings: Sequence[Binding],
+    class_id: UUID,
+    body: ClassNoticeInput,
+    *,
+    now: datetime,
+    request: Request | None = None,
+) -> NoticeSent:
+    """班主任给本班家长发公告:对象固定为本班家长,收件人在此刻确定并落库后再推 notice.new。"""
+    cls = _class_for_notice(db, request, sender, bindings, class_id)
+    year = require_active_year(db, sender.school_id)
+    full = NoticeInput(
+        title=body.title,
+        content=body.content,
+        target=ClassTarget(kind="class", class_id=cls.id),
+        audience="parents",
+        ack=body.ack,
+        ack_deadline=body.ack_deadline,
+    )
+    ack_cols = _ack_columns(full, now)
+    recipients, pairs, without, label = _parent_recipients_in_scope(
+        db, sender, full.target, cls, year
+    )
+    if not recipients:
+        raise ApiError(400, "NO_RECIPIENTS", "没有可接收的人")
+    target = full.target.model_dump(mode="json")
+    notice = Notice(
+        school_id=sender.school_id,
+        from_user_id=sender.id,
+        class_id=cls.id,
+        title=body.title,
+        content=body.content,
+        target=target,
+        target_label=label,
+        students_without_parent=without,
+        audience="parents",
+        created_at=now,
+        **ack_cols,
+    )
+    db.add(notice)
+    db.flush()
+    db.add_all(NoticeRecipient(notice_id=notice.id, user_id=uid) for uid in recipients)
+    db.add_all(
+        NoticeStudent(notice_id=notice.id, student_id=sid, parent_user_id=uid) for sid, uid in pairs
+    )
+    record(
+        db,
+        user_id=sender.id,
+        action="notice.send",
+        success=True,
+        object_type="notice",
+        object_id=str(notice.id),
+        request=request,
+        extra={
+            "target": _audit_target(full),
+            "recipients": len(recipients),
+            "audience": "parents",
+            "ack": body.ack.kind,
+        },
+    )
+    event = {
+        "type": "notice.new",
+        "id": str(notice.id),
+        "title": notice.title,
+        "from_name": sender.display_name,
+        "created_at": notice.created_at.isoformat(),
+    }
+    view = _sent_view(notice, len(recipients), 0)
+    db.commit()
+    publish(redis, recipients, event)
+    return view
+
+
+def class_sent_list(
+    db: Session,
+    request: Request | None,
+    sender: User,
+    bindings: Sequence[Binding],
+    class_id: UUID,
+    page: int,
+) -> NoticeSentPage:
+    """自己发给这个班家长的公告,时间倒序。"""
+    cls = _class_for_notice(db, request, sender, bindings, class_id)
+    where = (Notice.from_user_id == sender.id, Notice.class_id == cls.id)
+    total = db.scalar(select(func.count()).select_from(Notice).where(*where)) or 0
+    notices = db.scalars(
+        select(Notice)
+        .where(*where)
+        .order_by(Notice.created_at.desc(), Notice.id)
+        .limit(PAGE_SIZE)
+        .offset((page - 1) * PAGE_SIZE)
+    ).all()
+    return NoticeSentPage(items=sent_views(db, notices), total=total)
+
+
+def recall_class_notice(
+    db: Session,
+    redis: Redis,
+    sender: User,
+    bindings: Sequence[Binding],
+    class_id: UUID,
+    notice_id: UUID,
+    *,
+    now: datetime,
+    request: Request | None = None,
+) -> NoticeSent:
+    """只能撤回自己发给这个班的公告,否则 404;撤回与推送复用 recall。"""
+    cls = _class_for_notice(db, request, sender, bindings, class_id)
+    notice = _own_notice(db, sender, notice_id)
+    if notice.class_id != cls.id:
+        raise ApiError(404, "NOT_FOUND", "通知不存在")
+    return recall(db, redis, sender, notice_id, now=now, request=request)
 
 
 def _audit_target(body: NoticeInput) -> dict:
@@ -406,7 +824,7 @@ def recall(
         )
     db.refresh(notice)
     counts = _counts(db, [notice.id])
-    view = _sent_view(notice, *counts.get(notice.id, (0, 0)))
+    view = _sent_view(notice, *counts.get(notice.id, (0, 0, 0)))
     nid = str(notice.id)
     if won:
         db.commit()
@@ -498,7 +916,9 @@ def people(
 # ---- 收件箱 ----
 
 
-def inbox(db: Session, user: User, page: int) -> Inbox:
+def inbox(db: Session, user: User, page: int, *, now: datetime | None = None) -> Inbox:
+    """只返回以我为收件人的通知(notice_recipients.user_id = 我)。"""
+    now = now or clock.utc_now()
     mine = NoticeRecipient.user_id == user.id
     total = db.scalar(select(func.count()).select_from(NoticeRecipient).where(mine)) or 0
     unread = (
@@ -511,7 +931,14 @@ def inbox(db: Session, user: User, page: int) -> Inbox:
         or 0
     )
     rows = db.execute(
-        select(Notice, User.display_name, NoticeRecipient.read_at)
+        select(
+            Notice,
+            User.display_name,
+            NoticeRecipient.read_at,
+            NoticeRecipient.acked_at,
+            NoticeRecipient.ack_choice,
+            NoticeRecipient.ack_content,
+        )
         .join(NoticeRecipient, NoticeRecipient.notice_id == Notice.id)
         .outerjoin(User, User.id == Notice.from_user_id)
         .where(mine)
@@ -519,18 +946,54 @@ def inbox(db: Session, user: User, page: int) -> Inbox:
         .limit(PAGE_SIZE)
         .offset((page - 1) * PAGE_SIZE)
     ).all()
-    items = [
-        InboxItem(
-            id=n.id,
-            title=n.title,
-            content=None if n.recalled_at is not None else n.content,
-            from_name=from_name,
-            created_at=n.created_at,
-            read_at=read_at,
-            recalled=n.recalled_at is not None,
+    parent_ids = [r[0].id for r in rows if r[0].audience == "parents"]
+    kids: dict[UUID, list[str]] = defaultdict(list)
+    live: set[UUID] = set()  # 至少一个涉及的孩子绑定仍在用的通知
+    if parent_ids:
+        # 一次查询取当页所有通知涉及的孩子姓名(按学号)与绑定是否在用
+        active_link = exists().where(
+            ParentLink.student_id == NoticeStudent.student_id,
+            ParentLink.status == "active",
+            ParentLink.parent_id.in_(select(Parent.id).where(Parent.user_id == user.id)),
         )
-        for n, from_name, read_at in rows
-    ]
+        for nid, name, in_use in db.execute(
+            select(NoticeStudent.notice_id, Student.name, active_link)
+            .join(Student, Student.id == NoticeStudent.student_id)
+            .where(NoticeStudent.notice_id.in_(parent_ids), NoticeStudent.parent_user_id == user.id)
+            .order_by(Student.student_no.nulls_last(), Student.mk)
+        ):
+            kids[nid].append(name)
+            if in_use:
+                live.add(nid)
+    items = []
+    for n, from_name, read_at, acked_at, choice, content in rows:
+        recalled = n.recalled_at is not None
+        open_ = (
+            n.ack_kind != "none"
+            and not recalled
+            and (n.ack_deadline is None or now < n.ack_deadline)
+        )
+        can_ack = open_ and (n.audience != "parents" or n.id in live)
+        items.append(
+            InboxItem(
+                id=n.id,
+                title=n.title,
+                content=None if recalled else n.content,
+                from_name=from_name,
+                created_at=n.created_at,
+                read_at=read_at,
+                recalled=recalled,
+                ack=ack_spec(n),
+                ack_deadline=n.ack_deadline,
+                my_ack=(
+                    MyAck(choice=choice, note=content, acked_at=acked_at)
+                    if acked_at is not None
+                    else None
+                ),
+                students=kids.get(n.id, []),
+                can_ack=can_ack,
+            )
+        )
     return Inbox(items=items, total=total, unread=unread)
 
 

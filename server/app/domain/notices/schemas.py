@@ -34,10 +34,48 @@ NoticeTarget = Annotated[
 ]
 
 
+class NoAck(BaseModel):
+    kind: Literal["none"]
+
+
+class ConfirmAck(BaseModel):
+    kind: Literal["confirm"]
+
+
+AckOption = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=20)]
+
+
+class ChoiceAck(BaseModel):
+    kind: Literal["choice"]
+    options: Annotated[list[AckOption], Field(min_length=2, max_length=5)]
+    allow_note: bool = False
+
+    @field_validator("options")
+    @classmethod
+    def _distinct(cls, value: list[str]) -> list[str]:
+        if len(set(value)) != len(value):
+            raise ValueError("options must be distinct")
+        return value
+
+
+AckSpec = Annotated[NoAck | ConfirmAck | ChoiceAck, Field(discriminator="kind")]
+Audience = Literal["teachers", "parents"]
+
+
 class NoticeInput(BaseModel):
     title: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=50)]
     content: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)]
     target: NoticeTarget
+    audience: Audience = "teachers"
+    ack: AckSpec = NoAck(kind="none")
+    ack_deadline: datetime | None = None
+
+
+class ClassNoticeInput(BaseModel):
+    title: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=50)]
+    content: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)]
+    ack: AckSpec = NoAck(kind="none")
+    ack_deadline: datetime | None = None
 
 
 class NoticeSent(BaseModel):
@@ -49,6 +87,63 @@ class NoticeSent(BaseModel):
     recalled_at: datetime | None
     recipients: int
     read: int
+    audience: Audience
+    ack: AckSpec
+    ack_deadline: datetime | None
+    acked: int
+    students_without_parent: int
+
+
+class OptionGrade(BaseModel):
+    id: UUID
+    name: str
+
+
+class OptionClass(BaseModel):
+    id: UUID
+    name: str
+    grade_id: UUID
+
+
+class NoticeOptions(BaseModel):
+    school_wide: bool
+    grades: list[OptionGrade]
+    classes: list[OptionClass]
+
+
+class AckInput(BaseModel):
+    choice: int | None = None
+    note: str | None = Field(default=None, max_length=1000)  # 宽松上限;业务上限 200 见 service
+
+
+class AckRow(BaseModel):
+    user_id: UUID
+    user_name: str
+    student_id: UUID | None
+    student_name: str | None
+    class_name: str | None
+    read_at: datetime | None
+    choice: int | None
+    note: str | None
+    acked_at: datetime | None
+
+
+class AckStats(BaseModel):
+    audience: Audience
+    ack: AckSpec
+    ack_deadline: datetime | None
+    total: int
+    read: int
+    acked: int
+    counts: list[int]
+    students_without_parent: int
+    rows: list[AckRow]
+
+
+class MyAck(BaseModel):
+    choice: int | None
+    note: str | None
+    acked_at: datetime
 
 
 class NoticeSentPage(BaseModel):
@@ -86,6 +181,11 @@ class InboxItem(BaseModel):
     created_at: datetime
     read_at: datetime | None
     recalled: bool
+    ack: AckSpec
+    ack_deadline: datetime | None
+    my_ack: MyAck | None
+    students: list[str]
+    can_ack: bool
 
 
 class Inbox(BaseModel):
