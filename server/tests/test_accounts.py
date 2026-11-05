@@ -370,3 +370,12 @@ def test_parent_tag_and_filter(client, settings):
     assert any(r["role"] == "homeroom_teacher" for r in teacher04["roles"])
     other = client.get(ACCOUNTS, headers=h, params={"role": "homeroom_teacher"}).json()["items"]
     assert "13800000061" not in {a["login_name"] for a in other}
+
+
+def test_list_page_and_q_caps(client, settings):
+    h = _admin(settings)
+    # 项目口径:查询参数校验失败统一 400 BAD_REQUEST
+    assert client.get(ACCOUNTS, headers=h, params={"page": 1000}).status_code == 200
+    assert client.get(ACCOUNTS, headers=h, params={"page": 1001}).status_code == 400
+    assert client.get(ACCOUNTS, headers=h, params={"q": "字" * 50}).status_code == 200
+    assert client.get(ACCOUNTS, headers=h, params={"q": "字" * 51}).status_code == 400

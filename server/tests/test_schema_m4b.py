@@ -99,8 +99,10 @@ def test_require_ack_must_match_ack_kind(db):
 
 
 def test_invalid_audience_and_ack_kind_rejected(db):
-    with pytest.raises(IntegrityError):
+    with pytest.raises(IntegrityError), db.begin_nested():
         _notice(db, audience="students")
+    with pytest.raises(IntegrityError), db.begin_nested():
+        _notice(db, ack_kind="x")
 
 
 def test_ack_content_length_limit(db):

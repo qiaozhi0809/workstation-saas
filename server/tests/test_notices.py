@@ -5,7 +5,7 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy import func, select, text
 
-from app.models import AcademicYear, Notice, NoticeRecipient, User
+from app.models import AcademicYear, Notice, NoticeRecipient, Parent, ParentLink, User
 from app.models.audit import AuditLog
 from app.rbac.roles import Role
 from app.ws.hub import CHANNEL
@@ -37,8 +37,8 @@ GRADE3_TEACHERS = {T01, T02, T03, T04}
 TARGET_SCHOOL = {"kind": "school"}
 
 
-def body(target, title="放假通知", content="下周一放假一天"):
-    return {"title": title, "content": content, "target": target}
+def body(target, title="放假通知", content="下周一放假一天", **extra):
+    return {"title": title, "content": content, "target": target, **extra}
 
 
 def send(client, settings, who, target, **kw):
@@ -190,18 +190,19 @@ def test_users_target_rejects_non_candidates(client, db, settings):
     nobody = make_teacher_account(db, login_name="u_nobody")
     db.flush()
 
+    # L46:曾有过教师 / 管理岗绑定、现已失效的本校账号 → 409;从未有过的 / 不存在的 / 自己 → 403
     for who in (PRINCIPAL, DEAN):
-        for bad in (
-            str(null_year.id),
-            str(other_year.id),
-            str(ended.id),
-            str(frozen.id),
-            str(nobody.id),
-            str(uuid4()),
-            who,  # 自己不在候选里
-        ):
+        for gone in (null_year, other_year, ended, frozen):
+            res = send(client, settings, who, {"kind": "users", "user_ids": [T01, str(gone.id)]})
+            assert res.status_code == 409, (who, gone.login_name)
+            assert res.json()["error"]["code"] == "RECIPIENT_UNAVAILABLE"
+            assert res.json()["error"]["details"] == {"user_ids": [str(gone.id)]}
+        for bad in (str(nobody.id), str(uuid4()), who):
             res = send(client, settings, who, {"kind": "users", "user_ids": [T01, bad]})
             assert res.status_code == 403, (who, bad)
+        # 混有越权的人时按越权处理,不泄露谁已失效
+        mixed = {"kind": "users", "user_ids": [str(frozen.id), str(nobody.id)]}
+        assert send(client, settings, who, mixed).status_code == 403
     count = db.scalar(select(func.count()).select_from(Notice))
     assert count == 0
 
@@ -714,3 +715,358 @@ def test_notice_people_escapes_like(client, settings):
     h = auth(settings, PRINCIPAL)
     assert client.get(PEOPLE, params={"q": "%"}, headers=h).json() == []
     assert client.get(PEOPLE, params={"q": "_"}, headers=h).json() == []
+
+
+# ---- M4b:通知到家长、L44 / L46 / L47 ----
+
+LI = "55555555-5555-5555-5555-555555555561"  # 李家长:S0001(三年二班)、S0017(四年一班)主家长
+ZHOU = "55555555-5555-5555-5555-555555555562"  # 周家长:S0001 次要家长
+TARGET_C32 = {"kind": "class", "class_id": C32}
+CONFIRM = {"kind": "confirm"}
+
+
+def send_parents(client, settings, who, target, **kw):
+    return send(client, settings, who, target, audience="parents", **kw)
+
+
+def set_link(db, login: str, mk: str, **cols) -> None:
+    """改种子家长绑定;只读状态必须带 readonly_since(表约束)。"""
+    allowed = {"status", "readonly_since", "ended_at", "notify_enabled", "is_primary"}
+    assert set(cols) <= allowed
+    sets = ", ".join(f"{k} = :{k}" for k in cols)
+    db.execute(
+        text(
+            f"UPDATE parent_links SET {sets} WHERE id = ("  # noqa: S608 - 列名来自白名单
+            " SELECT pl.id FROM parent_links pl JOIN parents p ON p.id = pl.parent_id"
+            " JOIN users u ON u.id = p.user_id JOIN students s ON s.id = pl.student_id"
+            " WHERE u.login_name = :login AND s.mk = :mk)"
+        ),
+        {**cols, "login": login, "mk": mk},
+    )
+
+
+def make_readonly(db, login: str, mk: str) -> None:
+    set_link(db, login, mk, status="readonly", readonly_since=datetime.now(UTC))
+
+
+def student_rows(db, notice_id) -> set[tuple[str, str]]:
+    return {
+        (mk, str(parent))
+        for mk, parent in db.execute(
+            text(
+                "SELECT s.mk, ns.parent_user_id FROM notice_students ns"
+                " JOIN students s ON s.id = ns.student_id WHERE ns.notice_id = :n"
+            ),
+            {"n": notice_id},
+        )
+    }
+
+
+def test_parent_recipients_primary_active_only(client, db, settings):
+    res = send_parents(client, settings, PRINCIPAL, TARGET_C32)
+    assert res.status_code == 201, res.text
+    notice = res.json()
+    assert notice["audience"] == "parents" and notice["target_label"] == "三年二班家长"
+    assert notice["ack"] == {"kind": "none"} and notice["ack_deadline"] is None
+    assert recipients_of(db, notice["id"]) == {LI, T04}  # 不含次要家长 ZHOU、不含发送人
+    assert notice["recipients"] == 2
+    assert notice["students_without_parent"] == 8 and notice["acked"] == 0
+    assert student_rows(db, notice["id"]) == {("S0001", LI), ("S0002", T04)}
+
+    make_readonly(db, "13800000061", "S0001")
+    again = send_parents(client, settings, PRINCIPAL, TARGET_C32).json()
+    assert recipients_of(db, again["id"]) == {T04}
+    assert again["students_without_parent"] == 9
+    assert student_rows(db, again["id"]) == {("S0002", T04)}
+
+
+def test_parent_recipients_ended_link_inactive_enrollment_and_class_skipped(client, db, settings):
+    set_link(db, "13800000061", "S0001", status="ended", ended_at=datetime.now(UTC))
+    res = send_parents(client, settings, PRINCIPAL, TARGET_C32).json()
+    assert recipients_of(db, res["id"]) == {T04}
+
+    set_link(db, "13800000061", "S0001", status="active", ended_at=None)
+    db.execute(
+        text(
+            "UPDATE enrollments SET status = 'removed' WHERE student_id ="
+            " (SELECT id FROM students WHERE mk = 'S0002')"
+        )
+    )
+    res = send_parents(client, settings, PRINCIPAL, TARGET_C32).json()
+    assert recipients_of(db, res["id"]) == {LI}
+    assert res["students_without_parent"] == 8  # S0002 不在读,不算
+
+    db.execute(text("UPDATE classes SET active = false WHERE id = :c"), {"c": C32})
+    res = send_parents(client, settings, PRINCIPAL, TARGET_SCHOOL).json()
+    assert recipients_of(db, res["id"]) == {LI}
+    assert student_rows(db, res["id"]) == {("S0017", LI)}  # 停用班的学生不算
+
+
+def test_two_children_one_notice(client, db, settings):
+    res = send_parents(client, settings, PRINCIPAL, TARGET_SCHOOL, ack=CONFIRM)
+    assert res.status_code == 201, res.text
+    nid = res.json()["id"]
+    assert res.json()["target_label"] == "全校家长"
+    assert recipients_of(db, nid) == {LI, T04}  # 李家长只有一条收件行
+    assert student_rows(db, nid) == {("S0001", LI), ("S0017", LI), ("S0002", T04)}
+    h = auth(settings, LI)
+    item = inbox(client, settings, LI)["items"][0]
+    assert item["students"] == ["魏小七", "王小一"]  # 按学号
+    assert client.post(f"{INBOX}/{nid}/ack", json={"choice": None, "note": None}, headers=h)
+    stats = client.get(f"{INBOX}/{nid}/acks", headers=auth(settings, PRINCIPAL)).json()
+    mine = [r for r in stats["rows"] if r["user_id"] == LI]
+    assert len(mine) == 2 and all(r["acked_at"] is not None for r in mine)
+    other = [r for r in stats["rows"] if r["user_id"] == T04]
+    assert len(other) == 1 and other[0]["acked_at"] is None
+
+
+def test_notify_disabled_and_inactive_account_skipped(client, db, settings):
+    set_link(db, "13800000061", "S0001", notify_enabled=False)
+    res = send_parents(client, settings, PRINCIPAL, TARGET_C32).json()
+    assert recipients_of(db, res["id"]) == {T04}
+    assert res["students_without_parent"] == 9
+
+    set_link(db, "13800000061", "S0001", notify_enabled=True)
+    db.execute(text("UPDATE users SET status = 'frozen' WHERE id = :u"), {"u": LI})
+    res = send_parents(client, settings, PRINCIPAL, TARGET_C32).json()
+    assert recipients_of(db, res["id"]) == {T04}
+    assert res["students_without_parent"] == 9
+
+
+def test_dual_role_teacher_parent(client, db, settings):
+    p = send_parents(client, settings, PRINCIPAL, TARGET_C32, ack=CONFIRM).json()
+    t = send(client, settings, PRINCIPAL, TARGET_SCHOOL, ack=CONFIRM).json()
+    items = {i["id"]: i for i in inbox(client, settings, T04)["items"]}
+    assert items[p["id"]]["students"] == ["李小二"] and items[p["id"]]["can_ack"] is True
+    assert items[t["id"]]["students"] == [] and items[t["id"]]["can_ack"] is True
+    h = auth(settings, T04)
+    ack = {"choice": None, "note": None}
+    assert client.post(f"{INBOX}/{p['id']}/ack", json=ack, headers=h).status_code == 204
+
+    # 老师对象的通知不查绑定:孩子绑定变只读也能回执
+    make_readonly(db, "teacher04", "S0002")
+    assert client.post(f"{INBOX}/{t['id']}/ack", json=ack, headers=h).status_code == 204
+    # 家长对象的通知:涉及的孩子绑定都不在用 → 403
+    p2 = send_parents(client, settings, PRINCIPAL, TARGET_C32, ack=CONFIRM)
+    assert p2.status_code == 201  # 只读绑定不收新通知 → 收件人只剩 LI
+    assert T04 not in recipients_of(db, p2.json()["id"])
+    # 已收到的旧通知,绑定变只读后回执 403
+    res = client.post(f"{INBOX}/{p['id']}/ack", json=ack, headers=h)
+    assert res.status_code == 403 and res.json()["error"]["code"] == "ACK_NOT_ALLOWED"
+    rows = [r for r in audit_rows(db, p["id"]) if r.action == "notice.ack"]
+    assert [r.success for r in rows] == [True, False]
+    inbox_item = {i["id"]: i for i in inbox(client, settings, T04)["items"]}[p["id"]]
+    assert inbox_item["can_ack"] is False
+
+
+def test_sender_is_parent_skips_own_child(client, db, settings):
+    sender = db.get(User, UUID(PRINCIPAL))
+    parent = Parent(user_id=sender.id, name="何校长")
+    db.add(parent)
+    db.flush()
+    sid = db.scalar(text("SELECT id FROM students WHERE mk = 'S0003'"))
+    db.add(ParentLink(parent_id=parent.id, student_id=sid, is_primary=True))
+    db.flush()
+    res = send_parents(client, settings, PRINCIPAL, TARGET_C32).json()
+    assert student_rows(db, res["id"]) == {("S0001", LI), ("S0002", T04)}
+    assert res["students_without_parent"] == 7  # S0003 既不写 notice_students 也不计入
+    assert PRINCIPAL not in recipients_of(db, res["id"])
+
+
+def test_grade_head_parent_scope(client, db, settings):
+    gh = GRADE_HEAD3
+    assert send_parents(client, settings, gh, TARGET_SCHOOL).status_code == 403
+    assert send_parents(client, settings, gh, {"kind": "class", "class_id": C41}).status_code == 403
+    assert send_parents(client, settings, gh, {"kind": "grade", "grade_id": G4}).status_code == 403
+    ok = send_parents(client, settings, gh, {"kind": "grade", "grade_id": GRADE_ID})
+    assert ok.status_code == 201, ok.text
+    assert ok.json()["target_label"] == "三年级家长"
+    assert recipients_of(db, ok.json()["id"]) == {LI, T04}
+    denied = db.scalars(
+        select(AuditLog).where(
+            AuditLog.user_id == UUID(gh),
+            AuditLog.action == "notice.send",
+            AuditLog.success.is_(False),
+        )
+    ).all()
+    assert len(denied) == 3
+    users = {"kind": "users", "user_ids": [T01]}
+    res = send_parents(client, settings, PRINCIPAL, users)
+    assert res.status_code == 400 and res.json()["error"]["code"] == "TARGET_INVALID"
+
+
+def test_unavailable_recipient_409(client, db, settings, events):
+    db.get(User, UUID(T05)).status = "frozen"
+    db.flush()
+    res = send(client, settings, PRINCIPAL, {"kind": "users", "user_ids": [T01, T05]})
+    assert res.status_code == 409
+    err = res.json()["error"]
+    assert err["code"] == "RECIPIENT_UNAVAILABLE"
+    assert err["details"] == {"user_ids": [T05]}
+    assert "1" in err["message"] and "重发" in err["message"]
+    assert db.scalar(select(func.count()).select_from(Notice)) == 0
+    assert events() == []
+    # 去掉后重发成功
+    assert (
+        send(client, settings, PRINCIPAL, {"kind": "users", "user_ids": [T01]}).status_code == 201
+    )
+
+
+def test_users_target_parent_account_403(client, db, settings):
+    for target in ({"kind": "users", "user_ids": [T01, LI]}, {"kind": "users", "user_ids": [ZHOU]}):
+        res = send(client, settings, PRINCIPAL, target)
+        assert res.status_code == 403, target
+    denied = db.scalars(
+        select(AuditLog).where(
+            AuditLog.user_id == UUID(PRINCIPAL),
+            AuditLog.action == "notice.send",
+            AuditLog.success.is_(False),
+        )
+    ).all()
+    assert len(denied) == 2
+    for who in (PRINCIPAL, GRADE_HEAD3):
+        got = client.get(PEOPLE, params={"q": "李家长"}, headers=auth(settings, who))
+        assert got.status_code == 200 and got.json() == []
+    got = client.get(PEOPLE, params={"q": "13800000061"}, headers=auth(settings, PRINCIPAL))
+    assert got.json() == []
+
+
+def test_teacher_audience_excludes_parent_only_accounts(client, db, settings):
+    res = send(client, settings, PRINCIPAL, TARGET_SCHOOL)
+    got = recipients_of(db, res.json()["id"])
+    assert T04 in got and LI not in got and ZHOU not in got
+    assert res.json()["audience"] == "teachers"
+
+
+def test_parent_token_denied_on_sender_endpoints(client, db, settings):
+    h = auth(settings, LI)
+    sent = send_parents(client, settings, PRINCIPAL, TARGET_C32, ack=CONFIRM).json()
+    nid = sent["id"]
+    before = db.scalar(select(func.count()).select_from(Notice))
+    assert client.get(ADMIN, headers=h).status_code == 403
+    assert client.post(ADMIN, json=body(TARGET_SCHOOL), headers=h).status_code == 403
+    assert (
+        client.post(ADMIN, json=body(TARGET_C32, audience="parents"), headers=h).status_code == 403
+    )
+    assert client.get(f"{ADMIN}/options", headers=h).status_code == 403
+    assert client.get(PEOPLE, headers=h).status_code == 403
+    assert client.get(f"{ADMIN}/{nid}/recipients", headers=h).status_code == 403
+    assert client.post(f"{ADMIN}/{nid}/recall", headers=h).status_code == 403
+    assert client.get(f"{INBOX}/{nid}/acks", headers=h).status_code == 404
+    assert client.get(f"{INBOX}/{nid}/acks/export", headers=h).status_code == 404
+    assert db.scalar(select(func.count()).select_from(Notice)) == before
+    denied = db.scalars(
+        select(AuditLog).where(
+            AuditLog.user_id == UUID(LI),
+            AuditLog.action == "notice.send",
+            AuditLog.success.is_(False),
+        )
+    ).all()
+    assert len(denied) >= 6
+
+
+def test_ack_other_parents_notice_404(client, db, settings):
+    nid = send_parents(client, settings, PRINCIPAL, TARGET_C32, ack=CONFIRM).json()["id"]
+    assert LI in recipients_of(db, nid) and ZHOU not in recipients_of(db, nid)
+    h = auth(settings, ZHOU)
+    ack = {"choice": None, "note": None}
+    assert client.post(f"{INBOX}/{nid}/ack", json=ack, headers=h).status_code == 404
+    assert client.post(f"{INBOX}/{nid}/read", headers=h).status_code == 404
+    row = db.get(NoticeRecipient, (UUID(nid), UUID(LI)))
+    assert row.acked_at is None and row.read_at is None
+
+
+def test_send_options(client, db, settings):
+    res = client.get(f"{ADMIN}/options", headers=auth(settings, PRINCIPAL))
+    assert res.status_code == 200, res.text
+    opts = res.json()
+    assert opts["school_wide"] is True
+    assert [g["id"] for g in opts["grades"]] == [GRADE_ID, G4]
+    assert [c["id"] for c in opts["classes"]] == [C31, C32, C41]
+    assert {c["id"]: c["grade_id"] for c in opts["classes"]} == {
+        C31: GRADE_ID,
+        C32: GRADE_ID,
+        C41: G4,
+    }
+    gh = client.get(f"{ADMIN}/options", headers=auth(settings, GRADE_HEAD3)).json()
+    assert gh["school_wide"] is False
+    assert [g["id"] for g in gh["grades"]] == [GRADE_ID]
+    assert [c["id"] for c in gh["classes"]] == [C31, C32]
+    assert client.get(f"{ADMIN}/options", headers=auth(settings, T01)).status_code == 403
+    denied = db.scalars(
+        select(AuditLog).where(
+            AuditLog.user_id == UUID(T01),
+            AuditLog.action == "notice.send",
+            AuditLog.success.is_(False),
+        )
+    ).all()
+    assert len(denied) == 1
+
+
+def test_page_and_q_caps(client, settings):
+    h = auth(settings, PRINCIPAL)
+    # 项目口径:查询参数校验失败统一 400 BAD_REQUEST(契约写 422,按代码)
+    assert client.get(INBOX, params={"page": 1000}, headers=h).status_code == 200
+    assert client.get(INBOX, params={"page": 1001}, headers=h).status_code == 400
+    assert client.get(ADMIN, params={"page": 1001}, headers=h).status_code == 400
+    assert client.get(PEOPLE, params={"q": "字" * 50}, headers=h).status_code == 200
+    assert client.get(PEOPLE, params={"q": "字" * 51}, headers=h).status_code == 400
+
+
+def test_parent_realtime(client, db, settings, events):
+    res = send_parents(client, settings, PRINCIPAL, TARGET_C32, title="家长会")
+    nid = res.json()["id"]
+    [msg] = events()
+    assert set(msg["user_ids"]) == recipients_of(db, nid) == {LI, T04}
+    assert ZHOU not in msg["user_ids"] and PRINCIPAL not in msg["user_ids"]
+    assert msg["event"]["type"] == "notice.new" and msg["event"]["id"] == nid
+    client.post(f"{ADMIN}/{nid}/recall", headers=auth(settings, PRINCIPAL))
+    [recalled] = events()
+    assert recalled["event"] == {"type": "notice.recalled", "id": nid}
+    assert set(recalled["user_ids"]) == {LI, T04}
+
+
+def test_send_audit_has_audience_and_ack(client, db, settings):
+    ack = {"kind": "choice", "options": ["参加", "不参加"], "allow_note": True}
+    res = send_parents(client, settings, PRINCIPAL, TARGET_C32, ack=ack)
+    assert res.status_code == 201, res.text
+    extra = audit_rows(db, res.json()["id"])[0].extra
+    assert extra["audience"] == "parents"
+    assert extra["ack"] == "choice"
+
+
+def test_ack_spec_and_deadline_validation(client, db, settings):
+    def go(**kw):
+        return send_parents(client, settings, PRINCIPAL, TARGET_C32, **kw)
+
+    bad_acks = [
+        {"kind": "choice", "options": ["只有一个"], "allow_note": False},
+        {"kind": "choice", "options": ["a", "b", "c", "d", "e", "f"], "allow_note": False},
+        {"kind": "choice", "options": ["同", "同"], "allow_note": False},
+        {"kind": "choice", "options": ["字" * 21, "b"], "allow_note": False},
+        {"kind": "choice", "options": ["", "b"], "allow_note": False},
+        {"kind": "bogus"},
+    ]
+    for ack in bad_acks:
+        assert go(ack=ack).status_code == 400, ack
+    past = "2000-01-01T00:00:00+00:00"
+    assert go(ack=CONFIRM, ack_deadline=past).status_code == 400
+    assert go(ack=CONFIRM, ack_deadline="2999-01-01T00:00:00").status_code == 400  # 无时区
+    ok = go(ack=CONFIRM, ack_deadline="2999-01-01T00:00:00+00:00")
+    assert ok.status_code == 201 and ok.json()["ack_deadline"].startswith("2999-01-01")
+    row = db.get(Notice, UUID(ok.json()["id"]))
+    assert row.require_ack is True and row.ack_kind == "confirm"
+    assert db.scalar(select(func.count()).select_from(Notice)) == 1
+
+
+def test_inbox_new_fields_for_teacher_notice(client, db, settings):
+    ack = {"kind": "choice", "options": ["好", "否"], "allow_note": False}
+    nid = send(client, settings, PRINCIPAL, {"kind": "class", "class_id": C32}, ack=ack).json()[
+        "id"
+    ]
+    item = inbox(client, settings, T01)["items"][0]
+    assert item["id"] == nid and item["ack"] == ack and item["my_ack"] is None
+    assert item["students"] == [] and item["can_ack"] is True and item["ack_deadline"] is None
+    plain = send(client, settings, PRINCIPAL, {"kind": "class", "class_id": C32}).json()["id"]
+    got = {i["id"]: i for i in inbox(client, settings, T01)["items"]}
+    assert got[plain]["ack"] == {"kind": "none"} and got[plain]["can_ack"] is False

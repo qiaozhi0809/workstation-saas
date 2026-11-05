@@ -92,6 +92,8 @@ ACTION_LABELS: dict[str, str] = {
     # 通知
     "notice.send": "发送通知",
     "notice.recall": "撤回通知",
+    "notice.ack": "回执通知",
+    "notice.ack_export": "导出回执",
     # 家长
     "parent.manage": "管理家长",
     "parent.create": "新建家长账号",
