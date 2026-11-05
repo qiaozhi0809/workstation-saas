@@ -82,7 +82,7 @@ export default function TeacherLayout() {
       <AppShell
         home="/teacher/classroom"
         context={context}
-        nav={<TeacherNav />}
+        nav={<TeacherNav perms={summary.data?.my_perms} />}
         actions={actions}
         overlays={
           <>

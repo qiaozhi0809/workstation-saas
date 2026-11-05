@@ -362,3 +362,16 @@ it('puts the notice bell before the theme toggle in the top bar', async () => {
   const theme = screen.getByRole('button', { name: /^主题:/ })
   expect(bell.compareDocumentPosition(theme) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 })
+
+it('passes the current class my_perms to the nav: 班级公告 only with class.notice', async () => {
+  vi.mocked(classesApi.mine).mockResolvedValue({ items: [cls('a', '三年二班', 'homeroom_teacher')] })
+  const first = renderAt('/teacher/classroom')
+  await screen.findByText('教室页')
+  await screen.findByText('三年级 · 2026-2027 第 10 周')
+  expect(screen.queryByRole('link', { name: '班级公告' })).toBeNull()
+  first.unmount()
+  useTeacherStore.setState({ classId: null })
+  vi.mocked(classroomApi.summary).mockResolvedValue(summaryFixture({ my_perms: ['class.notice'] }))
+  renderAt('/teacher/classroom')
+  expect(await screen.findByRole('link', { name: '班级公告' })).toHaveAttribute('href', '/teacher/notices')
+})

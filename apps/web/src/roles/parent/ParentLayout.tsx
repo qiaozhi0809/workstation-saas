@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { UserRound } from 'lucide-react'
 import { Link, Navigate, Outlet, useNavigate } from 'react-router-dom'
 import { authApi } from '@/shared/api/auth'
-import { Toaster } from '@/shared/components/Toast'
+import { Toaster, toast } from '@/shared/components/Toast'
 import { EmptyState } from '@/shared/components/feedback/EmptyState'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import AccountMenu from '@/shared/components/layout/AccountMenu'
 import AppShell from '@/shared/components/layout/AppShell'
 import { switchTargets } from '@/shared/components/layout/switchTargets'
+import { RealtimeProvider } from '@/shared/realtime/RealtimeProvider'
+import { useRealtimeEvent } from '@/shared/realtime/useRealtimeEvent'
 import { useAuthStore } from '@/shared/stores/auth'
 import ThemeToggle from '@/theme/ThemeToggle'
 import ChildSwitcher from './ChildSwitcher'
@@ -31,6 +34,16 @@ function useWide(): boolean {
 }
 
 export default function ParentLayout() {
+  return <RealtimeProvider><ParentShell /></RealtimeProvider>
+}
+
+/** 家长端只订阅事件、不判权:推给谁由后端决定 */
+function ParentShell() {
+  const qc = useQueryClient()
+  const refresh = () => void qc.invalidateQueries({ queryKey: ['notices', 'inbox'] })
+  useRealtimeEvent('notice.new', (e) => { toast(`新通知:${e.title}`); refresh() })
+  useRealtimeEvent('notice.recalled', refresh)
+  useRealtimeEvent('reconnected', refresh)
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
   const wide = useWide()

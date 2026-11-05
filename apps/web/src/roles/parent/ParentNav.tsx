@@ -1,16 +1,22 @@
-import { CalendarDays, ClipboardList, Sprout, type LucideIcon } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { Bell, CalendarDays, ClipboardList, Sprout, type LucideIcon } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
+import { noticesApi } from '@/shared/api/notices'
 import { cn } from '@/shared/lib/utils'
 
 const TABS: { path: string; label: string; icon: LucideIcon }[] = [
   { path: 'today', label: '今日', icon: CalendarDays },
   { path: 'growth', label: '成长', icon: Sprout },
   { path: 'grades', label: '成绩', icon: ClipboardList },
+  { path: 'notices', label: '通知', icon: Bell },
 ]
 
 /** < 768 底部固定页签(图标在上文字在下,避开 iOS 安全区);≥ 768 放进顶栏 */
 export default function ParentNav({ placement, childId }: { placement: 'bottom' | 'top'; childId: string }) {
   const bottom = placement === 'bottom'
+  // 与铃铛、通知页同一个 key;事件失效在 ParentLayout
+  const inbox = useQuery({ queryKey: ['notices', 'inbox'], queryFn: () => noticesApi.inbox(1) })
+  const unread = inbox.data?.unread ?? 0
   const search = `?child=${encodeURIComponent(childId)}`
   return (
     <nav
@@ -28,8 +34,19 @@ export default function ParentNav({ placement, childId }: { placement: 'bottom' 
             !bottom && isActive && 'bg-accent',
           )}
         >
-          <Icon className="h-5 w-5" aria-hidden="true" />
+          <span className="relative">
+            <Icon className="h-5 w-5" aria-hidden="true" />
+            {path === 'notices' && unread > 0 && (
+              <span
+                aria-hidden="true"
+                className="absolute -right-2 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-destructive-foreground"
+              >
+                {unread > 99 ? '99+' : unread}
+              </span>
+            )}
+          </span>
           <span>{label}</span>
+          {path === 'notices' && unread > 0 && <span className="sr-only">{`${unread} 条未读`}</span>}
         </NavLink>
       ))}
     </nav>
