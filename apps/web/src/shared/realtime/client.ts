@@ -21,7 +21,7 @@ const BACKOFF_S = [1, 2, 4, 8, 16, 30]
  */
 export function realtimeUrl(base: string = API_BASE): string {
   const abs = /^http(s?):\/\/(.+)$/i.exec(base)
-  if (abs) return `ws${abs[1]}://${abs[2].replace(/\/+$/, '')}/ws`
+  if (abs) return `ws${abs[1].toLowerCase()}://${abs[2].replace(/\/+$/, '')}/ws`
   return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${base.replace(/\/+$/, '')}/ws`
 }
 

@@ -82,7 +82,8 @@ export default function SystemCard() {
     const days = info.last_backup
       ? Math.floor((Date.now() - new Date(info.last_backup.at).getTime()) / DAY_MS)
       : null
-    const stale = days !== null && days > 2
+    const stale =
+      info.last_backup !== null && Date.now() - new Date(info.last_backup.at).getTime() > 2 * DAY_MS
     body = (
       <dl className="space-y-2">
         <Row label="版本">{info.version}</Row>
@@ -92,7 +93,7 @@ export default function SystemCard() {
           {info.last_backup === null ? (
             '还没有备份记录'
           ) : stale ? (
-            <span role="alert" className="text-amber-600">
+            <span role="alert" className="text-warning">
               上次备份是 {days} 天前
             </span>
           ) : (
