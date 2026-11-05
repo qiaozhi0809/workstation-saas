@@ -92,7 +92,7 @@ test('notice reaches an open classroom without refresh, shows read count, and re
     await sent.getByRole('button', { name: `撤回 ${title}` }).click()
     await page.getByRole('button', { name: '确认撤回' }).click()
     await expect(sent.getByText('已撤回')).toBeVisible()
-    await expect(teacher.getByRole('button', { name: new RegExp(title) }).getByText('此通知已撤回')).toBeVisible()
+    await expect(teacher.getByRole('listitem').filter({ hasText: title }).getByText('此通知已撤回')).toBeVisible()
   } finally {
     await teacherCtx.close()
     // 中途失败时别留下一条未撤回的全校通知(收件人的未读数会被污染)
