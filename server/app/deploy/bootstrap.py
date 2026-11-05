@@ -1,6 +1,7 @@
 """首次安装:初始化学校与信息中心管理员。"""
 
 import re
+from datetime import date
 from typing import Literal
 
 from sqlalchemy import text
@@ -10,8 +11,9 @@ from sqlalchemy.orm import Session
 from app.audit.service import record
 from app.auth.passwords import check_policy, hash_password
 from app.config import Settings
+from app.domain.schools.service import school_today
 from app.errors import ApiError
-from app.models import RoleBinding, School, User
+from app.models import AcademicYear, RoleBinding, School, User
 from app.rbac.roles import Role
 
 InitResult = Literal["created", "exists"]
@@ -33,6 +35,17 @@ def _validate(name: str, admin_login: str, admin_password: str) -> None:
         check_policy(admin_password)
     except ApiError as exc:
         raise InitError(f"管理员密码不符合要求:{exc.message}") from None
+
+
+def first_year_for(today: date) -> tuple[str, date, date, date]:
+    """按学校本地日期推算首个学年:8 月起算新学年,1–7 月仍属上一学年。"""
+    y = today.year if today.month >= 8 else today.year - 1
+    return (
+        f"{y}-{y + 1}学年",
+        date(y, 9, 1),
+        date(y + 1, 7, 31),
+        date(y + 1, 2, 1),
+    )
 
 
 def init_school(
@@ -65,6 +78,17 @@ def init_school(
                 academic_year_id=None,
             )
         )
+        year_name, start, end, term2 = first_year_for(school_today(db, school_id))
+        db.add(
+            AcademicYear(
+                school_id=school_id,
+                name=year_name,
+                start_date=start,
+                end_date=end,
+                term2_start=term2,
+                is_active=True,
+            )
+        )
         db.flush()
         record(
             db,
@@ -73,7 +97,12 @@ def init_school(
             success=True,
             object_type="school",
             object_id=str(school_id),
-            extra={"school_name": name, "admin_login": admin_login, "via": "cli"},
+            extra={
+                "school_name": name,
+                "admin_login": admin_login,
+                "via": "cli",
+                "year_name": year_name,
+            },
         )
         db.commit()
     except IntegrityError:

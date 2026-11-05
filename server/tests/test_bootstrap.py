@@ -2,6 +2,7 @@
 
 import io
 from contextlib import contextmanager
+from datetime import date
 from uuid import uuid4
 
 import pytest
@@ -13,12 +14,13 @@ from sqlalchemy.orm import Session
 from app.cli import build_parser, init_school_cmd
 from app.config import Settings
 from app.db import get_db, session_scope
-from app.deploy.bootstrap import InitError, init_school
+from app.deploy.bootstrap import InitError, first_year_for, init_school
 from app.main import create_app
-from app.models import RoleBinding, School, User
+from app.models import AcademicYear, RoleBinding, School, User
 from app.models.audit import AuditLog
 from app.redis import get_redis
 from tests.conftest import _reuse
+from tests.helpers import freeze
 
 PW = "Test-Pass-123x"
 
@@ -210,3 +212,133 @@ def test_exists_wins_over_validation_in_api_and_cli(db, new_settings):
     code, out = _run_cli(db, ["--name", "x", "--admin-login", "!", "--admin-password-stdin"], "\n")
     assert code == 3
     assert "已初始化过" in out
+
+
+def _years(db, settings) -> list[AcademicYear]:
+    return list(
+        db.scalars(select(AcademicYear).where(AcademicYear.school_id == settings.school_id)).all()
+    )
+
+
+def _admin_headers(client) -> dict[str, str]:
+    token = _login(client).json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
+def test_init_school_creates_one_active_year(db, new_settings):
+    _init(db, new_settings)
+    years = _years(db, new_settings)
+    assert len(years) == 1 and years[0].is_active is True
+
+
+@pytest.mark.parametrize(
+    ("today", "name", "start", "end", "term2"),
+    [
+        (date(2026, 3, 15), "2025-2026学年", date(2025, 9, 1), date(2026, 7, 31), date(2026, 2, 1)),
+        (date(2026, 9, 10), "2026-2027学年", date(2026, 9, 1), date(2027, 7, 31), date(2027, 2, 1)),
+        (date(2026, 8, 1), "2026-2027学年", date(2026, 9, 1), date(2027, 7, 31), date(2027, 2, 1)),
+        (date(2026, 7, 31), "2025-2026学年", date(2025, 9, 1), date(2026, 7, 31), date(2026, 2, 1)),
+        (date(2027, 1, 1), "2026-2027学年", date(2026, 9, 1), date(2027, 7, 31), date(2027, 2, 1)),
+        (
+            date(2026, 12, 31),
+            "2026-2027学年",
+            date(2026, 9, 1),
+            date(2027, 7, 31),
+            date(2027, 2, 1),
+        ),
+    ],
+)
+def test_first_year_for(today, name, start, end, term2):
+    assert first_year_for(today) == (name, start, end, term2)
+
+
+@pytest.mark.parametrize(
+    ("iso", "name", "start", "end", "term2"),
+    [
+        (
+            "2026-03-15T04:00:00+00:00",
+            "2025-2026学年",
+            date(2025, 9, 1),
+            date(2026, 7, 31),
+            date(2026, 2, 1),
+        ),
+        (
+            "2026-09-10T04:00:00+00:00",
+            "2026-2027学年",
+            date(2026, 9, 1),
+            date(2027, 7, 31),
+            date(2027, 2, 1),
+        ),
+        # UTC 7 月 31 日 20:00 = 上海 8 月 1 日 04:00 → 已是新学年
+        (
+            "2026-07-31T20:00:00+00:00",
+            "2026-2027学年",
+            date(2026, 9, 1),
+            date(2027, 7, 31),
+            date(2027, 2, 1),
+        ),
+        # UTC 7 月 31 日 15:59 = 上海 7 月 31 日 23:59 → 仍是旧学年
+        (
+            "2026-07-31T15:59:00+00:00",
+            "2025-2026学年",
+            date(2025, 9, 1),
+            date(2026, 7, 31),
+            date(2026, 2, 1),
+        ),
+    ],
+)
+def test_init_school_year_follows_school_local_date(
+    db, new_settings, monkeypatch, iso, name, start, end, term2
+):
+    freeze(monkeypatch, iso)
+    _init(db, new_settings)
+    (year,) = _years(db, new_settings)
+    assert (year.name, year.start_date, year.end_date, year.term2_start) == (
+        name,
+        start,
+        end,
+        term2,
+    )
+    assert year.is_active is True
+
+
+def test_admin_can_create_grade_right_after_install(db, new_settings, new_client):
+    _init(db, new_settings)
+    db.execute(text("UPDATE users SET must_change_password = false WHERE login_name = 'admin01'"))
+    r = new_client.post(
+        "/api/v1/admin/grades",
+        json={"name": "七年级", "display_order": 1},
+        headers=_admin_headers(new_client),
+    )
+    assert r.status_code == 201, r.text
+
+
+def test_init_school_again_keeps_single_year(db, new_settings):
+    _init(db, new_settings)
+    (before,) = _years(db, new_settings)
+    assert _init(db, new_settings) == "exists"
+    (after,) = _years(db, new_settings)
+    assert after.id == before.id and after.name == before.name
+
+
+def test_rollback_leaves_no_year(db, new_settings, monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("audit down")
+
+    monkeypatch.setattr("app.deploy.bootstrap.record", boom)
+    with pytest.raises(RuntimeError):
+        _init(db, new_settings)
+    assert _years(db, new_settings) == []
+
+
+def test_admin_years_lists_exactly_the_first_year(db, new_settings, new_client, monkeypatch):
+    freeze(monkeypatch, "2026-03-15T04:00:00+00:00")
+    _init(db, new_settings)
+    db.execute(text("UPDATE users SET must_change_password = false WHERE login_name = 'admin01'"))
+    monkeypatch.undo()
+    r = new_client.get("/api/v1/admin/years", headers=_admin_headers(new_client))
+    assert r.status_code == 200, r.text
+    (item,) = r.json()
+    assert item["name"] == "2025-2026学年" and item["is_active"] is True
+    assert item["start_date"] == "2025-09-01" and item["end_date"] == "2026-07-31"
+    assert item["term2_start"] == "2026-02-01"
