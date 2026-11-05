@@ -205,3 +205,75 @@ jobs:
             apps/web/test-results/
             apps/web/playwright-report/
           if-no-files-found: ignore
+
+  # 离线包 + 部署冒烟:构建 0.0.0-ci 离线包,解开后对解开的目录逐个跑部署测试
+  # (真实 docker compose,端口 18080/18443,固定子网 172.30.0.0/24 → 脚本必须逐个跑,不能并行)
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    # 显式 bash:-eo pipefail。默认的 `bash -e` 没有 pipefail,`脚本 | tee` 会吞掉脚本的退出码
+    defaults:
+      run:
+        shell: bash
+    env:
+      WS_TEST_VERSION: 0.0.0-ci
+      WS_TEST_PROJECT: ws-m5a-ci
+      WS_HTTP_PORT: 18080
+      WS_HTTPS_PORT: 18443
+    steps:
+      - uses: actions/checkout@v7
+
+      # runner 自带 shellcheck;-S warning 与本地、计划一致
+      - name: Shellcheck
+        # -x 跟进 source 进来的文件(与段 B 本地一致)
+        run: shellcheck -S warning -x deploy/prod/scripts/*.sh deploy/tests/*.sh deploy/release/*.sh
+
+      - name: Build offline bundle
+        run: deploy/release/build-bundle.sh "$WS_TEST_VERSION"
+
+      - name: Bundle smoke
+        run: deploy/tests/bundle_smoke.sh "$WS_TEST_VERSION"
+
+      - name: Unpack bundle
+        run: |
+          mkdir -p "$RUNNER_TEMP/bundle"
+          tar -xzf "dist/workstation-deploy-$WS_TEST_VERSION.tar.gz" -C "$RUNNER_TEMP/bundle"
+          echo "WS_TEST_DEPLOY_SRC=$RUNNER_TEMP/bundle/workstation-deploy-$WS_TEST_VERSION" >> "$GITHUB_ENV"
+          echo "WS_BUNDLE_PKG=$PWD/dist/workstation-deploy-$WS_TEST_VERSION.tar.gz" >> "$GITHUB_ENV"
+
+      # 删掉本机构建出的镜像:离线包是唯一来源。bundle_upgrade 排在第一个,它真的 docker load 包里的镜像 tar,
+      # 之后的测试沿用已载入的镜像(_common.sh 的 WS_INSTALL_SKIP_LOAD=1)
+      - name: Remove locally built images
+        run: docker image rm "workstation-app:$WS_TEST_VERSION" "workstation-web:$WS_TEST_VERSION" postgres:16-alpine redis:7-alpine
+
+      # 一个脚本一个脚本地跑;每个脚本后台抓各服务日志,失败时作为 artifact 上传
+      - name: Deploy tests
+        run: |
+          for t in bundle_upgrade install_fresh install_twice backup_restore restore_rejects upgrade_same upgrade_precheck_fail; do
+            echo "::group::$t"
+            stop="$RUNNER_TEMP/stop-$t"
+            deploy/tests/bundle_collect_logs.sh "$WS_TEST_PROJECT" "$RUNNER_TEMP/service-logs/$t" "$stop" &
+            collector=$!
+            rc=0
+            set +e
+            "deploy/tests/$t.sh" 2>&1 | tee "$RUNNER_TEMP/service-logs-$t.out"
+            rc=${PIPESTATUS[0]}
+            set -e
+            touch "$stop"
+            wait "$collector" || true
+            mkdir -p "$RUNNER_TEMP/service-logs/$t"
+            mv "$RUNNER_TEMP/service-logs-$t.out" "$RUNNER_TEMP/service-logs/$t/test-output.txt"
+            echo "::endgroup::"
+            if [ "$rc" -ne 0 ]; then
+              echo "::error::$t 失败(退出码 $rc)"
+              exit "$rc"
+            fi
+          done
+
+      - name: Upload service logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-service-logs
+          path: ${{ runner.temp }}/service-logs/
+          if-no-files-found: ignore
