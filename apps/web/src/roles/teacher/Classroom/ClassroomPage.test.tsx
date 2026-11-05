@@ -296,20 +296,18 @@ it('keeps the loaded page when background refetches of classes, roster or attend
 })
 
 const leaveE1 = () =>
-  vi
-    .mocked(attendanceApi.day)
-    .mockImplementation(async (_c, date) => ({
-      date,
-      confirmed_at: null,
-      items: [
-        {
-          enrollment_id: 'e1',
-          status: 'leave' as const,
-          reason: null,
-          marked_at: '2026-11-02T01:00:00Z',
-        },
-      ],
-    }))
+  vi.mocked(attendanceApi.day).mockImplementation(async (_c, date) => ({
+    date,
+    confirmed_at: null,
+    items: [
+      {
+        enrollment_id: 'e1',
+        status: 'leave' as const,
+        reason: null,
+        marked_at: '2026-11-02T01:00:00Z',
+      },
+    ],
+  }))
 
 it('does not project attendance in daily or review mode while presenting', async () => {
   leaveE1()

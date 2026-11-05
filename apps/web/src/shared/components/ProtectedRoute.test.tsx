@@ -34,29 +34,25 @@ it('redirects to /login without a token', () => {
 })
 
 it('renders children with a token', () => {
-  useAuthStore
-    .getState()
-    .setTokens('a', 'r', {
-      id: 'u',
-      display_name: 't',
-      contexts: ['teacher'],
-      admin_perms: [],
-      must_change_password: false,
-    })
+  useAuthStore.getState().setTokens('a', 'r', {
+    id: 'u',
+    display_name: 't',
+    contexts: ['teacher'],
+    admin_perms: [],
+    must_change_password: false,
+  })
   renderApp()
   expect(screen.getByText('secret')).toBeInTheDocument()
 })
 
 it('navigates to /login when the token is cleared while mounted', () => {
-  useAuthStore
-    .getState()
-    .setTokens('a', 'r', {
-      id: 'u',
-      display_name: 't',
-      contexts: ['teacher'],
-      admin_perms: [],
-      must_change_password: false,
-    })
+  useAuthStore.getState().setTokens('a', 'r', {
+    id: 'u',
+    display_name: 't',
+    contexts: ['teacher'],
+    admin_perms: [],
+    must_change_password: false,
+  })
   renderApp()
   expect(screen.getByText('secret')).toBeInTheDocument()
   act(() => useAuthStore.getState().logout())
@@ -64,15 +60,13 @@ it('navigates to /login when the token is cleared while mounted', () => {
 })
 
 it('redirects to /change-password when the password must be changed', () => {
-  useAuthStore
-    .getState()
-    .setTokens('a', 'r', {
-      id: 'u',
-      display_name: 't',
-      contexts: ['teacher'],
-      admin_perms: [],
-      must_change_password: true,
-    })
+  useAuthStore.getState().setTokens('a', 'r', {
+    id: 'u',
+    display_name: 't',
+    contexts: ['teacher'],
+    admin_perms: [],
+    must_change_password: true,
+  })
   render(
     <MemoryRouter initialEntries={['/private']}>
       <Routes>
@@ -92,15 +86,13 @@ it('redirects to /change-password when the password must be changed', () => {
 })
 
 it('redirects an account with no contexts to /login', () => {
-  useAuthStore
-    .getState()
-    .setTokens('a', 'r', {
-      id: 'u',
-      display_name: 't',
-      contexts: [],
-      admin_perms: [],
-      must_change_password: false,
-    })
+  useAuthStore.getState().setTokens('a', 'r', {
+    id: 'u',
+    display_name: 't',
+    contexts: [],
+    admin_perms: [],
+    must_change_password: false,
+  })
   render(
     <MemoryRouter initialEntries={['/private']}>
       <Routes>
@@ -146,15 +138,13 @@ it('sends an old-shape persisted user (no contexts) to /login without crashing',
 
 it('lets a parent account into a parent-context route and sends others to their first context', () => {
   const mk = (contexts: ('teacher' | 'parent')[]) => {
-    useAuthStore
-      .getState()
-      .setTokens('a', 'r', {
-        id: 'u',
-        display_name: 't',
-        contexts,
-        admin_perms: [],
-        must_change_password: false,
-      })
+    useAuthStore.getState().setTokens('a', 'r', {
+      id: 'u',
+      display_name: 't',
+      contexts,
+      admin_perms: [],
+      must_change_password: false,
+    })
     return render(
       <MemoryRouter initialEntries={['/parent']}>
         <Routes>
