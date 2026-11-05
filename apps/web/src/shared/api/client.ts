@@ -1,6 +1,7 @@
 import { useAuthStore } from '@/shared/stores/auth'
 
-const BASE = import.meta.env.VITE_API_BASE ?? '/api/v1'
+export const API_BASE: string = import.meta.env.VITE_API_BASE ?? '/api/v1'
+const BASE = API_BASE
 const NO_REFRESH_PATHS = ['/auth/login', '/auth/refresh', '/auth/logout']
 
 export class ApiError extends Error {
@@ -27,7 +28,7 @@ async function doRefresh(refreshToken: string): Promise<RefreshResult> {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refresh_token: refreshToken }),
     })
-    if (res.status >= 500) return 'network'   // 服务端暂不可用(重启、网关 502/503/504):不是令牌的问题
+    if (res.status >= 500) return 'network' // 服务端暂不可用(重启、网关 502/503/504):不是令牌的问题
     if (!res.ok) return 'rejected'
     const data = (await res.json()) as { access_token?: string }
     if (!data.access_token) return 'rejected'
@@ -107,7 +108,7 @@ export async function authedFetch(
     const { refreshToken } = useAuthStore.getState()
     if (!refreshToken) throw sessionExpired()
     const refreshed = await refreshOnce(refreshToken)
-    if (refreshed === 'network') return res   // 弱网 / 服务端暂不可用:保留登录态,这次请求按原 401 失败,下次请求再试刷新
+    if (refreshed === 'network') return res // 弱网 / 服务端暂不可用:保留登录态,这次请求按原 401 失败,下次请求再试刷新
     if (refreshed !== 'ok') throw sessionExpired()
     res = await send(method, path, body, signal)
     if (res.status === 401) throw sessionExpired()

@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import {
-  THEME_KEY, nextThemeMode, readThemeMode, resolveTheme, useThemeStore, type ThemeMode,
+  THEME_KEY,
+  nextThemeMode,
+  readThemeMode,
+  resolveTheme,
+  useThemeStore,
+  type ThemeMode,
 } from './theme'
 import { useApplyTheme } from './useTheme'
 import ThemeToggle from './ThemeToggle'
@@ -17,7 +22,9 @@ describe('theme', () => {
     expect(readThemeMode()).toBe('system')
     localStorage.setItem(THEME_KEY, 'purple')
     expect(readThemeMode()).toBe('system')
-    const spy = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('blocked') })
+    const spy = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('blocked')
+    })
     try {
       expect(readThemeMode()).toBe('system')
     } finally {
@@ -28,11 +35,18 @@ describe('theme', () => {
   it('resolves and cycles modes', () => {
     expect(resolveTheme('system', true)).toBe('dark')
     expect(resolveTheme('light', true)).toBe('light')
-    expect(['system', 'light', 'dark'].map((m) => nextThemeMode(m as ThemeMode))).toEqual(['light', 'dark', 'system'])
+    expect(['system', 'light', 'dark'].map((m) => nextThemeMode(m as ThemeMode))).toEqual([
+      'light',
+      'dark',
+      'system',
+    ])
   })
 
   it('toggle cycles, applies the dark class and remembers the choice', () => {
-    function Root() { useApplyTheme(); return <ThemeToggle /> }
+    function Root() {
+      useApplyTheme()
+      return <ThemeToggle />
+    }
     render(<Root />)
     fireEvent.click(screen.getByRole('button', { name: '主题:跟随系统' }))
     fireEvent.click(screen.getByRole('button', { name: '主题:浅色' }))
@@ -46,21 +60,39 @@ describe('theme', () => {
     const listeners: Array<() => void> = []
     const mql = {
       matches: false,
-      addEventListener: (_: string, fn: () => void) => { listeners.push(fn) },
-      removeEventListener: (_: string, fn: () => void) => { listeners.splice(listeners.indexOf(fn), 1) },
+      addEventListener: (_: string, fn: () => void) => {
+        listeners.push(fn)
+      },
+      removeEventListener: (_: string, fn: () => void) => {
+        listeners.splice(listeners.indexOf(fn), 1)
+      },
     }
     window.matchMedia = (() => mql) as unknown as typeof window.matchMedia
     try {
-      function Root() { useApplyTheme(); return null }
+      function Root() {
+        useApplyTheme()
+        return null
+      }
       render(<Root />)
       expect(document.documentElement).not.toHaveClass('dark')
-      act(() => { mql.matches = true; listeners.forEach((fn) => fn()) })
+      act(() => {
+        mql.matches = true
+        listeners.forEach((fn) => fn())
+      })
       expect(document.documentElement).toHaveClass('dark')
-      act(() => { mql.matches = false; listeners.forEach((fn) => fn()) })
+      act(() => {
+        mql.matches = false
+        listeners.forEach((fn) => fn())
+      })
       expect(document.documentElement).not.toHaveClass('dark')
-      act(() => { mql.matches = true; listeners.forEach((fn) => fn()) })
+      act(() => {
+        mql.matches = true
+        listeners.forEach((fn) => fn())
+      })
       expect(document.documentElement).toHaveClass('dark')
-      act(() => { useThemeStore.setState({ mode: 'light' }) })
+      act(() => {
+        useThemeStore.setState({ mode: 'light' })
+      })
       expect(document.documentElement).not.toHaveClass('dark')
     } finally {
       window.matchMedia = original

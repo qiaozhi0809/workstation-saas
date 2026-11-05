@@ -10,13 +10,20 @@ const savedAt = new Date(2026, 10, 2, 9, 5)
 
 beforeEach(() => {
   vi.resetAllMocks()
-  vi.mocked(studentsApi.saveMyNotes).mockResolvedValue({ text: '爱读书', updated_at: savedAt.toISOString() })
+  vi.mocked(studentsApi.saveMyNotes).mockResolvedValue({
+    text: '爱读书',
+    updated_at: savedAt.toISOString(),
+  })
 })
 
 function renderSection(note?: { text: string; updated_at: string }) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const invalidate = vi.spyOn(client, 'invalidateQueries')
-  render(<QueryClientProvider client={client}><NotesSection studentId="s1" note={note} /></QueryClientProvider>)
+  render(
+    <QueryClientProvider client={client}>
+      <NotesSection studentId="s1" note={note} />
+    </QueryClientProvider>,
+  )
   return { invalidate }
 }
 

@@ -6,7 +6,8 @@ import { Chalkboard, Clock, PinBoard, SmartScreen } from './wallParts'
 
 // eslint-disable-next-line react-refresh/only-export-components
 export function clockAngles(now: Date): { hour: number; minute: number } {
-  const h = now.getHours(), m = now.getMinutes()
+  const h = now.getHours(),
+    m = now.getMinutes()
   return { hour: (h % 12) * 30 + m * 0.5, minute: m * 6 }
 }
 
@@ -32,20 +33,39 @@ function slots(w: number) {
     x += size + gap
     return p
   }
-  const star = at(smw), left = at(bw), screen = at(scw), right = at(bw), bday = at(smw)
+  const star = at(smw),
+    left = at(bw),
+    screen = at(scw),
+    right = at(bw),
+    bday = at(smw)
   return { gap, scw, smw, bw, star, left, screen, right, bday }
 }
 
 const mmdd = (date: string) => date.split('-').map(Number).join('/')
-const BOARD_Y = 22, SCREEN_Y = 30, PIN_Y = 62
+const BOARD_Y = 22,
+  SCREEN_Y = 30,
+  PIN_Y = 62
 
-export default memo(function FrontWall({ rect, board, now }: { rect: Rect; board?: BoardData; now: Date }) {
-  const s = slots(rect.w), { hour, minute } = clockAngles(now)
+export default memo(function FrontWall({
+  rect,
+  board,
+  now,
+}: {
+  rect: Rect
+  board?: BoardData
+  now: Date
+}) {
+  const s = slots(rect.w),
+    { hour, minute } = clockAngles(now)
   return (
     <g className="cr-front-wall" transform={`translate(${rect.x} ${rect.y})`}>
       <rect width={rect.w} height={rect.h} fill={ROOM.wall} />
       <rect y={rect.h - 26} width={rect.w} height={26} fill={ROOM.trim} />
-      <path d={`M 0 ${rect.h - 26} L ${rect.w} ${rect.h - 26}`} stroke={ROOM.desk} strokeWidth={3} />
+      <path
+        d={`M 0 ${rect.h - 26} L ${rect.w} ${rect.h - 26}`}
+        stroke={ROOM.desk}
+        strokeWidth={3}
+      />
       {s.bw > 0 && (
         <>
           <g transform={`translate(${s.left} ${BOARD_Y})`}>
@@ -64,16 +84,26 @@ export default memo(function FrontWall({ rect, board, now }: { rect: Rect; board
       {s.smw > 0 && (
         <>
           <g transform={`translate(${s.star} ${PIN_Y})`}>
-            <PinBoard w={s.smw} title="本周之星" accent={ROOM.gold}
-              rows={board?.stars.map((r) => ({ name: r.name, value: `★${r.points}` })) ?? []} />
+            <PinBoard
+              w={s.smw}
+              title="本周之星"
+              accent={ROOM.gold}
+              rows={board?.stars.map((r) => ({ name: r.name, value: `★${r.points}` })) ?? []}
+            />
           </g>
           <g transform={`translate(${s.bday} ${PIN_Y})`}>
-            <PinBoard w={s.smw} title="本月寿星" accent={GROUP_COLORS[1]}
-              rows={board?.birthdays.map((r) => ({ name: r.name, value: mmdd(r.date) })) ?? []} />
+            <PinBoard
+              w={s.smw}
+              title="本月寿星"
+              accent={GROUP_COLORS[1]}
+              rows={board?.birthdays.map((r) => ({ name: r.name, value: mmdd(r.date) })) ?? []}
+            />
           </g>
         </>
       )}
-      <g transform={`translate(${rect.w - 30} 36)`}><Clock hour={hour} minute={minute} /></g>
+      <g transform={`translate(${rect.w - 30} 36)`}>
+        <Clock hour={hour} minute={minute} />
+      </g>
     </g>
   )
 })

@@ -7,9 +7,15 @@
 .cr-teacher .cr-mug-up {
   transform-box: view-box;
 }
-.cr-stu .cr-pose { transform-origin: 0 50px; }
-.cr-stu .cr-head { transform-origin: 0 14px; }
-.cr-stu .cr-arm-r { transform-origin: 0 0; }
+.cr-stu .cr-pose {
+  transform-origin: 0 50px;
+}
+.cr-stu .cr-head {
+  transform-origin: 0 14px;
+}
+.cr-stu .cr-arm-r {
+  transform-origin: 0 0;
+}
 .cr-stu .cr-z,
 .cr-stu .cr-burst {
   transform-box: fill-box;
@@ -20,10 +26,15 @@
 .cr-stu .cr-front {
   transform-box: view-box;
   transform-origin: 0 0;
-  transition: transform 180ms ease-out, opacity 180ms ease-out;
+  transition:
+    transform 180ms ease-out,
+    opacity 180ms ease-out;
 }
 @starting-style {
-  .cr-stu .cr-front { transform: scaleX(0.2); opacity: 0.3; }
+  .cr-stu .cr-front {
+    transform: scaleX(0.2);
+    opacity: 0.3;
+  }
 }
 
 /* look:左右张望 */
@@ -32,18 +43,40 @@
   animation: cr-look 1.8s ease-in-out infinite;
 }
 @keyframes cr-look {
-  0%, 100% { transform: rotate(0) translateX(0); }
-  15%, 40% { transform: rotate(-11deg) translateX(-2px); }
-  55%, 85% { transform: rotate(11deg) translateX(2px); }
+  0%,
+  100% {
+    transform: rotate(0) translateX(0);
+  }
+  15%,
+  40% {
+    transform: rotate(-11deg) translateX(-2px);
+  }
+  55%,
+  85% {
+    transform: rotate(11deg) translateX(2px);
+  }
 }
 
 /* raise:举手挥动 */
-.cr-stu[data-pose='raise'] .cr-arm-r { animation: cr-raise 2.2s ease-in-out infinite; }
+.cr-stu[data-pose='raise'] .cr-arm-r {
+  animation: cr-raise 2.2s ease-in-out infinite;
+}
 @keyframes cr-raise {
-  0%, 100% { transform: rotate(0) translateY(0); }
-  12%, 36% { transform: rotate(10deg) translateY(0); }
-  24%, 48% { transform: rotate(-5deg) translateY(-2px); }
-  62% { transform: rotate(0) translateY(-3px); }
+  0%,
+  100% {
+    transform: rotate(0) translateY(0);
+  }
+  12%,
+  36% {
+    transform: rotate(10deg) translateY(0);
+  }
+  24%,
+  48% {
+    transform: rotate(-5deg) translateY(-2px);
+  }
+  62% {
+    transform: rotate(0) translateY(-3px);
+  }
 }
 
 /* doze:低头打盹,猛地点头,再慢慢垂下 */
@@ -52,25 +85,58 @@
   animation: cr-doze 4s ease-in-out infinite;
 }
 @keyframes cr-doze {
-  0%, 100% { transform: translateY(-2px) rotate(1deg) scaleY(0.96); }
-  45% { transform: translateY(-5px) rotate(3deg) scaleY(0.9); }
-  52% { transform: translateY(-6px) rotate(4deg) scaleY(0.88); }
-  58% { transform: translateY(0) rotate(0) scaleY(1); }
-  70% { transform: translateY(-1px) rotate(0) scaleY(0.98); }
+  0%,
+  100% {
+    transform: translateY(-2px) rotate(1deg) scaleY(0.96);
+  }
+  45% {
+    transform: translateY(-5px) rotate(3deg) scaleY(0.9);
+  }
+  52% {
+    transform: translateY(-6px) rotate(4deg) scaleY(0.88);
+  }
+  58% {
+    transform: translateY(0) rotate(0) scaleY(1);
+  }
+  70% {
+    transform: translateY(-1px) rotate(0) scaleY(0.98);
+  }
 }
-.cr-stu .cr-z { animation: cr-zz 4s ease-in-out infinite; }
-.cr-stu .cr-z2 { animation-delay: -2s; }
+.cr-stu .cr-z {
+  animation: cr-zz 4s ease-in-out infinite;
+}
+.cr-stu .cr-z2 {
+  animation-delay: -2s;
+}
 @keyframes cr-zz {
-  0% { opacity: 0; transform: translate(-4px, 6px) scale(0.6); }
-  20%, 70% { opacity: 1; transform: translate(0, 0) scale(1); }
-  100% { opacity: 0; transform: translate(4px, -8px) scale(1.1); }
+  0% {
+    opacity: 0;
+    transform: translate(-4px, 6px) scale(0.6);
+  }
+  20%,
+  70% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(4px, -8px) scale(1.1);
+  }
 }
 
 /* stretch:双臂上举伸懒腰 */
-.cr-stu[data-pose='stretch'] .cr-arm-r { animation: cr-stretch 1.6s ease-in-out infinite; }
+.cr-stu[data-pose='stretch'] .cr-arm-r {
+  animation: cr-stretch 1.6s ease-in-out infinite;
+}
 @keyframes cr-stretch {
-  0%, 100% { transform: rotate(30deg) translateY(0); }
-  45%, 65% { transform: rotate(-4deg) translateY(-2px); }
+  0%,
+  100% {
+    transform: rotate(30deg) translateY(0);
+  }
+  45%,
+  65% {
+    transform: rotate(-4deg) translateY(-2px);
+  }
 }
 
 /* stand:起立 + 六角星环一闪 */
@@ -79,17 +145,30 @@
   animation: cr-stand 320ms cubic-bezier(0.3, 1.5, 0.6, 1) both;
 }
 @keyframes cr-stand {
-  from { transform: translateY(0) scale(1); }
-  to { transform: translateY(-10px) scale(1.08); }
+  from {
+    transform: translateY(0) scale(1);
+  }
+  to {
+    transform: translateY(-10px) scale(1.08);
+  }
 }
 .cr-stu .cr-burst {
   opacity: 0.9;
   animation: cr-burst 900ms ease-out both;
 }
 @keyframes cr-burst {
-  0% { opacity: 0; transform: scale(0.4) rotate(-30deg); }
-  45% { opacity: 1; transform: scale(1.18) rotate(0); }
-  100% { opacity: 0.9; transform: scale(1) rotate(0); }
+  0% {
+    opacity: 0;
+    transform: scale(0.4) rotate(-30deg);
+  }
+  45% {
+    opacity: 1;
+    transform: scale(1.18) rotate(0);
+  }
+  100% {
+    opacity: 0.9;
+    transform: scale(1) rotate(0);
+  }
 }
 
 /* 老师端杯喝水:绕肩膀抬起、倾杯、放下 */
@@ -98,9 +177,18 @@
   animation: cr-sip 2.4s ease-in-out infinite;
 }
 @keyframes cr-sip {
-  0%, 100% { transform: rotate(-28deg); }
-  35%, 80% { transform: rotate(0); }
-  45%, 68% { transform: rotate(4deg); }
+  0%,
+  100% {
+    transform: rotate(-28deg);
+  }
+  35%,
+  80% {
+    transform: rotate(0);
+  }
+  45%,
+  68% {
+    transform: rotate(4deg);
+  }
 }
 
 /* 积分气泡:从课桌升起 40px 并淡出 */
@@ -109,22 +197,42 @@
   animation: cr-float 1.4s ease-out both;
 }
 @keyframes cr-float {
-  0% { opacity: 0; transform: translateY(0); }
-  15% { opacity: 1; }
-  70% { opacity: 1; }
-  100% { opacity: 0; transform: translateY(-40px); }
+  0% {
+    opacity: 0;
+    transform: translateY(0);
+  }
+  15% {
+    opacity: 1;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-40px);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .cr-anim, .cr-anim * { animation: none !important; transition: none !important; }
+  .cr-anim,
+  .cr-anim * {
+    animation: none !important;
+    transition: none !important;
+  }
 }
 
 /* 积分气泡配色:加分 TONES.green.fg,扣分 TONES.coral.fg(星和字都用 currentColor) */
-.cr-float-plus { color: #2f855a; }
-.cr-float-minus { color: #d1603d; }
+.cr-float-plus {
+  color: #2f855a;
+}
+.cr-float-minus {
+  color: #d1603d;
+}
 
 /* 点名聚光灯:位置写在 style transform 上,换人时平移过去 */
-.cr-spotlight { transition: transform 120ms ease-out; }
+.cr-spotlight {
+  transition: transform 120ms ease-out;
+}
 
 /* 选中虚线框(TONES.blue.fg) */
 .cr-selected {
@@ -136,28 +244,69 @@
 }
 
 /* 可点的座位:鼠标指针 + 键盘焦点框 */
-.cr-pressable { cursor: pointer; outline: none; }
+.cr-pressable {
+  cursor: pointer;
+  outline: none;
+}
 /* 人物随姿态(悬停转身 / 聚焦)整块换节点;让按下落在稳定的 .cr-hit 上,否则按下与抬起不是同一节点、click 丢失 */
-.cr-pressable .cr-stu { pointer-events: none; }
-.cr-pressable:focus-visible .cr-hit { stroke: #2b6cb0; stroke-width: 3; vector-effect: non-scaling-stroke; }
+.cr-pressable .cr-stu {
+  pointer-events: none;
+}
+.cr-pressable:focus-visible .cr-hit {
+  stroke: #2b6cb0;
+  stroke-width: 3;
+  vector-effect: non-scaling-stroke;
+}
 
 /* 老师 / 讲台不挡住第一排座位的点击 */
-.cr-podium { pointer-events: none; }
+.cr-podium {
+  pointer-events: none;
+}
 
 /* 舞台:自己不滚动(clip 不是滚动容器,聚焦时浏览器不会滚它);空白处拖动平移 */
-.cr-stage { overflow: hidden; overflow: clip; }
-.cr-stage[data-pan] { cursor: grab; }
-.cr-stage.cr-grabbing, .cr-stage.cr-grabbing * { cursor: grabbing !important; }
+.cr-stage {
+  overflow: hidden;
+  overflow: clip;
+}
+.cr-stage[data-pan] {
+  cursor: grab;
+}
+.cr-stage.cr-grabbing,
+.cr-stage.cr-grabbing * {
+  cursor: grabbing !important;
+}
 
 /* 悬停卡(舞台内 HTML 浮层,不接收指针) */
-.cr-hovercard { pointer-events: none; }
-.cr-anim .cr-hovercard { animation: cr-card-in 120ms ease-out both; }
+.cr-hovercard {
+  pointer-events: none;
+}
+.cr-anim .cr-hovercard {
+  animation: cr-card-in 120ms ease-out both;
+}
 @keyframes cr-card-in {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: none; }
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 /* 座位拖拽:原座位变淡,经过的座位描蓝框(TONES.blue),影子跟随指针 */
-.cr-dragging { opacity: 0.35; }
-.cr-drop-on .cr-hit { fill: #e3eefb; fill-opacity: 0.7; stroke: #2b6cb0; stroke-width: 2; stroke-dasharray: 6 4; vector-effect: non-scaling-stroke; }
-.cr-drag-ghost { transform: translate(-50%, -50%) scale(1.05); filter: drop-shadow(0 4px 6px rgb(0 0 0 / 0.2)); }
+.cr-dragging {
+  opacity: 0.35;
+}
+.cr-drop-on .cr-hit {
+  fill: #e3eefb;
+  fill-opacity: 0.7;
+  stroke: #2b6cb0;
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+  vector-effect: non-scaling-stroke;
+}
+.cr-drag-ghost {
+  transform: translate(-50%, -50%) scale(1.05);
+  filter: drop-shadow(0 4px 6px rgb(0 0 0 / 0.2));
+}

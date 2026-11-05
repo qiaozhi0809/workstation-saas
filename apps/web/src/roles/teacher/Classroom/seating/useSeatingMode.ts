@@ -12,7 +12,14 @@ import type { ClassView } from '@/shared/types/class'
 import type { ClassroomSummary } from '@/shared/types/classroom'
 import type { StudentSeat } from '@/shared/types/student'
 import { genderPairSeats, mentorSeats, shuffleSeats } from './algorithms'
-import { draftReducer, initDraft, isDirty, toSavePayload, type DraftAction, type SeatDraft } from './draft'
+import {
+  draftReducer,
+  initDraft,
+  isDirty,
+  toSavePayload,
+  type DraftAction,
+  type SeatDraft,
+} from './draft'
 import { printSeating, seatingPrintHtml } from './printSeating'
 import type { SeatingBarProps } from './SeatingBar'
 import type { UnseatedTrayProps } from './UnseatedTray'
@@ -28,7 +35,11 @@ interface Options {
 }
 
 /** 草稿、它的起点,以及建草稿时用的名单(地图上的学生信息取自它,和草稿始终一致) */
-interface Drafts { draft: SeatDraft; original: SeatDraft; roster: StudentSeat[] }
+interface Drafts {
+  draft: SeatDraft
+  original: SeatDraft
+  roster: StudentSeat[]
+}
 /** loading:正在取最新数据建草稿;failed:取数失败,排座不可编辑 */
 type Status = 'idle' | 'loading' | 'failed'
 
@@ -41,9 +52,13 @@ const leavesSeating = (from: Location, to: Location) =>
 /** 用名单 + 桌椅排列 + 版本建草稿;不在格内的座位视为未排座,讲台边的座位在格内即算已就座。 */
 function buildDraft(roster: StudentSeat[], grid: DeskGrid, baseVersion: number): SeatDraft {
   return initDraft({
-    grid, baseVersion,
+    grid,
+    baseVersion,
     students: roster.map((s) => {
-      const seated = s.seat_row !== null && s.seat_col !== null && inGrid(grid, { row: s.seat_row, col: s.seat_col })
+      const seated =
+        s.seat_row !== null &&
+        s.seat_col !== null &&
+        inGrid(grid, { row: s.seat_row, col: s.seat_col })
       return {
         enrollmentId: s.enrollment_id,
         name: s.name,
@@ -82,35 +97,42 @@ export function useSeatingMode(o: Options) {
   }
 
   /** 取最新数据并重建草稿;minVersion 为保存成功时服务端返回的版本。失败则不建草稿。 */
-  const load = useCallback(async (minVersion = 0) => {
-    const token = ++seq.current
-    setStatus('loading')
-    // 先取消进行中的旧请求(包括首次加载),保证新请求在上一步之后才发出
-    const fresh = async (queryKey: QueryKey) => {
-      await qc.cancelQueries({ queryKey })
-      await qc.invalidateQueries({ queryKey, refetchType: 'all' }, { throwOnError: true })
-    }
-    try {
-      await fresh(['classroom', classId])
-      const summary = qc.getQueryData<ClassroomSummary>(['classroom', classId])
-      await Promise.all([fresh(['class-students', classId]), fresh(['my-classes'])])
-      const roster = qc.getQueryData<{ items: StudentSeat[] }>(['class-students', classId])?.items
-      const cls = qc.getQueryData<{ items: ClassView[] }>(['my-classes'])?.items.find((c) => c.id === classId)
-      if (!summary || !roster || !cls) throw new Error(LOAD_FAILED)
-      if (token !== seq.current) return
-      const d = buildDraft(roster, gridOf(cls), Math.max(summary.seat_version, minVersion))
-      setDrafts({ draft: d, original: d, roster })
-      setStatus('idle')
-    } catch {
-      if (token !== seq.current) return
-      toast(LOAD_FAILED)
-      setDrafts(null)
-      setStatus('failed')
-    }
-  }, [qc, classId])
+  const load = useCallback(
+    async (minVersion = 0) => {
+      const token = ++seq.current
+      setStatus('loading')
+      // 先取消进行中的旧请求(包括首次加载),保证新请求在上一步之后才发出
+      const fresh = async (queryKey: QueryKey) => {
+        await qc.cancelQueries({ queryKey })
+        await qc.invalidateQueries({ queryKey, refetchType: 'all' }, { throwOnError: true })
+      }
+      try {
+        await fresh(['classroom', classId])
+        const summary = qc.getQueryData<ClassroomSummary>(['classroom', classId])
+        await Promise.all([fresh(['class-students', classId]), fresh(['my-classes'])])
+        const roster = qc.getQueryData<{ items: StudentSeat[] }>(['class-students', classId])?.items
+        const cls = qc
+          .getQueryData<{ items: ClassView[] }>(['my-classes'])
+          ?.items.find((c) => c.id === classId)
+        if (!summary || !roster || !cls) throw new Error(LOAD_FAILED)
+        if (token !== seq.current) return
+        const d = buildDraft(roster, gridOf(cls), Math.max(summary.seat_version, minVersion))
+        setDrafts({ draft: d, original: d, roster })
+        setStatus('idle')
+      } catch {
+        if (token !== seq.current) return
+        toast(LOAD_FAILED)
+        setDrafts(null)
+        setStatus('failed')
+      }
+    },
+    [qc, classId],
+  )
 
   // 离开模式(或卸载)时让进行中的加载作废
-  const abandonLoads = useCallback(() => { seq.current++ }, [])
+  const abandonLoads = useCallback(() => {
+    seq.current++
+  }, [])
   useEffect(() => {
     if (!enabled) return
     void load()
@@ -121,50 +143,77 @@ export function useSeatingMode(o: Options) {
   const dirty = !!drafts && isDirty(drafts.draft, drafts.original)
   // 保存或加载进行中:草稿不可编辑(否则改动会被随后的重建悄悄丢掉);页面据 pending 给出可见提示。
   // 保存成功后紧接着重新加载,这时已经保存完了,报“加载中”
-  const pending = status === 'loading' ? 'loading' as const : saving ? 'saving' as const : null
+  const pending = status === 'loading' ? ('loading' as const) : saving ? ('saving' as const) : null
   const busy = pending !== null
 
   const setUnsaved = useTeacherStore((s) => s.setUnsaved)
-  useEffect(() => { setUnsaved('seating', dirty) }, [dirty, setUnsaved])
+  useEffect(() => {
+    setUnsaved('seating', dirty)
+  }, [dirty, setUnsaved])
   useEffect(() => () => setUnsaved('seating', false), [setUnsaved])
   // 有未保存的修改时,关闭 / 刷新页面前让浏览器提示
   useEffect(() => {
     if (!dirty) return
-    const guard = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    const guard = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue = ''
+    }
     window.addEventListener('beforeunload', guard)
     return () => window.removeEventListener('beforeunload', guard)
   }, [dirty])
   // 站内跳转(链接、浏览器后退、程序导航)同样先确认;读 store 里的标记,
   // 已经在切模式 / 换班级 / 退出登录时确认过的(标记已清)不再拦
-  const blocker = useBlocker(({ currentLocation, nextLocation }) =>
-    useTeacherStore.getState().unsaved.seating && leavesSeating(currentLocation, nextLocation))
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      useTeacherStore.getState().unsaved.seating && leavesSeating(currentLocation, nextLocation),
+  )
   useEffect(() => {
     if (blocker.state !== 'blocked') return
     if (confirmLeave(['seating'])) blocker.proceed()
     else blocker.reset()
   }, [blocker])
 
-  const update = useCallback((f: (d: SeatDraft) => SeatDraft) => setDrafts((cur) => {
-    if (!cur) return cur
-    const next = f(cur.draft)
-    return next === cur.draft ? cur : { ...cur, draft: next }
-  }), [])
+  const update = useCallback(
+    (f: (d: SeatDraft) => SeatDraft) =>
+      setDrafts((cur) => {
+        if (!cur) return cur
+        const next = f(cur.draft)
+        return next === cur.draft ? cur : { ...cur, draft: next }
+      }),
+    [],
+  )
   const dispatch = useCallback((a: DraftAction) => update((d) => draftReducer(d, a)), [update])
 
   /** 点学生:未选中 → 选中;再点自己 → 取消;已选别人 → 换到该生的位置(换不了就改选该生)。 */
-  const clickStudent = useCallback((id: string) => update((d) => {
-    if (d.selected === id) return draftReducer(d, { type: 'select', enrollmentId: null })
-    const target = d.students.find((s) => s.enrollmentId === id)
-    if (d.selected && target && target.row !== null && target.col !== null) {
-      const moved = draftReducer(d, { type: 'moveTo', enrollmentId: d.selected, to: { row: target.row, col: target.col } })
-      if (moved !== d) return moved
-    }
-    return draftReducer(d, { type: 'select', enrollmentId: id })
-  }), [update])
+  const clickStudent = useCallback(
+    (id: string) =>
+      update((d) => {
+        if (d.selected === id) return draftReducer(d, { type: 'select', enrollmentId: null })
+        const target = d.students.find((s) => s.enrollmentId === id)
+        if (d.selected && target && target.row !== null && target.col !== null) {
+          const moved = draftReducer(d, {
+            type: 'moveTo',
+            enrollmentId: d.selected,
+            to: { row: target.row, col: target.col },
+          })
+          if (moved !== d) return moved
+        }
+        return draftReducer(d, { type: 'select', enrollmentId: id })
+      }),
+    [update],
+  )
 
-  const clickEmpty = useCallback((cell: Cell) => update((d) =>
-    (d.selected ? draftReducer(d, { type: 'moveTo', enrollmentId: d.selected, to: cell }) : d)), [update])
-  const drop = useCallback((from: Cell, to: Cell) => dispatch({ type: 'swapCells', from, to }), [dispatch])
+  const clickEmpty = useCallback(
+    (cell: Cell) =>
+      update((d) =>
+        d.selected ? draftReducer(d, { type: 'moveTo', enrollmentId: d.selected, to: cell }) : d,
+      ),
+    [update],
+  )
+  const drop = useCallback(
+    (from: Cell, to: Cell) => dispatch({ type: 'swapCells', from, to }),
+    [dispatch],
+  )
 
   const save = async () => {
     if (!drafts || !dirty || busy || inflight.current) return
@@ -178,8 +227,11 @@ export function useSeatingMode(o: Options) {
       if (err instanceof ApiError && err.code === 'SEAT_VERSION_CONFLICT') setConflict(true)
       else if (err instanceof ApiError && err.code === 'SEAT_INVALID') {
         const reason = (err.details as { reason?: string } | undefined)?.reason
-        toast(reason === 'layout_mismatch' || reason === 'podium_unavailable'
-          ? '班级的桌椅排列已变化,已重新加载' : '学生名单有变化,已重新加载')
+        toast(
+          reason === 'layout_mismatch' || reason === 'podium_unavailable'
+            ? '班级的桌椅排列已变化,已重新加载'
+            : '学生名单有变化,已重新加载',
+        )
         await load()
       } else toast(err instanceof Error ? err.message : '保存失败')
     } finally {
@@ -204,14 +256,24 @@ export function useSeatingMode(o: Options) {
     const out: Record<string, SeatView> = {}
     for (const s of draft?.students ?? []) {
       if (s.locked || s.enrollmentId === draft?.selected) {
-        out[s.enrollmentId] = { ...(s.locked ? { locked: true } : {}), ...(s.enrollmentId === draft?.selected ? { selected: true } : {}) }
+        out[s.enrollmentId] = {
+          ...(s.locked ? { locked: true } : {}),
+          ...(s.enrollmentId === draft?.selected ? { selected: true } : {}),
+        }
       }
     }
     return out
   }, [draft])
 
   if (!enabled || !drafts || !draft) {
-    return { ready: false as const, dirty, pending, failed: status === 'failed', retry: () => void load(), reload: () => load() }
+    return {
+      ready: false as const,
+      dirty,
+      pending,
+      failed: status === 'failed',
+      retry: () => void load(),
+      reload: () => load(),
+    }
   }
 
   const selected = draft.students.find((s) => s.enrollmentId === draft.selected) ?? null
@@ -226,23 +288,48 @@ export function useSeatingMode(o: Options) {
     busy,
     selected: selectedSeated,
     conflict,
-    onShuffle: () => dispatch({ type: 'apply', students: shuffleSeats(draft.students, draft.grid, Math.random) }),
-    onPair: () => dispatch({ type: 'apply', students: genderPairSeats(draft.students, draft.grid, Math.random) }),
+    onShuffle: () =>
+      dispatch({ type: 'apply', students: shuffleSeats(draft.students, draft.grid, Math.random) }),
+    onPair: () =>
+      dispatch({
+        type: 'apply',
+        students: genderPairSeats(draft.students, draft.grid, Math.random),
+      }),
     canMentor: !!o.ranks && o.ranks.size > 0,
-    onMentor: () => { if (o.ranks) dispatch({ type: 'apply', students: mentorSeats(draft.students, draft.grid, o.ranks, Math.random) }) },
+    onMentor: () => {
+      if (o.ranks)
+        dispatch({
+          type: 'apply',
+          students: mentorSeats(draft.students, draft.grid, o.ranks, Math.random),
+        })
+    },
     onUndo: () => dispatch({ type: 'undo' }),
     onDiscard: () => dispatch({ type: 'reset', draft: drafts.original }),
-    onToggleLock: () => { if (selectedSeated) dispatch({ type: 'toggleLock', enrollmentId: selectedSeated.enrollmentId }) },
+    onToggleLock: () => {
+      if (selectedSeated)
+        dispatch({ type: 'toggleLock', enrollmentId: selectedSeated.enrollmentId })
+    },
     onPrint: () => {
       const summary = qc.getQueryData<ClassroomSummary>(['classroom', classId])
-      const cls = qc.getQueryData<{ items: ClassView[] }>(['my-classes'])?.items.find((c) => c.id === classId)
-      printSeating(seatingPrintHtml({
-        className: o.className, schoolName: summary?.school_name ?? '', room: cls?.room ?? '', today: summary?.today ?? '',
-        grid: draft.grid, students: draft.students,
-      }))
+      const cls = qc
+        .getQueryData<{ items: ClassView[] }>(['my-classes'])
+        ?.items.find((c) => c.id === classId)
+      printSeating(
+        seatingPrintHtml({
+          className: o.className,
+          schoolName: summary?.school_name ?? '',
+          room: cls?.room ?? '',
+          today: summary?.today ?? '',
+          grid: draft.grid,
+          students: draft.students,
+        }),
+      )
     },
     onSave: () => void save(),
-    onReload: () => { setConflict(false); void load() },
+    onReload: () => {
+      setConflict(false)
+      void load()
+    },
     onKeepEditing: () => setConflict(false),
   }
   const tray: UnseatedTrayProps = {
@@ -252,10 +339,12 @@ export function useSeatingMode(o: Options) {
     busy,
     seedOf: (id) => {
       const s = drafts.roster.find((r) => r.enrollment_id === id)
-      return s ? s.avatar_seed ?? s.student_id : id
+      return s ? (s.avatar_seed ?? s.student_id) : id
     },
     onSelect: clickStudent,
-    onUnseat: () => { if (selectedSeated) dispatch({ type: 'unseat', enrollmentId: selectedSeated.enrollmentId }) },
+    onUnseat: () => {
+      if (selectedSeated) dispatch({ type: 'unseat', enrollmentId: selectedSeated.enrollmentId })
+    },
   }
 
   return {

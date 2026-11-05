@@ -8,21 +8,51 @@ import { boardView } from '../Board/boardFixtures'
 import AttendanceReportPage from './AttendanceReportPage'
 
 vi.mock('@/shared/api/admin', () => ({
-  adminApi: { board: vi.fn(), attendanceReport: vi.fn(), attendanceClass: vi.fn(), exportAttendance: vi.fn() },
+  adminApi: {
+    board: vi.fn(),
+    attendanceReport: vi.fn(),
+    attendanceClass: vi.fn(),
+    exportAttendance: vi.fn(),
+  },
 }))
 
 const report = (month: string): AttendanceReport => ({
   month,
   scope_label: '全校',
   classes: [
-    { class_id: 'c1', class_name: '三年一班', grade_name: '三年级', days: 20, expected: 800, present: 780, leave: 12, absent: 8, late: 5, rate: 0.975 },
-    { class_id: 'c2', class_name: '三年二班', grade_name: '三年级', days: 0, expected: 0, present: 0, leave: 0, absent: 0, late: 0, rate: null },
+    {
+      class_id: 'c1',
+      class_name: '三年一班',
+      grade_name: '三年级',
+      days: 20,
+      expected: 800,
+      present: 780,
+      leave: 12,
+      absent: 8,
+      late: 5,
+      rate: 0.975,
+    },
+    {
+      class_id: 'c2',
+      class_name: '三年二班',
+      grade_name: '三年级',
+      days: 0,
+      expected: 0,
+      present: 0,
+      leave: 0,
+      absent: 0,
+      late: 0,
+      rate: null,
+    },
   ],
   total: { days: 20, expected: 800, present: 780, leave: 12, absent: 8, late: 5, rate: 0.975 },
 })
 
 const detail: AttendanceClassDetail = {
-  month: '2026-10', class_id: 'c1', class_name: '三年一班', days: 20,
+  month: '2026-10',
+  class_id: 'c1',
+  class_name: '三年一班',
+  days: 20,
   students: [
     { student_id: 's1', name: '王小一', student_no: '2026001', leave: 0, absent: 3, late: 1 },
     { student_id: 's2', name: '李小二', student_no: null, leave: 2, absent: 0, late: 0 },
@@ -31,8 +61,12 @@ const detail: AttendanceClassDetail = {
 
 function setup() {
   return render(
-    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <MemoryRouter><AttendanceReportPage /></MemoryRouter>
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      <MemoryRouter>
+        <AttendanceReportPage />
+      </MemoryRouter>
     </QueryClientProvider>,
   )
 }
@@ -104,7 +138,9 @@ describe('月度考勤报告', () => {
     const revoke = vi.fn()
     Object.assign(URL, { createObjectURL: create, revokeObjectURL: revoke })
     const clicked: { download: string; href: string }[] = []
-    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
       clicked.push({ download: this.download, href: this.href })
     })
     setup()

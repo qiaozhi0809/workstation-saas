@@ -9,7 +9,13 @@ import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import Modal from '@/shared/components/overlay/Modal'
 import { toast } from '@/shared/components/Toast'
 import { Button } from '@/shared/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/shared/components/ui/card'
 import { Input } from '@/shared/components/ui/input'
 import { Label } from '@/shared/components/ui/label'
 import { PROTECTED_TAGS } from '@/shared/lib/tags'
@@ -45,8 +51,13 @@ export default function TagPoolCard() {
 
   if (pool.isPending) return <LoadingState />
   if (pool.isError) {
-    return <ErrorState title={pool.error instanceof ApiError ? pool.error.message : '加载失败,请重试'}
-      onRetry={() => void pool.refetch()} retrying={pool.isFetching} />
+    return (
+      <ErrorState
+        title={pool.error instanceof ApiError ? pool.error.message : '加载失败,请重试'}
+        onRetry={() => void pool.refetch()}
+        retrying={pool.isFetching}
+      />
+    )
   }
   const tags = draft ?? pool.data.tags
   const dirty = draft !== null || renames.length > 0
@@ -66,7 +77,12 @@ export default function TagPoolCard() {
     setAddError('')
   }
 
-  const openRename = (t: string) => { setRenaming(t); setNewName(t); setAlsoStudents(true); setDialogError('') }
+  const openRename = (t: string) => {
+    setRenaming(t)
+    setNewName(t)
+    setAlsoStudents(true)
+    setDialogError('')
+  }
   const confirmRename = () => {
     const from = renaming!
     const to = newName.trim()
@@ -97,7 +113,10 @@ export default function TagPoolCard() {
     setBusy(true)
     setSaveError('')
     try {
-      const saved = await adminApi.saveTagPool({ tags, renames: renames.filter((r) => r.from !== r.to) })
+      const saved = await adminApi.saveTagPool({
+        tags,
+        renames: renames.filter((r) => r.from !== r.to),
+      })
       qc.setQueryData(['tag-pool'], saved)
       setDraft(null)
       setRenames([])
@@ -121,28 +140,51 @@ export default function TagPoolCard() {
           {tags.map((t, i) => {
             const locked = PROTECTED_TAGS.includes(t)
             return (
-              <li key={t} data-tag={t} className="flex items-center gap-0.5 rounded-full border bg-background py-0.5 pl-1 pr-1.5 text-sm">
-                <button type="button" aria-label={`上移 ${t}`} disabled={i === 0} onClick={() => move(i, -1)}
-                  className="rounded-full p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30">
+              <li
+                key={t}
+                data-tag={t}
+                className="flex items-center gap-0.5 rounded-full border bg-background py-0.5 pl-1 pr-1.5 text-sm"
+              >
+                <button
+                  type="button"
+                  aria-label={`上移 ${t}`}
+                  disabled={i === 0}
+                  onClick={() => move(i, -1)}
+                  className="rounded-full p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30"
+                >
                   <ArrowUp className="h-3.5 w-3.5" aria-hidden="true" />
                 </button>
-                <button type="button" aria-label={`下移 ${t}`} disabled={i === tags.length - 1} onClick={() => move(i, 1)}
-                  className="rounded-full p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30">
+                <button
+                  type="button"
+                  aria-label={`下移 ${t}`}
+                  disabled={i === tags.length - 1}
+                  onClick={() => move(i, 1)}
+                  className="rounded-full p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30"
+                >
                   <ArrowDown className="h-3.5 w-3.5" aria-hidden="true" />
                 </button>
                 {locked ? (
                   <span title={PROTECTED_NOTE} className="flex items-center gap-1 px-1.5">
-                    {t}<Lock className="h-3 w-3 text-muted-foreground" aria-hidden="true" />
+                    {t}
+                    <Lock className="h-3 w-3 text-muted-foreground" aria-hidden="true" />
                     <span className="sr-only">{PROTECTED_NOTE}</span>
                   </span>
                 ) : (
                   <>
-                    <button type="button" aria-label={`改名 ${t}`} onClick={() => openRename(t)}
-                      className="rounded px-1.5 hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
+                    <button
+                      type="button"
+                      aria-label={`改名 ${t}`}
+                      onClick={() => openRename(t)}
+                      className="rounded px-1.5 hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    >
                       {t}
                     </button>
-                    <button type="button" aria-label={`删除 ${t}`} onClick={() => setDeleting(t)}
-                      className="rounded-full p-0.5 text-muted-foreground hover:text-destructive">
+                    <button
+                      type="button"
+                      aria-label={`删除 ${t}`}
+                      onClick={() => setDeleting(t)}
+                      className="rounded-full p-0.5 text-muted-foreground hover:text-destructive"
+                    >
                       <X className="h-3.5 w-3.5" aria-hidden="true" />
                     </button>
                   </>
@@ -151,41 +193,94 @@ export default function TagPoolCard() {
             )
           })}
         </ul>
-        <p className="text-xs text-muted-foreground">带锁的标签有特殊用途,不能改名或删除。点标签名可以改名。</p>
+        <p className="text-xs text-muted-foreground">
+          带锁的标签有特殊用途,不能改名或删除。点标签名可以改名。
+        </p>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Input aria-label="新标签" placeholder="新标签" maxLength={MAX_LEN} className="w-40" value={addDraft}
-            onChange={(e) => { setAddDraft(e.target.value); setAddError('') }}
+          <Input
+            aria-label="新标签"
+            placeholder="新标签"
+            maxLength={MAX_LEN}
+            className="w-40"
+            value={addDraft}
+            onChange={(e) => {
+              setAddDraft(e.target.value)
+              setAddError('')
+            }}
             onKeyDown={(e) => {
               if (e.key !== 'Enter' || e.nativeEvent.isComposing || e.keyCode === 229) return
               e.preventDefault()
               add()
-            }} />
-          <Button type="button" variant="outline" onClick={add}>添加</Button>
-          {addError && <p role="alert" className="text-sm text-destructive">{addError}</p>}
+            }}
+          />
+          <Button type="button" variant="outline" onClick={add}>
+            添加
+          </Button>
+          {addError && (
+            <p role="alert" className="text-sm text-destructive">
+              {addError}
+            </p>
+          )}
         </div>
 
-        {saveError && <p role="alert" className="text-sm text-destructive">{saveError}</p>}
+        {saveError && (
+          <p role="alert" className="text-sm text-destructive">
+            {saveError}
+          </p>
+        )}
         <div className="flex justify-end">
-          <Button type="button" disabled={!dirty || busy} onClick={() => void save()}>保存标签池</Button>
+          <Button type="button" disabled={!dirty || busy} onClick={() => void save()}>
+            保存标签池
+          </Button>
         </div>
       </CardContent>
 
       {renaming !== null && (
-        <Modal open onClose={() => setRenaming(null)} title={`改名「${renaming}」`} dismissOnOutside={false} className="max-w-sm">
-          <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); confirmRename() }}>
+        <Modal
+          open
+          onClose={() => setRenaming(null)}
+          title={`改名「${renaming}」`}
+          dismissOnOutside={false}
+          className="max-w-sm"
+        >
+          <form
+            className="space-y-3"
+            onSubmit={(e) => {
+              e.preventDefault()
+              confirmRename()
+            }}
+          >
             <div className="space-y-1">
               <Label htmlFor="tag-new-name">新名称</Label>
-              <Input id="tag-new-name" value={newName} maxLength={MAX_LEN} autoFocus
-                onChange={(e) => { setNewName(e.target.value); setDialogError('') }} />
+              <Input
+                id="tag-new-name"
+                value={newName}
+                maxLength={MAX_LEN}
+                autoFocus
+                onChange={(e) => {
+                  setNewName(e.target.value)
+                  setDialogError('')
+                }}
+              />
             </div>
             <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={alsoStudents} onChange={(e) => setAlsoStudents(e.target.checked)} />
+              <input
+                type="checkbox"
+                checked={alsoStudents}
+                onChange={(e) => setAlsoStudents(e.target.checked)}
+              />
               同时修改已有学生的这个标签
             </label>
-            {dialogError && <p role="alert" className="text-sm text-destructive">{dialogError}</p>}
+            {dialogError && (
+              <p role="alert" className="text-sm text-destructive">
+                {dialogError}
+              </p>
+            )}
             <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setRenaming(null)}>取消</Button>
+              <Button type="button" variant="outline" onClick={() => setRenaming(null)}>
+                取消
+              </Button>
               <Button type="submit">确定</Button>
             </div>
           </form>
@@ -195,8 +290,12 @@ export default function TagPoolCard() {
         <Modal open onClose={() => setDeleting(null)} title="删除标签" className="max-w-sm">
           <p className="text-sm">{`从标签池删除「${deleting}」?已有学生身上的这个标签会保留。`}</p>
           <div className="mt-4 flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => setDeleting(null)}>取消</Button>
-            <Button type="button" variant="destructive" onClick={confirmDelete}>删除</Button>
+            <Button type="button" variant="outline" onClick={() => setDeleting(null)}>
+              取消
+            </Button>
+            <Button type="button" variant="destructive" onClick={confirmDelete}>
+              删除
+            </Button>
           </div>
         </Modal>
       )}

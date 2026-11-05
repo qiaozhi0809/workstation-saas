@@ -28,10 +28,15 @@ export default function TeacherLayout() {
   const classes = useMemo(() => data?.items ?? [], [data])
   const cls = classes.find((c) => c.id === classId)
   // 与教室页同一个 key,共用缓存;这里不轮询
-  const summary = useQuery({ queryKey: ['classroom', classId], queryFn: () => classroomApi.summary(classId!), enabled: !!classId })
+  const summary = useQuery({
+    queryKey: ['classroom', classId],
+    queryFn: () => classroomApi.summary(classId!),
+    enabled: !!classId,
+  })
 
   useEffect(() => {
-    if (user && classes.length > 0 && !classes.some((c) => c.id === classId)) setClass(classes[0].id)
+    if (user && classes.length > 0 && !classes.some((c) => c.id === classId))
+      setClass(classes[0].id)
   }, [user, classes, classId, setClass])
 
   const logout = () => {
@@ -52,14 +57,22 @@ export default function TeacherLayout() {
           aria-label="切换班级"
           className="min-w-0 max-w-[40vw] md:max-w-xs"
           value={classId ?? ''}
-          onChange={(e) => { if (confirmLeave()) setClass(e.target.value) }}
+          onChange={(e) => {
+            if (confirmLeave()) setClass(e.target.value)
+          }}
         >
-          {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          {classes.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
         </NativeSelect>
       )}
       {cls && summary.data && (
         <span className="hidden truncate text-sm text-muted-foreground sm:inline">
-          {[cls.grade_name, cls.room, `${summary.data.year.name} 第 ${summary.data.week_no} 周`].filter(Boolean).join(' · ')}
+          {[cls.grade_name, cls.room, `${summary.data.year.name} 第 ${summary.data.week_no} 周`]
+            .filter(Boolean)
+            .join(' · ')}
         </span>
       )}
     </>

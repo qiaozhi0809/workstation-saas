@@ -3,7 +3,10 @@ import { nextStatus } from './cycle'
 
 it('cycles present → leave → absent → late → present', () => {
   expect(['present', 'leave', 'absent', 'late'].map((s) => nextStatus(s as never))).toEqual([
-    'leave', 'absent', 'late', 'present',
+    'leave',
+    'absent',
+    'late',
+    'present',
   ])
 })
 

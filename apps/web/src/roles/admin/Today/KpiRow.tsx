@@ -2,7 +2,10 @@ import type { TodayView } from '@/shared/types/admin'
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div data-kpi className="flex flex-col gap-1 rounded-lg border bg-card p-3 text-card-foreground">
+    <div
+      data-kpi
+      className="flex flex-col gap-1 rounded-lg border bg-card p-3 text-card-foreground"
+    >
       <div className="text-sm text-muted-foreground">{title}</div>
       <div className="text-2xl font-semibold">{children}</div>
     </div>
@@ -10,7 +13,8 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
 }
 
 export function KpiRow({ totals }: { totals: TodayView['totals'] }) {
-  const rate = totals.students > 0 ? `${((totals.present / totals.students) * 100).toFixed(1)}%` : '—'
+  const rate =
+    totals.students > 0 ? `${((totals.present / totals.students) * 100).toFixed(1)}%` : '—'
   return (
     <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
       <Card title="在读">{totals.students}</Card>

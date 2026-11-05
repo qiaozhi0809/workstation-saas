@@ -8,9 +8,18 @@ import type { StudentSeat } from '@/shared/types/student'
 
 const oneDecimal = (n: number) => String(Math.round(n * 10) / 10)
 
-export default function ExamSection({ classId, roster }: { classId: string; roster: StudentSeat[] }) {
+export default function ExamSection({
+  classId,
+  roster,
+}: {
+  classId: string
+  roster: StudentSeat[]
+}) {
   // 与成绩模式、排座共用同一份缓存
-  const book = useQuery({ queryKey: ['gradebook', classId], queryFn: () => examsApi.gradebook(classId) })
+  const book = useQuery({
+    queryKey: ['gradebook', classId],
+    queryFn: () => examsApi.gradebook(classId),
+  })
   const exams = book.data?.exams ?? []
   const latest = latestExam(exams)
   const ids = roster.map((s) => s.enrollment_id)
@@ -20,7 +29,9 @@ export default function ExamSection({ classId, roster }: { classId: string; rost
     <Card className="p-3">
       <h3 className="text-sm font-semibold">最近考试</h3>
       {book.isError && !book.data ? (
-        <p role="alert" className="mt-1 text-xs text-destructive">成绩加载失败</p>
+        <p role="alert" className="mt-1 text-xs text-destructive">
+          成绩加载失败
+        </p>
       ) : !latest ? (
         <p className="mt-1 text-xs text-muted-foreground">还没有考试成绩</p>
       ) : (
@@ -37,7 +48,12 @@ export default function ExamSection({ classId, roster }: { classId: string; rost
           {rates.filter((r) => r !== null).length >= 2 && (
             <Sparkline label="历次平均得分率" height={48} values={rates} />
           )}
-          <Link className="text-primary underline-offset-2 hover:underline" to={`/teacher/analysis?exam=${latest.id}`}>查看分析</Link>
+          <Link
+            className="text-primary underline-offset-2 hover:underline"
+            to={`/teacher/analysis?exam=${latest.id}`}
+          >
+            查看分析
+          </Link>
         </div>
       )}
     </Card>

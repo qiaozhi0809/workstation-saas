@@ -13,39 +13,79 @@ import AiUsagePage from './AiUsagePage'
 
 vi.mock('@/shared/api/admin', () => ({
   adminApi: {
-    aiUsage: vi.fn(), aiConfig: vi.fn(), saveAiConfig: vi.fn(), clearAiConfig: vi.fn(), testAiConfig: vi.fn(),
+    aiUsage: vi.fn(),
+    aiConfig: vi.fn(),
+    saveAiConfig: vi.fn(),
+    clearAiConfig: vi.fn(),
+    testAiConfig: vi.fn(),
   },
 }))
 vi.mock('@/shared/components/Toast', () => ({ toast: vi.fn() }))
 
 const PROVIDERS: AiConfigView['providers'] = [
-  { id: 'deepseek', label: 'DeepSeek', base_url: 'https://api.deepseek.example/v1', models: ['deepseek-chat', 'deepseek-reasoner'] },
+  {
+    id: 'deepseek',
+    label: 'DeepSeek',
+    base_url: 'https://api.deepseek.example/v1',
+    models: ['deepseek-chat', 'deepseek-reasoner'],
+  },
   { id: 'qwen', label: '通义千问', base_url: 'https://qwen.example/v1', models: ['qwen-plus'] },
 ]
 const view = (o: Partial<AiConfigView> = {}): AiConfigView => ({
-  provider: 'deepseek', base_url: 'https://api.deepseek.example/v1', model: 'deepseek-chat', temperature: 0.7,
-  mask_forced: false, key_set: true, key_undecryptable: false, providers: PROVIDERS, ...o,
+  provider: 'deepseek',
+  base_url: 'https://api.deepseek.example/v1',
+  model: 'deepseek-chat',
+  temperature: 0.7,
+  mask_forced: false,
+  key_set: true,
+  key_undecryptable: false,
+  providers: PROVIDERS,
+  ...o,
 })
 
-const wrap = (ui: React.ReactNode) => render(
-  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-    <MemoryRouter>{ui}</MemoryRouter>
-  </QueryClientProvider>,
-)
+const wrap = (ui: React.ReactNode) =>
+  render(
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      <MemoryRouter>{ui}</MemoryRouter>
+    </QueryClientProvider>,
+  )
 
 beforeEach(() => {
   vi.resetAllMocks()
   vi.mocked(adminApi.aiConfig).mockResolvedValue(view())
 })
-afterEach(() => { cleanup(); useAuthStore.getState().logout() })
+afterEach(() => {
+  cleanup()
+  useAuthStore.getState().logout()
+})
 
 describe('AI 使用', () => {
   const USAGE: AiUsage = {
     month: '2026-11',
     rows: [
-      { user_id: 'u1', display_name: '李老师', calls: 12, failed: 2, prompt_tokens: 3000, completion_tokens: 1500,
-        top_templates: [{ template: 'comment', label: '期末评语', count: 8 }, { template: 'plan', label: '教案', count: 4 }] },
-      { user_id: 'u2', display_name: '王老师', calls: 3, failed: 0, prompt_tokens: 400, completion_tokens: 200, top_templates: [] },
+      {
+        user_id: 'u1',
+        display_name: '李老师',
+        calls: 12,
+        failed: 2,
+        prompt_tokens: 3000,
+        completion_tokens: 1500,
+        top_templates: [
+          { template: 'comment', label: '期末评语', count: 8 },
+          { template: 'plan', label: '教案', count: 4 },
+        ],
+      },
+      {
+        user_id: 'u2',
+        display_name: '王老师',
+        calls: 3,
+        failed: 0,
+        prompt_tokens: 400,
+        completion_tokens: 200,
+        top_templates: [],
+      },
     ],
     total: { calls: 15, failed: 2, prompt_tokens: 3400, completion_tokens: 1700 },
   }
@@ -61,11 +101,21 @@ describe('AI 使用', () => {
     wrap(<AiUsagePage />)
     expect(await screen.findByText('李老师')).toBeInTheDocument()
     expect(adminApi.aiUsage).toHaveBeenCalledWith('2026-11')
-    expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toEqual(
-      ['老师', '调用次数', '失败', '输入 token', '输出 token', '常用场景'])
+    expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toEqual([
+      '老师',
+      '调用次数',
+      '失败',
+      '输入 token',
+      '输出 token',
+      '常用场景',
+    ])
     expect(screen.getByText('期末评语 × 8、教案 × 4')).toBeInTheDocument()
     const total = screen.getByText('合计').closest('tr') as HTMLElement
-    expect(within(total).getAllByRole('cell').map((c) => c.textContent)).toEqual(['合计', '15', '2', '3400', '1700', ''])
+    expect(
+      within(total)
+        .getAllByRole('cell')
+        .map((c) => c.textContent),
+    ).toEqual(['合计', '15', '2', '3400', '1700', ''])
   })
 
   it('切换月份时请求对应月份', async () => {
@@ -77,7 +127,11 @@ describe('AI 使用', () => {
   })
 
   it('本月没有记录时显示空状态', async () => {
-    vi.mocked(adminApi.aiUsage).mockResolvedValue({ month: '2026-11', rows: [], total: { calls: 0, failed: 0, prompt_tokens: 0, completion_tokens: 0 } })
+    vi.mocked(adminApi.aiUsage).mockResolvedValue({
+      month: '2026-11',
+      rows: [],
+      total: { calls: 0, failed: 0, prompt_tokens: 0, completion_tokens: 0 },
+    })
     wrap(<AiUsagePage />)
     expect(await screen.findByText('这个月还没有人使用 AI 助手')).toBeInTheDocument()
   })
@@ -96,10 +150,16 @@ describe('AI 配置', () => {
     expect(key).toHaveAttribute('type', 'password')
     expect(key).toHaveAttribute('placeholder', '已配置,留空则不修改')
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
-    await waitFor(() => expect(adminApi.saveAiConfig).toHaveBeenCalledWith({
-      provider: 'deepseek', base_url: 'https://api.deepseek.example/v1', model: 'deepseek-chat',
-      temperature: 0.7, mask_forced: false, api_key: null,
-    }))
+    await waitFor(() =>
+      expect(adminApi.saveAiConfig).toHaveBeenCalledWith({
+        provider: 'deepseek',
+        base_url: 'https://api.deepseek.example/v1',
+        model: 'deepseek-chat',
+        temperature: 0.7,
+        mask_forced: false,
+        api_key: null,
+      }),
+    )
     expect(toast).toHaveBeenCalledWith('已保存')
   })
 
@@ -109,8 +169,11 @@ describe('AI 配置', () => {
     fireEvent.change(screen.getByLabelText('API Key'), { target: { value: ' test-key-123 ' } })
     fireEvent.click(screen.getByRole('switch', { name: '强制隐去学生姓名' }))
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
-    await waitFor(() => expect(adminApi.saveAiConfig).toHaveBeenCalledWith(
-      expect.objectContaining({ api_key: 'test-key-123', mask_forced: true })))
+    await waitFor(() =>
+      expect(adminApi.saveAiConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ api_key: 'test-key-123', mask_forced: true }),
+      ),
+    )
   })
 
   it('选服务商后自动填地址与第一个模型', async () => {
@@ -125,11 +188,17 @@ describe('AI 配置', () => {
     await renderConfig()
     fireEvent.change(screen.getByLabelText('模型'), { target: { value: 'my-model' } })
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
-    await waitFor(() => expect(adminApi.saveAiConfig).toHaveBeenCalledWith(expect.objectContaining({ model: 'my-model' })))
+    await waitFor(() =>
+      expect(adminApi.saveAiConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'my-model' }),
+      ),
+    )
   })
 
   it('没配过 Key 又不填时不发请求,提示填写', async () => {
-    vi.mocked(adminApi.aiConfig).mockResolvedValue(view({ provider: null, base_url: null, model: null, temperature: null, key_set: false }))
+    vi.mocked(adminApi.aiConfig).mockResolvedValue(
+      view({ provider: null, base_url: null, model: null, temperature: null, key_set: false }),
+    )
     await renderConfig()
     expect(screen.getByLabelText('API Key')).toHaveAttribute('placeholder', '')
     fireEvent.change(screen.getByLabelText('服务商'), { target: { value: 'deepseek' } })
@@ -147,7 +216,9 @@ describe('AI 配置', () => {
   })
 
   it('保存失败显示后端的话', async () => {
-    vi.mocked(adminApi.saveAiConfig).mockRejectedValue(new ApiError(400, 'BAD_REQUEST', '地址必须以 http 开头(后端)'))
+    vi.mocked(adminApi.saveAiConfig).mockRejectedValue(
+      new ApiError(400, 'BAD_REQUEST', '地址必须以 http 开头(后端)'),
+    )
     await renderConfig()
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
     expect(await screen.findByText('地址必须以 http 开头(后端)')).toBeInTheDocument()
@@ -158,7 +229,9 @@ describe('AI 配置', () => {
     await renderConfig()
     fireEvent.click(screen.getByRole('button', { name: '测试连接' }))
     expect(await screen.findByText('Key 不对或已过期')).toBeInTheDocument()
-    expect(adminApi.testAiConfig).toHaveBeenCalledWith(expect.objectContaining({ api_key: null, model: 'deepseek-chat' }))
+    expect(adminApi.testAiConfig).toHaveBeenCalledWith(
+      expect.objectContaining({ api_key: null, model: 'deepseek-chat' }),
+    )
     expect(adminApi.saveAiConfig).not.toHaveBeenCalled()
   })
 
@@ -191,39 +264,57 @@ describe('AI 配置', () => {
   it('改了地址的主机且 Key 留空时提示,保存和测试连接都不发请求', async () => {
     await renderConfig()
     expect(screen.queryByText(NOTICE)).toBeNull()
-    fireEvent.change(screen.getByLabelText('接口地址'), { target: { value: 'https://other.example/v1' } })
+    fireEvent.change(screen.getByLabelText('接口地址'), {
+      target: { value: 'https://other.example/v1' },
+    })
     expect(screen.getByText(NOTICE)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
     fireEvent.click(screen.getByRole('button', { name: '测试连接' }))
     expect(adminApi.saveAiConfig).not.toHaveBeenCalled()
     expect(adminApi.testAiConfig).not.toHaveBeenCalled()
     // 改回去,提示消失
-    fireEvent.change(screen.getByLabelText('接口地址'), { target: { value: 'https://api.deepseek.example/v1' } })
+    fireEvent.change(screen.getByLabelText('接口地址'), {
+      target: { value: 'https://api.deepseek.example/v1' },
+    })
     expect(screen.queryByText(NOTICE)).toBeNull()
   })
 
   it('填了 Key 后提示消失,保存带上填的 Key', async () => {
     vi.mocked(adminApi.saveAiConfig).mockResolvedValue(view())
     await renderConfig()
-    fireEvent.change(screen.getByLabelText('接口地址'), { target: { value: 'https://other.example/v1' } })
+    fireEvent.change(screen.getByLabelText('接口地址'), {
+      target: { value: 'https://other.example/v1' },
+    })
     expect(screen.getByText(NOTICE)).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('API Key'), { target: { value: 'test-key-456' } })
     expect(screen.queryByText(NOTICE)).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
-    await waitFor(() => expect(adminApi.saveAiConfig).toHaveBeenCalledWith(expect.objectContaining({
-      base_url: 'https://other.example/v1', api_key: 'test-key-456',
-    })))
+    await waitFor(() =>
+      expect(adminApi.saveAiConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          base_url: 'https://other.example/v1',
+          api_key: 'test-key-456',
+        }),
+      ),
+    )
   })
 
   it('只改路径不提示,保存时 api_key 仍为 null', async () => {
     vi.mocked(adminApi.saveAiConfig).mockResolvedValue(view())
     await renderConfig()
-    fireEvent.change(screen.getByLabelText('接口地址'), { target: { value: 'https://api.deepseek.example/v2/' } })
+    fireEvent.change(screen.getByLabelText('接口地址'), {
+      target: { value: 'https://api.deepseek.example/v2/' },
+    })
     expect(screen.queryByText(NOTICE)).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
-    await waitFor(() => expect(adminApi.saveAiConfig).toHaveBeenCalledWith(expect.objectContaining({
-      base_url: 'https://api.deepseek.example/v2/', api_key: null,
-    })))
+    await waitFor(() =>
+      expect(adminApi.saveAiConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          base_url: 'https://api.deepseek.example/v2/',
+          api_key: null,
+        }),
+      ),
+    )
   })
 
   it('换服务商(自动填地址)且 Key 留空时提示', async () => {
@@ -236,9 +327,13 @@ describe('AI 配置', () => {
 
   it('主机大小写和默认端口写法不同不算换地址', async () => {
     await renderConfig()
-    fireEvent.change(screen.getByLabelText('接口地址'), { target: { value: 'HTTPS://API.deepseek.example:443/v1' } })
+    fireEvent.change(screen.getByLabelText('接口地址'), {
+      target: { value: 'HTTPS://API.deepseek.example:443/v1' },
+    })
     expect(screen.queryByText(NOTICE)).toBeNull()
-    fireEvent.change(screen.getByLabelText('接口地址'), { target: { value: 'https://api.deepseek.example:8443/v1' } })
+    fireEvent.change(screen.getByLabelText('接口地址'), {
+      target: { value: 'https://api.deepseek.example:8443/v1' },
+    })
     expect(screen.getByText(NOTICE)).toBeInTheDocument()
   })
 
@@ -262,28 +357,53 @@ describe('AI 配置', () => {
 describe('导航', () => {
   it('只有 settings.manage 的管理员(信息中心)看到 AI 配置,看不到 AI 使用和审计日志', () => {
     useAuthStore.setState({
-      accessToken: 'a', refreshToken: 'r', lastContext: null,
-      user: { id: 'u', display_name: '信息员', contexts: ['admin'], admin_perms: ['settings.manage'], must_change_password: false },
+      accessToken: 'a',
+      refreshToken: 'r',
+      lastContext: null,
+      user: {
+        id: 'u',
+        display_name: '信息员',
+        contexts: ['admin'],
+        admin_perms: ['settings.manage'],
+        must_change_password: false,
+      },
     })
     wrap(<AdminNav />)
     const nav = screen.getByRole('navigation', { name: '主导航' })
-    expect(within(nav).getByRole('link', { name: 'AI 配置' })).toHaveAttribute('href', '/admin/ai/config')
+    expect(within(nav).getByRole('link', { name: 'AI 配置' })).toHaveAttribute(
+      'href',
+      '/admin/ai/config',
+    )
     expect(within(nav).queryByRole('link', { name: 'AI 使用' })).toBeNull()
     expect(within(nav).queryByRole('link', { name: '审计日志' })).toBeNull()
   })
 
   it('有 ai.usage 和 audit.read 的看到 AI 使用与审计日志', () => {
     useAuthStore.setState({
-      accessToken: 'a', refreshToken: 'r', lastContext: null,
-      user: { id: 'u', display_name: '校长', contexts: ['admin'], admin_perms: ['ai.usage', 'audit.read'], must_change_password: false },
+      accessToken: 'a',
+      refreshToken: 'r',
+      lastContext: null,
+      user: {
+        id: 'u',
+        display_name: '校长',
+        contexts: ['admin'],
+        admin_perms: ['ai.usage', 'audit.read'],
+        must_change_password: false,
+      },
     })
     wrap(<AdminNav />)
     const nav = screen.getByRole('navigation', { name: '主导航' })
     // 两项都有 → 收进"系统"下拉
     fireEvent.click(within(nav).getByRole('button', { name: '系统' }))
     const menu = screen.getByRole('menu', { name: '系统' })
-    expect(within(menu).getByRole('menuitem', { name: 'AI 使用' })).toHaveAttribute('href', '/admin/ai/usage')
-    expect(within(menu).getByRole('menuitem', { name: '审计日志' })).toHaveAttribute('href', '/admin/audit')
+    expect(within(menu).getByRole('menuitem', { name: 'AI 使用' })).toHaveAttribute(
+      'href',
+      '/admin/ai/usage',
+    )
+    expect(within(menu).getByRole('menuitem', { name: '审计日志' })).toHaveAttribute(
+      'href',
+      '/admin/audit',
+    )
     expect(within(menu).queryByRole('menuitem', { name: 'AI 配置' })).toBeNull()
   })
 })

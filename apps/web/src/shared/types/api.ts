@@ -1,6 +1,8 @@
 import type { User } from './user'
 
-export interface ListResponse<T> { items: T[] }
+export interface ListResponse<T> {
+  items: T[]
+}
 
 export interface LoginResponse {
   access_token: string

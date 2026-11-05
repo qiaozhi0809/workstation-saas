@@ -4,7 +4,11 @@ import { toast } from '@/shared/components/Toast'
 import { Button } from '@/shared/components/ui/button'
 import { downloadText, toCSV } from '@/shared/lib/csv'
 
-export interface TempPassword { login_name: string; display_name: string; temp_password: string }
+export interface TempPassword {
+  login_name: string
+  display_name: string
+  temp_password: string
+}
 
 const today = () => {
   const d = new Date()
@@ -22,18 +26,31 @@ async function copy(text: string) {
 }
 
 /** 临时密码只存在于调用方传进来的 entries;关闭时调用方把它置空 */
-export default function TempPasswordDialog({ entries, batch = false, onClose }: {
-  entries: TempPassword[]; batch?: boolean; onClose(): void
+export default function TempPasswordDialog({
+  entries,
+  batch = false,
+  onClose,
+}: {
+  entries: TempPassword[]
+  batch?: boolean
+  onClose(): void
 }) {
   // 批量导入即使只有一行也用表格 + 下载 CSV
   const many = batch || entries.length > 1
-  const download = () => downloadText(
-    `临时密码-${today()}.csv`,
-    toCSV([['登录名', '姓名', '临时密码'], ...entries.map((e) => [e.login_name, e.display_name, e.temp_password])]),
-  )
+  const download = () =>
+    downloadText(
+      `临时密码-${today()}.csv`,
+      toCSV([
+        ['登录名', '姓名', '临时密码'],
+        ...entries.map((e) => [e.login_name, e.display_name, e.temp_password]),
+      ]),
+    )
   return (
     <Modal
-      open onClose={onClose} title="临时密码" dismissOnOutside={false}
+      open
+      onClose={onClose}
+      title="临时密码"
+      dismissOnOutside={false}
       description="请把下面的密码交给本人,关闭后不再显示;对方首次登录需要修改密码。"
       className={many ? 'max-w-xl' : 'max-w-sm'}
     >
@@ -41,7 +58,11 @@ export default function TempPasswordDialog({ entries, batch = false, onClose }: 
         <div className="max-h-80 overflow-auto rounded-md border">
           <table className="w-full text-sm">
             <thead className="bg-muted text-left text-muted-foreground">
-              <tr><th className="px-3 py-2 font-medium">登录名</th><th className="px-3 py-2 font-medium">姓名</th><th className="px-3 py-2 font-medium">临时密码</th></tr>
+              <tr>
+                <th className="px-3 py-2 font-medium">登录名</th>
+                <th className="px-3 py-2 font-medium">姓名</th>
+                <th className="px-3 py-2 font-medium">临时密码</th>
+              </tr>
             </thead>
             <tbody>
               {entries.map((e) => (
@@ -54,19 +75,34 @@ export default function TempPasswordDialog({ entries, batch = false, onClose }: 
             </tbody>
           </table>
         </div>
-      ) : entries.map((e) => (
-        <div key={e.login_name} className="space-y-1 rounded-md bg-muted px-3 py-3 text-center">
-          <p className="text-sm text-muted-foreground">{e.display_name}({e.login_name})</p>
-          <p className="select-all font-mono text-xl tracking-wider">{e.temp_password}</p>
-        </div>
-      ))}
+      ) : (
+        entries.map((e) => (
+          <div key={e.login_name} className="space-y-1 rounded-md bg-muted px-3 py-3 text-center">
+            <p className="text-sm text-muted-foreground">
+              {e.display_name}({e.login_name})
+            </p>
+            <p className="select-all font-mono text-xl tracking-wider">{e.temp_password}</p>
+          </div>
+        ))
+      )}
       <div className="mt-4 flex justify-end gap-2">
         {many ? (
-          <Button type="button" variant="outline" onClick={download}><Download aria-hidden="true" />下载 CSV</Button>
+          <Button type="button" variant="outline" onClick={download}>
+            <Download aria-hidden="true" />
+            下载 CSV
+          </Button>
         ) : (
-          <Button type="button" variant="outline" onClick={() => void copy(entries[0].temp_password)}>复制</Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void copy(entries[0].temp_password)}
+          >
+            复制
+          </Button>
         )}
-        <Button type="button" onClick={onClose}>关闭</Button>
+        <Button type="button" onClick={onClose}>
+          关闭
+        </Button>
       </div>
     </Modal>
   )

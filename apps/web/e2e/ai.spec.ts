@@ -18,9 +18,13 @@ let before: AiDataSnapshot
 // 防止本地之前配过真服务商:没指向假服务就直接失败,绝不把种子数据发出去
 test.beforeAll(async ({ request }) => {
   const token = await login(request, 'teacher01')
-  const res = await request.get('/api/v1/ai/status', { headers: { Authorization: `Bearer ${token}` } })
+  const res = await request.get('/api/v1/ai/status', {
+    headers: { Authorization: `Bearer ${token}` },
+  })
   const status = (await res.json()) as { provider_label: string | null }
-  expect(status.provider_label, 'AI 必须配到假服务 fake-model,见 README“测试”一节').toContain('fake-model')
+  expect(status.provider_label, 'AI 必须配到假服务 fake-model,见 README“测试”一节').toContain(
+    'fake-model',
+  )
 })
 test.beforeEach(async ({ request }) => {
   const token = await login(request, 'teacher01')
@@ -32,7 +36,8 @@ test.afterEach(async ({ request }) => {
   await restoreAiData(request, [token], CLASS_ID, before)
 })
 
-const templateCard = (page: Page, title: string) => page.getByRole('button', { name: new RegExp(title) })
+const templateCard = (page: Page, title: string) =>
+  page.getByRole('button', { name: new RegExp(title) })
 
 /** 首页发一句自由对话,等跳到对话页。 */
 async function chatFreely(page: Page, text: string) {
@@ -78,7 +83,9 @@ test('profile shortcut writes a comment and saves it to the profile', async ({ p
   await page.getByRole('button', { name: 'AI 生成' }).click()
 
   const form = page.getByRole('dialog', { name: '个人评语' })
-  await expect(form.getByLabel('学生', { exact: true }).locator('option:checked')).toHaveText('王小一')
+  await expect(form.getByLabel('学生', { exact: true }).locator('option:checked')).toHaveText(
+    '王小一',
+  )
   await form.getByRole('button', { name: '开始生成' }).click()
   await expect(page.getByText('王小一这学期进步很大')).toBeVisible()
   await page.getByRole('button', { name: '保存为评语' }).click()
@@ -91,7 +98,10 @@ test('profile shortcut writes a comment and saves it to the profile', async ({ p
   await expect(card.getByText('AI 生成', { exact: true })).toBeVisible()
 })
 
-test('batch comments for two students, save all, and saving again after a reload does not duplicate', async ({ page, request }) => {
+test('batch comments for two students, save all, and saving again after a reload does not duplicate', async ({
+  page,
+  request,
+}) => {
   await signIn(page)
   await page.goto('/teacher/ai')
   await templateCard(page, '期末评语').click()
@@ -107,26 +117,45 @@ test('batch comments for two students, save all, and saving again after a reload
   await expect(page.getByText('已保存 2 条评语')).toBeVisible()
 
   const token = await login(request, 'teacher01')
-  const roster = await request.get(`/api/v1/classes/${CLASS_ID}/students`, { headers: { Authorization: `Bearer ${token}` } })
+  const roster = await request.get(`/api/v1/classes/${CLASS_ID}/students`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
   const { items } = (await roster.json()) as { items: { student_id: string; name: string }[] }
   for (const name of ['王小一', '李小二']) {
     const sid = items.find((s) => s.name === name)!.student_id
-    const res = await request.get(`/api/v1/students/${sid}/comments`, { headers: { Authorization: `Bearer ${token}` } })
-    const list = ((await res.json()) as { items: { id: string; content: string; generated_by_ai: boolean }[] }).items
-    expect(list.some((c) => !before.comments.has(c.id) && c.generated_by_ai && c.content.includes(`${name}这学期进步很大`))).toBe(true)
+    const res = await request.get(`/api/v1/students/${sid}/comments`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    const list = (
+      (await res.json()) as { items: { id: string; content: string; generated_by_ai: boolean }[] }
+    ).items
+    expect(
+      list.some(
+        (c) =>
+          !before.comments.has(c.id) &&
+          c.generated_by_ai &&
+          c.content.includes(`${name}这学期进步很大`),
+      ),
+    ).toBe(true)
   }
 
   // 刷新页面后前端不记得已保存过;再点"全部保存"时后端按同学生、同学期、同内容去重,不会出现重复评语
   await page.reload()
   await expect(page.getByText('完成 2/2')).toBeVisible()
-  const bulk = page.waitForResponse((r) => r.url().includes('/comments/bulk') && r.request().method() === 'POST')
+  const bulk = page.waitForResponse(
+    (r) => r.url().includes('/comments/bulk') && r.request().method() === 'POST',
+  )
   await page.getByRole('button', { name: '全部保存到档案' }).click()
   expect((await bulk).status()).toBe(201)
   for (const name of ['王小一', '李小二']) {
     const sid = items.find((s) => s.name === name)!.student_id
-    const res = await request.get(`/api/v1/students/${sid}/comments`, { headers: { Authorization: `Bearer ${token}` } })
+    const res = await request.get(`/api/v1/students/${sid}/comments`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
     const list = ((await res.json()) as { items: { id: string; content: string }[] }).items
-    expect(list.filter((c) => !before.comments.has(c.id) && c.content.includes(`${name}这学期进步很大`))).toHaveLength(1)
+    expect(
+      list.filter((c) => !before.comments.has(c.id) && c.content.includes(`${name}这学期进步很大`)),
+    ).toHaveLength(1)
   }
 })
 
@@ -172,7 +201,9 @@ test('provider failure shows an error box and survives a retry', async ({ page, 
   // 重试要真的再向服务商发一次请求,并再次失败:先清空假服务记录,再等它重新记到请求
   await request.post(`${FAKE_LLM}/reset`)
   await box.getByRole('button', { name: '重试' }).click()
-  await expect.poll(async () => (await (await request.get(`${FAKE_LLM}/last`)).json()) !== null).toBe(true)
+  await expect
+    .poll(async () => (await (await request.get(`${FAKE_LLM}/last`)).json()) !== null)
+    .toBe(true)
   await expect(box).toHaveCount(1)
   await expect(box).toBeVisible()
   await expect(page).toHaveURL(/\/teacher\/ai\/[0-9a-f-]{36}/)

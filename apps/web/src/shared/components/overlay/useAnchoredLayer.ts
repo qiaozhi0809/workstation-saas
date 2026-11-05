@@ -65,8 +65,12 @@ export function useAnchoredLayer(initialFocus: (layer: HTMLElement) => HTMLEleme
     if (!open) return
     let pressedInside = false
     const inside = (t: EventTarget | null) => t instanceof Node && !!wrapperRef.current?.contains(t)
-    const onPointerDown = (e: PointerEvent) => { pressedInside = inside(e.target) }
-    const onPointerCancel = () => { pressedInside = false }
+    const onPointerDown = (e: PointerEvent) => {
+      pressedInside = inside(e.target)
+    }
+    const onPointerCancel = () => {
+      pressedInside = false
+    }
     const onClick = (e: MouseEvent) => {
       const skip = pressedInside
       pressedInside = false
@@ -83,10 +87,13 @@ export function useAnchoredLayer(initialFocus: (layer: HTMLElement) => HTMLEleme
   }, [open, close])
 
   // 焦点移到组件外才关;relatedTarget 为空(点了不可聚焦处、切走窗口)交给点外面处理
-  const onWrapperBlur = useCallback((e: FocusEvent<HTMLDivElement>) => {
-    const next = e.relatedTarget
-    if (open && next instanceof Node && !e.currentTarget.contains(next)) close(false)
-  }, [open, close])
+  const onWrapperBlur = useCallback(
+    (e: FocusEvent<HTMLDivElement>) => {
+      const next = e.relatedTarget
+      if (open && next instanceof Node && !e.currentTarget.contains(next)) close(false)
+    },
+    [open, close],
+  )
 
   return { open, setOpen, close, toggle, layerId, wrapperRef, triggerRef, layerRef, onWrapperBlur }
 }

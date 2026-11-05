@@ -14,10 +14,15 @@ const keyOf = (c: ScoreCell) => `${c.enrollment_id}|${c.subject}`
 
 /** 把已保存的格子合并进成绩表缓存:null = 清空(删 key),'absent' = 缺考(null)。 */
 function mergeCells(sheet: ScoreSheet, cells: ScoreCell[]): ScoreSheet {
-  const byId = new Map(sheet.items.map((it) => [it.enrollment_id, { ...it, scores: { ...it.scores } }]))
+  const byId = new Map(
+    sheet.items.map((it) => [it.enrollment_id, { ...it, scores: { ...it.scores } }]),
+  )
   for (const c of cells) {
     let it = byId.get(c.enrollment_id)
-    if (!it) { it = { enrollment_id: c.enrollment_id, scores: {} }; byId.set(c.enrollment_id, it) }
+    if (!it) {
+      it = { enrollment_id: c.enrollment_id, scores: {} }
+      byId.set(c.enrollment_id, it)
+    }
     if (c.value === null) delete it.scores[c.subject]
     else it.scores[c.subject] = c.value === 'absent' ? null : c.value
   }
@@ -54,11 +59,15 @@ export function useScoreAutosave({ classId, examId }: { classId: string; examId:
         const chunk = all.slice(i, i + BATCH)
         await examsApi.saveScores(classId, examId, chunk)
         qc.setQueryData<ScoreSheet>(sheetKey, (old) => (old ? mergeCells(old, chunk) : old))
-        for (const c of chunk) if (pending.current.get(keyOf(c)) === c) pending.current.delete(keyOf(c))
+        for (const c of chunk)
+          if (pending.current.get(keyOf(c)) === c) pending.current.delete(keyOf(c))
       }
     } catch {
       sending.current = false
-      if (pending.current.size === 0) { setStatus('idle'); setDirty(false) } else setStatus('error')
+      if (pending.current.size === 0) {
+        setStatus('idle')
+        setDirty(false)
+      } else setStatus('error')
       return
     }
     sending.current = false
@@ -73,13 +82,16 @@ export function useScoreAutosave({ classId, examId }: { classId: string; examId:
     void qc.invalidateQueries({ queryKey: ['gradebook', classId] })
   }, [qc, classId, examId])
 
-  const queue = useCallback((cells: ScoreCell[]) => {
-    if (cells.length === 0) return
-    for (const c of cells) pending.current.set(keyOf(c), c)
-    setDirty(true)
-    clearTimeout(timer.current)
-    timer.current = setTimeout(() => void flush(), DEBOUNCE_MS)
-  }, [flush])
+  const queue = useCallback(
+    (cells: ScoreCell[]) => {
+      if (cells.length === 0) return
+      for (const c of cells) pending.current.set(keyOf(c), c)
+      setDirty(true)
+      clearTimeout(timer.current)
+      timer.current = setTimeout(() => void flush(), DEBOUNCE_MS)
+    },
+    [flush],
+  )
 
   /** 撤回还没发出去的格子(文字被拒绝后不能留着前一次按键的值) */
   const discard = useCallback((keys: string[]) => {
@@ -92,31 +104,43 @@ export function useScoreAutosave({ classId, examId }: { classId: string; examId:
     }
   }, [])
 
-  const retry = useCallback(() => { void flush() }, [flush])
+  const retry = useCallback(() => {
+    void flush()
+  }, [flush])
 
   // 卸载时还没发出去的改动立刻发送,不丢
-  useEffect(() => () => {
-    if (pending.current.size > 0) void flush()
-  }, [flush])
+  useEffect(
+    () => () => {
+      if (pending.current.size > 0) void flush()
+    },
+    [flush],
+  )
 
   // 顶栏换班 / 退出登录不走路由,靠 store 里的标记拦截
   const setUnsaved = useTeacherStore((s) => s.setUnsaved)
-  useEffect(() => { setUnsaved('scores', dirty) }, [dirty, setUnsaved])
+  useEffect(() => {
+    setUnsaved('scores', dirty)
+  }, [dirty, setUnsaved])
   useEffect(() => () => setUnsaved('scores', false), [setUnsaved])
 
   useEffect(() => {
     if (!dirty) return
-    const guard = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    const guard = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue = ''
+    }
     window.addEventListener('beforeunload', guard)
     return () => window.removeEventListener('beforeunload', guard)
   }, [dirty])
 
   // 换页面或换考试(?exam= 变化)都算离开
-  const blocker = useBlocker(({ currentLocation, nextLocation }) =>
-    useTeacherStore.getState().unsaved.scores && (
-      nextLocation.pathname !== currentLocation.pathname
-      || new URLSearchParams(nextLocation.search).get('exam') !== new URLSearchParams(currentLocation.search).get('exam')
-    ))
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      useTeacherStore.getState().unsaved.scores &&
+      (nextLocation.pathname !== currentLocation.pathname ||
+        new URLSearchParams(nextLocation.search).get('exam') !==
+          new URLSearchParams(currentLocation.search).get('exam')),
+  )
   useEffect(() => {
     if (blocker.state !== 'blocked') return
     if (confirmLeave(['scores'])) blocker.proceed()

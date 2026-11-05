@@ -1,6 +1,13 @@
 import { readFile } from 'node:fs/promises'
 import { expect, test, type Page } from '@playwright/test'
-import { clearMyNote, deleteTestStudents, login, restoreSeedSeating, schoolToday, studentRecord } from './helpers/api'
+import {
+  clearMyNote,
+  deleteTestStudents,
+  login,
+  restoreSeedSeating,
+  schoolToday,
+  studentRecord,
+} from './helpers/api'
 
 const CLASS_ID = '44444444-4444-4444-4444-444444444444'
 
@@ -18,12 +25,17 @@ async function cleanup(request: Parameters<typeof login>[0]) {
   const token = await login(request, 'teacher01')
   await deleteTestStudents(request, token, CLASS_ID)
   await restoreSeedSeating(request, token, CLASS_ID)
-  await clearMyNote(request, token, (await studentRecord(request, token, CLASS_ID, '王小一')).student_id)
+  await clearMyNote(
+    request,
+    token,
+    (await studentRecord(request, token, CLASS_ID, '王小一')).student_id,
+  )
 }
 test.beforeEach(({ request }) => cleanup(request))
 test.afterEach(({ request }) => cleanup(request))
 
-const rowOf = (page: Page, name: string) => page.locator('tr', { has: page.getByRole('button', { name, exact: true }) })
+const rowOf = (page: Page, name: string) =>
+  page.locator('tr', { has: page.getByRole('button', { name, exact: true }) })
 
 test('adds, edits and removes a student', async ({ page }) => {
   await signIn(page)
@@ -47,15 +59,22 @@ test('adds, edits and removes a student', async ({ page }) => {
   await edit.getByLabel('职务').fill('学习委员')
   await edit.getByRole('button', { name: '保存' }).click()
   await expect(edit).toBeHidden()
-  await expect(rowOf(page, '测试新生').getByRole('cell', { name: '学习委员', exact: true })).toBeVisible()
+  await expect(
+    rowOf(page, '测试新生').getByRole('cell', { name: '学习委员', exact: true }),
+  ).toBeVisible()
   await page.reload()
-  await expect(rowOf(page, '测试新生').getByRole('cell', { name: '学习委员', exact: true })).toBeVisible()
+  await expect(
+    rowOf(page, '测试新生').getByRole('cell', { name: '学习委员', exact: true }),
+  ).toBeVisible()
 
   // 删除(确认框)
   await rowOf(page, '测试新生').getByRole('button', { name: '编辑' }).click()
   const edit2 = page.getByRole('dialog', { name: '编辑学生' })
   await edit2.getByRole('button', { name: '删除学生' }).click()
-  await page.getByRole('dialog', { name: '删除学生' }).getByRole('button', { name: '确认删除' }).click()
+  await page
+    .getByRole('dialog', { name: '删除学生' })
+    .getByRole('button', { name: '确认删除' })
+    .click()
   await expect(page.getByRole('button', { name: '测试新生', exact: true })).toHaveCount(0)
   await page.reload()
   await expect(page.getByRole('button', { name: '王小一', exact: true })).toBeVisible()
@@ -140,5 +159,7 @@ test('profile overview shows points, attendance and birthday KPIs', async ({ pag
   let next = utc(ty, m, d)
   if (next < utc(ty, tm, td)) next = utc(ty + 1, m, d)
   const days = Math.round((next - utc(ty, tm, td)) / 86_400_000)
-  await expect(kpis.getByText(days === 0 ? '就是今天' : `${days} 天后`, { exact: true })).toBeVisible()
+  await expect(
+    kpis.getByText(days === 0 ? '就是今天' : `${days} 天后`, { exact: true }),
+  ).toBeVisible()
 })

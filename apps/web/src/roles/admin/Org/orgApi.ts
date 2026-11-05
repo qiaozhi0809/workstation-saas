@@ -1,7 +1,12 @@
 import { api } from '@/shared/api/client'
 
 /** 选人候选:只含在用且有教师行的账号 */
-export interface OrgPerson { user_id: string; name: string; login_name: string; subjects: string[] }
+export interface OrgPerson {
+  user_id: string
+  name: string
+  login_name: string
+  subjects: string[]
+}
 
 const qs = (q: string) => {
   const sp = new URLSearchParams()

@@ -9,7 +9,9 @@ export function useRealtimeEvent<T extends RealtimeEvent['type']>(
 ): void {
   const subscribe = useContext(RealtimeContext)
   const ref = useRef(handler)
-  useEffect(() => { ref.current = handler })
+  useEffect(() => {
+    ref.current = handler
+  })
   useEffect(() => {
     if (!subscribe) return
     return subscribe((e) => {

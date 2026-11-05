@@ -14,10 +14,7 @@ export const reviewsApi = {
     if (opts?.cursor !== undefined) qs.set('cursor', opts.cursor)
     if (opts?.limit !== undefined) qs.set('limit', String(opts.limit))
     const query = qs.toString()
-    return api<ReviewPage>(
-      'GET',
-      query ? `${base(classId)}?${query}` : base(classId),
-    )
+    return api<ReviewPage>('GET', query ? `${base(classId)}?${query}` : base(classId))
   },
   /** 只看某个学生（enrollment）的点评，学生档案用 */
   listForStudent: (classId: string, enrollmentId: string, limit = 40) => {

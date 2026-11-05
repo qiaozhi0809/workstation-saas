@@ -1,8 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import type { GradebookExam, ScoreValue } from '../types/grades'
 import {
-  attention, cellState, examStats, examTable, latestExam, parseScore, previousExam, rankChanges,
-  rankTint, scoreBands, studentTrend, subjectStats, trendDomain,
+  attention,
+  cellState,
+  examStats,
+  examTable,
+  latestExam,
+  parseScore,
+  previousExam,
+  rankChanges,
+  rankTint,
+  scoreBands,
+  studentTrend,
+  subjectStats,
+  trendDomain,
   type Row,
 } from './grades'
 
@@ -10,8 +21,11 @@ const SUBJECTS = ['语文', '数学', '英语']
 const IDS = Array.from({ length: 10 }, (_, i) => `e${i}`)
 
 function makeExam(
-  id: string, name: string, date: string,
-  cols: Record<string, ScoreValue[]>, ids: string[] = IDS,
+  id: string,
+  name: string,
+  date: string,
+  cols: Record<string, ScoreValue[]>,
+  ids: string[] = IDS,
 ): GradebookExam {
   const subjects = Object.keys(cols).map((s) => ({ name: s, full: 100 }))
   const scores: Record<string, Record<string, ScoreValue>> = {}
@@ -20,8 +34,15 @@ function makeExam(
     for (const s of Object.keys(cols)) scores[eid][s] = cols[s][i]
   })
   return {
-    id, name, exam_type: '期中', date, subjects, scores,
-    grade_exam_id: null, created_by_me: true, progress: { entered: ids.length, total: ids.length },
+    id,
+    name,
+    exam_type: '期中',
+    date,
+    subjects,
+    scores,
+    grade_exam_id: null,
+    created_by_me: true,
+    progress: { entered: ids.length, total: ids.length },
   }
 }
 
@@ -37,11 +58,21 @@ const monthly = makeExam('monthly', '月考', '2026-10-09', {
 })
 
 const abc = ['a', 'b', 'c']
-function exam2(id: string, scores: Record<string, Record<string, ScoreValue>>, subs = ['甲', '乙']): GradebookExam {
+function exam2(
+  id: string,
+  scores: Record<string, Record<string, ScoreValue>>,
+  subs = ['甲', '乙'],
+): GradebookExam {
   return {
-    id, name: id, exam_type: '月考', date: '2026-01-01',
-    subjects: subs.map((name) => ({ name, full: 100 })), scores,
-    grade_exam_id: null, created_by_me: true, progress: { entered: 0, total: 0 },
+    id,
+    name: id,
+    exam_type: '月考',
+    date: '2026-01-01',
+    subjects: subs.map((name) => ({ name, full: 100 })),
+    scores,
+    grade_exam_id: null,
+    created_by_me: true,
+    progress: { entered: 0, total: 0 },
   }
 }
 const empty = exam2('empty', {})
@@ -65,8 +96,11 @@ describe('parseScore / cellState', () => {
     expect(parseScore('1.2.3')).toBe('invalid')
   })
   it('classifies cells against the full mark', () => {
-    expect(cellState(undefined, 100)).toBe('empty'); expect(cellState(null, 100)).toBe('absent')
-    expect(cellState(101, 100)).toBe('over'); expect(cellState(59.5, 100)).toBe('low'); expect(cellState(60, 100)).toBe('ok')
+    expect(cellState(undefined, 100)).toBe('empty')
+    expect(cellState(null, 100)).toBe('absent')
+    expect(cellState(101, 100)).toBe('over')
+    expect(cellState(59.5, 100)).toBe('low')
+    expect(cellState(60, 100)).toBe('ok')
     expect(cellState(-1, 100)).toBe('over')
     expect(cellState(100, 100)).toBe('ok')
     expect(cellState(0, 100)).toBe('low')
@@ -77,11 +111,17 @@ describe('examTable', () => {
   it('ranks ties together and skips the next rank', () => {
     const ex = exam2('t', { a: { 甲: 90, 乙: 90 }, b: { 甲: 100, 乙: 80 }, c: { 甲: 80, 乙: 90 } })
     const t = examTable(ex, abc)
-    expect(t.map((r) => [r.id, r.total, r.rank])).toEqual([['a', 180, 1], ['b', 180, 1], ['c', 170, 3]])
+    expect(t.map((r) => [r.id, r.total, r.rank])).toEqual([
+      ['a', 180, 1],
+      ['b', 180, 1],
+      ['c', 170, 3],
+    ])
   })
   it('leaves all-absent students unranked and out of the stats', () => {
     const ex = exam2('t', {
-      a: { 甲: 90, 乙: 80 }, b: { 甲: null, 乙: null }, c: { 甲: 60, 乙: 70 },
+      a: { 甲: 90, 乙: 80 },
+      b: { 甲: null, 乙: null },
+      c: { 甲: 60, 乙: 70 },
     })
     const t = examTable(ex, abc)
     expect(t.map((r) => r.id)).toEqual(['a', 'c', 'b'])
@@ -93,14 +133,28 @@ describe('examTable', () => {
   it('treats a student with no record as unranked and keeps list order for nulls', () => {
     const ex = exam2('t', { b: { 甲: 50, 乙: 50 } })
     const t = examTable(ex, abc)
-    expect(t.map((r) => [r.id, r.total, r.rank])).toEqual([['b', 100, 1], ['a', null, null], ['c', null, null]])
+    expect(t.map((r) => [r.id, r.total, r.rank])).toEqual([
+      ['b', 100, 1],
+      ['a', null, null],
+      ['c', null, null],
+    ])
   })
   it('rounds totals to one decimal so float drift cannot split ties', () => {
-    const ex = exam2('t', {
-      a: { 甲: 0.1, 乙: 0.2, 丙: 0.3 }, b: { 甲: 0.3, 乙: 0.2, 丙: 0.1 }, c: { 甲: 0, 乙: 0, 丙: 0.5 },
-    }, ['甲', '乙', '丙'])
+    const ex = exam2(
+      't',
+      {
+        a: { 甲: 0.1, 乙: 0.2, 丙: 0.3 },
+        b: { 甲: 0.3, 乙: 0.2, 丙: 0.1 },
+        c: { 甲: 0, 乙: 0, 丙: 0.5 },
+      },
+      ['甲', '乙', '丙'],
+    )
     const t = examTable(ex, abc)
-    expect(t.map((r) => [r.id, r.total, r.rank])).toEqual([['a', 0.6, 1], ['b', 0.6, 1], ['c', 0.5, 3]])
+    expect(t.map((r) => [r.id, r.total, r.rank])).toEqual([
+      ['a', 0.6, 1],
+      ['b', 0.6, 1],
+      ['c', 0.5, 3],
+    ])
     const ex2 = exam2('u', { a: { 甲: 80.1, 乙: 80.1 } })
     expect(examTable(ex2, ['a'])[0].total).toBe(160.2)
   })
@@ -171,8 +225,13 @@ describe('examStats', () => {
 
 describe('scoreBands / trendDomain / rankTint', () => {
   it('builds ten bands from the first non-empty one', () => {
-    expect(scoreBands([55, 65, 95, 100], 100).map((b) => [b.lo, b.count, b.tone]))
-      .toEqual([[50, 1, 'low'], [60, 1, 'mid'], [70, 0, 'mid'], [80, 0, 'mid'], [90, 2, 'good']])
+    expect(scoreBands([55, 65, 95, 100], 100).map((b) => [b.lo, b.count, b.tone])).toEqual([
+      [50, 1, 'low'],
+      [60, 1, 'mid'],
+      [70, 0, 'mid'],
+      [80, 0, 'mid'],
+      [90, 2, 'good'],
+    ])
   })
   it('scales bands to the full mark and handles no data', () => {
     const b = scoreBands([0, 300], 300)
@@ -197,11 +256,16 @@ describe('scoreBands / trendDomain / rankTint', () => {
       }
     }
   })
-  it('returns no bands for a non-positive full mark', () => { expect(scoreBands([5], 0)).toEqual([]) })
-  it('pads and rounds the trend domain to fives within 0–100', () => {
-    expect(trendDomain([62, 91])).toEqual([55, 95]); expect(trendDomain([2, 99])).toEqual([0, 100])
+  it('returns no bands for a non-positive full mark', () => {
+    expect(scoreBands([5], 0)).toEqual([])
   })
-  it('tints ranks in fifths', () => { expect([1, 2, 10].map((r) => rankTint(r, 10))).toEqual([1, 1, 5]) })
+  it('pads and rounds the trend domain to fives within 0–100', () => {
+    expect(trendDomain([62, 91])).toEqual([55, 95])
+    expect(trendDomain([2, 99])).toEqual([0, 100])
+  })
+  it('tints ranks in fifths', () => {
+    expect([1, 2, 10].map((r) => rankTint(r, 10))).toEqual([1, 1, 5])
+  })
   it('caps the tint at 5', () => {
     expect(rankTint(3, 10)).toBe(2)
     expect(rankTint(6, 10)).toBe(3)
@@ -229,8 +293,11 @@ describe('exam navigation', () => {
 })
 
 describe('rankChanges / attention', () => {
-  const row = (id: string, rank: number | null, subs: Record<string, ScoreValue | undefined> = {}): Row =>
-    ({ id, total: rank === null ? null : 100 - rank, rank, subs })
+  const row = (
+    id: string,
+    rank: number | null,
+    subs: Record<string, ScoreValue | undefined> = {},
+  ): Row => ({ id, total: rank === null ? null : 100 - rank, rank, subs })
 
   it('maps previous rank minus current rank when both ranked', () => {
     const m = rankChanges(
@@ -275,9 +342,22 @@ describe('rankChanges / attention', () => {
   })
 
   it('uses the exam full marks and keeps -4 out of fallers', () => {
-    const ex: GradebookExam = { ...exam2('t', {}, ['甲', '乙']), subjects: [{ name: '甲', full: 50 }, { name: '乙', full: 150 }] }
+    const ex: GradebookExam = {
+      ...exam2('t', {}, ['甲', '乙']),
+      subjects: [
+        { name: '甲', full: 50 },
+        { name: '乙', full: 150 },
+      ],
+    }
     const cur = [row('a', 1, { 甲: 29, 乙: 89 }), row('b', 2, { 甲: 30, 乙: 90 })]
-    const a = attention(ex, cur, new Map([['a', -4], ['b', -5]]))
+    const a = attention(
+      ex,
+      cur,
+      new Map([
+        ['a', -4],
+        ['b', -5],
+      ]),
+    )
     expect(a.failing).toEqual([{ id: 'a', count: 2 }])
     expect(a.fallers).toEqual([{ id: 'b', change: -5 }])
     expect(a.risers).toEqual([])

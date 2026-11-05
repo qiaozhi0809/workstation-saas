@@ -1,7 +1,13 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
 import { openAdminPage } from './helpers/nav'
 import {
-  adminGet, clearScores, deleteE2eExams, deleteE2eGradeExams, login, putScores, rosterEnrollmentIds,
+  adminGet,
+  clearScores,
+  deleteE2eExams,
+  deleteE2eGradeExams,
+  login,
+  putScores,
+  rosterEnrollmentIds,
 } from './helpers/api'
 
 const API = '/api/v1'
@@ -18,14 +24,19 @@ async function signIn(page: Page, name: string) {
 }
 
 const bell = (page: Page) => page.getByRole('button', { name: /^通知,\d+ 条未读$/ })
-const unreadOf = async (page: Page) => Number(/通知,(\d+) 条未读/.exec((await bell(page).getAttribute('aria-label')) ?? '')?.[1])
+const unreadOf = async (page: Page) =>
+  Number(/通知,(\d+) 条未读/.exec((await bell(page).getAttribute('aria-label')) ?? '')?.[1])
 
 // 本文件的用例各自准备自己的数据,改到的数据在用例里或 afterEach 里还原。通知只能撤回不能删,留在库里的都是"已撤回"。
 // 学年升级用例放最后,结束时回滚;与其他 spec 的隔离由 playwright.config.ts 的 project 依赖链保证。
 test.describe.configure({ mode: 'serial' })
 
 /** 校长发一条全校通知(经 API),返回通知 id;recallNotice 撤回(重复撤回是幂等的)。 */
-async function sendSchoolNotice(request: APIRequestContext, token: string, title: string): Promise<string> {
+async function sendSchoolNotice(
+  request: APIRequestContext,
+  token: string,
+  title: string,
+): Promise<string> {
   const res = await request.post(`${API}/admin/notices`, {
     headers: { Authorization: `Bearer ${token}` },
     data: { title, content: '审计用例的占位通知,发出后立刻撤回。', target: { kind: 'school' } },
@@ -34,23 +45,33 @@ async function sendSchoolNotice(request: APIRequestContext, token: string, title
   return ((await res.json()) as { id: string }).id
 }
 async function recallNotice(request: APIRequestContext, token: string, id: string): Promise<void> {
-  const res = await request.post(`${API}/admin/notices/${id}/recall`, { headers: { Authorization: `Bearer ${token}` } })
+  const res = await request.post(`${API}/admin/notices/${id}/recall`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
   expect(res.ok(), await res.text()).toBeTruthy()
 }
 // 保证前一次跑到一半被打断(升级后、回滚前)留下的新学年不会连锁拖垮后面的用例
 test.beforeAll(async ({ request }) => {
   const principal = await login(request, 'principal01')
-  const latest = await adminGet<{ id: string; rolled_back: boolean } | null>(request, principal, '/admin/years/upgrade/latest')
+  const latest = await adminGet<{ id: string; rolled_back: boolean } | null>(
+    request,
+    principal,
+    '/admin/years/upgrade/latest',
+  )
   if (latest && !latest.rolled_back) {
     const res = await request.post(`${API}/admin/years/upgrade/rollback`, {
-        headers: { Authorization: `Bearer ${principal}` },
-        data: { upgrade_id: latest.id },
-      })
+      headers: { Authorization: `Bearer ${principal}` },
+      data: { upgrade_id: latest.id },
+    })
     expect(res.ok(), await res.text()).toBeTruthy()
   }
 })
 
-test('notice reaches an open classroom without refresh, shows read count, and recall is reflected', async ({ page, browser, request }) => {
+test('notice reaches an open classroom without refresh, shows read count, and recall is reflected', async ({
+  page,
+  browser,
+  request,
+}) => {
   const title = `E2E通知${Date.now().toString(36)}`
   const teacherCtx = await browser.newContext({ baseURL: BASE_URL })
   const teacher = await teacherCtx.newPage()
@@ -85,20 +106,28 @@ test('notice reaches an open classroom without refresh, shows read count, and re
     await expect(teacher.getByText('明天下午三点开全体教师会,请准时参加。')).toBeVisible()
     await expect(bell(teacher)).toHaveAttribute('aria-label', `通知,${before} 条未读`)
     await page.reload()
-    const sent = page.getByRole('region', { name: '我发出的' }).getByRole('listitem').filter({ hasText: title })
+    const sent = page
+      .getByRole('region', { name: '我发出的' })
+      .getByRole('listitem')
+      .filter({ hasText: title })
     await expect(sent.getByText(/^已读 1 \/ \d+$/)).toBeVisible()
 
     // 撤回:老师那边这条变成"此通知已撤回"
     await sent.getByRole('button', { name: `撤回 ${title}` }).click()
     await page.getByRole('button', { name: '确认撤回' }).click()
     await expect(sent.getByText('已撤回')).toBeVisible()
-    await expect(teacher.getByRole('listitem').filter({ hasText: title }).getByText('此通知已撤回')).toBeVisible()
+    await expect(
+      teacher.getByRole('listitem').filter({ hasText: title }).getByText('此通知已撤回'),
+    ).toBeVisible()
   } finally {
     await teacherCtx.close()
     // 中途失败时别留下一条未撤回的全校通知(收件人的未读数会被污染)
     const principal = await login(request, 'principal01')
-    const sentList = await adminGet<{ items: { id: string; title: string; recalled_at: string | null }[] }>(request, principal, '/admin/notices?page=1')
-    for (const n of sentList.items.filter((x) => x.title === title && !x.recalled_at)) await recallNotice(request, principal, n.id)
+    const sentList = await adminGet<{
+      items: { id: string; title: string; recalled_at: string | null }[]
+    }>(request, principal, '/admin/notices?page=1')
+    for (const n of sentList.items.filter((x) => x.title === title && !x.recalled_at))
+      await recallNotice(request, principal, n.id)
   }
 })
 
@@ -107,7 +136,10 @@ test.describe('grade exam', () => {
 
   async function cleanup(request: APIRequestContext) {
     const dean = await login(request, 'dean01')
-    for (const [user, classId] of [['teacher01', CLASS_3_2], ['teacher04', CLASS_3_1]] as const) {
+    for (const [user, classId] of [
+      ['teacher01', CLASS_3_2],
+      ['teacher04', CLASS_3_1],
+    ] as const) {
       const token = await login(request, user)
       await clearScores(request, token, classId, NAME, ['语文', '数学'])
     }
@@ -116,7 +148,11 @@ test.describe('grade exam', () => {
   test.beforeEach(({ request }) => cleanup(request))
   test.afterEach(({ request }) => cleanup(request))
 
-  test('dean creates a grade exam, teachers score it, report compares classes and exports', async ({ page, browser, request }) => {
+  test('dean creates a grade exam, teachers score it, report compares classes and exports', async ({
+    page,
+    browser,
+    request,
+  }) => {
     await signIn(page, 'dean01')
     await expect(page).toHaveURL(/\/admin\/today/)
     await openAdminPage(page, '年级联考', '联考与报表')
@@ -155,11 +191,22 @@ test.describe('grade exam', () => {
     const students = page.getByRole('table', { name: '三年二班 学生成绩' })
     await expect(students.getByRole('columnheader', { name: /年级名次/ })).toBeVisible()
     // 年级总分:3-1 甲 181、3-2 乙 180、3-2 甲 160、3-1 乙 135 → 三年二班这两人是第 2、第 3
-    const ranks = await students.locator('tbody tr').evaluateAll((trs) =>
-      trs.map((tr) => Array.from(tr.querySelectorAll('td'), (td) => td.textContent?.trim() ?? '')),
+    const ranks = await students
+      .locator('tbody tr')
+      .evaluateAll((trs) =>
+        trs.map((tr) =>
+          Array.from(tr.querySelectorAll('td'), (td) => td.textContent?.trim() ?? ''),
+        ),
+      )
+    const gradeRankCol = (await students.locator('thead th').allInnerTexts()).findIndex((t) =>
+      t.includes('年级名次'),
     )
-    const gradeRankCol = (await students.locator('thead th').allInnerTexts()).findIndex((t) => t.includes('年级名次'))
-    expect(ranks.map((r) => r[gradeRankCol]).filter((v) => v && v !== '—').sort()).toEqual(['2', '3'])
+    expect(
+      ranks
+        .map((r) => r[gradeRankCol])
+        .filter((v) => v && v !== '—')
+        .sort(),
+    ).toEqual(['2', '3'])
 
     const download = page.waitForEvent('download')
     await page.getByRole('button', { name: '导出 CSV' }).click()
@@ -172,7 +219,11 @@ test.describe('grade exam', () => {
       await signIn(teacherPage, 'teacher01')
       await expect(teacherPage.getByRole('heading', { name: '三年二班' })).toBeVisible()
       await teacherPage.goto(`/teacher/scores?exam=${exam32}`)
-      await expect(teacherPage.getByRole('navigation', { name: '考试列表' }).getByText('年级联考', { exact: true })).toBeVisible()
+      await expect(
+        teacherPage
+          .getByRole('navigation', { name: '考试列表' })
+          .getByText('年级联考', { exact: true }),
+      ).toBeVisible()
       await expect(teacherPage.getByText('这是年级联考,由教导处修改')).toBeVisible()
       await expect(teacherPage.getByRole('button', { name: /编辑考试|删除/ })).toHaveCount(0)
       await expect(teacherPage.getByRole('button', { name: '新建考试' })).toBeVisible()
@@ -182,27 +233,43 @@ test.describe('grade exam', () => {
   })
 })
 
-async function classExamId(request: APIRequestContext, token: string, classId: string, name: string): Promise<string> {
-  const { items } = await adminGet<{ items: { id: string; name: string; grade_exam_id: string | null }[] }>(request, token, `/classes/${classId}/exams`)
+async function classExamId(
+  request: APIRequestContext,
+  token: string,
+  classId: string,
+  name: string,
+): Promise<string> {
+  const { items } = await adminGet<{
+    items: { id: string; name: string; grade_exam_id: string | null }[]
+  }>(request, token, `/classes/${classId}/exams`)
   const found = items.find((x) => x.name === name)
   expect(found, `${classId} 缺少班级考试 ${name}`).toBeTruthy()
   expect(found!.grade_exam_id).not.toBeNull()
   return found!.id
 }
 
-test('principal reads the 2026-10 attendance report that matches the seed, with export and print', async ({ page }) => {
+test('principal reads the 2026-10 attendance report that matches the seed, with export and print', async ({
+  page,
+}) => {
   await signIn(page, 'principal01')
   await expect(page).toHaveURL(/\/admin\/today/)
   await openAdminPage(page, '考勤报告', '联考与报表')
   await expect(page.getByRole('heading', { name: '月度考勤报告' })).toBeVisible()
-  for (let i = 0; i < 240 && !(await page.getByText('2026年10月', { exact: true }).isVisible()); i++) {
+  for (
+    let i = 0;
+    i < 240 && !(await page.getByText('2026年10月', { exact: true }).isVisible());
+    i++
+  ) {
     await page.getByRole('button', { name: '上一月' }).click()
   }
   await expect(page.getByText('2026年10月', { exact: true })).toBeVisible()
 
   // 种子:10-12 至 10-16 五天都已确认;三班应到 = 人数 × 5
   const expectRow = async (cls: string, cells: string[]) => {
-    const row = page.getByRole('row').filter({ has: page.getByText(cls, { exact: true }) }).first()
+    const row = page
+      .getByRole('row')
+      .filter({ has: page.getByText(cls, { exact: true }) })
+      .first()
     await expect(row).toBeVisible()
     await expect(row.locator('td')).toHaveText([cls, ...cells])
   }
@@ -216,15 +283,28 @@ test('principal reads the 2026-10 attendance report that matches the seed, with 
   await expect(page.getByRole('button', { name: '打印' })).toBeEnabled()
 })
 
-test('it admin finds audit entries by group and saves + tests the fake AI service', async ({ page, request }) => {
+test('it admin finds audit entries by group and saves + tests the fake AI service', async ({
+  page,
+  request,
+}) => {
   const it = await login(request, 'itadmin01')
   const principal = await login(request, 'principal01')
   const loginName = `e2e_audit_${Date.now().toString(36)}`
   // 自己发一条通知再撤回,让"通知"分组里一定有记录,不依赖用例 1 先跑
-  await recallNotice(request, principal, await sendSchoolNotice(request, principal, `E2E审计通知${Date.now().toString(36)}`))
+  await recallNotice(
+    request,
+    principal,
+    await sendSchoolNotice(request, principal, `E2E审计通知${Date.now().toString(36)}`),
+  )
   const created = await request.post(`${API}/admin/accounts`, {
     headers: { Authorization: `Bearer ${it}` },
-    data: { login_name: loginName, display_name: '审计测试', employee_no: null, phone: null, subjects: [] },
+    data: {
+      login_name: loginName,
+      display_name: '审计测试',
+      employee_no: null,
+      phone: null,
+      subjects: [],
+    },
   })
   expect(created.ok(), await created.text()).toBeTruthy()
   const accountId = ((await created.json()) as { account: { id: string } }).account.id
@@ -235,7 +315,9 @@ test('it admin finds audit entries by group and saves + tests the fake AI servic
     await expect(page.getByRole('heading', { name: '审计日志' })).toBeVisible()
     // 默认区间的结束日取浏览器本地日期,而后端按学校时区(上海)算日界:浏览器时区落后于上海时今天的记录会被排除。
     // 用例把结束日放宽到两天后,不依赖跑测试的机器所在时区(台账 L43)
-    await page.getByLabel('结束日期').fill(new Date(Date.now() + 2 * 86_400_000).toLocaleDateString('sv-SE'))
+    await page
+      .getByLabel('结束日期')
+      .fill(new Date(Date.now() + 2 * 86_400_000).toLocaleDateString('sv-SE'))
     await page.getByLabel('分组').selectOption({ label: '账号' })
     const rows = page.getByRole('table').locator('tbody tr')
     await expect(rows.first()).toBeVisible()
@@ -254,7 +336,9 @@ test('it admin finds audit entries by group and saves + tests the fake AI servic
     await page.getByRole('button', { name: '保存', exact: true }).click()
     await expect(page.getByText('已保存')).toBeVisible()
   } finally {
-    await request.post(`${API}/admin/accounts/${accountId}/freeze`, { headers: { Authorization: `Bearer ${it}` } })
+    await request.post(`${API}/admin/accounts/${accountId}/freeze`, {
+      headers: { Authorization: `Bearer ${it}` },
+    })
   }
 })
 
@@ -263,7 +347,11 @@ test.describe('year upgrade', () => {
 
   async function rollbackIfNeeded(request: APIRequestContext) {
     const principal = await login(request, 'principal01')
-    const latest = await adminGet<{ id: string; rolled_back: boolean } | null>(request, principal, '/admin/years/upgrade/latest')
+    const latest = await adminGet<{ id: string; rolled_back: boolean } | null>(
+      request,
+      principal,
+      '/admin/years/upgrade/latest',
+    )
     if (latest && !latest.rolled_back) {
       const res = await request.post(`${API}/admin/years/upgrade/rollback`, {
         headers: { Authorization: `Bearer ${principal}` },
@@ -276,19 +364,41 @@ test.describe('year upgrade', () => {
     const t1 = await login(request, 'teacher01')
     await deleteE2eExams(request, t1, CLASS_3_2)
   }
-  test.beforeEach(async ({ request }) => { await rollbackIfNeeded(request); await dropExam(request) })
-  test.afterEach(async ({ request }) => { await rollbackIfNeeded(request); await dropExam(request) })
+  test.beforeEach(async ({ request }) => {
+    await rollbackIfNeeded(request)
+    await dropExam(request)
+  })
+  test.afterEach(async ({ request }) => {
+    await rollbackIfNeeded(request)
+    await dropExam(request)
+  })
 
-  test('principal upgrades the year with dean as the new grade head, reads last year read-only, then rolls back', async ({ page, request }) => {
+  test('principal upgrades the year with dean as the new grade head, reads last year read-only, then rolls back', async ({
+    page,
+    request,
+  }) => {
     // 往年班级要有一场考试可看:升级前给三年二班建一场(名字以 E2E 开头,afterEach 兜底删除)
     const t1 = await login(request, 'teacher01')
     const ids = (await rosterEnrollmentIds(request, t1, CLASS_3_2)).slice(0, 2)
     const examRes = await request.post(`${API}/classes/${CLASS_3_2}/exams`, {
       headers: { Authorization: `Bearer ${t1}` },
-      data: { name: NAME, date: '2026-10-20', exam_type: '月考', subjects: [{ name: '语文', full: 100 }] },
+      data: {
+        name: NAME,
+        date: '2026-10-20',
+        exam_type: '月考',
+        subjects: [{ name: '语文', full: 100 }],
+      },
     })
     expect(examRes.ok(), await examRes.text()).toBeTruthy()
-    await putScores(request, t1, CLASS_3_2, ((await examRes.json()) as { id: string }).id, '语文', ids, [88, 77])
+    await putScores(
+      request,
+      t1,
+      CLASS_3_2,
+      ((await examRes.json()) as { id: string }).id,
+      '语文',
+      ids,
+      [88, 77],
+    )
 
     await signIn(page, 'principal01')
     await expect(page).toHaveURL(/\/admin\/today/)
@@ -300,7 +410,10 @@ test.describe('year upgrade', () => {
     await page.getByLabel('开学日期').fill('2027-09-01')
     await page.getByLabel('结束日期').fill('2028-07-15')
     await page.getByRole('button', { name: '生成建议' }).click()
-    await expect(page.getByRole('button', { name: /2\. 班级去向/ })).toHaveAttribute('aria-current', 'step')
+    await expect(page.getByRole('button', { name: /2\. 班级去向/ })).toHaveAttribute(
+      'aria-current',
+      'step',
+    )
 
     // 人员一步:四年级组长(跟届沿用 gradehead03)换成 dean01
     await page.getByRole('button', { name: /5\. 人员/ }).click()
@@ -319,7 +432,11 @@ test.describe('year upgrade', () => {
     await expect(page.getByText(/2026-2027 → 2027-2028/)).toBeVisible()
 
     // 新学年四年级的组长确实换成了 dean01(冯主任),原组长(韩组长)不在其中
-    const roles = await adminGet<{ role: string; display_name: string }[]>(request, await login(request, 'principal01'), '/admin/roles')
+    const roles = await adminGet<{ role: string; display_name: string }[]>(
+      request,
+      await login(request, 'principal01'),
+      '/admin/roles',
+    )
     const heads = roles.filter((r) => r.role === 'grade_head').map((r) => r.display_name)
     expect(heads).toContain('冯主任')
     expect(heads).not.toContain('韩组长')
@@ -334,7 +451,9 @@ test.describe('year upgrade', () => {
     await page.getByRole('tab', { name: '成绩' }).click()
     await expect(page.getByLabel('考试')).toContainText(NAME)
     await expect(page.getByRole('table', { name: '成绩表' })).toContainText('88')
-    await expect(page.getByRole('button', { name: /新建|添加|编辑|删除|保存|导入|导出|考勤|点评|排座/ })).toHaveCount(0)
+    await expect(
+      page.getByRole('button', { name: /新建|添加|编辑|删除|保存|导入|导出|考勤|点评|排座/ }),
+    ).toHaveCount(0)
 
     // 回滚 → 回到原学年,往年班级回到空状态
     await openAdminPage(page, '学年升级', '学校管理')
@@ -344,25 +463,40 @@ test.describe('year upgrade', () => {
     await expect(page.getByText('已回滚', { exact: true })).toBeVisible()
     await openAdminPage(page, '往年班级', '学校管理')
     await expect(page.getByText('还没有往年数据')).toBeVisible()
-    const years = await adminGet<{ name: string; is_active: boolean }[]>(request, await login(request, 'principal01'), '/admin/years')
+    const years = await adminGet<{ name: string; is_active: boolean }[]>(
+      request,
+      await login(request, 'principal01'),
+      '/admin/years',
+    )
     expect(years.find((y) => y.is_active)?.name).toBe('2026-2027')
   })
 })
 
-for (const [width, height] of [[1280, 720], [1024, 768], [768, 1024]] as const) {
-  test(`admin nav keeps every entry reachable without page overflow at ${width}px`, async ({ page }) => {
+for (const [width, height] of [
+  [1280, 720],
+  [1024, 768],
+  [768, 1024],
+] as const) {
+  test(`admin nav keeps every entry reachable without page overflow at ${width}px`, async ({
+    page,
+  }) => {
     await page.setViewportSize({ width, height })
     // 长校名:导航不能被压缩,校名自己截断(种子校名太短,区分不出)
     if (width < 1280) {
-      await page.route('**/api/v1/admin/school', (route) => route.request().method() === 'GET'
-        ? route.fulfill({ json: { name: '北京市海淀区中关村第一实验小学教育集团', address: null } })
-        : route.continue())
+      await page.route('**/api/v1/admin/school', (route) =>
+        route.request().method() === 'GET'
+          ? route.fulfill({
+              json: { name: '北京市海淀区中关村第一实验小学教育集团', address: null },
+            })
+          : route.continue(),
+      )
     }
     await signIn(page, 'principal01')
     await expect(page).toHaveURL(/\/admin\/today/)
     const nav = page.getByRole('navigation', { name: '主导航' })
     // 直接显示的:今日关注、全校看板、通知;其余都收在三个下拉里
-    for (const name of ['今日关注', '全校看板', '通知']) await expect(nav.getByRole('link', { name })).toBeVisible()
+    for (const name of ['今日关注', '全校看板', '通知'])
+      await expect(nav.getByRole('link', { name })).toBeVisible()
     const groups: Record<string, string[]> = {
       学校管理: ['组织架构', '账号', '学校设置', '学年升级', '往年班级'],
       联考与报表: ['年级联考', '成绩汇总', '考勤报告'],
@@ -371,14 +505,20 @@ for (const [width, height] of [[1280, 720], [1024, 768], [768, 1024]] as const) 
     for (const [group, items] of Object.entries(groups)) {
       await nav.getByRole('button', { name: group }).click()
       const menu = page.getByRole('menu', { name: group })
-      for (const item of items) await expect(menu.getByRole('menuitem', { name: item })).toBeVisible()
+      for (const item of items)
+        await expect(menu.getByRole('menuitem', { name: item })).toBeVisible()
       await page.keyboard.press('Escape')
       await expect(page.getByRole('menu')).toHaveCount(0)
     }
     await openAdminPage(page, '成绩汇总', '联考与报表')
     await expect(page).toHaveURL(/\/admin\/reports\/scores/)
-    await expect(nav.getByRole('button', { name: '联考与报表' })).toHaveAttribute('aria-current', 'true')
-    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0)
+    await expect(nav.getByRole('button', { name: '联考与报表' })).toHaveAttribute(
+      'aria-current',
+      'true',
+    )
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth),
+    ).toBeLessThanOrEqual(0)
     // 文字标签:≥ 1024 显示,768–1023 只剩图标(sr-only,宽高 1px);导航不能压到右侧的铃铛 / 主题 / 账号按钮上
     for (const label of ['今日关注', '联考与报表']) {
       const box = await nav.getByText(label, { exact: true }).boundingBox()
@@ -388,8 +528,14 @@ for (const [width, height] of [[1280, 720], [1024, 768], [768, 1024]] as const) 
     const navBox = (await nav.boundingBox())!
     const bellBox = (await page.getByRole('button', { name: /^通知,\d+ 条未读$/ }).boundingBox())!
     // 入口之间不重叠、最后一个不压到右侧按钮(导航被压缩时,下拉的外层 wrapper 会缩、里面的按钮溢出去盖住相邻入口)
-    const boxes = await nav.locator('a, button').evaluateAll((els) => els.map((el) => { const r = el.getBoundingClientRect(); return [r.x, r.right] }))
-    for (let i = 1; i < boxes.length; i++) expect(boxes[i][0]).toBeGreaterThanOrEqual(boxes[i - 1][1] - 1)
+    const boxes = await nav.locator('a, button').evaluateAll((els) =>
+      els.map((el) => {
+        const r = el.getBoundingClientRect()
+        return [r.x, r.right]
+      }),
+    )
+    for (let i = 1; i < boxes.length; i++)
+      expect(boxes[i][0]).toBeGreaterThanOrEqual(boxes[i - 1][1] - 1)
     expect(boxes[boxes.length - 1][1]).toBeLessThanOrEqual(bellBox.x)
     expect(navBox.x + navBox.width).toBeLessThanOrEqual(bellBox.x + 1)
     // 学校名在 1280 宽放得下,不被截成"示…"

@@ -27,11 +27,21 @@ export default function NoticeBell() {
   const read = useMutation({
     mutationFn: (id: string) => noticesApi.read(id),
     onSuccess: (_, id) => {
-      qc.setQueryData<Inbox>(INBOX_KEY, (old) => old && {
-        ...old,
-        unread: Math.max(0, old.unread - (old.items.some((i) => i.id === id && !i.read_at && !i.recalled) ? 1 : 0)),
-        items: old.items.map((i) => (i.id === id && !i.read_at ? { ...i, read_at: new Date().toISOString() } : i)),
-      })
+      qc.setQueryData<Inbox>(
+        INBOX_KEY,
+        (old) =>
+          old && {
+            ...old,
+            unread: Math.max(
+              0,
+              old.unread -
+                (old.items.some((i) => i.id === id && !i.read_at && !i.recalled) ? 1 : 0),
+            ),
+            items: old.items.map((i) =>
+              i.id === id && !i.read_at ? { ...i, read_at: new Date().toISOString() } : i,
+            ),
+          },
+      )
       refresh()
     },
     onError: () => toast('标记已读失败,请重试'),
@@ -48,7 +58,13 @@ export default function NoticeBell() {
       label="通知"
       align="end"
       className="p-0"
-      triggerProps={{ variant: 'ghost', size: 'icon', className: 'relative', 'aria-label': `通知,${unread} 条未读`, title: '通知' }}
+      triggerProps={{
+        variant: 'ghost',
+        size: 'icon',
+        className: 'relative',
+        'aria-label': `通知,${unread} 条未读`,
+        title: '通知',
+      }}
       trigger={
         <>
           <Bell className="h-5 w-5" aria-hidden="true" />
@@ -64,7 +80,12 @@ export default function NoticeBell() {
       }
     >
       {inbox.isError && !inbox.data ? (
-        <ErrorState title="通知加载失败" onRetry={() => void inbox.refetch()} retrying={inbox.isFetching} className="w-80 max-w-full" />
+        <ErrorState
+          title="通知加载失败"
+          onRetry={() => void inbox.refetch()}
+          retrying={inbox.isFetching}
+          className="w-80 max-w-full"
+        />
       ) : !inbox.data ? (
         <LoadingState />
       ) : (

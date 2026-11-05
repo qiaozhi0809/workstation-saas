@@ -63,7 +63,8 @@ function moveTo(state: SeatDraft, enrollmentId: string, to: Cell): SeatDraft {
   if (other?.locked) return state
   const students = state.students.map((s) => {
     if (s.enrollmentId === mover.enrollmentId) return { ...s, row: to.row, col: to.col }
-    if (other && s.enrollmentId === other.enrollmentId) return { ...s, row: mover.row, col: mover.col }
+    if (other && s.enrollmentId === other.enrollmentId)
+      return { ...s, row: mover.row, col: mover.col }
     return s
   })
   return commit(state, { students })
@@ -119,7 +120,9 @@ export function isDirty(draft: SeatDraft, original: SeatDraft): boolean {
 
 export function toSavePayload(draft: SeatDraft): SeatingSave {
   const seats = draft.students
-    .filter((s): s is DraftStudent & { row: number; col: number } => s.row !== null && s.col !== null)
+    .filter(
+      (s): s is DraftStudent & { row: number; col: number } => s.row !== null && s.col !== null,
+    )
     .sort((a, b) => a.row - b.row || a.col - b.col)
     .map((s) => ({ enrollment_id: s.enrollmentId, row: s.row, col: s.col, locked: s.locked }))
   return { base_version: draft.baseVersion, rows: draft.grid.rows, cols: draft.grid.cols, seats }

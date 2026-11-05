@@ -9,5 +9,8 @@ const ORDER: Context[] = ['teacher', 'admin', 'parent']
 
 /** 账号菜单里的"切换到…":除当前语境外账号拥有的全部语境 */
 export function switchTargets(contexts: Context[] | undefined, current: Context) {
-  return ORDER.filter((c) => c !== current && contexts?.includes(c)).map((c) => ({ ...LABEL[c], context: c }))
+  return ORDER.filter((c) => c !== current && contexts?.includes(c)).map((c) => ({
+    ...LABEL[c],
+    context: c,
+  }))
 }

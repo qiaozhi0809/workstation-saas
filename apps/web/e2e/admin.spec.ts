@@ -1,6 +1,14 @@
 import { randomUUID } from 'node:crypto'
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
-import { adminGet, currentUserId, endRolesOfUser, endStaffOfUser, getSwitches, login, putSwitches } from './helpers/api'
+import {
+  adminGet,
+  currentUserId,
+  endRolesOfUser,
+  endStaffOfUser,
+  getSwitches,
+  login,
+  putSwitches,
+} from './helpers/api'
 
 const API = '/api/v1'
 const BASE_URL = process.env.E2E_BASE_URL ?? 'http://localhost:5173'
@@ -21,7 +29,9 @@ async function signIn(page: Page, name: string, password = 'dev123') {
 // 本文件的用例会建账号、改任职 / 管理岗、改学校开关:每个用例前后兜底还原(账号只冻结不删除,登录名带随机后缀避免重跑撞名)。
 // 与其他 spec 的隔离由 playwright.config.ts 的 project 依赖链保证。
 async function saveSwitches(page: Page) {
-  const saved = page.waitForResponse((r) => r.url().includes('/admin/settings/switches') && r.request().method() === 'PUT')
+  const saved = page.waitForResponse(
+    (r) => r.url().includes('/admin/settings/switches') && r.request().method() === 'PUT',
+  )
   await page.getByRole('button', { name: '保存' }).last().click()
   expect((await saved).ok()).toBeTruthy()
 }
@@ -34,14 +44,18 @@ async function cleanup(request: APIRequestContext) {
   await putSwitches(request, it, { ...(await getSwitches(request, it)), star_of_week: true })
   for (const id of created.splice(0)) {
     await endStaffOfUser(request, it, CLASS_3_1, id)
-    const res = await request.post(`${API}/admin/accounts/${id}/freeze`, { headers: { Authorization: `Bearer ${it}` } })
+    const res = await request.post(`${API}/admin/accounts/${id}/freeze`, {
+      headers: { Authorization: `Bearer ${it}` },
+    })
     expect([200, 409]).toContain(res.status())
   }
 }
 test.beforeEach(({ request }) => cleanup(request))
 test.afterEach(({ request }) => cleanup(request))
 
-test('principal lands on today, browses the board and opens a read-only class view', async ({ page }) => {
+test('principal lands on today, browses the board and opens a read-only class view', async ({
+  page,
+}) => {
   await signIn(page, 'principal01')
   await expect(page).toHaveURL(/\/admin\/today/)
   await expect(page.getByRole('heading', { name: '今日关注 · 全校' })).toBeVisible()
@@ -62,7 +76,11 @@ test('principal lands on today, browses the board and opens a read-only class vi
   }
 })
 
-test('it admin creates a teacher account, who changes the temp password and is logged out when frozen', async ({ page, browser, request }) => {
+test('it admin creates a teacher account, who changes the temp password and is logged out when frozen', async ({
+  page,
+  browser,
+  request,
+}) => {
   const loginName = `e2e_teacher_${Date.now().toString(36)}`
   const it = await login(request, 'itadmin01')
 
@@ -82,7 +100,11 @@ test('it admin creates a teacher account, who changes the temp password and is l
   await page.keyboard.press('Escape')
   await expect(tempDialog).toBeHidden()
 
-  const accounts = await adminGet<{ items: { id: string; login_name: string }[] }>(request, it, `/admin/accounts?q=${loginName}`)
+  const accounts = await adminGet<{ items: { id: string; login_name: string }[] }>(
+    request,
+    it,
+    `/admin/accounts?q=${loginName}`,
+  )
   const accountId = accounts.items.find((a) => a.login_name === loginName)!.id
   created.push(accountId)
   const assign = await request.post(`${API}/admin/classes/${CLASS_3_1}/staff`, {
@@ -116,13 +138,27 @@ test('it admin creates a teacher account, who changes the temp password and is l
   await ctx.close()
 })
 
-test('turning off star of the week in settings hides it on the teacher blackboard', async ({ page, browser, request }) => {
+test('turning off star of the week in settings hides it on the teacher blackboard', async ({
+  page,
+  browser,
+  request,
+}) => {
   const teacher = await login(request, 'teacher01')
-  const roster = await adminGet<{ items: { enrollment_id: string }[] }>(request, teacher, `/classes/${CLASS_3_2}/students`)
+  const roster = await adminGet<{ items: { enrollment_id: string }[] }>(
+    request,
+    teacher,
+    `/classes/${CLASS_3_2}/students`,
+  )
   const opId = randomUUID()
   const review = await request.post(`${API}/classes/${CLASS_3_2}/reviews`, {
     headers: { Authorization: `Bearer ${teacher}` },
-    data: { op_id: opId, category: 'individual', enrollment_ids: [roster.items[0].enrollment_id], reason_text: 'E2E 本周之星', score_delta: 1 },
+    data: {
+      op_id: opId,
+      category: 'individual',
+      enrollment_ids: [roster.items[0].enrollment_id],
+      reason_text: 'E2E 本周之星',
+      score_delta: 1,
+    },
   })
   expect(review.ok(), await review.text()).toBeTruthy()
 
@@ -152,12 +188,17 @@ test('turning off star of the week in settings hides it on the teacher blackboar
     await expect(teacherPage.getByText(STAR_ROW).first()).toBeVisible()
     await ctx.close()
   } finally {
-    const revoked = await request.post(`${API}/classes/${CLASS_3_2}/reviews/${opId}/revoke`, { headers: { Authorization: `Bearer ${teacher}` } })
+    const revoked = await request.post(`${API}/classes/${CLASS_3_2}/reviews/${opId}/revoke`, {
+      headers: { Authorization: `Bearer ${teacher}` },
+    })
     expect(revoked.ok(), await revoked.text()).toBeTruthy()
   }
 })
 
-test('grade head only sees her own grade and gets 403 on another grade board', async ({ page, request }) => {
+test('grade head only sees her own grade and gets 403 on another grade board', async ({
+  page,
+  request,
+}) => {
   await signIn(page, 'gradehead03')
   await expect(page.getByRole('heading', { name: '今日关注 · 三年级' })).toBeVisible()
   await page.getByRole('link', { name: '全校看板' }).first().click()
@@ -165,13 +206,20 @@ test('grade head only sees her own grade and gets 403 on another grade board', a
   await expect(page.getByRole('tab', { name: '四年级' })).toHaveCount(0)
 
   const token = await login(request, 'gradehead03')
-  const own = await request.get(`${API}/admin/board?grade_id=${GRADE3}`, { headers: { Authorization: `Bearer ${token}` } })
+  const own = await request.get(`${API}/admin/board?grade_id=${GRADE3}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
   expect(own.status()).toBe(200)
-  const other = await request.get(`${API}/admin/board?grade_id=${GRADE4}`, { headers: { Authorization: `Bearer ${token}` } })
+  const other = await request.get(`${API}/admin/board?grade_id=${GRADE4}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
   expect(other.status()).toBe(403)
 })
 
-test('teacher01 gets a grade head role and can switch between teacher and admin sides', async ({ page, request }) => {
+test('teacher01 gets a grade head role and can switch between teacher and admin sides', async ({
+  page,
+  request,
+}) => {
   const it = await login(request, 'itadmin01')
   const teacher = await login(request, 'teacher01')
   const res = await request.post(`${API}/admin/roles`, {

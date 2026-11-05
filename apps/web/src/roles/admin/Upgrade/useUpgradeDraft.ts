@@ -38,7 +38,8 @@ const emptyDraft = (): Draft => ({
   ui: { studentClassId: null, names: {}, studentClasses: {} },
 })
 
-const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
+const isObj = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v)
 
 function read(owner: string | null): Draft {
   const base = emptyDraft()
@@ -46,9 +47,15 @@ function read(owner: string | null): Draft {
     const raw = window.localStorage.getItem(DRAFT_KEY)
     if (!raw) return base
     const d: unknown = JSON.parse(raw)
-    const planOk = (p: unknown) => isObj(p) && Array.isArray(p.classes) && typeof p.from_year_id === 'string'
+    const planOk = (p: unknown) =>
+      isObj(p) && Array.isArray(p.classes) && typeof p.from_year_id === 'string'
     // 结构不对、版本不对、别人的草稿:丢弃并清掉
-    if (!isObj(d) || d.v !== DRAFT_VERSION || (d.owner ?? null) !== owner || (d.plan != null && !planOk(d.plan))) {
+    if (
+      !isObj(d) ||
+      d.v !== DRAFT_VERSION ||
+      (d.owner ?? null) !== owner ||
+      (d.plan != null && !planOk(d.plan))
+    ) {
       drop()
       return base
     }
@@ -67,7 +74,9 @@ function read(owner: string | null): Draft {
       ui: {
         studentClassId: typeof ui.studentClassId === 'string' ? ui.studentClassId : null,
         names: isObj(ui.names) ? (ui.names as Record<string, string>) : {},
-        studentClasses: isObj(ui.studentClasses) ? (ui.studentClasses as Record<string, string>) : {},
+        studentClasses: isObj(ui.studentClasses)
+          ? (ui.studentClasses as Record<string, string>)
+          : {},
       },
     }
   } catch {
@@ -77,11 +86,19 @@ function read(owner: string | null): Draft {
 }
 
 function write(d: Draft, owner: string | null) {
-  try { window.localStorage.setItem(DRAFT_KEY, JSON.stringify({ v: DRAFT_VERSION, owner, ...d })) } catch { /* 存不下就只留在内存里 */ }
+  try {
+    window.localStorage.setItem(DRAFT_KEY, JSON.stringify({ v: DRAFT_VERSION, owner, ...d }))
+  } catch {
+    /* 存不下就只留在内存里 */
+  }
 }
 
 function drop() {
-  try { window.localStorage.removeItem(DRAFT_KEY) } catch { /* 同上 */ }
+  try {
+    window.localStorage.removeItem(DRAFT_KEY)
+  } catch {
+    /* 同上 */
+  }
 }
 
 /** 升级方案草稿:每次改动写入 localStorage(读写都容错),执行成功或放弃后清除 */
@@ -91,29 +108,45 @@ export function useUpgradeDraft() {
   // 当前草稿放在 ref 里:连续多次更新互相可见,存档在事件处理里做,不放进 setState 更新函数
   const current = useRef(draft)
 
-  const update = useCallback((fn: (d: Draft) => Draft) => {
-    const next = fn(current.current)
-    if (next === current.current) return
-    current.current = next
-    write(next, owner)
-    setDraft(next)
-  }, [owner])
+  const update = useCallback(
+    (fn: (d: Draft) => Draft) => {
+      const next = fn(current.current)
+      if (next === current.current) return
+      current.current = next
+      write(next, owner)
+      setDraft(next)
+    },
+    [owner],
+  )
 
   return {
     draft,
     setStep: useCallback((step: StepKey) => update((d) => ({ ...d, step })), [update]),
     // 方案已经生成时,学年名称和日期同步写进 plan.new_year
-    setYear: useCallback((patch: Partial<Draft['year']>) => update((d) => ({
-      ...d,
-      year: { ...d.year, ...patch },
-      plan: d.plan ? { ...d.plan, new_year: { ...d.plan.new_year, ...patch } } : d.plan,
-    })), [update]),
+    setYear: useCallback(
+      (patch: Partial<Draft['year']>) =>
+        update((d) => ({
+          ...d,
+          year: { ...d.year, ...patch },
+          plan: d.plan ? { ...d.plan, new_year: { ...d.plan.new_year, ...patch } } : d.plan,
+        })),
+      [update],
+    ),
     setPlan: useCallback((plan: UpgradePlan | null) => update((d) => ({ ...d, plan })), [update]),
-    editPlan: useCallback((fn: (p: UpgradePlan) => UpgradePlan) =>
-      update((d) => (d.plan ? { ...d, plan: fn(d.plan) } : d)), [update]),
-    setUi: useCallback((patch: Partial<Draft['ui']>) => update((d) => ({ ...d, ui: { ...d.ui, ...patch } })), [update]),
-    rememberNames: useCallback((names: Record<string, string>) =>
-      update((d) => ({ ...d, ui: { ...d.ui, names: { ...d.ui.names, ...names } } })), [update]),
+    editPlan: useCallback(
+      (fn: (p: UpgradePlan) => UpgradePlan) =>
+        update((d) => (d.plan ? { ...d, plan: fn(d.plan) } : d)),
+      [update],
+    ),
+    setUi: useCallback(
+      (patch: Partial<Draft['ui']>) => update((d) => ({ ...d, ui: { ...d.ui, ...patch } })),
+      [update],
+    ),
+    rememberNames: useCallback(
+      (names: Record<string, string>) =>
+        update((d) => ({ ...d, ui: { ...d.ui, names: { ...d.ui.names, ...names } } })),
+      [update],
+    ),
     clear: useCallback(() => {
       drop()
       current.current = emptyDraft()

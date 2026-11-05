@@ -1,5 +1,12 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { createExam, deleteE2eExams, login, putScores, restoreSeedSeating, rosterEnrollmentIds } from './helpers/api'
+import {
+  createExam,
+  deleteE2eExams,
+  login,
+  putScores,
+  restoreSeedSeating,
+  rosterEnrollmentIds,
+} from './helpers/api'
 
 const CLASS_ID = '44444444-4444-4444-4444-444444444444'
 
@@ -30,8 +37,10 @@ test.afterEach(async ({ request }) => {
   await restoreSeedSeating(request, token, CLASS_ID)
 })
 
-const cell = (page: Page, name: string, subject: string) => page.getByRole('textbox', { name: `${name} ${subject}`, exact: true })
-const rowOf = (page: Page, name: string) => page.locator('tr', { has: page.getByRole('cell', { name, exact: true }) })
+const cell = (page: Page, name: string, subject: string) =>
+  page.getByRole('textbox', { name: `${name} ${subject}`, exact: true })
+const rowOf = (page: Page, name: string) =>
+  page.locator('tr', { has: page.getByRole('cell', { name, exact: true }) })
 
 // 在聚焦的格子上派发粘贴事件(格子的 onPaste 读 clipboardData),不依赖系统剪贴板权限
 async function paste(target: Locator, text: string) {
@@ -39,18 +48,23 @@ async function paste(target: Locator, text: string) {
   await target.evaluate((el, t) => {
     const dt = new DataTransfer()
     dt.setData('text/plain', t)
-    el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
+    el.dispatchEvent(
+      new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }),
+    )
   }, text)
 }
 
-test('homeroom teacher creates an exam, types and pastes scores, and sees totals', async ({ page }) => {
+test('homeroom teacher creates an exam, types and pastes scores, and sees totals', async ({
+  page,
+}) => {
   await signIn(page)
   await page.goto('/teacher/scores')
   await page.getByRole('button', { name: '新建考试' }).click()
   const dialog = page.getByRole('dialog', { name: '新建考试' })
   await dialog.getByLabel('考试名称').fill('E2E 单元测')
   const subjects = dialog.getByRole('group', { name: '科目' })
-  for (const s of ['英语', '科学', '道法']) await subjects.getByRole('button', { name: s, exact: true }).click()
+  for (const s of ['英语', '科学', '道法'])
+    await subjects.getByRole('button', { name: s, exact: true }).click()
   await dialog.getByRole('button', { name: '保存' }).click()
   await expect(dialog).toBeHidden()
   await expect(page.getByRole('heading', { name: 'E2E 单元测' })).toBeVisible()
@@ -59,7 +73,10 @@ test('homeroom teacher creates an exam, types and pastes scores, and sees totals
   await expect(page.getByRole('columnheader', { name: /^英语/ })).toHaveCount(0)
 
   // 状态文字"已保存"在新改动排队时不会清掉,不能当作"所有改动都已落库";改为按 PUT 响应等待
-  const scoresSaved = () => page.waitForResponse((r) => r.request().method() === 'PUT' && /\/scores$/.test(r.url()) && r.ok())
+  const scoresSaved = () =>
+    page.waitForResponse(
+      (r) => r.request().method() === 'PUT' && /\/scores$/.test(r.url()) && r.ok(),
+    )
 
   // 输入 95 + Enter:焦点落到下一行同一科;等这次保存落库,粘贴才会是独立的一次保存
   const typedSaved = scoresSaved()
@@ -99,7 +116,9 @@ test('analysis shows KPIs and opens the scores tab from the ranking', async ({ p
   await page.goto('/teacher/analysis')
   const examSelect = page.getByRole('combobox', { name: '考试' })
   await expect(examSelect.locator('option:checked')).toHaveText('期中考试')
-  await expect(page.getByRole('combobox', { name: '对比' }).locator('option:checked')).toHaveText('第一次月考')
+  await expect(page.getByRole('combobox', { name: '对比' }).locator('option:checked')).toHaveText(
+    '第一次月考',
+  )
   await expect(page.locator('[data-kpi]', { hasText: '平均分' })).toContainText('较第一次月考')
 
   const ranking = page.getByRole('region', { name: '成绩排名' })
@@ -118,11 +137,35 @@ async function seedMovers(request: Parameters<typeof login>[0]) {
   const token = await login(request, 'teacher01')
   const ids = await rosterEnrollmentIds(request, token, CLASS_ID)
   const subjects = [{ name: '语文', full: 100 }]
-  const first = await createExam(request, token, CLASS_ID, { name: 'E2E 进退一', date: '2026-10-31', subjects })
-  const second = await createExam(request, token, CLASS_ID, { name: 'E2E 进退二', date: '2026-11-01', subjects })
+  const first = await createExam(request, token, CLASS_ID, {
+    name: 'E2E 进退一',
+    date: '2026-10-31',
+    subjects,
+  })
+  const second = await createExam(request, token, CLASS_ID, {
+    name: 'E2E 进退二',
+    date: '2026-11-01',
+    subjects,
+  })
   const n = ids.length
-  await putScores(request, token, CLASS_ID, first, '语文', ids, ids.map((_, i) => 100 - i))
-  await putScores(request, token, CLASS_ID, second, '语文', ids, ids.map((_, i) => (i === 0 ? 70 : i === n - 1 ? 100 : 99 - i)))
+  await putScores(
+    request,
+    token,
+    CLASS_ID,
+    first,
+    '语文',
+    ids,
+    ids.map((_, i) => 100 - i),
+  )
+  await putScores(
+    request,
+    token,
+    CLASS_ID,
+    second,
+    '语文',
+    ids,
+    ids.map((_, i) => (i === 0 ? 70 : i === n - 1 ? 100 : 99 - i)),
+  )
   return second
 }
 
@@ -138,15 +181,25 @@ test('classroom grades mode tints seats and links to analysis', async ({ page, r
 
   await page.getByRole('link', { name: '完整分析' }).click()
   await expect(page).toHaveURL(new RegExp(`/teacher/analysis\\?exam=${latestId}$`))
-  await expect(page.getByRole('combobox', { name: '考试' }).locator('option:checked')).toHaveText('E2E 进退二')
+  await expect(page.getByRole('combobox', { name: '考试' }).locator('option:checked')).toHaveText(
+    'E2E 进退二',
+  )
 })
 
 test('projection hides grade tints, badges and legend', async ({ page, request }) => {
   await seedMovers(request)
   await signIn(page)
   // 桌面着色用 rect 的 fill 判断;"投屏"本身可能换底色,所以以"日常模式 + 投屏"的填充色集合为基线
-  const rawFills = () => page.evaluate(() =>
-    [...new Set(Array.from(document.querySelectorAll('.cr-canvas svg rect')).map((r) => r.getAttribute('fill')))].sort())
+  const rawFills = () =>
+    page.evaluate(() =>
+      [
+        ...new Set(
+          Array.from(document.querySelectorAll('.cr-canvas svg rect')).map((r) =>
+            r.getAttribute('fill'),
+          ),
+        ),
+      ].sort(),
+    )
   // 先等 10 个座位渲染出来,并等填充色集合非空:基线取空会让后面的"有新颜色"恒真
   const fills = async () => {
     await expect(page.locator('[data-seat][data-enrollment]')).toHaveCount(10)
@@ -173,7 +226,10 @@ test('projection hides grade tints, badges and legend', async ({ page, request }
   await expect(seats.filter({ hasText: /↑/ })).toHaveCount(1)
   await expect(seats.filter({ hasText: /↓/ })).toHaveCount(1)
   const tinted = await fills()
-  expect(tinted.filter((f) => !dailyWindowed.includes(f)).length, '成绩模式有着色(对比非全屏日常)').toBeGreaterThan(0)
+  expect(
+    tinted.filter((f) => !dailyWindowed.includes(f)).length,
+    '成绩模式有着色(对比非全屏日常)',
+  ).toBeGreaterThan(0)
 
   await present()
   // 投屏时座位不可点,没有读屏名称:改看座位里的文字
@@ -202,14 +258,18 @@ test('subject teacher only sees math', async ({ page }) => {
 test('asks before logging out with unsaved scores', async ({ page, request }) => {
   const token = await login(request, 'teacher01')
   const examId = await createExam(request, token, CLASS_ID, {
-    name: 'E2E 未保存', date: '2026-11-01', subjects: [{ name: '语文', full: 100 }],
+    name: 'E2E 未保存',
+    date: '2026-11-01',
+    subjects: [{ name: '语文', full: 100 }],
   })
   await signIn(page)
   await page.goto(`/teacher/scores?exam=${examId}`)
   await expect(page.getByRole('heading', { name: 'E2E 未保存' })).toBeVisible()
 
   const failSave = (route: import('@playwright/test').Route) =>
-    route.request().method() === 'PUT' ? route.fulfill({ status: 500, body: '{}' }) : route.fallback()
+    route.request().method() === 'PUT'
+      ? route.fulfill({ status: 500, body: '{}' })
+      : route.fallback()
   await page.route('**/scores', failSave)
   await cell(page, '王小一', '语文').fill('88')
   const status = page.getByRole('status')
@@ -220,7 +280,10 @@ test('asks before logging out with unsaved scores', async ({ page, request }) =>
     await page.getByRole('menuitem', { name: '退出登录' }).click()
   }
   const messages: string[] = []
-  page.on('dialog', (d) => { messages.push(d.message()); void d.dismiss() })
+  page.on('dialog', (d) => {
+    messages.push(d.message())
+    void d.dismiss()
+  })
   await logout()
   await expect.poll(() => messages).toEqual(['还有成绩没保存,确定离开?'])
   await expect(page).toHaveURL(/\/teacher\/scores/)

@@ -2,7 +2,8 @@ import { daysUntilBirthday } from '@/shared/lib/date'
 import { compareRoster } from '@/shared/lib/rosterOrder'
 import type { StudentRecord } from '@/shared/types/student'
 
-export type RosterFilter = 'all' | 'male' | 'female' | 'cadre' | 'focus' | 'boarding' | 'birthday' | 'unseated'
+export type RosterFilter =
+  'all' | 'male' | 'female' | 'cadre' | 'focus' | 'boarding' | 'birthday' | 'unseated'
 export type RosterSort = 'no' | 'name' | 'rank' | 'points' | 'birthday'
 
 export interface RosterRow extends StudentRecord {
@@ -23,7 +24,7 @@ export function buildRows(
     ...r,
     rank: ranks.get(r.enrollment_id)?.rank ?? null,
     rankChange: ranks.get(r.enrollment_id)?.change ?? null,
-    points: points ? points.get(r.enrollment_id) ?? 0 : null,
+    points: points ? (points.get(r.enrollment_id) ?? 0) : null,
     daysToBirthday: r.birthdate ? daysUntilBirthday(r.birthdate, today) : null,
   }))
 }
@@ -39,12 +40,19 @@ const matches: Record<RosterFilter, (r: RosterRow, today: string) => boolean> = 
   unseated: (r) => r.seat_row === null || r.seat_col === null,
 }
 
-export function filterRows(rows: RosterRow[], q: string, filter: RosterFilter, today: string): RosterRow[] {
+export function filterRows(
+  rows: RosterRow[],
+  q: string,
+  filter: RosterFilter,
+  today: string,
+): RosterRow[] {
   const needle = q.trim().toLowerCase()
   return rows.filter((r) => {
     if (!matches[filter](r, today)) return false
     if (!needle) return true
-    return [r.name, r.student_no ?? '', ...(r.tags ?? [])].some((t) => t.toLowerCase().includes(needle))
+    return [r.name, r.student_no ?? '', ...(r.tags ?? [])].some((t) =>
+      t.toLowerCase().includes(needle),
+    )
   })
 }
 
@@ -63,10 +71,14 @@ export function sortRows(rows: RosterRow[], sort: RosterSort, dir: 'asc' | 'desc
   }
   const key = (r: RosterRow): string | number | null => {
     switch (sort) {
-      case 'name': return r.name
-      case 'rank': return r.rank
-      case 'points': return r.points
-      case 'birthday': return r.daysToBirthday
+      case 'name':
+        return r.name
+      case 'rank':
+        return r.rank
+      case 'points':
+        return r.points
+      case 'birthday':
+        return r.daysToBirthday
     }
   }
   return [...rows].sort((a, b) => {
@@ -75,7 +87,10 @@ export function sortRows(rows: RosterRow[], sort: RosterSort, dir: 'asc' | 'desc
     if (x === null && y === null) return 0
     if (x === null) return 1
     if (y === null) return -1
-    const c = typeof x === 'number' && typeof y === 'number' ? x - y : collator.compare(String(x), String(y))
+    const c =
+      typeof x === 'number' && typeof y === 'number'
+        ? x - y
+        : collator.compare(String(x), String(y))
     return c * sign
   })
 }

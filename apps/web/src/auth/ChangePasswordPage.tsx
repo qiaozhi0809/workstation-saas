@@ -14,15 +14,23 @@ export default function ChangePasswordPage() {
   const user = useAuthStore((s) => s.user)
   const lastContext = useAuthStore((s) => s.lastContext)
   if (!accessToken) return <Navigate to="/login" replace />
-  if (user && !user.must_change_password) return <Navigate to={homeFor(user, lastContext)} replace />
+  if (user && !user.must_change_password)
+    return <Navigate to={homeFor(user, lastContext)} replace />
 
   const onSuccess = async () => {
     // 密码此时已改成功;me() 失败不能当作"修改失败",回退为本地置 must_change_password=false
     let user: User | null = null
-    try { user = await authApi.me() } catch { /* 回退 */ }
+    try {
+      user = await authApi.me()
+    } catch {
+      /* 回退 */
+    }
     if (!user) {
       const cur = useAuthStore.getState().user
-      if (!cur) { navigate('/login', { replace: true }); return }
+      if (!cur) {
+        navigate('/login', { replace: true })
+        return
+      }
       user = { ...cur, must_change_password: false }
     }
     useAuthStore.getState().setUser(user)

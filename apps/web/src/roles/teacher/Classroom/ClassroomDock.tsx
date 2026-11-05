@@ -26,10 +26,23 @@ export interface ClassroomDockProps {
 
 /** 舞台下方的操作台:模式 → 模式操作 → 常用操作 → 更多操作 → 状态 → 全屏 / 待办与点评。 */
 export default function ClassroomDock({
-  mode, perms, onModeChange, actions, common, menu, status, presenting, onTogglePresent, onOpenPanel,
+  mode,
+  perms,
+  onModeChange,
+  actions,
+  common,
+  menu,
+  status,
+  presenting,
+  onTogglePresent,
+  onOpenPanel,
 }: ClassroomDockProps) {
   return (
-    <div role="toolbar" aria-label="教室工具" className="flex flex-wrap items-center gap-2 rounded-xl border bg-card px-2 py-1.5 shadow-sm">
+    <div
+      role="toolbar"
+      aria-label="教室工具"
+      className="flex flex-wrap items-center gap-2 rounded-xl border bg-card px-2 py-1.5 shadow-sm"
+    >
       <ModeBar mode={mode} perms={perms} onChange={onModeChange} />
       {/* actions 始终在同一树位置(SeatingBar 带弹层状态,不能因 common / status 出现而重挂) */}
       {actions ? <Separator orientation="vertical" className="h-6" /> : null}
@@ -37,20 +50,44 @@ export default function ClassroomDock({
       {common ? <Separator orientation="vertical" className="h-6" /> : null}
       {common}
       {menu ? (
-        <Menu label="更多操作" side="top" trigger={<Ellipsis aria-hidden />}
-          triggerProps={{ variant: 'outline', size: 'icon', 'aria-label': '更多操作', title: '更多操作' }}>
+        <Menu
+          label="更多操作"
+          side="top"
+          trigger={<Ellipsis aria-hidden />}
+          triggerProps={{
+            variant: 'outline',
+            size: 'icon',
+            'aria-label': '更多操作',
+            title: '更多操作',
+          }}
+        >
           {menu}
         </Menu>
       ) : null}
-      {status && <span role="status" className="text-sm text-muted-foreground">{status}</span>}
+      {status && (
+        <span role="status" className="text-sm text-muted-foreground">
+          {status}
+        </span>
+      )}
       <div className="ml-auto flex items-center gap-2">
-        <Button variant="outline" size="icon" aria-label={presenting ? '退出全屏' : '全屏'}
-          title={presenting ? '退出全屏' : '全屏'} onClick={onTogglePresent}>
+        <Button
+          variant="outline"
+          size="icon"
+          aria-label={presenting ? '退出全屏' : '全屏'}
+          title={presenting ? '退出全屏' : '全屏'}
+          onClick={onTogglePresent}
+        >
           {presenting ? <Minimize2 aria-hidden /> : <Maximize2 aria-hidden />}
         </Button>
         {!presenting && (
-          <Button variant="outline" size="icon" aria-label="待办与点评" title="待办与点评"
-            aria-haspopup="dialog" onClick={onOpenPanel}>
+          <Button
+            variant="outline"
+            size="icon"
+            aria-label="待办与点评"
+            title="待办与点评"
+            aria-haspopup="dialog"
+            onClick={onOpenPanel}
+          >
             <ListTodo aria-hidden />
           </Button>
         )}

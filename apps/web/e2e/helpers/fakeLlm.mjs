@@ -12,15 +12,21 @@ const delta = (res, text) => send(res, { choices: [{ delta: { content: text } }]
 function lastUserText(body) {
   const msgs = Array.isArray(body?.messages) ? body.messages : []
   for (let i = msgs.length - 1; i >= 0; i--) {
-    if (msgs[i].role === 'user') return typeof msgs[i].content === 'string' ? msgs[i].content : JSON.stringify(msgs[i].content)
+    if (msgs[i].role === 'user')
+      return typeof msgs[i].content === 'string' ? msgs[i].content : JSON.stringify(msgs[i].content)
   }
   return ''
 }
 
 function plan(text) {
   const code = text.match(/【学生(\d{2})】/)
-  if (code) return { chunks: ['## 草稿\n\n', '【学', `生${code[1]}】这学期进步很大。\n`, '\n- 第一条建议\n'], gap: 30 }
-  if (text.includes('慢慢')) return { chunks: Array.from({ length: 40 }, (_, i) => `第 ${i + 1} 段。`), gap: 150 }
+  if (code)
+    return {
+      chunks: ['## 草稿\n\n', '【学', `生${code[1]}】这学期进步很大。\n`, '\n- 第一条建议\n'],
+      gap: 30,
+    }
+  if (text.includes('慢慢'))
+    return { chunks: Array.from({ length: 40 }, (_, i) => `第 ${i + 1} 段。`), gap: 150 }
   return { chunks: ['好的,这是草稿。\n\n', '- 第一条\n'], gap: 30 }
 }
 
@@ -50,7 +56,9 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' })
     const { chunks, gap } = plan(lastUserText(last))
     let closed = false
-    res.on('close', () => { closed = true })
+    res.on('close', () => {
+      closed = true
+    })
     for (const c of chunks) {
       if (closed) return
       delta(res, c)

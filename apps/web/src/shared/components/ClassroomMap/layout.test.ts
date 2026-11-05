@@ -23,7 +23,12 @@ it('handles an odd column count', () => {
 })
 
 it('fits decor zones to the available height', () => {
-  expect(computeLayout(2, 4).zones.map((z) => z.id)).toEqual(['reading', 'honor', 'homework', 'nature'])
+  expect(computeLayout(2, 4).zones.map((z) => z.id)).toEqual([
+    'reading',
+    'honor',
+    'homework',
+    'nature',
+  ])
   expect(computeLayout(8, 4).zones).toHaveLength(7)
 })
 
@@ -55,14 +60,25 @@ it('widens to the aspect with symmetric wings and keeps the core unchanged insid
   expect(L.wings!.left.wall.x + L.wings!.left.wall.w).toBe(L.frontWall!.x)
   expect(L.wings!.right.wall.x).toBe(L.frontWall!.x + L.frontWall!.w)
   expect(L.wings!.right.floor.x + L.wings!.right.floor.w).toBe(L.width - M.WALL)
-  expect(L.wings!.left.floor).toEqual({ x: M.WALL, y: M.WALL + M.FRONT, w: 669, h: L.height - 2 * M.WALL - M.FRONT })
+  expect(L.wings!.left.floor).toEqual({
+    x: M.WALL,
+    y: M.WALL + M.FRONT,
+    w: 669,
+    h: L.height - 2 * M.WALL - M.FRONT,
+  })
 })
 
 it('moves honor and cleaning out to the wings when they are wide enough', () => {
-  expect(computeLayout(6, 4, { aspect: SCENE_ASPECT }).zones.map((z) => z.id))
-    .toEqual(['reading', 'talk', 'homework', 'nature', 'sports'])
-  expect(computeLayout(4, 8, { aspect: SCENE_ASPECT }).zones.map((z) => z.id))
-    .toEqual(computeLayout(4, 8).zones.map((z) => z.id))
+  expect(computeLayout(6, 4, { aspect: SCENE_ASPECT }).zones.map((z) => z.id)).toEqual([
+    'reading',
+    'talk',
+    'homework',
+    'nature',
+    'sports',
+  ])
+  expect(computeLayout(4, 8, { aspect: SCENE_ASPECT }).zones.map((z) => z.id)).toEqual(
+    computeLayout(4, 8).zones.map((z) => z.id),
+  )
 })
 
 it('does not widen a room that is already wider than the aspect', () => {
@@ -98,17 +114,34 @@ it('treats the whole scene as core when there is no front wall (mini map)', () =
   expect(L.core).toEqual({ x: 0, y: 0, w: L.width, h: L.height })
 })
 
-const overlaps = (a: Rect, b: Rect) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
-const contains = (o: Rect, i: Rect) => i.x >= o.x && i.y >= o.y && i.x + i.w <= o.x + o.w && i.y + i.h <= o.y + o.h
-const seatRect = (L: Layout, r: number, c: number): Rect => ({ ...L.seat(r, c), w: M.DESK_W, h: M.SEAT_BOTTOM })
+const overlaps = (a: Rect, b: Rect) =>
+  a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+const contains = (o: Rect, i: Rect) =>
+  i.x >= o.x && i.y >= o.y && i.x + i.w <= o.x + o.w && i.y + i.h <= o.y + o.h
+const seatRect = (L: Layout, r: number, c: number): Rect => ({
+  ...L.seat(r, c),
+  w: M.DESK_W,
+  h: M.SEAT_BOTTOM,
+})
 // 函数字段每次新建,按数据与取样结果比较
 const plain = (L: Layout) => ({
-  ...L, seat: undefined, head: undefined, label: undefined, group: undefined,
-  seats: L.cells.map((c) => [L.seat(c.row, c.col), L.head(c.row, c.col), L.label(c.row, c.col), L.group(c.row, c.col)]),
+  ...L,
+  seat: undefined,
+  head: undefined,
+  label: undefined,
+  group: undefined,
+  seats: L.cells.map((c) => [
+    L.seat(c.row, c.col),
+    L.head(c.row, c.col),
+    L.label(c.row, c.col),
+    L.group(c.row, c.col),
+  ]),
 })
 
 it('keeps the double-desk layout unchanged by default', () => {
-  expect(plain(computeLayout(6, 4))).toEqual(plain(computeLayout(6, 4, { deskSize: 2, podium: { left: 0, right: 0 } })))
+  expect(plain(computeLayout(6, 4))).toEqual(
+    plain(computeLayout(6, 4, { deskSize: 2, podium: { left: 0, right: 0 } })),
+  )
 })
 it('groups three seats per desk with an aisle between desks', () => {
   const L = computeLayout(4, 9, { deskSize: 3 })
@@ -125,9 +158,15 @@ it('places podium seats beside the lectern, inside the core, clear of the side z
   expect(L.seat(0, -1).x + M.DESK_W).toBe(cx - 120 - M.POD_GAP)
   expect(L.seat(0, -1).x - L.seat(0, -2).x).toBe(M.DESK_W + M.POD_SEP)
   expect(L.seat(0, 1).x).toBe(cx + 120 + M.POD_GAP)
-  for (const z of L.zones) for (const c of [-2, -1, 1, 2]) expect(overlaps(z.rect, seatRect(L, 0, c))).toBe(false)
+  for (const z of L.zones)
+    for (const c of [-2, -1, 1, 2]) expect(overlaps(z.rect, seatRect(L, 0, c))).toBe(false)
   expect(contains(L.core, seatRect(L, 0, -2))).toBe(true)
-  expect(L.cells.slice(0, 4)).toEqual([{ row: 0, col: -2 }, { row: 0, col: -1 }, { row: 0, col: 1 }, { row: 0, col: 2 }])
+  expect(L.cells.slice(0, 4)).toEqual([
+    { row: 0, col: -2 },
+    { row: 0, col: -1 },
+    { row: 0, col: 1 },
+    { row: 0, col: 2 },
+  ])
 })
 it('keeps podium seats a clear step off the front wall and inside the platform', () => {
   const L = computeLayout(4, 4, { podium: { left: 1, right: 1 } })
@@ -135,7 +174,10 @@ it('keeps podium seats a clear step off the front wall and inside the platform',
   expect(L.seat(0, -1).y + M.SEAT_BOTTOM).toBeLessThanOrEqual(L.podium!.y + L.podium!.h)
 })
 it('podium seats do not straddle the platform front edge', () => {
-  for (const opts of [{ left: 1, right: 1 }, { left: 2, right: 2 }]) {
+  for (const opts of [
+    { left: 1, right: 1 },
+    { left: 2, right: 2 },
+  ]) {
     const L = computeLayout(4, 4, { deskSize: 1, podium: opts })
     const edge = L.podium!.y + L.podium!.h - M.POD_EDGE
     for (const c of L.cells.filter((x) => x.row === 0)) {

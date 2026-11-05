@@ -1,14 +1,14 @@
-import { useRef } from "react"
-import type { KeyboardEvent } from "react"
+import { useRef } from 'react'
+import type { KeyboardEvent } from 'react'
 
-import { cn } from "@/shared/lib/utils"
+import { cn } from '@/shared/lib/utils'
 
 interface SegmentedTabsProps<T extends string> {
   label: string
   items: readonly { value: T; label: string }[]
   value: T
   onChange(value: T): void
-  variant?: "pill" | "underline"
+  variant?: 'pill' | 'underline'
   className?: string
 }
 
@@ -17,7 +17,7 @@ export function SegmentedTabs<T extends string>({
   items,
   value,
   onChange,
-  variant = "pill",
+  variant = 'pill',
   className,
 }: SegmentedTabsProps<T>) {
   const hasSelection = items.some((item) => item.value === value)
@@ -29,19 +29,19 @@ export function SegmentedTabs<T extends string>({
 
   const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     switch (event.key) {
-      case "ArrowRight":
+      case 'ArrowRight':
         event.preventDefault()
         focusAt(index + 1)
         break
-      case "ArrowLeft":
+      case 'ArrowLeft':
         event.preventDefault()
         focusAt(index - 1)
         break
-      case "Home":
+      case 'Home':
         event.preventDefault()
         focusAt(0)
         break
-      case "End":
+      case 'End':
         event.preventDefault()
         focusAt(items.length - 1)
         break
@@ -53,8 +53,8 @@ export function SegmentedTabs<T extends string>({
       role="tablist"
       aria-label={label}
       className={cn(
-        variant === "pill" ? "inline-flex rounded-lg bg-muted p-1" : "flex gap-4 border-b",
-        className
+        variant === 'pill' ? 'inline-flex rounded-lg bg-muted p-1' : 'flex gap-4 border-b',
+        className,
       )}
     >
       {items.map((item, index) => {
@@ -74,10 +74,13 @@ export function SegmentedTabs<T extends string>({
             }}
             onKeyDown={(event) => onKeyDown(event, index)}
             className={cn(
-              "text-sm text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-              variant === "pill"
-                ? cn("rounded-md px-3 py-1", selected && "bg-background text-foreground shadow-sm")
-                : cn("-mb-px border-b-2 border-transparent px-1 pb-2", selected && "border-primary font-medium text-foreground")
+              'text-sm text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
+              variant === 'pill'
+                ? cn('rounded-md px-3 py-1', selected && 'bg-background text-foreground shadow-sm')
+                : cn(
+                    '-mb-px border-b-2 border-transparent px-1 pb-2',
+                    selected && 'border-primary font-medium text-foreground',
+                  ),
             )}
           >
             {item.label}

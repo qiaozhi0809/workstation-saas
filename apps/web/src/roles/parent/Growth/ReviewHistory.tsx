@@ -23,7 +23,8 @@ export default function ReviewHistory({ sid }: { sid: string }) {
 
   useEffect(() => {
     const el = sentinel.current
-    if (!el || !hasNextPage || isFetchNextPageError || typeof IntersectionObserver === 'undefined') return
+    if (!el || !hasNextPage || isFetchNextPageError || typeof IntersectionObserver === 'undefined')
+      return
     const io = new IntersectionObserver((entries) => {
       if (entries.some((e) => e.isIntersecting) && !isFetchingNextPage) void fetchNextPage()
     })
@@ -31,7 +32,10 @@ export default function ReviewHistory({ sid }: { sid: string }) {
     return () => io.disconnect()
   }, [hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage])
 
-  if (q.isError && !q.data) return <ErrorState title="点评加载失败" onRetry={() => void q.refetch()} retrying={q.isFetching} />
+  if (q.isError && !q.data)
+    return (
+      <ErrorState title="点评加载失败" onRetry={() => void q.refetch()} retrying={q.isFetching} />
+    )
   if (!q.data) return <LoadingState />
   const items = q.data.pages.flatMap((p) => p.items)
   if (items.length === 0) return <EmptyState title="还没有点评" />
@@ -41,22 +45,40 @@ export default function ReviewHistory({ sid }: { sid: string }) {
       <ul className="divide-y rounded-xl border bg-card px-3 text-card-foreground">
         {items.map((r) => (
           <li key={r.id} className="flex items-start gap-3 py-3">
-            <span className={cn('min-w-10 shrink-0 text-base font-semibold tabular-nums', r.score_delta > 0 && 'text-success', r.score_delta < 0 && 'text-destructive', r.score_delta === 0 && 'text-muted-foreground')}>
+            <span
+              className={cn(
+                'min-w-10 shrink-0 text-base font-semibold tabular-nums',
+                r.score_delta > 0 && 'text-success',
+                r.score_delta < 0 && 'text-destructive',
+                r.score_delta === 0 && 'text-muted-foreground',
+              )}
+            >
               {r.score_delta > 0 ? `+${r.score_delta}` : `${r.score_delta}`}
             </span>
             <div className="min-w-0 text-sm">
               <p className="break-words">{r.reason_text}</p>
               <p className="text-xs text-muted-foreground">
-                {[formatInTz(r.given_at, SCHOOL_TZ).slice(0, 10), r.subject, r.given_by_name].filter(Boolean).join(' · ')}
+                {[formatInTz(r.given_at, SCHOOL_TZ).slice(0, 10), r.subject, r.given_by_name]
+                  .filter(Boolean)
+                  .join(' · ')}
               </p>
             </div>
           </li>
         ))}
       </ul>
-      {isFetchNextPageError && <p role="alert" className="mt-2 text-center text-sm text-destructive">加载更多失败</p>}
+      {isFetchNextPageError && (
+        <p role="alert" className="mt-2 text-center text-sm text-destructive">
+          加载更多失败
+        </p>
+      )}
       {hasNextPage && (
         <div ref={sentinel} className="flex justify-center py-3">
-          <Button variant="outline" className="min-h-11" disabled={isFetchingNextPage} onClick={() => void fetchNextPage()}>
+          <Button
+            variant="outline"
+            className="min-h-11"
+            disabled={isFetchingNextPage}
+            onClick={() => void fetchNextPage()}
+          >
             {isFetchingNextPage ? '加载中…' : '加载更多'}
           </Button>
         </div>

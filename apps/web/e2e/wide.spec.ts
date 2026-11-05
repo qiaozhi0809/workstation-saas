@@ -1,6 +1,11 @@
 import { expect, test, type Page } from '@playwright/test'
 
-interface Box { x: number; y: number; width: number; height: number }
+interface Box {
+  x: number
+  y: number
+  width: number
+  height: number
+}
 
 async function signIn(page: Page, name = 'teacher01') {
   await page.goto('/login')
@@ -17,7 +22,10 @@ async function switchMode(page: Page, name: string) {
 }
 
 const inside = (a: Box, b: Box) =>
-  a.x >= b.x - 1 && a.y >= b.y - 1 && a.x + a.width <= b.x + b.width + 1 && a.y + a.height <= b.y + b.height + 1
+  a.x >= b.x - 1 &&
+  a.y >= b.y - 1 &&
+  a.x + a.width <= b.x + b.width + 1 &&
+  a.y + a.height <= b.y + b.height + 1
 
 const intersects = (a: Box, b: Box) =>
   a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
@@ -33,7 +41,12 @@ async function mapReady(page: Page) {
 
 const stageBox = async (page: Page) => (await page.getByTestId('classroom-stage').boundingBox())!
 
-for (const [w, h] of [[1920, 1080], [1280, 720], [1024, 768], [768, 1024]]) {
+for (const [w, h] of [
+  [1920, 1080],
+  [1280, 720],
+  [1024, 768],
+  [768, 1024],
+]) {
   test(`core stays whole at ${w}×${h}`, async ({ page }) => {
     await page.setViewportSize({ width: w, height: h })
     await signIn(page)
@@ -41,10 +54,14 @@ for (const [w, h] of [[1920, 1080], [1280, 720], [1024, 768], [768, 1024]]) {
     // 窗口缩放后舞台会重新适应,用重试断言等它稳定
     await expect(async () => {
       const stage = await stageBox(page)
-      expect(inside((await page.locator('.cr-front-wall').boundingBox())!, stage), '讲台墙在舞台内').toBe(true)
+      expect(
+        inside((await page.locator('.cr-front-wall').boundingBox())!, stage),
+        '讲台墙在舞台内',
+      ).toBe(true)
       const seats = await page.locator('[data-seat]').all()
       expect(seats).toHaveLength(24)
-      for (const seat of seats) expect(inside((await seat.boundingBox())!, stage), '座位在舞台内').toBe(true)
+      for (const seat of seats)
+        expect(inside((await seat.boundingBox())!, stage), '座位在舞台内').toBe(true)
     }).toPass()
   })
 }
@@ -56,15 +73,20 @@ test('16:9 fills the stage with the wings', async ({ page }) => {
   await expect(async () => {
     const stage = await stageBox(page)
     const svg = (await page.locator('.cr-canvas > svg').boundingBox())!
-    const visibleWidth = Math.min(svg.x + svg.width, stage.x + stage.width) - Math.max(svg.x, stage.x)
+    const visibleWidth =
+      Math.min(svg.x + svg.width, stage.x + stage.width) - Math.max(svg.x, stage.x)
     expect(visibleWidth, '地图在舞台内的可见宽度').toBeGreaterThanOrEqual(stage.width * 0.9)
     const wing = (await page.locator('[data-wing="left"]').boundingBox())!
     expect(intersects(wing, stage), '左侧窗户与舞台相交').toBe(true)
     // 适应按核心放大(设计稿 §6):铺满宽度的同时核心(前墙 + 24 个座位)仍完整在舞台内
-    expect(inside((await page.locator('.cr-front-wall').boundingBox())!, stage), '讲台墙在舞台内').toBe(true)
+    expect(
+      inside((await page.locator('.cr-front-wall').boundingBox())!, stage),
+      '讲台墙在舞台内',
+    ).toBe(true)
     const seats = await page.locator('[data-seat]').all()
     expect(seats).toHaveLength(24)
-    for (const seat of seats) expect(inside((await seat.boundingBox())!, stage), '座位在舞台内').toBe(true)
+    for (const seat of seats)
+      expect(inside((await seat.boundingBox())!, stage), '座位在舞台内').toBe(true)
   }).toPass()
 })
 
@@ -79,7 +101,11 @@ test('the 1024×768 core keeps its height-bound size', async ({ page }) => {
       const svg = document.querySelector('.cr-canvas > svg') as SVGSVGElement
       const seat = document.querySelector('[data-seat]')!.getBoundingClientRect()
       const vb = svg.viewBox.baseVal
-      return { s: svg.getBoundingClientRect().width / vb.width, expected: stage.clientHeight / vb.height, seatW: seat.width }
+      return {
+        s: svg.getBoundingClientRect().width / vb.width,
+        expected: stage.clientHeight / vb.height,
+        seatW: seat.width,
+      }
     })
     expect(m.s, '适应比例 = 舞台高 / 场景高').toBeCloseTo(m.expected, 4)
     // 座位整格宽 84(场景坐标)
@@ -87,7 +113,9 @@ test('the 1024×768 core keeps its height-bound size', async ({ page }) => {
   }).toPass()
 })
 
-test('the map cannot be dragged at fit and never leaves the stage after zooming', async ({ page }) => {
+test('the map cannot be dragged at fit and never leaves the stage after zooming', async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 1280, height: 720 })
   await signIn(page)
   await mapReady(page)
@@ -105,7 +133,9 @@ test('the map cannot be dragged at fit and never leaves the stage after zooming'
   // (适应按核心放大后 1280 × 720 横向不再溢出;纵向上方只裁约 8px 顶墙边距、下方裁约 69px 后部地板,
   //  所以锁定检查要往上拖:锁定失效时场景能往上移 69px)
   const fitSvg = (await page.locator('.cr-canvas > svg').boundingBox())!
-  expect(fitSvg.height, '地图比舞台高出至少 20px,保证拖动锁定的断言有意义').toBeGreaterThan(stage.height + 20)
+  expect(fitSvg.height, '地图比舞台高出至少 20px,保证拖动锁定的断言有意义').toBeGreaterThan(
+    stage.height + 20,
+  )
 
   // 默认从舞台左上角空白处起拖;fromBottom 时从左下角起拖(往上拖时指针不离开舞台);都避开右下角的缩放悬浮钮
   const drag = async (dx: number, dy: number, fromBottom = false) => {
@@ -121,7 +151,9 @@ test('the map cannot be dragged at fit and never leaves the stage after zooming'
   await drag(300, 200)
   expect(await canvasTransform(page), '适应时拖不动(往下)').toBe(fitTransform)
   await drag(300, -200, true)
-  expect(await canvasTransform(page), '适应时拖不动(往上,下方有约 69px 可动余地)').toBe(fitTransform)
+  expect(await canvasTransform(page), '适应时拖不动(往上,下方有约 69px 可动余地)').toBe(
+    fitTransform,
+  )
 
   const zoomIn = page.getByRole('group', { name: '缩放' }).getByRole('button', { name: '放大' })
   for (let i = 0; i < 3; i++) await zoomIn.click()
@@ -156,7 +188,11 @@ test('account menu works from the keyboard', async ({ page }) => {
 
 // 操作台:≥ 1024 宽所有模式都是一行(无概况栏);窄屏允许换行但页面不滚动
 const DOCK_MODES = ['日常', '考勤', '点评', '成绩', '排座']
-for (const [w, h] of [[1024, 768], [1280, 720], [1920, 1080]]) {
+for (const [w, h] of [
+  [1024, 768],
+  [1280, 720],
+  [1920, 1080],
+]) {
   test(`dock fits on one row at ${w}×${h}`, async ({ page }) => {
     await page.setViewportSize({ width: w, height: h })
     await signIn(page)
@@ -164,21 +200,29 @@ for (const [w, h] of [[1024, 768], [1280, 720], [1920, 1080]]) {
     for (const mode of DOCK_MODES) {
       await switchMode(page, mode)
       await expect(async () => {
-        const items = await page.getByRole('toolbar', { name: '教室工具' }).locator('button, [role="tab"]').all()
+        const items = await page
+          .getByRole('toolbar', { name: '教室工具' })
+          .locator('button, [role="tab"]')
+          .all()
         const tops: number[] = []
         for (const it of items) {
           const box = await it.boundingBox()
           if (box) tops.push(box.y)
         }
         expect(tops.length).toBeGreaterThan(4)
-        const groups = tops.sort((a, b) => a - b).reduce<number[]>((g, t) => (g.length && t - g[g.length - 1] <= 10 ? g : [...g, t]), [])
+        const groups = tops
+          .sort((a, b) => a - b)
+          .reduce<number[]>((g, t) => (g.length && t - g[g.length - 1] <= 10 ? g : [...g, t]), [])
         expect(groups, `${mode} 的按钮行数(top 分组 ${tops.join(',')})`).toHaveLength(1)
       }).toPass()
     }
   })
 }
 
-for (const [w, h] of [[768, 1024], [375, 812]]) {
+for (const [w, h] of [
+  [768, 1024],
+  [375, 812],
+]) {
   test(`dock wraps without scrolling the page at ${w}×${h}`, async ({ page }) => {
     await page.setViewportSize({ width: w, height: h })
     await signIn(page)

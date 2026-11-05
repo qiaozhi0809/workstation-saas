@@ -13,7 +13,11 @@ function tip(s: { max: number | null; min: number | null; count: number }) {
 }
 
 function subjectText(s: SubjectStat, view: ScoreView) {
-  return view === 'avg' ? fmtAvg(s.avg) : view === 'pass' ? fmtRate(s.pass_rate) : fmtRate(s.good_rate)
+  return view === 'avg'
+    ? fmtAvg(s.avg)
+    : view === 'pass'
+      ? fmtRate(s.pass_rate)
+      : fmtRate(s.good_rate)
 }
 
 // 总分没有及格率 / 优秀率,只在平均分视图里显示
@@ -26,10 +30,19 @@ const byName = (stats: SubjectStat[], name: string) => stats.find((s) => s.subje
 
 function StatCell({ stat, view }: { stat: SubjectStat | undefined; view: ScoreView }) {
   if (!stat) return <td className={cell}>{DASH}</td>
-  return <td title={tip(stat)} className={cell}>{subjectText(stat, view)}</td>
+  return (
+    <td title={tip(stat)} className={cell}>
+      {subjectText(stat, view)}
+    </td>
+  )
 }
 
-export default function ScoreClassTable({ summary, view, openClassId, onToggle }: {
+export default function ScoreClassTable({
+  summary,
+  view,
+  openClassId,
+  onToggle,
+}: {
   summary: ScoreSummary
   view: ScoreView
   openClassId: string | null
@@ -40,11 +53,17 @@ export default function ScoreClassTable({ summary, view, openClassId, onToggle }
       <table aria-label="班级成绩汇总" className="w-full min-w-max border-collapse text-sm">
         <thead>
           <tr className="border-b bg-muted/50 text-muted-foreground">
-            <th scope="col" className="px-3 py-2 text-left font-medium">班级</th>
+            <th scope="col" className="px-3 py-2 text-left font-medium">
+              班级
+            </th>
             {summary.subjects.map((s) => (
-              <th key={s.name} scope="col" className={cn(cell, 'font-medium')}>{s.name}</th>
+              <th key={s.name} scope="col" className={cn(cell, 'font-medium')}>
+                {s.name}
+              </th>
             ))}
-            <th scope="col" className={cn(cell, 'font-medium')}>总分</th>
+            <th scope="col" className={cn(cell, 'font-medium')}>
+              总分
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -53,20 +72,34 @@ export default function ScoreClassTable({ summary, view, openClassId, onToggle }
             return (
               <tr key={c.class_id} className="border-b">
                 <th scope="row" className="px-3 py-2 text-left font-medium">
-                  <button type="button" aria-expanded={open} onClick={() => onToggle(c.class_id)}
-                    className="rounded text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  <button
+                    type="button"
+                    aria-expanded={open}
+                    onClick={() => onToggle(c.class_id)}
+                    className="rounded text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
                     {c.class_name}
                   </button>
                 </th>
-                {summary.subjects.map((h) => <StatCell key={h.name} stat={byName(c.subjects, h.name)} view={view} />)}
-                <td title={tip(c.total)} className={cell}>{totalText(c.total, view)}</td>
+                {summary.subjects.map((h) => (
+                  <StatCell key={h.name} stat={byName(c.subjects, h.name)} view={view} />
+                ))}
+                <td title={tip(c.total)} className={cell}>
+                  {totalText(c.total, view)}
+                </td>
               </tr>
             )
           })}
           <tr className="bg-muted/30 font-medium">
-            <th scope="row" className="px-3 py-2 text-left">全年级</th>
-            {summary.subjects.map((h) => <StatCell key={h.name} stat={byName(summary.grade.subjects, h.name)} view={view} />)}
-            <td title={tip(summary.grade.total)} className={cell}>{totalText(summary.grade.total, view)}</td>
+            <th scope="row" className="px-3 py-2 text-left">
+              全年级
+            </th>
+            {summary.subjects.map((h) => (
+              <StatCell key={h.name} stat={byName(summary.grade.subjects, h.name)} view={view} />
+            ))}
+            <td title={tip(summary.grade.total)} className={cell}>
+              {totalText(summary.grade.total, view)}
+            </td>
           </tr>
         </tbody>
       </table>

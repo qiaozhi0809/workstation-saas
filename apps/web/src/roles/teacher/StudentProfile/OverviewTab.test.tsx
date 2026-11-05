@@ -20,36 +20,88 @@ vi.mock('@/shared/api/students', () => ({ studentsApi: { setClassRole: vi.fn() }
 vi.mock('@/shared/api/exams', () => ({ examsApi: { gradebook: vi.fn() } }))
 vi.mock('@/shared/api/reviews', () => ({ reviewsApi: { summary: vi.fn() } }))
 vi.mock('@/shared/api/attendance', () => ({ attendanceApi: { month: vi.fn() } }))
-vi.mock('@/shared/api/growth', () => ({ growthApi: { list: vi.fn().mockResolvedValue({ items: [] }) } }))
+vi.mock('@/shared/api/growth', () => ({
+  growthApi: { list: vi.fn().mockResolvedValue({ items: [] }) },
+}))
 const trendLine = vi.hoisted(() => vi.fn())
 const scoreRadar = vi.hoisted(() => vi.fn())
 vi.mock('@/shared/components/charts/TrendLine', () => ({
-  TrendLine: (props: { label: string }) => { trendLine(props); return <div role="img" aria-label={props.label} /> },
+  TrendLine: (props: { label: string }) => {
+    trendLine(props)
+    return <div role="img" aria-label={props.label} />
+  },
 }))
 vi.mock('@/shared/components/charts/ScoreRadar', () => ({
-  ScoreRadar: (props: { label: string }) => { scoreRadar(props); return <div role="img" aria-label={props.label} /> },
+  ScoreRadar: (props: { label: string }) => {
+    scoreRadar(props)
+    return <div role="img" aria-label={props.label} />
+  },
 }))
 
-const subjects = [{ name: '语文', full: 100 }, { name: '数学', full: 100 }]
-const base = { exam_type: '月考' as const, subjects, grade_exam_id: null, created_by_me: true, progress: { entered: 3, total: 3 } }
+const subjects = [
+  { name: '语文', full: 100 },
+  { name: '数学', full: 100 },
+]
+const base = {
+  exam_type: '月考' as const,
+  subjects,
+  grade_exam_id: null,
+  created_by_me: true,
+  progress: { entered: 3, total: 3 },
+}
 const book: Gradebook = {
   exams: [
-    { ...base, id: 'x1', name: '九月月考', date: '2026-09-20',
-      scores: { e1: { 语文: 80, 数学: 70 }, e2: { 语文: 90, 数学: 90 }, e3: { 语文: 50, 数学: 60 } } },
-    { ...base, id: 'x2', name: '十月月考', date: '2026-10-25',
-      scores: { e1: { 语文: 55, 数学: 85 }, e2: { 语文: 70, 数学: 80 }, e3: { 语文: 90, 数学: 70 } } },
+    {
+      ...base,
+      id: 'x1',
+      name: '九月月考',
+      date: '2026-09-20',
+      scores: {
+        e1: { 语文: 80, 数学: 70 },
+        e2: { 语文: 90, 数学: 90 },
+        e3: { 语文: 50, 数学: 60 },
+      },
+    },
+    {
+      ...base,
+      id: 'x2',
+      name: '十月月考',
+      date: '2026-10-25',
+      scores: {
+        e1: { 语文: 55, 数学: 85 },
+        e2: { 语文: 70, 数学: 80 },
+        e3: { 语文: 90, 数学: 70 },
+      },
+    },
   ],
 }
 
-const profile: StudentProfile = { id: 's1', mk: 'S0001', name: '王小一', class_id: 'c1', enrollment_id: 'e1' }
+const profile: StudentProfile = {
+  id: 's1',
+  mk: 'S0001',
+  name: '王小一',
+  class_id: 'c1',
+  enrollment_id: 'e1',
+}
 
-function renderTab({ perms, student, today = '2026-11-02' }: { perms: ClassPerm[]; student: StudentProfile; today?: string }) {
+function renderTab({
+  perms,
+  student,
+  today = '2026-11-02',
+}: {
+  perms: ClassPerm[]
+  student: StudentProfile
+  today?: string
+}) {
   vi.mocked(classroomApi.summary).mockResolvedValue({ my_perms: perms, today } as never)
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const invalidate = vi.spyOn(client, 'invalidateQueries')
   render(
     <QueryClientProvider client={client}>
-      <MemoryRouter><OverviewTab student={student} /><Toaster /></MemoryRouter>
+      <MemoryRouter>
+        <OverviewTab student={student} />
+        <Toaster />
+      </MemoryRouter>
     </QueryClientProvider>,
   )
   return { invalidate }
@@ -65,7 +117,10 @@ beforeEach(() => {
 })
 
 it('lets the homeroom teacher set a class role', async () => {
-  const { invalidate } = renderTab({ perms: ['student.write_basic'], student: { ...profile, class_role: undefined } })
+  const { invalidate } = renderTab({
+    perms: ['student.write_basic'],
+    student: { ...profile, class_role: undefined },
+  })
   fireEvent.change(await screen.findByLabelText('职务'), { target: { value: '体育委员' } })
   await waitFor(() => expect(studentsApi.setClassRole).toHaveBeenCalledWith('c1', 'e1', '体育委员'))
   await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['student', 's1'] }))
@@ -78,7 +133,9 @@ it('lets the homeroom teacher set a class role', async () => {
 it('lists 无, the presets, and a current value that is not a preset', async () => {
   renderTab({ perms: ['student.write_basic'], student: { ...profile, class_role: '图书管理员' } })
   const select = await screen.findByLabelText('职务')
-  const options = within(select).getAllByRole('option').map((o) => o.textContent)
+  const options = within(select)
+    .getAllByRole('option')
+    .map((o) => o.textContent)
   expect(options).toEqual(['无', ...CLASS_ROLE_PRESETS, '图书管理员'])
   expect(select).toHaveValue('图书管理员')
 })
@@ -133,8 +190,19 @@ it('shows the latest total, rank change, rate curve and subject radar in the ove
 })
 
 it('drops radar axes the student has no score for and shows ↑ for a climb', async () => {
-  const climbed: Gradebook = { exams: [book.exams[0], { ...book.exams[1], scores: {
-    e1: { 语文: 95, 数学: null }, e2: { 语文: 40, 数学: 30 }, e3: { 语文: 30, 数学: 30 } } }] }
+  const climbed: Gradebook = {
+    exams: [
+      book.exams[0],
+      {
+        ...book.exams[1],
+        scores: {
+          e1: { 语文: 95, 数学: null },
+          e2: { 语文: 40, 数学: 30 },
+          e3: { 语文: 30, 数学: 30 },
+        },
+      },
+    ],
+  }
   vi.mocked(examsApi.gradebook).mockResolvedValue(climbed)
   renderTab({ perms: ['exam.read'], student: profile })
   expect(await screen.findByText('↑1')).toBeInTheDocument()
@@ -152,9 +220,18 @@ it('does not request the gradebook without exam.read', async () => {
 })
 
 it('rounds radar values to integers', async () => {
-  const frac: Gradebook = { exams: [{ ...base, id: 'x1', name: '期中', date: '2026-10-25',
-    subjects: [{ name: '数学', full: 120 }],
-    scores: { e1: { 数学: 55 }, e2: { 数学: 100 }, e3: { 数学: 61 } } }] }
+  const frac: Gradebook = {
+    exams: [
+      {
+        ...base,
+        id: 'x1',
+        name: '期中',
+        date: '2026-10-25',
+        subjects: [{ name: '数学', full: 120 }],
+        scores: { e1: { 数学: 55 }, e2: { 数学: 100 }, e3: { 数学: 61 } },
+      },
+    ],
+  }
   vi.mocked(examsApi.gradebook).mockResolvedValue(frac)
   renderTab({ perms: ['exam.read'], student: profile })
   await waitFor(() => expect(scoreRadar).toHaveBeenCalled())
@@ -178,13 +255,17 @@ it('renders no score blocks when the gradebook is forbidden', async () => {
   expect(screen.queryByRole('alert')).toBeNull()
 })
 
-const kpi = (name: string) => within(screen.getByRole('group', { name: '概况指标' })).getByText(name).parentElement!
+const kpi = (name: string) =>
+  within(screen.getByRole('group', { name: '概况指标' })).getByText(name).parentElement!
 
 it('shows total points and review count with review.read', async () => {
-  vi.mocked(reviewsApi.summary).mockResolvedValue({ week_start: '2026-10-26', items: [
-    { enrollment_id: 'e2', total: 99, week: 1, plus_count: 9, minus_count: 0 },
-    { enrollment_id: 'e1', total: -3, week: 0, plus_count: 2, minus_count: 3 },
-  ] })
+  vi.mocked(reviewsApi.summary).mockResolvedValue({
+    week_start: '2026-10-26',
+    items: [
+      { enrollment_id: 'e2', total: 99, week: 1, plus_count: 9, minus_count: 0 },
+      { enrollment_id: 'e1', total: -3, week: 0, plus_count: 2, minus_count: 3 },
+    ],
+  })
   renderTab({ perms: ['review.read'], student: profile })
   await screen.findByText('点评 5 次')
   expect(reviewsApi.summary).toHaveBeenCalledWith('c1')
@@ -211,22 +292,26 @@ it('shows 全勤 when the month has no exceptions', async () => {
 })
 
 it('counts distinct absent days and per-status records for this student only', async () => {
-  vi.mocked(attendanceApi.month).mockResolvedValue({ month: '2026-11', items: [
-    { enrollment_id: 'e1', date: '2026-11-01', status: 'leave' },
-    { enrollment_id: 'e1', date: '2026-11-02', status: 'absent' },
-    { enrollment_id: 'e1', date: '2026-11-03', status: 'late' },
-    { enrollment_id: 'e1', date: '2026-11-04', status: 'late' },
-    { enrollment_id: 'e2', date: '2026-11-05', status: 'absent' },
-  ] })
+  vi.mocked(attendanceApi.month).mockResolvedValue({
+    month: '2026-11',
+    items: [
+      { enrollment_id: 'e1', date: '2026-11-01', status: 'leave' },
+      { enrollment_id: 'e1', date: '2026-11-02', status: 'absent' },
+      { enrollment_id: 'e1', date: '2026-11-03', status: 'late' },
+      { enrollment_id: 'e1', date: '2026-11-04', status: 'late' },
+      { enrollment_id: 'e2', date: '2026-11-05', status: 'absent' },
+    ],
+  })
   renderTab({ perms: ['attendance.read'], student: profile })
   expect(await screen.findByText('2 天未到')).toBeInTheDocument()
   expect(screen.getByText('请假 1 · 缺勤 1 · 迟到 2')).toBeInTheDocument()
 })
 
 it('shows 0 天未到 when there are only late records', async () => {
-  vi.mocked(attendanceApi.month).mockResolvedValue({ month: '2026-11', items: [
-    { enrollment_id: 'e1', date: '2026-11-03', status: 'late' },
-  ] })
+  vi.mocked(attendanceApi.month).mockResolvedValue({
+    month: '2026-11',
+    items: [{ enrollment_id: 'e1', date: '2026-11-03', status: 'late' }],
+  })
   renderTab({ perms: ['attendance.read'], student: profile })
   expect(await screen.findByText('0 天未到')).toBeInTheDocument()
   expect(screen.getByText('请假 0 · 缺勤 0 · 迟到 1')).toBeInTheDocument()
@@ -240,19 +325,27 @@ it('queries the month of summary.today', async () => {
 })
 
 it('refetches the attendance KPI on reopen even within the global staleTime', async () => {
-  vi.mocked(classroomApi.summary).mockResolvedValue({ my_perms: ['attendance.read'], today: '2026-11-02' } as never)
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 30_000 } } })
+  vi.mocked(classroomApi.summary).mockResolvedValue({
+    my_perms: ['attendance.read'],
+    today: '2026-11-02',
+  } as never)
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: 30_000 } },
+  })
   const ui = (
     <QueryClientProvider client={client}>
-      <MemoryRouter><OverviewTab student={profile} /></MemoryRouter>
+      <MemoryRouter>
+        <OverviewTab student={profile} />
+      </MemoryRouter>
     </QueryClientProvider>
   )
   const first = render(ui)
   expect(await screen.findByText('全勤')).toBeInTheDocument()
   first.unmount()
-  vi.mocked(attendanceApi.month).mockResolvedValue({ month: '2026-11', items: [
-    { enrollment_id: 'e1', date: '2026-11-02', status: 'absent' },
-  ] })
+  vi.mocked(attendanceApi.month).mockResolvedValue({
+    month: '2026-11',
+    items: [{ enrollment_id: 'e1', date: '2026-11-02', status: 'absent' }],
+  })
   render(ui)
   expect(await screen.findByText('1 天未到')).toBeInTheDocument()
 })

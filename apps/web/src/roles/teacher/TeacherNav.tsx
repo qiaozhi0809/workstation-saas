@@ -1,4 +1,12 @@
-import { ChartColumn, ClipboardList, Megaphone, School, Sparkles, Users, type LucideIcon } from 'lucide-react'
+import {
+  ChartColumn,
+  ClipboardList,
+  Megaphone,
+  School,
+  Sparkles,
+  Users,
+  type LucideIcon,
+} from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 import { cn } from '@/shared/lib/utils'
 
@@ -19,10 +27,14 @@ export default function TeacherNav({ perms }: { perms?: readonly string[] }) {
         <NavLink
           key={to}
           to={to}
-          className={({ isActive }) => cn(
-            'flex h-9 items-center gap-1.5 rounded-md px-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:px-3',
-            isActive ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
-          )}
+          className={({ isActive }) =>
+            cn(
+              'flex h-9 items-center gap-1.5 rounded-md px-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:px-3',
+              isActive
+                ? 'bg-accent text-foreground'
+                : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
+            )
+          }
         >
           <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
           <span className="sr-only md:not-sr-only">{label}</span>

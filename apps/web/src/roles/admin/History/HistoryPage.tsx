@@ -32,9 +32,16 @@ export default function HistoryPage() {
   })
 
   if (years.isError) {
-    return statusOf(years.error) === 403
-      ? <EmptyState title="没有权限查看往年班级" className="p-6" />
-      : <ErrorState title="加载失败" onRetry={() => void years.refetch()} retrying={years.isFetching} className="p-6" />
+    return statusOf(years.error) === 403 ? (
+      <EmptyState title="没有权限查看往年班级" className="p-6" />
+    ) : (
+      <ErrorState
+        title="加载失败"
+        onRetry={() => void years.refetch()}
+        retrying={years.isFetching}
+        className="p-6"
+      />
+    )
   }
   if (!years.data) return <LoadingState />
 
@@ -43,9 +50,18 @@ export default function HistoryPage() {
     body = <EmptyState title="还没有往年数据,完成第一次学年升级后会出现在这里" />
   } else if (classes.isError) {
     const st = statusOf(classes.error)
-    body = st === 403 ? <EmptyState title="没有权限查看往年班级" />
-      : st === 404 ? <EmptyState title="该学年不存在" />
-      : <ErrorState title="加载失败" onRetry={() => void classes.refetch()} retrying={classes.isFetching} />
+    body =
+      st === 403 ? (
+        <EmptyState title="没有权限查看往年班级" />
+      ) : st === 404 ? (
+        <EmptyState title="该学年不存在" />
+      ) : (
+        <ErrorState
+          title="加载失败"
+          onRetry={() => void classes.refetch()}
+          retrying={classes.isFetching}
+        />
+      )
   } else if (!classes.data) {
     body = <LoadingState />
   } else if (classes.data.length === 0) {
@@ -58,10 +74,15 @@ export default function HistoryPage() {
             <h2 className="text-base font-semibold">{grade}</h2>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {list.map((c) => (
-                <Link key={c.class_id} to={`/admin/history/classes/${c.class_id}?year=${yearId}`}
-                  className="flex flex-col gap-1 rounded-lg border bg-card p-4 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                <Link
+                  key={c.class_id}
+                  to={`/admin/history/classes/${c.class_id}?year=${yearId}`}
+                  className="flex flex-col gap-1 rounded-lg border bg-card p-4 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
                   <span className="text-base font-semibold">{c.class_name}</span>
-                  <span className="text-sm text-muted-foreground">{c.homeroom_name ? `班主任 ${c.homeroom_name}` : '未设班主任'}</span>
+                  <span className="text-sm text-muted-foreground">
+                    {c.homeroom_name ? `班主任 ${c.homeroom_name}` : '未设班主任'}
+                  </span>
                   <span className="text-sm text-muted-foreground">{`${c.students} 人`}</span>
                 </Link>
               ))}
@@ -77,8 +98,17 @@ export default function HistoryPage() {
       <header className="flex flex-col gap-3">
         <h1 className="text-xl font-semibold">往年班级</h1>
         {years.data.length > 0 && (
-          <NativeSelect aria-label="学年" className="w-fit max-w-full" value={yearId} onChange={(e) => setPicked(e.target.value)}>
-            {years.data.map((y) => <option key={y.id} value={y.id}>{y.name}</option>)}
+          <NativeSelect
+            aria-label="学年"
+            className="w-fit max-w-full"
+            value={yearId}
+            onChange={(e) => setPicked(e.target.value)}
+          >
+            {years.data.map((y) => (
+              <option key={y.id} value={y.id}>
+                {y.name}
+              </option>
+            ))}
           </NativeSelect>
         )}
       </header>

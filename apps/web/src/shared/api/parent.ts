@@ -1,7 +1,13 @@
 import type { Contact } from '@/shared/types/student'
 import type {
-  ParentChild, ParentComment, ParentExamDetail, ParentExamItem, ParentGrowthRecord, ParentProfile,
-  ParentReviewPage, ParentToday,
+  ParentChild,
+  ParentComment,
+  ParentExamDetail,
+  ParentExamItem,
+  ParentGrowthRecord,
+  ParentProfile,
+  ParentReviewPage,
+  ParentToday,
 } from '@/shared/types/parent'
 import { api } from './client'
 
@@ -15,7 +21,8 @@ export const parentApi = {
   profile: (sid: string) => api<ParentProfile>('GET', `${base(sid)}/profile`),
   saveContacts: (sid: string, contacts: Contact[]) =>
     api<ParentProfile>('PUT', `${base(sid)}/contacts`, { contacts }),
-  growth: (sid: string) => api<{ items: ParentGrowthRecord[] }>('GET', `${base(sid)}/growth-records`),
+  growth: (sid: string) =>
+    api<{ items: ParentGrowthRecord[] }>('GET', `${base(sid)}/growth-records`),
   comments: (sid: string) => api<{ items: ParentComment[] }>('GET', `${base(sid)}/comments`),
   reviews: (sid: string, cursor?: string) => {
     const qs = new URLSearchParams()

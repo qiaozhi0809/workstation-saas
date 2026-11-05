@@ -7,15 +7,37 @@ const fetchMock = vi.fn()
 beforeEach(() => {
   fetchMock.mockReset().mockResolvedValue(new Response('{}', { status: 200 }))
   vi.stubGlobal('fetch', fetchMock)
-  useAuthStore.setState({ accessToken: 'a', refreshToken: 'r', user: { id: 'u', display_name: 'x', contexts: ['teacher'], admin_perms: [], must_change_password: false } })
+  useAuthStore.setState({
+    accessToken: 'a',
+    refreshToken: 'r',
+    user: {
+      id: 'u',
+      display_name: 'x',
+      contexts: ['teacher'],
+      admin_perms: [],
+      must_change_password: false,
+    },
+  })
 })
 
 const lastCall = () => {
   const [url, init] = fetchMock.mock.calls[0]
-  return { method: init.method, url, body: init.body === undefined ? undefined : JSON.parse(init.body) }
+  return {
+    method: init.method,
+    url,
+    body: init.body === undefined ? undefined : JSON.parse(init.body),
+  }
 }
 
-const draft: LayoutDraft = { desk_size: 2, seat_layout: 'manual', rows: 5, cols: 8, podium_left: 1, podium_right: 0, how: 'keep' }
+const draft: LayoutDraft = {
+  desk_size: 2,
+  seat_layout: 'manual',
+  rows: 5,
+  cols: 8,
+  podium_left: 1,
+  podium_right: 0,
+  how: 'keep',
+}
 
 it('previews a layout draft', async () => {
   await seatingApi.preview('c1', draft)

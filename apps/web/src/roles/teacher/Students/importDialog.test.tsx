@@ -11,18 +11,39 @@ import ImportDialog from './ImportDialog'
 
 vi.mock('@/shared/api/students', () => ({ studentsApi: { importRows: vi.fn() } }))
 vi.mock('@/shared/components/Toast', () => ({ toast: vi.fn() }))
-vi.mock('@/shared/lib/csv', async (orig) => ({ ...(await orig<typeof import('@/shared/lib/csv')>()), downloadText: vi.fn() }))
+vi.mock('@/shared/lib/csv', async (orig) => ({
+  ...(await orig<typeof import('@/shared/lib/csv')>()),
+  downloadText: vi.fn(),
+}))
 
-const cls: ClassView = { id: 'c1', name: '三年二班', grade_name: '三年级', seat_rows: 2, seat_cols: 2, desk_size: 2, seat_layout: 'manual', seat_order: 'row', podium_left: 0, podium_right: 0, room: '', role: 'homeroom_teacher' }
+const cls: ClassView = {
+  id: 'c1',
+  name: '三年二班',
+  grade_name: '三年级',
+  seat_rows: 2,
+  seat_cols: 2,
+  desk_size: 2,
+  seat_layout: 'manual',
+  seat_order: 'row',
+  podium_left: 0,
+  podium_right: 0,
+  room: '',
+  role: 'homeroom_teacher',
+}
 const PASTED = '姓名\t性别\t学号\n张三\t男\t01\n李四\t女\t02\n'
 
 let client: QueryClient
 const renderDialog = () => {
   const onClose = vi.fn()
-  render(<QueryClientProvider client={client}><ImportDialog cls={cls} onClose={onClose} /></QueryClientProvider>)
+  render(
+    <QueryClientProvider client={client}>
+      <ImportDialog cls={cls} onClose={onClose} />
+    </QueryClientProvider>,
+  )
   return onClose
 }
-const paste = (text: string) => fireEvent.change(screen.getByLabelText('粘贴名单'), { target: { value: text } })
+const paste = (text: string) =>
+  fireEvent.change(screen.getByLabelText('粘贴名单'), { target: { value: text } })
 
 beforeEach(() => {
   vi.resetAllMocks()
@@ -30,7 +51,10 @@ beforeEach(() => {
 })
 
 it('previews and imports pasted rows with auto seating', async () => {
-  vi.mocked(studentsApi.importRows).mockResolvedValue({ created: 1, skipped: [{ index: 1, reason: 'duplicate' }] })
+  vi.mocked(studentsApi.importRows).mockResolvedValue({
+    created: 1,
+    skipped: [{ index: 1, reason: 'duplicate' }],
+  })
   const spy = vi.spyOn(client, 'invalidateQueries')
   const onClose = renderDialog()
   expect(screen.getByRole('button', { name: '导入' })).toBeDisabled()
@@ -44,7 +68,15 @@ it('previews and imports pasted rows with auto seating', async () => {
   expect(body.auto_seat).toBe(true)
   expect(body.rows.map((r) => r.name)).toEqual(['张三', '李四'])
   expect(toast).toHaveBeenCalledWith('导入 1 人,跳过重复 1 人')
-  for (const k of ['student-records', 'class-students', 'classroom', 'gradebook', 'student', 'exams', 'score-sheet']) {
+  for (const k of [
+    'student-records',
+    'class-students',
+    'classroom',
+    'gradebook',
+    'student',
+    'exams',
+    'score-sheet',
+  ]) {
     expect(spy).toHaveBeenCalledWith({ queryKey: [k] })
   }
   expect(screen.getByRole('checkbox', { name: '自动安排到空座位' })).toBeInTheDocument()
@@ -92,7 +124,9 @@ it('downloads the template with a BOM', () => {
 })
 
 it('shows the error and stays open when the import fails', async () => {
-  vi.mocked(studentsApi.importRows).mockRejectedValue(new ApiError(409, 'NO_ACTIVE_YEAR', '学校还没有进行中的学年'))
+  vi.mocked(studentsApi.importRows).mockRejectedValue(
+    new ApiError(409, 'NO_ACTIVE_YEAR', '学校还没有进行中的学年'),
+  )
   const onClose = renderDialog()
   paste(PASTED)
   fireEvent.click(screen.getByRole('button', { name: '导入' }))
@@ -101,7 +135,9 @@ it('shows the error and stays open when the import fails', async () => {
 })
 
 it('clears a stale error when the text, file or auto-seat option changes', async () => {
-  vi.mocked(studentsApi.importRows).mockRejectedValue(new ApiError(409, 'NO_ACTIVE_YEAR', '学校还没有进行中的学年'))
+  vi.mocked(studentsApi.importRows).mockRejectedValue(
+    new ApiError(409, 'NO_ACTIVE_YEAR', '学校还没有进行中的学年'),
+  )
   renderDialog()
   const fail = async () => {
     fireEvent.click(screen.getByRole('button', { name: '导入' }))
@@ -115,6 +151,8 @@ it('clears a stale error when the text, file or auto-seat option changes', async
   fireEvent.click(screen.getByLabelText('自动安排到空座位'))
   expect(screen.queryByRole('alert')).toBeNull()
   await fail()
-  fireEvent.change(screen.getByLabelText('选择 CSV 文件'), { target: { files: [new File([PASTED], 'a.csv')] } })
+  fireEvent.change(screen.getByLabelText('选择 CSV 文件'), {
+    target: { files: [new File([PASTED], 'a.csv')] },
+  })
   await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
 })

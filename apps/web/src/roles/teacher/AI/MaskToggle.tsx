@@ -1,7 +1,11 @@
 import type { AiStatus } from '@/shared/types/ai'
 
 /** 「隐去学生姓名」开关:学校强制时固定勾选并禁用,旁注「学校要求」。 */
-export default function MaskToggle({ status, checked, onChange }: {
+export default function MaskToggle({
+  status,
+  checked,
+  onChange,
+}: {
   status: AiStatus | undefined
   checked: boolean
   onChange(v: boolean): void

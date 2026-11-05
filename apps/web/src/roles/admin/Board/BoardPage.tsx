@@ -16,7 +16,15 @@ export default function BoardPage() {
     placeholderData: keepPreviousData,
   })
 
-  if (q.isError) return <ErrorState title="加载失败" onRetry={() => void q.refetch()} retrying={q.isFetching} className="p-6" />
+  if (q.isError)
+    return (
+      <ErrorState
+        title="加载失败"
+        onRetry={() => void q.refetch()}
+        retrying={q.isFetching}
+        className="p-6"
+      />
+    )
   if (!q.data) return <LoadingState />
   const d = q.data
   const active = gradeId ?? d.grade_id
@@ -27,16 +35,25 @@ export default function BoardPage() {
         <h1 className="text-xl font-semibold">全校看板</h1>
         {d.grades.length > 0 && (
           <div className="max-w-full overflow-x-auto">
-            <SegmentedTabs label="年级" items={d.grades.map((g) => ({ value: g.id, label: g.name }))}
-              value={active ?? ''} onChange={setGradeId} />
+            <SegmentedTabs
+              label="年级"
+              items={d.grades.map((g) => ({ value: g.id, label: g.name }))}
+              value={active ?? ''}
+              onChange={setGradeId}
+            />
           </div>
         )}
       </header>
       {d.classes.length === 0 ? (
         <EmptyState title="暂无班级" />
       ) : (
-        <div data-class-grid className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {d.classes.map((c) => <ClassCard key={c.id} cls={c} />)}
+        <div
+          data-class-grid
+          className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+        >
+          {d.classes.map((c) => (
+            <ClassCard key={c.id} cls={c} />
+          ))}
         </div>
       )}
     </div>
