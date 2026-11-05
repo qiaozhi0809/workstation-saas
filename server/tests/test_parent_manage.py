@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -274,8 +275,6 @@ def test_unlink_no_active_heir_leaves_no_primary(client, settings, db):
 
 
 def _drain(pubsub) -> list[dict]:
-    import json
-
     out = []
     while (msg := pubsub.get_message(timeout=0.5)) is not None:
         if msg["type"] == "message":
@@ -289,7 +288,7 @@ def test_unlink_archive_publishes_revoked(client, settings, db, redis_client):
     _add(client, settings, S4, "13800000087")
     pubsub = redis_client.pubsub()
     pubsub.subscribe("ws:events")
-    pubsub.get_message(timeout=1)  # 订阅确认
+    assert pubsub.get_message(timeout=2)["type"] == "subscribe"
     # 还有别的孩子:账号不归档,不发布
     res = client.delete(f"/api/v1/parent-links/{busy['link_id']}", headers=auth(settings))
     assert res.status_code == 204
