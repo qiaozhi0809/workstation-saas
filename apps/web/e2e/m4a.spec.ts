@@ -55,7 +55,7 @@ async function unlinkParent(request: APIRequestContext, token: string, studentId
   }
 }
 
-/** 三年二班建一场考试并给全班录语文分(王小一在内),返回考试 id。 */
+/** 三年二班建一场考试并给全班录语文分(王小一在内)。 */
 async function createClassExam(request: APIRequestContext, teacherToken: string): Promise<void> {
   const id = await createExam(request, teacherToken, CLASS_3_2, { name: EXAM, date: '2026-10-20', subjects: [{ name: '语文', full: 100 }] })
   const ids = await rosterEnrollmentIds(request, teacherToken, CLASS_3_2)
@@ -63,7 +63,8 @@ async function createClassExam(request: APIRequestContext, teacherToken: string)
 }
 
 test('homeroom teacher creates a parent account who signs in on a phone and sees only the own child', async ({ page, browser, request }) => {
-  const phone = `13800${String(Math.floor(Math.random() * 1_000_000)).padStart(6, '0')}`
+  // 139 号段:种子与其他用例只用 138 / 199,随机号不会撞上已有账号(撞上会绑到原账号、不出临时密码)
+  const phone = `13900${String(Math.floor(Math.random() * 1_000_000)).padStart(6, '0')}`
   const teacher = await login(request, 'teacher01')
   const zhang = await studentRecord(request, teacher, CLASS_3_2, '张小三')
   let ctx: Awaited<ReturnType<typeof phoneContext>>['ctx'] | undefined
@@ -125,7 +126,7 @@ test('a parent with two children switches between them and the school rank switc
     await expect(switcher.locator('option')).toHaveCount(2)
     await expect(switcher.locator('option:checked')).toHaveText('王小一')
 
-    // 切到魏小七:地址里的 ?child= 变了,出勤卡仍在
+    // 切到魏小七:选中项变了,出勤卡仍在
     await switcher.selectOption({ label: '魏小七' })
     await expect(switcher.locator('option:checked')).toHaveText('魏小七')
     await expect(page.getByRole('region', { name: '今日出勤' })).toBeVisible()
@@ -155,7 +156,7 @@ test('a teacher who is also a parent switches to the parent view and sees the ow
   await expect(page).toHaveURL(/\/parent\/today/)
   await expect(page.getByText('李小二').first()).toBeVisible()
   await expect(page.getByRole('region', { name: '今日出勤' })).toBeVisible()
-  // 家长端再切回教师端
+  // 家长端的账号菜单里能切回教师端
   await page.getByRole('button', { name: '账号菜单' }).click()
   await expect(page.getByRole('menuitem', { name: '切换到教师端' })).toBeVisible()
 })

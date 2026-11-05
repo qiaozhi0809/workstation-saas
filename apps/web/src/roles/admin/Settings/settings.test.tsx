@@ -135,7 +135,8 @@ it('lays out the eight switches in three groups with their notes', async () => {
     const region = await screen.findByRole('group', { name: g })
     expect(within(region).getAllByRole('switch').map((s) => s.getAttribute('aria-label') ?? s.closest('label')?.textContent)).toEqual(labels)
   }
-  expect(screen.getAllByText('家长端上线后生效')).toHaveLength(3)
+  expect(screen.getAllByText('家长端下次刷新即生效')).toHaveLength(2)
+  expect(screen.getByText('对之后 AI 生成的评语生效')).toBeInTheDocument()
   expect(screen.getAllByText('监控上线后生效')).toHaveLength(1)
   expect(screen.getByRole('switch', { name: '家长可看监控' })).toBeDisabled()
   expect(screen.getByText('v1 不开放')).toBeInTheDocument()
