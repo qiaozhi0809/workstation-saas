@@ -1,0 +1,102 @@
+# 生产 compose。与 .env 放在同一目录;WS_VERSION 等变量来自 .env。
+name: workstation
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: workstation
+      POSTGRES_DB: workstation
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请在 .env 中设置 POSTGRES_PASSWORD}
+    volumes:
+      - ./data/pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workstation -d workstation"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    networks: [ws-net]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - ./data/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    networks: [ws-net]
+
+  app:
+    image: workstation-app:${WS_VERSION:?请在 .env 中设置 WS_VERSION}
+    restart: unless-stopped
+    command: ["app"]
+    env_file: .env
+    environment:
+      WS_LOG_DIR: /var/log/workstation
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - ./data/logs:/var/log/workstation
+    # 只覆盖启动宽限期,其余(检查命令、间隔、重试次数)沿用镜像的 HEALTHCHECK:
+    # app 启动时会自动做数据库迁移,数据量大时可能超过镜像里默认的 60 秒宽限期,
+    # 过早判成 unhealthy 会让依赖它的 scheduler 起不来、安装 / 升级 / 恢复误报失败
+    healthcheck:
+      start_period: 300s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [ws-net]
+
+  scheduler:
+    image: workstation-app:${WS_VERSION}
+    restart: unless-stopped
+    command: ["scheduler"]
+    env_file: .env
+    environment:
+      WS_LOG_DIR: /var/log/workstation
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - ./data/logs:/var/log/workstation
+    # 镜像自带的 HEALTHCHECK 检查 8080 端口,scheduler 不监听端口,关掉
+    healthcheck:
+      disable: true
+    depends_on:
+      app:
+        condition: service_healthy
+    networks: [ws-net]
+
+  web:
+    image: workstation-web:${WS_VERSION}
+    restart: unless-stopped
+    # 只传 Caddyfile 用到的变量,不把 .env 里的密钥交给 web 容器
+    environment:
+      WS_SITE_ADDRESS: ${WS_SITE_ADDRESS:-localhost}
+      WS_ACME_EMAIL: ${WS_ACME_EMAIL:-}
+    ports:
+      - "${WS_HTTP_PORT:-80}:80"
+      - "${WS_HTTPS_PORT:-443}:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs:/certs:ro
+      - ./data/caddy:/data
+    healthcheck:
+      # Caddy 管理接口只监听容器内回环地址,能响应说明 Caddy 已加载配置
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:2019/config/"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    # 不依赖 app:app 异常时,备份/恢复仍要能经 web 容器取到 data/ 的 tar
+    networks: [ws-net]
+
+networks:
+  ws-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24

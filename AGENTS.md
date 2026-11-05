@@ -48,6 +48,7 @@
 - **不写不必要的错误处理**。只在系统边界(用户输入、外部 API)validate。
 - **commits** 用 Conventional Commits 格式:`feat:` / `fix:` / `chore:` / `test:` / `docs:` / `refactor:`
 - **分支**:`main` 为主分支;功能开发在 feature 分支(可选)。首次实现可直接推 main。
+- **迁移预检**:新迁移里每个 `CHECK` / 唯一约束 / `NOT NULL`(对已有表加的)必须在 `server/app/deploy/precheck.py` 的 `CHECKS` 登记预检,否则升级旧库时会在迁移中途失败;`tests/test_precheck.py` 会扫描迁移 SQL 核对。
 
 ### 安全
 
@@ -168,6 +169,11 @@ Step N+(1-k): Commit          → git add && git commit
 | 前端 E2E | Playwright(project 链 mutating → … → admin → m3b → m4a → m4b → readonly) | `cd apps/web && npm run e2e` |
 | 后端 Lint | ruff | `uv run ruff check . && uv run ruff format --check .` |
 | 前端 Lint | ESLint + Prettier | `npm run lint` |
+| 部署镜像 | Docker | `make image VERSION=<标签>`(构建 `workstation-app` 与 `workstation-web` 两个镜像) |
+| 部署脚本测试 | bash + Docker | `bash deploy/tests/compose_smoke.sh`、`install_fresh.sh`、`install_twice.sh`、`upgrade_same.sh`、`upgrade_precheck_fail.sh`、`backup_restore.sh`、`restore_rejects.sh`(都在 `deploy/tests/`) |
+| 部署脚本 Lint | shellcheck | `docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck-alpine:stable shellcheck -S warning -x deploy/prod/scripts/*.sh deploy/tests/*.sh` |
+
+部署测试脚本须以**非 root** 用户运行,且该用户在 `docker` 组里;**逐个跑**,不要并行(它们共用 compose 项目名 `ws-m5a-b`、端口 18080 / 18443 与固定子网 `172.30.0.0/24`,可用 `WS_TEST_PROJECT`(`compose_smoke.sh` 另兼容旧名 `WS_SMOKE_PROJECT`)、`WS_HTTP_PORT`、`WS_HTTPS_PORT`、`WS_TEST_VERSION`(旧名 `WS_VERSION` 仍有效)、`WS_TEST_DEPLOY_SRC`(被测部署目录,默认 `deploy/prod`)覆盖);镜像须先用 `make image VERSION=0.0.0-seg-b`(或 `WS_VERSION` 指定的标签)构建好。
 
 **不要 mock 数据库和 Redis**。用 testcontainers 跑真服务(plan Task 3 提供 conftest);本机需先启动 Docker。
 
