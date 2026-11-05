@@ -207,6 +207,21 @@ def test_users_target_rejects_non_candidates(client, db, settings):
     assert count == 0
 
 
+def test_users_target_frozen_teacher_with_parent_account_403(client, db, settings):
+    # 已冻结的前教师 + 纯家长账号:整体 403,不是 409(不能借此探出哪些账号是家长)
+    frozen = make_teacher_account(db, login_name="mix_frozen")
+    bind(db, frozen.id, Role.subject_teacher, class_id=C32)
+    frozen.status = "frozen"
+    db.flush()
+    for who in (PRINCIPAL, DEAN):
+        for parent in (LI, ZHOU):
+            target = {"kind": "users", "user_ids": [str(frozen.id), parent]}
+            assert send(client, settings, who, target).status_code == 403, (who, parent)
+        only = {"kind": "users", "user_ids": [str(frozen.id)]}
+        assert send(client, settings, who, only).status_code == 409
+    assert db.scalar(select(func.count()).select_from(Notice)) == 0
+
+
 def test_users_target_bounds(client, settings):
     res = send(client, settings, PRINCIPAL, {"kind": "users", "user_ids": []})
     assert res.status_code == 400

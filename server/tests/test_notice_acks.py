@@ -188,6 +188,26 @@ def test_ack_stats_and_export(client, db, settings):
     assert len(exported) == 1 and exported[0].success and exported[0].user_id == UUID(PRINCIPAL)
 
 
+def test_export_escapes_formula_prefixes(client, db, settings):
+    n = parent_notice(client, settings, CHOICE)
+    notes = {LI: "+1", T04: "-1"}
+    for who, note in notes.items():
+        assert post_ack(client, settings, who, n, choice=0, note=note).status_code == 204
+    h = auth(settings, PRINCIPAL)
+
+    def exported() -> dict[str, str]:
+        text = client.get(f"{INBOX}/{n}/acks/export", headers=h).content.decode("utf-8")
+        rows = list(csv.reader(io.StringIO(text.removeprefix(BOM))))
+        return {r[3]: r[6] for r in rows[1:]}
+
+    assert exported() == {"李家长": "'+1", "孙老师": "'-1"}
+    row_li = row_of(db, n, LI)
+    for raw, expect in (("@cmd", "'@cmd"), ("\t制表", "'\t制表"), ("普通留言", "普通留言")):
+        row_li.ack_content = raw
+        db.flush()
+        assert exported()["李家长"] == expect, raw
+
+
 def test_ack_stats_teacher_audience(client, db, settings):
     res = send(client, settings, PRINCIPAL, TARGET_C32, ack=CONFIRM)
     n = res.json()["id"]

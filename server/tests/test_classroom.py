@@ -25,6 +25,7 @@ ALL_PERMS = [
     "ai.use",
     "ai.class",
     "parent.manage",
+    "class.notice",
 ]
 A_BOARD = {
     "left_title": "今日课程",

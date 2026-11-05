@@ -142,6 +142,7 @@ def test_role_perms_full_matrix():
             Perm.AI_USE,
             Perm.AI_CLASS,
             Perm.PARENT_MANAGE,
+            Perm.CLASS_NOTICE,
         },
         Role.subject_teacher: {
             Perm.CLASS_READ,
@@ -353,7 +354,14 @@ def test_teacher_binding_without_year_ignored(db):
 def test_parent_manage_homeroom_only():
     holders = {r for r, perms in ROLE_PERMS.items() if Perm.PARENT_MANAGE in perms}
     assert holders == {Role.homeroom_teacher}
-    assert CLASSROOM_PERMS[-1] == Perm.PARENT_MANAGE
+    assert Perm.PARENT_MANAGE in CLASSROOM_PERMS
+
+
+def test_class_notice_homeroom_only():
+    holders = {r for r, perms in ROLE_PERMS.items() if Perm.CLASS_NOTICE in perms}
+    assert holders == {Role.homeroom_teacher}
+    assert CLASSROOM_PERMS[-1] == Perm.CLASS_NOTICE
+    assert CLASSROOM_PERMS[-2] == Perm.PARENT_MANAGE
 
 
 PARENT01_USER = "55555555-5555-5555-5555-555555555561"  # 种子家长,S0001 主家长

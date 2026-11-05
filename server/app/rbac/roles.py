@@ -55,6 +55,7 @@ class Perm(StrEnum):
     GRADE_EXAM_WRITE = "exam.grade_write"
     YEAR_UPGRADE = "year.upgrade"
     PARENT_MANAGE = "parent.manage"
+    CLASS_NOTICE = "class.notice"
 
 
 # Order matches ClassroomSummary.my_perms.
@@ -79,6 +80,7 @@ CLASSROOM_PERMS: tuple[Perm, ...] = (
     Perm.AI_USE,
     Perm.AI_CLASS,
     Perm.PARENT_MANAGE,
+    Perm.CLASS_NOTICE,
 )
 
 
@@ -160,6 +162,7 @@ ROLE_PERMS: dict[Role, frozenset[Perm]] = {
             Perm.AI_USE,
             Perm.AI_CLASS,
             Perm.PARENT_MANAGE,
+            Perm.CLASS_NOTICE,
         }
     ),
     Role.subject_teacher: frozenset(
