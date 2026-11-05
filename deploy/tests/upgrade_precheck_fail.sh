@@ -3,11 +3,12 @@
 # 同时覆盖几类"在动任何东西之前就被拒绝"的离线包(路径穿越、符号链接、大版本、备份失败),
 # 并用带不同版本号的包验证 WS_VERSION 覆盖确实让预检跑在新镜像上。
 set -euo pipefail
-# shellcheck source=deploy/tests/_common.sh
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=_common.sh
 . "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
-[ -x "$ROOT/deploy/prod/scripts/backup.sh" ] \
-  || fail "deploy/prod/scripts/backup.sh 不存在(由 Task 7 提供);upgrade.sh 的强制备份依赖它,本测试在 Task 7 完成前无法通过"
+[ -x "$DEPLOY_SRC/scripts/backup.sh" ] \
+  || fail "scripts/backup.sh 不存在(由 Task 7 提供);upgrade.sh 的强制备份依赖它,本测试在 Task 7 完成前无法通过"
 
 echo "== 1/5 安装并制造脏数据"
 prepare_deploy_dir
@@ -33,14 +34,14 @@ build_pkg() {
   local out="$1" ver="$2" src="$TMP/pkgsrc/workstation-deploy-$2"
   rm -rf "$TMP/pkgsrc"
   mkdir -p "$src"
-  cp -R "$ROOT/deploy/prod/." "$src/"
+  cp -R "$DEPLOY_SRC/." "$src/"
   printf '%s\n' "$ver" >"$src/VERSION"
   printf '# upgraded-marker\n' >>"$src/docker-compose.yml"
   tar -C "$TMP/pkgsrc" -czf "$out" "workstation-deploy-$ver"
 }
 # 用 python 造含恶意条目的包($1=输出 $2=kind)
 build_evil_pkg() {
-  python3 -I - "$1" "$2" "$ROOT/deploy/prod" "$VERSION" <<'PY'
+  python3 -I - "$1" "$2" "$DEPLOY_SRC" "$VERSION" <<'PY'
 import io, os, sys, tarfile
 out, kind, src, ver = sys.argv[1:5]
 top = "workstation-deploy-" + ver
@@ -67,7 +68,6 @@ tree_before="$(tree_hash)"
 compose_sha="$(sha256_of "$DEPLOY/docker-compose.yml")"
 env_sha="$(sha256_of "$DEPLOY/.env")"
 app_cid="$(dc ps -q app)"
-app_image="$(docker inspect -f '{{.Image}}' "$app_cid")"
 backups_n() { find "$DEPLOY/backups" -name 'ws-backup-*.tar.gz' | wc -l | tr -d ' '; }
 backups_before="$(backups_n)"
 
@@ -99,15 +99,56 @@ cp -p "$DEPLOY/scripts/backup.sh" "$TMP/backup.sh.orig"
 printf '#!/usr/bin/env bash\nexit 1\n' >"$DEPLOY/scripts/backup.sh"
 chmod 755 "$DEPLOY/scripts/backup.sh"
 rc=0
+tb0="$(date +%s)"
 ( cd "$DEPLOY" && ./scripts/upgrade.sh "$PKG" ) >"$TMP/reject.log" 2>&1 || rc=$?
+sleep 1
+tb1="$(date +%s)"
 cp -p "$TMP/backup.sh.orig" "$DEPLOY/scripts/backup.sh"
 [ "$rc" -ne 0 ] && [ "$rc" -ne 2 ] || fail "备份失败时应以非 0(非 2)退出,实际 $rc"
 grep -q '备份失败' "$TMP/reject.log" || fail "备份失败时输出里没有「备份失败」"
 [ "$(tree_hash)" = "$tree_before" ] || fail "备份失败后部署目录被改动了"
 [ "$(psql_scalar "SELECT version_num FROM alembic_version")" = "0001" ] || fail "备份失败时数据库被动过"
-pass "备份失败:升级立即停止,没有覆盖任何文件,没有进入预检"
+# "没有进入预检"的证据:预检要用 workstation-app 镜像 compose run 起一个一次性容器;这段时间内不应有这样的容器被创建
+bcreated="$(docker events --since "$tb0" --until "$tb1" --filter type=container --filter event=create \
+  --format '{{.Actor.Attributes.image}}' 2>/dev/null || true)"
+if grep -q '^workstation-app:' <<<"$bcreated"; then fail "备份失败后仍创建了 workstation-app 容器(进入了预检?)"; fi
+assert_no_secrets "备份失败用例的升级输出" "$TMP/reject.log"
+pass "备份失败:升级立即停止,没有覆盖任何文件,没有进入预检(期间没有创建 workstation-app 容器),输出无密钥"
+
+# 校验和不符:两种命名都要生效;都在动任何东西之前被拒绝
+mkdir -p "$TMP/cs"
+cp "$PKG" "$TMP/cs/workstation-deploy-bad.tar.gz"
+BADSUM="$(printf '%064d' 0)"
+printf '%s  workstation-deploy-bad.tar.gz\n' "$BADSUM" >"$TMP/cs/workstation-deploy-bad.tar.gz.sha256"
+expect_rejected "校验和不符(<包全名>.sha256)" "$TMP/cs/workstation-deploy-bad.tar.gz" '校验和不符'
+rm -f "$TMP/cs/workstation-deploy-bad.tar.gz.sha256"
+printf '%s  workstation-deploy-bad.tar.gz\n' "$BADSUM" >"$TMP/cs/workstation-deploy-bad.sha256"
+expect_rejected "校验和不符(<包名主干>.sha256)" "$TMP/cs/workstation-deploy-bad.tar.gz" '校验和不符'
+rm -rf "$TMP/cs"
+
+echo "== 2b 升级运行中被 TERM 打断:不留 .ws-upgrade.* / .stage.* / 锁,部署目录不变"
+# 直接后台运行脚本($! 就是脚本进程);等解包临时目录出现(此时正在做强制备份)就发 TERM。
+# 脚本在前台子进程(备份)结束后才处理 TERM,随后经 EXIT trap 清理。
+"$DEPLOY/scripts/upgrade.sh" "$PKG" >"$TMP/term-upgrade.log" 2>&1 &
+upid=$!
+w=0
+until [ -n "$(find "$DEPLOY" -maxdepth 1 -name '.ws-upgrade.*' | head -n 1)" ]; do
+  kill -0 "$upid" 2>/dev/null || break
+  w=$((w + 1)); [ "$w" -lt 1200 ] || break
+  sleep 0.05
+done
+kill -TERM "$upid" 2>/dev/null || true
+rc=0; wait "$upid" || rc=$?
+[ "$rc" -eq 143 ] || { tail -n 10 "$TMP/term-upgrade.log" >&2; fail "升级被 TERM 后退出码应为 143,实际 $rc(测试自身问题:TERM 没有赶在升级结束之前?)"; }
+assert_no_residue
+[ "$(tree_hash)" = "$tree_before" ] || fail "升级被 TERM 打断后部署目录被改动了"
+assert_healthz
+assert_no_secrets "被 TERM 打断的升级输出" "$TMP/term-upgrade.log"
+pass "升级被 TERM 打断:退出码 143,无临时目录 / 锁残留,部署目录整树哈希不变,服务仍健康"
 
 echo "== 3/5 升级(预期被预检拦下;包的版本号 $NEWV 不同于当前 $VERSION)"
+# 全名命名的校验和文件(正确的):应被采用并通过
+printf '%s  %s\n' "$(sha256_of "$PKG")" "$(basename "$PKG")" >"$PKG.sha256"
 t0="$(date +%s)"
 rc=0
 ( cd "$DEPLOY" && ./scripts/upgrade.sh "$PKG" ) >"$TMP/upgrade.log" 2>&1 || rc=$?
@@ -117,19 +158,19 @@ t1="$(date +%s)"
 grep -q '不通过' "$TMP/upgrade.log" || fail "输出里没有预检报告(「不通过」)"
 grep -q 'classes_seat_dims\|座位' "$TMP/upgrade.log" || fail "预检报告里没有定位到 classes 座位约束"
 grep -q '仍在旧版本' "$TMP/upgrade.log" || fail "输出里没有「系统仍在旧版本」提示"
-pass "退出码 2,预检报告与旧版本提示都在"
+grep -q '校验和通过' "$TMP/upgrade.log" || fail "输出里没有「校验和通过」(<包全名>.sha256 没被采用?)"
+pass "退出码 2,预检报告与旧版本提示都在,<包全名>.sha256 被核对通过"
 created="$(docker events --since "$t0" --until "$t1" --filter type=container --filter event=create \
   --format '{{.Actor.Attributes.image}}' 2>/dev/null || true)"
-printf '%s\n' "$created" | grep -qxF "workstation-app:$NEWV" \
+grep -qxF "workstation-app:$NEWV" <<<"$created" \
   || fail "预检的一次性容器没有用新版本镜像 workstation-app:$NEWV(WS_VERSION 覆盖失效?)"
-if printf '%s\n' "$created" | grep -qxF "workstation-app:$VERSION"; then
+if grep -qxF "workstation-app:$VERSION" <<<"$created"; then
   fail "升级过程中出现了用旧标签 workstation-app:$VERSION 新建的容器"
 fi
 pass "WS_VERSION 覆盖生效:预检容器用的是 workstation-app:$NEWV"
 
 echo "== 4/5 旧服务继续可用、整个部署目录未被覆盖、数据库仍在 0001"
 [ "$(dc ps -q app)" = "$app_cid" ] || fail "app 容器被重建了"
-[ "$(docker inspect -f '{{.Image}}' "$app_cid")" = "$app_image" ] || fail "app 容器的镜像 ID 变了"
 [ "$(docker inspect -f '{{.State.Running}}' "$app_cid")" = "true" ] || fail "app 容器没在运行"
 assert_healthz
 [ "$(psql_scalar "SELECT version_num FROM alembic_version")" = "0001" ] || fail "alembic_version 不再是 0001:预检失败后数据库被迁移了"
@@ -138,7 +179,7 @@ assert_healthz
 if grep -q 'upgraded-marker' "$DEPLOY/docker-compose.yml"; then fail "新包的 compose 文件被写进了部署目录"; fi
 [ "$(cat "$DEPLOY/VERSION")" = "$VERSION" ] || fail "VERSION 被改动了"
 [ "$(tree_hash)" = "$tree_before" ] || fail "部署目录(不含 data/、backups/)整树哈希变了"
-pass "app 容器与镜像 ID 不变且健康;alembic_version=0001;部署目录整树哈希不变"
+pass "app 容器未被重建且在运行、健康;alembic_version=0001;部署目录整树哈希不变"
 
 echo "== 5/5 密钥出口"
 selftest_scanner
@@ -151,5 +192,6 @@ pass "升级输出与容器日志、data/logs 里没有密钥"
 assert_ps_clean
 assert_deploy_hygiene
 assert_no_xtrace
+assert_static_safe
 
 echo "upgrade_precheck_fail 全部通过"

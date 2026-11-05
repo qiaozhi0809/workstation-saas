@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # 生产镜像与 compose 冒烟测试:构建镜像 → 起整套服务 → 逐项断言 → 清理。
-# 可用环境变量:
-#   WS_VERSION                 镜像标签(默认 0.0.0-seg-b)
-#   WS_SMOKE_PROJECT           compose 项目名(默认 ws-m5a-b)
+# 可用环境变量(与 _common.sh 一致):
+#   WS_TEST_VERSION            镜像标签(默认取 WS_VERSION,再默认 0.0.0-seg-b)
+#   WS_TEST_PROJECT            compose 项目名(默认 ws-m5a-b);旧名 WS_SMOKE_PROJECT 仍作为回退
+#   WS_TEST_DEPLOY_SRC         被测的部署目录来源(默认 $ROOT/deploy/prod;compose 文件、Caddyfile.internal、.env.example 取自这里)
 #   WS_HTTP_PORT/WS_HTTPS_PORT 宿主机端口(默认 18080 / 18443)
 #   WS_SMOKE_SKIP_BUILD=1      不重新构建镜像,直接用已有标签
 #   WS_SMOKE_COMPOSE_OVERRIDE  额外的 compose 文件(-f),仅本地验证占位用
@@ -14,8 +15,9 @@ if [ "$(id -u)" -eq 0 ]; then
 fi
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-VERSION="${WS_VERSION:-0.0.0-seg-b}"
-PROJECT="${WS_SMOKE_PROJECT:-ws-m5a-b}"
+VERSION="${WS_TEST_VERSION:-${WS_VERSION:-0.0.0-seg-b}}"
+PROJECT="${WS_TEST_PROJECT:-${WS_SMOKE_PROJECT:-ws-m5a-b}}"
+DEPLOY_SRC="${WS_TEST_DEPLOY_SRC:-$ROOT/deploy/prod}"
 HTTP_PORT="${WS_HTTP_PORT:-18080}"
 HTTPS_PORT="${WS_HTTPS_PORT:-18443}"
 OVERRIDE="${WS_SMOKE_COMPOSE_OVERRIDE:-}"
@@ -41,8 +43,8 @@ cleanup() {
   if [ -d "$TMP/data" ] && docker image inspect "workstation-web:$VERSION" >/dev/null 2>&1; then
     docker run --rm --entrypoint sh -v "$TMP:/t" "workstation-web:$VERSION" -c 'rm -rf /t/data' >/dev/null 2>&1 || true
   fi
-  for f in "${CANARIES[@]}"; do rm -f "$f"; done
-  for d in "${CANARY_DIRS[@]}"; do rmdir "$d" 2>/dev/null || true; done
+  for f in ${CANARIES[@]+"${CANARIES[@]}"}; do rm -f "$f"; done
+  for d in ${CANARY_DIRS[@]+"${CANARY_DIRS[@]}"}; do rmdir "$d" 2>/dev/null || true; done
   rm -rf "$TMP" 2>/dev/null || true
   if [ "$code" -ne 0 ] && [ "$FAILED" -eq 0 ]; then
     echo "冒烟测试异常退出(退出码 $code)" >&2
@@ -128,8 +130,8 @@ docker run --rm --entrypoint sh "workstation-app:$VERSION" -c \
 pass "应用镜像带有 /srv/server/app、migrations 与 alembic.ini"
 
 echo "== 3/6 准备部署目录与随机密钥(只写入临时目录,不打印)"
-cp "$ROOT/deploy/prod/docker-compose.yml" "$TMP/docker-compose.yml"
-cp "$ROOT/deploy/prod/Caddyfile.internal" "$TMP/Caddyfile"
+cp "$DEPLOY_SRC/docker-compose.yml" "$TMP/docker-compose.yml"
+cp "$DEPLOY_SRC/Caddyfile.internal" "$TMP/Caddyfile"
 mkdir -p "$TMP/certs" "$TMP/data/pg" "$TMP/data/redis" "$TMP/data/caddy" "$TMP/data/logs"
 # data/logs:容器内 uid 10001 要写 app.jsonl,宿主机用户要写 backup-last.json。
 # 与 install.sh 同一做法:当前用户所有 + 1777(粘滞位),不依赖 chown / setfacl
@@ -157,7 +159,7 @@ umask "$old_umask"
 unset PG_PASS
 # .env.example 里的密钥必须留空
 for key in WS_JWT_SECRET WS_MASTER_KEY POSTGRES_PASSWORD; do
-  grep -qx "$key=" "$ROOT/deploy/prod/.env.example" || fail ".env.example 中 $key 必须存在且留空"
+  grep -qx "$key=" "$DEPLOY_SRC/.env.example" || fail ".env.example 中 $key 必须存在且留空"
 done
 pass "部署目录就绪,.env.example 密钥留空"
 
@@ -174,13 +176,15 @@ base="https://localhost:$HTTPS_PORT"
 health="$(curl -ksS --max-time 10 "$base/api/v1/healthz")" || fail "healthz 请求失败"
 [ "$(printf '%s' "$health" | tr -d ' ')" = '{"ok":true}' ] || fail "healthz 返回不是 {\"ok\":true}:$health"
 pass "/api/v1/healthz 返回 {\"ok\":true}"
-curl -ksS --max-time 10 "$base/" | grep -q '<div id="root">' || fail "/ 未返回含 <div id=\"root\"> 的页面"
+root_page="$(curl -ksS --max-time 10 "$base/")" || fail "/ 请求失败"
+grep -q '<div id="root">' <<<"$root_page" || fail "/ 未返回含 <div id=\"root\"> 的页面"
 pass "/ 返回前端首页"
-curl -ksS --max-time 10 "$base/teacher" | grep -q '<div id="root">' || fail "/teacher 刷新未回落到 index"
+teacher_page="$(curl -ksS --max-time 10 "$base/teacher")" || fail "/teacher 请求失败"
+grep -q '<div id="root">' <<<"$teacher_page" || fail "/teacher 刷新未回落到 index"
 pass "/teacher 刷新回落到 index"
 headers="$(curl -ksS --max-time 10 -o /dev/null -D - "$base/")"
 for h in strict-transport-security x-content-type-options referrer-policy; do
-  printf '%s' "$headers" | grep -qi "^$h:" || fail "缺少 $h 响应头"
+  grep -qi "^$h:" <<<"$headers" || fail "缺少 $h 响应头"
 done
 pass "三条安全响应头(HSTS / nosniff / Referrer-Policy)都存在"
 code="$(curl -ksS --max-time 10 -o "$TMP/404.body" -w '%{http_code}' "$base/api/v1/no-such-route")"
@@ -194,14 +198,14 @@ uid="$(compose exec -T app id -u | tr -d '\r\n')"
 pass "app 容器以 uid 10001 运行"
 for svc in postgres redis app; do
   ports="$(docker inspect -f '{{json .NetworkSettings.Ports}}' "$(compose ps -q "$svc")")"
-  if printf '%s' "$ports" | grep -q 'HostPort'; then
+  if grep -q 'HostPort' <<<"$ports"; then
     fail "$svc 不应对宿主机发布端口,实际:$ports"
   fi
 done
 pass "postgres / redis / app 没有 HostPort"
 web_ports="$(docker inspect -f '{{json .NetworkSettings.Ports}}' "$(compose ps -q web)")"
-printf '%s' "$web_ports" | grep -q "\"80/tcp\":\[{[^]]*\"HostPort\":\"$HTTP_PORT\"" || fail "web 缺少 80 的 HostPort:$web_ports"
-printf '%s' "$web_ports" | grep -q "\"443/tcp\":\[{[^]]*\"HostPort\":\"$HTTPS_PORT\"" || fail "web 缺少 443 的 HostPort:$web_ports"
+grep -q "\"80/tcp\":\[{[^]]*\"HostPort\":\"$HTTP_PORT\"" <<<"$web_ports" || fail "web 缺少 80 的 HostPort:$web_ports"
+grep -q "\"443/tcp\":\[{[^]]*\"HostPort\":\"$HTTPS_PORT\"" <<<"$web_ports" || fail "web 缺少 443 的 HostPort:$web_ports"
 pass "web 发布了 80 / 443"
 # 只判退出码,不打印环境变量的值
 if compose exec -T web sh -c 'env | grep -Eq "^(WS_JWT_SECRET|WS_MASTER_KEY|POSTGRES_PASSWORD|WS_DATABASE_URL)="'; then
@@ -214,6 +218,12 @@ pass "网络子网为 172.30.0.0/24"
 sched_state="$(docker inspect -f '{{.State.Running}} {{.RestartCount}}' "$(compose ps -q scheduler)")"
 [ "$sched_state" = "true 0" ] || fail "scheduler 应在运行且重启次数为 0,实际:$sched_state"
 pass "scheduler 在运行且未重启"
+hc_start="$(docker inspect -f '{{.Config.Healthcheck.StartPeriod}}' "$(compose ps -q app)")"
+[ "$hc_start" = "300000000000" ] || fail "app 的健康检查启动宽限期应为 300s(compose 覆盖),实际(纳秒):$hc_start"
+pass "app 健康检查启动宽限期为 300s(只覆盖 start_period,其余沿用镜像)"
+web_health="$(docker inspect -f '{{.State.Health.Status}}' "$(compose ps -q web)")"
+[ "$web_health" = "healthy" ] || fail "web 应为 healthy,实际:$web_health"
+pass "web 为 healthy"
 perm="$(ls -l "$TMP/.env" | cut -c1-10)"
 [ "$perm" = "-rw-------" ] || fail ".env 权限应为 600,实际:$perm"
 pass ".env 权限为 600"

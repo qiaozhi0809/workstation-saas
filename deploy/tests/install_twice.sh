@@ -3,7 +3,8 @@
 # 缺 .env 但有数据目录时拒绝覆盖;有 .env 但学校为空时(交互方式)补做初始化;.env 缺密钥时拒绝;
 # 故意配错 WS_MASTER_KEY 时,安装输出里不得出现密钥值。
 set -euo pipefail
-# shellcheck source=deploy/tests/_common.sh
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=_common.sh
 . "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
 start_ps_sampler
@@ -37,6 +38,36 @@ dump_logs "$TMP/compose.log"
 assert_no_secrets "第二次安装输出" "$TMP/install2.log"
 assert_no_secrets "容器日志" "$TMP/compose.log"
 pass ".env 的 sha256、users / schools / it_admin 数量都不变,输出含「已安装」,仍可登录,无密钥泄露"
+
+echo "== 2b WS_INSTALL_ADMIN_PASSWORD 读入后立即从环境清除,docker 子进程不得继承(S-6)"
+# 在 PATH 最前面放一个只观察的 docker 包装:发现自己的环境里还有 WS_INSTALL_ADMIN_PASSWORD 就记一笔,然后原样转交真正的 docker
+# (不改变任何行为,不是桩)。先做正向对照,证明包装确实能发现变量。
+mkdir -p "$TMP/shim"
+cat >"$TMP/shim/docker" <<'SH'
+#!/bin/sh
+if [ -n "${WS_INSTALL_ADMIN_PASSWORD+x}" ]; then echo leaked >>"$WS_SHIM_LOG"; fi
+exec "$WS_REAL_DOCKER" "$@"
+SH
+chmod 755 "$TMP/shim/docker"
+REAL_DOCKER="$(command -v docker)"
+: >"$TMP/shim.log"
+WS_SHIM_LOG="$TMP/shim.log" WS_REAL_DOCKER="$REAL_DOCKER" WS_INSTALL_ADMIN_PASSWORD=control "$TMP/shim/docker" version >/dev/null 2>&1 || true
+[ -s "$TMP/shim.log" ] || fail "测试自身问题:docker 观察包装没有发现对照用的环境变量"
+: >"$TMP/shim.log"
+rc=0
+(
+  cd "$DEPLOY" || exit 1
+  PATH="$TMP/shim:$PATH" WS_SHIM_LOG="$TMP/shim.log" WS_REAL_DOCKER="$REAL_DOCKER" \
+  WS_INSTALL_SCHOOL_NAME="$SCHOOL_NAME" WS_INSTALL_ADMIN_LOGIN="$ADMIN_LOGIN" \
+  WS_INSTALL_ADMIN_PASSWORD="$ADMIN_PW" WS_INSTALL_SITE=localhost WS_INSTALL_TLS=1 \
+    ./scripts/install.sh --non-interactive --force
+) >"$TMP/install2b.log" 2>&1 || rc=$?
+[ "$rc" -eq 0 ] || { tail -n 20 "$TMP/install2b.log" >&2; fail "带观察包装的第三次安装退出码 $rc"; }
+[ ! -s "$TMP/shim.log" ] || fail "docker 子进程的环境里仍有 WS_INSTALL_ADMIN_PASSWORD(没有在启动时清除)"
+assert_no_secrets "第三次安装输出" "$TMP/install2b.log"
+assert_services_up
+rm -rf "$TMP/shim"
+pass "docker 子进程环境里没有 WS_INSTALL_ADMIN_PASSWORD(对照包装能发现该变量);三个服务均就绪"
 
 echo "== 3/6 已有 .env 但 schools=0:交互方式补做 init-school"
 # 模拟"上次安装在初始化前中断":清空学校与用户(级联),.env 保持不变
@@ -142,5 +173,6 @@ assert_logs_dir_clean
 assert_ps_clean
 assert_deploy_hygiene
 assert_no_xtrace
+assert_static_safe
 
 echo "install_twice 全部通过"

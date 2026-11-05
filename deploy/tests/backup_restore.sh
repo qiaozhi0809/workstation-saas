@@ -2,11 +2,12 @@
 # 备份与恢复主流程:安装 → 建标识数据 → 备份 → 删数据 → 恢复 → 数据回来;--keep 保留份数;
 # backup-last.json;旧 refresh 令牌失效;Caddy 根证书不变;.env 不同时的另存;密钥出口(规则 15)。
 set -euo pipefail
-# shellcheck source=deploy/tests/_common.sh
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=_common.sh
 . "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
-[ -x "$ROOT/deploy/prod/scripts/backup.sh" ] || fail "deploy/prod/scripts/backup.sh 不存在或不可执行"
-[ -x "$ROOT/deploy/prod/scripts/restore.sh" ] || fail "deploy/prod/scripts/restore.sh 不存在或不可执行"
+[ -x "$DEPLOY_SRC/scripts/backup.sh" ] || fail "scripts/backup.sh 不存在或不可执行"
+[ -x "$DEPLOY_SRC/scripts/restore.sh" ] || fail "scripts/restore.sh 不存在或不可执行"
 
 echo "== 1/6 安装并造标识数据"
 prepare_deploy_dir
@@ -51,8 +52,10 @@ grep -Eq '"created_at": "[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z"' "$X/manifest.js
 for f in db.dump env caddy.tar; do
   grep -q "\"$f\": \"$(sha256_of "$X/$f")\"" "$X/manifest.json" || fail "manifest 里 $f 的 sha256 不对"
 done
-tar -tf "$X/caddy.tar" | grep -q 'pki/authorities/local/root.crt' || fail "caddy.tar 里没有根证书"
+caddy_list="$(tar -tf "$X/caddy.tar")" || fail "caddy.tar 读不出来"
+grep -q 'pki/authorities/local/root.crt' <<<"$caddy_list" || fail "caddy.tar 里没有根证书"
 # 防漂移:backup.sh 写出的 manifest 必须被 restore.sh 用的校验函数接受(两处格式各写各的会悄悄失配)
+# shellcheck source=/dev/null
 ( . "$DEPLOY/scripts/lib.sh"; manifest_valid "$X/manifest.json" ) || fail "backup.sh 生成的 manifest 没通过 restore 的 manifest_valid 校验(格式漂移)"
 rm -rf "$X"
 pass "包内 4 个文件齐全,manifest 字段与 sha256 正确,env 与 .env 一致,caddy 数据含根证书"
@@ -83,6 +86,7 @@ sig_after="$(state_sig)"
 pass "标识数据回来,users 行数与迁移版本一致"
 assert_healthz
 assert_login_ok
+assert_services_up
 [ "$(refresh_code "$TMP/rt.txt")" = "401" ] || fail "恢复后旧 refresh 令牌应返回 401"
 pass "服务健康、可登录、恢复前的 refresh 令牌失效(401)"
 [ "$(root_ca_fp)" = "$fp_before" ] || fail "恢复后 Caddy 根证书指纹变了(没有写回或被重新生成)"
@@ -124,7 +128,21 @@ rc=0; ( cd "$DEPLOY" && ./scripts/backup.sh --keep 2 ) >"$TMP/lock-stale.log" 2>
 [ "$rc" -eq 0 ] || { tail -n 20 "$TMP/lock-stale.log" >&2; fail "持有者已死的陈旧锁应被接管并完成备份"; }
 grep -q '接管' "$TMP/lock-stale.log" || fail "接管陈旧锁时没有提示"
 [ ! -e "$DEPLOY/backups/.lock" ] || fail "备份结束后锁目录没有清除"
-pass "活进程持锁时 backup / restore 拒绝;持有者已死则接管;结束后锁清除"
+[ -z "$(find "$DEPLOY/backups" -maxdepth 1 -name '.lock*')" ] || fail "接管后 backups/ 下残留了 .lock* 目录"
+# 锁目录与 pid 文件的权限不随调用者的 umask:022 的环境里建出来也应是 700 / 600
+# shellcheck source=/dev/null
+lock_modes="$( umask 022; . "$DEPLOY/scripts/lib.sh"; acquire_lock; printf '%s %s' "$(ls -ld "$DEPLOY/backups/.lock" | cut -c1-10)" "$(ls -l "$DEPLOY/backups/.lock/pid" | cut -c1-10)"; release_lock )"
+[ "$lock_modes" = "drwx------ -rw-------" ] || fail "锁目录 / pid 文件权限应为 700 / 600,实际:$lock_modes"
+[ ! -e "$DEPLOY/backups/.lock" ] || fail "release_lock 后锁目录仍在"
+# 持有者是"存在但不属于当前用户"的进程(pid 1):kill -0 返回 EPERM,必须当作存活,不能被接管
+mkdir "$DEPLOY/backups/.lock"
+printf '1\n' >"$DEPLOY/backups/.lock/pid"
+rc=0; ( cd "$DEPLOY" && ./scripts/backup.sh ) >"$TMP/lock-eperm.log" 2>&1 || rc=$?
+[ "$rc" -ne 0 ] || fail "持有者是他人进程(kill -0 返回 EPERM)时锁不应被接管"
+grep -q '正在进行' "$TMP/lock-eperm.log" || fail "EPERM 持有者:提示不对"
+[ -d "$DEPLOY/backups/.lock" ] || fail "EPERM 持有者的锁被删掉了"
+rm -rf "$DEPLOY/backups/.lock"
+pass "活进程持锁时 backup / restore 拒绝;他人进程(EPERM)持锁同样拒绝;持有者已死则接管且不留 .lock.*;锁目录 700;结束后锁清除"
 # backup-last.json 写失败 → 降级为警告,备份仍成功并保留文件
 mv "$LAST" "$TMP/backup-last.saved"
 mkdir "$LAST"
@@ -175,6 +193,7 @@ grep -q "^WS_JWT_SECRET=$NEW_JWT\$" "$SAVED" || fail "另存的旧 .env 内容�
 rm -f "$SAVED"
 assert_healthz
 assert_login_ok
+assert_services_up
 pass "数据绑定的值(主密钥、JWT 密钥)取备份的;数据库密码与连接串、站点类键保持当前;缺失键追加;旧 .env 另存 600;应用健康"
 assert_no_residue
 
@@ -185,8 +204,15 @@ dump_logs "$TMP/compose.log"
 assert_no_secrets "容器日志" "$TMP/compose.log"
 dc exec -T app sh -c 'echo "CANARY-DIAG $WS_JWT_SECRET $WS_MASTER_KEY $WS_DATABASE_URL 13800000012 Bearer abc123.def456 eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.sig_nature-1" > /proc/1/fd/1' \
   || fail "造诊断金丝雀日志失败"
-dc exec -T app sh -c 'echo "CANARY-SHAPES +86 138-0000-0013 86 13900000014 bearer lowerTok99xyz Authorization: Token tokVal7788zz password=Sup3rS3cret1 ?token=tok-abc-123456 Set-Cookie: sid=cookieval999 {\"refresh_token\": \"rtVal5566qq\"}" > /proc/1/fd/1' \
+dc exec -T app sh -c 'echo "CANARY-SHAPES +86 138-0000-0013 86 13800000014 bearer lowerTok99xyz Authorization: Token tokVal7788zz password=Sup3rS3cret1 ?token=tok-abc-123456 Set-Cookie: sid=cookieval999 {\"refresh_token\": \"rtVal5566qq\"}" > /proc/1/fd/1' \
   || fail "造打码形状金丝雀日志失败"
+# S-5:往 .env 里临时加两个"未来才会有"的密钥键(键名含 KEY;连接串里带密码),诊断包与终端输出里都不得出现它们的值
+FUT1="$(openssl rand -hex 12)"
+FUT2="$(openssl rand -hex 12)"
+cp -p "$DEPLOY/.env" "$TMP/env.prefuture"
+printf 'WS_FUTURE_API_KEY=%s\nWS_FUTURE_CACHE_URL=redis://cache:%s@cache.example.test:6379/1\n' "$FUT1" "$FUT2" >>"$DEPLOY/.env"
+printf 'CANARY-FUTURE api-key-is %s and cache-pw-is %s\n' "$FUT1" "$FUT2" | dc exec -T app sh -c 'cat > /proc/1/fd/1' \
+  || fail "造新增密钥键的金丝雀日志失败"
 mkdir -p "$TMP/diag-out" "$TMP/diag-tmp"
 rc=0
 ( cd "$DEPLOY" && TMPDIR="$TMP/diag-tmp" ./scripts/diagnose.sh --out "$TMP/diag-out" ) >"$TMP/diagnose.log" 2>&1 || rc=$?
@@ -206,13 +232,32 @@ grep -rq '13800000012' "$TMP/diag-x" && fail "诊断包里出现了手机号"
 grep -rq 'abc123.def456' "$TMP/diag-x" && fail "诊断包里出现了 Bearer 令牌"
 grep -rq 'eyJhbGciOiJIUzI1NiJ9' "$TMP/diag-x" && fail "诊断包里出现了 JWT"
 grep -rq 'CANARY-SHAPES' "$TMP/diag-x" || fail "形状金丝雀日志没有进诊断包(测试无效)"
-for leak in '138-0000-0013' '13900000014' 'lowerTok99xyz' 'tokVal7788zz' 'Sup3rS3cret1' 'tok-abc-123456' 'cookieval999' 'rtVal5566qq'; do
+for leak in '138-0000-0013' '13800000014' 'lowerTok99xyz' 'tokVal7788zz' 'Sup3rS3cret1' 'tok-abc-123456' 'cookieval999' 'rtVal5566qq'; do
   grep -rqF -- "$leak" "$TMP/diag-x" && fail "诊断包里出现了应被打码的内容:$leak"
 done
 while IFS= read -r f; do
   assert_no_secrets "诊断包文件 $(basename "$f")" "$f"
 done < <(find "$TMP/diag-x" -type f)
 assert_no_secrets "diagnose 终端输出" "$TMP/diagnose.log"
+grep -rq 'CANARY-FUTURE' "$TMP/diag-x" || fail "新增密钥键的金丝雀日志没有进诊断包(测试无效)"
+while IFS= read -r f; do
+  rc=0; scan_file "$f" "$FUT1" "$FUT2" || rc=$?
+  [ "$rc" -eq 0 ] || fail "诊断包文件 $(basename "$f") 里出现了 .env 新增键(WS_FUTURE_API_KEY / 连接串密码)的值"
+done < <(find "$TMP/diag-x" -type f)
+rc=0; scan_file "$TMP/diagnose.log" "$FUT1" "$FUT2" || rc=$?
+[ "$rc" -eq 0 ] || fail "diagnose 终端输出里出现了 .env 新增键的值"
+# lib.sh 的 redact(安装 / 恢复 / 升级回显容器输出前用的)同样按键名规则覆盖新增键
+# shellcheck source=/dev/null
+red="$( . "$DEPLOY/scripts/lib.sh"; printf 'a %s b %s c\n' "$FUT1" "$FUT2" | redact )"
+case "$red" in *"$FUT1"*|*"$FUT2"*) fail "redact 没有遮住 .env 新增键的值" ;; esac
+case "$red" in *'a *** b *** c'*) ;; *) fail "redact 输出不符合预期:$red" ;; esac
+# 正向对照:换成没有这两个键的 .env 后,同样的输入不会被遮(证明上面是键名规则起作用,不是别的原因)
+cat "$TMP/env.prefuture" >"$DEPLOY/.env"
+# shellcheck source=/dev/null
+red2="$( . "$DEPLOY/scripts/lib.sh"; printf 'a %s b\n' "$FUT1" | redact )"
+case "$red2" in *"$FUT1"*) ;; *) fail "对照失败:没有这个键时值不该被遮" ;; esac
+unset FUT1 FUT2 red red2
+pass "新增的 WS_FUTURE_API_KEY 与连接串密码:诊断包与终端输出里没有;redact 同样遮住;去掉键后不再遮(规则按键名生效)"
 [ -z "$(ls -A "$TMP/diag-tmp")" ] || fail "diagnose 在 TMPDIR 里留下了临时物"
 # .env 里的主密钥写成带引号的形式:读取时去引号,诊断包与终端输出里(容器里是不带引号的值)仍不得出现密钥
 cp -p "$DEPLOY/.env" "$TMP/env.orig"
@@ -233,7 +278,35 @@ cat "$TMP/env.orig" >"$DEPLOY/.env"
 rm -f "$TMP/env.orig" "$TMP/env.quoted"
 [ -z "$(ls -A "$TMP/diag-tmp")" ] || fail "diagnose 在 TMPDIR 里留下了临时物"
 pass "诊断包:文件齐全、600、不含 .env、金丝雀日志里的密钥/手机号/Bearer/JWT 全部打码"
-for n in backup1 backup-keep1 backup-keep2 backup-keep3 backup5 restore1 restore2 lock-busy lock-busy2 lock-stale last-fail install; do
+
+echo "-- 6b 以 xtrace 方式运行 backup.sh / diagnose.sh:输出里不得有密钥(S-3)"
+# 脚本第一条命令就是 set +x(并 unset BASH_XTRACEFD),所以即使调用者设了 SHELLOPTS=xtrace 或 bash -x,
+# 只有 "+ set +x" 这样的开头几行会被回显,这几行不含密钥;之后全部静默。
+# 先做正向对照:同样的环境变量下,一个没有 set +x 的脚本确实会把密钥回显到 stderr(扫描器抓得到),证明下面的"干净"有意义。
+WS_XT_CTRL="$(env_value WS_JWT_SECRET)" SHELLOPTS=xtrace bash -c ': "$WS_XT_CTRL"' 2>"$TMP/xt-ctrl.err" || fail "xtrace 对照脚本运行失败"
+rc=0; scan_file "$TMP/xt-ctrl.err" || rc=$?
+[ "$rc" -eq 1 ] || fail "xtrace 对照:没开 set +x 的脚本在 SHELLOPTS=xtrace 下应当泄露密钥(rc=$rc),说明测试方法无效"
+rm -f "$TMP/xt-ctrl.err"
+mkdir -p "$TMP/diag-out3"
+rc=0
+( cd "$DEPLOY" && SHELLOPTS=xtrace ./scripts/backup.sh --keep 5 ) >"$TMP/xt-backup.out" 2>"$TMP/xt-backup.err" || rc=$?
+[ "$rc" -eq 0 ] || { tail -n 10 "$TMP/xt-backup.err" >&2; fail "SHELLOPTS=xtrace 下 backup.sh 退出码 $rc"; }
+rc=0
+( cd "$DEPLOY" && SHELLOPTS=xtrace TMPDIR="$TMP/diag-tmp" ./scripts/diagnose.sh --out "$TMP/diag-out3" ) >"$TMP/xt-diag.out" 2>"$TMP/xt-diag.err" || rc=$?
+[ "$rc" -eq 0 ] || { tail -n 10 "$TMP/xt-diag.err" >&2; fail "SHELLOPTS=xtrace 下 diagnose.sh 退出码 $rc"; }
+# BASH_XTRACEFD 指向文件的变体:trace 写进该文件(而不是 stderr),同样不得含密钥
+rc=0
+( cd "$DEPLOY" && BASH_XTRACEFD=7 SHELLOPTS=xtrace ./scripts/backup.sh --keep 5 7>"$TMP/xt-fd.txt" ) >"$TMP/xt-fd.out" 2>"$TMP/xt-fd.err" || rc=$?
+[ "$rc" -eq 0 ] || { tail -n 10 "$TMP/xt-fd.err" >&2; fail "BASH_XTRACEFD + xtrace 下 backup.sh 退出码 $rc"; }
+for n in xt-backup.out xt-backup.err xt-diag.out xt-diag.err xt-fd.out xt-fd.err xt-fd.txt; do
+  assert_no_secrets "xtrace 方式运行的输出 $n" "$TMP/$n"
+done
+for n in xt-backup.err xt-diag.err xt-fd.err; do
+  [ "$(grep -c '^+' "$TMP/$n" || true)" -le 3 ] || fail "$n 里 xtrace 行数超过开头的几行(set +x 没有让脚本静默?)"
+done
+rm -f "$TMP/xt-"* ; rm -rf "$TMP/diag-out3"
+pass "SHELLOPTS=xtrace / BASH_XTRACEFD 下运行 backup.sh、diagnose.sh:stdout、stderr、trace 文件里都没有密钥,xtrace 只回显开头几行"
+for n in backup1 backup-keep1 backup-keep2 backup-keep3 backup5 restore1 restore2 lock-busy lock-busy2 lock-stale lock-eperm last-fail install; do
   assert_no_secrets "输出 $n.log" "$TMP/$n.log"
 done
 assert_logs_dir_clean
@@ -242,5 +315,6 @@ assert_ps_clean
 assert_deploy_hygiene
 assert_no_residue
 assert_no_xtrace
+assert_static_safe
 
 echo "backup_restore 全部通过"

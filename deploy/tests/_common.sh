@@ -2,12 +2,16 @@
 # 部署测试脚本的公共部分(被 install_*.sh / upgrade_*.sh 等 source,不单独运行)。
 # 兼容 macOS 自带的 bash 3.2 与 BSD 工具:不用关联数组、${v,,}、mapfile、GNU 专有选项。
 #
-# 可用环境变量:
-#   WS_VERSION         镜像标签(默认 0.0.0-seg-b)
+# 可用环境变量(所有部署测试脚本通用;compose_smoke.sh 也认 WS_TEST_PROJECT / WS_TEST_VERSION):
+#   WS_TEST_DEPLOY_SRC 被测的部署目录来源(默认 $ROOT/deploy/prod)。段 E 的 CI 把它指向"解开的离线包目录",
+#                      这样同一套测试既能测源码树里的脚本,也能测真正打出来的离线包。
+#                      测试只从这里复制部署文件(prepare_deploy_dir、造升级包),静态检查(xtrace、docker inspect 等)也扫这里。
+#   WS_TEST_VERSION    镜像标签(默认取 WS_VERSION,再默认 0.0.0-seg-b);同时写入部署目录的 VERSION
+#   WS_VERSION         WS_TEST_VERSION 的旧名,仍然有效
 #   WS_TEST_PROJECT    compose 项目名(默认 ws-m5a-b)
 #   WS_HTTP_PORT / WS_HTTPS_PORT  宿主机端口(默认 18080 / 18443)
 # 本文件会设置 WS_INSTALL_SKIP_LOAD=1(镜像已在本机,跳过 docker load)与
-# WS_INSTALL_MIN_DISK_GB=1(降低磁盘门槛),这两个开关只用于测试。
+# WS_INSTALL_MIN_DISK_GB=1(降低磁盘门槛),这两个开关只用于测试,正式离线包安装不得设置。
 
 if [ "$(id -u)" -eq 0 ]; then
   echo "请不要用 root 运行部署测试(会改变 data/ 目录属主,与正式安装不一致)" >&2
@@ -15,7 +19,11 @@ if [ "$(id -u)" -eq 0 ]; then
 fi
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-VERSION="${WS_VERSION:-0.0.0-seg-b}"
+DEPLOY_SRC="${WS_TEST_DEPLOY_SRC:-$ROOT/deploy/prod}"
+[ -f "$DEPLOY_SRC/docker-compose.yml" ] && [ -d "$DEPLOY_SRC/scripts" ] \
+  || { echo "WS_TEST_DEPLOY_SRC 不是有效的部署目录(需含 docker-compose.yml 与 scripts/):$DEPLOY_SRC" >&2; exit 1; }
+DEPLOY_SRC="$(cd "$DEPLOY_SRC" && pwd)"
+VERSION="${WS_TEST_VERSION:-${WS_VERSION:-0.0.0-seg-b}}"
 PROJECT="${WS_TEST_PROJECT:-ws-m5a-b}"
 HTTP_PORT="${WS_HTTP_PORT:-18080}"
 HTTPS_PORT="${WS_HTTPS_PORT:-18443}"
@@ -90,11 +98,11 @@ sha256_of() {
   fi
 }
 
-# 把 deploy/prod 复制成一份部署目录($1,默认 $DEPLOY),写入 VERSION
+# 把 $DEPLOY_SRC(默认 deploy/prod)复制成一份部署目录($1,默认 $DEPLOY),写入 VERSION
 prepare_deploy_dir() {
   local dir="${1:-$DEPLOY}"
   mkdir -p "$dir"
-  cp -R "$ROOT/deploy/prod/." "$dir/"
+  cp -R "$DEPLOY_SRC/." "$dir/"
   printf '%s\n' "$VERSION" >"$dir/VERSION"
 }
 
@@ -151,10 +159,11 @@ login_as() {
 }
 
 assert_login_ok() {
-  local out="$TMP/login.json"
+  local out="$TMP/login.json" body
   login_as "$ADMIN_LOGIN" "$out" "$ADMIN_PW" || fail "登录请求失败"
-  tr -d ' \n' <"$out" | grep -q '"access_token"' || fail "登录没有返回 access_token"
-  tr -d ' \n' <"$out" | grep -q '"must_change_password":true' || fail "登录返回里 must_change_password 不是 true"
+  body="$(tr -d ' \n' <"$out")"
+  case "$body" in *'"access_token"'*) ;; *) fail "登录没有返回 access_token" ;; esac
+  case "$body" in *'"must_change_password":true'*) ;; *) fail "登录返回里 must_change_password 不是 true" ;; esac
   rm -f "$out"
 }
 
@@ -270,16 +279,60 @@ assert_deploy_hygiene() {
   pass "部署目录无 .env.XXXXXX / *.new.* / 升级临时目录残留,无 compose run 残留容器"
 }
 
-# 静态检查:被测脚本不得开启 xtrace(set -x / bash -x 等)
+# xtrace_hits <文件>:输出该脚本里会开启 xtrace 的行(行号:内容);无则无输出。只看非注释行,但第一行 shebang 单独检查。
+# 覆盖的写法:set -x / set -ex(任何含 x 的短选项组合)、set -o xtrace、sh/bash -x(含 bash -eux 等)、
+# 对 BASH_XTRACEFD 赋值或 exec 重定向、SHELLOPTS 赋值、shebang 里带 -x。
+# 允许的"关闭"写法:set +x、unset BASH_XTRACEFD(各脚本开头就是这两句)。
+xtrace_hits() {
+  local f="$1"
+  { head -n 1 "$f" | grep -nE '^#!.*[[:space:]]-[a-zA-Z]*x' || true; }
+  { grep -nvE '^[[:space:]]*#' "$f" | grep -vE '^[0-9]+:[[:space:]]*(set \+x|unset BASH_XTRACEFD)[[:space:]]*$' \
+      | grep -E 'set[[:space:]]+-[a-zA-Z]*x|set[[:space:]]+-o[[:space:]]+xtrace|(^|[^[:alnum:]_])(ba)?sh[[:space:]]+(-[a-zA-Z-]+[[:space:]]+)*-[a-zA-Z]*x|BASH_XTRACEFD[[:space:]]*=|SHELLOPTS' || true; }
+}
+
+# 静态检查:被测脚本不得开启 xtrace;先用造出来的坏样本证明检测器真的能抓到各种写法
 assert_no_xtrace() {
-  local f hits=""
-  for f in "$ROOT"/deploy/prod/scripts/*.sh; do
-    if grep -nE '(^|[;&|[:space:]])(set[[:space:]]+-[a-zA-Z]*x|(ba)?sh[[:space:]]+-[a-zA-Z]*x)' "$f" | grep -v '^[0-9]*:[[:space:]]*#' >/dev/null; then
-      hits="$hits $f"
-    fi
+  local f hits="" d="$TMP/xtrace-selftest" i=0 line
+  mkdir -p "$d"
+  for line in 'set -x' 'set -ex' 'set -euxo pipefail' 'set -o xtrace' 'bash -x ./a.sh' 'sh -eux ./a.sh' 'BASH_XTRACEFD=9' 'export SHELLOPTS=xtrace' 'exec 5>/tmp/x; BASH_XTRACEFD=5; set -o xtrace'; do
+    i=$((i + 1))
+    printf '#!/usr/bin/env bash\nset +x\nunset BASH_XTRACEFD\n%s\n' "$line" >"$d/bad$i.sh"
+    [ -n "$(xtrace_hits "$d/bad$i.sh")" ] || fail "xtrace 检测器自检失败:没抓到「$line」"
+  done
+  printf '#!/bin/bash -x\necho hi\n' >"$d/badshebang.sh"
+  [ -n "$(xtrace_hits "$d/badshebang.sh")" ] || fail "xtrace 检测器自检失败:没抓到 shebang 里的 -x"
+  printf '#!/usr/bin/env bash\n# set -x 只是注释\nset +x\nunset BASH_XTRACEFD\nset -euo pipefail\n' >"$d/good.sh"
+  [ -z "$(xtrace_hits "$d/good.sh")" ] || fail "xtrace 检测器自检失败:误报了注释与关闭写法"
+  rm -rf "$d"
+  for f in "$DEPLOY_SRC"/scripts/*.sh; do
+    [ -z "$(xtrace_hits "$f")" ] || hits="$hits $f"
   done
   [ -z "$hits" ] || fail "这些脚本里出现了 xtrace:$hits"
-  pass "scripts/*.sh 里没有 set -x / bash -x"
+  pass "scripts/*.sh 里没有 xtrace 写法(set -x / set -o xtrace / bash -x / BASH_XTRACEFD / SHELLOPTS),检测器自检通过"
+}
+
+# 静态检查(S-4):scripts/*.sh 全部——不得出现会展开密钥的命令:compose ... config、compose convert;
+# 每一处 docker [image|container] inspect 都必须带 -f / --format(只取指定字段),或把输出丢到 /dev/null(只判存在)。
+# 只看非注释行。
+assert_static_safe() {
+  local f bad="" line
+  for f in "$DEPLOY_SRC"/scripts/*.sh; do
+    if grep -vE '^[[:space:]]*#' "$f" | grep -Eq 'compose[^|;&]*[[:space:]]config([[:space:]]|$)|compose[^|;&]*[[:space:]]convert([[:space:]]|$)'; then
+      bad="$bad $(basename "$f"):compose-config/convert"
+    fi
+    while IFS= read -r line; do
+      case "$line" in
+        *docker*inspect*)
+          case "$line" in
+            *" -f "*|*"--format"*|*">/dev/null"*) ;;
+            *) bad="$bad $(basename "$f"):inspect-without-format" ;;
+          esac
+          ;;
+      esac
+    done < <(grep -vE '^[[:space:]]*#' "$f")
+  done
+  [ -z "$bad" ] || fail "scripts 里出现了会展开密钥的写法:$bad"
+  pass "scripts/*.sh 不含 compose config / convert,docker inspect 都带 -f / --format(或丢弃输出)"
 }
 
 # 造一个镜像标签别名($1=新版本号),测试结束自动删除;$2=distinct 时基于原镜像加一层,使镜像 ID 不同
@@ -337,10 +390,23 @@ root_ca_fp() {
     | openssl x509 -noout -fingerprint -sha256 2>/dev/null
 }
 
+# 全部服务就绪的断言(M-1):scheduler 在运行且重启次数为 0(没有崩溃重启循环)、web 健康、app 健康。
+# 只能用在"这些容器是刚创建 / 刚启动"的场景(安装后、升级后、恢复后),已运行很久的容器重启次数可能合法地不为 0。
+assert_services_up() {
+  local sched web app
+  sched="$(docker inspect -f '{{.State.Running}} {{.RestartCount}}' "$(dc ps -q scheduler)" 2>/dev/null)" || fail "取不到 scheduler 容器状态"
+  [ "$sched" = "true 0" ] || fail "scheduler 应在运行且重启次数为 0,实际:$sched"
+  web="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}nohealth{{end}}' "$(dc ps -q web)" 2>/dev/null)" || fail "取不到 web 容器状态"
+  [ "$web" = "healthy" ] || fail "web 应为 healthy,实际:$web"
+  app="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}nohealth{{end}}' "$(dc ps -q app)" 2>/dev/null)" || fail "取不到 app 容器状态"
+  [ "$app" = "healthy" ] || fail "app 应为 healthy,实际:$app"
+  pass "scheduler 在运行且重启 0 次,web 与 app 均 healthy"
+}
+
 # 备份 / 恢复 / 诊断留下的临时物:不允许残留
 assert_no_residue() {
   local left dbs
-  left="$(find "$DEPLOY" -path "$DEPLOY/data" -prune -o \( -name '.ws-restore.*' -o -name '.stage.*' -o -name '*.partial' -o -name '.ws-diag.*' -o -name '.ws-backup.*' -o -name '.lock' \) -print)"
+  left="$(find "$DEPLOY" -path "$DEPLOY/data" -prune -o \( -name '.ws-restore.*' -o -name '.stage.*' -o -name '*.partial' -o -name '.ws-diag.*' -o -name '.ws-backup.*' -o -name '.lock' -o -name '.lock.*' -o -name '.ws-upgrade.*' -o -name '.env.tmp' \) -print)"
   [ -z "$left" ] || fail "残留了备份/恢复临时物:$left"
   dbs="$(psql_scalar "SELECT count(*) FROM pg_database WHERE datname IN ('ws_restore_tmp', 'ws_restore_old')")"
   [ "$dbs" = "0" ] || fail "数据库里残留了 ws_restore_tmp / ws_restore_old"
@@ -364,6 +430,10 @@ assert_no_residue() {
 #   badjson     manifest.json 改成不合法的 JSON
 #   mannosha    manifest 里去掉 env 的 sha 行
 #   manextra    manifest 里多出一个文件键
+#   padlink     外层归档:第一个条目是符号链接,后面接 3000 个普通条目(清单很长,专测 grep -q 提前退出 + pipefail 的 141 绕过)
+#   padtrav     外层归档:第一个条目是 ../evil,后面接 3000 个普通条目(同上,针对路径检查)
+#   caddypadlink caddy.tar:第一个条目是符号链接,后面接 3000 个普通条目(manifest 的 sha 同步重算)
+#   caddypadtrav caddy.tar:第一个条目是 ../evil-caddy,后面接 3000 个普通条目(manifest 的 sha 同步重算)
 tamper_backup() {
   python3 -I - "$1" "$2" "$3" <<'PY'
 import hashlib, io, re, sys, tarfile
@@ -386,13 +456,29 @@ for mm in members:
         mm[1] = b"NOTADUMP" + data[8:]
     if kind == "caddygarbage" and m.name == "caddy.tar":
         mm[1] = b"this is not a tar archive\n" * 200
+def make_caddy(kind):
+    bio = io.BytesIO()
+    with tarfile.open(fileobj=bio, mode="w") as t:
+        if kind == "caddypadlink":
+            ti = tarfile.TarInfo("evil-link"); ti.type = tarfile.SYMTYPE; ti.linkname = "/etc/passwd"
+            t.addfile(ti)
+        else:
+            ti = tarfile.TarInfo("../evil-caddy"); ti.size = 4
+            t.addfile(ti, io.BytesIO(b"evil"))
+        for i in range(3000):
+            ti = tarfile.TarInfo("pad/%s-%05d" % ("x" * 50, i)); ti.size = 0
+            t.addfile(ti, io.BytesIO(b""))
+    return bio.getvalue()
+for mm in members:
+    if kind in ("caddypadlink", "caddypadtrav") and mm[0].name == "caddy.tar":
+        mm[1] = make_caddy(kind)
 shas = {m.name: hashlib.sha256(d).hexdigest() for m, d in members if d is not None and m.name != "manifest.json"}
 for mm in members:
     m, data = mm
     if m.name != "manifest.json":
         continue
     t = data.decode()
-    if kind in ("dbcorrupt", "caddygarbage"):
+    if kind in ("dbcorrupt", "caddygarbage", "caddypadlink", "caddypadtrav"):
         for n in ("db.dump", "caddy.tar"):
             t = re.sub(r'("%s": ")[0-9a-f]+(")' % re.escape(n), lambda mo: mo.group(1) + shas[n] + mo.group(2), t)
     elif kind == "version9":
@@ -407,6 +493,12 @@ for mm in members:
         t = re.sub(r'(    "db.dump": "[0-9a-f]+",\n)', lambda mo: mo.group(1) + '    "extra.txt": "' + "0" * 64 + '",\n', t)
     mm[1] = t.encode()
 with tarfile.open(out, "w:gz") as tf:
+    if kind == "padlink":
+        ti = tarfile.TarInfo("first-link"); ti.type = tarfile.SYMTYPE; ti.linkname = "/etc/passwd"
+        tf.addfile(ti)
+    if kind == "padtrav":
+        ti = tarfile.TarInfo("../evil"); ti.size = 4
+        tf.addfile(ti, io.BytesIO(b"evil"))
     for m, data in members:
         if kind == "nomanifest" and m.name == "manifest.json":
             continue
@@ -421,6 +513,10 @@ with tarfile.open(out, "w:gz") as tf:
             tf.addfile(m, io.BytesIO(data))
         else:
             tf.addfile(m)
+    if kind in ("padlink", "padtrav"):
+        for i in range(3000):
+            ti = tarfile.TarInfo("pad/%s-%05d" % ("x" * 50, i)); ti.size = 0
+            tf.addfile(ti, io.BytesIO(b""))
     if kind == "traversal":
         ti = tarfile.TarInfo("../evil"); ti.size = 4
         tf.addfile(ti, io.BytesIO(b"evil"))

@@ -5,11 +5,12 @@
 # 另有:校验和自洽但内容坏的备份(pg_restore 失败、caddy.tar 不是归档)、换库阶段失败(临时库被占用,验证旧库自动改回)。
 # 最后用原始(未改动的)备份做正向对照:证明被拒绝是因为改动,而不是备份本身有问题。
 set -euo pipefail
-# shellcheck source=deploy/tests/_common.sh
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=_common.sh
 . "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
-[ -x "$ROOT/deploy/prod/scripts/backup.sh" ] || fail "deploy/prod/scripts/backup.sh 不存在或不可执行"
-[ -x "$ROOT/deploy/prod/scripts/restore.sh" ] || fail "deploy/prod/scripts/restore.sh 不存在或不可执行"
+[ -x "$DEPLOY_SRC/scripts/backup.sh" ] || fail "scripts/backup.sh 不存在或不可执行"
+[ -x "$DEPLOY_SRC/scripts/restore.sh" ] || fail "scripts/restore.sh 不存在或不可执行"
 command -v python3 >/dev/null 2>&1 || fail "本测试需要 python3 来改造备份包"
 
 echo "== 1/3 安装、造数据、备份"
@@ -19,6 +20,9 @@ rc=0
 run_install "$TMP/install.log" || rc=$?
 if [ "$rc" -ne 0 ]; then tail -n 20 "$TMP/install.log" >&2; fail "安装退出码 $rc"; fi
 make_marker "原始"
+# 压舱数据:让备份大一些,pg_restore 要几秒,换库失败用例与 TERM 用例才有足够宽的时间窗口(S-17)
+psql_scalar "CREATE TABLE ws_ballast AS SELECT g AS id, md5(g::text) || md5((g * 7)::text) || md5((g * 13)::text) AS pad FROM generate_series(1, 300000) g" >/dev/null || fail "造压舱数据失败"
+psql_scalar "ALTER TABLE ws_ballast ADD PRIMARY KEY (id)" >/dev/null || fail "给压舱数据加主键失败"
 ( cd "$DEPLOY" && ./scripts/backup.sh ) >"$TMP/backup.log" 2>&1 || { tail -n 20 "$TMP/backup.log" >&2; fail "backup.sh 失败"; }
 GOOD="$(ls -1 "$DEPLOY"/backups/ws-backup-*.tar.gz | tail -n 1)"
 [ -s "$GOOD" ] || fail "没有生成备份"
@@ -80,6 +84,17 @@ expect_reject 路径穿越条目 "$TMP/bad/trav.tar.gz" "不安全的路径" --y
 tamper_backup "$GOOD" "$TMP/bad/sym.tar.gz" symlink
 expect_reject 符号链接条目 "$TMP/bad/sym.tar.gz" "链接" --yes
 
+# S-1:条目很多、第一个条目就是链接 / 路径穿越。若检查写成 `printf ... | grep -q`,pipefail 下 grep 提前退出会让
+# printf 收到 SIGPIPE(141),管道失败,检查被悄悄绕过;这里断言走的就是该检查本身的报错(不是后面某个别的检查)
+tamper_backup "$GOOD" "$TMP/bad/padlink.tar.gz" padlink
+expect_reject 超长清单且首项是链接 "$TMP/bad/padlink.tar.gz" "含有链接、目录或特殊文件" --yes
+tamper_backup "$GOOD" "$TMP/bad/padtrav.tar.gz" padtrav
+expect_reject 超长清单且首项是路径穿越 "$TMP/bad/padtrav.tar.gz" "不安全的路径" --yes
+tamper_backup "$GOOD" "$TMP/bad/caddypadlink.tar.gz" caddypadlink
+expect_reject caddy清单超长且首项是链接 "$TMP/bad/caddypadlink.tar.gz" "caddy.tar 含有链接或设备文件" --yes
+tamper_backup "$GOOD" "$TMP/bad/caddypadtrav.tar.gz" caddypadtrav
+expect_reject caddy清单超长且首项是路径穿越 "$TMP/bad/caddypadtrav.tar.gz" "caddy.tar 含有不安全的路径" --yes
+
 # 非交互且没有 --yes:标准输入关闭(<&-),既不是终端也读不到确认
 expect_reject 非交互且无yes "$GOOD" "必须加 --yes"
 
@@ -115,23 +130,35 @@ grep -q '校验和不符' "$TMP/reject-db数据损坏但sha自洽.log" && fail "
 echo "== 2b 换库阶段失败:临时库被占用,旧库必须自动改回"
 # 后台等 ws_restore_tmp 出现就占一个长连接,使"临时库改名为正式库"失败;此时正式库已改名为 ws_restore_old,
 # restore.sh 必须把它改回来、清掉临时库、重启服务。
-(
-  n=0
-  while [ "$n" -lt 600 ]; do
-    if [ "$(dc exec -T postgres psql -U workstation -d postgres -tA -c "SELECT count(*) FROM pg_database WHERE datname = 'ws_restore_tmp'" 2>/dev/null | tr -d '[:space:]')" = "1" ]; then
-      dc exec -T postgres psql -U workstation -d ws_restore_tmp -c 'SELECT pg_sleep(120)' >/dev/null 2>&1 || true
-      exit 0
-    fi
-    n=$((n + 1))
-    sleep 0.2
-  done
-) &
-HOLD_PID=$!
-rc=0
-( cd "$DEPLOY" && ./scripts/restore.sh "$GOOD" --yes ) <&- >"$TMP/reject-swapfail.log" 2>&1 || rc=$?
-kill "$HOLD_PID" 2>/dev/null || true
-wait "$HOLD_PID" 2>/dev/null || true
-[ "$rc" -ne 0 ] || fail "换库失败用例:应当失败,但退出码为 0(测试自身问题:占连接没抢在改名之前?)"
+# 压舱数据让 pg_restore 要几秒,时间窗口远大于轮询间隔;万一还是没抢到(restore 成功了),就把库重置回"备份之后"的状态再试一次。
+swap_attempt() {
+  (
+    n=0
+    while [ "$n" -lt 1200 ]; do
+      if [ "$(dc exec -T postgres psql -U workstation -d postgres -tA -c "SELECT count(*) FROM pg_database WHERE datname = 'ws_restore_tmp'" 2>/dev/null | tr -d '[:space:]')" = "1" ]; then
+        dc exec -T postgres psql -U workstation -d ws_restore_tmp -c 'SELECT pg_sleep(120)' >/dev/null 2>&1 || true
+        exit 0
+      fi
+      n=$((n + 1))
+      sleep 0.05
+    done
+  ) &
+  HOLD_PID=$!
+  rc=0
+  ( cd "$DEPLOY" && ./scripts/restore.sh "$GOOD" --yes ) <&- >"$TMP/reject-swapfail.log" 2>&1 || rc=$?
+  kill "$HOLD_PID" 2>/dev/null || true
+  wait "$HOLD_PID" 2>/dev/null || true
+}
+swap_attempt
+if [ "$rc" -eq 0 ]; then
+  echo "  (第一次没抢到占连接的时机,restore 成功了;重置数据后重试一次)"
+  make_marker "备份之后"
+  SIG="$(state_sig)"
+  APP_ID="$(dc ps -q app)"
+  APP_STARTED="$(docker inspect -f '{{.State.StartedAt}}' "$APP_ID")"
+  swap_attempt
+fi
+[ "$rc" -ne 0 ] || fail "换库失败用例:连试两次 restore 都成功了(测试自身问题:占连接没抢在改名之前,请检查本机负载后重跑)"
 grep -q '把临时库改名为正式库时出错' "$TMP/reject-swapfail.log" || { sed 's/^/    | /' "$TMP/reject-swapfail.log" >&2; fail "换库失败用例:报错里没有失败步骤的说明"; }
 grep -q '正式数据库已还原' "$TMP/reject-swapfail.log" || fail "换库失败用例:没有提示\"正式数据库已还原\""
 w=0
@@ -146,6 +173,41 @@ APP_STARTED="$(docker inspect -f '{{.State.StartedAt}}' "$(dc ps -q app)")"
 APP_ID="$(dc ps -q app)"
 pass "换库阶段失败:旧库原样改回(oid 与内容签名不变)、临时库与旧库名都不残留、服务自动重启恢复"
 
+echo "== 2c 恢复 / 备份运行中被 TERM 打断:不留临时目录、临时库、锁、.partial"
+# backup.sh:等 .stage.* 出现就发 TERM(脚本在前台子进程结束后处理 TERM,经 EXIT trap 清理)
+"$DEPLOY/scripts/backup.sh" >"$TMP/term-backup.log" 2>&1 &
+bpid=$!
+w=0
+until [ -n "$(find "$DEPLOY/backups" -maxdepth 1 -name '.stage.*' | head -n 1)" ]; do
+  kill -0 "$bpid" 2>/dev/null || break
+  w=$((w + 1)); [ "$w" -lt 1200 ] || break
+  sleep 0.05
+done
+kill -TERM "$bpid" 2>/dev/null || true
+rc=0; wait "$bpid" || rc=$?
+[ "$rc" -eq 143 ] || { tail -n 10 "$TMP/term-backup.log" >&2; fail "backup.sh 被 TERM 后退出码应为 143,实际 $rc(测试自身问题:TERM 没有赶在备份结束之前?)"; }
+assert_no_residue
+assert_no_secrets "被 TERM 打断的备份输出" "$TMP/term-backup.log"
+pass "backup.sh 被 TERM 打断:退出码 143,无 .stage.* / .partial / 锁残留"
+# restore.sh:等临时库 ws_restore_tmp 出现(正在 pg_restore)就发 TERM;此时正式库没动,清理必须删掉临时库
+"$DEPLOY/scripts/restore.sh" "$GOOD" --yes <&- >"$TMP/term-restore.log" 2>&1 &
+rpid=$!
+w=0
+until [ "$(dc exec -T postgres psql -U workstation -d postgres -tA -c "SELECT count(*) FROM pg_database WHERE datname = 'ws_restore_tmp'" 2>/dev/null | tr -d '[:space:]')" = "1" ]; do
+  kill -0 "$rpid" 2>/dev/null || break
+  w=$((w + 1)); [ "$w" -lt 1200 ] || break
+  sleep 0.05
+done
+kill -TERM "$rpid" 2>/dev/null || true
+rc=0; wait "$rpid" || rc=$?
+[ "$rc" -eq 143 ] || { tail -n 10 "$TMP/term-restore.log" >&2; fail "restore.sh 被 TERM 后退出码应为 143,实际 $rc(测试自身问题:TERM 没有赶在恢复结束之前?)"; }
+assert_no_residue
+[ "$(state_sig)" = "$SIG" ] || fail "restore 被 TERM 打断后正式库变了"
+assert_healthz
+[ "$(dc ps -q app)" = "$APP_ID" ] || fail "restore 在换库之前被 TERM,app 容器不该被重建"
+assert_no_secrets "被 TERM 打断的恢复输出" "$TMP/term-restore.log"
+pass "restore.sh 被 TERM 打断:退出码 143,临时库 / .ws-restore.* / 锁都已清理,正式库未变、服务在线"
+
 echo "== 3/3 正向对照:未改动的备份可以恢复"
 [ "$(psql_scalar "SELECT note FROM ws_backup_marker WHERE id = 1")" = "备份标识-备份之后" ] || fail "测试自身问题:库里应是备份之后的数据"
 rc=0
@@ -156,14 +218,6 @@ assert_healthz
 assert_login_ok
 pass "正向对照通过:同一个备份在未被改动时可以恢复(上面的拒绝确实来自改动)"
 
-# 静态检查:这几个脚本不得展开密钥的命令(compose config / docker inspect / compose convert);只看非注释行
-for f in diagnose backup restore; do
-  if grep -v '^[[:space:]]*#' "$ROOT/deploy/prod/scripts/$f.sh" | grep -Eq 'compose[^|;&]* config|docker inspect|compose[^|;&]* convert'; then
-    fail "$f.sh 里出现了 compose config / docker inspect / compose convert"
-  fi
-done
-pass "diagnose / backup / restore 不含 compose config、docker inspect、compose convert"
-
 selftest_scanner
 assert_no_secrets "restore 正向输出" "$TMP/restore-good.log"
 assert_no_secrets "backup 输出" "$TMP/backup.log"
@@ -172,5 +226,6 @@ assert_ps_clean
 assert_deploy_hygiene
 assert_no_residue
 assert_no_xtrace
+assert_static_safe
 
 echo "restore_rejects 全部通过"

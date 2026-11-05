@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # 全新安装:非交互装一遍,断言 .env、目录、登录、证书、定时备份提示,以及密钥不外泄(规则 15)。
 set -euo pipefail
-# shellcheck source=deploy/tests/_common.sh
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=_common.sh
 . "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
 echo "== 1/5 准备部署目录并安装(管理员密码经 WS_INSTALL_ADMIN_PASSWORD_FILE 传入)"
@@ -35,7 +36,7 @@ pgpw="$(env_value POSTGRES_PASSWORD)"
 [ "${#pgpw}" -ge 24 ] || fail "POSTGRES_PASSWORD 太短(${#pgpw})"
 grep -qF ":${pgpw}@postgres:5432/" "$DEPLOY/.env" || fail "WS_DATABASE_URL 里没有填入数据库密码"
 sid="$(env_value WS_SCHOOL_ID)"
-printf '%s' "$sid" | grep -Eq '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' || fail "WS_SCHOOL_ID 不是小写 uuid"
+grep -Eq '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' <<<"$sid" || fail "WS_SCHOOL_ID 不是小写 uuid"
 [ "$sid" != "11111111-1111-1111-1111-111111111111" ] || fail "WS_SCHOOL_ID 不应是种子学校 ID"
 [ "$(env_value WS_HTTPS_PORT)" = "$HTTPS_PORT" ] || fail ".env 里的 WS_HTTPS_PORT 不对"
 [ "$(env_value WS_VERSION)" = "$VERSION" ] || fail ".env 里的 WS_VERSION 不对"
@@ -55,6 +56,7 @@ assert_healthz
 pass "healthz 正常"
 assert_login_ok
 pass "管理员登录成功且 must_change_password 为 true"
+assert_services_up
 [ "$(user_count)" = "1" ] || fail "users 应只有 1 行(管理员)"
 pass "users 只有管理员一行"
 ok=0
@@ -95,5 +97,6 @@ pass "安装输出、容器日志、data/logs 全部文件里都没有管理员�
 assert_ps_clean
 assert_deploy_hygiene
 assert_no_xtrace
+assert_static_safe
 
 echo "install_fresh 全部通过"
