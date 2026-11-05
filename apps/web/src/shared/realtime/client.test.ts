@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
-vi.mock('@/shared/api/client', () => ({ tryRefreshAccessToken: vi.fn() }))
+vi.mock('@/shared/api/client', () => ({
+  API_BASE: '/api/v1',
+  tryRefreshAccessToken: vi.fn(),
+}))
 
 import { tryRefreshAccessToken } from '@/shared/api/client'
 import type { RefreshResult } from '@/shared/api/client'
@@ -55,6 +58,17 @@ afterEach(() => vi.useRealTimers())
 
 it('realtimeUrl 由 location 推出,令牌不进 URL', () => {
   expect(realtimeUrl()).toBe(
+    `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/v1/ws`,
+  )
+})
+
+it('realtimeUrl 跟随绝对地址的 API_BASE(跨域部署)', () => {
+  expect(realtimeUrl('https://api.example.test/api/v1')).toBe('wss://api.example.test/api/v1/ws')
+  expect(realtimeUrl('http://localhost:8253/api/v1/')).toBe('ws://localhost:8253/api/v1/ws')
+})
+
+it('realtimeUrl 相对路径仍用 location', () => {
+  expect(realtimeUrl('/api/v1')).toBe(
     `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/v1/ws`,
   )
 })

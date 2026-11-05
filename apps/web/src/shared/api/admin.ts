@@ -31,6 +31,7 @@ import type {
   NoticeRecipients,
   NoticeSent,
   SchoolInfo,
+  SystemInfo,
   ScoreStudentRow,
   ScoreSummary,
   StaffInput,
@@ -85,6 +86,14 @@ async function download(path: string): Promise<Blob> {
 }
 
 export const adminApi = {
+  systemInfo: () => api<SystemInfo>('GET', '/admin/system/info'),
+  /** 带 Bearer 取回诊断包 zip(令牌走请求头,不进 URL);非 2xx 抛 ApiError */
+  downloadDiagnostics: async (): Promise<{ blob: Blob; filename: string }> => {
+    const res = await authedFetch('GET', '/admin/system/diagnostics')
+    if (!res.ok) throw await toApiError(res)
+    const m = /filename="?([^";]+)"?/.exec(res.headers.get('Content-Disposition') ?? '')
+    return { blob: await res.blob(), filename: m?.[1] ?? 'ws-diagnostics.zip' }
+  },
   school: () => api<SchoolInfo>('GET', '/admin/school'),
   saveSchool: (b: SchoolInfo) => api<SchoolInfo>('PUT', '/admin/school', b),
   years: () => api<YearAdmin[]>('GET', '/admin/years'),

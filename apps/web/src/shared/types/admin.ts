@@ -582,3 +582,11 @@ export interface HistoryScores {
     class_rank: number | null
   }[]
 }
+
+export interface SystemInfo {
+  version: string
+  migration: string
+  started_at: string
+  db_size_bytes: number
+  last_backup: { at: string; file: string; size_bytes: number } | null
+}

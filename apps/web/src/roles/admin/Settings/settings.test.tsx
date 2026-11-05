@@ -6,10 +6,18 @@ import { ApiError } from '@/shared/api/client'
 import { schoolApi } from '@/shared/api/school'
 import { toast } from '@/shared/components/Toast'
 import type { Switches } from '@/shared/types/admin'
+import { useAuthStore } from '@/shared/stores/auth'
+import type { SystemInfo } from '@/shared/types/admin'
 import SettingsPage from './SettingsPage'
 
 vi.mock('@/shared/api/admin', () => ({
-  adminApi: { saveTagPool: vi.fn(), switches: vi.fn(), saveSwitches: vi.fn() },
+  adminApi: {
+    saveTagPool: vi.fn(),
+    switches: vi.fn(),
+    saveSwitches: vi.fn(),
+    systemInfo: vi.fn(),
+    downloadDiagnostics: vi.fn(),
+  },
 }))
 vi.mock('@/shared/api/school', () => ({ schoolApi: { tagPool: vi.fn() } }))
 vi.mock('@/shared/components/Toast', () => ({ toast: vi.fn() }))
@@ -269,4 +277,79 @@ it('invalidates student caches after saving the pool', async () => {
   fireEvent.click(screen.getByRole('button', { name: '保存标签池' }))
   await waitFor(() => expect(spy).toHaveBeenCalledWith({ queryKey: ['student-records'] }))
   expect(spy).toHaveBeenCalledWith({ queryKey: ['class-students'] })
+})
+
+const asAdmin = (perms: string[]) =>
+  useAuthStore.setState({ user: { admin_perms: perms } as never })
+const INFO: SystemInfo = {
+  version: '0.7.0',
+  migration: '0010',
+  started_at: '2026-11-05T01:00:00Z',
+  db_size_bytes: 5 * 1024 * 1024,
+  last_backup: { at: new Date().toISOString(), file: 'ws-backup-x.tar.gz', size_bytes: 1024 },
+}
+
+it('shows system card for settings.manage', async () => {
+  asAdmin(['settings.manage'])
+  vi.mocked(adminApi.systemInfo).mockResolvedValue(INFO)
+  await renderPage()
+  expect(await screen.findByText('0.7.0')).toBeInTheDocument()
+  expect(screen.getByText('0010')).toBeInTheDocument()
+  expect(screen.getByText('5.0 MB')).toBeInTheDocument()
+  expect(screen.getByText('诊断包不含学生、成绩等业务数据,可以发给技术支持')).toBeInTheDocument()
+})
+
+it('hides system card without settings.manage', async () => {
+  asAdmin(['accounts.manage'])
+  await renderPage()
+  expect(screen.queryByText('导出诊断信息')).toBeNull()
+  expect(adminApi.systemInfo).not.toHaveBeenCalled()
+})
+
+it('says there is no backup record when last_backup is null', async () => {
+  asAdmin(['settings.manage'])
+  vi.mocked(adminApi.systemInfo).mockResolvedValue({ ...INFO, last_backup: null })
+  await renderPage()
+  expect(await screen.findByText('还没有备份记录')).toBeInTheDocument()
+})
+
+it('warns when last backup is older than 2 days', async () => {
+  asAdmin(['settings.manage'])
+  const at = new Date(Date.now() - 5 * 24 * 3600 * 1000).toISOString()
+  vi.mocked(adminApi.systemInfo).mockResolvedValue({
+    ...INFO,
+    last_backup: { at, file: 'f', size_bytes: 1 },
+  })
+  await renderPage()
+  expect(await screen.findByText('上次备份是 5 天前')).toBeInTheDocument()
+})
+
+it('downloads diagnostics, disabled while running', async () => {
+  asAdmin(['settings.manage'])
+  vi.mocked(adminApi.systemInfo).mockResolvedValue(INFO)
+  let done!: (v: { blob: Blob; filename: string }) => void
+  vi.mocked(adminApi.downloadDiagnostics).mockReturnValue(new Promise((r) => (done = r)))
+  const createUrl = vi.fn(() => 'blob:x')
+  Object.assign(URL, { createObjectURL: createUrl, revokeObjectURL: vi.fn() })
+  const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+  await renderPage()
+  const btn = await screen.findByRole('button', { name: '导出诊断信息' })
+  fireEvent.click(btn)
+  await waitFor(() => expect(btn).toBeDisabled())
+  done({ blob: new Blob(['z']), filename: 'ws-diagnostics-20261105-100000.zip' })
+  await waitFor(() => expect(click).toHaveBeenCalled())
+  expect(createUrl).toHaveBeenCalled()
+  await waitFor(() => expect(btn).toBeEnabled())
+  click.mockRestore()
+})
+
+it('toasts when diagnostics export fails', async () => {
+  asAdmin(['settings.manage'])
+  vi.mocked(adminApi.systemInfo).mockResolvedValue(INFO)
+  vi.mocked(adminApi.downloadDiagnostics).mockRejectedValue(
+    new ApiError(403, 'forbidden', '没有权限'),
+  )
+  await renderPage()
+  fireEvent.click(await screen.findByRole('button', { name: '导出诊断信息' }))
+  await waitFor(() => expect(toast).toHaveBeenCalledWith('没有权限'))
 })

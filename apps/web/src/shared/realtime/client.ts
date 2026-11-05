@@ -1,4 +1,4 @@
-import { tryRefreshAccessToken } from '@/shared/api/client'
+import { API_BASE, tryRefreshAccessToken } from '@/shared/api/client'
 
 export type RealtimeEvent =
   | { type: 'notice.new'; id: string; title: string; from_name: string | null; created_at: string }
@@ -15,9 +15,14 @@ export interface RealtimeOptions {
 
 const BACKOFF_S = [1, 2, 4, 8, 16, 30]
 
-/** 由 location 推出的 WebSocket 地址;令牌不进 URL,连上后用首条 auth 消息发送 */
-export function realtimeUrl(): string {
-  return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/v1/ws`
+/**
+ * WebSocket 地址:`base` 是 http(s) 绝对地址时(跨域部署,VITE_API_BASE)换成 ws(s) 同主机同路径;
+ * 相对路径时由 location 推出。令牌不进 URL,连上后用首条 auth 消息发送
+ */
+export function realtimeUrl(base: string = API_BASE): string {
+  const abs = /^http(s?):\/\/(.+)$/i.exec(base)
+  if (abs) return `ws${abs[1]}://${abs[2].replace(/\/+$/, '')}/ws`
+  return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${base.replace(/\/+$/, '')}/ws`
 }
 
 export function createRealtimeClient(opts: RealtimeOptions): { start(): void; stop(): void } {
