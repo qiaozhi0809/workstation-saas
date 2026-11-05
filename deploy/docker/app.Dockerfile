@@ -10,7 +10,8 @@ ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
     UV_LINK_MODE=copy \
     UV_PYTHON_DOWNLOADS=never \
     PIP_DISABLE_PIP_VERSION_CHECK=1
-RUN pip install --no-cache-dir uv
+# uv 固定为 0.13.4(2026-10-20 发布,距 2026-11-05 已满两周的最新版;升级时同样取发布满两周的版本)
+RUN pip install --no-cache-dir uv==0.13.4
 WORKDIR /build
 COPY server/pyproject.toml server/uv.lock ./
 RUN uv sync --locked --no-dev

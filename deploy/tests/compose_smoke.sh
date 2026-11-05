@@ -5,9 +5,13 @@
 #   WS_SMOKE_PROJECT           compose 项目名(默认 ws-m5a-b)
 #   WS_HTTP_PORT/WS_HTTPS_PORT 宿主机端口(默认 18080 / 18443)
 #   WS_SMOKE_SKIP_BUILD=1      不重新构建镜像,直接用已有标签
-#   WS_SMOKE_SKIP_LOGFILE=1    跳过 app.jsonl 落盘断言(依赖日志落盘功能)
 #   WS_SMOKE_COMPOSE_OVERRIDE  额外的 compose 文件(-f),仅本地验证占位用
 set -euo pipefail
+
+if [ "$(id -u)" -eq 0 ]; then
+  echo "请不要用 root 运行冒烟测试(会改变 data/ 目录属主,与正式安装不一致)" >&2
+  exit 1
+fi
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 VERSION="${WS_VERSION:-0.0.0-seg-b}"
@@ -18,6 +22,8 @@ OVERRIDE="${WS_SMOKE_COMPOSE_OVERRIDE:-}"
 
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/ws-smoke.XXXXXX")"
 FAILED=0
+CANARIES=()
+CANARY_DIRS=()
 
 compose() {
   local args=(-p "$PROJECT" --project-directory "$TMP" -f "$TMP/docker-compose.yml")
@@ -35,6 +41,8 @@ cleanup() {
   if [ -d "$TMP/data" ] && docker image inspect "workstation-web:$VERSION" >/dev/null 2>&1; then
     docker run --rm --entrypoint sh -v "$TMP:/t" "workstation-web:$VERSION" -c 'rm -rf /t/data' >/dev/null 2>&1 || true
   fi
+  for f in "${CANARIES[@]}"; do rm -f "$f"; done
+  for d in "${CANARY_DIRS[@]}"; do rmdir "$d" 2>/dev/null || true; done
   rm -rf "$TMP" 2>/dev/null || true
   if [ "$code" -ne 0 ] && [ "$FAILED" -eq 0 ]; then
     echo "冒烟测试异常退出(退出码 $code)" >&2
@@ -54,7 +62,9 @@ fail() {
 
 echo "== 1/6 构建镜像(标签 $VERSION)"
 if [ "${WS_SMOKE_SKIP_BUILD:-0}" != "1" ]; then
-  make -C "$ROOT" image VERSION="$VERSION" >/dev/null 2>&1 || {
+  # 构建输出写到临时文件,失败时只打印末尾(构建日志不含密钥)
+  make -C "$ROOT" image VERSION="$VERSION" >"$TMP/build.log" 2>&1 || {
+    tail -n 40 "$TMP/build.log" >&2
     echo "镜像构建失败,请单独运行:make image VERSION=$VERSION" >&2
     exit 1
   }
@@ -74,6 +84,44 @@ leaked="$(docker run --rm --entrypoint sh "workstation-app:$VERSION" -c \
   'find /srv -name ".env*" -print 2>/dev/null' || true)"
 [ -z "$leaked" ] || fail "应用镜像里不应带 .env 文件:$leaked"
 pass "应用镜像里没有 .env"
+env_found="$(docker run --rm --entrypoint sh "workstation-app:$VERSION" -c \
+  "find / -xdev -name '.env*' -print 2>/dev/null" || true)"
+[ -z "$env_found" ] || fail "应用镜像全盘不应有 .env* 文件:$env_found"
+pass "应用镜像全盘没有 .env*"
+
+# R7:.dockerignore 真的把 node_modules / .venv / .env* 挡在构建上下文之外。
+# 做法:在仓库里放 canary 文件,再用一个只 `COPY . /ctx` 的临时 Dockerfile 构建探针镜像,
+# 临时 Dockerfile 旁放一份与正式 .dockerignore 内容相同的同名忽略文件(BuildKit 按 Dockerfile 名取忽略文件),
+# 然后在探针镜像里断言 canary 不存在。同时断言正常文件存在,避免"上下文本来就是空的"这种假通过。
+# 不直接看正式镜像,因为正式镜像只 COPY 部分目录,即使忽略规则失效 canary 也不会进去。
+make_canary() {
+  local f="$1" d
+  d="$(dirname "$f")"
+  if [ ! -d "$d" ]; then mkdir -p "$d"; CANARY_DIRS+=("$d"); fi
+  : >"$f"
+  CANARIES+=("$f")
+}
+make_canary "$ROOT/apps/web/node_modules/.ws-canary"
+make_canary "$ROOT/server/.venv/.ws-canary"
+make_canary "$ROOT/server/.env.ws-canary"
+make_canary "$ROOT/apps/web/.env.ws-canary"
+mkdir -p "$TMP/probe"
+probe_ctx() {  # $1=名称 $2=正式 Dockerfile 名 $3=必须存在的正常文件
+  cp "$ROOT/deploy/docker/$2.dockerignore" "$TMP/probe/$1.Dockerfile.dockerignore"
+  printf 'FROM workstation-web:%s\nCOPY . /ctx\n' "$VERSION" >"$TMP/probe/$1.Dockerfile"
+  docker build -q -f "$TMP/probe/$1.Dockerfile" -t "ws-probe-$1:$VERSION" "$ROOT" >"$TMP/probe/$1.log" 2>&1 \
+    || { tail -n 20 "$TMP/probe/$1.log" >&2; fail "探针镜像 $1 构建失败"; }
+  docker run --rm --entrypoint sh "ws-probe-$1:$VERSION" -c "test -f /ctx/$3" \
+    || { docker image rm "ws-probe-$1:$VERSION" >/dev/null 2>&1; fail "探针上下文里缺少 $3(上下文为空则断言无意义)"; }
+  local leaked
+  leaked="$(docker run --rm --entrypoint sh "ws-probe-$1:$VERSION" -c \
+    "find /ctx \\( -name '.ws-canary' -o -name '.env.ws-canary' \\) -print" || true)"
+  docker image rm "ws-probe-$1:$VERSION" >/dev/null 2>&1 || true
+  [ -z "$leaked" ] || fail "$2 的 .dockerignore 没挡住:$leaked"
+}
+probe_ctx app app.Dockerfile server/pyproject.toml
+probe_ctx web web.Dockerfile apps/web/package.json
+pass "两份 .dockerignore 都挡住了 node_modules / .venv / .env* 的 canary"
 docker run --rm --entrypoint sh "workstation-app:$VERSION" -c \
   'test -f /srv/server/alembic.ini && test -d /srv/server/migrations/versions' \
   || fail "应用镜像缺少 alembic.ini 或 migrations"
@@ -84,9 +132,11 @@ cp "$ROOT/deploy/prod/docker-compose.yml" "$TMP/docker-compose.yml"
 cp "$ROOT/deploy/prod/Caddyfile.internal" "$TMP/Caddyfile"
 mkdir -p "$TMP/certs" "$TMP/data/pg" "$TMP/data/redis" "$TMP/data/caddy" "$TMP/data/logs"
 # data/logs:容器内 uid 10001 要写 app.jsonl,宿主机用户要写 backup-last.json,
-# 冒烟里直接放开为 777(正式安装由 install.sh 处理)
+# 冒烟里直接放开为 777。正式安装的日志目录权限(chown/ACL 方案)由 Task 6 的 install.sh 决定,
+# 届时再与本脚本对齐
 chmod 777 "$TMP/data/logs"
 PG_PASS="$(openssl rand -hex 16)"
+old_umask="$(umask)"
 umask 077
 {
   echo "WS_VERSION=$VERSION"
@@ -104,7 +154,7 @@ umask 077
   echo "WS_HTTP_PORT=$HTTP_PORT"
   echo "WS_HTTPS_PORT=$HTTPS_PORT"
 } >"$TMP/.env"
-umask 022
+umask "$old_umask"
 unset PG_PASS
 # .env.example 里的密钥必须留空
 for key in WS_JWT_SECRET WS_MASTER_KEY POSTGRES_PASSWORD; do
@@ -113,7 +163,11 @@ done
 pass "部署目录就绪,.env.example 密钥留空"
 
 echo "== 4/6 启动服务并等待健康"
-compose up -d --wait --wait-timeout 300 >/dev/null 2>&1 || fail "服务未能在 300 秒内全部健康"
+# up 输出写到临时文件,失败时 fail 会打印各服务日志尾部(输出里不含密钥)
+compose up -d --wait --wait-timeout 300 >"$TMP/up.log" 2>&1 || {
+  tail -n 30 "$TMP/up.log" >&2
+  fail "服务未能在 300 秒内全部健康"
+}
 pass "所有服务已启动且健康"
 
 echo "== 5/6 逐项断言"
@@ -125,30 +179,53 @@ curl -ksS --max-time 10 "$base/" | grep -q '<div id="root">' || fail "/ 未返�
 pass "/ 返回前端首页"
 curl -ksS --max-time 10 "$base/teacher" | grep -q '<div id="root">' || fail "/teacher 刷新未回落到 index"
 pass "/teacher 刷新回落到 index"
-curl -ksS --max-time 10 -o /dev/null -D - "$base/" | grep -qi '^strict-transport-security:' || fail "缺少 Strict-Transport-Security 响应头"
-pass "安全响应头存在"
+headers="$(curl -ksS --max-time 10 -o /dev/null -D - "$base/")"
+for h in strict-transport-security x-content-type-options referrer-policy; do
+  printf '%s' "$headers" | grep -qi "^$h:" || fail "缺少 $h 响应头"
+done
+pass "三条安全响应头(HSTS / nosniff / Referrer-Policy)都存在"
+code="$(curl -ksS --max-time 10 -o "$TMP/404.body" -w '%{http_code}' "$base/api/v1/no-such-route")"
+[ "$code" = "404" ] || fail "/api/v1/no-such-route 应返回 404,实际 $code"
+if grep -q '<div id="root">' "$TMP/404.body"; then
+  fail "/api/* 的未知路径不应回落到前端首页"
+fi
+pass "/api/v1/no-such-route 返回 404 且不是前端首页"
 uid="$(compose exec -T app id -u | tr -d '\r\n')"
 [ "$uid" = "10001" ] || fail "app 容器 uid 应为 10001,实际为 $uid"
 pass "app 容器以 uid 10001 运行"
-for pair in postgres:5432 redis:6379 app:8080; do
-  # 未发布端口时 compose port 输出空或 ":0"
-  if [ -n "$(compose port "${pair%%:*}" "${pair##*:}" 2>/dev/null | grep -v ':0$' || true)" ]; then
-    fail "${pair%%:*} 的端口 ${pair##*:} 不应对宿主机发布"
+for svc in postgres redis app; do
+  ports="$(docker inspect -f '{{json .NetworkSettings.Ports}}' "$(compose ps -q "$svc")")"
+  if printf '%s' "$ports" | grep -q 'HostPort'; then
+    fail "$svc 不应对宿主机发布端口,实际:$ports"
   fi
 done
-pass "postgres / redis / app 未对宿主机发布端口"
+pass "postgres / redis / app 没有 HostPort"
+web_ports="$(docker inspect -f '{{json .NetworkSettings.Ports}}' "$(compose ps -q web)")"
+printf '%s' "$web_ports" | grep -q "\"80/tcp\":\[{[^]]*\"HostPort\":\"$HTTP_PORT\"" || fail "web 缺少 80 的 HostPort:$web_ports"
+printf '%s' "$web_ports" | grep -q "\"443/tcp\":\[{[^]]*\"HostPort\":\"$HTTPS_PORT\"" || fail "web 缺少 443 的 HostPort:$web_ports"
+pass "web 发布了 80 / 443"
+# 只判退出码,不打印环境变量的值
+if compose exec -T web sh -c 'env | grep -Eq "^(WS_JWT_SECRET|WS_MASTER_KEY|POSTGRES_PASSWORD|WS_DATABASE_URL)="'; then
+  fail "web 容器环境里不应出现应用密钥或数据库连接串"
+fi
+pass "web 容器环境里没有密钥"
+subnets="$(docker network inspect "${PROJECT}_ws-net" -f '{{range .IPAM.Config}}{{.Subnet}} {{end}}')"
+case "$subnets" in *172.30.0.0/24*) ;; *) fail "网络子网应为 172.30.0.0/24,实际:$subnets" ;; esac
+pass "网络子网为 172.30.0.0/24"
+sched_state="$(docker inspect -f '{{.State.Running}} {{.RestartCount}}' "$(compose ps -q scheduler)")"
+[ "$sched_state" = "true 0" ] || fail "scheduler 应在运行且重启次数为 0,实际:$sched_state"
+pass "scheduler 在运行且未重启"
+perm="$(ls -l "$TMP/.env" | cut -c1-10)"
+[ "$perm" = "-rw-------" ] || fail ".env 权限应为 600,实际:$perm"
+pass ".env 权限为 600"
 
 echo "== 6/6 日志落盘"
-if [ "${WS_SMOKE_SKIP_LOGFILE:-0}" = "1" ]; then
-  echo "  跳过:WS_SMOKE_SKIP_LOGFILE=1"
-else
-  ok=0
-  for _ in $(seq 1 30); do
-    if [ -s "$TMP/data/logs/app.jsonl" ]; then ok=1; break; fi
-    sleep 1
-  done
-  [ "$ok" = 1 ] || fail "data/logs/app.jsonl 未出现"
-  pass "data/logs/app.jsonl 已落盘"
-fi
+ok=0
+for _ in $(seq 1 30); do
+  if [ -s "$TMP/data/logs/app.jsonl" ]; then ok=1; break; fi
+  sleep 1
+done
+[ "$ok" = 1 ] || fail "data/logs/app.jsonl 未出现"
+pass "data/logs/app.jsonl 已落盘"
 
 echo "冒烟测试全部通过"
