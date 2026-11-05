@@ -131,10 +131,9 @@ echo "== 3/6 准备部署目录与随机密钥(只写入临时目录,不打印)"
 cp "$ROOT/deploy/prod/docker-compose.yml" "$TMP/docker-compose.yml"
 cp "$ROOT/deploy/prod/Caddyfile.internal" "$TMP/Caddyfile"
 mkdir -p "$TMP/certs" "$TMP/data/pg" "$TMP/data/redis" "$TMP/data/caddy" "$TMP/data/logs"
-# data/logs:容器内 uid 10001 要写 app.jsonl,宿主机用户要写 backup-last.json,
-# 冒烟里直接放开为 777。正式安装的日志目录权限(chown/ACL 方案)由 Task 6 的 install.sh 决定,
-# 届时再与本脚本对齐
-chmod 777 "$TMP/data/logs"
+# data/logs:容器内 uid 10001 要写 app.jsonl,宿主机用户要写 backup-last.json。
+# 与 install.sh 同一做法:当前用户所有 + 1777(粘滞位),不依赖 chown / setfacl
+chmod 1777 "$TMP/data/logs"
 PG_PASS="$(openssl rand -hex 16)"
 old_umask="$(umask)"
 umask 077
