@@ -1,4 +1,4 @@
-.PHONY: dev dev-down backend web migrate seed reset-db test image
+.PHONY: dev dev-down backend web migrate seed reset-db test image bundle
 
 VERSION ?= 0.0.0-dev
 
@@ -30,3 +30,8 @@ test:
 image:
 	docker build -f deploy/docker/app.Dockerfile --build-arg WS_APP_VERSION=$(VERSION) -t workstation-app:$(VERSION) .
 	docker build -f deploy/docker/web.Dockerfile -t workstation-web:$(VERSION) .
+
+# 离线部署包:make bundle VERSION=0.7.0(版本号必须是 1.2.3 / 1.2.3-rc.1 / 1.2.3-ci)
+bundle:
+	deploy/release/build-bundle.sh $(VERSION)
+	deploy/tests/bundle_smoke.sh $(VERSION)
