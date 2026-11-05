@@ -5,15 +5,23 @@ from datetime import UTC, date, datetime, time
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
+import pytest
 import structlog
 from structlog.testing import capture_logs
 
 from app.cli import build_parser, scheduler_cmd
+from app.deploy import scheduler as _sch
 from app.deploy.scheduler import JOBS, Job, due_jobs, run_due
+from app.domain.parents import lifecycle
 from tests.seed_ids import SCHOOL_ID as _SID
 
 SCHOOL_ID = UUID(_SID)
 SH = ZoneInfo("Asia/Shanghai")
+
+
+@pytest.fixture(autouse=True)
+def _reset_warn_state():
+    _sch._NO_SCHOOL_WARNED.clear()
 
 
 def _local(day: int, h: int, m: int) -> datetime:
@@ -140,3 +148,114 @@ def test_scheduler_once_runs_due_parent_archive(db, settings, redis_client, monk
     out2 = io.StringIO()
     assert scheduler_cmd(ns, db_factory=_factory(db), redis=redis_client, out=out2) == 0
     assert out2.getvalue().strip() == ""
+
+
+class _Proxy:
+    """包一层 Redis,按需在某个调用前后插入行为。"""
+
+    def __init__(self, inner, *, before_lock=None, fail_on=()):
+        self._inner = inner
+        self._before_lock = before_lock
+        self._fail_on = fail_on
+
+    def __getattr__(self, name):
+        attr = getattr(self._inner, name)
+        if name in self._fail_on:
+
+            def boom(*a, **k):
+                if name == "set" and not str(a[0]).startswith("ws:job:last:"):
+                    return attr(*a, **k)
+                raise ConnectionError("redis down")
+
+            return boom
+        if name == "set" and self._before_lock:
+
+            def wrapped(*a, **k):
+                if str(a[0]).startswith("ws:job:lock:") and self._before_lock:
+                    hook, self._before_lock = self._before_lock, None
+                    hook()
+                return attr(*a, **k)
+
+            return wrapped
+        return attr
+
+
+def test_lock_acquired_after_other_finished_rechecks_last(db, redis_client):
+    calls: list = []
+    now = _local(5, 3, 15).astimezone(UTC)
+    # B 已读到 last 为空,A 随后跑完写了 last,B 才抢到锁
+    proxy = _Proxy(
+        redis_client, before_lock=lambda: redis_client.set("ws:job:last:t-job", "2026-11-05")
+    )
+    assert run_due(_factory(db), proxy, now, [_job(calls)], school_id=SCHOOL_ID) == []
+    assert calls == []
+    assert redis_client.get("ws:job:lock:t-job") is None
+
+
+def test_does_not_delete_lock_owned_by_someone_else(db, redis_client):
+    now = _local(5, 3, 15).astimezone(UTC)
+
+    def run(db_, redis_, now_):
+        redis_client.set("ws:job:lock:t-job", "other-token", ex=600)  # 模拟 TTL 过期后被别人拿走
+        return "ok"
+
+    assert run_due(
+        _factory(db), redis_client, now, [Job("t-job", time(3, 10), run)], school_id=SCHOOL_ID
+    ) == ["t-job"]
+    assert redis_client.get("ws:job:lock:t-job") == "other-token"
+
+
+def test_last_write_failure_is_not_job_failure(db, redis_client):
+    calls: list = []
+    now = _local(5, 3, 15).astimezone(UTC)
+    proxy = _Proxy(redis_client, fail_on=("set",))
+    with capture_logs() as logs:
+        done = run_due(_factory(db), proxy, now, [_job(calls)], school_id=SCHOOL_ID)
+    assert done == ["t-job"]
+    events = [(e["log_level"], e["event"]) for e in logs]
+    assert ("warning", "scheduler.last_write_failed") in events
+    assert not any(lvl == "error" for lvl, _ in events)
+
+
+def test_lock_release_failure_does_not_block_other_jobs(db, redis_client):
+    a: list = []
+    b: list = []
+    now = _local(5, 3, 15).astimezone(UTC)
+    proxy = _Proxy(redis_client, fail_on=("eval",))
+    done = run_due(
+        _factory(db),
+        proxy,
+        now,
+        [_job(a, name="j1"), _job(b, name="j2")],
+        school_id=SCHOOL_ID,
+    )
+    assert done == ["j1", "j2"] and len(a) == len(b) == 1
+
+
+def test_parent_archive_uses_school_id_from_run_due(db, redis_client, settings, monkeypatch):
+    seen: dict = {}
+
+    def fake(db_, school_id, now, redis, *, dry_run=False, via="cli"):
+        seen.update(school_id=school_id, via=via)
+        return lifecycle.ArchiveResult(links=0, users=0)
+
+    monkeypatch.setattr("app.deploy.scheduler.lifecycle.archive_expired", fake)
+    monkeypatch.setattr(
+        "app.deploy.scheduler.get_settings",
+        lambda: settings.model_copy(update={"school_id": uuid4()}),
+    )
+    now = _local(5, 3, 15).astimezone(UTC)
+    assert run_due(_factory(db), redis_client, now, school_id=SCHOOL_ID) == ["parent-archive"]
+    assert seen == {"school_id": SCHOOL_ID, "via": "scheduler"}
+
+
+def test_no_school_warning_is_throttled(db, redis_client):
+    now = _local(5, 3, 15).astimezone(UTC)
+    t = [1000.0]
+    with capture_logs() as logs:
+        for at in (1000.0, 1030.0, 4599.0, 4601.0):
+            t[0] = at
+            run_due(
+                _factory(db), redis_client, now, [_job([])], school_id=uuid4(), mono=lambda: t[0]
+            )
+    assert len([e for e in logs if e["event"] == "scheduler.no_school"]) == 2

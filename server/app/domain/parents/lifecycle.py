@@ -71,6 +71,7 @@ def archive_expired(
     redis: Redis | None = None,
     *,
     dry_run: bool = False,
+    via: str = "cli",
 ) -> ArchiveResult:
     """只读满 365 天的绑定改 ended,并结束对应 role_bindings;不再有任何未结束
     role_bindings 且不是教职工的家长账号改 archived、作废刷新令牌(redis 给了才作废)。幂等;
@@ -102,7 +103,7 @@ def archive_expired(
             success=True,
             object_type="user",
             object_id=str(uid),
-            extra={"via": "cli"},
+            extra={"via": via},
         )
     if not dry_run:
         db.commit()

@@ -5,8 +5,11 @@
 日志每次一行 JSON,只写任务名、状态、摘要和异常类型,不写异常消息。
 """
 
+import contextvars
 import signal
 import threading
+import time as _time
+import uuid
 from collections.abc import Callable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
@@ -29,6 +32,12 @@ log = structlog.get_logger()
 LAST_KEY = "ws:job:last:{name}"
 LOCK_KEY = "ws:job:lock:{name}"
 LOCK_TTL = 600
+NO_SCHOOL_WARN_EVERY = 3600.0
+_NO_SCHOOL_WARNED: dict[str, float] = {}
+_RELEASE = (
+    "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) end return 0"
+)
+_school: contextvars.ContextVar[UUID] = contextvars.ContextVar("scheduler_school")
 
 
 @dataclass(frozen=True)
@@ -39,7 +48,7 @@ class Job:
 
 
 def _parent_archive(db: Session, redis: Redis, now: datetime) -> str:
-    res = lifecycle.archive_expired(db, get_settings().school_id, now, redis, dry_run=False)
+    res = lifecycle.archive_expired(db, _school.get(), now, redis, dry_run=False, via="scheduler")
     return f"archived links={res.links} users={res.users}"
 
 
@@ -71,31 +80,58 @@ def run_due(
     jobs: list[Job] | None = None,
     *,
     school_id: UUID | None = None,
+    mono: Callable[[], float] = _time.monotonic,
 ) -> list[str]:
     """执行所有到期任务,返回实际成功执行的任务名。"""
     jobs = JOBS if jobs is None else jobs
     sid = school_id or get_settings().school_id
     with db_factory() as db:
         if db.get(School, sid) is None:
-            log.warning("scheduler.no_school", school_id=str(sid))
+            t = mono()
+            last = _NO_SCHOOL_WARNED.get("t")
+            if last is None or t - last >= NO_SCHOOL_WARN_EVERY:
+                _NO_SCHOOL_WARNED["t"] = t
+                log.warning("scheduler.no_school", school_id=str(sid))
             return []
         now_local = now.astimezone(school_tz(db, sid))
     done: list[str] = []
-    for job in due_jobs(jobs, now_local, _last_runs(redis, jobs)):
-        lock = LOCK_KEY.format(name=job.name)
-        if not redis.set(lock, "1", nx=True, ex=LOCK_TTL):
-            continue
+    token_school = _school.set(sid)
+    try:
+        for job in due_jobs(jobs, now_local, _last_runs(redis, jobs)):
+            if _run_one(db_factory, redis, job, now, now_local):
+                done.append(job.name)
+    finally:
+        _school.reset(token_school)
+    return done
+
+
+def _run_one(db_factory, redis: Redis, job: Job, now: datetime, now_local: datetime) -> bool:
+    lock = LOCK_KEY.format(name=job.name)
+    last_key = LAST_KEY.format(name=job.name)
+    token = uuid.uuid4().hex
+    if not redis.set(lock, token, nx=True, ex=LOCK_TTL):
+        return False
+    try:
+        # 抢锁前读到的 last 可能已过期:别的实例也许刚跑完
+        if _last_runs(redis, [job]).get(job.name) == now_local.date():
+            return False
         try:
             with db_factory() as db:
                 summary = job.run(db, redis, now)
-            redis.set(LAST_KEY.format(name=job.name), now_local.date().isoformat())
-            log.info("scheduler.job", job=job.name, status="ok", summary=summary)
-            done.append(job.name)
         except Exception as exc:
             log.error("scheduler.job", job=job.name, status="error", error=type(exc).__name__)
-        finally:
-            redis.delete(lock)
-    return done
+            return False
+        try:
+            redis.set(last_key, now_local.date().isoformat())
+        except Exception as exc:
+            log.warning("scheduler.last_write_failed", job=job.name, error=type(exc).__name__)
+        log.info("scheduler.job", job=job.name, status="ok", summary=summary)
+        return True
+    finally:
+        try:
+            redis.eval(_RELEASE, 1, lock, token)  # 只删自己的锁
+        except Exception as exc:
+            log.warning("scheduler.unlock_failed", job=job.name, error=type(exc).__name__)
 
 
 def serve(settings: Settings, *, interval: float = 30.0) -> None:
