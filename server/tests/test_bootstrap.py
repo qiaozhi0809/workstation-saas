@@ -194,15 +194,20 @@ def test_concurrent_install_loser_gets_exists(db, new_settings, monkeypatch):
     )
 
 
-def test_init_school_audit_has_no_password(db, new_settings):
-    code, out = _run_cli(
-        db, ["--name", "测试学校", "--admin-login", "admin01", "--admin-password-stdin"], PW + "\n"
-    )
+def test_init_school_audit_has_no_password(db, new_settings, monkeypatch):
+    with monkeypatch.context() as m:
+        freeze(m, "2026-03-15T04:00:00+00:00")
+        code, out = _run_cli(
+            db,
+            ["--name", "测试学校", "--admin-login", "admin01", "--admin-password-stdin"],
+            PW + "\n",
+        )
     assert code == 0
     assert PW not in out
     row = db.scalars(select(AuditLog).where(AuditLog.action == "system.init")).one()
     assert row.user_id is None and row.success is True
     assert PW not in repr(row.extra) and "password" not in repr(row.extra).lower()
+    assert row.extra["year_name"] == "2025-2026学年"
 
 
 def test_exists_wins_over_validation_in_api_and_cli(db, new_settings):
@@ -321,6 +326,15 @@ def test_init_school_again_keeps_single_year(db, new_settings):
     assert after.id == before.id and after.name == before.name
 
 
+def test_init_school_exists_does_not_backfill_year(db, new_settings):
+    _init(db, new_settings)
+    db.execute(
+        text("DELETE FROM academic_years WHERE school_id = :s"), {"s": new_settings.school_id}
+    )
+    assert _init(db, new_settings) == "exists"
+    assert _years(db, new_settings) == []
+
+
 def test_rollback_leaves_no_year(db, new_settings, monkeypatch):
     def boom(*a, **k):
         raise RuntimeError("audit down")
@@ -332,10 +346,10 @@ def test_rollback_leaves_no_year(db, new_settings, monkeypatch):
 
 
 def test_admin_years_lists_exactly_the_first_year(db, new_settings, new_client, monkeypatch):
-    freeze(monkeypatch, "2026-03-15T04:00:00+00:00")
-    _init(db, new_settings)
+    with monkeypatch.context() as m:
+        freeze(m, "2026-03-15T04:00:00+00:00")
+        _init(db, new_settings)
     db.execute(text("UPDATE users SET must_change_password = false WHERE login_name = 'admin01'"))
-    monkeypatch.undo()
     r = new_client.get("/api/v1/admin/years", headers=_admin_headers(new_client))
     assert r.status_code == 200, r.text
     (item,) = r.json()
