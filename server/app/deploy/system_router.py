@@ -88,12 +88,27 @@ def diagnostics(
 ) -> Response:
     ensure_admin(db, request, user.id, bindings, Perm.SETTINGS_MANAGE, settings.school_id)
     now = clock.utc_now()
-    content = build_bundle(request.app.state.engine, settings, now)
+    try:
+        content = build_bundle(request.app.state.engine, settings, now)
+    except Exception as exc:
+        record(
+            db,
+            user_id=user.id,
+            action="system.diagnostics",
+            success=False,
+            request=request,
+            extra={"error": type(exc).__name__},
+        )
+        db.commit()
+        raise
     record(db, user_id=user.id, action="system.diagnostics", success=True, request=request)
     db.commit()
     name = f"ws-diagnostics-{now:%Y%m%d-%H%M%S}.zip"
     return Response(
         content,
         media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="{name}"',
+            "Cache-Control": "no-store",
+        },
     )

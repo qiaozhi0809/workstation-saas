@@ -370,7 +370,7 @@ def main() -> None:
         from app.logging import configure_logging
 
         settings = get_settings()
-        configure_logging(settings.log_level)
+        configure_logging(settings.log_level, settings.log_dir, settings.log_retention_days)
         if not ns.once:
             scheduler.serve(settings)
             sys.exit(0)

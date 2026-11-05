@@ -1,7 +1,9 @@
 import logging
 import logging.handlers
+import os
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import TextIO
 
@@ -35,6 +37,45 @@ class _Tee:
         self._stream.flush()
 
 
+class SafeTimedRotatingFileHandler(logging.handlers.TimedRotatingFileHandler):
+    """多进程(app 多 worker + scheduler)同写 app.jsonl 的按天轮转。
+
+    标准实现发现目标文件已存在会先删除再改名,后轮转的进程会把先轮转进程已归档的整天日志删掉。
+    这里目标已存在时不删不覆盖,只跳过改名、重开流;并发写依赖追加模式(O_APPEND)。
+    轮转按本机本地时间(utc=False);容器时区由部署设置(compose 里设 TZ),否则按 UTC 午夜轮转。
+    """
+
+    def doRollover(self) -> None:
+        if self.stream:
+            self.stream.close()
+            self.stream = None  # type: ignore[assignment]
+        current = int(time.time())
+        t = self.rolloverAt - self.interval
+        time_tuple = time.gmtime(t) if self.utc else time.localtime(t)
+        dfn = self.rotation_filename(
+            self.baseFilename + "." + time.strftime(self.suffix, time_tuple)
+        )
+        if not os.path.exists(dfn):
+            self.rotate(self.baseFilename, dfn)
+        if self.backupCount > 0:
+            for old in self.getFilesToDelete():
+                try:
+                    os.remove(old)
+                except OSError:
+                    pass
+        if not self.delay:
+            self.stream = self._open()
+        new_at = self.computeRollover(current)
+        while new_at <= current:
+            new_at += self.interval
+        if not self.utc:
+            dst_now = time.localtime(current)[-1]
+            dst_at = time.localtime(new_at)[-1]
+            if dst_now != dst_at:
+                new_at += -3600 if not dst_now else 3600
+        self.rolloverAt = new_at
+
+
 def _file_logger(log_dir: Path, retention_days: int) -> logging.Logger | None:
     logger = logging.getLogger(FILE_LOGGER_NAME)
     for h in list(logger.handlers):  # 重复 configure 不叠加
@@ -44,12 +85,12 @@ def _file_logger(log_dir: Path, retention_days: int) -> logging.Logger | None:
     logger.setLevel(logging.INFO)
     try:
         log_dir.mkdir(parents=True, exist_ok=True)
-        handler = logging.handlers.TimedRotatingFileHandler(
+        handler = SafeTimedRotatingFileHandler(
             log_dir / LOG_FILE_NAME,
             when="midnight",
             backupCount=retention_days,
             encoding="utf-8",
-            utc=True,
+            utc=False,
         )
     except OSError:
         return None

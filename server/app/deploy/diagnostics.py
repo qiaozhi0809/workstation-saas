@@ -24,19 +24,25 @@ LOG_DAYS = 3
 LOG_FILE_PREFIX = "app.jsonl"
 
 _SENSITIVE_KEY = re.compile(r"secret|key|password|token", re.IGNORECASE)
-_URL_PASSWORD = re.compile(r"(://[^/@:]*:)[^/]*(@)")
-_PHONE = re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)")
+# DSN:`://` 之后第一个 `:` 起,到同一串里最后一个 `@` 之前全部是密码(可含 / @ ?)
+_URL_PASSWORD = re.compile(r"(://[^:/@\s\"'\\]*:)[^\s\"'\\]*@")
+_PHONE = re.compile(r"(?<!\d)(?:\+?86[-\s]?)?1[3-9]\d[-\s]?\d{4}[-\s]?\d{4}(?!\d)")
 _BEARER = re.compile(r"Bearer\s+[A-Za-z0-9._~+/=\-]+", re.IGNORECASE)
 _JWT = re.compile(r"eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]*")
-# JSON 日志里 "xxx_password": "值" 之类的键值
+_BCRYPT = re.compile(r"\$2[aby]\$\d\d\$[./A-Za-z0-9]{53}")
+_API_KEY = re.compile(r"sk-[A-Za-z0-9_\-]{16,}")
+# SQLAlchemy 异常里的 [parameters: (...)] 带真实列值(姓名、哈希……),整段抹掉;贪婪到最后一个 ]
+_SQL_PARAMS = re.compile(r"\[parameters: .*\]")
+# JSON 日志里 "xxx_password": "值" 之类的键值(值里可含转义引号)
 _JSON_SECRET = re.compile(
-    r'("[\w\-]*(?:secret|password|passwd|token|api_?key|master_?key)[\w\-]*"\s*:\s*")[^"]*(")',
+    r'("[\w\-]*(?:secret|password|passwd|token|api_?key|master_?key)[\w\-]*"\s*:\s*")'
+    r'(?:[^"\\]|\\.)*(")',
     re.IGNORECASE,
 )
 
 
-def _mask_url(value: str) -> str:
-    return _URL_PASSWORD.sub(rf"\1{MASK}\2", value)
+def mask_url(value: str) -> str:
+    return _URL_PASSWORD.sub(rf"\1{MASK}@", value)
 
 
 def _jsonable(value: Any) -> Any:
@@ -57,12 +63,16 @@ def mask_settings(settings: Settings) -> dict[str, Any]:
             out[name] = MASK
         else:
             v = _jsonable(value)
-            out[name] = _mask_url(v) if isinstance(v, str) and "://" in v else v
+            out[name] = mask_url(v) if isinstance(v, str) and "://" in v else v
     return out
 
 
 def mask_line(line: str) -> str:
+    line = _SQL_PARAMS.sub(f"[parameters: {MASK}]", line)
+    line = mask_url(line)
     line = _JSON_SECRET.sub(rf"\1{MASK}\2", line)
+    line = _BCRYPT.sub(MASK, line)
+    line = _API_KEY.sub(MASK, line)
     line = _BEARER.sub(MASK, line)
     line = _JWT.sub(MASK, line)
     return _PHONE.sub("1**********", line)
@@ -117,13 +127,26 @@ def _schema(engine: Engine) -> dict[str, Any]:
     return {"tables": tables}
 
 
-def _counts(engine: Engine) -> dict[str, int]:
+COUNT_TIMEOUT = "5s"
+
+
+def _count_query(quoted_table: str) -> str:
+    return f"SELECT count(*) FROM {quoted_table}"
+
+
+def _counts(engine: Engine) -> dict[str, int | None]:
+    """每表行数;单表超时(statement_timeout)或出错记 null,不让整包失败。"""
     quote = engine.dialect.identifier_preparer.quote
     names = sorted(inspect(engine).get_table_names())
-    with engine.connect() as conn:
-        return {
-            n: conn.execute(text(f"SELECT count(*) FROM {quote(n)}")).scalar_one() for n in names
-        }
+    out: dict[str, int | None] = {}
+    for n in names:
+        try:
+            with engine.connect() as conn, conn.begin():
+                conn.execute(text(f"SET LOCAL statement_timeout = '{COUNT_TIMEOUT}'"))
+                out[n] = conn.execute(text(_count_query(quote(n)))).scalar_one()
+        except Exception:
+            out[n] = None
+    return out
 
 
 def _redis_version(redis_url: str) -> str | None:
@@ -152,16 +175,27 @@ def _log_files(log_dir: Path, since: datetime) -> list[Path]:
     return [p for _, p in sorted(found, key=lambda t: t[0], reverse=True)]
 
 
+def _tail_lines(path: Path) -> list[str]:
+    """文件最后 MAX_LOG_BYTES 字节内的完整行(截断点处的残行丢弃)。"""
+    with path.open("rb") as fh:
+        size = fh.seek(0, 2)
+        start = max(0, size - MAX_LOG_BYTES)
+        fh.seek(start)
+        data = fh.read(MAX_LOG_BYTES)
+    lines = data.split(b"\n")
+    if start > 0:
+        lines = lines[1:]
+    return [ln.decode("utf-8", errors="replace") for ln in lines if ln]
+
+
 def _masked_lines_newest_first(files: list[Path]) -> Iterator[bytes]:
     for p in files:
         try:
-            with p.open(encoding="utf-8", errors="replace") as fh:
-                lines = [ln.rstrip("\n") for ln in fh]
+            lines = _tail_lines(p)
         except OSError:
             continue
         for ln in reversed(lines):
-            if ln:
-                yield (mask_line(ln) + "\n").encode("utf-8")
+            yield (mask_line(ln) + "\n").encode("utf-8")
 
 
 def collect_logs(log_dir: Path | None, now: datetime) -> bytes:
