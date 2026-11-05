@@ -17,8 +17,8 @@ export default function ParentNoticeItem({ item, open, onToggle }: {
     <li>
       <button
         type="button"
-        aria-expanded={open}
-        onClick={onToggle}
+        aria-expanded={item.recalled ? undefined : open}
+        onClick={item.recalled ? undefined : onToggle}
         className={cn(
           'flex min-h-[44px] w-full flex-col gap-1 rounded-md px-3 py-2 text-left text-sm',
           'hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',

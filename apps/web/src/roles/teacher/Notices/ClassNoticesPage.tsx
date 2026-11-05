@@ -58,7 +58,7 @@ function SentList({ classId }: { classId: string }) {
           <Badge variant="neutral">已撤回</Badge>
         ) : (
           <Button type="button" variant="ghost" size="sm" aria-label={`撤回 ${n.title}`}
-            disabled={recall.isPending} onClick={() => recall.mutate(n.id)}>
+            disabled={recall.isPending} onClick={() => { if (window.confirm(`确认撤回「${n.title}」?撤回后家长将看不到正文。`)) recall.mutate(n.id) }}>
             撤回
           </Button>
         )}

@@ -131,6 +131,7 @@ it('shows progress and recalls, then refreshes the list', async () => {
   expect(within(item).getByText('已读 12 / 30')).toBeInTheDocument()
   expect(within(item).getByText('回执 5 / 30')).toBeInTheDocument()
   vi.mocked(classNoticesApi.list).mockResolvedValue({ items: [sent({ recalled_at: '2026-11-04T02:00:00Z' })], total: 1 })
+  vi.spyOn(window, 'confirm').mockReturnValue(true)
   fireEvent.click(within(item).getByRole('button', { name: '撤回 周五春游' }))
   await waitFor(() => expect(classNoticesApi.recall).toHaveBeenCalledWith('c1', 'n1'))
   expect(await within(item).findByText('已撤回')).toBeInTheDocument()

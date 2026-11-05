@@ -33,7 +33,6 @@ export default function ClassNoticeComposer({ classId, className, onSent }: {
       toast(`已发给 ${res.recipients} 位家长`)
       if (res.students_without_parent > 0) toast(`另有 ${res.students_without_parent} 名学生还没有绑定家长,他们收不到`)
       void qc.invalidateQueries({ queryKey: ['class-notices', classId] })
-      onSent(res)
     },
     onError: (err) => setError(err instanceof ApiError ? err.message : '发送失败,请重试'),
   })
@@ -43,7 +42,8 @@ export default function ClassNoticeComposer({ classId, className, onSent }: {
     const bad = ackSpecError(ack, deadline)
     if (bad) { setError(bad); return }
     setError('')
-    send.mutate()
+    // 回调挂在 mutate 上:换班卸载后不会清掉新班的草稿
+    send.mutate(undefined, { onSuccess: onSent })
   }
 
   const canSend = title.trim() !== '' && content.trim() !== ''
