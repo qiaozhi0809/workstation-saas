@@ -240,13 +240,13 @@ url_password() {
   printf '%s' "$1" | sed -n -E 's#^[A-Za-z0-9+.-]+://[^:@/]*:(.*)@[^@]*$#\1#p' | head -n 1 || true
 }
 
-# secret_values [文件]:列出 .env 里需要打码的全部值,每行一个(长度不足 4 的忽略,避免把常见短串全替换掉)。
+# secret_values:列出 .env 里需要打码的全部值,每行一个(长度不足 4 的忽略,避免把常见短串全替换掉)。
 # 规则不写死具体键名,以后新增密钥(如 WS_FUTURE_API_KEY)自动覆盖:
 #   1) 键名含 SECRET、KEY、PASSWORD、TOKEN(不分大小写)的键,取它的值;
 #   2) 任何值如果是带账号密码的连接串(DATABASE_URL、REDIS_URL 等),取其中的密码。
 # 值可能很敏感,本函数只输出给打码函数使用,调用者不得回显。
 secret_values() {
-  local f="${1:-$ENV_FILE}" line key val up pw
+  local f="$ENV_FILE" line key val up pw
   [ -f "$f" ] || return 0
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in
