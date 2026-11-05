@@ -1,0 +1,17 @@
+# app.Dockerfile 的构建上下文过滤(BuildKit:与 Dockerfile 同名加 .dockerignore 后缀)
+**/node_modules
+**/.venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.ruff_cache
+**/.env
+**/.env.*
+.git
+.github
+apps
+reference-html
+docs
+deploy/data
+deploy/prod
+server/tests

@@ -1,0 +1,17 @@
+# web.Dockerfile 的构建上下文过滤(BuildKit:与 Dockerfile 同名加 .dockerignore 后缀)
+**/node_modules
+**/.venv
+apps/web/dist
+apps/web/coverage
+apps/web/playwright-report
+apps/web/test-results
+apps/web/e2e
+**/.env
+**/.env.*
+.git
+.github
+server
+reference-html
+docs
+deploy/data
+deploy/prod

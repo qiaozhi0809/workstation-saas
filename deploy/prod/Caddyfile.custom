@@ -1,0 +1,18 @@
+# 证书方式 custom:使用自备证书(certs/site.crt、certs/site.key)
+{$WS_SITE_ADDRESS} {
+	tls /certs/site.crt /certs/site.key
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy same-origin
+	}
+	encode gzip
+	handle /api/* {
+		reverse_proxy app:8080
+	}
+	handle {
+		root * /srv/www
+		try_files {path} /index.html
+		file_server
+	}
+}
