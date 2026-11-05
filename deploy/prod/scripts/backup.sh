@@ -37,7 +37,8 @@ pg_sh() { compose exec -T postgres sh -c "$1" </dev/null; }
 usage() { printf '用法:./scripts/backup.sh [--keep N]   (默认保留 WS_BACKUP_KEEP 或 14 份)\n'; }
 
 main() {
-  local keep="${WS_BACKUP_KEEP:-14}" ts version migration stage partial final errf n excess f
+  local keep="${WS_BACKUP_KEEP:-14}" ts version migration stage partial final errf n excess f i
+  local -a files
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --keep) [ "$#" -ge 2 ] || die "--keep 需要一个数字"; keep="$2"; shift 2 ;;
@@ -60,6 +61,8 @@ main() {
 
   mkdir -p "$DEPLOY_DIR/backups"
   chmod 700 "$DEPLOY_DIR/backups"
+  acquire_lock
+  clean_stale_tmp
   stage="$(mktemp -d "$DEPLOY_DIR/backups/.stage.XXXXXX")"
   register_tmp "$stage"
   errf="$stage/err.txt"
@@ -81,6 +84,7 @@ main() {
     die "取 Caddy 数据失败"
   fi
   [ -s "$stage/caddy.tar" ] || die "Caddy 数据为空"
+  tar -tf "$stage/caddy.tar" >/dev/null 2>&1 || die "取到的 Caddy 数据不是有效的 tar 归档"
 
   cp "$ENV_FILE" "$stage/env"
 
@@ -113,23 +117,30 @@ main() {
   chmod 600 "$partial"
   mv "$partial" "$final"
 
-  # 只保留最新 N 份(按文件名里的时间戳排序)
-  n="$(ls -1 "$DEPLOY_DIR"/backups/ws-backup-*.tar.gz | wc -l | tr -d '[:space:]')"
+  # 只保留最新 N 份(glob 按文件名里的时间戳排序;逐个元素处理,目录名含空格也不会被拆开);跳过刚生成的 $final
+  files=()
+  for f in "$DEPLOY_DIR"/backups/ws-backup-*.tar.gz; do
+    [ -f "$f" ] && files+=("$f")
+  done
+  n="${#files[@]}"
   if [ "$n" -gt "$keep" ]; then
     excess=$((n - keep))
-    for f in $(ls -1 "$DEPLOY_DIR"/backups/ws-backup-*.tar.gz | sort | head -n "$excess"); do
-      rm -f "$f"
+    i=0
+    while [ "$i" -lt "$excess" ]; do
+      f="${files[$i]}"
+      [ "$f" = "$final" ] || rm -f "$f"
+      i=$((i + 1))
     done
     log_info "已删除 $excess 份最旧的备份(保留最新 $keep 份)"
   fi
 
-  # 原地覆盖写(不写临时文件再 mv:data/logs 是 1777 粘滞目录)
-  mkdir -p "$DEPLOY_DIR/data/logs"
+  # 原地覆盖写(不写临时文件再 mv:data/logs 是 1777 粘滞目录)。写失败不算备份失败:备份文件已经好了。
+  mkdir -p "$DEPLOY_DIR/data/logs" 2>/dev/null || true
   if ! ( umask 022
          printf '{"at": "%s", "file": "%s", "size_bytes": %s}\n' \
            "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(basename "$final")" "$(wc -c <"$final" | tr -d '[:space:]')" \
-           >"$DEPLOY_DIR/data/logs/backup-last.json" ); then
-    die "备份已完成($final),但写 data/logs/backup-last.json 失败(检查该文件的属主与权限)"
+           >"$DEPLOY_DIR/data/logs/backup-last.json" ) 2>/dev/null; then
+    log_warn "备份已完成,备份文件已保留($final);只是写 data/logs/backup-last.json 失败(检查该文件的属主与权限),设置页里的\"上次备份\"可能不更新"
   fi
 
   log_info "备份完成"

@@ -2,17 +2,26 @@
 # 恢复:在部署目录里执行 ./scripts/restore.sh <备份文件> [--yes]
 #
 # 所有校验都在动数据库之前完成:文件存在可读、归档完整且只含 4 个普通文件(拒绝路径穿越、链接)、
-# manifest.json 合法、sha256 全部对得上、大版本一致、备份的迁移版本不比当前镜像的 head 新。
+# manifest.json 严格符合本系统格式、sha256 全部对得上、env 含必需键且值非空、caddy.tar 可完整读出且不含绝对路径 / .. /
+# 链接 / 设备文件、大版本一致、备份的迁移版本不比当前镜像的 head 新、磁盘空间够(db.dump 大小的 3 倍)。
 # 取镜像 head 的办法:用当前 app 镜像执行 python 读 alembic 的 ScriptDirectory(不连库、不改库)。
 #
 # 恢复顺序与理由:
 #   1) 先把备份里的库恢复进一个临时库 ws_restore_tmp(此时 app 仍在运行,正式库完全没动);
 #      备份文件读不出来、版本不兼容等问题在这里暴露,系统原样可用。
-#   2) 停 app、scheduler;DROP 正式库并把临时库改名为正式库名(改名瞬间完成,旧库被删与新库就位之间窗口极短)。
-#   3) .env 与当前不同时用备份里的(主密钥必须与数据一致),WS_VERSION 保持当前值;旧 .env 另存为 .env.before-restore-<时间>(600)。
-#   4) web 保持运行,经容器把 Caddy 数据写回,再重启 web 让 Caddy 重新加载证书。
+#   2) 停 app、scheduler;换库采用"先改名、最后再删":终止正式库上的连接 → 正式库改名 ws_restore_old →
+#      临时库改名为正式库名 → 两次改名都成功后才 DROP ws_restore_old。任何一步失败,按真实状态(查 pg_database)
+#      把旧库改回来;状态确认不了(查询失败、改回失败)时绝不删临时库、不重启服务,提示"状态不确定、备份完好、重跑命令"。
+#   3) .env 的取舍(与计划里"默认用备份的 .env"不同,有意为之):备份的 .env 只用来取"与数据绑定"的值:
+#      WS_MASTER_KEY、WS_JWT_SECRET、WS_SCHOOL_ID(数据用主密钥加密、令牌与学校 ID 绑在数据里)。
+#      其余键一律保留当前机器的值,因为它们是部署环境属性,不是数据属性:POSTGRES_PASSWORD 与 WS_DATABASE_URL
+#      (pg 角色密码是装机时定的,不随 pg_restore 变,换成备份里的会让 app 连不上库)、WS_VERSION、WS_REDIS_URL、
+#      WS_ENV、WS_TRUSTED_PROXIES、站点地址 / 端口 / 证书方式 / ACME 邮箱。备份里有而当前没有的键追加到末尾。
+#      结果与当前 .env 不同时,旧 .env 另存为 .env.before-restore-<时间>(600)。
+#   4) web 保持运行,经容器把 Caddy 数据写回(--no-same-owner),再重启 web 让 Caddy 重新加载证书。
 #   5) 清 Redis(会话全部失效,所有人重新登录;在 app 停止期间清,避免与新进程竞争)。
 #   6) compose up -d --pull never 启动全部服务(app 启动时自动迁移到当前版本),等 app 健康。
+# 备份 / 恢复 / 升级互斥(backups/.lock)。
 # 安全约定:不开 xtrace;不打印 .env 内容与密钥;回显容器输出前先过 redact;解包用 --no-same-owner。
 set +x
 unset BASH_XTRACEFD
@@ -27,33 +36,95 @@ WORK=""
 PKG=""
 TMPDB_MADE=0
 STOPPED=0
-SWAPPED=0
+SWAP=0          # 0 未开始换库;1 即将改名;2 旧库已改名(新库未就位);3 新库已就位(旧库待删);4 全部完成
 ENV_SAVED=""
 HEALTH_TIMEOUT="${WS_RESTORE_HEALTH_TIMEOUT:-300}"
 TMPDB="ws_restore_tmp"
+OLDDB="ws_restore_old"
 
 pg_sh() { compose exec -T postgres sh -c "$1" </dev/null; }
+
+# pgsql <SQL>:经 stdin 把 SQL 交给 postgres 容器里的 psql(连 postgres 库;psql 变量 :"db" / :'db' 是正式库名,
+# 取容器环境里的 POSTGRES_DB)。输出先过 redact 再给调用者;psql 失败时返回非 0。
+pgsql() {
+  printf '%s\n' "$1" | compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1 -tA -v "db=$POSTGRES_DB" -f -' 2>&1 | redact
+}
+
+# db_has main|<库名>:库存在输出 1,不存在输出 0;查询本身失败返回非 0
+db_has() {
+  local sql out
+  if [ "$1" = "main" ]; then
+    sql="SELECT count(*) FROM pg_database WHERE datname = :'db';"
+  else
+    sql="SELECT count(*) FROM pg_database WHERE datname = '$1';"
+  fi
+  out="$(pgsql "$sql")" || return 1
+  out="$(printf '%s' "$out" | tr -d '[:space:]')"
+  case "$out" in 0|1) printf '%s' "$out" ;; *) return 1 ;; esac
+}
+
+# 异常退出时判断正式库的真实状态并尽量还原。输出:intact(正式库是原来的旧库)/ swapped(新库已就位)/ uncertain
+swap_state_after_failure() {
+  local m o
+  m="$(db_has main)" || { printf uncertain; return 0; }
+  o="$(db_has "$OLDDB")" || { printf uncertain; return 0; }
+  if [ "$m" = "1" ] && [ "$o" = "0" ]; then printf intact
+  elif [ "$m" = "0" ] && [ "$o" = "1" ]; then
+    if pgsql "ALTER DATABASE \"$OLDDB\" RENAME TO :\"db\";" >/dev/null 2>&1; then printf intact; else printf uncertain; fi
+  elif [ "$m" = "1" ] && [ "$o" = "1" ]; then printf swapped
+  else printf uncertain
+  fi
+}
 
 cleanup() {
   local rc=$?
   trap - EXIT
-  if [ "$TMPDB_MADE" -eq 1 ] && [ "$SWAPPED" -eq 0 ]; then
+  local state=""
+  if [ "$rc" -ne 0 ]; then
+    if [ "$SWAP" -ge 1 ] && [ "$SWAP" -le 2 ]; then
+      state="$(swap_state_after_failure)"
+      if [ "$state" = "swapped" ]; then SWAP=3; TMPDB_MADE=0; fi
+    elif [ "$SWAP" -ge 3 ]; then
+      state="swapped"
+    else
+      state="intact"
+    fi
+  fi
+  # 临时库只在"确认正式库状态"之后才清;状态不确定时保留,留给人工判断
+  if [ "$TMPDB_MADE" -eq 1 ] && { [ "$rc" -eq 0 ] || [ "$state" = "intact" ]; }; then
     pg_sh "psql -U \"\$POSTGRES_USER\" -d postgres -c 'DROP DATABASE IF EXISTS $TMPDB WITH (FORCE)'" >/dev/null 2>&1 || true
   fi
   if [ -n "$WORK" ] && [ -d "$WORK" ]; then rm -rf "$WORK"; fi
   lib_cleanup
-  if [ "$rc" -ne 0 ] && [ "$STOPPED" -eq 1 ]; then
-    if [ "$SWAPPED" -eq 0 ]; then
-      printf '\n恢复在替换数据库之前失败:正式数据库没有被改动。正在重新启动服务……\n' >&2
-      compose up -d --pull never >/dev/null 2>&1 || printf '自动启动失败,请手动执行:docker compose -p %s --project-directory %s up -d\n' "${WS_COMPOSE_PROJECT:-workstation}" "$DEPLOY_DIR" >&2
-    else
-      {
-        printf '\n恢复在数据库已替换之后失败:系统可能处于"数据库已换成备份、其余部分未完成"的状态,请不要直接使用。\n'
-        printf '备份文件没有被改动:%s\n' "$PKG"
-        if [ -n "$ENV_SAVED" ]; then printf '恢复前的 .env 已另存为:%s\n' "$ENV_SAVED"; fi
-        printf '请根据上面的错误修正原因后,重新执行:./scripts/restore.sh %s --yes\n' "$PKG"
-      } >&2
-    fi
+  if [ "$rc" -ne 0 ]; then
+    case "$state" in
+      intact)
+        if [ "$STOPPED" -eq 1 ]; then
+          if [ "$SWAP" -ge 1 ]; then
+            printf '\n恢复在替换数据库时失败:旧的正式数据库已改回原名,正式数据库已还原、数据没有被改动。正在重新启动服务……\n' >&2
+          else
+            printf '\n恢复在替换数据库之前失败:正式数据库没有被改动。正在重新启动服务……\n' >&2
+          fi
+          compose up -d --pull never >/dev/null 2>&1 || printf '自动启动失败,请手动执行:docker compose -p %s --project-directory %s up -d\n' "${WS_COMPOSE_PROJECT:-workstation}" "$DEPLOY_DIR" >&2
+        fi
+        ;;
+      uncertain)
+        {
+          printf '\n恢复在替换数据库时失败,并且无法确认正式数据库的状态(状态不确定),服务保持停止,请不要直接启动。\n'
+          printf '旧的正式数据库如果还在,会保存在名为 %s 的库里;临时库 %s 已保留,没有删除。\n' "$OLDDB" "$TMPDB"
+          printf '备份文件完好,没有被改动:%s\n' "$PKG"
+          printf '请先确认数据库服务正常,然后重新执行:./scripts/restore.sh %s --yes\n' "$PKG"
+        } >&2
+        ;;
+      swapped)
+        {
+          printf '\n恢复在数据库已替换之后失败:系统可能处于"数据库已换成备份、其余部分未完成"的状态,请不要直接使用。\n'
+          printf '备份文件没有被改动:%s\n' "$PKG"
+          if [ -n "$ENV_SAVED" ]; then printf '恢复前的 .env 已另存为:%s\n' "$ENV_SAVED"; fi
+          printf '请根据上面的错误修正原因后,重新执行:./scripts/restore.sh %s --yes\n' "$PKG"
+        } >&2
+        ;;
+    esac
   fi
   exit "$rc"
 }
@@ -90,29 +161,24 @@ check_archive() {
   done
 }
 
-# manifest.json 必须是本系统写出的格式(逐行严格匹配);通过返回 0
-manifest_valid() {
-  awk '
-    BEGIN { st = 0; nf = 0 }
-    st == 0 { if ($0 == "{") { st = 1; next } else bad = 1 }
-    st == 1 { if ($0 ~ /^  "version": "[A-Za-z0-9._-]+",$/) { st = 2; next } else bad = 1 }
-    st == 2 { if ($0 ~ /^  "migration": "[0-9A-Za-z_]+",$/) { st = 3; next } else bad = 1 }
-    st == 3 { if ($0 ~ /^  "created_at": "[0-9T:Z-]+",$/) { st = 4; next } else bad = 1 }
-    st == 4 { if ($0 == "  \"files\": {") { st = 5; next } else bad = 1 }
-    st == 5 {
-      if ($0 ~ /^    "[A-Za-z0-9._-]+": "[0-9a-f]+",?$/) { nf++; next }
-      else if ($0 == "  }") { st = 6; next } else bad = 1
-    }
-    st == 6 { if ($0 == "}") { st = 7; next } else bad = 1 }
-    st == 7 { bad = 1 }
-    END { exit (bad || st != 7 || nf < 1) ? 1 : 0 }
-  ' "$1"
+# caddy.tar(会在 web 容器里以 root 解开,必须先在宿主机上验清楚):能完整读出,不含绝对路径、..、链接、设备文件
+check_caddy_tar() {
+  local f="$1" list vlist
+  list="$(tar -tf "$f" 2>/dev/null)" || die "备份里的 caddy.tar 不是有效的归档(读不出来),已拒绝,数据库未改动"
+  vlist="$(tar -tvf "$f" 2>/dev/null)" || die "备份里的 caddy.tar 不是有效的归档(读不出来),已拒绝,数据库未改动"
+  [ -n "$list" ] || die "备份里的 caddy.tar 是空的,已拒绝,数据库未改动"
+  if printf '%s\n' "$list" | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
+    die "备份里的 caddy.tar 含有不安全的路径(绝对路径或 ..),已拒绝,数据库未改动"
+  fi
+  if printf '%s\n' "$vlist" | grep -Evq '^[-d]' || printf '%s\n' "$vlist" | grep -Eq ' -> | link to '; then
+    die "备份里的 caddy.tar 含有链接或设备文件,已拒绝,数据库未改动"
+  fi
 }
 
 manifest_field() { sed -n "s/^  \"$1\": \"\\([^\"]*\\)\",\$/\\1/p" "$2" | head -n 1; }
 
 main() {
-  local arg yes=0 pkg_arg="" bver cur_version bmig created out rc head known name want got ans ts newenv
+  local arg yes=0 pkg_arg="" bver cur_version bmig created out rc head known name want got ans ts newenv m o need_kb avail_kb line
   for arg in "$@"; do
     case "$arg" in
       --yes) yes=1 ;;
@@ -130,6 +196,8 @@ main() {
   [ -f "$DEPLOY_DIR/VERSION" ] || die "部署目录里缺少 VERSION 文件"
   require_cmd docker "请先安装 Docker Engine"
   cd "$DEPLOY_DIR"
+  acquire_lock
+  clean_stale_tmp
 
   # ---- 1. 全部校验(不动数据库、不停服务) ----
   check_archive "$PKG"
@@ -138,7 +206,7 @@ main() {
   if [ -n "$(find "$WORK" -mindepth 1 \( ! -type f \) | head -n 1)" ]; then
     die "备份文件解开后含有链接或特殊文件,已拒绝,数据库未改动"
   fi
-  manifest_valid "$WORK/manifest.json" || die "manifest.json 不是合法的 JSON(或不是本系统生成的格式),已拒绝,数据库未改动"
+  manifest_valid "$WORK/manifest.json" || die "manifest.json 不是本系统生成的格式,已拒绝,数据库未改动"
   bver="$(manifest_field version "$WORK/manifest.json")"
   bmig="$(manifest_field migration "$WORK/manifest.json")"
   created="$(manifest_field created_at "$WORK/manifest.json")"
@@ -151,6 +219,11 @@ main() {
   if [ "$(grep -c '^    "' "$WORK/manifest.json")" -ne 3 ]; then
     die "manifest.json 的文件清单与备份内容不一致,已拒绝,数据库未改动"
   fi
+  if [ ! -s "$WORK/env" ]; then die "备份里的 env 是空的,已拒绝,数据库未改动"; fi
+  for name in WS_MASTER_KEY WS_JWT_SECRET POSTGRES_PASSWORD WS_DATABASE_URL; do
+    [ -n "$(read_env "$name" "$WORK/env")" ] || die "备份里的 env 缺少 $name 或它的值为空,已拒绝,数据库未改动"
+  done
+  check_caddy_tar "$WORK/caddy.tar"
   cur_version="$(tr -d '[:space:]' <"$DEPLOY_DIR/VERSION")"
   if [ "$(major_of "$bver")" != "$(major_of "$cur_version")" ]; then
     die "备份来自版本 $bver,当前版本 $cur_version:大版本不同,本脚本拒绝恢复,数据库未改动。请用对应大版本的离线包恢复"
@@ -194,31 +267,77 @@ print("KNOWN=" + ("1" if sys.argv[1] in {r.revision for r in s.walk_revisions()}
   fi
 
   # ---- 3. 先恢复进临时库(正式库与服务都还没动) ----
+  # 磁盘空间:临时库与旧库会同时存在,要求可用空间不小于 db.dump 大小的 3 倍
+  need_kb=$(( ($(wc -c <"$WORK/db.dump" | tr -d '[:space:]') * 3) / 1024 + 1 ))
+  avail_kb="$(df -Pk "$DEPLOY_DIR" | awk 'NR==2 {print $4}')"
+  if [ "$avail_kb" -lt "$need_kb" ]; then
+    die "磁盘空间不足:恢复需要约 $((need_kb / 1024)) MB 可用空间(备份数据库大小的 3 倍),当前约 $((avail_kb / 1024)) MB,数据库未改动"
+  fi
+  # 上一次异常中断可能留下 ws_restore_old:正式库还在就删掉它;正式库不在,说明停在换库中途,先把它改回来
+  m="$(db_has main)" || die "查询数据库状态失败,数据库未改动"
+  o="$(db_has "$OLDDB")" || die "查询数据库状态失败,数据库未改动"
+  if [ "$o" = "1" ]; then
+    if [ "$m" = "1" ]; then
+      pgsql "DROP DATABASE IF EXISTS \"$OLDDB\" WITH (FORCE);" >/dev/null || die "清理上次遗留的 $OLDDB 失败,数据库未改动"
+    else
+      log_warn "上次恢复在换库中途中断:正式库缺失,把遗留的 $OLDDB 改回正式库名"
+      pgsql "ALTER DATABASE \"$OLDDB\" RENAME TO :\"db\";" >/dev/null || die "无法把 $OLDDB 改回正式库名,数据库未改动,请联系技术支持(备份文件完好)"
+    fi
+  elif [ "$m" = "0" ]; then
+    die "找不到正式数据库,也没有遗留的旧库,已停止(备份文件完好),请联系技术支持"
+  fi
   log_info "把备份恢复进临时库(此时正式库不受影响)……"
   TMPDB_MADE=1
-  pg_sh "psql -U \"\$POSTGRES_USER\" -d postgres -v ON_ERROR_STOP=1 -c 'DROP DATABASE IF EXISTS $TMPDB WITH (FORCE)' -c 'CREATE DATABASE $TMPDB'" 2>&1 | redact >/dev/null \
+  pgsql "DROP DATABASE IF EXISTS \"$TMPDB\" WITH (FORCE); CREATE DATABASE \"$TMPDB\";" >/dev/null \
     || die "创建临时库失败,数据库未改动"
   if ! compose exec -T postgres sh -c "pg_restore -U \"\$POSTGRES_USER\" -d $TMPDB --no-owner --exit-on-error" <"$WORK/db.dump" 2>&1 | redact >"$WORK/pgrestore.log"; then
-    tail -n 8 "$WORK/pgrestore.log" >&2
+    # 只回显 pg_restore 自己的错误行(再套一遍手机号等打码),不回显其余输出
+    { grep '^pg_restore: error:' "$WORK/pgrestore.log" || true; } | tail -n 8 | mask_shapes >&2
     die "pg_restore 失败(备份里的数据库文件不能用),数据库未改动"
   fi
 
-  # ---- 4. 停服务、换库 ----
+  # ---- 4. 停服务、换库(先改名、最后再删) ----
   log_info "停止应用与定时任务……"
   STOPPED=1
   compose stop app scheduler 2>&1 | redact >/dev/null || die "停止服务失败"
   log_info "替换数据库……"
-  pg_sh "psql -U \"\$POSTGRES_USER\" -d postgres -v ON_ERROR_STOP=1 -c \"DROP DATABASE IF EXISTS \\\"\$POSTGRES_DB\\\" WITH (FORCE)\" -c \"ALTER DATABASE $TMPDB RENAME TO \\\"\$POSTGRES_DB\\\"\"" 2>&1 | redact >"$WORK/swap.log" \
-    || { tail -n 8 "$WORK/swap.log" >&2; die "替换数据库失败"; }
-  SWAPPED=1
+  SWAP=1
+  pgsql "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = :'db' AND pid <> pg_backend_pid();" >"$WORK/swap.log" \
+    || { tail -n 8 "$WORK/swap.log" >&2; die "替换数据库失败(清除正式库上的连接时出错)"; }
+  pgsql "ALTER DATABASE :\"db\" RENAME TO \"$OLDDB\";" >"$WORK/swap.log" \
+    || { tail -n 8 "$WORK/swap.log" >&2; die "替换数据库失败(把正式库改名为 $OLDDB 时出错)"; }
+  SWAP=2
+  pgsql "ALTER DATABASE \"$TMPDB\" RENAME TO :\"db\";" >"$WORK/swap.log" \
+    || { tail -n 8 "$WORK/swap.log" >&2; die "替换数据库失败(把临时库改名为正式库时出错)"; }
+  SWAP=3
+  TMPDB_MADE=0
+  if pgsql "DROP DATABASE IF EXISTS \"$OLDDB\" WITH (FORCE);" >/dev/null; then
+    SWAP=4
+  else
+    log_warn "恢复后的新库已就位,但旧库 $OLDDB 没能删除(占用磁盘空间,下次备份 / 恢复前会自动清理)"
+    SWAP=4
+  fi
 
-  # ---- 5. .env ----
+  # ---- 5. .env:只取与数据绑定的值,其余保留当前机器的(理由见文件头注释) ----
   newenv="$WORK/env.new"
-  cp "$WORK/env" "$newenv"
+  cp "$ENV_FILE" "$newenv"
   chmod 600 "$newenv"
-  set_env WS_VERSION "$cur_version" "$newenv"
+  for name in WS_MASTER_KEY WS_JWT_SECRET WS_SCHOOL_ID; do
+    want="$(read_env "$name" "$WORK/env")"
+    if [ -n "$want" ] && [ "$want" != "$(read_env "$name" "$newenv")" ]; then
+      set_env "$name" "$want" "$newenv"
+    fi
+  done
+  while IFS= read -r line || [ -n "$line" ]; do
+    name="${line%%=*}"
+    case "$name" in
+      ''|*[!A-Za-z0-9_]*|[0-9]*) continue ;;
+    esac
+    case "$line" in *=*) ;; *) continue ;; esac
+    grep -q "^$name=" "$newenv" || set_env "$name" "$(read_env "$name" "$WORK/env")" "$newenv"
+  done <"$WORK/env"
   if cmp -s "$newenv" "$ENV_FILE"; then
-    log_info ".env 与备份里的一致,不改动"
+    log_info ".env 里与数据绑定的值与备份一致,不改动"
   else
     ts="$(date +%Y%m%d-%H%M%S)"
     ENV_SAVED="$DEPLOY_DIR/.env.before-restore-$ts"
@@ -226,12 +345,12 @@ print("KNOWN=" + ("1" if sys.argv[1] in {r.revision for r in s.walk_revisions()}
     chmod 600 "$ENV_SAVED"
     mv "$newenv" "$ENV_FILE"
     chmod 600 "$ENV_FILE"
-    log_warn ".env 与备份里的不同,已改用备份里的(主密钥必须与数据一致,WS_VERSION 保持当前版本);恢复前的 .env 另存为 $ENV_SAVED"
+    log_warn ".env 里与数据绑定的值(主密钥、令牌密钥、学校 ID)已换成备份里的,数据库密码、站点与端口等保留当前机器的;恢复前的 .env 另存为 $ENV_SAVED"
   fi
 
   # ---- 6. Caddy 数据(经 web 容器写回),再重启 web ----
   log_info "写回 Caddy 数据……"
-  compose exec -T web tar -C /data -xf - <"$WORK/caddy.tar" 2>&1 | redact >"$WORK/caddy.log" \
+  compose exec -T web tar -C /data --no-same-owner -xf - <"$WORK/caddy.tar" 2>&1 | redact >"$WORK/caddy.log" \
     || { tail -n 8 "$WORK/caddy.log" >&2; die "写回 Caddy 数据失败"; }
   compose restart web 2>&1 | redact >/dev/null || die "重启 web 失败"
 

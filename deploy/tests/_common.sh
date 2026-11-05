@@ -124,7 +124,17 @@ run_install() {
   return "$rc"
 }
 
-env_value() { grep -m1 "^$1=" "$DEPLOY/.env" | cut -d= -f2-; }
+# 与被测脚本的 read_env 各自独立实现:去掉首尾 \r 与成对引号,这样 .env 写成带引号的形式时,扫描的仍是真正的密钥值
+env_value() {
+  local v
+  v="$(grep -m1 "^$1=" "$DEPLOY/.env" | cut -d= -f2-)" || return 1
+  v="${v%$'\r'}"
+  case "$v" in
+    \"*\") v="${v#\"}"; v="${v%\"}" ;;
+    \'*\') v="${v#\'}"; v="${v%\'}" ;;
+  esac
+  printf '%s\n' "$v"
+}
 
 psql_scalar() {
   dc exec -T postgres psql -U workstation -d workstation -tA -c "$1" | tr -d '[:space:]'
@@ -329,23 +339,34 @@ root_ca_fp() {
 
 # 备份 / 恢复 / 诊断留下的临时物:不允许残留
 assert_no_residue() {
-  local left
-  left="$(find "$DEPLOY" -path "$DEPLOY/data" -prune -o \( -name '.ws-restore.*' -o -name '.stage.*' -o -name '*.partial' -o -name '.ws-diag.*' -o -name '.ws-backup.*' \) -print)"
+  local left dbs
+  left="$(find "$DEPLOY" -path "$DEPLOY/data" -prune -o \( -name '.ws-restore.*' -o -name '.stage.*' -o -name '*.partial' -o -name '.ws-diag.*' -o -name '.ws-backup.*' -o -name '.lock' \) -print)"
   [ -z "$left" ] || fail "残留了备份/恢复临时物:$left"
+  dbs="$(psql_scalar "SELECT count(*) FROM pg_database WHERE datname IN ('ws_restore_tmp', 'ws_restore_old')")"
+  [ "$dbs" = "0" ] || fail "数据库里残留了 ws_restore_tmp / ws_restore_old"
 }
 
 # tamper_backup <原备份> <输出> <种类>:用 python 改造备份包(种类见下)。每种只让一个检查失败。
 #   flipgz      原样 gzip 流中间翻一个字节(损坏的压缩流)
 #   dbbyte      解开后改 db.dump 的一个字节,manifest 不动(校验和对不上)
+#   dbcorrupt   db.dump 换成损坏内容(不是 pg_dump 格式),manifest 的 sha 同步重算(校验阶段全过,pg_restore 才失败)
+#   caddygarbage caddy.tar 换成垃圾字节,manifest 的 sha 同步重算(校验和自洽,caddy.tar 不是归档)
 #   version9    只把 manifest 的 version 改成 9.0.0(校验和仍自洽)
 #   migration   只把 manifest 的 migration 改成 9999(比镜像 head 新)
 #   traversal   额外加一个 ../evil 条目
 #   symlink     额外加一个符号链接条目
+#   symenv      env 条目换成指向 /etc/passwd 的符号链接
+#   hardlink    额外加一个指向 db.dump 的硬链接条目
+#   dirent      额外加一个目录条目
+#   dupdb       重复一个 db.dump 条目
+#   nodb        去掉 db.dump
 #   nomanifest  去掉 manifest.json
 #   badjson     manifest.json 改成不合法的 JSON
+#   mannosha    manifest 里去掉 env 的 sha 行
+#   manextra    manifest 里多出一个文件键
 tamper_backup() {
   python3 -I - "$1" "$2" "$3" <<'PY'
-import io, sys, tarfile
+import hashlib, io, re, sys, tarfile
 src, out, kind = sys.argv[1:4]
 if kind == "flipgz":
     b = bytearray(open(src, "rb").read())
@@ -356,25 +377,46 @@ if kind == "flipgz":
 members = []
 with tarfile.open(src, "r:gz") as tf:
     for m in tf.getmembers():
-        members.append((m, tf.extractfile(m).read() if m.isfile() else None))
+        members.append([m, tf.extractfile(m).read() if m.isfile() else None])
+for mm in members:
+    m, data = mm
+    if kind == "dbbyte" and m.name == "db.dump":
+        d = bytearray(data); d[len(d) // 2] ^= 0xFF; mm[1] = bytes(d)
+    if kind == "dbcorrupt" and m.name == "db.dump":
+        mm[1] = b"NOTADUMP" + data[8:]
+    if kind == "caddygarbage" and m.name == "caddy.tar":
+        mm[1] = b"this is not a tar archive\n" * 200
+shas = {m.name: hashlib.sha256(d).hexdigest() for m, d in members if d is not None and m.name != "manifest.json"}
+for mm in members:
+    m, data = mm
+    if m.name != "manifest.json":
+        continue
+    t = data.decode()
+    if kind in ("dbcorrupt", "caddygarbage"):
+        for n in ("db.dump", "caddy.tar"):
+            t = re.sub(r'("%s": ")[0-9a-f]+(")' % re.escape(n), lambda mo: mo.group(1) + shas[n] + mo.group(2), t)
+    elif kind == "version9":
+        t = re.sub(r'("version": ")[^"]*(")', r'\g<1>9.0.0\2', t)
+    elif kind == "migration":
+        t = re.sub(r'("migration": ")[^"]*(")', r'\g<1>9999\2', t)
+    elif kind == "badjson":
+        t = t + "{{{"
+    elif kind == "mannosha":
+        t = "\n".join(l for l in t.split("\n") if '"env":' not in l)
+    elif kind == "manextra":
+        t = re.sub(r'(    "db.dump": "[0-9a-f]+",\n)', lambda mo: mo.group(1) + '    "extra.txt": "' + "0" * 64 + '",\n', t)
+    mm[1] = t.encode()
 with tarfile.open(out, "w:gz") as tf:
     for m, data in members:
         if kind == "nomanifest" and m.name == "manifest.json":
             continue
+        if kind == "nodb" and m.name == "db.dump":
+            continue
+        if kind == "symenv" and m.name == "env":
+            ti = tarfile.TarInfo("env"); ti.type = tarfile.SYMTYPE; ti.linkname = "/etc/passwd"
+            tf.addfile(ti)
+            continue
         if m.isfile():
-            if kind == "dbbyte" and m.name == "db.dump":
-                data = bytearray(data); data[len(data) // 2] ^= 0xFF; data = bytes(data)
-            if m.name == "manifest.json":
-                t = data.decode()
-                if kind == "version9":
-                    import re
-                    t = re.sub(r'("version": ")[^"]*(")', r'\g<1>9.0.0\2', t)
-                elif kind == "migration":
-                    import re
-                    t = re.sub(r'("migration": ")[^"]*(")', r'\g<1>9999\2', t)
-                elif kind == "badjson":
-                    t = t + "{{{"
-                data = t.encode()
             m.size = len(data)
             tf.addfile(m, io.BytesIO(data))
         else:
@@ -385,5 +427,15 @@ with tarfile.open(out, "w:gz") as tf:
     if kind == "symlink":
         ti = tarfile.TarInfo("link"); ti.type = tarfile.SYMTYPE; ti.linkname = "/etc/passwd"
         tf.addfile(ti)
+    if kind == "hardlink":
+        ti = tarfile.TarInfo("hl"); ti.type = tarfile.LNKTYPE; ti.linkname = "db.dump"
+        tf.addfile(ti)
+    if kind == "dirent":
+        ti = tarfile.TarInfo("subdir"); ti.type = tarfile.DIRTYPE; ti.mode = 0o755
+        tf.addfile(ti)
+    if kind == "dupdb":
+        for m, data in members:
+            if m.name == "db.dump":
+                tf.addfile(m, io.BytesIO(data))
 PY
 }

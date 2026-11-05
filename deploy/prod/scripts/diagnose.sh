@@ -25,12 +25,14 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-# 连接串里的密码:scheme://用户:密码@主机/...,取 ":" 与最后一个 "@" 之间的部分
+# 连接串里的密码:scheme://用户:密码@主机/...,取第一个 ":"(用户名之后)与最后一个 "@" 之间的部分(贪婪匹配,
+# 密码里含 "@" 时也能整段取到)
 url_password() {
-  printf '%s' "$1" | sed -n -E 's#^[A-Za-z0-9+.-]+://[^:@/]*:([^@]*)@.*#\1#p' | head -n 1
+  printf '%s' "$1" | sed -n -E 's#^[A-Za-z0-9+.-]+://[^:@/]*:(.*)@[^@]*$#\1#p' | head -n 1
 }
 
-# mask:标准输入 → 标准输出。先精确替换密钥值,再按形状打码。
+# mask:标准输入 → 标准输出。先精确替换密钥值(read_env 已去掉引号与 \r,所以 .env 里写成带引号的形式也能替换,
+# 容器日志里不带引号的值同样会被替换),再交给 lib.sh 的 mask_shapes 按形状打码。
 mask() {
   WS_DG1="$(read_env WS_JWT_SECRET)" WS_DG2="$(read_env WS_MASTER_KEY)" WS_DG3="$(read_env POSTGRES_PASSWORD)" \
   WS_DG4="$(url_password "$(read_env WS_DATABASE_URL)")" WS_DG5="$(url_password "$(read_env WS_REDIS_URL)")" awk '
@@ -50,11 +52,7 @@ mask() {
       }
       print line
     }' \
-  | sed -E \
-      -e 's/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*/***/g' \
-      -e 's/Bearer [A-Za-z0-9._~+\/=-]+/Bearer ***/g' \
-      -e 's/(^|[^0-9])1[3-9][0-9]{9}([^0-9]|$)/\11**********\2/g' \
-      -e 's/(^|[^0-9])1[3-9][0-9]{9}([^0-9]|$)/\11**********\2/g'
+  | mask_shapes
 }
 
 # capture <文件名> <命令...>:命令输出(含 stderr)打码后写入;命令不存在或失败时写"不可用"
@@ -109,8 +107,11 @@ main() {
   ts="$(date +%Y%m%d-%H%M%S)"
   final="$outdir/ws-host-diagnostics-$ts.tar.gz"
   export COPYFILE_DISABLE=1
-  tar -czf "$final" -C "$WORK" . || die "打包失败"
-  chmod 600 "$final"
+  # 先写 .partial 再改名:不会留下半个诊断包;失败时登记的临时文件会被清理
+  register_tmp "$final.partial"
+  tar -czf "$final.partial" -C "$WORK" . || die "打包失败"
+  chmod 600 "$final.partial"
+  mv "$final.partial" "$final"
   log_info "诊断包已生成:$final"
   printf '  已对密钥、手机号、令牌打码,且不含 .env;发给技术支持前仍请自行浏览一遍\n'
 }
