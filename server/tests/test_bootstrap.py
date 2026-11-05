@@ -7,7 +7,7 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 from redis import Redis
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from app.cli import build_parser, init_school_cmd
@@ -83,6 +83,20 @@ def test_init_school_creates_school_and_admin(db, new_settings, new_client):
     assert me["must_change_password"] is True
     binding = db.scalars(select(RoleBinding).join(User).where(User.login_name == "admin01")).one()
     assert binding.role_type == "it_admin" and binding.academic_year_id is None
+    assert binding.scope == {"school_id": str(new_settings.school_id)}
+    uid = binding.user_id
+    assert db.scalar(text("SELECT count(*) FROM teachers WHERE user_id = :u"), {"u": uid}) == 1
+
+
+def test_admin_scope_grants_settings_manage(db, new_settings, new_client):
+    _init(db, new_settings)
+    # 首次登录须先改密码(此时管理接口 403);这里只验证角色绑定的 scope 生效
+    db.execute(text("UPDATE users SET must_change_password = false WHERE login_name = 'admin01'"))
+    token = _login(new_client).json()["access_token"]
+    r = new_client.get(
+        "/api/v1/admin/settings/switches", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert r.status_code == 200, r.text
 
 
 def test_init_school_idempotent(db, new_settings, new_client):
@@ -133,6 +147,46 @@ def test_rollback_when_failure_midway(db, new_settings, monkeypatch):
     with pytest.raises(RuntimeError):
         _init(db, new_settings)
     assert _school_count(db, new_settings) == 0
+    assert (
+        db.scalar(select(func.count()).select_from(User).where(User.login_name == "admin01")) == 0
+    )
+    sid = str(new_settings.school_id)
+    assert (
+        db.scalar(
+            text("SELECT count(*) FROM role_bindings WHERE scope->>'school_id' = :s"), {"s": sid}
+        )
+        == 0
+    )
+    assert (
+        db.scalar(select(func.count()).select_from(AuditLog).where(AuditLog.object_id == sid)) == 0
+    )
+    assert (
+        db.scalar(
+            text(
+                "SELECT count(*) FROM teachers t JOIN users u ON u.id = t.user_id"
+                " WHERE u.school_id = :s"
+            ),
+            {"s": new_settings.school_id},
+        )
+        == 0
+    )
+
+
+def test_concurrent_install_loser_gets_exists(db, new_settings, monkeypatch):
+    db.add(School(id=new_settings.school_id, name="先到者"))
+    db.commit()  # 赢家已提交
+    real_get = db.get
+    calls = {"n": 0}
+
+    def fake_get(model, ident, *a, **k):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            db.expunge_all()  # 模拟另一事务刚提交:本会话还没看到
+            return None
+        return real_get(model, ident, *a, **k)
+
+    monkeypatch.setattr(db, "get", fake_get)
+    assert _init(db, new_settings) == "exists"
     assert (
         db.scalar(select(func.count()).select_from(User).where(User.login_name == "admin01")) == 0
     )
