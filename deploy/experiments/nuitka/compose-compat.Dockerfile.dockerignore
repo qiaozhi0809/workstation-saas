@@ -1,0 +1,9 @@
+*
+!server/pyproject.toml
+!server/uv.lock
+!server/alembic.ini
+!server/app
+!server/migrations
+!deploy/docker/entrypoint.sh
+**/__pycache__
+**/.venv

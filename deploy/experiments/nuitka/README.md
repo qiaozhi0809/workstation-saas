@@ -11,6 +11,7 @@
 | `nuitka.Dockerfile` | 多阶段:`baseline`(源码版)、`nuitka`(`--standalone` 编译版)、`pytest-compiled`(把 `app` 编成 `--module` 的 `.so`,在不含 `app` 源码的容器里跑 pytest) |
 | `nuitka.Dockerfile.dockerignore` | BuildKit 每个 Dockerfile 一个忽略文件(只放行构建需要的目录) |
 | `run_app.py` | 两个镜像共用的入口:`serve`(默认)/ `migrate` / `seed` |
+| `compose-compat.Dockerfile`(+ `.dockerignore`) | 段 G 补测:生产形态运行镜像 + `--module` 编译的 `.so` + `ws-cli` 垫片,可直接用生产 compose 与 `compose_smoke.sh`(`WS_SMOKE_SKIP_BUILD=1 WS_TEST_VERSION=<标签>`),见 D13 报告"补测(段 G)" |
 | `smoke.sh`、`smoke.compose.yml`、`bench.py` | 最小冒烟:postgres + redis + 待测镜像,查 `/healthz` 与登录,测启动时间与 p50 |
 
 ## 版本
