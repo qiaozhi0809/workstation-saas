@@ -23,7 +23,8 @@ vi.mock('@/shared/api/notices', () => ({ noticesApi: { inbox: vi.fn(), read: vi.
 
 const item = (id: string, over: Partial<InboxItem> = {}): InboxItem => ({
   id, title: `通知${id}`, content: `正文${id}`, from_name: '陈校长',
-  created_at: '2026-11-04T01:00:00Z', read_at: null, recalled: false, ...over,
+  created_at: '2026-11-04T01:00:00Z', read_at: null, recalled: false,
+  ack: { kind: 'none' }, ack_deadline: null, my_ack: null, students: [], can_ack: false, ...over,
 })
 
 // 一份可变的"服务端状态":各个 mock 读写它,这样失效重取后能看到变化
