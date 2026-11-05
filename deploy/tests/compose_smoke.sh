@@ -123,9 +123,9 @@ probe_ctx app app.Dockerfile server/pyproject.toml
 probe_ctx web web.Dockerfile apps/web/package.json
 pass "两份 .dockerignore 都挡住了 node_modules / .venv / .env* 的 canary"
 docker run --rm --entrypoint sh "workstation-app:$VERSION" -c \
-  'test -f /srv/server/alembic.ini && test -d /srv/server/migrations/versions' \
-  || fail "应用镜像缺少 alembic.ini 或 migrations"
-pass "应用镜像带有 alembic.ini 与 migrations"
+  'test -d /srv/server/app && test -d /srv/server/migrations/versions && test -f /srv/server/alembic.ini' \
+  || fail "应用镜像缺少 /srv/server/app、migrations 或 alembic.ini"
+pass "应用镜像带有 /srv/server/app、migrations 与 alembic.ini"
 
 echo "== 3/6 准备部署目录与随机密钥(只写入临时目录,不打印)"
 cp "$ROOT/deploy/prod/docker-compose.yml" "$TMP/docker-compose.yml"

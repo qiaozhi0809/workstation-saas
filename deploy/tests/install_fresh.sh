@@ -59,11 +59,19 @@ pass "管理员登录成功且 must_change_password 为 true"
 pass "users 只有管理员一行"
 ok=0
 for _ in $(seq 1 30); do
-  if [ -f "$DEPLOY/data/logs/app.jsonl" ]; then ok=1; break; fi
+  if [ -s "$DEPLOY/data/logs/app.jsonl" ]; then ok=1; break; fi
   sleep 1
 done
-[ "$ok" = 1 ] || fail "data/logs/app.jsonl 未出现"
-pass "data/logs/app.jsonl 已创建(容器 uid 10001 可写;当前内容可能为空,见交接文件缺口)"
+[ "$ok" = 1 ] || fail "data/logs/app.jsonl 没有出现或为空(应用启动应写入 app.started)"
+grep -q '"app.started"' "$DEPLOY/data/logs/app.jsonl" || fail "app.jsonl 里没有 app.started 启动日志"
+pass "data/logs/app.jsonl 非空且含启动日志 app.started(容器 uid 10001 可写)"
+ok=0
+for _ in $(seq 1 30); do
+  if [ -f "$DEPLOY/data/logs/scheduler.jsonl" ]; then ok=1; break; fi
+  sleep 1
+done
+[ "$ok" = 1 ] || fail "data/logs/scheduler.jsonl 未出现(scheduler 应单独落盘)"
+pass "data/logs/scheduler.jsonl 已创建"
 # 宿主机用户也要能在日志目录里写 backup-last.json
 : >"$DEPLOY/data/logs/backup-last.json" || fail "宿主机用户无法在 data/logs 里写文件"
 rm -f "$DEPLOY/data/logs/backup-last.json"
