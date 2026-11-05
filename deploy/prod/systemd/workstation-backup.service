@@ -1,0 +1,9 @@
+[Unit]
+Description=教学工作台每日备份
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=@DEPLOY_DIR@
+ExecStart=@DEPLOY_DIR@/scripts/backup.sh

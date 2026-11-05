@@ -292,3 +292,98 @@ tree_hash() {
       | LC_ALL=C sort | while IFS= read -r f; do printf '%s  %s\n' "$(sha256_of "$f")" "$f"; done ) \
     | { if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi; } | awk '{print $1}'
 }
+
+# ---- 备份 / 恢复 / 诊断测试的辅助(Task 7) ----
+
+# 登录并把 refresh_token 写到文件 $1(不打印);用的是 login_as 的同一请求
+get_refresh_token() {
+  local out="$TMP/login-rt.json"
+  login_as "$ADMIN_LOGIN" "$out" "$ADMIN_PW" || fail "登录请求失败"
+  tr -d ' \n' <"$out" | sed -n 's/.*"refresh_token":"\([^"]*\)".*/\1/p' >"$1"
+  rm -f "$out"
+  [ -s "$1" ] || fail "登录没有返回 refresh_token"
+}
+
+# refresh_code <存 token 的文件>:用 refresh token 换 access token,输出 HTTP 状态码
+refresh_code() {
+  printf '{"refresh_token":"%s"}' "$(cat "$1")" \
+    | curl -ksS --max-time 15 -o /dev/null -w '%{http_code}' -X POST \
+        "https://localhost:$HTTPS_PORT/api/v1/auth/refresh" -H 'Content-Type: application/json' --data-binary @-
+}
+
+# 建一张带标识数据的标记表(备份恢复用它证明"数据回来了")
+make_marker() {
+  psql_scalar "CREATE TABLE IF NOT EXISTS ws_backup_marker (id int PRIMARY KEY, note text)" >/dev/null || fail "建标记表失败"
+  psql_scalar "INSERT INTO ws_backup_marker VALUES (1, '备份标识-$1') ON CONFLICT (id) DO UPDATE SET note = EXCLUDED.note" >/dev/null || fail "写标记行失败"
+}
+
+# 库状态签名:库的 oid(被 DROP 重建就会变)+ 标记表内容哈希 + users 行数 + alembic 版本
+state_sig() {
+  psql_scalar "SELECT (SELECT oid FROM pg_database WHERE datname = current_database()) || '/' || COALESCE((SELECT md5(string_agg(id || note, ',' ORDER BY id)) FROM ws_backup_marker), 'nomarker') || '/' || (SELECT count(*) FROM users) || '/' || (SELECT version_num FROM alembic_version)"
+}
+
+root_ca_fp() {
+  dc exec -T web cat /data/caddy/pki/authorities/local/root.crt 2>/dev/null \
+    | openssl x509 -noout -fingerprint -sha256 2>/dev/null
+}
+
+# 备份 / 恢复 / 诊断留下的临时物:不允许残留
+assert_no_residue() {
+  local left
+  left="$(find "$DEPLOY" -path "$DEPLOY/data" -prune -o \( -name '.ws-restore.*' -o -name '.stage.*' -o -name '*.partial' -o -name '.ws-diag.*' -o -name '.ws-backup.*' \) -print)"
+  [ -z "$left" ] || fail "残留了备份/恢复临时物:$left"
+}
+
+# tamper_backup <原备份> <输出> <种类>:用 python 改造备份包(种类见下)。每种只让一个检查失败。
+#   flipgz      原样 gzip 流中间翻一个字节(损坏的压缩流)
+#   dbbyte      解开后改 db.dump 的一个字节,manifest 不动(校验和对不上)
+#   version9    只把 manifest 的 version 改成 9.0.0(校验和仍自洽)
+#   migration   只把 manifest 的 migration 改成 9999(比镜像 head 新)
+#   traversal   额外加一个 ../evil 条目
+#   symlink     额外加一个符号链接条目
+#   nomanifest  去掉 manifest.json
+#   badjson     manifest.json 改成不合法的 JSON
+tamper_backup() {
+  python3 -I - "$1" "$2" "$3" <<'PY'
+import io, sys, tarfile
+src, out, kind = sys.argv[1:4]
+if kind == "flipgz":
+    b = bytearray(open(src, "rb").read())
+    i = len(b) // 2
+    b[i] ^= 0xFF
+    open(out, "wb").write(bytes(b))
+    sys.exit(0)
+members = []
+with tarfile.open(src, "r:gz") as tf:
+    for m in tf.getmembers():
+        members.append((m, tf.extractfile(m).read() if m.isfile() else None))
+with tarfile.open(out, "w:gz") as tf:
+    for m, data in members:
+        if kind == "nomanifest" and m.name == "manifest.json":
+            continue
+        if m.isfile():
+            if kind == "dbbyte" and m.name == "db.dump":
+                data = bytearray(data); data[len(data) // 2] ^= 0xFF; data = bytes(data)
+            if m.name == "manifest.json":
+                t = data.decode()
+                if kind == "version9":
+                    import re
+                    t = re.sub(r'("version": ")[^"]*(")', r'\g<1>9.0.0\2', t)
+                elif kind == "migration":
+                    import re
+                    t = re.sub(r'("migration": ")[^"]*(")', r'\g<1>9999\2', t)
+                elif kind == "badjson":
+                    t = t + "{{{"
+                data = t.encode()
+            m.size = len(data)
+            tf.addfile(m, io.BytesIO(data))
+        else:
+            tf.addfile(m)
+    if kind == "traversal":
+        ti = tarfile.TarInfo("../evil"); ti.size = 4
+        tf.addfile(ti, io.BytesIO(b"evil"))
+    if kind == "symlink":
+        ti = tarfile.TarInfo("link"); ti.type = tarfile.SYMTYPE; ti.linkname = "/etc/passwd"
+        tf.addfile(ti)
+PY
+}

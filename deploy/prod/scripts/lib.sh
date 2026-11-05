@@ -142,3 +142,10 @@ replace_file() {
   cp -p "$src" "$tmp"
   mv "$tmp" "$dst"
 }
+
+# service_running <服务>:该服务的容器存在且正在运行则返回 0
+service_running() {
+  local cid
+  cid="$(compose ps -q "$1" 2>/dev/null | head -n 1)"
+  [ -n "$cid" ] && [ "$(docker inspect -f '{{.State.Running}}' "$cid" 2>/dev/null || true)" = "true" ]
+}
