@@ -61,6 +61,24 @@ def current_version(engine: Engine) -> str | None:
     return row[0] if row else None
 
 
+@pytest.fixture(scope="module")
+def head_engine(pg_admin_url: str) -> Iterator[Engine]:
+    """一个升到 head 的空库,供"每条 Check 都能查出脏数据"的测试在事务里反复使用。"""
+    name = f"t_{uuid.uuid4().hex[:12]}"
+    admin = create_engine(pg_admin_url, isolation_level="AUTOCOMMIT")
+    with admin.connect() as conn:
+        conn.execute(text(f'CREATE DATABASE "{name}"'))
+    eng = create_engine(make_url(pg_admin_url).set(database=name))
+    try:
+        upgrade_to(eng, "head")
+        yield eng
+    finally:
+        eng.dispose()
+        with admin.connect() as conn:
+            conn.execute(text(f'DROP DATABASE "{name}" WITH (FORCE)'))
+        admin.dispose()
+
+
 def _school_year_grade(conn) -> tuple[str, str, str]:
     school = conn.execute(
         text("INSERT INTO schools (name) VALUES ('测试学校') RETURNING id")
@@ -249,39 +267,94 @@ def test_all_check_sql_runs_on_head_schema(engine):
             conn.execute(text(c.locate_sql)).all()
 
 
+_ID = r'(?:"?\w+"?\.)?"?(\w+)"?'  # 可带 schema 前缀、可带双引号
+
+
 def _strip_comments(sql: str) -> str:
     return re.sub(r"--[^\n]*", "", sql)
 
 
 def _revision_sqls() -> list[tuple[str, str]]:
-    return [
-        (p.name[:4], _strip_comments(p.read_text(encoding="utf-8")))
-        for p in sorted(VERSIONS.glob("*.up.sql"))
-    ]
+    return [(p.name[:4], p.read_text(encoding="utf-8")) for p in sorted(VERSIONS.glob("*.up.sql"))]
 
 
-def _constraints_on_existing_tables() -> set[tuple[str, str]]:
+def scan_constraints(revisions: list[tuple[str, str]]) -> set[tuple[str, str]]:
     """扫描迁移 SQL,返回 (revision, 约束标识)。
 
-    范围:对更早 revision 已建的表加的命名约束 / 唯一索引 / SET NOT NULL。
-    同一迁移里 DROP CONSTRAINT 再 ADD CONSTRAINT 同名约束(重建)按 ADD 识别,同样算数。"""
+    范围:对更早 revision 已建的表加的 命名 CHECK/UNIQUE 约束、无名 ADD CHECK/UNIQUE(标识
+    "表.CHECK#序号" / "表.UNIQUE#序号",序号为该 ALTER 里无名约束的出现顺序)、
+    唯一索引、SET NOT NULL("表.列")。
+    同一迁移里 DROP CONSTRAINT 再 ADD CONSTRAINT 同名约束(重建)按 ADD 识别,同样算数。
+    容忍 ONLY / IF [NOT] EXISTS / CONCURRENTLY 与双引号标识符。"""
     created: set[str] = set()
     found: set[tuple[str, str]] = set()
-    for rev, sql in _revision_sqls():
+    for rev, raw in revisions:
+        sql = _strip_comments(raw)
         existing = set(created)
-        for m in re.finditer(r"ALTER TABLE\s+(\w+)(.*?);", sql, re.S | re.I):
+        for m in re.finditer(
+            rf"ALTER\s+TABLE\s+(?:ONLY\s+)?(?:IF\s+EXISTS\s+)?{_ID}(.*?);", sql, re.S | re.I
+        ):
             table, body = m.group(1), m.group(2)
             if table not in existing:
                 continue
-            for c in re.finditer(r"ADD CONSTRAINT\s+(\w+)", body, re.I):
+            for c in re.finditer(r'ADD\s+CONSTRAINT\s+"?(\w+)"?\s+(?:CHECK|UNIQUE)\b', body, re.I):
                 found.add((rev, c.group(1)))
-            for c in re.finditer(r"ALTER COLUMN\s+(\w+)\s+SET NOT NULL", body, re.I):
+            for n, c in enumerate(re.finditer(r"ADD\s+(CHECK|UNIQUE)\b", body, re.I), 1):
+                found.add((rev, f"{table}.{c.group(1).upper()}#{n}"))
+            for c in re.finditer(r'ALTER\s+(?:COLUMN\s+)?"?(\w+)"?\s+SET\s+NOT\s+NULL', body, re.I):
                 found.add((rev, f"{table}.{c.group(1)}"))
-        for m in re.finditer(r"CREATE UNIQUE INDEX\s+(\w+)\s+ON\s+(\w+)", sql, re.I):
+        for m in re.finditer(
+            rf"CREATE\s+UNIQUE\s+INDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+NOT\s+EXISTS\s+)?"
+            rf'"?(\w+)"?\s+ON\s+(?:ONLY\s+)?{_ID}',
+            sql,
+            re.I,
+        ):
             if m.group(2) in existing:
                 found.add((rev, m.group(1)))
-        created |= {m.group(1) for m in re.finditer(r"CREATE TABLE\s+(\w+)", sql, re.I)}
+        created |= {
+            m.group(1)
+            for m in re.finditer(rf"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?{_ID}", sql, re.I)
+        }
     return found
+
+
+def test_scanner_handles_syntax_variants():
+    sqls = [
+        ("0001", 'CREATE TABLE IF NOT EXISTS public."t1" (id int); CREATE TABLE t2 (id int);'),
+        (
+            "0002",
+            """
+            -- ALTER TABLE t1 ADD CONSTRAINT commented_out CHECK (true);
+            ALTER TABLE ONLY IF EXISTS public."t1"
+              ADD COLUMN c int CHECK (c > 0),
+              ADD CONSTRAINT "q_ck" CHECK (id > 0),
+              ADD UNIQUE (id),
+              ADD CHECK (id < 10),
+              ALTER COLUMN "id" SET NOT NULL,
+              ALTER c SET NOT NULL;
+            ALTER TABLE t2 ADD CONSTRAINT t2_fk FOREIGN KEY (id) REFERENCES t1(id);
+            ALTER TABLE new_table ADD CONSTRAINT nt_ck CHECK (true);
+            CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS "u_idx" ON ONLY public."t2" (id);
+            CREATE INDEX plain_idx ON t2 (id);
+            CREATE TABLE new_table (id int);
+            CREATE UNIQUE INDEX new_idx ON new_table (id);
+            """,
+        ),
+        ("0003", "ALTER TABLE new_table DROP CONSTRAINT nt_ck, ADD CONSTRAINT nt_ck CHECK (id>1);"),
+    ]
+    assert scan_constraints(sqls) == {
+        ("0002", "q_ck"),
+        ("0002", "t1.UNIQUE#1"),
+        ("0002", "t1.CHECK#2"),
+        ("0002", "t1.id"),
+        ("0002", "t1.c"),
+        ("0002", "u_idx"),
+        ("0003", "nt_ck"),
+    }
+
+
+def _constraints_on_existing_tables() -> set[tuple[str, str]]:
+    return scan_constraints(_revision_sqls())
 
 
 def test_every_constraint_in_migrations_has_check():
@@ -309,3 +382,232 @@ def test_every_constraint_in_migrations_has_check():
     # 登记表里不能有迁移里不存在的名字
     assert not (registered | exempt) - scanned, sorted((registered | exempt) - scanned)
     assert all(reason.strip() for reason in EXEMPT_CONSTRAINTS.values())
+
+
+class _Base:
+    """一个事务里的最小数据骨架,按需造班级 / 学生 / 在读记录 / 用户。"""
+
+    def __init__(self, conn):
+        self.conn = conn
+        self.school, self.year, self.grade = _school_year_grade(conn)
+        self._n = 0
+
+    def _next(self) -> int:
+        self._n += 1
+        return self._n
+
+    def klass(self, **cols) -> str:
+        cols = {"name": f"班{self._next()}", **cols}
+        names = ", ".join(cols)
+        marks = ", ".join(f":{k}" for k in cols)
+        return self.conn.execute(
+            text(
+                "INSERT INTO classes (school_id, academic_year_id, grade_id, "
+                f"{names}) VALUES (:s, :y, :g, {marks}) RETURNING id"
+            ),
+            {"s": self.school, "y": self.year, "g": self.grade, **cols},
+        ).scalar()
+
+    def enrollment(self, class_id: str, **cols) -> str:
+        n = self._next()
+        sid = self.conn.execute(
+            text(
+                "INSERT INTO students (school_id, mk, name) VALUES (:s, :mk, '某学生') RETURNING id"
+            ),
+            {"s": self.school, "mk": f"mk{n}"},
+        ).scalar()
+        cols = {"status": "active", **cols}
+        names = ", ".join(cols)
+        marks = ", ".join(f":{k}" for k in cols)
+        return self.conn.execute(
+            text(
+                "INSERT INTO enrollments (student_id, class_id, academic_year_id, "
+                f"{names}) VALUES (:sid, :c, :y, {marks}) RETURNING id"
+            ),
+            {"sid": sid, "c": class_id, "y": self.year, **cols},
+        ).scalar()
+
+    def user(self, login: str) -> str:
+        return self.conn.execute(
+            text(
+                "INSERT INTO users (school_id, login_name, password_hash, display_name)"
+                " VALUES (:s, :l, 'x', '某人') RETURNING id"
+            ),
+            {"s": self.school, "l": login},
+        ).scalar()
+
+    def teacher(self) -> str:
+        uid = self.user(f"t{self._next()}")
+        return self.conn.execute(
+            text("INSERT INTO teachers (user_id) VALUES (:u) RETURNING id"), {"u": uid}
+        ).scalar()
+
+    def assignment(self, teacher_id: str, class_id: str, ended: bool = False) -> None:
+        self.conn.execute(
+            text(
+                "INSERT INTO teacher_assignments"
+                " (teacher_id, class_id, academic_year_id, identity, ended_at)"
+                " VALUES (:t, :c, :y, 'homeroom', CASE WHEN :e THEN now() END)"
+            ),
+            {"t": teacher_id, "c": class_id, "y": self.year, "e": ended},
+        )
+
+    def notice(self, **cols) -> str:
+        cols = {"title": "通知", "content": "内容", "target_label": "全体", **cols}
+        names = ", ".join(cols)
+        marks = ", ".join(f":{k}" for k in cols)
+        return self.conn.execute(
+            text(
+                f"INSERT INTO notices (school_id, target, {names})"
+                f" VALUES (:s, '{{}}', {marks}) RETURNING id"
+            ),
+            {"s": self.school, **cols},
+        ).scalar()
+
+
+def _dirty_seat_dims(b: _Base) -> int:
+    b.klass(seat_rows=13)
+    b.klass(seat_cols=12, seat_rows=0)
+    b.klass()  # 合法班级不计入
+    return 2
+
+
+def _dirty_seat_pair(b: _Base) -> int:
+    c = b.klass()
+    b.enrollment(c, seat_row=1)
+    b.enrollment(c, seat_col=2)
+    b.enrollment(c, seat_row=2, seat_col=2)  # 成对,不计入
+    b.enrollment(c)  # 都为空,不计入
+    return 2
+
+
+def _dirty_one_per_seat(b: _Base) -> int:
+    c = b.klass()
+    b.enrollment(c, seat_row=1, seat_col=1)
+    b.enrollment(c, seat_row=1, seat_col=1)  # 同座 -> 1 组
+    b.enrollment(c, seat_row=3, seat_col=1)
+    b.enrollment(c, seat_row=3, seat_col=1, status="graduated")  # 非在读,不计入
+    b.enrollment(c, seat_row=2)  # seat_col 为 NULL(行列不成对,另一条 Check 管),不计入
+    b.enrollment(c, seat_row=2)
+    return 1
+
+
+def _dirty_status(b: _Base) -> dict[str, int]:
+    c = b.klass()
+    b.enrollment(c, status="bogus")
+    b.enrollment(c, status="promoted")
+    b.enrollment(c, status="removed")
+    return {"0003": 2, "0004": 1}
+
+
+def _dirty_seat_code(b: _Base) -> int:
+    c = b.klass()
+    b.enrollment(c, seat_row=0, seat_col=3)  # 讲台边只允许 -2,-1,1,2
+    b.enrollment(c, seat_row=-1, seat_col=1)
+    b.enrollment(c, seat_row=0, seat_col=1)  # 合法
+    b.enrollment(c)  # 座位为 NULL,不计入
+    b.enrollment(c, seat_row=0)  # seat_col 为 NULL:CHECK 结果为 NULL,按 PG 语义不违规
+    return 2
+
+
+def _dirty_login(b: _Base) -> int:
+    for login in ("Abc", "abc", "X1", "x1", "solo"):
+        b.user(login)
+    return 2
+
+
+def _dirty_homeroom(b: _Base) -> int:
+    c1, c2, c3 = b.klass(), b.klass(), b.klass()
+    for c, k in ((c1, 2), (c2, 3)):
+        for _ in range(k):
+            b.assignment(b.teacher(), c)
+    b.assignment(b.teacher(), c3)
+    b.assignment(b.teacher(), c3, ended=True)  # 已结束的不算
+    return 2
+
+
+def _dirty_require_ack(b: _Base) -> int:
+    b.notice(require_ack=True)
+    b.notice(require_ack=True)
+    b.notice(require_ack=False)
+    return 2
+
+
+def _dirty_ack_content(b: _Base) -> int:
+    nid = b.notice()
+    for content, n in (("a" * 201, 1), ("b" * 200, 2), (None, 3)):
+        b.conn.execute(
+            text(
+                "INSERT INTO notice_recipients (notice_id, user_id, ack_content)"
+                " VALUES (:n, :u, :c)"
+            ),
+            {"n": nid, "u": b.user(f"r{n}"), "c": content},
+        )
+    return 1
+
+
+# (revision, name 前缀) -> (要先去掉的约束 / 索引, 造脏数据并返回期望的违规数)
+DIRTY_CASES = {
+    ("0002", "classes 座位行列数"): (
+        ["ALTER TABLE classes DROP CONSTRAINT classes_seat_dims"],
+        _dirty_seat_dims,
+    ),
+    ("0002", "enrollments 座位行列成对"): (
+        ["ALTER TABLE enrollments DROP CONSTRAINT enrollments_seat_pair"],
+        _dirty_seat_pair,
+    ),
+    ("0002", "enrollments 同座唯一"): (
+        [
+            "DROP INDEX enrollments_one_per_seat",
+            "ALTER TABLE enrollments DROP CONSTRAINT enrollments_seat_pair",
+        ],
+        _dirty_one_per_seat,
+    ),
+    ("0003", "enrollments 状态取值"): (
+        ["ALTER TABLE enrollments DROP CONSTRAINT enrollments_status_check"],
+        lambda b: _dirty_status(b)["0003"],
+    ),
+    ("0004", "enrollments 状态取值"): (
+        ["ALTER TABLE enrollments DROP CONSTRAINT enrollments_status_check"],
+        lambda b: _dirty_status(b)["0004"],
+    ),
+    ("0005", "enrollments 座位编码"): (
+        [
+            "ALTER TABLE enrollments DROP CONSTRAINT enrollments_seat_code",
+            "ALTER TABLE enrollments DROP CONSTRAINT enrollments_seat_pair",
+        ],
+        _dirty_seat_code,
+    ),
+    ("0007", "users 登录名大小写重复"): (["DROP INDEX users_school_login_lower_key"], _dirty_login),
+    ("0008", "teacher_assignments 班主任唯一"): (
+        ["DROP INDEX teacher_assignments_one_homeroom"],
+        _dirty_homeroom,
+    ),
+    ("0010", "notices 需回执标记"): (
+        ["ALTER TABLE notices DROP CONSTRAINT notices_require_ack_ck"],
+        _dirty_require_ack,
+    ),
+    ("0010", "notice_recipients 留言长度"): (
+        ["ALTER TABLE notice_recipients DROP CONSTRAINT notice_recipients_ack_content_ck"],
+        _dirty_ack_content,
+    ),
+}
+
+
+def test_every_check_has_a_dirty_case():
+    assert {(c.revision, c.name) for c in CHECKS} == set(DIRTY_CASES)
+
+
+@pytest.mark.parametrize("check", CHECKS, ids=lambda c: f"{c.revision}-{c.name}")
+def test_check_counts_and_locates_dirty_rows(head_engine, check):
+    drops, make_dirty = DIRTY_CASES[(check.revision, check.name)]
+    with head_engine.connect() as conn:
+        trans = conn.begin()
+        try:
+            for stmt in drops:  # head 库上约束已存在,先去掉才能插脏数据(DDL 随事务回滚)
+                conn.execute(text(stmt))
+            expected = make_dirty(_Base(conn))
+            assert conn.execute(text(check.count_sql)).scalar_one() == expected
+            assert len(conn.execute(text(check.locate_sql)).all()) == expected
+        finally:
+            trans.rollback()

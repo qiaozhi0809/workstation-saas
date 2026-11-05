@@ -8,7 +8,7 @@ from uuid import UUID
 from sqlalchemy import text
 
 from app.auth import sessions
-from app.cli import build_parser, migrate, parent_archive
+from app.cli import build_parser, init_school_cmd, migrate, parent_archive
 from tests.test_precheck import (  # noqa: F401  (fixtures)
     current_version,
     fresh_engine,
@@ -119,3 +119,49 @@ def test_migrate_other_error_exits_1():
     code, out = _migrate(bad)
     assert code == 1
     assert "迁移失败" in out
+
+
+def test_migrate_unknown_db_version_exits_1(fresh_engine):  # noqa: F811
+    from sqlalchemy import text as sql_text
+
+    upgrade_to(fresh_engine, "0001")
+    with fresh_engine.begin() as conn:
+        conn.execute(sql_text("UPDATE alembic_version SET version_num = '0099'"))
+    code, out = _migrate(fresh_engine)
+    assert code == 1
+    assert "数据库版本 0099 高于或不属于本程序版本,请使用对应版本的安装包" in out
+    assert current_version(fresh_engine) == "0099"
+
+
+def test_init_school_reads_password_from_stdin(db, settings, monkeypatch):
+    from uuid import uuid4
+
+    s = settings.model_copy(update={"school_id": uuid4()})
+    monkeypatch.setattr("app.cli.get_settings", lambda: s)
+
+    @contextmanager
+    def factory():
+        yield db
+
+    argv = [
+        "init-school",
+        "--name",
+        "试点学校",
+        "--admin-login",
+        "it.admin",
+        "--admin-password-stdin",
+    ]
+    pw = "Test-Pass-123x"
+
+    def run(stdin_text):
+        out = io.StringIO()
+        ns = build_parser().parse_args(argv)
+        code = init_school_cmd(ns, db_factory=factory, stdin=io.StringIO(stdin_text), out=out)
+        return code, out.getvalue()
+
+    code, out = run(pw + "\n")
+    assert code == 0
+    assert out.strip() == "已创建学校「试点学校」和管理员 it.admin"
+    assert pw not in out
+    code, out = run(pw + "\n")
+    assert code == 3 and out.strip() == "已初始化过,未做任何改动"
