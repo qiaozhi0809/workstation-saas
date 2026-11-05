@@ -84,9 +84,7 @@ services:
       interval: 3s
       timeout: 3s
       retries: 30
-    depends_on:
-      app:
-        condition: service_healthy
+    # 不依赖 app:app 异常时,备份/恢复仍要能经 web 容器取到 data/ 的 tar
     networks: [ws-net]
 
 networks:
