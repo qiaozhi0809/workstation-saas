@@ -221,7 +221,7 @@ describe('发通知:可选对象加载', () => {
 describe('发通知:发给家长', () => {
   const pickParents = async () => {
     await fill()
-    fireEvent.click(screen.getByRole('radio', { name: '家长' }))
+    fireEvent.click(screen.getByRole('radio', { name: '发给家长' }))
   }
 
   it('offers only 全校家长 / 某个年级 / 某个班 for parents, with parent labels', async () => {
@@ -242,9 +242,9 @@ describe('发通知:发给家长', () => {
     renderPage()
     await fill('users')
     fireEvent.click(await screen.findByRole('button', { name: '添加 李明' }))
-    fireEvent.click(screen.getByRole('radio', { name: '家长' }))
+    fireEvent.click(screen.getByRole('radio', { name: '发给家长' }))
     expect(screen.getByLabelText('发给')).toHaveValue('school')
-    fireEvent.click(screen.getByRole('radio', { name: '老师' }))
+    fireEvent.click(screen.getByRole('radio', { name: '发给老师' }))
     fireEvent.change(screen.getByLabelText('发给'), { target: { value: 'users' } })
     expect(await screen.findByRole('button', { name: '添加 李明' })).toBeInTheDocument()
     expect(screen.queryByRole('list', { name: '已选择的人' })).toBeNull()
@@ -254,7 +254,7 @@ describe('发通知:发给家长', () => {
     vi.mocked(adminApi.noticeOptions).mockResolvedValue(options({ school_wide: false }))
     renderPage()
     await fill('users')
-    fireEvent.click(screen.getByRole('radio', { name: '家长' }))
+    fireEvent.click(screen.getByRole('radio', { name: '发给家长' }))
     expect(screen.getByLabelText('发给')).toHaveValue('grade')
   })
 

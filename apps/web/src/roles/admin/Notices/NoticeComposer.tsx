@@ -148,7 +148,7 @@ export default function NoticeComposer({ options, onSent }: { options: NoticeOpt
         {(['teachers', 'parents'] as const).map((a) => (
           <label key={a} className="flex items-center gap-1.5 text-sm">
             <input type="radio" name="notice-audience" checked={audience === a} onChange={() => changeAudience(a)} />
-            {a === 'teachers' ? '老师' : '家长'}
+            {a === 'teachers' ? '发给老师' : '发给家长'}
           </label>
         ))}
       </div>

@@ -67,7 +67,7 @@ test('notice reaches an open classroom without refresh, shows read count, and re
     await expect(page.getByRole('heading', { name: '通知', exact: true })).toBeVisible()
     await page.getByLabel('标题').fill(title)
     await page.getByLabel('正文').fill('明天下午三点开全体教师会,请准时参加。')
-    await expect(page.getByLabel('发给')).toHaveValue('school')
+    await expect(page.getByLabel('发给', { exact: true })).toHaveValue('school')
     await page.getByRole('button', { name: '发送', exact: true }).click()
     // toast 只停几秒:在点"确认发送"之前就开始等,不要等推送到了才开始看
     await Promise.all([
