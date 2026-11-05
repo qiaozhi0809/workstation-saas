@@ -263,9 +263,12 @@ test.describe('year upgrade', () => {
 
   async function rollbackIfNeeded(request: APIRequestContext) {
     const principal = await login(request, 'principal01')
-    const latest = await adminGet<{ rolled_back: boolean } | null>(request, principal, '/admin/years/upgrade/latest')
+    const latest = await adminGet<{ id: string; rolled_back: boolean } | null>(request, principal, '/admin/years/upgrade/latest')
     if (latest && !latest.rolled_back) {
-      const res = await request.post(`${API}/admin/years/upgrade/rollback`, { headers: { Authorization: `Bearer ${principal}` } })
+      const res = await request.post(`${API}/admin/years/upgrade/rollback`, {
+        headers: { Authorization: `Bearer ${principal}` },
+        data: { upgrade_id: latest.id },
+      })
       expect(res.ok(), await res.text()).toBeTruthy()
     }
   }

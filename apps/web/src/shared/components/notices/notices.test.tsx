@@ -288,6 +288,17 @@ const renderStats = (s: AckStats, onClose = vi.fn()) => {
 }
 
 describe('AckStatsDialog', () => {
+  it('关掉再打开会重新请求,不先显示缓存里的旧统计', async () => {
+    const qc = renderStats(stats())
+    await screen.findByText('已读 2 / 4 · 已回执 1 / 4')
+    cleanup()
+    vi.mocked(noticesApi.acks).mockClear()
+    vi.mocked(noticesApi.acks).mockResolvedValue(stats({ read: 3, acked: 2 }))
+    render(<QueryClientProvider client={qc}><AckStatsDialog noticeId="n1" onClose={vi.fn()} /></QueryClientProvider>)
+    expect(await screen.findByText('已读 3 / 4 · 已回执 2 / 4')).toBeInTheDocument()
+    expect(noticesApi.acks).toHaveBeenCalledTimes(1)
+  })
+
   it('顶部计数与单选条形统计', async () => {
     renderStats(stats())
     const dlg = await screen.findByRole('dialog')
