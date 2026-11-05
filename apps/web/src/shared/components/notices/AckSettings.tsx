@@ -114,7 +114,7 @@ export default function AckSettings({ value, onChange, deadline, onDeadlineChang
         <div className="flex flex-col gap-1">
           <label className="flex items-center gap-2 text-sm">
             <span className="shrink-0">截止时间</span>
-            <Input type="datetime-local" aria-label="截止时间" value={local} onChange={(e) => onDeadline(e.target.value)} />
+            <Input type="datetime-local" aria-label="截止时间" className="min-w-0" value={local} onChange={(e) => onDeadline(e.target.value)} />
           </label>
           {dlError && <p role="alert" className="text-sm text-destructive">{dlError}</p>}
         </div>
