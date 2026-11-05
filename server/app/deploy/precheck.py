@@ -14,6 +14,14 @@ from sqlalchemy import Engine, text
 SERVER_DIR = Path(__file__).resolve().parents[2]
 
 
+class UnknownVersionError(Exception):
+    """alembic_version 里是本程序不认识的版本(数据库比程序新,或来自别的分支)。"""
+
+    def __init__(self, version: str):
+        super().__init__(version)
+        self.version = version
+
+
 @dataclass(frozen=True)
 class Check:
     revision: str
@@ -316,6 +324,8 @@ def pending_revisions(engine: Engine) -> list[str]:
             current = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
     if current is None:
         return ordered
+    if current not in ordered:
+        raise UnknownVersionError(current)
     return ordered[ordered.index(current) + 1 :]
 
 

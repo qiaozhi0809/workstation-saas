@@ -227,6 +227,9 @@ def migrate(ns: argparse.Namespace, *, engine: Engine, out: TextIO) -> int:
         command.upgrade(precheck.alembic_config(engine), "head")
         out.write(f"已迁移到 {precheck.head_revision(engine)}\n")
         return 0
+    except precheck.UnknownVersionError as exc:
+        out.write(f"数据库版本 {exc.version} 高于或不属于本程序版本,请使用对应版本的安装包\n")
+        return 1
     except Exception as exc:
         out.write(f"迁移失败:{type(exc).__name__}: {exc}\n")
         return 1

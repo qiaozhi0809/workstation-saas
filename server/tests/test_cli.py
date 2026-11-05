@@ -119,3 +119,15 @@ def test_migrate_other_error_exits_1():
     code, out = _migrate(bad)
     assert code == 1
     assert "迁移失败" in out
+
+
+def test_migrate_unknown_db_version_exits_1(fresh_engine):  # noqa: F811
+    from sqlalchemy import text as sql_text
+
+    upgrade_to(fresh_engine, "0001")
+    with fresh_engine.begin() as conn:
+        conn.execute(sql_text("UPDATE alembic_version SET version_num = '0099'"))
+    code, out = _migrate(fresh_engine)
+    assert code == 1
+    assert "数据库版本 0099 高于或不属于本程序版本,请使用对应版本的安装包" in out
+    assert current_version(fresh_engine) == "0099"
