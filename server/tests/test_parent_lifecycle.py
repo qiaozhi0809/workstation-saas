@@ -218,3 +218,44 @@ def test_archive_keeps_staff_account_without_current_binding(db):
         db.execute(text("SELECT status FROM users WHERE id = :u"), {"u": TEACHER04}).scalar_one()
         == "active"
     )
+
+
+def _collect(pubsub, want: int = 1, timeout: float = 2.0) -> list[dict]:
+    import json
+    import time
+
+    got: list[dict] = []
+    end = time.monotonic() + timeout
+    while time.monotonic() < end and len(got) < want:
+        msg = pubsub.get_message(ignore_subscribe_messages=True, timeout=0.1)
+        if msg:
+            got.append(json.loads(msg["data"]))
+    return got
+
+
+def test_archive_publishes_revoked(db, redis_client):
+    from app.ws.hub import CHANNEL, REVOKED
+
+    pubsub = redis_client.pubsub()
+    pubsub.subscribe(CHANNEL)
+    pubsub.get_message(timeout=1)  # 订阅确认
+    _age(db, PARENT02, "S0001")  # 只有一个孩子
+    res = archive_expired(db, SCHOOL, NOW, redis_client)
+    assert res.users == 1 and res.user_ids == [UUID(PARENT02)]
+    got = _collect(pubsub)
+    assert got == [{"user_ids": [PARENT02], "event": {"type": REVOKED}}]
+    pubsub.close()
+
+
+def test_archive_dry_run_does_not_publish(db, redis_client):
+    from app.ws.hub import CHANNEL
+
+    pubsub = redis_client.pubsub()
+    pubsub.subscribe(CHANNEL)
+    pubsub.get_message(timeout=1)
+    _age(db, PARENT02, "S0001")
+    res = archive_expired(db, SCHOOL, NOW, redis_client, dry_run=True)
+    assert res.users == 1
+    db.rollback()
+    assert _collect(pubsub, timeout=0.5) == []
+    pubsub.close()

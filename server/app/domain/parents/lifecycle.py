@@ -10,7 +10,7 @@
 """
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from uuid import UUID
 
@@ -22,6 +22,7 @@ from app.audit.service import record
 from app.auth import sessions
 from app.domain.parents.access import READONLY_DAYS
 from app.rbac.roles import PARENT_ROLES
+from app.ws import hub
 
 _PARENT_ROLES = sorted(r.value for r in PARENT_ROLES)
 
@@ -30,6 +31,7 @@ _PARENT_ROLES = sorted(r.value for r in PARENT_ROLES)
 class ArchiveResult:
     links: int
     users: int
+    user_ids: list[UUID] = field(default_factory=list)
 
 
 def close_links_for(db: Session, student_ids: Sequence[UUID], now: datetime) -> list[UUID]:
@@ -107,7 +109,9 @@ def archive_expired(
         if redis is not None:
             for uid in users:
                 sessions.revoke_all(redis, uid)
-    return ArchiveResult(links=len(links), users=len(users))
+            if users:
+                hub.publish(redis, users, {"type": hub.REVOKED})  # 踢掉已打开的 WebSocket
+    return ArchiveResult(links=len(links), users=len(users), user_ids=users)
 
 
 def archive_orphan_accounts(db: Session, user_ids: Sequence[UUID]) -> list[UUID]:
