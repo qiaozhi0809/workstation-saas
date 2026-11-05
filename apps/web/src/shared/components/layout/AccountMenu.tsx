@@ -26,7 +26,7 @@ export default function AccountMenu({ name, onLogout, switchTo, preferences = tr
         label="账号菜单"
         side="bottom"
         align="end"
-        triggerProps={{ variant: 'ghost', className: 'gap-1 px-1.5', 'aria-label': '账号菜单', title: name }}
+        triggerProps={{ variant: 'ghost', className: 'min-h-11 min-w-11 gap-1 px-1.5', 'aria-label': '账号菜单', title: name }}
         trigger={
           <>
             <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-sm font-medium text-primary-foreground">

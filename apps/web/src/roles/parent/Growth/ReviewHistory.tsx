@@ -41,8 +41,8 @@ export default function ReviewHistory({ sid }: { sid: string }) {
       <ul className="divide-y rounded-xl border bg-card px-3 text-card-foreground">
         {items.map((r) => (
           <li key={r.id} className="flex items-start gap-3 py-3">
-            <span className={cn('min-w-10 shrink-0 text-base font-semibold tabular-nums', r.score_delta >= 0 ? 'text-success' : 'text-destructive')}>
-              {r.score_delta >= 0 ? `+${r.score_delta}` : `${r.score_delta}`}
+            <span className={cn('min-w-10 shrink-0 text-base font-semibold tabular-nums', r.score_delta > 0 && 'text-success', r.score_delta < 0 && 'text-destructive', r.score_delta === 0 && 'text-muted-foreground')}>
+              {r.score_delta > 0 ? `+${r.score_delta}` : `${r.score_delta}`}
             </span>
             <div className="min-w-0 text-sm">
               <p className="break-words">{r.reason_text}</p>

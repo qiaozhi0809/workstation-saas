@@ -219,6 +219,14 @@ def test_profile_has_optional_sections_when_filled(client, settings, db):
     assert body["tags"] == ["近视"] and body["contacts"][0]["name"] == "李妈"
 
 
+def test_profile_omits_teacher_remark(client, settings, db):
+    s1 = sid(db, "S0001")
+    db.get(Student, s1).note = "老师的内部备注"
+    db.flush()
+    res = get(client, settings, f"/children/{s1}/profile")
+    assert "note" not in res.json() and "老师的内部备注" not in res.text
+
+
 def test_contacts_write_rules(client, settings, db):
     s1 = sid(db, "S0001")
     path = f"/api/v1/parent/children/{s1}/contacts"

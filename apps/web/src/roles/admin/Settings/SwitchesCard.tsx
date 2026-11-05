@@ -9,7 +9,8 @@ import { Button } from '@/shared/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card'
 import type { Switches } from '@/shared/types/admin'
 
-const PARENT_NOTE = '家长端上线后生效'
+const PARENT_NOTE = '家长端下次刷新即生效'
+const AI_NOTE = '对之后 AI 生成的评语生效'
 const MONITOR_NOTE = '监控上线后生效'
 
 const GROUPS: { title: string; items: { key: keyof Switches; label: string; note?: string }[] }[] = [
@@ -21,7 +22,7 @@ const GROUPS: { title: string; items: { key: keyof Switches; label: string; note
   { title: '家长端', items: [
     { key: 'parent_rank', label: '家长可见排名', note: PARENT_NOTE },
     { key: 'parent_negative_review', label: '家长收到负向点评', note: PARENT_NOTE },
-    { key: 'ai_review_before_send', label: 'AI 内容需审核后下发', note: PARENT_NOTE },
+    { key: 'ai_review_before_send', label: 'AI 内容需审核后下发', note: AI_NOTE },
   ] },
   { title: '监控', items: [
     { key: 'monitor', label: '监控模块总开关', note: MONITOR_NOTE },

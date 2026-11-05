@@ -1,4 +1,5 @@
 import { Monitor, Moon, Sun } from 'lucide-react'
+import { cn } from '@/shared/lib/utils'
 import { Button } from '@/shared/components/ui/button'
 import { nextThemeMode, useThemeStore, type ThemeMode } from './theme'
 
@@ -17,7 +18,7 @@ export default function ThemeToggle({ className, showLabel = false }: { classNam
     <Button
       variant="ghost"
       size={showLabel ? 'sm' : 'icon'}
-      className={className}
+      className={cn('min-h-11 min-w-11', className)}
       aria-label={label}
       title={label}
       onClick={() => setMode(nextThemeMode(mode))}

@@ -71,7 +71,8 @@
 | M2d 桌椅排列 | ✅ 已完成(tag `v0.4.5-m2d-desks`) | 12 task,文件:[`docs/superpowers/plans/2026-11-03-M2d-桌椅排列.md`](docs/superpowers/plans/2026-11-03-M2d-桌椅排列.md)、[范围清单](docs/superpowers/plans/2026-11-03-M2d-范围清单.md) |
 | M3a 管理底座与看全校 | ✅ 已完成(tag `v0.5.0-m3a-admin-org`,合并后由协调会话打) | 18 task,管理端壳、组织架构、账号、学校设置、今日关注、全校看板;文件:[M3a 计划](docs/superpowers/plans/2026-11-03-M3a-管理底座与看全校.md) |
 | M3b 联考报表、通知与学年 | ✅ 已完成(tag `v0.5.1-m3b-reports-notify`,合并后由协调会话打) | 18 task(1–18):年级联考与成绩汇总、月度考勤报告、审计查询、AI 使用与配置、通知与 WebSocket 实时推送、学年升级向导、往年班级只读查看;文件:[M3b 计划](docs/superpowers/plans/2026-11-03-M3b-联考报表通知与学年.md);M3 整体范围:[范围清单](docs/superpowers/plans/2026-11-03-M3-范围清单.md) |
-| M4 家长角色 | ⏳ 计划已写,待审阅 | 拆 M4a 家长账号与看孩子(11 task)/ M4b 通知到家长与回执(7 task);文件:[范围清单](docs/superpowers/plans/2026-11-04-M4-范围清单.md)、[M4a 计划](docs/superpowers/plans/2026-11-04-M4a-家长账号与看孩子.md)、[M4b 计划](docs/superpowers/plans/2026-11-04-M4b-通知到家长与回执.md) |
+| M4a 家长账号与看孩子 | ✅ 已完成(tag `v0.6.0-m4a-parent-view`,合并后由协调会话打) | 11 task:班主任建家长账号(登录名 = 手机号)、家长手机端今日 / 成长 / 成绩 / 档案、迷你教室、评语给家长看、毕业后只读 365 天再归档、台账 L12 前半 / L32 / L50;文件:[M4a 计划](docs/superpowers/plans/2026-11-04-M4a-家长账号与看孩子.md) |
+| M4b 通知到家长与回执 | ⏳ 计划已写,待开工 | 7 task:班级公告、管理端发家长、结构化回执与统计导出、家长端通知页签;文件:[M4b 计划](docs/superpowers/plans/2026-11-04-M4b-通知到家长与回执.md);M4 整体范围:[范围清单](docs/superpowers/plans/2026-11-04-M4-范围清单.md) |
 | M5 监控 + 部署 | ⏳ 未开始 | plan 待写 |
 
 ---
@@ -163,8 +164,8 @@ Step N+(1-k): Commit          → git add && git commit
 | 层 | 工具 | 命令 |
 |---|---|---|
 | 后端单元/集成 | pytest + testcontainers(真 Postgres / 真 Redis) | `cd server && uv run pytest` |
-| 前端单元 | Vitest + Testing Library | `cd apps/web && npm run test` |
-| 前端 E2E | Playwright(project 链 mutating → … → admin → m3b → readonly) | `cd apps/web && npm run e2e` |
+| 前端单元 | Vitest + Testing Library | `cd apps/web && npm run test`;只跑一部分并限制并发时写 `npx vitest run <目录> --maxWorkers=2 --minWorkers=1`(本机 vitest 2.1.9 只给 `--maxWorkers` 会报 minThreads 冲突) |
+| 前端 E2E | Playwright(project 链 mutating → … → admin → m3b → m4a → readonly) | `cd apps/web && npm run e2e` |
 | 后端 Lint | ruff | `uv run ruff check . && uv run ruff format --check .` |
 | 前端 Lint | ESLint + Prettier | `npm run lint` |
 
