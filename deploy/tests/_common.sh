@@ -5,6 +5,7 @@
 # 可用环境变量:
 #   WS_VERSION         镜像标签(默认 0.0.0-seg-b)
 #   WS_TEST_PROJECT    compose 项目名(默认 ws-m5a-b)
+#   WS_DEPLOY_SRC      部署目录来源(默认仓库的 deploy/prod;CI 指向解开的离线包目录)
 #   WS_HTTP_PORT / WS_HTTPS_PORT  宿主机端口(默认 18080 / 18443)
 # 本文件会设置 WS_INSTALL_SKIP_LOAD=1(镜像已在本机,跳过 docker load)与
 # WS_INSTALL_MIN_DISK_GB=1(降低磁盘门槛),这两个开关只用于测试。
@@ -94,7 +95,8 @@ sha256_of() {
 prepare_deploy_dir() {
   local dir="${1:-$DEPLOY}"
   mkdir -p "$dir"
-  cp -R "$ROOT/deploy/prod/." "$dir/"
+  # WS_DEPLOY_SRC 指向离线包解开的目录时,测的是包里的文件(CI deploy job);默认用仓库里的 deploy/prod
+  cp -R "${WS_DEPLOY_SRC:-$ROOT/deploy/prod}/." "$dir/"
   printf '%s\n' "$VERSION" >"$dir/VERSION"
 }
 

@@ -44,3 +44,6 @@ logs/
 
 # ---- Brainstorm mockups (local only) ----
 .superpowers/
+
+# 离线包构建产物(deploy/release/build-bundle.sh)
+/dist/
