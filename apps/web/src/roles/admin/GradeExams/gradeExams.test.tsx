@@ -10,25 +10,42 @@ import GradeExamsPage from './GradeExamsPage'
 
 vi.mock('@/shared/api/admin', () => ({
   adminApi: {
-    grades: vi.fn(), board: vi.fn(), gradeExams: vi.fn(), createGradeExam: vi.fn(), updateGradeExam: vi.fn(),
-    deleteGradeExam: vi.fn(), syncGradeExam: vi.fn(),
+    grades: vi.fn(),
+    board: vi.fn(),
+    gradeExams: vi.fn(),
+    createGradeExam: vi.fn(),
+    updateGradeExam: vi.fn(),
+    deleteGradeExam: vi.fn(),
+    syncGradeExam: vi.fn(),
   },
 }))
 vi.mock('@/shared/components/Toast', () => ({ toast: vi.fn() }))
 
-const boardOf = (...grades: { id: string; name: string }[]): BoardView =>
-  ({ grades, grade_id: null, classes: [] })
+const boardOf = (...grades: { id: string; name: string }[]): BoardView => ({
+  grades,
+  grade_id: null,
+  classes: [],
+})
 const G3 = { id: 'g3', name: '三年级' }
 const G4 = { id: 'g4', name: '四年级' }
 
 const exam = (over: Partial<GradeExam> = {}): GradeExam => ({
-  id: 'ge1', grade_id: 'g3', grade_name: '三年级', name: '十月联考', exam_type: '月考', date: '2026-10-20',
-  subjects: [{ name: '语文', full: 100 }, { name: '数学', full: 100 }],
+  id: 'ge1',
+  grade_id: 'g3',
+  grade_name: '三年级',
+  name: '十月联考',
+  exam_type: '月考',
+  date: '2026-10-20',
+  subjects: [
+    { name: '语文', full: 100 },
+    { name: '数学', full: 100 },
+  ],
   classes: [
     { class_id: 'c1', class_name: '三年一班', exam_id: 'e1', entered: 20, expected: 40 },
     { class_id: 'c2', class_name: '三年二班', exam_id: 'e2', entered: 40, expected: 40 },
   ],
-  missing_classes: [], ...over,
+  missing_classes: [],
+  ...over,
 })
 
 beforeEach(() => {
@@ -43,7 +60,9 @@ const renderPage = async () => {
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={client}>
-      <MemoryRouter><GradeExamsPage /></MemoryRouter>
+      <MemoryRouter>
+        <GradeExamsPage />
+      </MemoryRouter>
     </QueryClientProvider>,
   )
   await screen.findByText('十月联考')
@@ -60,8 +79,14 @@ it('lists the exams of the selected grade tab with per-class progress', async ()
   expect(r.getByText('语文、数学')).toBeInTheDocument()
   expect(r.getByText('三年一班 20/40')).toBeInTheDocument()
   expect(r.getByText('三年二班 40/40')).toBeInTheDocument()
-  expect(r.getByRole('progressbar', { name: '三年一班 录分进度' })).toHaveAttribute('aria-valuenow', '50')
-  expect(r.getByRole('link', { name: '查看汇总' })).toHaveAttribute('href', '/admin/reports/scores?exam=ge1')
+  expect(r.getByRole('progressbar', { name: '三年一班 录分进度' })).toHaveAttribute(
+    'aria-valuenow',
+    '50',
+  )
+  expect(r.getByRole('link', { name: '查看汇总' })).toHaveAttribute(
+    'href',
+    '/admin/reports/scores?exam=ge1',
+  )
 
   fireEvent.click(screen.getByRole('tab', { name: '四年级' }))
   await waitFor(() => expect(adminApi.gradeExams).toHaveBeenCalledWith('g4'))
@@ -97,13 +122,16 @@ it('shows no sync prompt when no class is missing', async () => {
 
 it('shows the backend message when delete is rejected with 409', async () => {
   vi.mocked(adminApi.deleteGradeExam).mockRejectedValue(
-    new ApiError(409, 'EXAM_HAS_SCORES', '三年一班已经录入了分数，不能删除'))
+    new ApiError(409, 'EXAM_HAS_SCORES', '三年一班已经录入了分数，不能删除'),
+  )
   await renderPage()
   fireEvent.click(within(row()).getByRole('button', { name: '删除' }))
   const dlg = await screen.findByRole('dialog')
   expect(adminApi.deleteGradeExam).not.toHaveBeenCalled()
   fireEvent.click(within(dlg).getByRole('button', { name: '确认删除' }))
-  expect(await within(dlg).findByRole('alert')).toHaveTextContent('三年一班已经录入了分数，不能删除')
+  expect(await within(dlg).findByRole('alert')).toHaveTextContent(
+    '三年一班已经录入了分数，不能删除',
+  )
   expect(screen.getByRole('dialog')).toBeInTheDocument()
 })
 
@@ -144,8 +172,15 @@ it('creates a grade exam for the selected grade', async () => {
   fireEvent.click(within(dlg).getByRole('button', { name: '保存' }))
   await waitFor(() => expect(adminApi.createGradeExam).toHaveBeenCalledTimes(1))
   expect(adminApi.createGradeExam).toHaveBeenCalledWith({
-    grade_id: 'g3', name: '期中联考', exam_type: '期中', date: '2026-11-05',
-    subjects: [{ name: '语文', full: 100 }, { name: '数学', full: 100 }, { name: '英语', full: 120 }],
+    grade_id: 'g3',
+    name: '期中联考',
+    exam_type: '期中',
+    date: '2026-11-05',
+    subjects: [
+      { name: '语文', full: 100 },
+      { name: '数学', full: 100 },
+      { name: '英语', full: 120 },
+    ],
   })
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 })
@@ -165,26 +200,38 @@ it('rejects an invalid full mark and an empty name locally', async () => {
 
 it('edits an exam keeping its grade and shows the backend message on 409', async () => {
   vi.mocked(adminApi.updateGradeExam).mockRejectedValue(
-    new ApiError(409, 'EXAM_HAS_SCORES', '「数学」已有成绩,不能去掉', { subject: '数学' }))
+    new ApiError(409, 'EXAM_HAS_SCORES', '「数学」已有成绩,不能去掉', { subject: '数学' }),
+  )
   await renderPage()
   fireEvent.click(within(row()).getByRole('button', { name: '编辑' }))
   const dlg = await screen.findByRole('dialog')
   expect(within(dlg).getByLabelText('考试名称')).toHaveValue('十月联考')
   fireEvent.click(within(dlg).getByRole('button', { name: '删除科目 2' }))
   fireEvent.click(within(dlg).getByRole('button', { name: '保存' }))
-  await waitFor(() => expect(adminApi.updateGradeExam).toHaveBeenCalledWith('ge1', {
-    grade_id: 'g3', name: '十月联考', exam_type: '月考', date: '2026-10-20', subjects: [{ name: '语文', full: 100 }],
-  }))
+  await waitFor(() =>
+    expect(adminApi.updateGradeExam).toHaveBeenCalledWith('ge1', {
+      grade_id: 'g3',
+      name: '十月联考',
+      exam_type: '月考',
+      date: '2026-10-20',
+      subjects: [{ name: '语文', full: 100 }],
+    }),
+  )
   expect(await within(dlg).findByRole('alert')).toHaveTextContent('「数学」已有成绩,不能去掉')
 })
 
 it('shows the subject-naming message when lowering full below recorded scores (409)', async () => {
   vi.mocked(adminApi.updateGradeExam).mockRejectedValue(
-    new ApiError(409, 'SCORE_ABOVE_FULL', '「语文」的满分不能低于已录入的最高分', { subject: '语文' }))
+    new ApiError(409, 'SCORE_ABOVE_FULL', '「语文」的满分不能低于已录入的最高分', {
+      subject: '语文',
+    }),
+  )
   await renderPage()
   fireEvent.click(within(row()).getByRole('button', { name: '编辑' }))
   const dlg = await screen.findByRole('dialog')
   fireEvent.change(within(dlg).getByLabelText('科目 1 满分'), { target: { value: '90' } })
   fireEvent.click(within(dlg).getByRole('button', { name: '保存' }))
-  expect(await within(dlg).findByRole('alert')).toHaveTextContent('「语文」的满分不能低于已录入的最高分')
+  expect(await within(dlg).findByRole('alert')).toHaveTextContent(
+    '「语文」的满分不能低于已录入的最高分',
+  )
 })

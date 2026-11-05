@@ -10,7 +10,14 @@ import ExamDetail from './ExamDetail'
 function ExamList({ sid }: { sid: string }) {
   const [openId, setOpenId] = useState<string | null>(null)
   const q = useQuery({ queryKey: ['parent', sid, 'exams'], queryFn: () => parentApi.exams(sid) })
-  if (q.isError) return <ErrorState title="考试列表加载失败" onRetry={() => void q.refetch()} retrying={q.isFetching} />
+  if (q.isError)
+    return (
+      <ErrorState
+        title="考试列表加载失败"
+        onRetry={() => void q.refetch()}
+        retrying={q.isFetching}
+      />
+    )
   if (!q.data) return <LoadingState />
   if (q.data.length === 0) return <EmptyState title="还没有考试成绩" />
   return (
@@ -27,9 +34,15 @@ function ExamList({ sid }: { sid: string }) {
               className="flex min-h-11 w-full flex-col items-start gap-0.5 rounded-xl px-4 py-3 text-left"
             >
               <span className="text-base font-medium">{e.name}</span>
-              <span className="text-xs text-muted-foreground">{e.date} · {e.year_name} · {e.class_name}</span>
+              <span className="text-xs text-muted-foreground">
+                {e.date} · {e.year_name} · {e.class_name}
+              </span>
             </button>
-            {open && <div id={`exam-panel-${e.id}`} className="border-t px-4 py-3"><ExamDetail sid={sid} examId={e.id} /></div>}
+            {open && (
+              <div id={`exam-panel-${e.id}`} className="border-t px-4 py-3">
+                <ExamDetail sid={sid} examId={e.id} />
+              </div>
+            )}
           </li>
         )
       })}

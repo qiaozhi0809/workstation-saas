@@ -11,8 +11,12 @@ import BoardEditor from './BoardEditor'
 vi.mock('@/shared/api/classroom', () => ({ classroomApi: { saveBoard: vi.fn() } }))
 
 const base: Board = {
-  left_title: '今日课程', left_text: '', right_title: '今日事项', right_text: '',
-  countdown_label: null, countdown_date: null,
+  left_title: '今日课程',
+  left_text: '',
+  right_title: '今日事项',
+  right_text: '',
+  countdown_label: null,
+  countdown_date: null,
 }
 const onClose = vi.fn()
 
@@ -21,7 +25,10 @@ function renderEditor(board: Board = base) {
   const invalidate = vi.spyOn(client, 'invalidateQueries')
   render(
     <QueryClientProvider client={client}>
-      <MemoryRouter><BoardEditor classId="c1" board={board} onClose={onClose} /><Toaster /></MemoryRouter>
+      <MemoryRouter>
+        <BoardEditor classId="c1" board={board} onClose={onClose} />
+        <Toaster />
+      </MemoryRouter>
     </QueryClientProvider>,
   )
   return { invalidate }
@@ -33,8 +40,14 @@ beforeEach(() => {
 })
 
 it('blocks a fifth line and a half-filled countdown, then saves', async () => {
-  renderEditor({ left_title: '今日课程', left_text: '', right_title: '今日事项', right_text: '',
-    countdown_label: null, countdown_date: null })
+  renderEditor({
+    left_title: '今日课程',
+    left_text: '',
+    right_title: '今日事项',
+    right_text: '',
+    countdown_label: null,
+    countdown_date: null,
+  })
   fireEvent.change(screen.getByLabelText('左黑板内容'), { target: { value: '1\n2\n3\n4\n5' } })
   fireEvent.click(screen.getByRole('button', { name: '保存' }))
   expect(await screen.findByText('每块黑板最多 4 行')).toBeInTheDocument()
@@ -44,8 +57,16 @@ it('blocks a fifth line and a half-filled countdown, then saves', async () => {
   expect(await screen.findByText('倒计时名称和日期要一起填')).toBeInTheDocument()
   fireEvent.change(screen.getByLabelText('倒计时日期'), { target: { value: '2027-01-15' } })
   fireEvent.click(screen.getByRole('button', { name: '保存' }))
-  await waitFor(() => expect(classroomApi.saveBoard).toHaveBeenCalledWith('c1', expect.objectContaining({
-    left_text: '1 语文', countdown_label: '期末考试', countdown_date: '2027-01-15' })))
+  await waitFor(() =>
+    expect(classroomApi.saveBoard).toHaveBeenCalledWith(
+      'c1',
+      expect.objectContaining({
+        left_text: '1 语文',
+        countdown_label: '期末考试',
+        countdown_date: '2027-01-15',
+      }),
+    ),
+  )
 })
 
 it('invalidates the summary and closes after saving, with empty countdown as null', async () => {
@@ -83,7 +104,11 @@ it('shows the server error and stays open', async () => {
 
 it('ignores a second submit while saving', async () => {
   let resolve!: (b: Board) => void
-  vi.mocked(classroomApi.saveBoard).mockReturnValue(new Promise<Board>((r) => { resolve = r }))
+  vi.mocked(classroomApi.saveBoard).mockReturnValue(
+    new Promise<Board>((r) => {
+      resolve = r
+    }),
+  )
   renderEditor()
   const save = screen.getByRole('button', { name: '保存' })
   fireEvent.click(save)

@@ -11,7 +11,13 @@ import { NativeSelect } from '@/shared/components/ui/native-select'
 import { aiLink } from '@/shared/lib/aiLink'
 import type { ClassPerm } from '@/shared/types/classroom'
 import {
-  attention, examStats, examTable, latestExam, previousExam, rankChanges, subjectStats,
+  attention,
+  examStats,
+  examTable,
+  latestExam,
+  previousExam,
+  rankChanges,
+  subjectStats,
 } from '@/shared/lib/grades'
 import { useStudentDrawer } from '../StudentProfile/useStudentDrawer'
 import ClassGate from '../ClassGate'
@@ -23,11 +29,25 @@ import { SubjectRateChart } from './SubjectRateChart'
 import { SubjectTable } from './SubjectTable'
 import { TrendGrid } from './TrendGrid'
 
-function AnalysisBody({ classId, perms, chartWidth }: { classId: string; perms: ClassPerm[]; chartWidth?: number }) {
+function AnalysisBody({
+  classId,
+  perms,
+  chartWidth,
+}: {
+  classId: string
+  perms: ClassPerm[]
+  chartWidth?: number
+}) {
   const [params, setParams] = useSearchParams()
   const navigate = useNavigate()
-  const book = useQuery({ queryKey: ['gradebook', classId], queryFn: () => examsApi.gradebook(classId) })
-  const roster = useQuery({ queryKey: ['class-students', classId], queryFn: () => studentsApi.listInClass(classId) })
+  const book = useQuery({
+    queryKey: ['gradebook', classId],
+    queryFn: () => examsApi.gradebook(classId),
+  })
+  const roster = useQuery({
+    queryKey: ['class-students', classId],
+    queryFn: () => studentsApi.listInClass(classId),
+  })
 
   const examParam = params.get('exam')
   const cmpParam = params.get('cmp')
@@ -51,8 +71,10 @@ function AnalysisBody({ classId, perms, chartWidth }: { classId: string; perms: 
   const view = useMemo(() => {
     const current = scored.find((e) => e.id === examParam) ?? latestExam(scored)
     if (!current) return null
-    const cmpExam = cmpParam === 'none' ? null
-      : scored.find((e) => e.id === cmpParam) ?? previousExam(scored, current.id)
+    const cmpExam =
+      cmpParam === 'none'
+        ? null
+        : (scored.find((e) => e.id === cmpParam) ?? previousExam(scored, current.id))
     const cur = examStats(current, ids)
     if (!cur) return null
     const cmp = cmpExam ? examStats(cmpExam, ids) : null
@@ -60,21 +82,45 @@ function AnalysisBody({ classId, perms, chartWidth }: { classId: string; perms: 
     const prevRows = cmpExam ? examTable(cmpExam, ids) : null
     const changes = prevRows ? rankChanges(rows, prevRows) : null
     const subjectNow = current.subjects.flatMap((s) => subjectStats(current, s.name, ids) ?? [])
-    const subjectPrev = cmpExam ? cmpExam.subjects.flatMap((s) => subjectStats(cmpExam, s.name, ids) ?? []) : null
+    const subjectPrev = cmpExam
+      ? cmpExam.subjects.flatMap((s) => subjectStats(cmpExam, s.name, ids) ?? [])
+      : null
     return {
-      current, cmpExam, cur, cmp, rows, changes, subjectNow, subjectPrev,
+      current,
+      cmpExam,
+      cur,
+      cmp,
+      rows,
+      changes,
+      subjectNow,
+      subjectPrev,
       attn: attention(current, rows, changes ?? new Map()),
     }
   }, [scored, ids, examParam, cmpParam])
 
   if (book.isLoading || roster.isLoading) return <LoadingState />
   if (!book.data || !roster.data) {
-    return <ErrorState title="成绩加载失败" retrying={book.isFetching || roster.isFetching} onRetry={() => { void book.refetch(); void roster.refetch() }} />
+    return (
+      <ErrorState
+        title="成绩加载失败"
+        retrying={book.isFetching || roster.isFetching}
+        onRetry={() => {
+          void book.refetch()
+          void roster.refetch()
+        }}
+      />
+    )
   }
   if (!view) {
     return (
-      <EmptyState title="还没有考试成绩"
-        action={<Link to="/teacher/scores" className="text-sm text-primary underline">去录入成绩</Link>} />
+      <EmptyState
+        title="还没有考试成绩"
+        action={
+          <Link to="/teacher/scores" className="text-sm text-primary underline">
+            去录入成绩
+          </Link>
+        }
+      />
     )
   }
   const { current, cmpExam, cur, cmp, rows, changes, subjectNow, subjectPrev, attn } = view
@@ -95,31 +141,61 @@ function AnalysisBody({ classId, perms, chartWidth }: { classId: string; perms: 
       <div className="flex flex-wrap gap-4">
         <label className="flex items-center gap-2 text-sm">
           考试
-          <NativeSelect value={current.id}
-            onChange={(e) => update((p) => { p.set('exam', e.target.value); p.delete('cmp') })}>
-            {scored.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+          <NativeSelect
+            value={current.id}
+            onChange={(e) =>
+              update((p) => {
+                p.set('exam', e.target.value)
+                p.delete('cmp')
+              })
+            }
+          >
+            {scored.map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.name}
+              </option>
+            ))}
           </NativeSelect>
         </label>
         <label className="flex items-center gap-2 text-sm">
           对比
-          <NativeSelect value={cmpExam?.id ?? 'none'} onChange={(e) => update((p) => p.set('cmp', e.target.value))}>
+          <NativeSelect
+            value={cmpExam?.id ?? 'none'}
+            onChange={(e) => update((p) => p.set('cmp', e.target.value))}
+          >
             <option value="none">不对比</option>
-            {scored.filter((e) => e.id !== current.id || cmpExam?.id === e.id).map((e) => (
-              <option key={e.id} value={e.id}>{e.name}</option>
-            ))}
+            {scored
+              .filter((e) => e.id !== current.id || cmpExam?.id === e.id)
+              .map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.name}
+                </option>
+              ))}
           </NativeSelect>
         </label>
         {/* AI 快捷入口:跟随选择器换行;不对比时链接不带对比考试 */}
         <div className="ml-auto flex flex-wrap gap-2">
           {perms.includes('ai.use') && (
-            <Button variant="outline" size="sm"
-              onClick={() => navigate(aiLink({ tpl: 'report', examId: current.id, compareExamId: cmpExam?.id }))}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                navigate(aiLink({ tpl: 'report', examId: current.id, compareExamId: cmpExam?.id }))
+              }
+            >
               AI 写分析报告
             </Button>
           )}
           {perms.includes('ai.class') && cmpExam && (
-            <Button variant="outline" size="sm"
-              onClick={() => navigate(aiLink({ tpl: 'parent-batch', examId: current.id, compareExamId: cmpExam.id }))}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                navigate(
+                  aiLink({ tpl: 'parent-batch', examId: current.id, compareExamId: cmpExam.id }),
+                )
+              }
+            >
               给退步同学家长写沟通消息
             </Button>
           )}
@@ -132,9 +208,19 @@ function AnalysisBody({ classId, perms, chartWidth }: { classId: string; perms: 
       </div>
       <TrendGrid book={scored} ids={ids} width={chartWidth} />
       <div className="grid items-start gap-4 lg:grid-cols-[2fr_1fr]">
-        <RankTable subjects={current.subjects} rows={rows} changes={changes} names={names} onOpen={openStudent} />
-        <AttentionPanel attention={attn} names={names} showFailing={current.subjects.length >= 2}
-          onOpen={openStudent} />
+        <RankTable
+          subjects={current.subjects}
+          rows={rows}
+          changes={changes}
+          names={names}
+          onOpen={openStudent}
+        />
+        <AttentionPanel
+          attention={attn}
+          names={names}
+          showFailing={current.subjects.length >= 2}
+          onOpen={openStudent}
+        />
       </div>
       <SubjectTable stats={subjectNow} prev={subjectPrev} />
     </div>

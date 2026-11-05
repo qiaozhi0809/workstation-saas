@@ -18,18 +18,33 @@ it('mode bar moves focus with arrow keys and switches on click only', () => {
   expect(onChange).toHaveBeenCalledWith('attendance')
 })
 
-const dock = (over: Partial<ClassroomDockProps> = {}) => render(
-  <ClassroomDock mode="daily" perms={[]} onModeChange={vi.fn()} actions={<button>甲</button>}
-    common={<button>乙</button>} status="保存中…" presenting={false} onTogglePresent={vi.fn()}
-    onOpenPanel={vi.fn()} {...over} />,
-)
+const dock = (over: Partial<ClassroomDockProps> = {}) =>
+  render(
+    <ClassroomDock
+      mode="daily"
+      perms={[]}
+      onModeChange={vi.fn()}
+      actions={<button>甲</button>}
+      common={<button>乙</button>}
+      status="保存中…"
+      presenting={false}
+      onTogglePresent={vi.fn()}
+      onOpenPanel={vi.fn()}
+      {...over}
+    />,
+  )
 
 it('puts tabs, mode actions, common actions, status and fullscreen / 待办与点评 into one toolbar in that order', () => {
   dock()
   const bar = screen.getByRole('toolbar', { name: '教室工具' })
-  const order = [...bar.querySelectorAll('[role="tab"], button, [role="status"]')].map((el) => el.getAttribute('aria-label') ?? el.textContent)
+  const order = [...bar.querySelectorAll('[role="tab"], button, [role="status"]')].map(
+    (el) => el.getAttribute('aria-label') ?? el.textContent,
+  )
   expect(order).toEqual(['日常', '甲', '乙', '保存中…', '全屏', '待办与点评'])
-  expect(within(bar).getByRole('button', { name: '待办与点评' })).toHaveAttribute('aria-haspopup', 'dialog')
+  expect(within(bar).getByRole('button', { name: '待办与点评' })).toHaveAttribute(
+    'aria-haspopup',
+    'dialog',
+  )
 })
 
 it('calls onOpenPanel from the 待办与点评 button', () => {
@@ -46,7 +61,10 @@ it('shows 退出全屏 and hides 待办与点评 while presenting', () => {
 })
 
 it('draws a separator only before a non-empty actions or common zone', () => {
-  const seps = () => screen.getByRole('toolbar', { name: '教室工具' }).querySelectorAll('[data-orientation="vertical"]').length
+  const seps = () =>
+    screen
+      .getByRole('toolbar', { name: '教室工具' })
+      .querySelectorAll('[data-orientation="vertical"]').length
   const { unmount } = dock()
   expect(seps()).toBe(2)
   unmount()
@@ -74,15 +92,29 @@ it('shows 全屏 and 待办与点评 as icon-only buttons that keep their names 
 })
 
 it('renders one 更多操作 menu from the menu items, after the common zone, and none without items', () => {
-  const { unmount } = dock({ menu: <><MenuItem onSelect={vi.fn()}>丙</MenuItem><MenuItem onSelect={vi.fn()}>丁</MenuItem></> })
+  const { unmount } = dock({
+    menu: (
+      <>
+        <MenuItem onSelect={vi.fn()}>丙</MenuItem>
+        <MenuItem onSelect={vi.fn()}>丁</MenuItem>
+      </>
+    ),
+  })
   const bar = screen.getByRole('toolbar', { name: '教室工具' })
   const more = within(bar).getByRole('button', { name: '更多操作' })
   expect(more).toHaveAttribute('title', '更多操作')
   expect(within(bar).getAllByRole('button', { name: '更多操作' })).toHaveLength(1)
-  expect([...bar.querySelectorAll('[role="tab"], button, [role="status"]')].map((el) => el.getAttribute('aria-label') ?? el.textContent))
-    .toEqual(['日常', '甲', '乙', '更多操作', '保存中…', '全屏', '待办与点评'])
+  expect(
+    [...bar.querySelectorAll('[role="tab"], button, [role="status"]')].map(
+      (el) => el.getAttribute('aria-label') ?? el.textContent,
+    ),
+  ).toEqual(['日常', '甲', '乙', '更多操作', '保存中…', '全屏', '待办与点评'])
   fireEvent.click(more)
-  expect(within(screen.getByRole('menu', { name: '更多操作' })).getAllByRole('menuitem').map((i) => i.textContent)).toEqual(['丙', '丁'])
+  expect(
+    within(screen.getByRole('menu', { name: '更多操作' }))
+      .getAllByRole('menuitem')
+      .map((i) => i.textContent),
+  ).toEqual(['丙', '丁'])
   unmount()
   dock()
   expect(screen.queryByRole('button', { name: '更多操作' })).toBeNull()

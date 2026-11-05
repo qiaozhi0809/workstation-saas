@@ -62,10 +62,18 @@ export function useAttendanceMode(o: Options) {
       const prev = qc.getQueryData<AttendanceDay>(key)
       const base: AttendanceDay = prev ?? { date: date!, confirmed_at: null, items: [] }
       const rest = base.items.filter((i) => i.enrollment_id !== v.enrollmentId)
-      const items = v.status === 'present' ? rest : [
-        ...rest,
-        { enrollment_id: v.enrollmentId, status: v.status, reason: null, marked_at: new Date(0).toISOString() },
-      ]
+      const items =
+        v.status === 'present'
+          ? rest
+          : [
+              ...rest,
+              {
+                enrollment_id: v.enrollmentId,
+                status: v.status,
+                reason: null,
+                marked_at: new Date(0).toISOString(),
+              },
+            ]
       qc.setQueryData<AttendanceDay>(key, { ...base, items })
       return { prev }
     },
@@ -82,16 +90,22 @@ export function useAttendanceMode(o: Options) {
   })
 
   const confirm = useMutation({
-    mutationFn: (clearExceptions: boolean) => attendanceApi.confirm(classId, date!, clearExceptions),
+    mutationFn: (clearExceptions: boolean) =>
+      attendanceApi.confirm(classId, date!, clearExceptions),
     onSuccess: (d) => qc.setQueryData(key, d),
     onError: (err) => toast(err.message),
   })
 
   const onSeatClick = (seat: StudentSeat) => {
-    if (!canWrite) { toast(NO_WRITE); return }
+    if (!canWrite) {
+      toast(NO_WRITE)
+      return
+    }
     if (!date) return
     // 以点击时缓存里的最新值为准,连点才能依次轮转
-    const cur = qc.getQueryData<AttendanceDay>(key)?.items.find((i) => i.enrollment_id === seat.enrollment_id)
+    const cur = qc
+      .getQueryData<AttendanceDay>(key)
+      ?.items.find((i) => i.enrollment_id === seat.enrollment_id)
     mark.mutate({ enrollmentId: seat.enrollment_id, status: nextStatus(cur?.status ?? 'present') })
   }
 
@@ -120,7 +134,9 @@ export function useAttendanceMode(o: Options) {
         leave={count('leave')}
         absent={count('absent')}
         late={count('late')}
-        confirmedAt={day.data?.confirmed_at ? formatInTz(day.data.confirmed_at, o.timezone).slice(11) : null}
+        confirmedAt={
+          day.data?.confirmed_at ? formatInTz(day.data.confirmed_at, o.timezone).slice(11) : null
+        }
         boardVisible={o.boardVisible}
         canWrite={canWrite}
         busy={confirm.isPending}
@@ -129,15 +145,21 @@ export function useAttendanceMode(o: Options) {
         onConfirm={() => confirm.mutate(false)}
         onAllPresent={() => {
           // 一键全部出勤会清掉当天已记的异常:有记录时先确认
-          if (items.length > 0 && !window.confirm(
-            `将清除${date === o.today ? '今天' : '这一天'}已记的 ${items.length} 条请假/缺勤/迟到,确定全部出勤吗?`,
-          )) return
+          if (
+            items.length > 0 &&
+            !window.confirm(
+              `将清除${date === o.today ? '今天' : '这一天'}已记的 ${items.length} 条请假/缺勤/迟到,确定全部出勤吗?`,
+            )
+          )
+            return
           confirm.mutate(true)
         }}
       />
     )
   }
   // 导出本月在操作台的"更多操作"菜单里(考勤自己的项,排在随机点名 / 编辑黑板之前)
-  const menu: ReactNode = bar ? <MenuItem onSelect={() => void exportMonth()}>导出本月</MenuItem> : null
+  const menu: ReactNode = bar ? (
+    <MenuItem onSelect={() => void exportMonth()}>导出本月</MenuItem>
+  ) : null
   return { views, onSeatClick, bar, menu, day: day.data }
 }

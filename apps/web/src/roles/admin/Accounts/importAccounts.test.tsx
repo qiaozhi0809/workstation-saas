@@ -12,38 +12,80 @@ vi.mock('@/shared/api/admin', () => ({
   adminApi: { accounts: vi.fn(), importPreview: vi.fn(), importAccounts: vi.fn() },
 }))
 vi.mock('@/shared/components/Toast', () => ({ toast: vi.fn() }))
-vi.mock('@/shared/lib/csv', async (orig) => ({ ...(await orig<typeof import('@/shared/lib/csv')>()), downloadText: vi.fn() }))
+vi.mock('@/shared/lib/csv', async (orig) => ({
+  ...(await orig<typeof import('@/shared/lib/csv')>()),
+  downloadText: vi.fn(),
+}))
 
-const CSV = '登录名,姓名,工号,科目,手机\nteacher11,孙一,T011,语文,13800000011\nteacher12,钱二,,数学、英语,\n'
+const CSV =
+  '登录名,姓名,工号,科目,手机\nteacher11,孙一,T011,语文,13800000011\nteacher12,钱二,,数学、英语,\n'
 const row = (over: Partial<ImportRow>): ImportRow => ({
-  line: 2, login_name: 'teacher11', display_name: '孙一', employee_no: 'T011', subjects: ['语文'], phone: '13800000011', error: null, ...over,
+  line: 2,
+  login_name: 'teacher11',
+  display_name: '孙一',
+  employee_no: 'T011',
+  subjects: ['语文'],
+  phone: '13800000011',
+  error: null,
+  ...over,
 })
-const goodRows = [row({}), row({ line: 3, login_name: 'teacher12', display_name: '钱二', employee_no: null, subjects: ['数学', '英语'], phone: null })]
+const goodRows = [
+  row({}),
+  row({
+    line: 3,
+    login_name: 'teacher12',
+    display_name: '钱二',
+    employee_no: null,
+    subjects: ['数学', '英语'],
+    phone: null,
+  }),
+]
 
 let client: QueryClient
 beforeEach(() => {
   vi.resetAllMocks()
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   useAuthStore.setState({
-    accessToken: 'a', refreshToken: 'r',
-    user: { id: 'me', display_name: '陈校长', contexts: ['admin'], admin_perms: ['account.manage'], must_change_password: false },
+    accessToken: 'a',
+    refreshToken: 'r',
+    user: {
+      id: 'me',
+      display_name: '陈校长',
+      contexts: ['admin'],
+      admin_perms: ['account.manage'],
+      must_change_password: false,
+    },
   })
   vi.mocked(adminApi.accounts).mockResolvedValue({ items: [], total: 0 })
 })
-afterEach(() => { cleanup(); useAuthStore.getState().logout() })
+afterEach(() => {
+  cleanup()
+  useAuthStore.getState().logout()
+})
 
 const openImport = async () => {
-  render(<QueryClientProvider client={client}><AccountsPage /></QueryClientProvider>)
+  render(
+    <QueryClientProvider client={client}>
+      <AccountsPage />
+    </QueryClientProvider>,
+  )
   await screen.findByRole('button', { name: '批量导入' })
   fireEvent.click(screen.getByRole('button', { name: '批量导入' }))
   return screen.findByRole('dialog')
 }
 const pick = (csv: string) => {
-  fireEvent.change(screen.getByLabelText('选择 CSV 文件'), { target: { files: [new File(['\uFEFF' + csv], 'a.csv', { type: 'text/csv' })] } })
+  fireEvent.change(screen.getByLabelText('选择 CSV 文件'), {
+    target: { files: [new File(['\uFEFF' + csv], 'a.csv', { type: 'text/csv' })] },
+  })
 }
 
 it('marks bad rows red and disables the confirm button', async () => {
-  vi.mocked(adminApi.importPreview).mockResolvedValue({ rows: [row({}), row({ line: 3, login_name: 'teacher01', display_name: '钱二', error: '登录名已存在' })] })
+  vi.mocked(adminApi.importPreview).mockResolvedValue({
+    rows: [
+      row({}),
+      row({ line: 3, login_name: 'teacher01', display_name: '钱二', error: '登录名已存在' }),
+    ],
+  })
   await openImport()
   pick(CSV)
   await waitFor(() => expect(adminApi.importPreview).toHaveBeenCalledWith(CSV))
@@ -55,10 +97,12 @@ it('marks bad rows red and disables the confirm button', async () => {
 
 it('imports valid rows and lists every temp password, downloadable as CSV, gone after close', async () => {
   vi.mocked(adminApi.importPreview).mockResolvedValue({ rows: goodRows })
-  vi.mocked(adminApi.importAccounts).mockResolvedValue({ created: [
-    { login_name: 'teacher11', display_name: '孙一', temp_password: 'Pw1aaaaaaa' },
-    { login_name: 'teacher12', display_name: '钱二', temp_password: 'Pw2bbbbbbb' },
-  ] })
+  vi.mocked(adminApi.importAccounts).mockResolvedValue({
+    created: [
+      { login_name: 'teacher11', display_name: '孙一', temp_password: 'Pw1aaaaaaa' },
+      { login_name: 'teacher12', display_name: '钱二', temp_password: 'Pw2bbbbbbb' },
+    ],
+  })
   await openImport()
   pick(CSV)
   const confirm = await screen.findByRole('button', { name: '确认导入' })
@@ -77,13 +121,24 @@ it('imports valid rows and lists every temp password, downloadable as CSV, gone 
   fireEvent.click(within(dlg).getAllByRole('button', { name: '关闭' })[0])
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   expect(document.body.textContent).not.toContain('Pw1aaaaaaa')
-  const dump = JSON.stringify([client.getQueryCache().getAll().map((q) => q.state.data), client.getMutationCache().getAll().map((m) => m.state.data)])
+  const dump = JSON.stringify([
+    client
+      .getQueryCache()
+      .getAll()
+      .map((q) => q.state.data),
+    client
+      .getMutationCache()
+      .getAll()
+      .map((m) => m.state.data),
+  ])
   expect(dump).not.toContain('Pw1aaaaaaa')
 })
 
 it('shows the backend message when importing fails', async () => {
   vi.mocked(adminApi.importPreview).mockResolvedValue({ rows: goodRows })
-  vi.mocked(adminApi.importAccounts).mockRejectedValue(new ApiError(400, 'IMPORT_INVALID', '有 1 行不合格(后端)'))
+  vi.mocked(adminApi.importAccounts).mockRejectedValue(
+    new ApiError(400, 'IMPORT_INVALID', '有 1 行不合格(后端)'),
+  )
   await openImport()
   pick(CSV)
   const confirm = await screen.findByRole('button', { name: '确认导入' })
@@ -105,7 +160,12 @@ it('previews pasted text and offers the template download', async () => {
 it('discards a stale preview that resolves after a newer one', async () => {
   let first!: (v: { rows: ImportRow[] }) => void
   vi.mocked(adminApi.importPreview)
-    .mockImplementationOnce(() => new Promise((r) => { first = r }))
+    .mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          first = r
+        }),
+    )
     .mockResolvedValueOnce({ rows: [row({ login_name: 'newer01' })] })
   await openImport()
   fireEvent.change(screen.getByLabelText('粘贴 CSV 内容'), { target: { value: CSV } })
@@ -121,9 +181,9 @@ it('discards a stale preview that resolves after a newer one', async () => {
 
 it('offers the CSV download even when only one account was imported', async () => {
   vi.mocked(adminApi.importPreview).mockResolvedValue({ rows: [row({})] })
-  vi.mocked(adminApi.importAccounts).mockResolvedValue({ created: [
-    { login_name: 'teacher11', display_name: '孙一', temp_password: 'Pw1aaaaaaa' },
-  ] })
+  vi.mocked(adminApi.importAccounts).mockResolvedValue({
+    created: [{ login_name: 'teacher11', display_name: '孙一', temp_password: 'Pw1aaaaaaa' }],
+  })
   await openImport()
   pick(CSV)
   const confirm = await screen.findByRole('button', { name: '确认导入' })

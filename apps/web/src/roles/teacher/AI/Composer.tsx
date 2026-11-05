@@ -15,7 +15,11 @@ import CopyPromptDialog from './CopyPromptDialog'
 import MaskToggle from './MaskToggle'
 
 /** 自由对话输入框:文字 + 资料开关;已配置直接开对话,未配置生成可复制的提示词。 */
-export default function Composer({ classId, status, canReadExams }: {
+export default function Composer({
+  classId,
+  status,
+  canReadExams,
+}: {
   classId: string
   status: AiStatus | undefined
   canReadExams: boolean
@@ -50,16 +54,27 @@ export default function Composer({ classId, status, canReadExams }: {
   })
   const send = useMutation({
     mutationFn: async (): Promise<{ chatId: string } | { prompt: AiPrompt }> =>
-      configured ? { chatId: (await aiApi.createChat(body())).id } : { prompt: await aiApi.prompt(body()) },
+      configured
+        ? { chatId: (await aiApi.createChat(body())).id }
+        : { prompt: await aiApi.prompt(body()) },
     onSuccess: (res) => {
       if ('chatId' in res) navigate(`/teacher/ai/${res.chatId}?go=1`)
       else setPrompt(res.prompt)
     },
-    onError: (e) => toast(e instanceof ApiError ? e.message : configured ? '发送失败,请重试' : '生成提示词失败,请重试'),
+    onError: (e) =>
+      toast(
+        e instanceof ApiError
+          ? e.message
+          : configured
+            ? '发送失败,请重试'
+            : '生成提示词失败,请重试',
+      ),
   })
 
   const canSend = status !== undefined && text.trim().length > 0 && !send.isPending
-  const submit = () => { if (canSend) send.mutate() }
+  const submit = () => {
+    if (canSend) send.mutate()
+  }
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key !== 'Enter' || e.shiftKey) return
     if (e.nativeEvent.isComposing || e.keyCode === 229) return
@@ -80,25 +95,41 @@ export default function Composer({ classId, status, canReadExams }: {
       />
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
         <label className="inline-flex items-center gap-1.5">
-          <input type="checkbox" checked={withClass} onChange={(e) => setWithClass(e.target.checked)} />
+          <input
+            type="checkbox"
+            checked={withClass}
+            onChange={(e) => setWithClass(e.target.checked)}
+          />
           班级概况
         </label>
         <label className="inline-flex items-center gap-1.5">
           <span className="text-muted-foreground">+ 学生档案</span>
-          <NativeSelect aria-label="+ 学生档案" value={studentId} onChange={(e) => setStudentId(e.target.value)}>
+          <NativeSelect
+            aria-label="+ 学生档案"
+            value={studentId}
+            onChange={(e) => setStudentId(e.target.value)}
+          >
             <option value="">不选</option>
             {(students.data?.items ?? []).map((s) => (
-              <option key={s.student_id} value={s.student_id}>{s.name}</option>
+              <option key={s.student_id} value={s.student_id}>
+                {s.name}
+              </option>
             ))}
           </NativeSelect>
         </label>
         {canReadExams && (
           <label className="inline-flex items-center gap-1.5">
             <span className="text-muted-foreground">+ 考试数据</span>
-            <NativeSelect aria-label="+ 考试数据" value={examId} onChange={(e) => setExamId(e.target.value)}>
+            <NativeSelect
+              aria-label="+ 考试数据"
+              value={examId}
+              onChange={(e) => setExamId(e.target.value)}
+            >
               <option value="">不选</option>
               {(exams.data?.items ?? []).map((x) => (
-                <option key={x.id} value={x.id}>{x.name}</option>
+                <option key={x.id} value={x.id}>
+                  {x.name}
+                </option>
               ))}
             </NativeSelect>
           </label>

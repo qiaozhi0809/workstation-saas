@@ -16,8 +16,10 @@ export default function ScoresTab({ profile }: { profile: StudentProfile }) {
     queryFn: () => examsApi.gradebook(profile.class_id),
   })
 
-  if (error instanceof ApiError && error.status === 403) return <EmptyState icon={Trophy} title="没有成绩权限" />
-  if (error) return <ErrorState title="成绩加载失败" onRetry={() => void refetch()} retrying={isFetching} />
+  if (error instanceof ApiError && error.status === 403)
+    return <EmptyState icon={Trophy} title="没有成绩权限" />
+  if (error)
+    return <ErrorState title="成绩加载失败" onRetry={() => void refetch()} retrying={isFetching} />
   if (!data) return <LoadingState />
 
   const me = profile.enrollment_id
@@ -27,8 +29,12 @@ export default function ScoresTab({ profile }: { profile: StudentProfile }) {
   if (exams.length === 0) return <EmptyState icon={Trophy} title="还没有考试成绩" />
 
   const subjectNames = [...new Set(exams.flatMap((e) => e.subjects.map((s) => s.name)))]
-  const rows = exams.map((exam) => ({ exam, row: examTable(exam, ids).find((r) => r.id === me) })).reverse()
-  const trend = studentTrend(data.exams, me, ids).filter((p) => data.exams.find((e) => e.id === p.examId)?.scores[me])
+  const rows = exams
+    .map((exam) => ({ exam, row: examTable(exam, ids).find((r) => r.id === me) }))
+    .reverse()
+  const trend = studentTrend(data.exams, me, ids).filter(
+    (p) => data.exams.find((e) => e.id === p.examId)?.scores[me],
+  )
 
   return (
     <div className="space-y-4">
@@ -37,7 +43,11 @@ export default function ScoresTab({ profile }: { profile: StudentProfile }) {
           <thead>
             <tr className="text-left text-muted-foreground">
               <th className="py-1 pr-2 font-normal">考试</th>
-              {subjectNames.map((n) => <th key={n} className="px-2 py-1 font-normal">{n}</th>)}
+              {subjectNames.map((n) => (
+                <th key={n} className="px-2 py-1 font-normal">
+                  {n}
+                </th>
+              ))}
               <th className="px-2 py-1 font-normal">总分</th>
               <th className="py-1 pl-2 font-normal">排名</th>
             </tr>
@@ -55,9 +65,13 @@ export default function ScoresTab({ profile }: { profile: StudentProfile }) {
                   const state = cellState(v, full)
                   return (
                     <td key={n} className="px-2 py-1">
-                      {state === 'absent' ? <Badge variant="warning">缺考</Badge>
-                        : state === 'empty' ? <span className="text-muted-foreground">—</span>
-                        : <span className={state === 'ok' ? undefined : 'text-destructive'}>{v}</span>}
+                      {state === 'absent' ? (
+                        <Badge variant="warning">缺考</Badge>
+                      ) : state === 'empty' ? (
+                        <span className="text-muted-foreground">—</span>
+                      ) : (
+                        <span className={state === 'ok' ? undefined : 'text-destructive'}>{v}</span>
+                      )}
                     </td>
                   )
                 })}
@@ -71,9 +85,14 @@ export default function ScoresTab({ profile }: { profile: StudentProfile }) {
       </div>
       <section>
         <h3 className="mb-1 text-sm font-medium">排名变化</h3>
-        <TrendLine label="排名变化" reversed labels={trend.map((p) => p.name)}
+        <TrendLine
+          label="排名变化"
+          reversed
+          labels={trend.map((p) => p.name)}
           series={[{ key: 'rank', label: '排名', values: trend.map((p) => p.rank) }]}
-          format={(v) => `第 ${v} 名`} yAxisWidth={64} />
+          format={(v) => `第 ${v} 名`}
+          yAxisWidth={64}
+        />
       </section>
     </div>
   )

@@ -25,38 +25,63 @@ it('posts an individual review with a fresh op id', async () => {
   setup({ mode: '点评' })
   fireEvent.click(await screen.findByRole('button', { name: /^王小一，/ }))
   fireEvent.click(await screen.findByRole('button', { name: '积极发言 +1' }))
-  await waitFor(() => expect(reviewsApi.create).toHaveBeenCalledWith('c1', {
-    op_id: expect.stringMatching(/^[0-9a-f-]{36}$/), category: 'individual',
-    enrollment_ids: ['e1'], reason_text: '积极发言', score_delta: 1,
-  }))
+  await waitFor(() =>
+    expect(reviewsApi.create).toHaveBeenCalledWith('c1', {
+      op_id: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      category: 'individual',
+      enrollment_ids: ['e1'],
+      reason_text: '积极发言',
+      score_delta: 1,
+    }),
+  )
   expect(await screen.findByText('+1')).toBeInTheDocument()
 })
 
 it('posts once when a reason is double-clicked', async () => {
   let resolve!: (v: { items: Review[] }) => void
-  vi.mocked(reviewsApi.create).mockReturnValue(new Promise((r) => { resolve = r }))
+  vi.mocked(reviewsApi.create).mockReturnValue(
+    new Promise((r) => {
+      resolve = r
+    }),
+  )
   setup({ mode: '点评' })
   fireEvent.click(await screen.findByRole('button', { name: /^王小一，/ }))
   const btn = await screen.findByRole('button', { name: '积极发言 +1' })
   // 同一批里连点两次:此时按钮还没来得及被禁用,只有同步守卫能拦住第二次
-  act(() => { btn.click(); btn.click() })
+  act(() => {
+    btn.click()
+    btn.click()
+  })
   await waitFor(() => expect(reviewsApi.create).toHaveBeenCalledTimes(1))
   expect(btn).toBeDisabled()
   expect(screen.getByRole('button', { name: '作业优秀 +1' })).toBeDisabled()
-  await act(async () => { resolve({ items: [review()] }) })
-  await waitFor(() => expect(screen.queryByRole('button', { name: '积极发言 +1' })).not.toBeInTheDocument())
+  await act(async () => {
+    resolve({ items: [review()] })
+  })
+  await waitFor(() =>
+    expect(screen.queryByRole('button', { name: '积极发言 +1' })).not.toBeInTheDocument(),
+  )
   expect(reviewsApi.create).toHaveBeenCalledTimes(1)
 })
 
 it('posts the whole-class bonus once when double-clicked', async () => {
   let resolve!: (v: { items: Review[] }) => void
-  vi.mocked(reviewsApi.create).mockReturnValue(new Promise((r) => { resolve = r }))
+  vi.mocked(reviewsApi.create).mockReturnValue(
+    new Promise((r) => {
+      resolve = r
+    }),
+  )
   setup({ mode: '点评' })
   const btn = await screen.findByRole('button', { name: '全班 +1' })
-  act(() => { btn.click(); btn.click() })
+  act(() => {
+    btn.click()
+    btn.click()
+  })
   await waitFor(() => expect(reviewsApi.create).toHaveBeenCalledTimes(1))
   expect(btn).toBeDisabled()
-  await act(async () => { resolve({ items: [review()] }) })
+  await act(async () => {
+    resolve({ items: [review()] })
+  })
   await waitFor(() => expect(btn).toBeEnabled())
   expect(reviewsApi.create).toHaveBeenCalledTimes(1)
 })
@@ -64,8 +89,16 @@ it('posts the whole-class bonus once when double-clicked', async () => {
 it('gives the whole class +1 and explains an empty class', async () => {
   setup({ mode: '点评' })
   fireEvent.click(await screen.findByRole('button', { name: '全班 +1' }))
-  await waitFor(() => expect(reviewsApi.create).toHaveBeenCalledWith('c1', expect.objectContaining({
-    category: 'whole_class', reason_text: '全班表现好', score_delta: 1 })))
+  await waitFor(() =>
+    expect(reviewsApi.create).toHaveBeenCalledWith(
+      'c1',
+      expect.objectContaining({
+        category: 'whole_class',
+        reason_text: '全班表现好',
+        score_delta: 1,
+      }),
+    ),
+  )
   expect(vi.mocked(reviewsApi.create).mock.calls[0][1]).not.toHaveProperty('enrollment_ids')
   await screen.findByRole('button', { name: '撤销' })
   await waitFor(() => expect(screen.getByRole('button', { name: '全班 +1' })).toBeEnabled())
@@ -117,7 +150,9 @@ it('closes the popover on stage pointerdown but not inside it', async () => {
   fireEvent.pointerDown(within(dialog).getByLabelText('理由'))
   expect(screen.getByRole('dialog', { name: '点评 王小一' })).toBeInTheDocument()
   fireEvent.pointerDown(screen.getByRole('button', { name: /^李小二，/ }))
-  await waitFor(() => expect(screen.queryByRole('dialog', { name: '点评 王小一' })).not.toBeInTheDocument())
+  await waitFor(() =>
+    expect(screen.queryByRole('dialog', { name: '点评 王小一' })).not.toBeInTheDocument(),
+  )
 })
 
 it('removes the float after 1400ms', async () => {
@@ -126,17 +161,28 @@ it('removes the float after 1400ms', async () => {
   // 记录 1400ms 的定时器,手动触发,避免假时钟卡住 waitFor
   const real = globalThis.setTimeout
   const floatTimers: (() => void)[] = []
-  const spy = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((fn: () => void, ms?: number, ...rest: unknown[]) => {
-    if (ms === 1400) { floatTimers.push(fn); return 0 as unknown as ReturnType<typeof setTimeout> }
+  const spy = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((
+    fn: () => void,
+    ms?: number,
+    ...rest: unknown[]
+  ) => {
+    if (ms === 1400) {
+      floatTimers.push(fn)
+      return 0 as unknown as ReturnType<typeof setTimeout>
+    }
     return real(fn, ms, ...rest)
   }) as typeof setTimeout)
   try {
     fireEvent.click(await screen.findByRole('button', { name: '积极发言 +1' }))
     await waitFor(() => expect(floatTimers).toHaveLength(1))
     expect(await screen.findByText('+1')).toBeInTheDocument()
-    act(() => { floatTimers[0]() })
+    act(() => {
+      floatTimers[0]()
+    })
     expect(screen.queryByText('+1')).not.toBeInTheDocument()
-  } finally { spy.mockRestore() }
+  } finally {
+    spy.mockRestore()
+  }
 })
 
 it('revokes from the undo toast', async () => {
@@ -161,22 +207,36 @@ it('invalidates the drawer review detail after revoking', async () => {
 })
 
 it('asks for a subject when the teacher teaches several here', async () => {
-  setup({ mode: '点评', subjects: ['物理', '化学'], perms: ['attendance.read', 'review.read', 'review.write'] })
+  setup({
+    mode: '点评',
+    subjects: ['物理', '化学'],
+    perms: ['attendance.read', 'review.read', 'review.write'],
+  })
   fireEvent.click(await screen.findByRole('button', { name: /^王小一，/ }))
   fireEvent.change(await screen.findByLabelText('科目'), { target: { value: '化学' } })
   fireEvent.click(screen.getByRole('button', { name: '积极发言 +1' }))
-  await waitFor(() => expect(reviewsApi.create).toHaveBeenCalledWith('c1', expect.objectContaining({ subject: '化学' })))
+  await waitFor(() =>
+    expect(reviewsApi.create).toHaveBeenCalledWith(
+      'c1',
+      expect.objectContaining({ subject: '化学' }),
+    ),
+  )
 })
 
 it('ranks students and groups on the leaderboard', async () => {
-  vi.mocked(reviewsApi.summary).mockResolvedValue({ week_start: '2026-11-02', items: [
-    { enrollment_id: 'e1', total: 5, week: 1, plus_count: 5, minus_count: 0 },
-    { enrollment_id: 'e2', total: 5, week: 0, plus_count: 6, minus_count: 1 },
-    { enrollment_id: 'e3', total: 2, week: 0, plus_count: 2, minus_count: 0 },
-  ] })
+  vi.mocked(reviewsApi.summary).mockResolvedValue({
+    week_start: '2026-11-02',
+    items: [
+      { enrollment_id: 'e1', total: 5, week: 1, plus_count: 5, minus_count: 0 },
+      { enrollment_id: 'e2', total: 5, week: 0, plus_count: 6, minus_count: 1 },
+      { enrollment_id: 'e3', total: 2, week: 0, plus_count: 2, minus_count: 0 },
+    ],
+  })
   setup({ mode: '点评' })
   fireEvent.click(await screen.findByRole('button', { name: '积分榜' }))
-  const rows = within(await screen.findByRole('table')).getAllByRole('row').slice(1)
+  const rows = within(await screen.findByRole('table'))
+    .getAllByRole('row')
+    .slice(1)
   expect(rows.map((r) => r.textContent)).toEqual(['1王小一550', '1李小二561', '3张小三220'])
   expect(screen.getByText('第 1 组')).toBeInTheDocument()
   expect(screen.getByText('10')).toBeInTheDocument()
@@ -188,7 +248,9 @@ it('shows the leaderboard as a modal and closes it with the dialog close button'
   const dialog = await screen.findByRole('dialog', { name: '积分榜' })
   expect(dialog).toHaveAttribute('aria-modal', 'true')
   fireEvent.click(within(dialog).getByRole('button', { name: '关闭' }))
-  await waitFor(() => expect(screen.queryByRole('dialog', { name: '积分榜' })).not.toBeInTheDocument())
+  await waitFor(() =>
+    expect(screen.queryByRole('dialog', { name: '积分榜' })).not.toBeInTheDocument(),
+  )
 })
 
 it('submits a custom reason and closes on Escape', async () => {
@@ -201,23 +263,44 @@ it('submits a custom reason and closes on Escape', async () => {
   expect(ok).toBeDisabled()
   fireEvent.change(screen.getByLabelText('分值'), { target: { value: '-3' } })
   fireEvent.click(ok)
-  await waitFor(() => expect(reviewsApi.create).toHaveBeenCalledWith('c1', expect.objectContaining({
-    enrollment_ids: ['e2'], reason_text: '帮同学', score_delta: -3 })))
+  await waitFor(() =>
+    expect(reviewsApi.create).toHaveBeenCalledWith(
+      'c1',
+      expect.objectContaining({
+        enrollment_ids: ['e2'],
+        reason_text: '帮同学',
+        score_delta: -3,
+      }),
+    ),
+  )
   fireEvent.click(await screen.findByRole('button', { name: /^张小三，/ }))
   fireEvent.click(await screen.findByRole('button', { name: '+1' }))
-  await waitFor(() => expect(reviewsApi.create).toHaveBeenLastCalledWith('c1', expect.objectContaining({
-    enrollment_ids: ['e3'], reason_text: '表现好', score_delta: 1 })))
+  await waitFor(() =>
+    expect(reviewsApi.create).toHaveBeenLastCalledWith(
+      'c1',
+      expect.objectContaining({
+        enrollment_ids: ['e3'],
+        reason_text: '表现好',
+        score_delta: 1,
+      }),
+    ),
+  )
   fireEvent.click(await screen.findByRole('button', { name: /^王小一，/ }))
   await screen.findByRole('button', { name: '确定' })
   fireEvent.keyDown(window, { key: 'Escape' })
-  await waitFor(() => expect(screen.queryByRole('button', { name: '确定' })).not.toBeInTheDocument())
+  await waitFor(() =>
+    expect(screen.queryByRole('button', { name: '确定' })).not.toBeInTheDocument(),
+  )
 })
 
 it('overlays score badges only in review mode', async () => {
-  vi.mocked(reviewsApi.summary).mockResolvedValue({ week_start: '2026-11-02', items: [
-    { enrollment_id: 'e1', total: 9, week: 9, plus_count: 9, minus_count: 0 },
-    { enrollment_id: 'e2', total: -2, week: -2, plus_count: 0, minus_count: 2 },
-  ] })
+  vi.mocked(reviewsApi.summary).mockResolvedValue({
+    week_start: '2026-11-02',
+    items: [
+      { enrollment_id: 'e1', total: 9, week: 9, plus_count: 9, minus_count: 0 },
+      { enrollment_id: 'e2', total: -2, week: -2, plus_count: 0, minus_count: 2 },
+    ],
+  })
   setup({ mode: '点评' })
   expect(await screen.findByText('+9')).toBeInTheDocument()
   expect(screen.getByText('-2')).toBeInTheDocument()
@@ -232,7 +315,9 @@ it('exports every page of reviews', async () => {
     .mockResolvedValueOnce({ items: [review({ id: 'b', enrollment_id: 'e2' })], next_cursor: null })
   setup({ mode: '点评' })
   fireEvent.click(await screen.findByRole('button', { name: '导出点评' }))
-  await waitFor(() => expect(dl).toHaveBeenCalledWith('三年二班-点评.csv', expect.stringContaining('李小二')))
+  await waitFor(() =>
+    expect(dl).toHaveBeenCalledWith('三年二班-点评.csv', expect.stringContaining('李小二')),
+  )
   expect(reviewsApi.list).toHaveBeenNthCalledWith(1, 'c1', { cursor: undefined, limit: 200 })
   expect(reviewsApi.list).toHaveBeenNthCalledWith(2, 'c1', { cursor: 'k1', limit: 200 })
   dl.mockRestore()
@@ -251,8 +336,15 @@ const SUBJECT_TEACHER = ['attendance.read', 'review.read', 'review.write'] as co
 it('requires a subject for a multi-subject subject teacher, defaulting to the first and remembering the choice', async () => {
   setup({ mode: '点评', subjects: ['物理', '化学'], perms: [...SUBJECT_TEACHER] })
   fireEvent.click(await screen.findByRole('button', { name: '全班 +1' }))
-  await waitFor(() => expect(reviewsApi.create).toHaveBeenCalledWith('c1', expect.objectContaining({
-    category: 'whole_class', subject: '物理' })))
+  await waitFor(() =>
+    expect(reviewsApi.create).toHaveBeenCalledWith(
+      'c1',
+      expect.objectContaining({
+        category: 'whole_class',
+        subject: '物理',
+      }),
+    ),
+  )
   await waitFor(() => expect(screen.getByRole('button', { name: '全班 +1' })).toBeEnabled())
   fireEvent.click(screen.getByRole('button', { name: /^王小一，/ }))
   const select = await screen.findByLabelText('科目')
@@ -265,8 +357,15 @@ it('requires a subject for a multi-subject subject teacher, defaulting to the fi
   expect(await screen.findByLabelText('科目')).toHaveValue('化学')
   fireEvent.keyDown(window, { key: 'Escape' })
   fireEvent.click(screen.getByRole('button', { name: '全班 +1' }))
-  await waitFor(() => expect(reviewsApi.create).toHaveBeenLastCalledWith('c1', expect.objectContaining({
-    category: 'whole_class', subject: '化学' })))
+  await waitFor(() =>
+    expect(reviewsApi.create).toHaveBeenLastCalledWith(
+      'c1',
+      expect.objectContaining({
+        category: 'whole_class',
+        subject: '化学',
+      }),
+    ),
+  )
 })
 
 it('lets a homeroom teacher who teaches several subjects leave the subject out', async () => {

@@ -11,29 +11,73 @@ import ScoresTab from './ScoresTab'
 import StudentProfileDrawer from './StudentProfileDrawer'
 
 vi.mock('@/shared/api/students', () => ({ studentsApi: { detail: vi.fn() } }))
-vi.mock('@/shared/api/classroom', () => ({ classroomApi: { summary: vi.fn().mockResolvedValue({ my_perms: [] }) } }))
-vi.mock('@/shared/api/classes', () => ({ classesApi: { mine: vi.fn().mockResolvedValue({ items: [] }) } }))
+vi.mock('@/shared/api/classroom', () => ({
+  classroomApi: { summary: vi.fn().mockResolvedValue({ my_perms: [] }) },
+}))
+vi.mock('@/shared/api/classes', () => ({
+  classesApi: { mine: vi.fn().mockResolvedValue({ items: [] }) },
+}))
 vi.mock('@/shared/api/exams', () => ({ examsApi: { gradebook: vi.fn() } }))
 const trendLine = vi.hoisted(() => vi.fn())
 vi.mock('@/shared/components/charts/TrendLine', () => ({
-  TrendLine: (props: { label: string; yAxisWidth?: number }) => { trendLine(props); return <div role="img" aria-label={props.label} /> },
+  TrendLine: (props: { label: string; yAxisWidth?: number }) => {
+    trendLine(props)
+    return <div role="img" aria-label={props.label} />
+  },
 }))
 
-const profile: StudentProfile = { id: 's1', mk: 'S0001', name: '王小一', class_id: 'c1', enrollment_id: 'e1' }
-const subjects = [{ name: '语文', full: 100 }, { name: '数学', full: 100 }]
-const base = { exam_type: '月考' as const, subjects, grade_exam_id: null, created_by_me: true, progress: { entered: 3, total: 3 } }
+const profile: StudentProfile = {
+  id: 's1',
+  mk: 'S0001',
+  name: '王小一',
+  class_id: 'c1',
+  enrollment_id: 'e1',
+}
+const subjects = [
+  { name: '语文', full: 100 },
+  { name: '数学', full: 100 },
+]
+const base = {
+  exam_type: '月考' as const,
+  subjects,
+  grade_exam_id: null,
+  created_by_me: true,
+  progress: { entered: 3, total: 3 },
+}
 const book: Gradebook = {
   exams: [
-    { ...base, id: 'x1', name: '九月月考', date: '2026-09-20',
-      scores: { e1: { 语文: 80, 数学: 70 }, e2: { 语文: 90, 数学: 90 }, e3: { 语文: 50, 数学: 60 } } },
-    { ...base, id: 'x2', name: '十月月考', date: '2026-10-25',
-      scores: { e1: { 语文: 55, 数学: null }, e2: { 语文: 70, 数学: 80 }, e3: { 语文: 90, 数学: 70 } } },
+    {
+      ...base,
+      id: 'x1',
+      name: '九月月考',
+      date: '2026-09-20',
+      scores: {
+        e1: { 语文: 80, 数学: 70 },
+        e2: { 语文: 90, 数学: 90 },
+        e3: { 语文: 50, 数学: 60 },
+      },
+    },
+    {
+      ...base,
+      id: 'x2',
+      name: '十月月考',
+      date: '2026-10-25',
+      scores: {
+        e1: { 语文: 55, 数学: null },
+        e2: { 语文: 70, 数学: 80 },
+        e3: { 语文: 90, 数学: 70 },
+      },
+    },
   ],
 }
 
 function renderTab() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(<QueryClientProvider client={client}><ScoresTab profile={profile} /></QueryClientProvider>)
+  render(
+    <QueryClientProvider client={client}>
+      <ScoresTab profile={profile} />
+    </QueryClientProvider>,
+  )
 }
 
 beforeEach(() => {
@@ -76,13 +120,17 @@ it('says there is no score permission on 403', async () => {
 })
 
 it('says there are no scores when the student has none', async () => {
-  vi.mocked(examsApi.gradebook).mockResolvedValue({ exams: [{ ...book.exams[0], scores: { e2: { 语文: 90, 数学: 90 } } }] })
+  vi.mocked(examsApi.gradebook).mockResolvedValue({
+    exams: [{ ...book.exams[0], scores: { e2: { 语文: 90, 数学: 90 } } }],
+  })
   renderTab()
   expect(await screen.findByText('还没有考试成绩')).toBeInTheDocument()
 })
 
 it('shows an error state with retry on other failures', async () => {
-  vi.mocked(examsApi.gradebook).mockRejectedValueOnce(new ApiError(500, 'X', 'boom')).mockResolvedValue(book)
+  vi.mocked(examsApi.gradebook)
+    .mockRejectedValueOnce(new ApiError(500, 'X', 'boom'))
+    .mockResolvedValue(book)
   renderTab()
   const retry = await screen.findByRole('button', { name: '重试' })
   retry.click()
@@ -94,7 +142,9 @@ it('is mounted in the real drawer on the 成绩 tab instead of the 暂未开放 
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={['/x?student=s1&tab=成绩']}><StudentProfileDrawer studentId="s1" /></MemoryRouter>
+      <MemoryRouter initialEntries={['/x?student=s1&tab=成绩']}>
+        <StudentProfileDrawer studentId="s1" />
+      </MemoryRouter>
     </QueryClientProvider>,
   )
   expect(await screen.findByText('红色为不及格(低于满分的 60%)')).toBeInTheDocument()

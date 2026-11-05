@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ClipboardEvent,
+  type KeyboardEvent,
+} from 'react'
 import { toast } from '@/shared/components/Toast'
 import { cellState, examTable, parseScore, type CellState } from '@/shared/lib/grades'
 import { parseTable } from '@/shared/lib/table'
@@ -50,7 +57,14 @@ export interface ScoreGridProps {
   onDiscard(keys: string[]): void
 }
 
-export default function ScoreGrid({ exam, roster, sheet, writable, onCells, onDiscard }: ScoreGridProps) {
+export default function ScoreGrid({
+  exam,
+  roster,
+  sheet,
+  writable,
+  onCells,
+  onDiscard,
+}: ScoreGridProps) {
   const students = useMemo(() => [...roster].sort(compareRoster), [roster])
   const subjects = exam.subjects
   // 未保存的改动(保存成功并合并进 sheet 后会被清掉);草稿文字只在输入过程中保留,无法保存的文字一直留着
@@ -66,7 +80,9 @@ export default function ScoreGrid({ exam, roster, sheet, writable, onCells, onDi
 
   useEffect(() => {
     setOverlay((cur) => {
-      const keep = Object.entries(cur).filter(([, c]) => server[c.enrollment_id]?.[c.subject] !== valueOf(c))
+      const keep = Object.entries(cur).filter(
+        ([, c]) => server[c.enrollment_id]?.[c.subject] !== valueOf(c),
+      )
       return keep.length === Object.keys(cur).length ? cur : Object.fromEntries(keep)
     })
   }, [server])
@@ -87,7 +103,10 @@ export default function ScoreGrid({ exam, roster, sheet, writable, onCells, onDi
       }
       scores[s.enrollment_id] = rec
     }
-    const rows = examTable({ ...exam, scores }, students.map((s) => s.enrollment_id))
+    const rows = examTable(
+      { ...exam, scores },
+      students.map((s) => s.enrollment_id),
+    )
     return new Map(rows.map((r) => [r.id, r]))
   }, [students, subjects, exam, overlay, server])
 
@@ -112,7 +131,8 @@ export default function ScoreGrid({ exam, roster, sheet, writable, onCells, onDi
     const key = keyOf(id, subject)
     setDrafts((d) => ({ ...d, [key]: text }))
     const r = interpret(text, full)
-    if (apply(id, subject, full, text) && 'cell' in r) onCells([{ enrollment_id: id, subject, value: r.cell }])
+    if (apply(id, subject, full, text) && 'cell' in r)
+      onCells([{ enrollment_id: id, subject, value: r.cell }])
   }
 
   const focusCell = (r: number, c: number) => refs.current.get(`${r}:${c}`)?.focus()
@@ -120,13 +140,20 @@ export default function ScoreGrid({ exam, roster, sheet, writable, onCells, onDi
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>, r: number, c: number) => {
     if (e.nativeEvent.isComposing) return
     const el = e.currentTarget
-    const go = (nr: number, nc: number) => { e.preventDefault(); focusCell(nr, nc) }
+    const go = (nr: number, nc: number) => {
+      e.preventDefault()
+      focusCell(nr, nc)
+    }
     switch (e.key) {
-      case 'Enter': return go(e.shiftKey ? r - 1 : r + 1, c)
-      case 'ArrowDown': return go(r + 1, c)
-      case 'ArrowUp': return go(r - 1, c)
+      case 'Enter':
+        return go(e.shiftKey ? r - 1 : r + 1, c)
+      case 'ArrowDown':
+        return go(r + 1, c)
+      case 'ArrowUp':
+        return go(r - 1, c)
       case 'ArrowRight':
-        if (el.selectionStart === el.value.length && el.selectionEnd === el.value.length) go(r, c + 1)
+        if (el.selectionStart === el.value.length && el.selectionEnd === el.value.length)
+          go(r, c + 1)
         return
       case 'ArrowLeft':
         if (el.selectionStart === 0 && el.selectionEnd === 0) go(r, c - 1)
@@ -143,21 +170,30 @@ export default function ScoreGrid({ exam, roster, sheet, writable, onCells, onDi
     let skipped = 0
     parseTable(text, true).forEach((line, dr) => {
       const student = students[r0 + dr]
-      if (!student) { skipped += line.filter((raw) => raw !== '').length; return }
+      if (!student) {
+        skipped += line.filter((raw) => raw !== '').length
+        return
+      }
       line.forEach((raw, dc) => {
         const sub = subjects[c0 + dc]
         if (raw === '') return
-        if (!sub || !canWrite(sub.name)) { skipped++; return }
+        if (!sub || !canWrite(sub.name)) {
+          skipped++
+          return
+        }
         const r = interpret(raw, sub.full)
         if (apply(student.enrollment_id, sub.name, sub.full, raw)) {
           // 粘贴成功的格子不再保留草稿文字
           setDrafts((d) => without(d, keyOf(student.enrollment_id, sub.name)))
-          if ('cell' in r) cells.push({ enrollment_id: student.enrollment_id, subject: sub.name, value: r.cell })
+          if ('cell' in r)
+            cells.push({ enrollment_id: student.enrollment_id, subject: sub.name, value: r.cell })
         } else rejected++
       })
     })
     onCells(cells)
-    toast(`已粘贴 ${cells.length} 格${skipped ? `,${skipped} 格在表格外或不可编辑,已跳过` : ''}${rejected ? `;${rejected} 格超出满分或格式不对,未保存` : ''}`)
+    toast(
+      `已粘贴 ${cells.length} 格${skipped ? `,${skipped} 格在表格外或不可编辑,已跳过` : ''}${rejected ? `;${rejected} 格超出满分或格式不对,未保存` : ''}`,
+    )
   }
 
   return (
@@ -165,13 +201,23 @@ export default function ScoreGrid({ exam, roster, sheet, writable, onCells, onDi
       <table className="w-full border-collapse text-sm">
         <thead className="bg-muted text-left text-muted-foreground">
           <tr>
-            <th scope="col" className="whitespace-nowrap px-3 py-2 font-medium">学号</th>
-            <th scope="col" className="whitespace-nowrap px-3 py-2 font-medium">姓名</th>
+            <th scope="col" className="whitespace-nowrap px-3 py-2 font-medium">
+              学号
+            </th>
+            <th scope="col" className="whitespace-nowrap px-3 py-2 font-medium">
+              姓名
+            </th>
             {subjects.map((s) => (
-              <th key={s.name} scope="col" className="whitespace-nowrap px-3 py-2 font-medium">{s.name} /{s.full}</th>
+              <th key={s.name} scope="col" className="whitespace-nowrap px-3 py-2 font-medium">
+                {s.name} /{s.full}
+              </th>
             ))}
-            <th scope="col" className="whitespace-nowrap px-3 py-2 font-medium">总分</th>
-            <th scope="col" className="whitespace-nowrap px-3 py-2 font-medium">排名</th>
+            <th scope="col" className="whitespace-nowrap px-3 py-2 font-medium">
+              总分
+            </th>
+            <th scope="col" className="whitespace-nowrap px-3 py-2 font-medium">
+              排名
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -179,7 +225,9 @@ export default function ScoreGrid({ exam, roster, sheet, writable, onCells, onDi
             const row = table.get(s.enrollment_id)
             return (
               <tr key={s.enrollment_id} className="border-t border-border">
-                <td className="whitespace-nowrap px-3 py-1 text-muted-foreground">{s.student_no ?? ''}</td>
+                <td className="whitespace-nowrap px-3 py-1 text-muted-foreground">
+                  {s.student_no ?? ''}
+                </td>
                 <td className="whitespace-nowrap px-3 py-1">{s.name}</td>
                 {subjects.map((sub, c) => {
                   const key = keyOf(s.enrollment_id, sub.name)
@@ -191,7 +239,10 @@ export default function ScoreGrid({ exam, roster, sheet, writable, onCells, onDi
                   return (
                     <td key={sub.name} className="px-1 py-1">
                       <input
-                        ref={(el) => { if (el) refs.current.set(`${r}:${c}`, el); else refs.current.delete(`${r}:${c}`) }}
+                        ref={(el) => {
+                          if (el) refs.current.set(`${r}:${c}`, el)
+                          else refs.current.delete(`${r}:${c}`)
+                        }}
                         inputMode="decimal"
                         aria-label={`${s.name} ${sub.name}`}
                         readOnly={readOnly}
@@ -203,16 +254,24 @@ export default function ScoreGrid({ exam, roster, sheet, writable, onCells, onDi
                           problem ? STATE_CLASS.over : STATE_CLASS[cellState(v, sub.full)],
                         )}
                         onFocus={(e) => e.currentTarget.select()}
-                        onBlur={() => { if (!problem) setDrafts((d) => without(d, key)) }}
-                        onChange={(e) => { if (!readOnly) change(s.enrollment_id, sub.name, sub.full, e.target.value) }}
+                        onBlur={() => {
+                          if (!problem) setDrafts((d) => without(d, key))
+                        }}
+                        onChange={(e) => {
+                          if (!readOnly) change(s.enrollment_id, sub.name, sub.full, e.target.value)
+                        }}
                         onKeyDown={(e) => onKeyDown(e, r, c)}
                         onPaste={(e) => onPaste(e, r, c)}
                       />
                     </td>
                   )
                 })}
-                <td data-testid="total" className="whitespace-nowrap px-3 py-1 tabular-nums">{row?.total ?? '—'}</td>
-                <td data-testid="rank" className="whitespace-nowrap px-3 py-1 tabular-nums">{row?.rank ?? '—'}</td>
+                <td data-testid="total" className="whitespace-nowrap px-3 py-1 tabular-nums">
+                  {row?.total ?? '—'}
+                </td>
+                <td data-testid="rank" className="whitespace-nowrap px-3 py-1 tabular-nums">
+                  {row?.rank ?? '—'}
+                </td>
               </tr>
             )
           })}

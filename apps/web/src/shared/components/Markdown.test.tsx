@@ -16,8 +16,14 @@ describe('Markdown', () => {
 
   it('collapses h2/h3 to h3 and h4-h6 to h4', () => {
     const { container } = render(<Markdown text={'## a\n\n### b\n\n##### c\n\n###### d'} />)
-    expect(Array.from(container.querySelectorAll('h3')).map((n) => n.textContent)).toEqual(['a', 'b'])
-    expect(Array.from(container.querySelectorAll('h4')).map((n) => n.textContent)).toEqual(['c', 'd'])
+    expect(Array.from(container.querySelectorAll('h3')).map((n) => n.textContent)).toEqual([
+      'a',
+      'b',
+    ])
+    expect(Array.from(container.querySelectorAll('h4')).map((n) => n.textContent)).toEqual([
+      'c',
+      'd',
+    ])
     expect(container.querySelector('h2,h5,h6')).toBeNull()
   })
 

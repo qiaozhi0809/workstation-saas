@@ -19,7 +19,13 @@ function byStudentNoThenName(a: StudentSeat, b: StudentSeat): number {
   return a.name.localeCompare(b.name, 'zh-Hans-CN')
 }
 
-export function buildBoard({ className, today, summary, roster, reviewSummary }: {
+export function buildBoard({
+  className,
+  today,
+  summary,
+  roster,
+  reviewSummary,
+}: {
   className: string
   today: string
   summary: ClassroomSummary
@@ -36,7 +42,7 @@ export function buildBoard({ className, today, summary, roster, reviewSummary }:
   const showStars = summary.switches?.star_of_week !== false
   const showBirthdays = summary.switches?.birthdays !== false
 
-  const stars = (showStars ? reviewSummary?.items ?? [] : [])
+  const stars = (showStars ? (reviewSummary?.items ?? []) : [])
     .flatMap((t) => {
       const s = byId.get(t.enrollment_id)
       return s && t.week > 0 ? [{ s, week: t.week }] : []
@@ -48,7 +54,10 @@ export function buildBoard({ className, today, summary, roster, reviewSummary }:
   const month = today.slice(5, 7)
   const birthdays = (showBirthdays ? roster : [])
     .filter((s) => s.birthdate?.slice(5, 7) === month)
-    .sort((x, y) => x.birthdate!.slice(8).localeCompare(y.birthdate!.slice(8)) || byStudentNoThenName(x, y))
+    .sort(
+      (x, y) =>
+        x.birthdate!.slice(8).localeCompare(y.birthdate!.slice(8)) || byStudentNoThenName(x, y),
+    )
     .slice(0, SHOW)
     .map((s) => ({ name: s.name, date: s.birthdate!.slice(5) }))
 

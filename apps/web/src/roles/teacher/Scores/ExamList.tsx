@@ -8,7 +8,11 @@ export const GRADE_EXAM_LABEL = '年级联考'
 /**
  * 考试列表(服务端按新到旧返回)。≥ lg 是左栏列表,窄屏变成顶部的下拉选择。
  */
-export default function ExamList({ exams, currentId, onSelect }: {
+export default function ExamList({
+  exams,
+  currentId,
+  onSelect,
+}: {
   exams: Exam[]
   currentId: string | null
   onSelect(id: string): void
@@ -19,7 +23,9 @@ export default function ExamList({ exams, currentId, onSelect }: {
         <span className="text-muted-foreground">选择考试</span>
         <NativeSelect value={currentId ?? ''} onChange={(e) => onSelect(e.target.value)}>
           {exams.map((x) => (
-            <option key={x.id} value={x.id}>{x.name}({x.date}){x.grade_exam_id ? ` · ${GRADE_EXAM_LABEL}` : ''}</option>
+            <option key={x.id} value={x.id}>
+              {x.name}({x.date}){x.grade_exam_id ? ` · ${GRADE_EXAM_LABEL}` : ''}
+            </option>
           ))}
         </NativeSelect>
       </label>
@@ -47,12 +53,19 @@ export default function ExamList({ exams, currentId, onSelect }: {
                       <Badge variant="neutral">{x.exam_type}</Badge>
                     </span>
                   </span>
-                  <span className="text-xs text-muted-foreground">{x.date} · {x.subjects.length} 科</span>
+                  <span className="text-xs text-muted-foreground">
+                    {x.date} · {x.subjects.length} 科
+                  </span>
                   <span className="flex items-center gap-2">
                     <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
-                      <span className="block h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
+                      <span
+                        className="block h-full rounded-full bg-primary"
+                        style={{ width: `${pct}%` }}
+                      />
                     </span>
-                    <span className="text-xs text-muted-foreground">已录 {entered}/{total}</span>
+                    <span className="text-xs text-muted-foreground">
+                      已录 {entered}/{total}
+                    </span>
                   </span>
                 </button>
               </li>

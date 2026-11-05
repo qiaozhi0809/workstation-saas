@@ -58,38 +58,86 @@ export default function ImportDialog({ cls, onClose }: { cls: ClassView; onClose
   }
 
   return (
-    <Modal open onClose={onClose} title="批量导入学生" dismissOnOutside={false} className="max-w-xl">
+    <Modal
+      open
+      onClose={onClose}
+      title="批量导入学生"
+      dismissOnOutside={false}
+      className="max-w-xl"
+    >
       <div className="space-y-3">
         <Textarea
-          aria-label="粘贴名单" rows={8} value={text} onChange={(e) => { setText(e.target.value); setError('') }}
+          aria-label="粘贴名单"
+          rows={8}
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value)
+            setError('')
+          }}
           placeholder="从 Excel 复制粘贴,或选择 CSV 文件;第一行是表头,至少要有“姓名”列"
         />
         <div className="flex flex-wrap items-center gap-2">
           <input
-            ref={fileRef} type="file" accept=".csv,text/csv" aria-label="选择 CSV 文件" className="hidden"
+            ref={fileRef}
+            type="file"
+            accept=".csv,text/csv"
+            aria-label="选择 CSV 文件"
+            className="hidden"
             onChange={(e) => onFile(e.target.files?.[0])}
           />
-          <Button type="button" variant="outline" size="sm" onClick={() => fileRef.current?.click()}>选择 CSV 文件</Button>
-          <Button type="button" variant="outline" size="sm" onClick={() => downloadText('学生名单模板.csv', BOM + STUDENT_TEMPLATE_CSV)}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => fileRef.current?.click()}
+          >
+            选择 CSV 文件
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => downloadText('学生名单模板.csv', BOM + STUDENT_TEMPLATE_CSV)}
+          >
             下载模板
           </Button>
         </div>
-        {parsed && (
-          parsed.missingName ? (
+        {parsed &&
+          (parsed.missingName ? (
             <p className="text-sm text-destructive">第一行要有"姓名"列</p>
           ) : (
             <p className="text-sm text-muted-foreground">{`识别到 ${count} 人,${parsed.columns.length} 列`}</p>
-          )
+          ))}
+        {tooMany && (
+          <p className="text-sm text-destructive">{`一次最多导入 ${MAX_ROWS} 人,请分批导入`}</p>
         )}
-        {tooMany && <p className="text-sm text-destructive">{`一次最多导入 ${MAX_ROWS} 人,请分批导入`}</p>}
         <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={autoSeat} onChange={(e) => { setAutoSeat(e.target.checked); setError('') }} />
+          <input
+            type="checkbox"
+            checked={autoSeat}
+            onChange={(e) => {
+              setAutoSeat(e.target.checked)
+              setError('')
+            }}
+          />
           自动安排到空座位
         </label>
-        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+        {error && (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        )}
         <div className="flex justify-end gap-2">
-          <Button type="button" variant="outline" onClick={onClose}>取消</Button>
-          <Button type="button" disabled={busy || count === 0 || tooMany} onClick={() => void submit()}>导入</Button>
+          <Button type="button" variant="outline" onClick={onClose}>
+            取消
+          </Button>
+          <Button
+            type="button"
+            disabled={busy || count === 0 || tooMany}
+            onClick={() => void submit()}
+          >
+            导入
+          </Button>
         </div>
       </div>
     </Modal>

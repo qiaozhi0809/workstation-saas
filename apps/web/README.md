@@ -4,18 +4,18 @@
 
 颜色一律用语义令牌(定义在 `src/theme/index.css`,映射在 `tailwind.config.ts`),不写原始色板(`bg-blue-500`)、`white` / `black` 或十六进制类。这条由 `src/theme/noLegacyStyles.test.ts` 对 `src` 下所有非测试的 TS/TSX 文件强制检查;深色模式随令牌自动切换。
 
-| 令牌 | 用途 |
-|---|---|
-| `background` / `foreground` | 页面底色 / 正文 |
-| `card` / `popover` | 卡片 / 弹出层表面 |
-| `primary` / `secondary` | 主操作 / 次要操作 |
-| `muted` / `muted-foreground` | 弱化底色 / 次要文字 |
-| `accent` | 悬停、选中底色 |
-| `border` / `input` / `ring` | 边框 / 输入框边框 / 焦点环 |
-| `destructive` | 危险、缺勤、扣分 |
-| `success` | 正向:出勤、加分 |
-| `warning` | 提醒:请假 |
-| `info` | 提示:迟到 |
+| 令牌                         | 用途                       |
+| ---------------------------- | -------------------------- |
+| `background` / `foreground`  | 页面底色 / 正文            |
+| `card` / `popover`           | 卡片 / 弹出层表面          |
+| `primary` / `secondary`      | 主操作 / 次要操作          |
+| `muted` / `muted-foreground` | 弱化底色 / 次要文字        |
+| `accent`                     | 悬停、选中底色             |
+| `border` / `input` / `ring`  | 边框 / 输入框边框 / 焦点环 |
+| `destructive`                | 危险、缺勤、扣分           |
+| `success`                    | 正向:出勤、加分            |
+| `warning`                    | 提醒:请假                  |
+| `info`                       | 提示:迟到                  |
 
 色调映射集中在 `src/shared/lib/tone.ts`:出勤 present→success、leave→warning、absent→danger(`destructive`)、late→info;加分 success、扣分 destructive。
 

@@ -20,7 +20,8 @@ async function copyPhone(phone: string) {
 export default function ArchiveTab({ student }: { student: StudentProfile }) {
   const classes = useQuery({ queryKey: ['my-classes'], queryFn: () => classesApi.mine() })
   // 笔记权限只给班主任,且不在 my_perms 里,所以按班级角色判断
-  const isHomeroom = classes.data?.items.find((c) => c.id === student.class_id)?.role === 'homeroom_teacher'
+  const isHomeroom =
+    classes.data?.items.find((c) => c.id === student.class_id)?.role === 'homeroom_teacher'
   return (
     <div className="space-y-4">
       <section>
@@ -36,7 +37,9 @@ export default function ArchiveTab({ student }: { student: StudentProfile }) {
         <h3 className="mb-1 text-sm font-medium">家庭情况</h3>
         <dl>
           <Field label="家庭结构" value={student.family_structure} />
-          {student.boarding !== undefined && <Field label="住校" value={student.boarding ? '是' : '否'} />}
+          {student.boarding !== undefined && (
+            <Field label="住校" value={student.boarding ? '是' : '否'} />
+          )}
           <Field label="家庭备注" value={student.family_note} />
         </dl>
       </section>
@@ -49,11 +52,20 @@ export default function ArchiveTab({ student }: { student: StudentProfile }) {
               {student.contacts!.map((c, i) => (
                 <li key={i} className="rounded-md border p-2 text-sm">
                   <div className="flex items-center justify-between gap-2">
-                    <span><span className="font-medium">{c.name}</span> <span className="text-muted-foreground">{c.relation}</span></span>
+                    <span>
+                      <span className="font-medium">{c.name}</span>{' '}
+                      <span className="text-muted-foreground">{c.relation}</span>
+                    </span>
                     {c.phone && (
                       <span className="flex items-center gap-1">
                         <span>{c.phone}</span>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="复制电话" onClick={() => void copyPhone(c.phone)}>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          aria-label="复制电话"
+                          onClick={() => void copyPhone(c.phone)}
+                        >
                           <Copy className="h-4 w-4" aria-hidden="true" />
                         </Button>
                       </span>
@@ -77,12 +89,16 @@ export default function ArchiveTab({ student }: { student: StudentProfile }) {
       <Separator />
       <section>
         <h3 className="mb-1 text-sm font-medium">健康情况</h3>
-        <dl><Field label="健康备注" value={student.health_notes} /></dl>
+        <dl>
+          <Field label="健康备注" value={student.health_notes} />
+        </dl>
       </section>
       <Separator />
       <section>
         <h3 className="mb-1 text-sm font-medium">其他备注</h3>
-        <dl><Field label="备注" value={student.note} /></dl>
+        <dl>
+          <Field label="备注" value={student.note} />
+        </dl>
       </section>
       {isHomeroom && (
         <>

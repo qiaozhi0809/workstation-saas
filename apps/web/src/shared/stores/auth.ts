@@ -34,7 +34,8 @@ export const useAuthStore = create<AuthState>()(
       // v0 存档的 user 没有 contexts/admin_perms:清掉登录态,强制重登
       migrate: (persisted, version) => {
         const s = (persisted ?? {}) as Partial<AuthState>
-        if (version < 1) return { ...s, accessToken: null, refreshToken: null, user: null } as AuthState
+        if (version < 1)
+          return { ...s, accessToken: null, refreshToken: null, user: null } as AuthState
         return s as AuthState
       },
     },

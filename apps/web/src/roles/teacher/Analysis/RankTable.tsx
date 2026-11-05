@@ -11,7 +11,13 @@ function Change({ value }: { value: number | undefined }) {
 }
 
 /** rows/changes 的 id 是 enrollment_id;changes 为 null 表示没有对比,不显示进退列 */
-export function RankTable({ subjects, rows, changes, names, onOpen }: {
+export function RankTable({
+  subjects,
+  rows,
+  changes,
+  names,
+  onOpen,
+}: {
   subjects: SubjectFull[]
   rows: Row[]
   changes: Map<string, number> | null
@@ -25,8 +31,16 @@ export function RankTable({ subjects, rows, changes, names, onOpen }: {
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-muted-foreground">
-              {['名次', '姓名', ...subjects.map((s) => s.name), '总分', ...(changes ? ['进退'] : [])].map((h) => (
-                <th key={h} scope="col" className="sticky top-0 bg-card px-3 py-2 font-medium">{h}</th>
+              {[
+                '名次',
+                '姓名',
+                ...subjects.map((s) => s.name),
+                '总分',
+                ...(changes ? ['进退'] : []),
+              ].map((h) => (
+                <th key={h} scope="col" className="sticky top-0 bg-card px-3 py-2 font-medium">
+                  {h}
+                </th>
               ))}
             </tr>
           </thead>
@@ -35,22 +49,37 @@ export function RankTable({ subjects, rows, changes, names, onOpen }: {
               <tr key={r.id} className="border-t hover:bg-muted">
                 <td className="px-3 py-2">{r.rank ?? '—'}</td>
                 <td className="px-3 py-2">
-                  <button type="button" className="text-primary hover:underline" onClick={() => onOpen(r.id)}>
+                  <button
+                    type="button"
+                    className="text-primary hover:underline"
+                    onClick={() => onOpen(r.id)}
+                  >
                     {names.get(r.id) ?? r.id}
                   </button>
                 </td>
                 {subjects.map((s) => {
                   const state = cellState(r.subs[s.name], s.full)
                   return (
-                    <td key={s.name} className={cn('px-3 py-2', state === 'low' && 'text-destructive')}>
-                      {state === 'absent' ? <Badge variant="warning">缺考</Badge>
-                        : state === 'empty' ? <span className="text-muted-foreground">—</span>
-                        : r.subs[s.name]}
+                    <td
+                      key={s.name}
+                      className={cn('px-3 py-2', state === 'low' && 'text-destructive')}
+                    >
+                      {state === 'absent' ? (
+                        <Badge variant="warning">缺考</Badge>
+                      ) : state === 'empty' ? (
+                        <span className="text-muted-foreground">—</span>
+                      ) : (
+                        r.subs[s.name]
+                      )}
                     </td>
                   )
                 })}
                 <td className="px-3 py-2 font-medium">{r.total ?? '—'}</td>
-                {changes && <td className="px-3 py-2"><Change value={changes.get(r.id)} /></td>}
+                {changes && (
+                  <td className="px-3 py-2">
+                    <Change value={changes.get(r.id)} />
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>

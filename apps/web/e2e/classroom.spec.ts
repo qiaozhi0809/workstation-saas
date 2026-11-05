@@ -1,5 +1,11 @@
 import { expect, test, type Page } from '@playwright/test'
-import { activeReviewOps, login, restoreSeedAttendance, restoreSeedSeating, revokeReviewsSince } from './helpers/api'
+import {
+  activeReviewOps,
+  login,
+  restoreSeedAttendance,
+  restoreSeedSeating,
+  revokeReviewsSince,
+} from './helpers/api'
 
 const CLASS_ID = '44444444-4444-4444-4444-444444444444'
 
@@ -116,19 +122,28 @@ test('fits a 1024×768 projector without page scrolling in every mode', async ({
 
 // 窗口较矮时进入排座:舞台随之变矮并重新适应,教室核心(前墙 + 全部座位)都在窗口内,不被裁掉
 // (扁舞台的适应按核心放大,核心之外的后部地板可以被裁,见设计稿 §6;所以量核心而不是整幅场景)
-test('keeps the classroom core in view after entering seating in a short window', async ({ page }) => {
+test('keeps the classroom core in view after entering seating in a short window', async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 1280, height: 640 })
   await signIn(page)
   await switchMode(page, '排座')
   await expect(page.getByRole('button', { name: '随机打乱' })).toBeEnabled()
   const within = (a: { x: number; y: number; width: number; height: number }, b: typeof a) =>
-    a.x >= b.x - 1 && a.y >= b.y - 1 && a.x + a.width <= b.x + b.width + 1 && a.y + a.height <= b.y + b.height + 1
+    a.x >= b.x - 1 &&
+    a.y >= b.y - 1 &&
+    a.x + a.width <= b.x + b.width + 1 &&
+    a.y + a.height <= b.y + b.height + 1
   await expect(async () => {
     const stage = (await page.getByTestId('classroom-stage').boundingBox())!
-    expect(within((await page.locator('.cr-front-wall').boundingBox())!, stage), '前墙在舞台内').toBe(true)
+    expect(
+      within((await page.locator('.cr-front-wall').boundingBox())!, stage),
+      '前墙在舞台内',
+    ).toBe(true)
     const seats = await page.locator('[data-seat]').all()
     expect(seats).toHaveLength(24)
-    for (const seat of seats) expect(within((await seat.boundingBox())!, stage), '座位在舞台内').toBe(true)
+    for (const seat of seats)
+      expect(within((await seat.boundingBox())!, stage), '座位在舞台内').toBe(true)
     expect(stage.y + stage.height).toBeLessThanOrEqual(640)
   }).toPass()
 })
@@ -141,7 +156,10 @@ test('asks before leaving unsaved seating through a link or logout', async ({ pa
   await page.getByRole('button', { name: /^王小一，/ }).click()
   await page.getByRole('button', { name: /^李小二，/ }).click()
   const dialogs: string[] = []
-  page.on('dialog', (d) => { dialogs.push(d.message()); void d.dismiss() })
+  page.on('dialog', (d) => {
+    dialogs.push(d.message())
+    void d.dismiss()
+  })
   await page.getByRole('button', { name: '账号菜单' }).click()
   await page.getByRole('menuitem', { name: '我的偏好' }).click()
   await page.getByRole('button', { name: '账号菜单' }).click()

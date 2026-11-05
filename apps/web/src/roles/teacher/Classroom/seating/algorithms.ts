@@ -32,24 +32,36 @@ function assign(students: DraftStudent[], placed: Map<string, Cell>): DraftStude
   })
 }
 
-export function shuffleSeats(students: DraftStudent[], grid: DeskGrid, rand: () => number): DraftStudent[] {
+export function shuffleSeats(
+  students: DraftStudent[],
+  grid: DeskGrid,
+  rand: () => number,
+): DraftStudent[] {
   const cells = freeCells(students, grid).flat()
   const placed = new Map<string, Cell>()
-  shuffled(students.filter((s) => !fixed(s)), rand).forEach((s, i) => {
+  shuffled(
+    students.filter((s) => !fixed(s)),
+    rand,
+  ).forEach((s, i) => {
     if (i < cells.length) placed.set(s.enrollmentId, cells[i])
   })
   return assign(students, placed)
 }
 
 /** 取出最多 k 个同学放进一桌:男女交替,先手取人数多的一方(一样多则随机),该性别没人了就取另一方。 */
-function genderGroups(males: DraftStudent[], females: DraftStudent[], k: number, rand: () => number): DraftStudent[][] {
+function genderGroups(
+  males: DraftStudent[],
+  females: DraftStudent[],
+  k: number,
+  rand: () => number,
+): DraftStudent[][] {
   const groups: DraftStudent[][] = []
   while (males.length > 0 && females.length > 0) {
     const maleFirst = males.length === females.length ? rand() < 0.5 : males.length > females.length
     const [a, b] = maleFirst ? [males, females] : [females, males]
     const group: DraftStudent[] = []
     for (let i = 0; i < k; i++) {
-      const pool = (i % 2 === 0 ? a : b).length > 0 ? (i % 2 === 0 ? a : b) : (i % 2 === 0 ? b : a)
+      const pool = (i % 2 === 0 ? a : b).length > 0 ? (i % 2 === 0 ? a : b) : i % 2 === 0 ? b : a
       if (pool.length === 0) break
       group.push(pool.pop()!)
     }
@@ -58,11 +70,21 @@ function genderGroups(males: DraftStudent[], females: DraftStudent[], k: number,
   return groups
 }
 
-export function genderPairSeats(students: DraftStudent[], grid: DeskGrid, rand: () => number): DraftStudent[] {
+export function genderPairSeats(
+  students: DraftStudent[],
+  grid: DeskGrid,
+  rand: () => number,
+): DraftStudent[] {
   const k = grid.deskSize
   const loose = students.filter((s) => !fixed(s))
-  const males = shuffled(loose.filter((s) => s.gender === 'male'), rand)
-  const females = shuffled(loose.filter((s) => s.gender === 'female'), rand)
+  const males = shuffled(
+    loose.filter((s) => s.gender === 'male'),
+    rand,
+  )
+  const females = shuffled(
+    loose.filter((s) => s.gender === 'female'),
+    rand,
+  )
   const groups: DraftStudent[][] = []
   const rest: DraftStudent[] = []
   for (const g of genderGroups(males, females, k, rand)) {
@@ -91,7 +113,10 @@ function placeGroups(
   alone: DraftStudent[],
   rand: () => number,
   /** 补位顺序:默认落单的在前、放不下的组在后;优带弱要求有名次的先补、没名次的最后 */
-  orderLeftovers: (alone: DraftStudent[], queue: DraftStudent[]) => DraftStudent[] = (a, q) => [...a, ...q],
+  orderLeftovers: (alone: DraftStudent[], queue: DraftStudent[]) => DraftStudent[] = (a, q) => [
+    ...a,
+    ...q,
+  ],
 ): DraftStudent[] {
   const k = grid.deskSize
   const desks: Cell[][] = []

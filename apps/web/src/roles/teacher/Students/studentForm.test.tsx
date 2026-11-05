@@ -16,17 +16,51 @@ vi.mock('@/shared/api/students', () => ({
 vi.mock('@/shared/api/school', () => ({ schoolApi: { tagPool: vi.fn() } }))
 vi.mock('@/shared/components/Toast', () => ({ toast: vi.fn() }))
 
-const cls: ClassView = { id: 'c1', name: '三年二班', grade_name: '三年级', seat_rows: 2, seat_cols: 2, desk_size: 2, seat_layout: 'manual', seat_order: 'row', podium_left: 0, podium_right: 0, room: '', role: 'homeroom_teacher' }
+const cls: ClassView = {
+  id: 'c1',
+  name: '三年二班',
+  grade_name: '三年级',
+  seat_rows: 2,
+  seat_cols: 2,
+  desk_size: 2,
+  seat_layout: 'manual',
+  seat_order: 'row',
+  podium_left: 0,
+  podium_right: 0,
+  room: '',
+  role: 'homeroom_teacher',
+}
 const roster = [
   rec({ enrollment_id: 'e1', name: '张三', student_no: '2026009', seat_row: 1, seat_col: 1 }),
-  rec({ enrollment_id: 'e2', name: '李四', student_no: '2026010', seat_row: 1, seat_col: 2, seat_locked: true }),
   rec({
-    enrollment_id: 'e3', name: '王五', student_no: '2026003', seat_row: 2, seat_col: 1, tags: ['爱画画', '近视'],
-    contacts: [{ name: '王父', relation: '父亲', phone: '13800000003', job: '' }], boarding: false,
+    enrollment_id: 'e2',
+    name: '李四',
+    student_no: '2026010',
+    seat_row: 1,
+    seat_col: 2,
+    seat_locked: true,
+  }),
+  rec({
+    enrollment_id: 'e3',
+    name: '王五',
+    student_no: '2026003',
+    seat_row: 2,
+    seat_col: 1,
+    tags: ['爱画画', '近视'],
+    contacts: [{ name: '王父', relation: '父亲', phone: '13800000003', job: '' }],
+    boarding: false,
   }),
 ]
 
-const ROSTER_KEYS = ['student-records', 'class-students', 'classroom', 'gradebook', 'student', 'exams', 'score-sheet']
+const ROSTER_KEYS = [
+  'student-records',
+  'class-students',
+  'classroom',
+  'gradebook',
+  'student',
+  'exams',
+  'score-sheet',
+]
 
 let client: QueryClient
 const renderForm = (props: Partial<React.ComponentProps<typeof StudentForm>> = {}) => {
@@ -46,10 +80,18 @@ beforeEach(() => {
 })
 
 it('suggests the next student number keeping prefix and width', () => {
-  expect(nextStudentNo([{ student_no: '2026009' }, { student_no: '2026010' }] as StudentSeat[])).toBe('2026011')
+  expect(
+    nextStudentNo([{ student_no: '2026009' }, { student_no: '2026010' }] as StudentSeat[]),
+  ).toBe('2026011')
   expect(nextStudentNo([{ student_no: '9' }, { student_no: '10' }] as StudentSeat[])).toBe('11')
   expect(nextStudentNo([{ student_no: 'S007' }] as StudentSeat[])).toBe('S008')
-  expect(nextStudentNo([{ student_no: null }, { student_no: '' }, { student_no: '甲' }] as StudentSeat[])).toBe('')
+  expect(
+    nextStudentNo([
+      { student_no: null },
+      { student_no: '' },
+      { student_no: '甲' },
+    ] as StudentSeat[]),
+  ).toBe('')
   expect(nextStudentNo([])).toBe('')
 })
 
@@ -67,10 +109,18 @@ it('adds a student with contacts, invalidates queries and closes', async () => {
   fireEvent.change(screen.getByLabelText('联系人1电话'), { target: { value: '13800000006' } })
   fireEvent.click(screen.getByRole('button', { name: '保存' }))
   await waitFor(() => expect(onClose).toHaveBeenCalled())
-  expect(studentsApi.create).toHaveBeenCalledWith('c1', expect.objectContaining({
-    name: '赵六', gender: '女', student_no: '2026011', seat: { row: 2, col: 2 }, tags: ['重点关注'], boarding: false,
-    contacts: [{ name: '赵母', relation: '母亲', phone: '13800000006', job: '' }],
-  }))
+  expect(studentsApi.create).toHaveBeenCalledWith(
+    'c1',
+    expect.objectContaining({
+      name: '赵六',
+      gender: '女',
+      student_no: '2026011',
+      seat: { row: 2, col: 2 },
+      tags: ['重点关注'],
+      boarding: false,
+      contacts: [{ name: '赵母', relation: '母亲', phone: '13800000006', job: '' }],
+    }),
+  )
   for (const k of ROSTER_KEYS) {
     expect(spy).toHaveBeenCalledWith({ queryKey: [k] })
   }
@@ -97,7 +147,9 @@ it('marks the invalid name, links its error and focuses it on submit', async () 
 })
 
 it('keeps the form open with the next number when asked to continue', async () => {
-  vi.mocked(studentsApi.create).mockResolvedValue(rec({ enrollment_id: 'e9', student_no: '2026011' }))
+  vi.mocked(studentsApi.create).mockResolvedValue(
+    rec({ enrollment_id: 'e9', student_no: '2026011' }),
+  )
   const onClose = renderForm()
   fireEvent.change(screen.getByLabelText('姓名'), { target: { value: '赵六' } })
   fireEvent.click(screen.getByLabelText('保存后继续添加'))
@@ -153,7 +205,9 @@ it('shows the seat locked error and other errors', async () => {
   fireEvent.change(screen.getByLabelText('姓名'), { target: { value: '赵六' } })
   fireEvent.click(screen.getByRole('button', { name: '保存' }))
   expect(await screen.findByText('该座位的同学已固定,不能互换')).toBeInTheDocument()
-  vi.mocked(studentsApi.create).mockRejectedValueOnce(new ApiError(409, 'NO_ACTIVE_YEAR', '学校还没有进行中的学年'))
+  vi.mocked(studentsApi.create).mockRejectedValueOnce(
+    new ApiError(409, 'NO_ACTIVE_YEAR', '学校还没有进行中的学年'),
+  )
   fireEvent.click(screen.getByRole('button', { name: '保存' }))
   expect(await screen.findByRole('alert')).toHaveTextContent('学校还没有进行中的学年')
 })
@@ -169,9 +223,15 @@ it('prefills when editing and sends update with the changes', async () => {
   fireEvent.change(screen.getByLabelText('姓名'), { target: { value: '王小五' } })
   fireEvent.click(screen.getByRole('button', { name: '保存' }))
   await waitFor(() => expect(onClose).toHaveBeenCalled())
-  expect(studentsApi.update).toHaveBeenCalledWith('c1', 'e3', expect.objectContaining({
-    name: '王小五', seat: { row: 2, col: 1 }, tags: ['爱画画', '近视'],
-  }))
+  expect(studentsApi.update).toHaveBeenCalledWith(
+    'c1',
+    'e3',
+    expect.objectContaining({
+      name: '王小五',
+      seat: { row: 2, col: 1 },
+      tags: ['爱画画', '近视'],
+    }),
+  )
 })
 
 it('adds custom tags with Enter but not while composing', () => {
@@ -213,7 +273,9 @@ it('deletes after confirmation', async () => {
   const onClose = renderForm({ record: roster[0] })
   expect(screen.queryByRole('button', { name: '删除学生' })).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: '删除学生' }))
-  expect(screen.getByText('删除张三?删除后该学生不再出现在名单、教室和成绩里。')).toBeInTheDocument()
+  expect(
+    screen.getByText('删除张三?删除后该学生不再出现在名单、教室和成绩里。'),
+  ).toBeInTheDocument()
   expect(studentsApi.remove).not.toHaveBeenCalled()
   fireEvent.click(screen.getByRole('button', { name: '确认删除' }))
   await waitFor(() => expect(onClose).toHaveBeenCalled())
@@ -238,13 +300,23 @@ const fullRoster = [
 it('lists podium seats with their names', async () => {
   vi.mocked(studentsApi.create).mockResolvedValue(rec({ enrollment_id: 'e9' }))
   const onClose = renderForm({ cls: podiumCls })
-  const labels = within(screen.getByLabelText('座位')).getAllByRole('option').map((o) => o.textContent)
-  expect(labels.slice(0, 4)).toEqual(['不排座', '讲台左边（靠讲桌）', '讲台左边（外侧）', '讲台右边'])
+  const labels = within(screen.getByLabelText('座位'))
+    .getAllByRole('option')
+    .map((o) => o.textContent)
+  expect(labels.slice(0, 4)).toEqual([
+    '不排座',
+    '讲台左边（靠讲桌）',
+    '讲台左边（外侧）',
+    '讲台右边',
+  ])
   fireEvent.change(screen.getByLabelText('姓名'), { target: { value: '赵六' } })
   fireEvent.change(screen.getByLabelText('座位'), { target: { value: '0--2' } })
   fireEvent.click(screen.getByRole('button', { name: '保存' }))
   await waitFor(() => expect(onClose).toHaveBeenCalled())
-  expect(studentsApi.create).toHaveBeenCalledWith('c1', expect.objectContaining({ seat: { row: 0, col: -2 } }))
+  expect(studentsApi.create).toHaveBeenCalledWith(
+    'c1',
+    expect.objectContaining({ seat: { row: 0, col: -2 } }),
+  )
 })
 
 it('defaults to auto seat when an auto class is full', async () => {
@@ -288,7 +360,11 @@ it('also invalidates my-classes after adding so the classroom map sees new seats
   await waitFor(() => expect(spy).toHaveBeenCalledWith({ queryKey: ['my-classes'] }))
 })
 
-const tagChips = () => screen.getAllByRole('button').filter((b) => b.hasAttribute('aria-pressed')).map((b) => b.textContent)
+const tagChips = () =>
+  screen
+    .getAllByRole('button')
+    .filter((b) => b.hasAttribute('aria-pressed'))
+    .map((b) => b.textContent)
 
 it('offers the school tag pool from the API', async () => {
   vi.mocked(schoolApi.tagPool).mockResolvedValue({ tags: ['重点关注', '住校', '自定义A'] })

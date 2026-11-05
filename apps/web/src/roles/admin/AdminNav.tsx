@@ -13,7 +13,8 @@ const GROUPS: Record<AdminGroup, { label: string; icon: LucideIcon }> = {
   system: { label: '系统', icon: Cog },
 }
 
-type Entry = { kind: 'link'; page: AdminPage } | { kind: 'group'; group: AdminGroup; pages: AdminPage[] }
+type Entry =
+  { kind: 'link'; page: AdminPage } | { kind: 'group'; group: AdminGroup; pages: AdminPage[] }
 
 /** 按权限过滤后分组:组放在它第一个页面的位置;一项都没有的组不出现,只剩一项的组退化成链接 */
 function buildEntries(pages: AdminPage[], perms: readonly string[] | undefined): Entry[] {
@@ -22,9 +23,15 @@ function buildEntries(pages: AdminPage[], perms: readonly string[] | undefined):
   const entries: Entry[] = []
   const placed = new Set<AdminGroup>()
   for (const page of visible) {
-    if (!page.group) { entries.push({ kind: 'link', page }); continue }
+    if (!page.group) {
+      entries.push({ kind: 'link', page })
+      continue
+    }
     const list = members(page.group)
-    if (list.length === 1) { entries.push({ kind: 'link', page }); continue }
+    if (list.length === 1) {
+      entries.push({ kind: 'link', page })
+      continue
+    }
     if (placed.has(page.group)) continue
     placed.add(page.group)
     entries.push({ kind: 'group', group: page.group, pages: list })
@@ -52,8 +59,12 @@ function useWide(): boolean {
   return wide
 }
 
-const ITEM_BASE = 'flex h-9 shrink-0 items-center gap-1.5 rounded-md px-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:px-3'
-const itemState = (active: boolean) => (active ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground')
+const ITEM_BASE =
+  'flex h-9 shrink-0 items-center gap-1.5 rounded-md px-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:px-3'
+const itemState = (active: boolean) =>
+  active
+    ? 'bg-accent text-foreground'
+    : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
 
 // 宽屏里 768–1023 只放得下图标(名字进 title 与读屏),≥ 1024 才显示文字
 const WIDE_LABEL = 'sr-only lg:not-sr-only'
@@ -61,7 +72,11 @@ const WIDE_LABEL = 'sr-only lg:not-sr-only'
 function NavItem({ page, labelClass = WIDE_LABEL }: { page: AdminPage; labelClass?: string }) {
   const { path, label, icon: Icon } = page
   return (
-    <NavLink to={`/admin/${path}`} title={label} className={({ isActive }) => cn(ITEM_BASE, itemState(isActive))}>
+    <NavLink
+      to={`/admin/${path}`}
+      title={label}
+      className={({ isActive }) => cn(ITEM_BASE, itemState(isActive))}
+    >
       <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
       <span className={labelClass}>{label}</span>
     </NavLink>
@@ -78,7 +93,12 @@ function GroupMenu({ group, pages }: { group: AdminGroup; pages: AdminPage[] }) 
       label={label}
       side="bottom"
       align="start"
-      triggerProps={{ variant: 'ghost', className: cn(ITEM_BASE, itemState(active)), 'aria-current': active ? 'true' : undefined, title: label }}
+      triggerProps={{
+        variant: 'ghost',
+        className: cn(ITEM_BASE, itemState(active)),
+        'aria-current': active ? 'true' : undefined,
+        title: label,
+      }}
       trigger={
         <>
           <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -106,17 +126,26 @@ export default function AdminNav({ pages = ADMIN_PAGES }: { pages?: AdminPage[] 
     const links = pages.filter((p) => !p.hidden && perms?.includes(p.perm))
     // relative:sr-only 标签是 absolute,导航不是定位祖先时它们逃出 overflow-x-auto 的裁剪,窄屏下整页出现横向滚动
     return (
-      <nav aria-label="主导航" className="relative flex min-w-0 items-center gap-0.5 overflow-x-auto">
-        {links.map((page) => <NavItem key={page.path} page={page} labelClass="sr-only" />)}
+      <nav
+        aria-label="主导航"
+        className="relative flex min-w-0 items-center gap-0.5 overflow-x-auto"
+      >
+        {links.map((page) => (
+          <NavItem key={page.path} page={page} labelClass="sr-only" />
+        ))}
       </nav>
     )
   }
   return (
     // shrink-0:校名过长时先截断校名(它自己 truncate),导航不能被压缩而盖到右侧按钮上
     <nav aria-label="主导航" className="relative flex shrink-0 items-center gap-0.5">
-      {buildEntries(pages, perms).map((e) => e.kind === 'link'
-        ? <NavItem key={e.page.path} page={e.page} />
-        : <GroupMenu key={e.group} group={e.group} pages={e.pages} />)}
+      {buildEntries(pages, perms).map((e) =>
+        e.kind === 'link' ? (
+          <NavItem key={e.page.path} page={e.page} />
+        ) : (
+          <GroupMenu key={e.group} group={e.group} pages={e.pages} />
+        ),
+      )}
     </nav>
   )
 }

@@ -56,18 +56,30 @@ function SentList({ page, setPage }: { page: number; setPage(p: number): void })
   return (
     <section aria-label="我发出的" className="flex flex-col gap-3 rounded-lg border bg-card p-4">
       <h2 className="text-base font-semibold">我发出的</h2>
-      {list.isPending ? <LoadingState /> : list.isError ? (
-        <ErrorState title={list.error instanceof ApiError ? list.error.message : '加载失败,请重试'}
-          onRetry={() => void list.refetch()} retrying={list.isFetching} />
+      {list.isPending ? (
+        <LoadingState />
+      ) : list.isError ? (
+        <ErrorState
+          title={list.error instanceof ApiError ? list.error.message : '加载失败,请重试'}
+          onRetry={() => void list.refetch()}
+          retrying={list.isFetching}
+        />
       ) : list.data.items.length === 0 ? (
         <EmptyState title="还没有发出过通知" />
       ) : (
         <ul className="flex flex-col divide-y">
           {list.data.items.map((n) => (
-            <li key={n.id} className="flex flex-wrap items-start justify-between gap-2 py-2.5 text-sm">
+            <li
+              key={n.id}
+              className="flex flex-wrap items-start justify-between gap-2 py-2.5 text-sm"
+            >
               <div className="flex min-w-0 flex-col gap-0.5">
-                <button type="button" aria-haspopup="dialog" onClick={() => setViewing(n)}
-                  className="break-words rounded-sm text-left font-medium underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
+                <button
+                  type="button"
+                  aria-haspopup="dialog"
+                  onClick={() => setViewing(n)}
+                  className="break-words rounded-sm text-left font-medium underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
                   {n.title}
                 </button>
                 <span className="text-xs text-muted-foreground">{`${n.target_label} · ${formatInTz(n.created_at, tz)}`}</span>
@@ -80,8 +92,16 @@ function SentList({ page, setPage }: { page: number; setPage(p: number): void })
               {n.recalled_at ? (
                 <Badge variant="neutral">已撤回</Badge>
               ) : (
-                <Button type="button" variant="ghost" size="sm" aria-label={`撤回 ${n.title}`}
-                  onClick={() => { setError(''); setRecalling(n) }}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  aria-label={`撤回 ${n.title}`}
+                  onClick={() => {
+                    setError('')
+                    setRecalling(n)
+                  }}
+                >
                   撤回
                 </Button>
               )}
@@ -92,20 +112,57 @@ function SentList({ page, setPage }: { page: number; setPage(p: number): void })
       {total > PAGE_SIZE && (
         <div className="flex items-center justify-end gap-2 text-sm">
           <span className="text-muted-foreground">{`共 ${total} 条,第 ${page} / ${pages} 页`}</span>
-          <Button type="button" variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>上一页</Button>
-          <Button type="button" variant="outline" size="sm" disabled={page >= pages} onClick={() => setPage(page + 1)}>下一页</Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={page <= 1}
+            onClick={() => setPage(page - 1)}
+          >
+            上一页
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={page >= pages}
+            onClick={() => setPage(page + 1)}
+          >
+            下一页
+          </Button>
         </div>
       )}
-      {viewing && (viewing.ack.kind !== 'none'
-        ? <AckStatsDialog noticeId={viewing.id} onClose={() => setViewing(null)} />
-        : <RecipientsDialog notice={viewing} onClose={() => setViewing(null)} />)}
+      {viewing &&
+        (viewing.ack.kind !== 'none' ? (
+          <AckStatsDialog noticeId={viewing.id} onClose={() => setViewing(null)} />
+        ) : (
+          <RecipientsDialog notice={viewing} onClose={() => setViewing(null)} />
+        ))}
       {recalling && (
-        <Modal open onClose={() => setRecalling(null)} title="撤回通知" description="撤回后收件人将看不到通知内容。">
+        <Modal
+          open
+          onClose={() => setRecalling(null)}
+          title="撤回通知"
+          description="撤回后收件人将看不到通知内容。"
+        >
           <p className="text-sm">{`确认撤回「${recalling.title}」?`}</p>
-          {error && <p role="alert" className="mt-2 text-sm text-destructive">{error}</p>}
+          {error && (
+            <p role="alert" className="mt-2 text-sm text-destructive">
+              {error}
+            </p>
+          )}
           <div className="mt-4 flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => setRecalling(null)}>取消</Button>
-            <Button type="button" variant="destructive" disabled={busy} onClick={() => void recall()}>确认撤回</Button>
+            <Button type="button" variant="outline" onClick={() => setRecalling(null)}>
+              取消
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={busy}
+              onClick={() => void recall()}
+            >
+              确认撤回
+            </Button>
           </div>
         </Modal>
       )}
@@ -124,7 +181,11 @@ export default function NoticesPage() {
       <h1 className="text-xl font-semibold">通知</h1>
       <div className="grid items-start gap-4 md:grid-cols-2">
         {opts.isError && !opts.data ? (
-          <ErrorState title="加载失败" onRetry={() => void opts.refetch()} retrying={opts.isFetching} />
+          <ErrorState
+            title="加载失败"
+            onRetry={() => void opts.refetch()}
+            retrying={opts.isFetching}
+          />
         ) : !opts.data ? (
           <LoadingState />
         ) : (

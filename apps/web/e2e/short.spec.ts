@@ -1,6 +1,11 @@
 import { expect, test, type Page } from '@playwright/test'
 
-interface Box { x: number; y: number; width: number; height: number }
+interface Box {
+  x: number
+  y: number
+  width: number
+  height: number
+}
 
 async function signIn(page: Page, name = 'teacher01') {
   await page.goto('/login')
@@ -11,11 +16,20 @@ async function signIn(page: Page, name = 'teacher01') {
 }
 
 const inside = (a: Box, b: Box) =>
-  a.x >= b.x - 1 && a.y >= b.y - 1 && a.x + a.width <= b.x + b.width + 1 && a.y + a.height <= b.y + b.height + 1
+  a.x >= b.x - 1 &&
+  a.y >= b.y - 1 &&
+  a.x + a.width <= b.x + b.width + 1 &&
+  a.y + a.height <= b.y + b.height + 1
 
 // 矮窗口(≥ 400px 高):教室页本身不整页滚动,舞台随之变矮,核心(讲台墙 + 全部座位)仍完整可见
 const MODES = ['日常', '考勤', '点评', '排座']
-for (const [w, h] of [[1280, 520], [1280, 480], [1024, 500], [1280, 400], [1024, 400]]) {
+for (const [w, h] of [
+  [1280, 520],
+  [1280, 480],
+  [1024, 500],
+  [1280, 400],
+  [1024, 400],
+]) {
   test(`classroom does not scroll the page at ${w}×${h}`, async ({ page }) => {
     await page.setViewportSize({ width: w, height: h })
     await signIn(page)
@@ -24,7 +38,8 @@ for (const [w, h] of [[1280, 520], [1280, 480], [1024, 500], [1280, 400], [1024,
       await tab.click()
       await expect(tab).toHaveAttribute('aria-selected', 'true')
       await expect(page.locator('[data-seat]').first()).toBeVisible()
-      if (mode === '排座') await expect(page.getByRole('button', { name: '随机打乱' })).toBeEnabled()
+      if (mode === '排座')
+        await expect(page.getByRole('button', { name: '随机打乱' })).toBeEnabled()
       await expect(async () => {
         const s = await page.evaluate(() => {
           const e = document.documentElement
@@ -33,10 +48,14 @@ for (const [w, h] of [[1280, 520], [1280, 480], [1024, 500], [1280, 400], [1024,
         })
         expect(s, `${mode} 页面滚动溢出`).toEqual({ html: 0, main: 0 })
         const stage = (await page.getByTestId('classroom-stage').boundingBox())!
-        expect(inside((await page.locator('.cr-front-wall').boundingBox())!, stage), `${mode} 讲台墙在舞台内`).toBe(true)
+        expect(
+          inside((await page.locator('.cr-front-wall').boundingBox())!, stage),
+          `${mode} 讲台墙在舞台内`,
+        ).toBe(true)
         const seats = await page.locator('[data-seat]').all()
         expect(seats).toHaveLength(24)
-        for (const seat of seats) expect(inside((await seat.boundingBox())!, stage), `${mode} 座位在舞台内`).toBe(true)
+        for (const seat of seats)
+          expect(inside((await seat.boundingBox())!, stage), `${mode} 座位在舞台内`).toBe(true)
         const dock = (await page.getByRole('toolbar', { name: '教室工具' }).boundingBox())!
         expect(dock.y + dock.height, `${mode} 操作台在窗口内`).toBeLessThanOrEqual(h + 1)
       }).toPass()

@@ -5,7 +5,13 @@ import { authApi } from '@/shared/api/auth'
 import { ApiError } from '@/shared/api/client'
 import { useAuthStore } from '@/shared/stores/auth'
 import { Button } from '@/shared/components/ui/button'
-import { Card, CardContent, CardDescription, CardFooter, CardHeader } from '@/shared/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+} from '@/shared/components/ui/card'
 import { Input } from '@/shared/components/ui/input'
 import { Label } from '@/shared/components/ui/label'
 import ThemeToggle from '@/theme/ThemeToggle'
@@ -31,7 +37,9 @@ export default function LoginPage() {
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(peekLoginFlash)
 
-  useEffect(() => { clearLoginFlash() }, [])
+  useEffect(() => {
+    clearLoginFlash()
+  }, [])
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -55,7 +63,13 @@ export default function LoginPage() {
   }
 
   // 已登录再打开 /login:直接去首页,不再显示登录表单(旧形状存档没有 contexts:照常显示表单,不崩)
-  if (accessToken && signedInUser && Array.isArray(signedInUser.contexts) && signedInUser.contexts.length > 0) return <Navigate to={homeFor(signedInUser, lastContext)} replace />
+  if (
+    accessToken &&
+    signedInUser &&
+    Array.isArray(signedInUser.contexts) &&
+    signedInUser.contexts.length > 0
+  )
+    return <Navigate to={homeFor(signedInUser, lastContext)} replace />
 
   return (
     <div className="relative grid min-h-full place-items-center bg-muted/40 px-4 pb-8 pt-16">
@@ -98,7 +112,9 @@ export default function LoginPage() {
           </CardContent>
           <CardFooter>
             <Button type="submit" className="w-full" disabled={pending} aria-busy={pending}>
-              {pending && <Loader2 className="h-4 w-4 motion-safe:animate-spin" aria-hidden="true" />}
+              {pending && (
+                <Loader2 className="h-4 w-4 motion-safe:animate-spin" aria-hidden="true" />
+              )}
               {pending ? '登录中…' : '登录'}
             </Button>
           </CardFooter>

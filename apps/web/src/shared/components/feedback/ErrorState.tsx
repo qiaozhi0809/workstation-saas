@@ -15,7 +15,10 @@ export function ErrorState({
   className?: string
 }) {
   return (
-    <div role="alert" className={cn('flex flex-col items-center gap-2 py-8 text-center', className)}>
+    <div
+      role="alert"
+      className={cn('flex flex-col items-center gap-2 py-8 text-center', className)}
+    >
       <p className="text-sm font-medium text-destructive">{title}</p>
       {description && <p className="text-sm text-muted-foreground">{description}</p>}
       {onRetry && (

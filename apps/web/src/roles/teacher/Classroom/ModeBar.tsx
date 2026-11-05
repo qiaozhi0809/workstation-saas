@@ -17,13 +17,20 @@ export function modesFor(perms: readonly ClassPerm[]): ClassroomUiMode[] {
   return MODES.filter((m) => !m.perm || perms.includes(m.perm)).map((m) => m.mode)
 }
 
-export default function ModeBar({ mode, perms, onChange }: {
+export default function ModeBar({
+  mode,
+  perms,
+  onChange,
+}: {
   mode: ClassroomUiMode
   perms: readonly ClassPerm[]
   onChange(mode: ClassroomUiMode): void
 }) {
   const allowed = modesFor(perms)
-  const items = MODES.filter((m) => allowed.includes(m.mode)).map((m) => ({ value: m.mode, label: m.label }))
+  const items = MODES.filter((m) => allowed.includes(m.mode)).map((m) => ({
+    value: m.mode,
+    label: m.label,
+  }))
   return (
     <SegmentedTabs label="教室模式" variant="pill" items={items} value={mode} onChange={onChange} />
   )

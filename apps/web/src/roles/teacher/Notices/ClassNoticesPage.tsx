@@ -47,19 +47,36 @@ function SentList({ classId }: { classId: string }) {
         <span className="break-words font-medium">{n.title}</span>
         <span className="text-xs text-muted-foreground">{formatInTz(n.created_at, localTz())}</span>
         <span className="text-xs">{`已读 ${n.read} / ${n.recipients}`}</span>
-        {n.ack.kind !== 'none' && <span className="text-xs">{`回执 ${n.acked} / ${n.recipients}`}</span>}
+        {n.ack.kind !== 'none' && (
+          <span className="text-xs">{`回执 ${n.acked} / ${n.recipients}`}</span>
+        )}
       </div>
       <div className="flex items-center gap-1">
         {n.ack.kind !== 'none' && (
-          <Button type="button" variant="ghost" size="sm" aria-label={`查看回执 ${n.title}`} onClick={() => setStatsId(n.id)}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-label={`查看回执 ${n.title}`}
+            onClick={() => setStatsId(n.id)}
+          >
             回执
           </Button>
         )}
         {n.recalled_at ? (
           <Badge variant="neutral">已撤回</Badge>
         ) : (
-          <Button type="button" variant="ghost" size="sm" aria-label={`撤回 ${n.title}`}
-            disabled={recall.isPending} onClick={() => { if (window.confirm(`确认撤回「${n.title}」?撤回后家长将看不到正文。`)) recall.mutate(n.id) }}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-label={`撤回 ${n.title}`}
+            disabled={recall.isPending}
+            onClick={() => {
+              if (window.confirm(`确认撤回「${n.title}」?撤回后家长将看不到正文。`))
+                recall.mutate(n.id)
+            }}
+          >
             撤回
           </Button>
         )}
@@ -70,9 +87,14 @@ function SentList({ classId }: { classId: string }) {
   return (
     <section aria-label="我发出的" className="flex flex-col gap-3 rounded-lg border bg-card p-4">
       <h2 className="text-base font-semibold">我发出的</h2>
-      {list.isPending ? <LoadingState /> : list.isError ? (
-        <ErrorState title={list.error instanceof ApiError ? list.error.message : '加载失败,请重试'}
-          onRetry={() => void list.refetch()} retrying={list.isFetching} />
+      {list.isPending ? (
+        <LoadingState />
+      ) : list.isError ? (
+        <ErrorState
+          title={list.error instanceof ApiError ? list.error.message : '加载失败,请重试'}
+          onRetry={() => void list.refetch()}
+          retrying={list.isFetching}
+        />
       ) : list.data.items.length === 0 ? (
         <EmptyState title="还没有发出过通知" />
       ) : (
@@ -81,11 +103,29 @@ function SentList({ classId }: { classId: string }) {
       {total > PAGE_SIZE && (
         <div className="flex items-center justify-end gap-2 text-sm">
           <span className="text-muted-foreground">{`共 ${total} 条,第 ${page} / ${pages} 页`}</span>
-          <Button type="button" variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>上一页</Button>
-          <Button type="button" variant="outline" size="sm" disabled={page >= pages} onClick={() => setPage(page + 1)}>下一页</Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={page <= 1}
+            onClick={() => setPage(page - 1)}
+          >
+            上一页
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={page >= pages}
+            onClick={() => setPage(page + 1)}
+          >
+            下一页
+          </Button>
         </div>
       )}
-      {statsId && <AckStatsDialog key={statsId} noticeId={statsId} onClose={() => setStatsId(null)} />}
+      {statsId && (
+        <AckStatsDialog key={statsId} noticeId={statsId} onClose={() => setStatsId(null)} />
+      )}
     </section>
   )
 }
@@ -94,21 +134,35 @@ export default function ClassNoticesPage() {
   const classId = useTeacherStore((s) => s.classId)
   const classes = useQuery({ queryKey: ['my-classes'], queryFn: classesApi.mine })
   // 与导航、教室页同一个 key,共用缓存;页面自己也判权,直接打开 URL 不会发班级公告请求
-  const summary = useQuery({ queryKey: ['classroom', classId], queryFn: () => classroomApi.summary(classId!), enabled: !!classId })
+  const summary = useQuery({
+    queryKey: ['classroom', classId],
+    queryFn: () => classroomApi.summary(classId!),
+    enabled: !!classId,
+  })
   const [composerKey, setComposerKey] = useState(0)
   const cls = classes.data?.items.find((c) => c.id === classId)
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-4 p-4 md:p-6">
       <h1 className="text-xl font-semibold">班级公告</h1>
-      {!classId || summary.isPending ? <LoadingState /> : summary.isError && !summary.data ? (
-        <ErrorState title="权限加载失败" onRetry={() => void summary.refetch()} retrying={summary.isFetching} />
+      {!classId || summary.isPending ? (
+        <LoadingState />
+      ) : summary.isError && !summary.data ? (
+        <ErrorState
+          title="权限加载失败"
+          onRetry={() => void summary.refetch()}
+          retrying={summary.isFetching}
+        />
       ) : !summary.data?.my_perms.includes('class.notice') ? (
         <EmptyState title="只有本班班主任可以发班级公告" className="justify-center p-6" />
       ) : (
         <div className="grid items-start gap-4 md:grid-cols-2">
           {classes.isError && !classes.data ? (
-            <ErrorState title="班级加载失败" onRetry={() => void classes.refetch()} retrying={classes.isFetching} />
+            <ErrorState
+              title="班级加载失败"
+              onRetry={() => void classes.refetch()}
+              retrying={classes.isFetching}
+            />
           ) : !cls ? (
             <LoadingState />
           ) : (

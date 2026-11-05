@@ -8,14 +8,32 @@ function RateChange({ cur, prev }: { cur: SubjectStats; prev: SubjectStats | und
   if (diff === 0) return <span className="text-muted-foreground">±0 个百分点</span>
   return (
     <span className={cn(diff > 0 ? 'text-success' : 'text-destructive')}>
-      {diff > 0 ? '+' : '-'}{Math.abs(diff)} 个百分点
+      {diff > 0 ? '+' : '-'}
+      {Math.abs(diff)} 个百分点
     </span>
   )
 }
 
 /** prev 为 null 表示没有对比,不显示得分率变化列 */
-export function SubjectTable({ stats, prev }: { stats: SubjectStats[]; prev: SubjectStats[] | null }) {
-  const heads = ['科目', '满分', '平均分', '得分率', '最高', '最低', '及格率', '优秀率', '不及格人数', ...(prev ? ['得分率变化'] : [])]
+export function SubjectTable({
+  stats,
+  prev,
+}: {
+  stats: SubjectStats[]
+  prev: SubjectStats[] | null
+}) {
+  const heads = [
+    '科目',
+    '满分',
+    '平均分',
+    '得分率',
+    '最高',
+    '最低',
+    '及格率',
+    '优秀率',
+    '不及格人数',
+    ...(prev ? ['得分率变化'] : []),
+  ]
   return (
     <section aria-label="各科明细" className="rounded-lg border bg-card text-card-foreground">
       <h2 className="px-3 pt-3 text-base font-semibold">各科明细</h2>
@@ -23,7 +41,11 @@ export function SubjectTable({ stats, prev }: { stats: SubjectStats[]; prev: Sub
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-muted-foreground">
-              {heads.map((h) => <th key={h} scope="col" className="px-3 py-2 font-medium">{h}</th>)}
+              {heads.map((h) => (
+                <th key={h} scope="col" className="px-3 py-2 font-medium">
+                  {h}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
@@ -38,7 +60,11 @@ export function SubjectTable({ stats, prev }: { stats: SubjectStats[]; prev: Sub
                 <td className="px-3 py-2">{round1(s.passRate * 100)}%</td>
                 <td className="px-3 py-2">{round1(s.goodRate * 100)}%</td>
                 <td className="px-3 py-2">{s.low}</td>
-                {prev && <td className="px-3 py-2"><RateChange cur={s} prev={prev.find((p) => p.name === s.name)} /></td>}
+                {prev && (
+                  <td className="px-3 py-2">
+                    <RateChange cur={s} prev={prev.find((p) => p.name === s.name)} />
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>

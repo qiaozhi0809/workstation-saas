@@ -4,23 +4,36 @@ import { expect, type APIRequestContext } from '@playwright/test'
 const API = '/api/v1'
 
 export async function login(request: APIRequestContext, loginName: string): Promise<string> {
-  const res = await request.post(`${API}/auth/login`, { data: { login_name: loginName, password: 'dev123' } })
+  const res = await request.post(`${API}/auth/login`, {
+    data: { login_name: loginName, password: 'dev123' },
+  })
   expect(res.ok()).toBeTruthy()
   return ((await res.json()) as { access_token: string }).access_token
 }
 
 /** 把座位存回种子布局:6 × 4,按学号顺序每排 4 人,全部未锁定。 */
-export async function restoreSeedSeating(request: APIRequestContext, token: string, classId: string): Promise<void> {
+export async function restoreSeedSeating(
+  request: APIRequestContext,
+  token: string,
+  classId: string,
+): Promise<void> {
   const headers = { Authorization: `Bearer ${token}` }
   const summary = await request.get(`${API}/classes/${classId}/classroom`, { headers })
   expect(summary.ok()).toBeTruthy()
   const { seat_version } = (await summary.json()) as { seat_version: number }
   const roster = await request.get(`${API}/classes/${classId}/students`, { headers })
   expect(roster.ok()).toBeTruthy()
-  const { items } = (await roster.json()) as { items: { enrollment_id: string; student_no: string | null }[] }
+  const { items } = (await roster.json()) as {
+    items: { enrollment_id: string; student_no: string | null }[]
+  }
   const seats = [...items]
     .sort((a, b) => (a.student_no ?? '').localeCompare(b.student_no ?? ''))
-    .map((s, i) => ({ enrollment_id: s.enrollment_id, row: Math.floor(i / 4) + 1, col: (i % 4) + 1, locked: false }))
+    .map((s, i) => ({
+      enrollment_id: s.enrollment_id,
+      row: Math.floor(i / 4) + 1,
+      col: (i % 4) + 1,
+      locked: false,
+    }))
   const saved = await request.put(`${API}/classes/${classId}/seating`, {
     headers,
     data: { base_version: seat_version, rows: 6, cols: 4, seats },
@@ -29,7 +42,11 @@ export async function restoreSeedSeating(request: APIRequestContext, token: stri
 }
 
 /** 把桌椅排列存回种子:双人同桌、自己设定 6 排 × 4 座、无讲台座位、教室 求知楼 201,座位随后由 restoreSeedSeating 还原。 */
-export async function restoreSeedLayout(request: APIRequestContext, token: string, classId: string): Promise<void> {
+export async function restoreSeedLayout(
+  request: APIRequestContext,
+  token: string,
+  classId: string,
+): Promise<void> {
   const headers = { Authorization: `Bearer ${token}` }
   const summary = await request.get(`${API}/classes/${classId}/classroom`, { headers })
   expect(summary.ok()).toBeTruthy()
@@ -37,8 +54,15 @@ export async function restoreSeedLayout(request: APIRequestContext, token: strin
   const res = await request.put(`${API}/classes/${classId}/layout`, {
     headers,
     data: {
-      base_version: seat_version, desk_size: 2, seat_layout: 'manual', rows: 6, cols: 4,
-      podium_left: 0, podium_right: 0, how: 'row', room: '求知楼 201',
+      base_version: seat_version,
+      desk_size: 2,
+      seat_layout: 'manual',
+      rows: 6,
+      cols: 4,
+      podium_left: 0,
+      podium_right: 0,
+      how: 'row',
+      room: '求知楼 201',
     },
   })
   expect(res.ok()).toBeTruthy()
@@ -46,14 +70,32 @@ export async function restoreSeedLayout(request: APIRequestContext, token: strin
 }
 
 /** 经 API 加若干名学生(姓名 测试加人N,不带座位);用例结束由 deleteTestStudents 兜底清理。 */
-export async function addTestStudents(request: APIRequestContext, token: string, classId: string, count: number): Promise<void> {
+export async function addTestStudents(
+  request: APIRequestContext,
+  token: string,
+  classId: string,
+  count: number,
+): Promise<void> {
   for (let i = 1; i <= count; i++) {
     const res = await request.post(`${API}/classes/${classId}/students`, {
       headers: { Authorization: `Bearer ${token}` },
       data: {
-        name: `测试加人${i}`, gender: null, student_no: `20269${String(i).padStart(2, '0')}`, birthdate: null, class_role: null,
-        tags: [], boarding: false, family_structure: null, family_note: null, learning_summary: null, personality: null,
-        note: null, health_notes: null, contacts: [], seat: null, auto_seat: true,
+        name: `测试加人${i}`,
+        gender: null,
+        student_no: `20269${String(i).padStart(2, '0')}`,
+        birthdate: null,
+        class_role: null,
+        tags: [],
+        boarding: false,
+        family_structure: null,
+        family_note: null,
+        learning_summary: null,
+        personality: null,
+        note: null,
+        health_notes: null,
+        contacts: [],
+        seat: null,
+        auto_seat: true,
       },
     })
     expect(res.ok(), await res.text()).toBeTruthy()
@@ -63,7 +105,11 @@ export async function addTestStudents(request: APIRequestContext, token: string,
 const authHeaders = (token: string) => ({ Authorization: `Bearer ${token}` })
 
 /** 把 王小一 今天的考勤改回"出勤"(种子初始态);用例失败留下脏状态时也能恢复。 */
-export async function restoreSeedAttendance(request: APIRequestContext, token: string, classId: string): Promise<void> {
+export async function restoreSeedAttendance(
+  request: APIRequestContext,
+  token: string,
+  classId: string,
+): Promise<void> {
   const headers = authHeaders(token)
   const summary = await request.get(`${API}/classes/${classId}/classroom`, { headers })
   expect(summary.ok()).toBeTruthy()
@@ -73,16 +119,25 @@ export async function restoreSeedAttendance(request: APIRequestContext, token: s
   const { items } = (await roster.json()) as { items: { enrollment_id: string; name: string }[] }
   const wang = items.find((s) => s.name === '王小一')
   expect(wang).toBeTruthy()
-  const res = await request.put(`${API}/classes/${classId}/attendance/${today}/${wang!.enrollment_id}`, {
-    headers,
-    data: { status: 'present' },
-  })
+  const res = await request.put(
+    `${API}/classes/${classId}/attendance/${today}/${wang!.enrollment_id}`,
+    {
+      headers,
+      data: { status: 'present' },
+    },
+  )
   expect(res.ok()).toBeTruthy()
 }
 
 /** 当前未撤销的点评 op_id 集合,用来在用例前后做差。 */
-export async function activeReviewOps(request: APIRequestContext, token: string, classId: string): Promise<Set<string>> {
-  const res = await request.get(`${API}/classes/${classId}/reviews?limit=200`, { headers: authHeaders(token) })
+export async function activeReviewOps(
+  request: APIRequestContext,
+  token: string,
+  classId: string,
+): Promise<Set<string>> {
+  const res = await request.get(`${API}/classes/${classId}/reviews?limit=200`, {
+    headers: authHeaders(token),
+  })
   expect(res.ok()).toBeTruthy()
   const { items } = (await res.json()) as { items: { op_id: string }[] }
   return new Set(items.map((r) => r.op_id))
@@ -97,15 +152,24 @@ export async function revokeReviewsSince(
 ): Promise<void> {
   for (const op of await activeReviewOps(request, token, classId)) {
     if (before.has(op)) continue
-    const res = await request.post(`${API}/classes/${classId}/reviews/${op}/revoke`, { headers: authHeaders(token) })
+    const res = await request.post(`${API}/classes/${classId}/reviews/${op}/revoke`, {
+      headers: authHeaders(token),
+    })
     expect(res.ok()).toBeTruthy()
   }
 }
 
-interface ExamSummary { id: string; name: string }
+interface ExamSummary {
+  id: string
+  name: string
+}
 
 /** 删除名字以 E2E 开头的考试(用例自建数据的兜底清理;失败中途退出也不留脏数据)。 */
-export async function deleteE2eExams(request: APIRequestContext, token: string, classId: string): Promise<void> {
+export async function deleteE2eExams(
+  request: APIRequestContext,
+  token: string,
+  classId: string,
+): Promise<void> {
   const headers = authHeaders(token)
   const res = await request.get(`${API}/classes/${classId}/exams`, { headers })
   expect(res.ok()).toBeTruthy()
@@ -132,12 +196,22 @@ export async function createExam(
 }
 
 /** 在籍学生按学号排序的 enrollment_id(与种子座位顺序一致,第 0 位是 王小一)。 */
-export async function rosterEnrollmentIds(request: APIRequestContext, token: string, classId: string): Promise<string[]> {
-  const res = await request.get(`${API}/classes/${classId}/students`, { headers: authHeaders(token) })
+export async function rosterEnrollmentIds(
+  request: APIRequestContext,
+  token: string,
+  classId: string,
+): Promise<string[]> {
+  const res = await request.get(`${API}/classes/${classId}/students`, {
+    headers: authHeaders(token),
+  })
   expect(res.ok()).toBeTruthy()
-  const { items } = (await res.json()) as { items: { enrollment_id: string; student_no: string | null }[] }
+  const { items } = (await res.json()) as {
+    items: { enrollment_id: string; student_no: string | null }[]
+  }
   // 依赖种子学号等长(7 位),文本序即数字序
-  return [...items].sort((a, b) => (a.student_no ?? '').localeCompare(b.student_no ?? '')).map((s) => s.enrollment_id)
+  return [...items]
+    .sort((a, b) => (a.student_no ?? '').localeCompare(b.student_no ?? ''))
+    .map((s) => s.enrollment_id)
 }
 
 /** 给一场考试的单科批量写分数:scores[i] 对应 enrollmentIds[i]。 */
@@ -152,26 +226,41 @@ export async function putScores(
 ): Promise<void> {
   const res = await request.put(`${API}/classes/${classId}/exams/${examId}/scores`, {
     headers: authHeaders(token),
-    data: { cells: enrollmentIds.map((id, i) => ({ enrollment_id: id, subject, value: scores[i] })) },
+    data: {
+      cells: enrollmentIds.map((id, i) => ({ enrollment_id: id, subject, value: scores[i] })),
+    },
   })
   expect(res.ok()).toBeTruthy()
 }
 
 /** 删除在籍学生里姓名以 测试 开头的人(用例自建学生的兜底清理;失败中途退出也不留脏数据)。 */
-export async function deleteTestStudents(request: APIRequestContext, token: string, classId: string): Promise<void> {
+export async function deleteTestStudents(
+  request: APIRequestContext,
+  token: string,
+  classId: string,
+): Promise<void> {
   const headers = authHeaders(token)
   const res = await request.get(`${API}/classes/${classId}/students`, { headers })
   expect(res.ok()).toBeTruthy()
   const { items } = (await res.json()) as { items: { enrollment_id: string; name: string }[] }
   for (const s of items.filter((x) => x.name.startsWith('测试'))) {
-    const del = await request.delete(`${API}/classes/${classId}/students/${s.enrollment_id}`, { headers })
+    const del = await request.delete(`${API}/classes/${classId}/students/${s.enrollment_id}`, {
+      headers,
+    })
     expect(del.ok()).toBeTruthy()
   }
 }
 
 /** 清空当前账号对某学生的个人笔记(PUT 空文本即删除本人笔记)。 */
-export async function clearMyNote(request: APIRequestContext, token: string, studentId: string): Promise<void> {
-  const res = await request.put(`${API}/students/${studentId}/my-notes`, { headers: authHeaders(token), data: { text: '' } })
+export async function clearMyNote(
+  request: APIRequestContext,
+  token: string,
+  studentId: string,
+): Promise<void> {
+  const res = await request.put(`${API}/students/${studentId}/my-notes`, {
+    headers: authHeaders(token),
+    data: { text: '' },
+  })
   expect(res.ok()).toBeTruthy()
 }
 
@@ -182,7 +271,9 @@ export async function studentRecord(
   classId: string,
   name: string,
 ): Promise<{ student_id: string; enrollment_id: string; birthdate: string | null }> {
-  const res = await request.get(`${API}/classes/${classId}/students/records`, { headers: authHeaders(token) })
+  const res = await request.get(`${API}/classes/${classId}/students/records`, {
+    headers: authHeaders(token),
+  })
   expect(res.ok()).toBeTruthy()
   const { items } = (await res.json()) as {
     items: { name: string; student_id: string; enrollment_id: string; birthdate: string | null }[]
@@ -193,8 +284,14 @@ export async function studentRecord(
 }
 
 /** 学校时区的"今天"(来自教室概况)。 */
-export async function schoolToday(request: APIRequestContext, token: string, classId: string): Promise<string> {
-  const res = await request.get(`${API}/classes/${classId}/classroom`, { headers: authHeaders(token) })
+export async function schoolToday(
+  request: APIRequestContext,
+  token: string,
+  classId: string,
+): Promise<string> {
+  const res = await request.get(`${API}/classes/${classId}/classroom`, {
+    headers: authHeaders(token),
+  })
   expect(res.ok()).toBeTruthy()
   return ((await res.json()) as { today: string }).today
 }
@@ -206,13 +303,23 @@ export interface AiDataSnapshot {
   growth: Set<string>
 }
 
-async function classStudentIds(request: APIRequestContext, token: string, classId: string): Promise<string[]> {
-  const res = await request.get(`${API}/classes/${classId}/students`, { headers: authHeaders(token) })
+async function classStudentIds(
+  request: APIRequestContext,
+  token: string,
+  classId: string,
+): Promise<string[]> {
+  const res = await request.get(`${API}/classes/${classId}/students`, {
+    headers: authHeaders(token),
+  })
   expect(res.ok()).toBeTruthy()
   return ((await res.json()) as { items: { student_id: string }[] }).items.map((s) => s.student_id)
 }
 
-export async function snapshotAiData(request: APIRequestContext, token: string, classId: string): Promise<AiDataSnapshot> {
+export async function snapshotAiData(
+  request: APIRequestContext,
+  token: string,
+  classId: string,
+): Promise<AiDataSnapshot> {
   const headers = authHeaders(token)
   const chats = await request.get(`${API}/ai/chats?class_id=${classId}`, { headers })
   expect(chats.ok()).toBeTruthy()
@@ -247,21 +354,26 @@ export async function restoreAiData(
     const c = await request.get(`${API}/students/${sid}/comments`, { headers: ownerHeaders })
     for (const x of ((await c.json()) as { items: { id: string }[] }).items) {
       if (snap.comments.has(x.id)) continue
-      if (!(await request.delete(`${API}/comments/${x.id}`, { headers: ownerHeaders })).ok()) failed.push(`${API}/comments/${x.id}`)
+      if (!(await request.delete(`${API}/comments/${x.id}`, { headers: ownerHeaders })).ok())
+        failed.push(`${API}/comments/${x.id}`)
     }
     const g = await request.get(`${API}/students/${sid}/growth-records`, { headers: ownerHeaders })
     for (const x of ((await g.json()) as { items: { id: string }[] }).items) {
       if (snap.growth.has(x.id)) continue
-      if (!(await request.delete(`${API}/growth-records/${x.id}`, { headers: ownerHeaders })).ok()) failed.push(`${API}/growth-records/${x.id}`)
+      if (!(await request.delete(`${API}/growth-records/${x.id}`, { headers: ownerHeaders })).ok())
+        failed.push(`${API}/growth-records/${x.id}`)
     }
   }
   // 对话按创建者隔离:每个 token 只看得到、删得掉自己的
   for (const token of tokens) {
-    const chats = await request.get(`${API}/ai/chats?class_id=${classId}`, { headers: authHeaders(token) })
+    const chats = await request.get(`${API}/ai/chats?class_id=${classId}`, {
+      headers: authHeaders(token),
+    })
     if (!chats.ok()) continue
     for (const x of ((await chats.json()) as { items: { id: string }[] }).items) {
       if (snap.chats.has(x.id)) continue
-      if (!(await request.delete(`${API}/ai/chats/${x.id}`, { headers: authHeaders(token) })).ok()) failed.push(`${API}/ai/chats/${x.id}`)
+      if (!(await request.delete(`${API}/ai/chats/${x.id}`, { headers: authHeaders(token) })).ok())
+        failed.push(`${API}/ai/chats/${x.id}`)
     }
   }
   expect(failed, '清理自建数据时有删除失败').toEqual([])
@@ -279,15 +391,28 @@ export async function giveReview(
   const opId = randomUUID()
   const res = await request.post(`${API}/classes/${classId}/reviews`, {
     headers: authHeaders(token),
-    data: { op_id: opId, category: 'individual', enrollment_ids: [enrollmentId], reason_text: reason, score_delta: delta },
+    data: {
+      op_id: opId,
+      category: 'individual',
+      enrollment_ids: [enrollmentId],
+      reason_text: reason,
+      score_delta: delta,
+    },
   })
   expect(res.ok()).toBeTruthy()
   return opId
 }
 
 /** 某名学生的累计积分(来自点评汇总)。 */
-export async function reviewTotal(request: APIRequestContext, token: string, classId: string, enrollmentId: string): Promise<number> {
-  const res = await request.get(`${API}/classes/${classId}/reviews/summary`, { headers: authHeaders(token) })
+export async function reviewTotal(
+  request: APIRequestContext,
+  token: string,
+  classId: string,
+  enrollmentId: string,
+): Promise<number> {
+  const res = await request.get(`${API}/classes/${classId}/reviews/summary`, {
+    headers: authHeaders(token),
+  })
   expect(res.ok()).toBeTruthy()
   const { items } = (await res.json()) as { items: { enrollment_id: string; total: number }[] }
   return items.find((i) => i.enrollment_id === enrollmentId)?.total ?? 0
@@ -296,7 +421,11 @@ export async function reviewTotal(request: APIRequestContext, token: string, cla
 const adminHeaders = authHeaders
 
 /** 管理端账号的 GET/请求助手:返回响应体,失败直接断言。 */
-export async function adminGet<T>(request: APIRequestContext, token: string, path: string): Promise<T> {
+export async function adminGet<T>(
+  request: APIRequestContext,
+  token: string,
+  path: string,
+): Promise<T> {
   const res = await request.get(`${API}${path}`, { headers: adminHeaders(token) })
   expect(res.ok(), await res.text()).toBeTruthy()
   return (await res.json()) as T
@@ -307,34 +436,63 @@ export async function currentUserId(request: APIRequestContext, token: string): 
 }
 
 /** 学校设置里的功能开关(完整对象)。 */
-export async function getSwitches(request: APIRequestContext, token: string): Promise<Record<string, boolean>> {
+export async function getSwitches(
+  request: APIRequestContext,
+  token: string,
+): Promise<Record<string, boolean>> {
   return adminGet<Record<string, boolean>>(request, token, '/admin/settings/switches')
 }
 
-export async function putSwitches(request: APIRequestContext, token: string, value: Record<string, boolean>): Promise<void> {
-  const res = await request.put(`${API}/admin/settings/switches`, { headers: adminHeaders(token), data: value })
+export async function putSwitches(
+  request: APIRequestContext,
+  token: string,
+  value: Record<string, boolean>,
+): Promise<void> {
+  const res = await request.put(`${API}/admin/settings/switches`, {
+    headers: adminHeaders(token),
+    data: value,
+  })
   expect(res.ok(), await res.text()).toBeTruthy()
 }
 
 /** 结束某用户在某班的全部在任任职(用例自建任职的兜底清理)。 */
-export async function endStaffOfUser(request: APIRequestContext, token: string, classId: string, userId: string): Promise<void> {
+export async function endStaffOfUser(
+  request: APIRequestContext,
+  token: string,
+  classId: string,
+  userId: string,
+): Promise<void> {
   const cls = await adminGet<{
     homeroom: { assignment_id: string; user_id: string } | null
     assistants: { assignment_id: string; user_id: string }[]
     subjects: { teachers: { assignment_id: string; user_id: string }[] }[]
   }>(request, token, `/admin/classes/${classId}`)
-  const all = [cls.homeroom, ...cls.assistants, ...cls.subjects.flatMap((s) => s.teachers)].filter((x) => x !== null)
+  const all = [cls.homeroom, ...cls.assistants, ...cls.subjects.flatMap((s) => s.teachers)].filter(
+    (x) => x !== null,
+  )
   for (const s of all.filter((x) => x.user_id === userId)) {
-    const res = await request.delete(`${API}/admin/staff/${s.assignment_id}`, { headers: adminHeaders(token) })
+    const res = await request.delete(`${API}/admin/staff/${s.assignment_id}`, {
+      headers: adminHeaders(token),
+    })
     expect(res.ok(), await res.text()).toBeTruthy()
   }
 }
 
 /** 卸任某用户的全部管理岗位(用例自加的岗位兜底清理)。 */
-export async function endRolesOfUser(request: APIRequestContext, token: string, userId: string): Promise<void> {
-  const roles = await adminGet<{ binding_id: string; user_id: string }[]>(request, token, '/admin/roles')
+export async function endRolesOfUser(
+  request: APIRequestContext,
+  token: string,
+  userId: string,
+): Promise<void> {
+  const roles = await adminGet<{ binding_id: string; user_id: string }[]>(
+    request,
+    token,
+    '/admin/roles',
+  )
   for (const r of roles.filter((x) => x.user_id === userId)) {
-    const res = await request.delete(`${API}/admin/roles/${r.binding_id}`, { headers: adminHeaders(token) })
+    const res = await request.delete(`${API}/admin/roles/${r.binding_id}`, {
+      headers: adminHeaders(token),
+    })
     expect(res.ok(), await res.text()).toBeTruthy()
   }
 }
@@ -350,16 +508,26 @@ export async function clearScores(
   const headers = authHeaders(token)
   const list = await request.get(`${API}/classes/${classId}/exams`, { headers })
   expect(list.ok()).toBeTruthy()
-  const exam = ((await list.json()) as { items: ExamSummary[] }).items.find((x) => x.name === examName)
+  const exam = ((await list.json()) as { items: ExamSummary[] }).items.find(
+    (x) => x.name === examName,
+  )
   if (!exam) return
   const roster = await rosterEnrollmentIds(request, token, classId)
-  const cells = roster.flatMap((id) => subjects.map((subject) => ({ enrollment_id: id, subject, value: null })))
-  const res = await request.put(`${API}/classes/${classId}/exams/${exam.id}/scores`, { headers, data: { cells } })
+  const cells = roster.flatMap((id) =>
+    subjects.map((subject) => ({ enrollment_id: id, subject, value: null })),
+  )
+  const res = await request.put(`${API}/classes/${classId}/exams/${exam.id}/scores`, {
+    headers,
+    data: { cells },
+  })
   expect(res.ok(), await res.text()).toBeTruthy()
 }
 
 /** 删除名字以 E2E 开头的年级联考(分数要先用 clearScores 清掉,否则 409)。 */
-export async function deleteE2eGradeExams(request: APIRequestContext, token: string): Promise<void> {
+export async function deleteE2eGradeExams(
+  request: APIRequestContext,
+  token: string,
+): Promise<void> {
   const headers = authHeaders(token)
   const res = await request.get(`${API}/admin/grade-exams`, { headers })
   expect(res.ok(), await res.text()).toBeTruthy()

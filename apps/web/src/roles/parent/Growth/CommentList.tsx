@@ -20,7 +20,9 @@ export default function CommentList({ comments }: { comments: ParentComment[] })
             {g.items.map((c) => (
               <li key={c.id} className="rounded-xl border bg-card p-3 text-sm text-card-foreground">
                 <p className="break-words whitespace-pre-wrap">{c.content}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{formatInTz(c.created_at, SCHOOL_TZ).slice(0, 10)}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {formatInTz(c.created_at, SCHOOL_TZ).slice(0, 10)}
+                </p>
               </li>
             ))}
           </ul>

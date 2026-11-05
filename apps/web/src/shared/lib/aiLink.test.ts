@@ -6,7 +6,10 @@ describe('aiLink', () => {
     const url = aiLink({ tpl: 'comment1', studentId: 's1', examId: 'e1', compareExamId: 'e0' })
     expect(url).toBe('/teacher/ai?tpl=comment1&stu=s1&exam=e1&vs=e0')
     expect(readAiLink(url.slice(url.indexOf('?')))).toEqual({
-      tpl: 'comment1', stu: 's1', exam: 'e1', vs: 'e0',
+      tpl: 'comment1',
+      stu: 's1',
+      exam: 'e1',
+      vs: 'e0',
     })
   })
 

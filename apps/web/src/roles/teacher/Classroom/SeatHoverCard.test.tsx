@@ -8,14 +8,22 @@ import { rosterFixture } from './pageTestUtils'
 import SeatHoverCard from './SeatHoverCard'
 
 vi.mock('@/shared/components/ClassroomMap/art/Avatar', () => ({
-  default: ({ color, title }: { color: string; title: string }) => <span data-testid="avatar" data-color={color}>{title}</span>,
+  default: ({ color, title }: { color: string; title: string }) => (
+    <span data-testid="avatar" data-color={color}>
+      {title}
+    </span>
+  ),
 }))
 
 const seat = (over: Partial<StudentSeat>): StudentSeat => ({ ...rosterFixture[0], ...over })
 const colorOf = (s: StudentSeat, desk: DeskSize, cols: number) => {
   const { unmount } = render(
-    <SeatHoverCard seat={s} attendance={undefined} week={undefined}
-      groupOf={(x) => groupOf(x.seat_col ?? 1, desk, cols, x.seat_row ?? 1)} />,
+    <SeatHoverCard
+      seat={s}
+      attendance={undefined}
+      week={undefined}
+      groupOf={(x) => groupOf(x.seat_col ?? 1, desk, cols, x.seat_row ?? 1)}
+    />,
   )
   const c = screen.getByTestId('avatar').getAttribute('data-color')
   unmount()

@@ -35,24 +35,35 @@ export function useStudentDrawer(): {
   // 渲染期同步:子组件的 effect 先于父组件的 effect 运行,用 effect 同步会读到旧地址
   searchRef.current = search
 
-  const write = useCallback((edit: (p: URLSearchParams) => void) => {
-    const p = new URLSearchParams(searchRef.current)
-    edit(p)
-    const str = p.toString()
-    searchRef.current = str ? `?${str}` : ''
-    navigate({ search: searchRef.current }, { replace: true })
-  }, [navigate])
+  const write = useCallback(
+    (edit: (p: URLSearchParams) => void) => {
+      const p = new URLSearchParams(searchRef.current)
+      edit(p)
+      const str = p.toString()
+      searchRef.current = str ? `?${str}` : ''
+      navigate({ search: searchRef.current }, { replace: true })
+    },
+    [navigate],
+  )
 
-  const open = useCallback((id: string, next?: ProfileTab) => write((p) => {
-    p.set('student', id)
-    if (next && next !== '概览') p.set('tab', next)
-    else p.delete('tab')
-  }), [write])
+  const open = useCallback(
+    (id: string, next?: ProfileTab) =>
+      write((p) => {
+        p.set('student', id)
+        if (next && next !== '概览') p.set('tab', next)
+        else p.delete('tab')
+      }),
+    [write],
+  )
 
-  const close = useCallback(() => write((p) => {
-    p.delete('student')
-    p.delete('tab')
-  }), [write])
+  const close = useCallback(
+    () =>
+      write((p) => {
+        p.delete('student')
+        p.delete('tab')
+      }),
+    [write],
+  )
 
   return useMemo(() => ({ studentId, tab, open, close }), [studentId, tab, open, close])
 }

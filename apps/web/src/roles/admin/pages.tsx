@@ -67,39 +67,151 @@ export const ADMIN_PAGES: AdminPage[] = [
   { path: 'today', label: '今日关注', icon: Sun, perm: 'school.view', element: <TodayPage /> },
   // ── today:追加在此行之上 ──
 
-  { path: 'board', label: '全校看板', icon: LayoutGrid, perm: 'school.view', element: <BoardPage /> },
-  { path: 'classes/:id', label: '班级', icon: LayoutGrid, perm: 'school.view', element: <ClassViewPage />, hidden: true },
+  {
+    path: 'board',
+    label: '全校看板',
+    icon: LayoutGrid,
+    perm: 'school.view',
+    element: <BoardPage />,
+  },
+  {
+    path: 'classes/:id',
+    label: '班级',
+    icon: LayoutGrid,
+    perm: 'school.view',
+    element: <ClassViewPage />,
+    hidden: true,
+  },
   // ── board:追加在此行之上 ──
 
-  { path: 'org', label: '组织架构', icon: Building2, perm: 'org.manage', element: <OrgPage />, group: 'manage' },
-  { path: 'org/classes/:id', label: '班级信息', icon: Building2, perm: 'org.manage', element: <ClassInfoPage />, hidden: true, group: 'manage' },
+  {
+    path: 'org',
+    label: '组织架构',
+    icon: Building2,
+    perm: 'org.manage',
+    element: <OrgPage />,
+    group: 'manage',
+  },
+  {
+    path: 'org/classes/:id',
+    label: '班级信息',
+    icon: Building2,
+    perm: 'org.manage',
+    element: <ClassInfoPage />,
+    hidden: true,
+    group: 'manage',
+  },
   // ── org:追加在此行之上 ──
 
-  { path: 'accounts', label: '账号', icon: Users, perm: 'account.manage', element: <AccountsPage />, group: 'manage' },
+  {
+    path: 'accounts',
+    label: '账号',
+    icon: Users,
+    perm: 'account.manage',
+    element: <AccountsPage />,
+    group: 'manage',
+  },
   // ── accounts:追加在此行之上 ──
 
-  { path: 'settings', label: '学校设置', icon: Settings, perm: 'settings.manage', element: <SettingsPage />, group: 'manage' },
+  {
+    path: 'settings',
+    label: '学校设置',
+    icon: Settings,
+    perm: 'settings.manage',
+    element: <SettingsPage />,
+    group: 'manage',
+  },
   // ── settings:追加在此行之上 ──
 
-  { path: 'grade-exams', label: '年级联考', icon: ClipboardList, perm: 'exam.grade_write', element: <GradeExamsPage />, group: 'reports' },
-  { path: 'reports/scores', label: '成绩汇总', icon: BarChart3, perm: 'school.view', element: <ScoresReportPage />, group: 'reports' },
+  {
+    path: 'grade-exams',
+    label: '年级联考',
+    icon: ClipboardList,
+    perm: 'exam.grade_write',
+    element: <GradeExamsPage />,
+    group: 'reports',
+  },
+  {
+    path: 'reports/scores',
+    label: '成绩汇总',
+    icon: BarChart3,
+    perm: 'school.view',
+    element: <ScoresReportPage />,
+    group: 'reports',
+  },
   // ── 段 C(联考 / 成绩汇总):追加在此行之上 ──
 
-  { path: 'reports/attendance', label: '考勤报告', icon: CalendarCheck, perm: 'school.view', element: <AttendanceReportPage />, group: 'reports' },
+  {
+    path: 'reports/attendance',
+    label: '考勤报告',
+    icon: CalendarCheck,
+    perm: 'school.view',
+    element: <AttendanceReportPage />,
+    group: 'reports',
+  },
   // ── reports-attendance:追加在此行之上 ──
 
-  { path: 'audit', label: '审计日志', icon: ScrollText, perm: 'audit.read', element: <AuditPage />, group: 'system' },
-  { path: 'ai/usage', label: 'AI 使用', icon: Sparkles, perm: 'ai.usage', element: <AiUsagePage />, group: 'system' },
-  { path: 'ai/config', label: 'AI 配置', icon: KeyRound, perm: 'settings.manage', element: <AiConfigPage />, group: 'system' },
+  {
+    path: 'audit',
+    label: '审计日志',
+    icon: ScrollText,
+    perm: 'audit.read',
+    element: <AuditPage />,
+    group: 'system',
+  },
+  {
+    path: 'ai/usage',
+    label: 'AI 使用',
+    icon: Sparkles,
+    perm: 'ai.usage',
+    element: <AiUsagePage />,
+    group: 'system',
+  },
+  {
+    path: 'ai/config',
+    label: 'AI 配置',
+    icon: KeyRound,
+    perm: 'settings.manage',
+    element: <AiConfigPage />,
+    group: 'system',
+  },
   // ── audit-ai:追加在此行之上 ──
 
-  { path: 'notices', label: '通知', icon: Megaphone, perm: 'notice.send', element: <NoticesPage /> },
+  {
+    path: 'notices',
+    label: '通知',
+    icon: Megaphone,
+    perm: 'notice.send',
+    element: <NoticesPage />,
+  },
   // ── notices:追加在此行之上 ──
 
-  { path: 'upgrade', label: '学年升级', icon: GraduationCap, perm: 'year.upgrade', element: <UpgradePage />, group: 'manage' },
+  {
+    path: 'upgrade',
+    label: '学年升级',
+    icon: GraduationCap,
+    perm: 'year.upgrade',
+    element: <UpgradePage />,
+    group: 'manage',
+  },
   // ── upgrade:追加在此行之上 ──
 
-  { path: 'history', label: '往年班级', icon: History, perm: 'school.view', element: <HistoryPage />, group: 'manage' },
-  { path: 'history/classes/:id', label: '往年班级', icon: History, perm: 'school.view', element: <HistoryClassPage />, hidden: true, group: 'manage' },
+  {
+    path: 'history',
+    label: '往年班级',
+    icon: History,
+    perm: 'school.view',
+    element: <HistoryPage />,
+    group: 'manage',
+  },
+  {
+    path: 'history/classes/:id',
+    label: '往年班级',
+    icon: History,
+    perm: 'school.view',
+    element: <HistoryClassPage />,
+    hidden: true,
+    group: 'manage',
+  },
   // ── history:追加在此行之上 ──
 ]

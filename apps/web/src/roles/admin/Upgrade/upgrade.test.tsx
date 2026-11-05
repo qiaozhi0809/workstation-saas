@@ -6,7 +6,13 @@ import { ApiError } from '@/shared/api/client'
 import { studentsApi } from '@/shared/api/students'
 import { useAuthStore } from '@/shared/stores/auth'
 import type {
-  AdminRole, ClassAdmin, ClassPreview, UpgradeLatest, UpgradePlan, UpgradePreview, YearAdmin,
+  AdminRole,
+  ClassAdmin,
+  ClassPreview,
+  UpgradeLatest,
+  UpgradePlan,
+  UpgradePreview,
+  YearAdmin,
 } from '@/shared/types/admin'
 import type { User } from '@/shared/types/user'
 import type { StudentSeat } from '@/shared/types/student'
@@ -16,8 +22,14 @@ import UpgradePage from './UpgradePage'
 
 vi.mock('@/shared/api/admin', () => ({
   adminApi: {
-    upgradeSuggest: vi.fn(), upgradePreview: vi.fn(), upgradeApply: vi.fn(),
-    upgradeLatest: vi.fn(), upgradeRollback: vi.fn(), classes: vi.fn(), roles: vi.fn(), years: vi.fn(),
+    upgradeSuggest: vi.fn(),
+    upgradePreview: vi.fn(),
+    upgradeApply: vi.fn(),
+    upgradeLatest: vi.fn(),
+    upgradeRollback: vi.fn(),
+    classes: vi.fn(),
+    roles: vi.fn(),
+    years: vi.fn(),
   },
 }))
 vi.mock('@/shared/api/students', () => ({ studentsApi: { listInClass: vi.fn() } }))
@@ -32,23 +44,79 @@ const suggested = (): UpgradePlan => ({
   from_year_id: 'y1',
   new_year: { name: '2027-2028学年', start_date: '2027-09-01', end_date: '2028-07-10' },
   classes: [
-    { from_class_id: 'c1', from_name: '三年一班', action: 'promote', to_grade_name: '四年级', to_name: '一班', homeroom_teacher_id: 't1', teacher_name: '李老师', keep_teachers: true },
+    {
+      from_class_id: 'c1',
+      from_name: '三年一班',
+      action: 'promote',
+      to_grade_name: '四年级',
+      to_name: '一班',
+      homeroom_teacher_id: 't1',
+      teacher_name: '李老师',
+      keep_teachers: true,
+    },
     { from_class_id: 'c2', from_name: '六年一班', action: 'graduate', keep_teachers: true },
-    { from_class_id: 'c3', from_name: '二年一班', action: 'promote', to_grade_name: '三年级', to_name: '一班', homeroom_teacher_id: null, teacher_name: null, keep_teachers: false },
+    {
+      from_class_id: 'c3',
+      from_name: '二年一班',
+      action: 'promote',
+      to_grade_name: '三年级',
+      to_name: '一班',
+      homeroom_teacher_id: null,
+      teacher_name: null,
+      keep_teachers: false,
+    },
   ],
   students: [],
   new_classes: [],
-  grade_heads: [{ grade_name: '四年级', user_ids: ['u9'] }, { grade_name: '三年级', user_ids: [] }],
+  grade_heads: [
+    { grade_name: '四年级', user_ids: ['u9'] },
+    { grade_name: '三年级', user_ids: [] },
+  ],
 })
-const adminClass = (id: string, name: string, grade: string) => ({ id, name, grade_name: grade }) as ClassAdmin
-const seat = (eid: string, name: string) => ({ enrollment_id: eid, student_id: `s-${eid}`, name }) as StudentSeat
-const headRole: AdminRole = { binding_id: 'b1', user_id: 'u9', display_name: '赵组长', role: 'grade_head', grade_id: 'g4', grade_name: '四年级' }
-const preview = (classes: ClassPreview[] = []): UpgradePreview => ({ new_year: '2027-2028学年', classes, new_classes: [], warnings: [] })
-const activeYear = (id: string): YearAdmin => ({ id, name: '学年', start_date: '2026-09-01', end_date: '2027-07-10', term2_start: null, is_active: true })
-const latest: UpgradeLatest = { id: 'up1', executed_at: '2027-08-20T08:30:00Z', from_year_name: '2026-2027', to_year_name: '2027-2028', rolled_back: false }
+const adminClass = (id: string, name: string, grade: string) =>
+  ({ id, name, grade_name: grade }) as ClassAdmin
+const seat = (eid: string, name: string) =>
+  ({ enrollment_id: eid, student_id: `s-${eid}`, name }) as StudentSeat
+const headRole: AdminRole = {
+  binding_id: 'b1',
+  user_id: 'u9',
+  display_name: '赵组长',
+  role: 'grade_head',
+  grade_id: 'g4',
+  grade_name: '四年级',
+}
+const preview = (classes: ClassPreview[] = []): UpgradePreview => ({
+  new_year: '2027-2028学年',
+  classes,
+  new_classes: [],
+  warnings: [],
+})
+const activeYear = (id: string): YearAdmin => ({
+  id,
+  name: '学年',
+  start_date: '2026-09-01',
+  end_date: '2027-07-10',
+  term2_start: null,
+  is_active: true,
+})
+const latest: UpgradeLatest = {
+  id: 'up1',
+  executed_at: '2027-08-20T08:30:00Z',
+  from_year_name: '2026-2027',
+  to_year_name: '2027-2028',
+  rolled_back: false,
+}
 const cp = (o: Partial<ClassPreview>): ClassPreview => ({
-  from_name: '三年一班', action: 'promote', to_label: '四年级 一班', teacher_name: '李老师',
-  follow: 38, repeat_in: 0, repeat_out: 1, leave: 1, graduate: 0, ...o,
+  from_name: '三年一班',
+  action: 'promote',
+  to_label: '四年级 一班',
+  teacher_name: '李老师',
+  follow: 38,
+  repeat_in: 0,
+  repeat_out: 1,
+  leave: 1,
+  graduate: 0,
+  ...o,
 })
 
 beforeEach(() => {
@@ -56,20 +124,34 @@ beforeEach(() => {
   api.upgradeSuggest.mockResolvedValue(suggested())
   api.upgradePreview.mockResolvedValue(preview([cp({})]))
   api.upgradeLatest.mockResolvedValue(null)
-  api.classes.mockResolvedValue([adminClass('c1', '三年一班', '三年级'), adminClass('c2', '六年一班', '六年级'), adminClass('c3', '二年一班', '二年级')])
+  api.classes.mockResolvedValue([
+    adminClass('c1', '三年一班', '三年级'),
+    adminClass('c2', '六年一班', '六年级'),
+    adminClass('c3', '二年一班', '二年级'),
+  ])
   api.roles.mockResolvedValue([headRole])
   api.years.mockResolvedValue([activeYear('y1')])
   students.listInClass.mockResolvedValue({ items: [seat('e1', '周小乐'), seat('e2', '吴小米')] })
-  org.people.mockResolvedValue([{ user_id: 'u7', name: '王老师', login_name: 'wang', subjects: ['数学'] }])
+  org.people.mockResolvedValue([
+    { user_id: 'u7', name: '王老师', login_name: 'wang', subjects: ['数学'] },
+  ])
 })
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.clearAllMocks(); useAuthStore.setState({ user: null }) })
+afterEach(() => {
+  cleanup()
+  vi.restoreAllMocks()
+  vi.clearAllMocks()
+  useAuthStore.setState({ user: null })
+})
 
 let qc: QueryClient
-const renderPage = () => render(
-  <QueryClientProvider client={(qc = new QueryClient({ defaultOptions: { queries: { retry: false } } }))}>
-    <UpgradePage />
-  </QueryClientProvider>,
-)
+const renderPage = () =>
+  render(
+    <QueryClientProvider
+      client={(qc = new QueryClient({ defaultOptions: { queries: { retry: false } } }))}
+    >
+      <UpgradePage />
+    </QueryClientProvider>,
+  )
 
 async function generate() {
   fireEvent.change(await screen.findByLabelText('学年名称'), { target: { value: '2027-2028学年' } })
@@ -85,7 +167,11 @@ describe('suggest and prefill', () => {
   it('prefills every step from the suggested plan', async () => {
     renderPage()
     await generate()
-    expect(api.upgradeSuggest).toHaveBeenCalledWith({ name: '2027-2028学年', start_date: '2027-09-01', end_date: '2028-07-10' })
+    expect(api.upgradeSuggest).toHaveBeenCalledWith({
+      name: '2027-2028学年',
+      start_date: '2027-09-01',
+      end_date: '2028-07-10',
+    })
     expect(screen.getByLabelText('三年一班 去向')).toHaveValue('promote')
     expect(screen.getByLabelText('三年一班 新年级名')).toHaveValue('四年级')
     expect(screen.getByLabelText('三年一班 新班名')).toHaveValue('一班')
@@ -110,7 +196,10 @@ describe('suggest and prefill', () => {
     expect(await screen.findByText('(未知账号)')).toBeInTheDocument()
     step('预览')
     await waitFor(() => expect(api.upgradePreview).toHaveBeenCalled())
-    expect(lastPreviewBody().grade_heads).toEqual([{ grade_name: '四年级', user_ids: ['u9'] }, { grade_name: '三年级', user_ids: [] }])
+    expect(lastPreviewBody().grade_heads).toEqual([
+      { grade_name: '四年级', user_ids: ['u9'] },
+      { grade_name: '三年级', user_ids: [] },
+    ])
   })
 })
 
@@ -137,9 +226,15 @@ describe('draft', () => {
   })
 
   it('keeps working when localStorage throws', async () => {
-    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('denied') })
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('denied') })
-    vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => { throw new Error('denied') })
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('denied')
+    })
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('denied')
+    })
+    vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
+      throw new Error('denied')
+    })
     renderPage()
     await generate()
     fireEvent.change(screen.getByLabelText('三年一班 新班名'), { target: { value: '二班' } })
@@ -163,7 +258,15 @@ describe('B-5 complete fields', () => {
     step('预览')
     await waitFor(() => expect(api.upgradePreview).toHaveBeenCalled())
     expect(lastPreviewBody().new_classes).toEqual([
-      { grade_name: '一年级', name: '一班', homeroom_teacher_id: null, seat_rows: 7, seat_cols: 4, desk_size: 2, seat_layout: 'auto' },
+      {
+        grade_name: '一年级',
+        name: '一班',
+        homeroom_teacher_id: null,
+        seat_rows: 7,
+        seat_cols: 4,
+        desk_size: 2,
+        seat_layout: 'auto',
+      },
     ])
   })
 
@@ -171,7 +274,9 @@ describe('B-5 complete fields', () => {
     const thin = suggested() as unknown as Record<string, unknown>
     delete thin.students
     delete thin.new_classes
-    ;(thin.classes as Record<string, unknown>[]).forEach((c) => { delete c.keep_teachers })
+    ;(thin.classes as Record<string, unknown>[]).forEach((c) => {
+      delete c.keep_teachers
+    })
     api.upgradeSuggest.mockResolvedValue(thin as unknown as UpgradePlan)
     renderPage()
     await generate()
@@ -187,7 +292,10 @@ describe('B-5 complete fields', () => {
   it('removing a new class drops and renumbers student targets', () => {
     const plan: UpgradePlan = {
       ...suggested(),
-      new_classes: [{ grade_name: '一年级', name: '一班', ...seats }, { grade_name: '一年级', name: '二班', ...seats }],
+      new_classes: [
+        { grade_name: '一年级', name: '一班', ...seats },
+        { grade_name: '一年级', name: '二班', ...seats },
+      ],
       students: [
         { enrollment_id: 'a', action: 'repeat', to: { new_class: 0 } },
         { enrollment_id: 'b', action: 'repeat', to: { new_class: 1 } },
@@ -209,7 +317,9 @@ describe('homeroom teacher id contract', () => {
     await generate()
     fireEvent.click(screen.getByRole('button', { name: '三年一班 班主任' }))
     fireEvent.click(await screen.findByRole('button', { name: /王老师/ }))
-    await waitFor(() => expect(screen.getByRole('button', { name: '三年一班 班主任' })).toHaveTextContent('王老师'))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '三年一班 班主任' })).toHaveTextContent('王老师'),
+    )
     step('预览')
     await waitFor(() => expect(api.upgradePreview).toHaveBeenCalled())
     const c = lastPreviewBody().classes[0]
@@ -234,7 +344,10 @@ describe('grade heads', () => {
     fireEvent.click(await screen.findByRole('button', { name: '移除 四年级 年级组长 赵组长' }))
     step('预览')
     await waitFor(() => expect(api.upgradePreview).toHaveBeenCalled())
-    expect(lastPreviewBody().grade_heads).toEqual([{ grade_name: '四年级', user_ids: [] }, { grade_name: '三年级', user_ids: [] }])
+    expect(lastPreviewBody().grade_heads).toEqual([
+      { grade_name: '四年级', user_ids: [] },
+      { grade_name: '三年级', user_ids: [] },
+    ])
   })
 
   it('adds a picked head', async () => {
@@ -246,7 +359,10 @@ describe('grade heads', () => {
     fireEvent.click(screen.getByRole('button', { name: '完成' }))
     step('预览')
     await waitFor(() => expect(api.upgradePreview).toHaveBeenCalled())
-    expect(lastPreviewBody().grade_heads).toEqual([{ grade_name: '四年级', user_ids: ['u9'] }, { grade_name: '三年级', user_ids: ['u7'] }])
+    expect(lastPreviewBody().grade_heads).toEqual([
+      { grade_name: '四年级', user_ids: ['u9'] },
+      { grade_name: '三年级', user_ids: ['u7'] },
+    ])
   })
 
   it('moves heads to the new name when exactly one grade is renamed', async () => {
@@ -260,7 +376,10 @@ describe('grade heads', () => {
     expect(screen.queryByText('年级名已改,组长未沿用,请重新选择')).toBeNull()
     step('预览')
     await waitFor(() => expect(api.upgradePreview).toHaveBeenCalled())
-    expect(lastPreviewBody().grade_heads).toEqual([{ grade_name: '五年级', user_ids: ['u9'] }, { grade_name: '三年级', user_ids: [] }])
+    expect(lastPreviewBody().grade_heads).toEqual([
+      { grade_name: '五年级', user_ids: ['u9'] },
+      { grade_name: '三年级', user_ids: [] },
+    ])
   })
 
   it('warns when renamed grades cannot be matched and heads are dropped', async () => {
@@ -273,7 +392,10 @@ describe('grade heads', () => {
     expect(screen.queryByText('赵组长')).toBeNull()
     step('预览')
     await waitFor(() => expect(api.upgradePreview).toHaveBeenCalled())
-    expect(lastPreviewBody().grade_heads).toEqual([{ grade_name: '五年级', user_ids: [] }, { grade_name: '六年级', user_ids: [] }])
+    expect(lastPreviewBody().grade_heads).toEqual([
+      { grade_name: '五年级', user_ids: [] },
+      { grade_name: '六年级', user_ids: [] },
+    ])
   })
 
   it('trims grade names so classes, new classes and heads agree', async () => {
@@ -290,7 +412,10 @@ describe('grade heads', () => {
     expect(b.classes[0].to_grade_name).toBe('四年级')
     expect(b.new_classes[0].grade_name).toBe('三年级')
     expect(b.new_classes[0].name).toBe('二班')
-    expect(b.grade_heads).toEqual([{ grade_name: '四年级', user_ids: ['u9'] }, { grade_name: '三年级', user_ids: [] }])
+    expect(b.grade_heads).toEqual([
+      { grade_name: '四年级', user_ids: ['u9'] },
+      { grade_name: '三年级', user_ids: [] },
+    ])
   })
 
   it('keeps null (legacy follow-the-grade rule) when never edited', async () => {
@@ -348,7 +473,13 @@ describe('student exceptions', () => {
     await generate()
     step('学生例外')
     fireEvent.change(await screen.findByLabelText('周小乐 去向'), { target: { value: 'repeat' } })
-    api.upgradePreview.mockRejectedValue(new ApiError(400, 'UPGRADE_PLAN_INVALID', '周小乐 留级的目标年级不一致', { section: 'students', index: 0, field: 'to' }))
+    api.upgradePreview.mockRejectedValue(
+      new ApiError(400, 'UPGRADE_PLAN_INVALID', '周小乐 留级的目标年级不一致', {
+        section: 'students',
+        index: 0,
+        field: 'to',
+      }),
+    )
     step('预览')
     expect(await screen.findByLabelText('周小乐 留级目标')).toHaveAttribute('aria-invalid', 'true')
     expect(screen.getByLabelText('吴小米 去向')).not.toHaveAttribute('aria-invalid')
@@ -363,7 +494,13 @@ describe('errors from the backend', () => {
     step('新建班级')
     fireEvent.click(screen.getByRole('button', { name: '新增班级' }))
     fireEvent.click(screen.getByRole('button', { name: '新增班级' }))
-    api.upgradePreview.mockRejectedValue(new ApiError(400, 'UPGRADE_PLAN_INVALID', '座位列数必须是每桌人数的整数倍', { section: 'new_classes', index: 1, field: 'seat_cols' }))
+    api.upgradePreview.mockRejectedValue(
+      new ApiError(400, 'UPGRADE_PLAN_INVALID', '座位列数必须是每桌人数的整数倍', {
+        section: 'new_classes',
+        index: 1,
+        field: 'seat_cols',
+      }),
+    )
     step('预览')
     const bad = await screen.findByLabelText('新建班2 列数')
     expect(bad).toHaveAttribute('aria-invalid', 'true')
@@ -375,7 +512,12 @@ describe('errors from the backend', () => {
   it('maps a new_year error to the first step', async () => {
     renderPage()
     await generate()
-    api.upgradePreview.mockRejectedValue(new ApiError(400, 'UPGRADE_PLAN_INVALID', '学年名 2027-2028学年 已存在', { section: 'new_year', field: 'name' }))
+    api.upgradePreview.mockRejectedValue(
+      new ApiError(400, 'UPGRADE_PLAN_INVALID', '学年名 2027-2028学年 已存在', {
+        section: 'new_year',
+        field: 'name',
+      }),
+    )
     step('预览')
     expect(await screen.findByLabelText('学年名称')).toHaveAttribute('aria-invalid', 'true')
     expect(screen.getByLabelText('开学日期')).not.toHaveAttribute('aria-invalid')
@@ -384,7 +526,13 @@ describe('errors from the backend', () => {
   it('maps a classes error to the class row and field', async () => {
     renderPage()
     await generate()
-    api.upgradePreview.mockRejectedValue(new ApiError(400, 'UPGRADE_PLAN_INVALID', '新学年 三年级 出现重名班 一班', { section: 'classes', index: 2, field: 'to_name' }))
+    api.upgradePreview.mockRejectedValue(
+      new ApiError(400, 'UPGRADE_PLAN_INVALID', '新学年 三年级 出现重名班 一班', {
+        section: 'classes',
+        index: 2,
+        field: 'to_name',
+      }),
+    )
     step('预览')
     expect(await screen.findByLabelText('二年一班 新班名')).toHaveAttribute('aria-invalid', 'true')
     expect(screen.getByLabelText('三年一班 新班名')).not.toHaveAttribute('aria-invalid')
@@ -394,21 +542,38 @@ describe('errors from the backend', () => {
   it('maps a grade_heads error to the people row', async () => {
     renderPage()
     await generate()
-    api.upgradePreview.mockRejectedValue(new ApiError(400, 'UPGRADE_PLAN_INVALID', '找不到年级组长账号', { section: 'grade_heads', index: 0, field: 'user_ids' }))
+    api.upgradePreview.mockRejectedValue(
+      new ApiError(400, 'UPGRADE_PLAN_INVALID', '找不到年级组长账号', {
+        section: 'grade_heads',
+        index: 0,
+        field: 'user_ids',
+      }),
+    )
     step('预览')
-    expect(await screen.findByRole('button', { name: '四年级 年级组长' })).toHaveAttribute('aria-invalid', 'true')
-    expect(screen.getByRole('button', { name: '三年级 年级组长' })).not.toHaveAttribute('aria-invalid')
+    expect(await screen.findByRole('button', { name: '四年级 年级组长' })).toHaveAttribute(
+      'aria-invalid',
+      'true',
+    )
+    expect(screen.getByRole('button', { name: '三年级 年级组长' })).not.toHaveAttribute(
+      'aria-invalid',
+    )
   })
 
   it('shows a regenerate entry on a stale plan and keeps name and dates', async () => {
     renderPage()
     await generate()
-    api.upgradePreview.mockRejectedValue(new ApiError(409, 'UPGRADE_PLAN_STALE', '方案基于的学年已不是进行中的学年'))
+    api.upgradePreview.mockRejectedValue(
+      new ApiError(409, 'UPGRADE_PLAN_STALE', '方案基于的学年已不是进行中的学年'),
+    )
     step('预览')
     expect(await screen.findByText('方案已过期,请重新生成')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '重新生成' }))
     await waitFor(() => expect(api.upgradeSuggest).toHaveBeenCalledTimes(2))
-    expect(api.upgradeSuggest).toHaveBeenLastCalledWith({ name: '2027-2028学年', start_date: '2027-09-01', end_date: '2028-07-10' })
+    expect(api.upgradeSuggest).toHaveBeenLastCalledWith({
+      name: '2027-2028学年',
+      start_date: '2027-09-01',
+      end_date: '2028-07-10',
+    })
   })
 
   it('shows other preview errors with their message', async () => {
@@ -422,16 +587,35 @@ describe('errors from the backend', () => {
 
 describe('preview (B-4)', () => {
   it('renders each known action and falls back for an unknown one', async () => {
-    api.upgradePreview.mockResolvedValue(preview([
-      cp({}),
-      cp({ from_name: '六年一班', action: 'graduate', to_label: '毕业', teacher_name: null, follow: 0, graduate: 40 }),
-      cp({ from_name: '一年二班', action: 'new', to_label: '一年级 二班', follow: 0, repeat_out: 0, leave: 0, repeat_in: 2 }),
-      cp({ from_name: '怪班', action: 'weird', to_label: '神秘去向' }),
-    ]))
+    api.upgradePreview.mockResolvedValue(
+      preview([
+        cp({}),
+        cp({
+          from_name: '六年一班',
+          action: 'graduate',
+          to_label: '毕业',
+          teacher_name: null,
+          follow: 0,
+          graduate: 40,
+        }),
+        cp({
+          from_name: '一年二班',
+          action: 'new',
+          to_label: '一年级 二班',
+          follow: 0,
+          repeat_out: 0,
+          leave: 0,
+          repeat_in: 2,
+        }),
+        cp({ from_name: '怪班', action: 'weird', to_label: '神秘去向' }),
+      ]),
+    )
     renderPage()
     await generate()
     step('预览')
-    expect(await screen.findByText(/三年一班 → 四年级 一班.*班主任:李老师.*随班 38 人/)).toBeInTheDocument()
+    expect(
+      await screen.findByText(/三年一班 → 四年级 一班.*班主任:李老师.*随班 38 人/),
+    ).toBeInTheDocument()
     expect(screen.getByText(/六年一班 毕业.*毕业 40 人/)).toBeInTheDocument()
     expect(screen.getByText(/新建班 一年级 二班/)).toBeInTheDocument()
     expect(screen.getByText(/神秘去向.*weird/)).toBeInTheDocument()
@@ -458,14 +642,21 @@ describe('apply', () => {
     expect(screen.getByText('执行后新学年立即生效')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '确认执行' }))
     expect(await screen.findByText('升级已执行,新学年已生效')).toBeInTheDocument()
-    expect(api.upgradeApply).toHaveBeenCalledWith(expect.objectContaining({ version: 1, from_year_id: 'y1' }))
+    expect(api.upgradeApply).toHaveBeenCalledWith(
+      expect.objectContaining({ version: 1, from_year_id: 'y1' }),
+    )
     expect(window.localStorage.getItem('ws-upgrade-draft')).toBeNull()
     expect(await screen.findByText(/2026-2027 → 2027-2028,执行于/)).toBeInTheDocument()
     expect(screen.getByLabelText('学年名称')).toHaveValue('')
   })
 
   it('maps an apply 400 back to the step', async () => {
-    api.upgradeApply.mockRejectedValue(new ApiError(400, 'UPGRADE_PLAN_INVALID', '学年名 2027-2028学年 已存在', { section: 'new_year', field: 'name' }))
+    api.upgradeApply.mockRejectedValue(
+      new ApiError(400, 'UPGRADE_PLAN_INVALID', '学年名 2027-2028学年 已存在', {
+        section: 'new_year',
+        field: 'name',
+      }),
+    )
     renderPage()
     await generate()
     step('预览')
@@ -480,21 +671,50 @@ describe('apply', () => {
 describe('latest upgrade and rollback', () => {
   it('lists Chinese items when rollback is blocked by data', async () => {
     api.upgradeLatest.mockResolvedValue(latest)
-    api.upgradeRollback.mockRejectedValue(new ApiError(409, 'UPGRADE_HAS_DATA', '新学年已经产生数据,不能回滚', {
-      class_boards: 3, seats: 2, class_roles: 1, transfers: 4, grade_exams: 2, attendances: 5, new_students: 6, new_grades: 1, new_classes: 2, new_assignments: 3, new_bindings: 4, mystery: 7,
-    }))
+    api.upgradeRollback.mockRejectedValue(
+      new ApiError(409, 'UPGRADE_HAS_DATA', '新学年已经产生数据,不能回滚', {
+        class_boards: 3,
+        seats: 2,
+        class_roles: 1,
+        transfers: 4,
+        grade_exams: 2,
+        attendances: 5,
+        new_students: 6,
+        new_grades: 1,
+        new_classes: 2,
+        new_assignments: 3,
+        new_bindings: 4,
+        mystery: 7,
+      }),
+    )
     renderPage()
     expect(await screen.findByText(/2026-2027 → 2027-2028,执行于/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '回滚' }))
-    expect(screen.getByText('回滚会删除新学年的班级与注册记录,往年数据不受影响')).toBeInTheDocument()
+    expect(
+      screen.getByText('回滚会删除新学年的班级与注册记录,往年数据不受影响'),
+    ).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '确认回滚' }))
     expect(await screen.findByText('年级联考 2 场')).toBeInTheDocument()
-    for (const t of ['看板改动 3 处', '座位调整 2 个班', '班干部变动 1 人', '学生转出 4 人', '考勤记录 5 条', '新增学生 6 人', '手动新建的年级 1 个', '手动新建的班级 2 个', '手动添加的任职 3 条', '手动添加的管理岗任命 4 条', 'mystery: 7'])
+    for (const t of [
+      '看板改动 3 处',
+      '座位调整 2 个班',
+      '班干部变动 1 人',
+      '学生转出 4 人',
+      '考勤记录 5 条',
+      '新增学生 6 人',
+      '手动新建的年级 1 个',
+      '手动新建的班级 2 个',
+      '手动添加的任职 3 条',
+      '手动添加的管理岗任命 4 条',
+      'mystery: 7',
+    ])
       expect(screen.getByText(t)).toBeInTheDocument()
   })
 
   it('refreshes the card after a successful rollback', async () => {
-    api.upgradeLatest.mockResolvedValueOnce(latest).mockResolvedValue({ ...latest, rolled_back: true })
+    api.upgradeLatest
+      .mockResolvedValueOnce(latest)
+      .mockResolvedValue({ ...latest, rolled_back: true })
     api.upgradeRollback.mockResolvedValue({ ok: true })
     renderPage()
     await screen.findByText(/2026-2027 → 2027-2028,执行于/)
@@ -511,11 +731,19 @@ describe('latest upgrade and rollback', () => {
     api.upgradeRollback.mockResolvedValue({ ok: true })
     renderPage()
     await screen.findByText(/2026-2027 → 2027-2028,执行于/)
-    const keys = [['history', 'years'], ['grade-exams', null], ['report', 'scores', 'e1'], ['report', 'attendance', '2026-10', null], ['admin', 'org', 'people', '']]
+    const keys = [
+      ['history', 'years'],
+      ['grade-exams', null],
+      ['report', 'scores', 'e1'],
+      ['report', 'attendance', '2026-10', null],
+      ['admin', 'org', 'people', ''],
+    ]
     keys.forEach((k) => qc.setQueryData(k, []))
     fireEvent.click(screen.getByRole('button', { name: '回滚' }))
     fireEvent.click(screen.getByRole('button', { name: '确认回滚' }))
-    await waitFor(() => keys.forEach((k) => expect(qc.getQueryState(k)?.isInvalidated, JSON.stringify(k)).toBe(true)))
+    await waitFor(() =>
+      keys.forEach((k) => expect(qc.getQueryState(k)?.isInvalidated, JSON.stringify(k)).toBe(true)),
+    )
   })
 
   it('disables rollback when already rolled back', async () => {
@@ -533,7 +761,12 @@ describe('review: year edits follow into the plan', () => {
   it('sends the renamed year after a new_year 400', async () => {
     renderPage()
     await generate()
-    api.upgradePreview.mockRejectedValueOnce(new ApiError(400, 'UPGRADE_PLAN_INVALID', '学年名 2027-2028学年 已存在', { section: 'new_year', field: 'name' }))
+    api.upgradePreview.mockRejectedValueOnce(
+      new ApiError(400, 'UPGRADE_PLAN_INVALID', '学年名 2027-2028学年 已存在', {
+        section: 'new_year',
+        field: 'name',
+      }),
+    )
     step('预览')
     const name = await screen.findByLabelText('学年名称')
     expect(name).toHaveAttribute('aria-invalid', 'true')
@@ -542,12 +775,16 @@ describe('review: year edits follow into the plan', () => {
     expect(screen.getByLabelText('学年名称')).not.toHaveAttribute('aria-invalid')
     step('预览')
     await waitFor(() => expect(api.upgradePreview).toHaveBeenCalledTimes(2))
-    expect(lastPreviewBody().new_year).toEqual({ name: '2027-2028学年(新)', start_date: '2027-09-01', end_date: '2028-07-20' })
+    expect(lastPreviewBody().new_year).toEqual({
+      name: '2027-2028学年(新)',
+      start_date: '2027-09-01',
+      end_date: '2028-07-20',
+    })
   })
 })
 
 describe('review: draft isolation and staleness', () => {
-  it('discards another user\'s draft', async () => {
+  it("discards another user's draft", async () => {
     asUser('u-me')
     const first = renderPage()
     await generate()
@@ -563,8 +800,18 @@ describe('review: draft isolation and staleness', () => {
 
   it.each([
     ['corrupt JSON', 'not json{'],
-    ['an old structure without version', JSON.stringify({ step: 'classes', year: { name: 'x', start_date: '', end_date: '' }, plan: suggested() })],
-    ['a plan without classes', JSON.stringify({ v: 2, owner: null, step: 'classes', year: {}, plan: { version: 1 } })],
+    [
+      'an old structure without version',
+      JSON.stringify({
+        step: 'classes',
+        year: { name: 'x', start_date: '', end_date: '' },
+        plan: suggested(),
+      }),
+    ],
+    [
+      'a plan without classes',
+      JSON.stringify({ v: 2, owner: null, step: 'classes', year: {}, plan: { version: 1 } }),
+    ],
   ])('discards %s', async (_n, raw) => {
     window.localStorage.setItem(DRAFT, raw)
     renderPage()
@@ -583,7 +830,11 @@ describe('review: draft isolation and staleness', () => {
     api.upgradeSuggest.mockResolvedValue({ ...suggested(), from_year_id: 'y2' })
     fireEvent.click(screen.getByRole('button', { name: '重新生成' }))
     await waitFor(() => expect(api.upgradeSuggest).toHaveBeenCalledTimes(2))
-    expect(api.upgradeSuggest).toHaveBeenLastCalledWith({ name: '2027-2028学年', start_date: '2027-09-01', end_date: '2028-07-10' })
+    expect(api.upgradeSuggest).toHaveBeenLastCalledWith({
+      name: '2027-2028学年',
+      start_date: '2027-09-01',
+      end_date: '2028-07-10',
+    })
     await waitFor(() => expect(screen.queryByText('草稿基于旧学年,请重新生成')).toBeNull())
   })
 
@@ -633,7 +884,13 @@ describe('review: orphan exception rows', () => {
     api.upgradeSuggest.mockResolvedValue(withOrphans())
     renderPage()
     await generate()
-    api.upgradePreview.mockRejectedValue(new ApiError(400, 'UPGRADE_PLAN_INVALID', '退学生 不在旧学年进行中班级的在籍名单里', { section: 'students', index: 0, field: 'enrollment_id' }))
+    api.upgradePreview.mockRejectedValue(
+      new ApiError(400, 'UPGRADE_PLAN_INVALID', '退学生 不在旧学年进行中班级的在籍名单里', {
+        section: 'students',
+        index: 0,
+        field: 'enrollment_id',
+      }),
+    )
     step('预览')
     const row = (await screen.findByText('退学生')).closest('li')!
     expect(row).toHaveAttribute('data-invalid', 'true')
@@ -667,7 +924,13 @@ describe('review: orphan exception rows', () => {
     fireEvent.change(await screen.findByLabelText('郑小花 去向'), { target: { value: 'leave' } })
     fireEvent.change(screen.getByLabelText('选择班级'), { target: { value: 'c1' } })
     await screen.findByLabelText('周小乐 去向')
-    api.upgradePreview.mockRejectedValue(new ApiError(400, 'UPGRADE_PLAN_INVALID', '郑小花 有问题', { section: 'students', index: 1, field: 'enrollment_id' }))
+    api.upgradePreview.mockRejectedValue(
+      new ApiError(400, 'UPGRADE_PLAN_INVALID', '郑小花 有问题', {
+        section: 'students',
+        index: 1,
+        field: 'enrollment_id',
+      }),
+    )
     step('预览')
     expect(await screen.findByLabelText('郑小花 去向')).toHaveAttribute('aria-invalid', 'true')
     expect(screen.getByLabelText('选择班级')).toHaveValue('c3')
@@ -678,7 +941,13 @@ describe('review: error banner and rows', () => {
   it('always shows the message in the top banner, even without a matching row', async () => {
     renderPage()
     await generate()
-    api.upgradePreview.mockRejectedValue(new ApiError(400, 'UPGRADE_PLAN_INVALID', '新建班序号越界', { section: 'new_classes', index: 5, field: 'name' }))
+    api.upgradePreview.mockRejectedValue(
+      new ApiError(400, 'UPGRADE_PLAN_INVALID', '新建班序号越界', {
+        section: 'new_classes',
+        index: 5,
+        field: 'name',
+      }),
+    )
     step('预览')
     await screen.findByRole('button', { name: '新增班级' })
     expect(screen.getByRole('alert')).toHaveTextContent('新建班序号越界')
@@ -689,7 +958,13 @@ describe('review: error banner and rows', () => {
     await generate()
     step('新建班级')
     fireEvent.click(screen.getByRole('button', { name: '新增班级' }))
-    api.upgradePreview.mockRejectedValue(new ApiError(400, 'UPGRADE_PLAN_INVALID', '座位列数不对', { section: 'new_classes', index: 0, field: 'seat_cols' }))
+    api.upgradePreview.mockRejectedValue(
+      new ApiError(400, 'UPGRADE_PLAN_INVALID', '座位列数不对', {
+        section: 'new_classes',
+        index: 0,
+        field: 'seat_cols',
+      }),
+    )
     step('预览')
     await screen.findByText('座位列数不对')
     expect(screen.getAllByRole('alert')).toHaveLength(1)
@@ -707,21 +982,34 @@ describe('review: preview resilience', () => {
 
   it('renders classes with missing counts as zero and duplicate warnings', async () => {
     api.upgradePreview.mockResolvedValue({
-      ...preview([{ from_name: '甲班', action: 'promote', to_label: '乙', teacher_name: null } as unknown as ClassPreview]),
+      ...preview([
+        {
+          from_name: '甲班',
+          action: 'promote',
+          to_label: '乙',
+          teacher_name: null,
+        } as unknown as ClassPreview,
+      ]),
       warnings: ['重复', '重复'],
     })
     renderPage()
     await generate()
     step('预览')
-    expect(await screen.findByText(/随班 0 · 留级转入 0 · 留级转出 0 · 离校 0 · 毕业 0/)).toBeInTheDocument()
+    expect(
+      await screen.findByText(/随班 0 · 留级转入 0 · 留级转出 0 · 离校 0 · 毕业 0/),
+    ).toBeInTheDocument()
     expect(screen.getAllByText('警告:重复')).toHaveLength(2)
   })
 })
 
 describe('review: rollback with nothing to roll back', () => {
   it('reloads the latest card', async () => {
-    api.upgradeLatest.mockResolvedValueOnce(latest).mockResolvedValue({ ...latest, rolled_back: true })
-    api.upgradeRollback.mockRejectedValue(new ApiError(409, 'UPGRADE_NOTHING_TO_ROLLBACK', '没有可以回滚的学年升级'))
+    api.upgradeLatest
+      .mockResolvedValueOnce(latest)
+      .mockResolvedValue({ ...latest, rolled_back: true })
+    api.upgradeRollback.mockRejectedValue(
+      new ApiError(409, 'UPGRADE_NOTHING_TO_ROLLBACK', '没有可以回滚的学年升级'),
+    )
     renderPage()
     await screen.findByText(/2026-2027 → 2027-2028,执行于/)
     fireEvent.click(screen.getByRole('button', { name: '回滚' }))
@@ -734,14 +1022,16 @@ describe('review: rollback with nothing to roll back', () => {
 describe('rollback of a stale card', () => {
   it('reloads the latest card when the upgrade is no longer the latest', async () => {
     api.upgradeLatest.mockResolvedValueOnce(latest).mockResolvedValue({ ...latest, id: 'up2' })
-    api.upgradeRollback.mockRejectedValue(new ApiError(409, 'UPGRADE_NOT_LATEST', '只能回滚最近一次升级', { latest_id: 'up2' }))
+    api.upgradeRollback.mockRejectedValue(
+      new ApiError(409, 'UPGRADE_NOT_LATEST', '只能回滚最近一次升级', { latest_id: 'up2' }),
+    )
     renderPage()
     await screen.findByText(/2026-2027 → 2027-2028,执行于/)
     fireEvent.click(screen.getByRole('button', { name: '回滚' }))
     fireEvent.click(screen.getByRole('button', { name: '确认回滚' }))
     await waitFor(() => expect(api.upgradeLatest).toHaveBeenCalledTimes(2))
     expect(api.upgradeRollback).toHaveBeenCalledWith('up1')
-    expect(await screen.findByText('只能回滚最近一次升级')).toBeInTheDocument()   // toast 显示后端的 message
+    expect(await screen.findByText('只能回滚最近一次升级')).toBeInTheDocument() // toast 显示后端的 message
   })
 })
 

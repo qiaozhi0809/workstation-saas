@@ -1,4 +1,12 @@
-import { addDays, ageOn, daysInMonth, daysUntilBirthday, formatInTz, formatMonthDay, weekdayCN } from './date'
+import {
+  addDays,
+  ageOn,
+  daysInMonth,
+  daysUntilBirthday,
+  formatInTz,
+  formatMonthDay,
+  weekdayCN,
+} from './date'
 
 it('does calendar math', () => {
   expect(addDays('2026-12-31', 1)).toBe('2027-01-01')

@@ -5,7 +5,10 @@ const PALETTE = String.raw`${PREFIX}-(?:slate|gray|zinc|neutral|stone|red|orange
 const MONO = String.raw`${PREFIX}-(?:white|black)(?:\/\d+)?`
 const HEX = String.raw`${PREFIX}-\[#[0-9a-fA-F]{3,8}\]`
 // 前后必须是类名边界:空白、引号、反引号、`${`、`}` 或行首行尾
-const RE = new RegExp(String.raw`(?<=^|[\s'"\`{}])(?:${HEX}|${PALETTE}|${MONO}|${LEGACY})(?=$|[\s'"\`}])`, 'gm')
+const RE = new RegExp(
+  String.raw`(?<=^|[\s'"\`{}])(?:${HEX}|${PALETTE}|${MONO}|${LEGACY})(?=$|[\s'"\`}])`,
+  'gm',
+)
 
 export function findLegacyStyles(files: Record<string, string>): string[] {
   return Object.keys(files)

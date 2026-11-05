@@ -11,7 +11,8 @@ export type MenuProps = Omit<PopoverProps, 'children'> & { children: ReactNode }
 // 菜单项选中后关菜单并还焦点;不导出,避免 react-refresh 规则报错
 const CloseMenu = createContext<() => void>(() => {})
 
-const items = (layer: HTMLElement) => Array.from(layer.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+const items = (layer: HTMLElement) =>
+  Array.from(layer.querySelectorAll<HTMLElement>('[role="menuitem"]'))
 
 // aria-disabled 项:悬停不高亮(免得看着能点);聚焦换成中性的 muted 底色,键盘仍能看出焦点在哪
 const ITEM = cn(
@@ -22,7 +23,15 @@ const ITEM = cn(
 )
 
 /** 菜单按钮(role="menu"):与 Popover 同一套开关与定位,外加 ↑↓ / Home / End 与菜单项 */
-export default function Menu({ label, trigger, triggerProps, side = 'bottom', align = 'start', className, children }: MenuProps) {
+export default function Menu({
+  label,
+  trigger,
+  triggerProps,
+  side = 'bottom',
+  align = 'start',
+  className,
+  children,
+}: MenuProps) {
   const { open, setOpen, close, toggle, layerId, wrapperRef, triggerRef, layerRef, onWrapperBlur } =
     useAnchoredLayer((layer) => items(layer)[0] ?? null)
 
@@ -53,14 +62,29 @@ export default function Menu({ label, trigger, triggerProps, side = 'bottom', al
 
   return (
     <div ref={wrapperRef} className="relative inline-flex" onBlur={onWrapperBlur}>
-      <Button ref={triggerRef} type="button" {...triggerProps}
-        aria-haspopup="menu" aria-expanded={open} aria-controls={layerId} onClick={toggle} onKeyDown={onTriggerKeyDown}>
+      <Button
+        ref={triggerRef}
+        type="button"
+        {...triggerProps}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={layerId}
+        onClick={toggle}
+        onKeyDown={onTriggerKeyDown}
+      >
         {trigger}
       </Button>
       {open && (
         <CloseMenu.Provider value={() => close(true)}>
-          <div ref={layerRef} id={layerId} role="menu" aria-label={label} tabIndex={-1}
-            className={layerClass(side, align, cn('flex min-w-32 flex-col', className))} onKeyDown={onMenuKeyDown}>
+          <div
+            ref={layerRef}
+            id={layerId}
+            role="menu"
+            aria-label={label}
+            tabIndex={-1}
+            className={layerClass(side, align, cn('flex min-w-32 flex-col', className))}
+            onKeyDown={onMenuKeyDown}
+          >
             {children}
           </div>
         </CloseMenu.Provider>
@@ -69,10 +93,23 @@ export default function Menu({ label, trigger, triggerProps, side = 'bottom', al
   )
 }
 
-export function MenuItem({ onSelect, disabled, children }: { onSelect(): void; disabled?: boolean; children: ReactNode }) {
+export function MenuItem({
+  onSelect,
+  disabled,
+  children,
+}: {
+  onSelect(): void
+  disabled?: boolean
+  children: ReactNode
+}) {
   const closeMenu = useContext(CloseMenu)
   return (
-    <button type="button" role="menuitem" tabIndex={-1} aria-disabled={disabled || undefined} className={ITEM}
+    <button
+      type="button"
+      role="menuitem"
+      tabIndex={-1}
+      aria-disabled={disabled || undefined}
+      className={ITEM}
       onClick={() => {
         // aria-disabled 而非 disabled:仍可用方向键聚焦,点了不执行、菜单不关
         if (disabled) return
@@ -80,7 +117,8 @@ export function MenuItem({ onSelect, disabled, children }: { onSelect(): void; d
         // 也不会被随后的还焦点抢走
         closeMenu()
         onSelect()
-      }}>
+      }}
+    >
       {children}
     </button>
   )
@@ -89,10 +127,18 @@ export function MenuItem({ onSelect, disabled, children }: { onSelect(): void; d
 export function MenuLinkItem({ to, children }: { to: string; children: ReactNode }) {
   const closeMenu = useContext(CloseMenu)
   // Link 先执行这里的 onClick,再导航
-  return <Link to={to} role="menuitem" tabIndex={-1} className={ITEM} onClick={closeMenu}>{children}</Link>
+  return (
+    <Link to={to} role="menuitem" tabIndex={-1} className={ITEM} onClick={closeMenu}>
+      {children}
+    </Link>
+  )
 }
 
 /** 菜单里的一行弱化文字(如当前用户名),不是菜单项 */
 export function MenuLabel({ children }: { children: ReactNode }) {
-  return <div role="presentation" className="px-2 py-1.5 text-xs text-muted-foreground">{children}</div>
+  return (
+    <div role="presentation" className="px-2 py-1.5 text-xs text-muted-foreground">
+      {children}
+    </div>
+  )
 }

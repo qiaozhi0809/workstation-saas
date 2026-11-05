@@ -15,21 +15,54 @@ import OverviewTab from './OverviewTab'
 import ReviewDetail from './ReviewDetail'
 
 vi.mock('@/shared/api/classroom', () => ({ classroomApi: { summary: vi.fn() } }))
-vi.mock('@/shared/api/growth', () => ({ growthApi: { list: vi.fn(), create: vi.fn(), remove: vi.fn() } }))
-vi.mock('@/shared/api/reviews', () => ({ reviewsApi: { listForStudent: vi.fn(), revokeItem: vi.fn(), summary: vi.fn() } }))
-vi.mock('@/shared/api/exams', () => ({ examsApi: { gradebook: vi.fn().mockResolvedValue({ exams: [] }) } }))
-vi.mock('@/shared/api/attendance', () => ({ attendanceApi: { month: vi.fn().mockResolvedValue({ month: '2026-11', items: [] }) } }))
+vi.mock('@/shared/api/growth', () => ({
+  growthApi: { list: vi.fn(), create: vi.fn(), remove: vi.fn() },
+}))
+vi.mock('@/shared/api/reviews', () => ({
+  reviewsApi: { listForStudent: vi.fn(), revokeItem: vi.fn(), summary: vi.fn() },
+}))
+vi.mock('@/shared/api/exams', () => ({
+  examsApi: { gradebook: vi.fn().mockResolvedValue({ exams: [] }) },
+}))
+vi.mock('@/shared/api/attendance', () => ({
+  attendanceApi: { month: vi.fn().mockResolvedValue({ month: '2026-11', items: [] }) },
+}))
 vi.mock('@/shared/api/students', () => ({ studentsApi: { setClassRole: vi.fn() } }))
 
-const profile: StudentProfile = { id: 's1', mk: 'S0001', name: '王小一', class_id: 'c1', enrollment_id: 'e1' }
+const profile: StudentProfile = {
+  id: 's1',
+  mk: 'S0001',
+  name: '王小一',
+  class_id: 'c1',
+  enrollment_id: 'e1',
+}
 
 const rec = (over: Partial<GrowthRecord>): GrowthRecord => ({
-  id: 'g1', type: '表扬', date: '2026-10-30', content: '主动帮同学补课', academic_year_name: '2026-2027',
-  class_name: '七(1)班', current_year: true, created_by_name: '李老师', can_delete: true, created_at: '2026-10-30T08:00:00Z', ...over,
+  id: 'g1',
+  type: '表扬',
+  date: '2026-10-30',
+  content: '主动帮同学补课',
+  academic_year_name: '2026-2027',
+  class_name: '七(1)班',
+  current_year: true,
+  created_by_name: '李老师',
+  can_delete: true,
+  created_at: '2026-10-30T08:00:00Z',
+  ...over,
 })
 const review = (over: Partial<Review>): Review => ({
-  id: 'r1', op_id: 'o1', enrollment_id: 'e1', category: 'individual', reason_text: '作业认真', score_delta: 2,
-  subject: null, given_at: '2026-10-30T02:15:00Z', given_by_me: true, student_name: '王小一', transferred: false, ...over,
+  id: 'r1',
+  op_id: 'o1',
+  enrollment_id: 'e1',
+  category: 'individual',
+  reason_text: '作业认真',
+  score_delta: 2,
+  subject: null,
+  given_at: '2026-10-30T02:15:00Z',
+  given_by_me: true,
+  student_name: '王小一',
+  transferred: false,
+  ...over,
 })
 
 function Loc() {
@@ -38,10 +71,22 @@ function Loc() {
 }
 
 function setup(ui: React.ReactElement, perms: ClassPerm[]) {
-  vi.mocked(classroomApi.summary).mockResolvedValue({ my_perms: perms, today: '2026-11-02', timezone: 'Asia/Shanghai' } as never)
+  vi.mocked(classroomApi.summary).mockResolvedValue({
+    my_perms: perms,
+    today: '2026-11-02',
+    timezone: 'Asia/Shanghai',
+  } as never)
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const invalidate = vi.spyOn(client, 'invalidateQueries')
-  render(<QueryClientProvider client={client}><MemoryRouter>{ui}<Loc /><Toaster /></MemoryRouter></QueryClientProvider>)
+  render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter>
+        {ui}
+        <Loc />
+        <Toaster />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  )
   return { invalidate, client }
 }
 
@@ -64,7 +109,13 @@ it('adds a record with Enter and keeps composition input', async () => {
   await act(async () => {})
   expect(growthApi.create).not.toHaveBeenCalled()
   fireEvent.keyDown(input, { key: 'Enter' })
-  await waitFor(() => expect(growthApi.create).toHaveBeenCalledWith('s1', { type: '表扬', date: '2026-11-02', content: '家访了解情况' }))
+  await waitFor(() =>
+    expect(growthApi.create).toHaveBeenCalledWith('s1', {
+      type: '表扬',
+      date: '2026-11-02',
+      content: '家访了解情况',
+    }),
+  )
   expect(growthApi.create).toHaveBeenCalledTimes(1)
   await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['growth', 's1'] }))
   await waitFor(() => expect(input).toHaveValue(''))
@@ -72,7 +123,17 @@ it('adds a record with Enter and keeps composition input', async () => {
 
 it('shows past-year records as read-only with their year and class', async () => {
   vi.mocked(growthApi.list).mockResolvedValue({
-    items: [rec({ id: 'g2', current_year: false, can_delete: false, academic_year_name: '2025-2026', class_name: '六(2)班', content: '获奖了', type: '获奖' })],
+    items: [
+      rec({
+        id: 'g2',
+        current_year: false,
+        can_delete: false,
+        academic_year_name: '2025-2026',
+        class_name: '六(2)班',
+        content: '获奖了',
+        type: '获奖',
+      }),
+    ],
   })
   setup(<GrowthTab profile={profile} />, ['growth.read', 'growth.write'])
   expect(await screen.findByText('获奖了')).toBeInTheDocument()
@@ -121,7 +182,16 @@ it('shows an empty state without records', async () => {
 
 it('lists 40 reviews and revokes only my own', async () => {
   vi.mocked(reviewsApi.listForStudent).mockResolvedValue({
-    items: [review({}), review({ id: 'r2', reason_text: '上课走神', score_delta: -1, given_by_me: false, given_at: '2026-10-29T03:00:00Z' })],
+    items: [
+      review({}),
+      review({
+        id: 'r2',
+        reason_text: '上课走神',
+        score_delta: -1,
+        given_by_me: false,
+        given_at: '2026-10-29T03:00:00Z',
+      }),
+    ],
     next_cursor: null,
   })
   const { invalidate } = setup(<ReviewDetail profile={profile} />, ['review.read', 'review.write'])
@@ -171,9 +241,19 @@ it('hides the overview block without records', async () => {
 it('shows a retryable error when the classroom summary fails in the growth tab', async () => {
   vi.mocked(classroomApi.summary).mockRejectedValueOnce(new Error('boom'))
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(<QueryClientProvider client={client}><MemoryRouter><GrowthTab profile={profile} /></MemoryRouter></QueryClientProvider>)
+  render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter>
+        <GrowthTab profile={profile} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  )
   expect(await screen.findByRole('alert')).toBeInTheDocument()
-  vi.mocked(classroomApi.summary).mockResolvedValue({ my_perms: ['growth.read'], today: '2026-11-02', timezone: 'Asia/Shanghai' } as never)
+  vi.mocked(classroomApi.summary).mockResolvedValue({
+    my_perms: ['growth.read'],
+    today: '2026-11-02',
+    timezone: 'Asia/Shanghai',
+  } as never)
   fireEvent.click(screen.getByRole('button', { name: '重试' }))
   expect(await screen.findByText('还没有成长记录')).toBeInTheDocument()
 })

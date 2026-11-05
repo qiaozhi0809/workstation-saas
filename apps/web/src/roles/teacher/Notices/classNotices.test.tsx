@@ -15,20 +15,39 @@ import ClassNoticesPage from './ClassNoticesPage'
 
 vi.mock('@/shared/api/classroom', () => ({ classroomApi: { summary: vi.fn() } }))
 vi.mock('@/shared/api/classes', () => ({ classesApi: { mine: vi.fn() } }))
-vi.mock('@/shared/api/classNotices', () => ({ classNoticesApi: { list: vi.fn(), send: vi.fn(), recall: vi.fn() } }))
+vi.mock('@/shared/api/classNotices', () => ({
+  classNoticesApi: { list: vi.fn(), send: vi.fn(), recall: vi.fn() },
+}))
 vi.mock('@/shared/api/notices', () => ({ noticesApi: { acks: vi.fn(), exportAcks: vi.fn() } }))
 
 const sent = (over: Partial<NoticeSent> = {}): NoticeSent => ({
-  id: 'n1', title: '周五春游', content: '带水杯', target_label: '三年二班家长',
-  created_at: '2026-11-04T01:00:00Z', recalled_at: null, recipients: 30, read: 12,
-  audience: 'parents', ack: { kind: 'none' }, ack_deadline: null, acked: 0, students_without_parent: 0, ...over,
+  id: 'n1',
+  title: '周五春游',
+  content: '带水杯',
+  target_label: '三年二班家长',
+  created_at: '2026-11-04T01:00:00Z',
+  recalled_at: null,
+  recipients: 30,
+  read: 12,
+  audience: 'parents',
+  ack: { kind: 'none' },
+  ack_deadline: null,
+  acked: 0,
+  students_without_parent: 0,
+  ...over,
 })
 
-const renderPage = () => render(
-  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-    <MemoryRouter><ClassNoticesPage /><Toaster /></MemoryRouter>
-  </QueryClientProvider>,
-)
+const renderPage = () =>
+  render(
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      <MemoryRouter>
+        <ClassNoticesPage />
+        <Toaster />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  )
 
 const fill = () => {
   fireEvent.change(screen.getByLabelText('标题'), { target: { value: '周五春游' } })
@@ -53,15 +72,22 @@ it('fixes the audience to the whole class parents, using the class name', async 
 })
 
 it('sends, refreshes the list, resets the composer and warns about students without a parent', async () => {
-  vi.mocked(classNoticesApi.send).mockResolvedValue(sent({ recipients: 28, students_without_parent: 2 }))
+  vi.mocked(classNoticesApi.send).mockResolvedValue(
+    sent({ recipients: 28, students_without_parent: 2 }),
+  )
   renderPage()
   await screen.findByText('三年二班全体家长')
   fill()
   vi.mocked(classNoticesApi.list).mockResolvedValue({ items: [sent()], total: 1 })
   clickSend()
-  await waitFor(() => expect(classNoticesApi.send).toHaveBeenCalledWith('c1', {
-    title: '周五春游', content: '带水杯', ack: { kind: 'none' }, ack_deadline: null,
-  }))
+  await waitFor(() =>
+    expect(classNoticesApi.send).toHaveBeenCalledWith('c1', {
+      title: '周五春游',
+      content: '带水杯',
+      ack: { kind: 'none' },
+      ack_deadline: null,
+    }),
+  )
   expect(await screen.findByText('另有 2 名学生还没有绑定家长,他们收不到')).toBeInTheDocument()
   expect(await screen.findByText('已发给 28 位家长')).toBeInTheDocument()
   expect(await screen.findByText('周五春游', { selector: 'li *' })).toBeInTheDocument()
@@ -89,9 +115,15 @@ it('submits a normalized ack', async () => {
   fireEvent.change(screen.getByLabelText('选项 1'), { target: { value: ' 参加 ' } })
   fireEvent.change(screen.getByLabelText('选项 2'), { target: { value: '不参加' } })
   clickSend()
-  await waitFor(() => expect(classNoticesApi.send).toHaveBeenCalledWith('c1', expect.objectContaining({
-    ack: { kind: 'choice', options: ['参加', '不参加'], allow_note: false }, ack_deadline: null,
-  })))
+  await waitFor(() =>
+    expect(classNoticesApi.send).toHaveBeenCalledWith(
+      'c1',
+      expect.objectContaining({
+        ack: { kind: 'choice', options: ['参加', '不参加'], allow_note: false },
+        ack_deadline: null,
+      }),
+    ),
+  )
 })
 
 it('blocks sending when choice options are not enough', async () => {
@@ -128,13 +160,19 @@ it('shows the API error and keeps the draft', async () => {
 })
 
 it('shows progress and recalls, then refreshes the list', async () => {
-  vi.mocked(classNoticesApi.list).mockResolvedValue({ items: [sent({ ack: { kind: 'confirm' }, acked: 5 })], total: 1 })
+  vi.mocked(classNoticesApi.list).mockResolvedValue({
+    items: [sent({ ack: { kind: 'confirm' }, acked: 5 })],
+    total: 1,
+  })
   vi.mocked(classNoticesApi.recall).mockResolvedValue(sent({ recalled_at: '2026-11-04T02:00:00Z' }))
   renderPage()
   const item = (await screen.findByText('周五春游', { selector: 'li *' })).closest('li')!
   expect(within(item).getByText('已读 12 / 30')).toBeInTheDocument()
   expect(within(item).getByText('回执 5 / 30')).toBeInTheDocument()
-  vi.mocked(classNoticesApi.list).mockResolvedValue({ items: [sent({ recalled_at: '2026-11-04T02:00:00Z' })], total: 1 })
+  vi.mocked(classNoticesApi.list).mockResolvedValue({
+    items: [sent({ recalled_at: '2026-11-04T02:00:00Z' })],
+    total: 1,
+  })
   vi.spyOn(window, 'confirm').mockReturnValue(true)
   fireEvent.click(within(item).getByRole('button', { name: '撤回 周五春游' }))
   await waitFor(() => expect(classNoticesApi.recall).toHaveBeenCalledWith('c1', 'n1'))
@@ -143,7 +181,10 @@ it('shows progress and recalls, then refreshes the list', async () => {
 })
 
 it('opens the ack stats dialog on demand', async () => {
-  vi.mocked(classNoticesApi.list).mockResolvedValue({ items: [sent({ ack: { kind: 'confirm' } })], total: 1 })
+  vi.mocked(classNoticesApi.list).mockResolvedValue({
+    items: [sent({ ack: { kind: 'confirm' } })],
+    total: 1,
+  })
   vi.mocked(noticesApi.acks).mockReturnValue(new Promise(() => {}))
   renderPage()
   await screen.findByText('周五春游', { selector: 'li *' })

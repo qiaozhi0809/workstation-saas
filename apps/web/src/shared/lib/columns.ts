@@ -6,13 +6,19 @@ export function cleanHeader(h: string): string {
 
 type Spec<K extends string> = readonly (readonly [K, readonly string[]])[]
 
-export function matchColumns<K extends string>(headers: string[], spec: Spec<K>): Partial<Record<K, number>> {
+export function matchColumns<K extends string>(
+  headers: string[],
+  spec: Spec<K>,
+): Partial<Record<K, number>> {
   const cleaned = headers.map(cleanHeader)
   const result: Partial<Record<K, number>> = {}
   const used = new Set<number>()
   for (const [key, aliases] of spec) {
     const idx = cleaned.findIndex((h, i) => !used.has(i) && h !== '' && aliases.includes(h))
-    if (idx >= 0) { result[key] = idx; used.add(idx) }
+    if (idx >= 0) {
+      result[key] = idx
+      used.add(idx)
+    }
   }
   cleaned.forEach((h, i) => {
     if (used.has(i) || h === '') return
@@ -21,10 +27,16 @@ export function matchColumns<K extends string>(headers: string[], spec: Spec<K>)
     for (const [key, aliases] of spec) {
       if (result[key] !== undefined) continue
       for (const a of aliases) {
-        if (h.startsWith(a) && a.length > bestLen) { best = key; bestLen = a.length }
+        if (h.startsWith(a) && a.length > bestLen) {
+          best = key
+          bestLen = a.length
+        }
       }
     }
-    if (best !== null) { result[best] = i; used.add(i) }
+    if (best !== null) {
+      result[best] = i
+      used.add(i)
+    }
   })
   return result
 }
@@ -46,10 +58,20 @@ export const STUDENT_COLUMNS = [
   ['note', ['备注', '其他备注']],
 ] as const
 
-export const FAMILY_TYPES = ['双亲家庭', '单亲家庭', '重组家庭', '隔代抚养', '父母在外务工', '其他'] as const
+export const FAMILY_TYPES = [
+  '双亲家庭',
+  '单亲家庭',
+  '重组家庭',
+  '隔代抚养',
+  '父母在外务工',
+  '其他',
+] as const
 
 export function normalizeBirthday(raw: string): string | null {
-  const s = raw.trim().replace(/[/.年月]/g, '-').replace(/日/g, '')
+  const s = raw
+    .trim()
+    .replace(/[/.年月]/g, '-')
+    .replace(/日/g, '')
   const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s)
   if (!m) return null
   const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])]
@@ -58,10 +80,16 @@ export function normalizeBirthday(raw: string): string | null {
   return `${m[1]}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`
 }
 
-export function toImportRows(table: string[][]): { rows: StudentImport['rows']; columns: string[]; missingName: boolean } {
+export function toImportRows(table: string[][]): {
+  rows: StudentImport['rows']
+  columns: string[]
+  missingName: boolean
+} {
   if (table.length === 0) return { rows: [], columns: [], missingName: true }
   const map = matchColumns(table[0], STUDENT_COLUMNS)
-  const columns = (Object.entries(map) as [string, number][]).sort((a, b) => a[1] - b[1]).map(([k]) => k)
+  const columns = (Object.entries(map) as [string, number][])
+    .sort((a, b) => a[1] - b[1])
+    .map(([k]) => k)
   if (map.name === undefined) return { rows: [], columns, missingName: true }
   const rows: StudentImport['rows'] = []
   for (const r of table.slice(1)) {
@@ -83,7 +111,12 @@ export function toImportRows(table: string[][]): { rows: StudentImport['rows']; 
         familyNote = familyNote ? `${fam}；${familyNote}` : fam
       }
     }
-    const contact: Contact = { name: get('p0name'), relation: get('p0rel'), phone: get('p0phone'), job: '' }
+    const contact: Contact = {
+      name: get('p0name'),
+      relation: get('p0rel'),
+      phone: get('p0phone'),
+      job: '',
+    }
     rows.push({
       name,
       gender: g ? (/女|f/i.test(g) ? '女' : '男') : null,
@@ -108,7 +141,10 @@ export function toImportRows(table: string[][]): { rows: StudentImport['rows']; 
 export const STUDENT_TEMPLATE_CSV =
   '姓名,性别,学号,生日,职务,家长姓名,关系,家长电话,家庭结构,备注\n张三,男,01,2012-05-06,,张建国,父亲,13800000000,双亲家庭,\n'
 
-const SCORE_ID_COLUMNS = [['name', ['姓名', '名字']], ['no', ['学号']]] as const
+const SCORE_ID_COLUMNS = [
+  ['name', ['姓名', '名字']],
+  ['no', ['学号']],
+] as const
 
 export function matchScoreColumns(
   headers: string[],
@@ -129,10 +165,10 @@ export function matchScoreColumns(
 export function findStudent(roster: StudentSeat[], name: string, no: string): StudentSeat | null {
   const n = no.trim()
   if (n) {
-    const byNo = roster.find(s => s.student_no === n)
+    const byNo = roster.find((s) => s.student_no === n)
     if (byNo) return byNo
   }
   const nm = name.trim()
-  const byName = roster.filter(s => s.name === nm)
+  const byName = roster.filter((s) => s.name === nm)
   return byName.length === 1 ? byName[0] : null
 }

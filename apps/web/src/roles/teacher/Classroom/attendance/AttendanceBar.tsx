@@ -32,9 +32,17 @@ export default function AttendanceBar(p: AttendanceBarProps) {
   return (
     <div className="flex flex-wrap items-center gap-2 text-sm">
       {/* 日期收成紧凑按钮(今天 / MM/DD),点开弹层再选;弹层里仍是原生日期框 */}
-      <Popover label="选择考勤日期" side="top"
+      <Popover
+        label="选择考勤日期"
+        side="top"
         triggerProps={{ variant: 'outline', 'aria-label': `考勤日期 ${dateText}` }}
-        trigger={<>{dateText}<ChevronDown aria-hidden /></>}>
+        trigger={
+          <>
+            {dateText}
+            <ChevronDown aria-hidden />
+          </>
+        }
+      >
         <div className="flex items-center gap-2">
           <Input
             type="date"
@@ -45,14 +53,22 @@ export default function AttendanceBar(p: AttendanceBarProps) {
             value={p.date}
             min={p.yearStart}
             max={p.today}
-            onChange={(e) => { if (e.target.value) p.onPickDate(e.target.value) }}
+            onChange={(e) => {
+              if (e.target.value) p.onPickDate(e.target.value)
+            }}
           />
           {p.date !== p.today && (
-            <Button type="button" variant="outline" onClick={() => {
-              // 回到今天后这个按钮会卸载(焦点会掉到 body),先把焦点交给日期框
-              dateRef.current?.focus()
-              p.onFollowToday()
-            }}>回到今天</Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                // 回到今天后这个按钮会卸载(焦点会掉到 body),先把焦点交给日期框
+                dateRef.current?.focus()
+                p.onFollowToday()
+              }}
+            >
+              回到今天
+            </Button>
           )}
         </div>
       </Popover>
@@ -62,16 +78,23 @@ export default function AttendanceBar(p: AttendanceBarProps) {
       <span className={`sr-only ${TONE_TEXT[ATTENDANCE_TONE.absent]}`}>{`缺勤 ${p.absent}`}</span>
       <span className={`sr-only ${TONE_TEXT[ATTENDANCE_TONE.late]}`}>{`迟到 ${p.late}`}</span>
       {!p.boardVisible && (
-        <span aria-hidden="true" title={`实到 ${arrived}/${p.enrolled} · 请假 ${p.leave} · 缺勤 ${p.absent} · 迟到 ${p.late}`}
-          className="rounded-full border bg-muted px-2 py-0.5 text-xs font-semibold tabular-nums">
+        <span
+          aria-hidden="true"
+          title={`实到 ${arrived}/${p.enrolled} · 请假 ${p.leave} · 缺勤 ${p.absent} · 迟到 ${p.late}`}
+          className="rounded-full border bg-muted px-2 py-0.5 text-xs font-semibold tabular-nums"
+        >
           {`${arrived}/${p.enrolled}`}
         </span>
       )}
       {p.confirmedAt && <span className="text-muted-foreground">{`已确认 ${p.confirmedAt}`}</span>}
       {p.canWrite && (
         <>
-          <Button type="button" variant="outline" disabled={p.busy} onClick={p.onConfirm}>确认考勤</Button>
-          <Button type="button" variant="outline" disabled={p.busy} onClick={p.onAllPresent}>全部出勤</Button>
+          <Button type="button" variant="outline" disabled={p.busy} onClick={p.onConfirm}>
+            确认考勤
+          </Button>
+          <Button type="button" variant="outline" disabled={p.busy} onClick={p.onAllPresent}>
+            全部出勤
+          </Button>
         </>
       )}
     </div>

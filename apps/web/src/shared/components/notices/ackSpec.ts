@@ -15,11 +15,11 @@ export function ackSpecError(spec: AckSpec, deadline: string | null | undefined)
 
 /** 提交用:选项去首尾空格;"不要回执"不带截止时间 */
 export function normalizeAck(
-  spec: AckSpec, deadline: string | null | undefined,
+  spec: AckSpec,
+  deadline: string | null | undefined,
 ): { ack: AckSpec; ack_deadline: string | null } {
   if (spec.kind === 'none') return { ack: spec, ack_deadline: null }
-  const ack: AckSpec = spec.kind === 'choice'
-    ? { ...spec, options: spec.options.map((o) => o.trim()) }
-    : spec
+  const ack: AckSpec =
+    spec.kind === 'choice' ? { ...spec, options: spec.options.map((o) => o.trim()) } : spec
   return { ack, ack_deadline: deadline ?? null }
 }

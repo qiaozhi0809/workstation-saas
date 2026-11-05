@@ -1,5 +1,11 @@
 import { expect, test, type Page } from '@playwright/test'
-import { addTestStudents, deleteTestStudents, login, restoreSeedLayout, rosterEnrollmentIds } from './helpers/api'
+import {
+  addTestStudents,
+  deleteTestStudents,
+  login,
+  restoreSeedLayout,
+  rosterEnrollmentIds,
+} from './helpers/api'
 
 const CLASS_ID = '44444444-4444-4444-4444-444444444444'
 
@@ -35,7 +41,10 @@ async function cleanup(request: Parameters<typeof login>[0]) {
 test.beforeEach(({ request }) => cleanup(request))
 test.afterEach(({ request }) => cleanup(request))
 
-test('homeroom teacher sets triple desks with a podium seat and keeps them through seating tools', async ({ page, request }) => {
+test('homeroom teacher sets triple desks with a podium seat and keeps them through seating tools', async ({
+  page,
+  request,
+}) => {
   const token = await login(request, 'teacher01')
   const firstId = (await rosterEnrollmentIds(request, token, CLASS_ID))[0]
   await signIn(page)
@@ -51,7 +60,9 @@ test('homeroom teacher sets triple desks with a podium seat and keeps them throu
   await dialog.getByRole('button', { name: '每排增加' }).click()
   await dialog.getByRole('button', { name: '左边增加' }).click()
   await dialog.getByRole('button', { name: '按学号横着排' }).click()
-  await expect(dialog.getByText('4 排 × 9 个座位 + 讲台边 1 个 = 37 个座位 · 学生 10 人')).toBeVisible()
+  await expect(
+    dialog.getByText('4 排 × 9 个座位 + 讲台边 1 个 = 37 个座位 · 学生 10 人'),
+  ).toBeVisible()
   await dialog.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.getByText('已保存,座位已按新桌椅排好')).toBeVisible()
   await expect(dialog).toBeHidden()
@@ -73,13 +84,20 @@ test('homeroom teacher sets triple desks with a podium seat and keeps them throu
   await expect(page.getByText('座位已保存')).toBeHidden()
   await page.getByRole('button', { name: '随机打乱' }).click()
   await expect(page.locator('[data-seat="0--1"]')).toContainText('王小一')
-  const saved = page.waitForResponse((r) => r.url().endsWith(`/classes/${CLASS_ID}/seating`) && r.request().method() === 'PUT')
+  const saved = page.waitForResponse(
+    (r) => r.url().endsWith(`/classes/${CLASS_ID}/seating`) && r.request().method() === 'PUT',
+  )
   await page.getByRole('button', { name: '保存座位' }).click()
   expect((await saved).ok()).toBe(true)
   await page.reload()
   await expect(page.locator('[data-seat="0--1"]')).toContainText('王小一')
-  const seats = await (await request.get(`/api/v1/classes/${CLASS_ID}/students`, { headers: { Authorization: `Bearer ${token}` } })).json() as
-    { items: { enrollment_id: string; seat_row: number | null; seat_col: number | null }[] }
+  const seats = (await (
+    await request.get(`/api/v1/classes/${CLASS_ID}/students`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  ).json()) as {
+    items: { enrollment_id: string; seat_row: number | null; seat_col: number | null }[]
+  }
   const first = seats.items.find((s) => s.enrollment_id === firstId)
   expect([first?.seat_row, first?.seat_col]).toEqual([0, -1])
 
@@ -102,7 +120,16 @@ test('homeroom teacher sets triple desks with a podium seat and keeps them throu
   await page.evaluate(() => {
     const w = window as unknown as { __printed: string; open: () => unknown }
     w.__printed = ''
-    w.open = () => ({ document: { write: (h: string) => { w.__printed += h }, close() {} }, focus() {}, print() {} })
+    w.open = () => ({
+      document: {
+        write: (h: string) => {
+          w.__printed += h
+        },
+        close() {},
+      },
+      focus() {},
+      print() {},
+    })
   })
   await page.getByRole('button', { name: '更多操作' }).click()
   await page.getByRole('menuitem', { name: '打印' }).click()
@@ -111,7 +138,10 @@ test('homeroom teacher sets triple desks with a podium seat and keeps them throu
   expect(html).toContain('<span class="ps">王小一')
 })
 
-test('auto layout grows a row when a student is added to a full class', async ({ page, request }) => {
+test('auto layout grows a row when a student is added to a full class', async ({
+  page,
+  request,
+}) => {
   const token = await login(request, 'teacher01')
   await signIn(page)
 

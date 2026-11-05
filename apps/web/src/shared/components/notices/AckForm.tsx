@@ -30,7 +30,9 @@ export default function AckForm({ item, onSubmitted }: { item: InboxItem; onSubm
 
   const mut = useMutation({
     mutationFn: (body: AckInput) => noticesApi.ack(item.id, body),
-    onError: () => { void qc.invalidateQueries({ queryKey: ['notices', 'inbox'] }) },
+    onError: () => {
+      void qc.invalidateQueries({ queryKey: ['notices', 'inbox'] })
+    },
     onSuccess: (_d, body) => {
       setMine({ choice: body.choice, note: body.note, acked_at: new Date().toISOString() })
       setEditing(false)
@@ -43,7 +45,11 @@ export default function AckForm({ item, onSubmitted }: { item: InboxItem; onSubm
   if (spec.kind === 'none') return null
 
   const submit = (body: AckInput) => mut.mutate(body)
-  const errMsg = mut.error ? (mut.error instanceof ApiError ? mut.error.message : '提交失败,请重试') : null
+  const errMsg = mut.error
+    ? mut.error instanceof ApiError
+      ? mut.error.message
+      : '提交失败,请重试'
+    : null
   const reason = item.can_ack ? null : blockedReason(item)
 
   const choiceLabel = (c: number | null) =>
@@ -65,23 +71,36 @@ export default function AckForm({ item, onSubmitted }: { item: InboxItem; onSubm
 
       {mine && !editing && (
         <div className="flex items-center gap-2">
-          <span>已回执:{choiceLabel(mine.choice)},{formatInTz(mine.acked_at, localTz())}</span>
+          <span>
+            已回执:{choiceLabel(mine.choice)},{formatInTz(mine.acked_at, localTz())}
+          </span>
           {item.can_ack && (
-            <Button type="button" variant="ghost" size="sm" onClick={startEdit}>修改</Button>
+            <Button type="button" variant="ghost" size="sm" onClick={startEdit}>
+              修改
+            </Button>
           )}
         </div>
       )}
       {mine && !editing && mine.note && (
-        <span className="whitespace-pre-wrap break-words text-xs text-muted-foreground">留言:{mine.note}</span>
+        <span className="whitespace-pre-wrap break-words text-xs text-muted-foreground">
+          留言:{mine.note}
+        </span>
       )}
 
       {canFill && spec.kind === 'confirm' && (
         <div className="flex gap-2">
-          <Button type="button" size="sm" disabled={mut.isPending} onClick={() => submit({ choice: null, note: null })}>
+          <Button
+            type="button"
+            size="sm"
+            disabled={mut.isPending}
+            onClick={() => submit({ choice: null, note: null })}
+          >
             已知晓
           </Button>
           {editing && (
-            <Button type="button" variant="ghost" size="sm" onClick={() => setEditing(false)}>取消</Button>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setEditing(false)}>
+              取消
+            </Button>
           )}
         </div>
       )}
@@ -91,7 +110,12 @@ export default function AckForm({ item, onSubmitted }: { item: InboxItem; onSubm
           <div role="radiogroup" aria-label="请选择" className="flex flex-col gap-1">
             {spec.options.map((opt, i) => (
               <label key={i} className="flex items-center gap-1.5">
-                <input type="radio" name={`ack-${item.id}`} checked={choice === i} onChange={() => setChoice(i)} />
+                <input
+                  type="radio"
+                  name={`ack-${item.id}`}
+                  checked={choice === i}
+                  onChange={() => setChoice(i)}
+                />
                 {opt}
               </label>
             ))}
@@ -99,28 +123,42 @@ export default function AckForm({ item, onSubmitted }: { item: InboxItem; onSubm
           {spec.allow_note && (
             <div className="flex flex-col gap-1">
               <Textarea
-                aria-label="留言" maxLength={NOTE_MAX} value={note}
+                aria-label="留言"
+                maxLength={NOTE_MAX}
+                value={note}
                 onChange={(e) => setNote(e.target.value)}
               />
-              <span className="self-end text-xs text-muted-foreground">{note.length} / {NOTE_MAX}</span>
+              <span className="self-end text-xs text-muted-foreground">
+                {note.length} / {NOTE_MAX}
+              </span>
             </div>
           )}
           <div className="flex gap-2">
             <Button
-              type="button" size="sm" disabled={choice === null || mut.isPending}
-              onClick={() => submit({ choice, note: spec.allow_note && note.trim() ? note.trim() : null })}
+              type="button"
+              size="sm"
+              disabled={choice === null || mut.isPending}
+              onClick={() =>
+                submit({ choice, note: spec.allow_note && note.trim() ? note.trim() : null })
+              }
             >
               提交回执
             </Button>
             {editing && (
-              <Button type="button" variant="ghost" size="sm" onClick={() => setEditing(false)}>取消</Button>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setEditing(false)}>
+                取消
+              </Button>
             )}
           </div>
         </div>
       )}
 
       {reason && <span className="text-muted-foreground">{reason}</span>}
-      {errMsg && <p role="alert" className="text-destructive">{errMsg}</p>}
+      {errMsg && (
+        <p role="alert" className="text-destructive">
+          {errMsg}
+        </p>
+      )}
     </div>
   )
 }

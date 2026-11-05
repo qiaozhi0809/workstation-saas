@@ -7,7 +7,13 @@ import { cn } from '@/shared/lib/utils'
 import type { InboxItem } from '@/shared/types/admin'
 
 /** 收件箱下拉里的列表:点一条展开正文,未读的同时通知上层标为已读 */
-export default function NoticeList({ items, unread, onRead, onReadAll, readAllBusy }: {
+export default function NoticeList({
+  items,
+  unread,
+  onRead,
+  onReadAll,
+  readAllBusy,
+}: {
   items: InboxItem[]
   unread: number
   onRead(id: string): void
@@ -30,11 +36,16 @@ export default function NoticeList({ items, unread, onRead, onReadAll, readAllBu
           {items.map((it) => {
             const isUnread = !it.recalled && !it.read_at
             const expanded = openId === it.id
-            const meta = [it.from_name, formatInTz(it.created_at, localTz())].filter(Boolean).join(' · ')
+            const meta = [it.from_name, formatInTz(it.created_at, localTz())]
+              .filter(Boolean)
+              .join(' · ')
             // 已撤回:不可点,只展示标题与说明
             if (it.recalled) {
               return (
-                <li key={it.id} className="flex flex-col gap-1 px-3 py-2 text-sm text-muted-foreground">
+                <li
+                  key={it.id}
+                  className="flex flex-col gap-1 px-3 py-2 text-sm text-muted-foreground"
+                >
                   <span className="min-w-0 break-words">{it.title}</span>
                   <span className="text-xs">{meta}</span>
                   <span className="text-xs">此通知已撤回</span>
@@ -55,14 +66,21 @@ export default function NoticeList({ items, unread, onRead, onReadAll, readAllBu
                   )}
                 >
                   <span className="flex items-center gap-2">
-                    {isUnread && <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full bg-primary" />}
+                    {isUnread && (
+                      <span
+                        aria-hidden="true"
+                        className="h-2 w-2 shrink-0 rounded-full bg-primary"
+                      />
+                    )}
                     <span className="min-w-0 break-words">{it.title}</span>
                   </span>
                   <span className="text-xs font-normal text-muted-foreground">{meta}</span>
                 </button>
                 {expanded && (
                   <div className="px-3 pb-2 text-sm">
-                    {it.content !== null && <p className="whitespace-pre-wrap break-words">{it.content}</p>}
+                    {it.content !== null && (
+                      <p className="whitespace-pre-wrap break-words">{it.content}</p>
+                    )}
                     {it.ack.kind !== 'none' && <AckForm key={it.id} item={it} />}
                   </div>
                 )}
@@ -72,7 +90,13 @@ export default function NoticeList({ items, unread, onRead, onReadAll, readAllBu
         </ul>
       )}
       <div className="flex justify-end border-t p-1">
-        <Button type="button" variant="ghost" size="sm" disabled={unread === 0 || readAllBusy} onClick={onReadAll}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={unread === 0 || readAllBusy}
+          onClick={onReadAll}
+        >
           全部标为已读
         </Button>
       </div>

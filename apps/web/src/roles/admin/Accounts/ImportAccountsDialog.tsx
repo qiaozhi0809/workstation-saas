@@ -12,8 +12,12 @@ import type { TempPassword } from './TempPasswordDialog'
 
 const TEMPLATE = '登录名,姓名,工号,科目,手机\nteacher21,示例老师,T021,语文、数学,13800000021\n'
 
-export default function ImportAccountsDialog({ onClose, onImported }: {
-  onClose(): void; onImported(created: TempPassword[]): void
+export default function ImportAccountsDialog({
+  onClose,
+  onImported,
+}: {
+  onClose(): void
+  onImported(created: TempPassword[]): void
 }) {
   const qc = useQueryClient()
   const fileRef = useRef<HTMLInputElement>(null)
@@ -23,7 +27,13 @@ export default function ImportAccountsDialog({ onClose, onImported }: {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
-  const edit = (text: string) => { seq.current++; setCsv(text); setRows(null); setError(''); setBusy(false) }
+  const edit = (text: string) => {
+    seq.current++
+    setCsv(text)
+    setRows(null)
+    setError('')
+    setBusy(false)
+  }
 
   const preview = async (text: string) => {
     const mine = ++seq.current
@@ -70,29 +80,75 @@ export default function ImportAccountsDialog({ onClose, onImported }: {
   const bad = rows?.some((r) => r.error) ?? false
 
   return (
-    <Modal open onClose={onClose} title="批量导入账号" dismissOnOutside={false} className="max-w-3xl">
+    <Modal
+      open
+      onClose={onClose}
+      title="批量导入账号"
+      dismissOnOutside={false}
+      className="max-w-3xl"
+    >
       <div className="space-y-3">
-        <Textarea aria-label="粘贴 CSV 内容" rows={5} value={csv} onChange={(e) => edit(e.target.value)}
-          placeholder="选择 CSV 文件,或粘贴内容;表头:登录名,姓名,工号,科目,手机" />
+        <Textarea
+          aria-label="粘贴 CSV 内容"
+          rows={5}
+          value={csv}
+          onChange={(e) => edit(e.target.value)}
+          placeholder="选择 CSV 文件,或粘贴内容;表头:登录名,姓名,工号,科目,手机"
+        />
         <div className="flex flex-wrap items-center gap-2">
-          <input ref={fileRef} type="file" accept=".csv,text/csv" aria-label="选择 CSV 文件" className="hidden"
-            onChange={(e) => onFile(e.target.files?.[0])} />
-          <Button type="button" variant="outline" size="sm" onClick={() => fileRef.current?.click()}>选择 CSV 文件</Button>
-          <Button type="button" variant="outline" size="sm" onClick={() => downloadText('账号导入模板.csv', '\uFEFF' + TEMPLATE)}>下载模板</Button>
-          <Button type="button" variant="outline" size="sm" disabled={busy || !csv.trim()} onClick={() => void preview(csv)}>预览</Button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".csv,text/csv"
+            aria-label="选择 CSV 文件"
+            className="hidden"
+            onChange={(e) => onFile(e.target.files?.[0])}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => fileRef.current?.click()}
+          >
+            选择 CSV 文件
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => downloadText('账号导入模板.csv', '\uFEFF' + TEMPLATE)}
+          >
+            下载模板
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={busy || !csv.trim()}
+            onClick={() => void preview(csv)}
+          >
+            预览
+          </Button>
         </div>
         {rows && (
           <div className="max-h-72 overflow-auto rounded-md border">
             <table className="w-full min-w-[40rem] text-sm">
               <thead className="bg-muted text-left text-muted-foreground">
                 <tr>
-                  {['行', '登录名', '姓名', '工号', '科目', '手机', '问题'].map((h) => <th key={h} className="px-3 py-2 font-medium">{h}</th>)}
+                  {['行', '登录名', '姓名', '工号', '科目', '手机', '问题'].map((h) => (
+                    <th key={h} className="px-3 py-2 font-medium">
+                      {h}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
                 {rows.map((r) => (
-                  <tr key={r.line} data-invalid={r.error ? 'true' : undefined}
-                    className={cn('border-t', r.error && 'bg-destructive/10 text-destructive')}>
+                  <tr
+                    key={r.line}
+                    data-invalid={r.error ? 'true' : undefined}
+                    className={cn('border-t', r.error && 'bg-destructive/10 text-destructive')}
+                  >
                     <td className="px-3 py-1.5">{r.line}</td>
                     <td className="px-3 py-1.5">{r.login_name}</td>
                     <td className="px-3 py-1.5">{r.display_name}</td>
@@ -106,10 +162,22 @@ export default function ImportAccountsDialog({ onClose, onImported }: {
             </table>
           </div>
         )}
-        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+        {error && (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        )}
         <div className="flex justify-end gap-2">
-          <Button type="button" variant="outline" onClick={onClose}>取消</Button>
-          <Button type="button" disabled={busy || !rows || rows.length === 0 || bad} onClick={() => void confirm()}>确认导入</Button>
+          <Button type="button" variant="outline" onClick={onClose}>
+            取消
+          </Button>
+          <Button
+            type="button"
+            disabled={busy || !rows || rows.length === 0 || bad}
+            onClick={() => void confirm()}
+          >
+            确认导入
+          </Button>
         </div>
       </div>
     </Modal>

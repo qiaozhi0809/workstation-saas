@@ -1,6 +1,12 @@
 import { lazy, Suspense, useState } from 'react'
 import {
-  createBrowserRouter, createRoutesFromElements, Link, Navigate, Route, RouterProvider, useParams,
+  createBrowserRouter,
+  createRoutesFromElements,
+  Link,
+  Navigate,
+  Route,
+  RouterProvider,
+  useParams,
 } from 'react-router-dom'
 import { FileQuestion } from 'lucide-react'
 import { QueryClientProvider } from '@tanstack/react-query'
@@ -31,7 +37,9 @@ import { EmptyState } from '@/shared/components/feedback/EmptyState'
 import { Button } from '@/shared/components/ui/button'
 import { useApplyTheme } from '@/theme/useTheme'
 
-const ClassroomPlayground = import.meta.env.DEV ? lazy(() => import('@/dev/ClassroomPlayground')) : null
+const ClassroomPlayground = import.meta.env.DEV
+  ? lazy(() => import('@/dev/ClassroomPlayground'))
+  : null
 
 /** 旧的学生档案地址 /teacher/students/:id → 教室页并打开档案抽屉 */
 function StudentRedirect() {
@@ -43,7 +51,14 @@ function StudentRedirect() {
 const routes = createRoutesFromElements(
   <>
     <Route path="/login" element={<LoginPage />} />
-    <Route path="/teacher" element={<ProtectedRoute context="teacher"><TeacherLayout /></ProtectedRoute>}>
+    <Route
+      path="/teacher"
+      element={
+        <ProtectedRoute context="teacher">
+          <TeacherLayout />
+        </ProtectedRoute>
+      }
+    >
       <Route index element={<Navigate to="classroom" replace />} />
       <Route path="classroom" element={<ClassroomPage />} />
       <Route path="preferences" element={<PreferencesPage />} />
@@ -56,14 +71,41 @@ const routes = createRoutesFromElements(
       <Route path="notices" element={<ClassNoticesPage />} />
     </Route>
     {ClassroomPlayground && (
-      <Route path="/dev/classroom" element={<Suspense fallback={null}><ClassroomPlayground /></Suspense>} />
+      <Route
+        path="/dev/classroom"
+        element={
+          <Suspense fallback={null}>
+            <ClassroomPlayground />
+          </Suspense>
+        }
+      />
     )}
     <Route path="/change-password" element={<ChangePasswordPage />} />
-    <Route path="/admin" element={<ProtectedRoute context="admin"><AdminLayout /></ProtectedRoute>}>
+    <Route
+      path="/admin"
+      element={
+        <ProtectedRoute context="admin">
+          <AdminLayout />
+        </ProtectedRoute>
+      }
+    >
       <Route index element={<AdminHome />} />
-      {ADMIN_PAGES.map((p) => <Route key={p.path} path={p.path} element={<RequirePerm perm={p.perm}>{p.element}</RequirePerm>} />)}
+      {ADMIN_PAGES.map((p) => (
+        <Route
+          key={p.path}
+          path={p.path}
+          element={<RequirePerm perm={p.perm}>{p.element}</RequirePerm>}
+        />
+      ))}
     </Route>
-    <Route path="/parent" element={<ProtectedRoute context="parent"><ParentLayout /></ProtectedRoute>}>
+    <Route
+      path="/parent"
+      element={
+        <ProtectedRoute context="parent">
+          <ParentLayout />
+        </ProtectedRoute>
+      }
+    >
       <Route index element={<ParentIndex />} />
       <Route path="today" element={<TodayPage />} />
       <Route path="growth" element={<GrowthPage />} />
@@ -74,14 +116,18 @@ const routes = createRoutesFromElements(
     <Route path="/" element={<Navigate to="/login" replace />} />
     <Route
       path="*"
-      element={(
+      element={
         <EmptyState
           icon={FileQuestion}
           title="页面不存在"
-          action={<Button asChild className="mt-2"><Link to="/">回到首页</Link></Button>}
+          action={
+            <Button asChild className="mt-2">
+              <Link to="/">回到首页</Link>
+            </Button>
+          }
           className="h-full justify-center p-6"
         />
-      )}
+      }
     />
   </>,
 )

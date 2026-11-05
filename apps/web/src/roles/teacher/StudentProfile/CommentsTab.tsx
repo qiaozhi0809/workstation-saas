@@ -30,7 +30,8 @@ function AddForm({ profile, canUseAi }: { profile: StudentProfile; canUseAi: boo
   const navigate = useNavigate()
   const [content, setContent] = useState('')
   const save = useMutation({
-    mutationFn: () => commentsApi.create(profile.id, { content: content.trim(), generated_by_ai: false }),
+    mutationFn: () =>
+      commentsApi.create(profile.id, { content: content.trim(), generated_by_ai: false }),
     onSuccess: () => {
       setContent('')
       return queryClient.invalidateQueries({ queryKey: ['comments', profile.id] })
@@ -40,21 +41,48 @@ function AddForm({ profile, canUseAi }: { profile: StudentProfile; canUseAi: boo
 
   return (
     <div className="mb-4 space-y-2">
-      <Textarea aria-label="评语内容" maxLength={1000} rows={4} placeholder="写下本学期的评语" value={content}
-        onChange={(e) => setContent(e.target.value)} />
+      <Textarea
+        aria-label="评语内容"
+        maxLength={1000}
+        rows={4}
+        placeholder="写下本学期的评语"
+        value={content}
+        onChange={(e) => setContent(e.target.value)}
+      />
       <div className="flex items-center gap-2">
         {canUseAi && (
-          <Button type="button" variant="outline" size="sm"
-            onClick={() => navigate(aiLink({ tpl: 'comment1', studentId: profile.id }))}>AI 生成</Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => navigate(aiLink({ tpl: 'comment1', studentId: profile.id }))}
+          >
+            AI 生成
+          </Button>
         )}
-        <Button type="button" size="sm" className="ml-auto" disabled={save.isPending || !content.trim()}
-          onClick={() => save.mutate()}>保存评语</Button>
+        <Button
+          type="button"
+          size="sm"
+          className="ml-auto"
+          disabled={save.isPending || !content.trim()}
+          onClick={() => save.mutate()}
+        >
+          保存评语
+        </Button>
       </div>
     </div>
   )
 }
 
-function CommentList({ profile, timezone, canWrite }: { profile: StudentProfile; timezone: string; canWrite: boolean }) {
+function CommentList({
+  profile,
+  timezone,
+  canWrite,
+}: {
+  profile: StudentProfile
+  timezone: string
+  canWrite: boolean
+}) {
   const queryClient = useQueryClient()
   const { data, error, refetch, isFetching } = useQuery({
     queryKey: ['comments', profile.id],
@@ -67,12 +95,14 @@ function CommentList({ profile, timezone, canWrite }: { profile: StudentProfile;
   })
 
   const share = useMutation({
-    mutationFn: ({ id, visible }: { id: string; visible: boolean }) => commentsApi.setParentVisible(id, visible),
+    mutationFn: ({ id, visible }: { id: string; visible: boolean }) =>
+      commentsApi.setParentVisible(id, visible),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['comments', profile.id] }),
     onError: (err) => toast(err instanceof ApiError ? err.message : '操作失败,请重试'),
   })
 
-  if (error) return <ErrorState title="评语加载失败" onRetry={() => void refetch()} retrying={isFetching} />
+  if (error)
+    return <ErrorState title="评语加载失败" onRetry={() => void refetch()} retrying={isFetching} />
   if (!data) return <LoadingState />
   if (data.items.length === 0) return <EmptyState icon={MessageSquareText} title="还没有评语" />
 
@@ -82,24 +112,56 @@ function CommentList({ profile, timezone, canWrite }: { profile: StudentProfile;
         <li key={c.id} className="border-b border-border pb-3 text-sm last:border-b-0">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-foreground">{c.semester}</span>
-            <span className="text-muted-foreground">{formatInTz(c.created_at, timezone).slice(0, 10)}</span>
-            <Badge variant={c.generated_by_ai ? 'info' : 'neutral'}>{c.generated_by_ai ? 'AI 生成' : '手写'}</Badge>
+            <span className="text-muted-foreground">
+              {formatInTz(c.created_at, timezone).slice(0, 10)}
+            </span>
+            <Badge variant={c.generated_by_ai ? 'info' : 'neutral'}>
+              {c.generated_by_ai ? 'AI 生成' : '手写'}
+            </Badge>
             <div className="ml-auto flex items-center gap-1">
-              <Button type="button" variant="ghost" size="sm" className="h-7 px-2" onClick={() => void copyComment(c.content)}>复制</Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2"
+                onClick={() => void copyComment(c.content)}
+              >
+                复制
+              </Button>
               {c.can_delete && (
-                <Button type="button" variant="ghost" size="sm" className="h-7 px-2" disabled={remove.isPending}
-                  onClick={() => { if (window.confirm('删除这条评语?')) remove.mutate(c.id) }}>删除</Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2"
+                  disabled={remove.isPending}
+                  onClick={() => {
+                    if (window.confirm('删除这条评语?')) remove.mutate(c.id)
+                  }}
+                >
+                  删除
+                </Button>
               )}
             </div>
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <button type="button" role="switch" aria-checked={c.parent_visible} aria-label="给家长看"
-              disabled={!canWrite || share.isPending} onClick={() => share.mutate({ id: c.id, visible: !c.parent_visible })}
-              className={`relative h-5 w-9 shrink-0 rounded-full transition-colors disabled:opacity-50 ${c.parent_visible ? 'bg-primary' : 'bg-muted-foreground/40'}`}>
-              <span className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-background transition-transform ${c.parent_visible ? 'translate-x-4' : ''}`} />
+            <button
+              type="button"
+              role="switch"
+              aria-checked={c.parent_visible}
+              aria-label="给家长看"
+              disabled={!canWrite || share.isPending}
+              onClick={() => share.mutate({ id: c.id, visible: !c.parent_visible })}
+              className={`relative h-5 w-9 shrink-0 rounded-full transition-colors disabled:opacity-50 ${c.parent_visible ? 'bg-primary' : 'bg-muted-foreground/40'}`}
+            >
+              <span
+                className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-background transition-transform ${c.parent_visible ? 'translate-x-4' : ''}`}
+              />
             </button>
             <span aria-hidden="true">给家长看</span>
-            {c.generated_by_ai && !c.parent_visible && <span className="text-warning">AI 生成,需确认后才给家长看</span>}
+            {c.generated_by_ai && !c.parent_visible && (
+              <span className="text-warning">AI 生成,需确认后才给家长看</span>
+            )}
           </div>
           {/* 评语是纯文本,按文本渲染并保留换行 */}
           <p className="mt-1 whitespace-pre-wrap break-words text-foreground">{c.content}</p>
@@ -114,15 +176,29 @@ export default function CommentsTab({ profile }: { profile: StudentProfile }) {
     queryKey: ['classroom', profile.class_id],
     queryFn: () => classroomApi.summary(profile.class_id),
   })
-  if (summary.error) return <ErrorState title="加载失败" onRetry={() => void summary.refetch()} retrying={summary.isFetching} />
+  if (summary.error)
+    return (
+      <ErrorState
+        title="加载失败"
+        onRetry={() => void summary.refetch()}
+        retrying={summary.isFetching}
+      />
+    )
   if (!summary.data) return <LoadingState />
   const perms = summary.data.my_perms
-  if (!perms.includes('comment.read')) return <EmptyState icon={MessageSquareText} title="只有班主任可以查看评语" />
+  if (!perms.includes('comment.read'))
+    return <EmptyState icon={MessageSquareText} title="只有班主任可以查看评语" />
 
   return (
     <section>
-      {perms.includes('comment.write') && <AddForm profile={profile} canUseAi={perms.includes('ai.class')} />}
-      <CommentList profile={profile} timezone={summary.data.timezone} canWrite={perms.includes('comment.write')} />
+      {perms.includes('comment.write') && (
+        <AddForm profile={profile} canUseAi={perms.includes('ai.class')} />
+      )}
+      <CommentList
+        profile={profile}
+        timezone={summary.data.timezone}
+        canWrite={perms.includes('comment.write')}
+      />
     </section>
   )
 }

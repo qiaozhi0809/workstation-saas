@@ -3,13 +3,14 @@ import logging
 import os
 import stat
 import sys
+import time
 
 import pytest
 import structlog
 from pydantic import ValidationError
 
 from app.config import Settings
-from app.logging import FILE_LOGGER_NAME, configure_logging
+from app.logging import FILE_LOGGER_NAME, SafeTimedRotatingFileHandler, configure_logging
 
 
 @pytest.fixture(autouse=True)
@@ -73,3 +74,64 @@ def test_unwritable_dir_falls_back_to_stdout(tmp_path, capsys):
     assert "log_dir_unavailable" in out
     assert not logging.getLogger(FILE_LOGGER_NAME).handlers
     assert sys.stdout  # 应用仍可启动
+
+
+def test_rollover_never_overwrites_existing_target(tmp_path):
+    path = tmp_path / "app.jsonl"
+    h = SafeTimedRotatingFileHandler(path, when="midnight", backupCount=3, utc=False)
+    try:
+        h.stream.write("current-line\n")
+        h.stream.flush()
+        h.rolloverAt = int(time.time()) - 1
+        t = h.rolloverAt - h.interval
+        dfn = tmp_path / ("app.jsonl." + time.strftime(h.suffix, time.localtime(t)))
+        dfn.write_text("other-process-rolled\n")  # 另一进程已轮转出的当天文件
+        h.doRollover()
+        assert dfn.read_text() == "other-process-rolled\n"
+        assert "current-line" in path.read_text()  # 本进程内容没丢
+        h.stream.write("after\n")
+        h.stream.flush()
+        assert path.read_text().endswith("after\n")
+        assert h.rolloverAt > time.time()
+    finally:
+        h.close()
+
+
+def test_rollover_renames_when_target_absent(tmp_path):
+    path = tmp_path / "app.jsonl"
+    h = SafeTimedRotatingFileHandler(path, when="midnight", backupCount=3, utc=False)
+    try:
+        h.stream.write("old\n")
+        h.stream.flush()
+        h.rolloverAt = int(time.time()) - 1
+        t = h.rolloverAt - h.interval
+        dfn = tmp_path / ("app.jsonl." + time.strftime(h.suffix, time.localtime(t)))
+        h.doRollover()
+        assert dfn.read_text() == "old\n"
+        assert path.read_text() == ""
+    finally:
+        h.close()
+
+
+def test_handler_uses_local_time_and_safe_class(tmp_path):
+    configure_logging("INFO", log_dir=tmp_path)
+    (handler,) = logging.getLogger(FILE_LOGGER_NAME).handlers
+    assert isinstance(handler, SafeTimedRotatingFileHandler)
+    assert handler.utc is False
+
+
+def test_scheduler_command_logs_to_file(tmp_path, monkeypatch):
+    import app.cli as cli
+    from app.deploy import scheduler
+
+    s = Settings(_env_file=None, log_dir=tmp_path, log_retention_days=9)
+    monkeypatch.setattr(cli, "get_settings", lambda: s)
+    monkeypatch.setattr(scheduler, "serve", lambda settings: None)
+    monkeypatch.setattr(sys, "argv", ["cli", "scheduler"])
+    with pytest.raises(SystemExit) as ei:
+        cli.main()
+    assert ei.value.code == 0
+    (handler,) = logging.getLogger(FILE_LOGGER_NAME).handlers
+    assert handler.backupCount == 9
+    structlog.get_logger().info("from-scheduler")
+    assert "from-scheduler" in (tmp_path / "app.jsonl").read_text()

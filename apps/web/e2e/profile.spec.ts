@@ -1,7 +1,14 @@
 import { expect, test, type Page } from '@playwright/test'
 import {
-  activeReviewOps, giveReview, login, restoreAiData, reviewTotal, revokeReviewsSince, snapshotAiData,
-  studentRecord, type AiDataSnapshot,
+  activeReviewOps,
+  giveReview,
+  login,
+  restoreAiData,
+  reviewTotal,
+  revokeReviewsSince,
+  snapshotAiData,
+  studentRecord,
+  type AiDataSnapshot,
 } from './helpers/api'
 
 const CLASS_ID = '44444444-4444-4444-4444-444444444444'

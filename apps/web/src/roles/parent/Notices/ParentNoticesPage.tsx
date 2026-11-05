@@ -15,7 +15,9 @@ export default function ParentNoticesPage() {
   const inbox = useQuery({ queryKey: ['notices', 'inbox'], queryFn: () => noticesApi.inbox(1) })
   const read = useMutation({
     mutationFn: (id: string) => noticesApi.read(id),
-    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['notices', 'inbox'] }) },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['notices', 'inbox'] })
+    },
     onError: () => toast('标记已读失败,请重试'),
   })
 
@@ -26,14 +28,26 @@ export default function ParentNoticesPage() {
 
   let body
   if (inbox.isError && !inbox.data) {
-    body = <ErrorState title="通知加载失败" onRetry={() => void inbox.refetch()} retrying={inbox.isFetching} />
+    body = (
+      <ErrorState
+        title="通知加载失败"
+        onRetry={() => void inbox.refetch()}
+        retrying={inbox.isFetching}
+      />
+    )
   } else if (!inbox.data) body = <LoadingState />
-  else if (inbox.data.items.length === 0) body = <EmptyState title="还没有通知" className="justify-center p-6" />
+  else if (inbox.data.items.length === 0)
+    body = <EmptyState title="还没有通知" className="justify-center p-6" />
   else {
     body = (
       <ul className="flex flex-col divide-y rounded-lg border bg-card">
         {inbox.data.items.map((it) => (
-          <ParentNoticeItem key={it.id} item={it} open={openId === it.id} onToggle={() => toggle(it)} />
+          <ParentNoticeItem
+            key={it.id}
+            item={it}
+            open={openId === it.id}
+            onToggle={() => toggle(it)}
+          />
         ))}
       </ul>
     )

@@ -13,15 +13,28 @@ interface Props {
 // 按下事件不冒泡到舞台,不会开始平移或拖座位
 export default function ZoomControls({ canZoomIn, canZoomOut, onZoomIn, onZoomOut, onFit }: Props) {
   const item = (label: string, Icon: LucideIcon, run: () => void, enabled = true) => (
-    <Button variant="ghost" size="icon" className="h-8 w-8 aria-disabled:cursor-default aria-disabled:opacity-50"
-      aria-label={label} title={label} aria-disabled={enabled ? undefined : true}
-      onClick={() => { if (enabled) run() }}>
+    <Button
+      variant="ghost"
+      size="icon"
+      className="h-8 w-8 aria-disabled:cursor-default aria-disabled:opacity-50"
+      aria-label={label}
+      title={label}
+      aria-disabled={enabled ? undefined : true}
+      onClick={() => {
+        if (enabled) run()
+      }}
+    >
       <Icon aria-hidden />
     </Button>
   )
   return (
-    <div role="group" aria-label="缩放" data-zoom-controls="" className="absolute bottom-3 right-3 z-10 flex gap-1 rounded-lg border bg-background/90 p-1 shadow-sm"
-      onPointerDown={(e) => e.stopPropagation()}>
+    <div
+      role="group"
+      aria-label="缩放"
+      data-zoom-controls=""
+      className="absolute bottom-3 right-3 z-10 flex gap-1 rounded-lg border bg-background/90 p-1 shadow-sm"
+      onPointerDown={(e) => e.stopPropagation()}
+    >
       {item('缩小', ZoomOut, onZoomOut, canZoomOut)}
       {item('适应', Scan, onFit)}
       {item('放大', ZoomIn, onZoomIn, canZoomIn)}

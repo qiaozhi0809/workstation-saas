@@ -12,7 +12,13 @@ const TABS: { path: string; label: string; icon: LucideIcon }[] = [
 ]
 
 /** < 768 底部固定页签(图标在上文字在下,避开 iOS 安全区);≥ 768 放进顶栏 */
-export default function ParentNav({ placement, childId }: { placement: 'bottom' | 'top'; childId: string }) {
+export default function ParentNav({
+  placement,
+  childId,
+}: {
+  placement: 'bottom' | 'top'
+  childId: string
+}) {
   const bottom = placement === 'bottom'
   // 与铃铛、通知页同一个 key;事件失效在 ParentLayout
   const inbox = useQuery({ queryKey: ['notices', 'inbox'], queryFn: () => noticesApi.inbox(1) })
@@ -21,18 +27,27 @@ export default function ParentNav({ placement, childId }: { placement: 'bottom' 
   return (
     <nav
       aria-label="主导航"
-      className={cn('flex', bottom ? 'shrink-0 border-t bg-background pb-[env(safe-area-inset-bottom)]' : 'items-center gap-1')}
+      className={cn(
+        'flex',
+        bottom
+          ? 'shrink-0 border-t bg-background pb-[env(safe-area-inset-bottom)]'
+          : 'items-center gap-1',
+      )}
     >
       {TABS.map(({ path, label, icon: Icon }) => (
         <NavLink
           key={path}
           to={{ pathname: `/parent/${path}`, search }}
-          className={({ isActive }) => cn(
-            'flex min-h-[44px] items-center justify-center rounded-md text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-            bottom ? 'min-w-[44px] flex-1 flex-col gap-0.5 py-1 text-xs' : 'min-w-[44px] gap-1.5 px-3',
-            isActive ? 'text-primary' : 'text-muted-foreground hover:text-foreground',
-            !bottom && isActive && 'bg-accent',
-          )}
+          className={({ isActive }) =>
+            cn(
+              'flex min-h-[44px] items-center justify-center rounded-md text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              bottom
+                ? 'min-w-[44px] flex-1 flex-col gap-0.5 py-1 text-xs'
+                : 'min-w-[44px] gap-1.5 px-3',
+              isActive ? 'text-primary' : 'text-muted-foreground hover:text-foreground',
+              !bottom && isActive && 'bg-accent',
+            )
+          }
         >
           <span className="relative">
             <Icon className="h-5 w-5" aria-hidden="true" />
@@ -46,7 +61,9 @@ export default function ParentNav({ placement, childId }: { placement: 'bottom' 
             )}
           </span>
           <span>{label}</span>
-          {path === 'notices' && unread > 0 && <span className="sr-only">{`${unread} 条未读`}</span>}
+          {path === 'notices' && unread > 0 && (
+            <span className="sr-only">{`${unread} 条未读`}</span>
+          )}
         </NavLink>
       ))}
     </nav>

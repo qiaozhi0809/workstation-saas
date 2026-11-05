@@ -3,17 +3,26 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { prefersReducedMotion, useReducedMotion } from './useReducedMotion'
 
 const original = window.matchMedia
-afterEach(() => { window.matchMedia = original })
+afterEach(() => {
+  window.matchMedia = original
+})
 
 function fakeMatchMedia(initial: boolean) {
   let listener: (() => void) | null = null
   const mql = {
     matches: initial,
-    addEventListener: (_: string, fn: () => void) => { listener = fn },
+    addEventListener: (_: string, fn: () => void) => {
+      listener = fn
+    },
     removeEventListener: vi.fn(),
   }
   window.matchMedia = vi.fn().mockReturnValue(mql)
-  return { set(v: boolean) { mql.matches = v; listener?.() } }
+  return {
+    set(v: boolean) {
+      mql.matches = v
+      listener?.()
+    },
+  }
 }
 
 it('reads the reduced-motion preference and treats a missing matchMedia as off', () => {
