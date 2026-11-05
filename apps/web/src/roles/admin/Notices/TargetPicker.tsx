@@ -83,9 +83,9 @@ function PeoplePicker({ users, onChange, unavailable, unavailableMessage }: {
           ))}
         </ul>
       )}
+      {unavailableMessage && <p role="alert" className="text-sm text-destructive">{unavailableMessage}</p>}
       {badIds.length > 0 && (
         <div className="flex flex-wrap items-center gap-2">
-          {unavailableMessage && <p role="alert" className="text-sm text-destructive">{unavailableMessage}</p>}
           <Button type="button" variant="outline" size="sm"
             onClick={() => onChange(users.filter((u) => !unavailable.has(u.user_id)))}>
             去掉这些人

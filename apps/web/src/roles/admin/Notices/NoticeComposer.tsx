@@ -30,7 +30,7 @@ export default function NoticeComposer({ options, onSent }: { options: NoticeOpt
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
   const [audience, setAudience] = useState<Audience>('teachers')
-  const [kind, setKind] = useState<TargetKind>(schoolWide ? 'school' : 'grade')
+  const [pickedKind, setKind] = useState<TargetKind>(schoolWide ? 'school' : 'grade')
   const [pickedGrade, setPickedGrade] = useState<string | null>(null)
   const [classId, setClassId] = useState('')
   const [users, setUsers] = useState<NoticePerson[]>([])
@@ -44,6 +44,8 @@ export default function NoticeComposer({ options, onSent }: { options: NoticeOpt
   const [error, setError] = useState('')
   const [result, setResult] = useState('')
 
+  // options 刷新后 school_wide 可能变化:当前对象不在合法范围内时校正
+  const kind: TargetKind = kindsFor(audience, schoolWide).includes(pickedKind) ? pickedKind : (schoolWide ? 'school' : 'grade')
   const grades = options.grades
   const gradeId = pickedGrade ?? grades[0]?.id ?? ''
   const klass = options.classes.find((c) => c.id === classId)
@@ -68,7 +70,7 @@ export default function NoticeComposer({ options, onSent }: { options: NoticeOpt
 
   const clearUnavailable = () => { setUnavailable(new Set()); setUnavailableMessage('') }
   const changeGrade = (id: string) => { setPickedGrade(id); setClassId('') }
-  const changeKind = (k: TargetKind) => { setKind(k); setClassId('') }
+  const changeKind = (k: TargetKind) => { setKind(k); setClassId(''); clearUnavailable() }
   // 家长对象没有"指定的人":切换时把落在 users 上的对象和已选的人重置到合法值
   const changeAudience = (a: Audience) => {
     setAudience(a)
@@ -114,7 +116,7 @@ export default function NoticeComposer({ options, onSent }: { options: NoticeOpt
       void qc.invalidateQueries({ queryKey: ['admin', 'today'] })
     } catch (err) {
       const ids = unavailableIds(err)
-      if (ids && target.kind === 'users') {
+      if (ids && target.kind === 'users' && ids.some((id) => users.some((u) => u.user_id === id))) {
         // L46:选好的人在发送前被冻结或解绑,在选择器里标出来,允许去掉后重发
         setUnavailable(new Set(ids))
         setUnavailableMessage((err as ApiError).message)

@@ -287,6 +287,17 @@ describe('发通知:发给家长', () => {
 })
 
 describe('发通知:对象选项来自 noticeOptions', () => {
+  it('corrects a school target when a refreshed options drops school_wide', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><NoticesPage /></QueryClientProvider>)
+    await fill()
+    expect(screen.getByLabelText('发给')).toHaveValue('school')
+    act(() => { client.setQueryData(['admin', 'notices', 'options'], options({ school_wide: false })) })
+    await waitFor(() => expect(screen.getByLabelText('发给')).toHaveValue('grade'))
+    clickSend()
+    expect((await confirmDialog()).getByText('确认发给 三年级老师?')).toBeInTheDocument()
+  })
+
   it('omits 全校老师 when school_wide is false', async () => {
     vi.mocked(adminApi.noticeOptions).mockResolvedValue(options({ school_wide: false }))
     renderPage()
@@ -433,6 +444,33 @@ describe('发通知:指定的人失效(409)', () => {
     fireEvent.click((await confirmDialog()).getByRole('button', { name: '确认发送' }))
     await waitFor(() => expect(adminApi.sendNotice).toHaveBeenLastCalledWith(
       expect.objectContaining({ target: { kind: 'users', user_ids: ['u1'] } })))
+  })
+
+  it('treats a 409 whose ids match nobody picked as a plain error', async () => {
+    vi.mocked(adminApi.sendNotice).mockRejectedValueOnce(
+      new ApiError(409, 'RECIPIENT_UNAVAILABLE', '有 1 位已不能接收通知', { user_ids: ['u99'] }))
+    renderPage()
+    await pickBoth()
+    clickSend()
+    fireEvent.click((await confirmDialog()).getByRole('button', { name: '确认发送' }))
+    const dlg = await confirmDialog()
+    expect(await dlg.findByRole('alert')).toHaveTextContent('有 1 位已不能接收通知')
+    expect(screen.queryByText('已不可选')).toBeNull()
+    expect(screen.queryByRole('button', { name: '去掉这些人' })).toBeNull()
+  })
+
+  it('clears the unavailable marks when switching the target away and back', async () => {
+    vi.mocked(adminApi.sendNotice).mockRejectedValueOnce(unavailable())
+    renderPage()
+    await pickBoth()
+    clickSend()
+    fireEvent.click((await confirmDialog()).getByRole('button', { name: '确认发送' }))
+    await screen.findByText('已不可选')
+    fireEvent.change(screen.getByLabelText('发给'), { target: { value: 'school' } })
+    fireEvent.change(screen.getByLabelText('发给'), { target: { value: 'users' } })
+    expect(await screen.findByRole('list', { name: '已选择的人' })).toBeInTheDocument()
+    expect(screen.queryByText('已不可选')).toBeNull()
+    expect(screen.queryByRole('button', { name: '去掉这些人' })).toBeNull()
   })
 
   it('keeps the generic error for a 409 with other code or invalid details', async () => {
