@@ -163,7 +163,8 @@ test('principal sends to grade-3 parents: only the primary parent of a grade-3 c
     expect((await inboxOf(request, zhou)).some((n) => n.title === title), '次要家长不应收到').toBe(false)
 
     // 年级组长的对象里没有"全校家长"
-    const { ctx, page: head } = await phoneContext(browser)
+    const ctx = await browser.newContext({ baseURL: BASE_URL })
+    const head = await ctx.newPage()
     try {
       await signIn(head, 'gradehead03')
       await head.goto('/admin/notices')
@@ -203,7 +204,7 @@ test('a notice past its deadline shows "已截止" and a recalled one shows "此
     await expect(mobile.getByRole('button', { name: new RegExp(recallTitle) }).getByText('此通知已撤回')).toBeVisible()
 
     // 截止:等过了截止时间再刷新(can_ack 由后端按服务器时间给出),展开后显示"已截止"、没有"已知晓"按钮
-    await expect.poll(() => Date.now(), { timeout: 15_000 }).toBeGreaterThan(Date.parse(deadline) + 500)
+    await expect.poll(() => Date.now(), { timeout: 15_000 }).toBeGreaterThan(Date.parse(deadline) + 2_000)
     await mobile.reload()
     await mobile.getByRole('button', { name: new RegExp(deadlineTitle) }).click()
     await expect(mobile.getByText('已截止', { exact: true })).toBeVisible()
