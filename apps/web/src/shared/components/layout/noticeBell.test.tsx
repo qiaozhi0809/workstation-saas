@@ -186,9 +186,14 @@ describe('通知铃铛', () => {
     fireEvent.click(within(list).getByRole('button', { name: /通知1/ }))
     const ackBtn = within(list).getByRole('button', { name: '已知晓' })
     expect(ackBtn.parentElement!.closest('button')).toBeNull()
+    // 先等展开引起的标已读与重取落定,再看回执本身是否让铃铛的收件箱重取
+    await waitFor(() => expect(noticesApi.read).toHaveBeenCalledWith('1'))
+    await waitFor(() => expect(within(screen.getByRole('button', { name: /^通知,/ })).queryByText('1')).toBeNull())
+    const before = vi.mocked(noticesApi.inbox).mock.calls.length
     fireEvent.click(ackBtn)
     await waitFor(() => expect(noticesApi.ack).toHaveBeenCalledWith('1', { choice: null, note: null }))
     expect(await within(list).findByText(/已回执/)).toBeInTheDocument()
+    await waitFor(() => expect(vi.mocked(noticesApi.inbox).mock.calls.length).toBeGreaterThan(before))
   })
 
   it('keeps each notice\'s ack state separate (key by id)', async () => {

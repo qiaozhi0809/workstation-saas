@@ -47,8 +47,9 @@ export default function NoticeComposer({ options, onSent }: { options: NoticeOpt
   // options 刷新后 school_wide 可能变化:当前对象不在合法范围内时校正
   const kind: TargetKind = kindsFor(audience, schoolWide).includes(pickedKind) ? pickedKind : (schoolWide ? 'school' : 'grade')
   const grades = options.grades
-  const gradeId = pickedGrade ?? grades[0]?.id ?? ''
-  const klass = options.classes.find((c) => c.id === classId)
+  // options 刷新后已选年级 / 班级可能不在范围内:回落到第一个年级,班级视为未选
+  const gradeId = (pickedGrade && grades.some((g) => g.id === pickedGrade) ? pickedGrade : grades[0]?.id) ?? ''
+  const klass = options.classes.find((c) => c.id === classId && c.grade_id === gradeId)
   const who = audience === 'parents' ? '家长' : '老师'
 
   let target: NoticeTarget | null = null
@@ -82,7 +83,10 @@ export default function NoticeComposer({ options, onSent }: { options: NoticeOpt
   }
   const changeUsers = (next: NoticePerson[]) => {
     setUsers(next)
-    setUnavailable((prev) => new Set([...prev].filter((id) => next.some((u) => u.user_id === id))))
+    const left = [...unavailable].filter((id) => next.some((u) => u.user_id === id))
+    setUnavailable(new Set(left))
+    // 不可选的人都去掉后,"有 N 位已不能接收通知"的提示一并收起
+    if (left.length === 0) setUnavailableMessage('')
   }
 
   // AckSettings 的校验只显示、不拦截:点发送与确认发送前都要用 ackSpecError 拦一道

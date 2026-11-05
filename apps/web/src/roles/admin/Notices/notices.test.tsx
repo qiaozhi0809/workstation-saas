@@ -197,7 +197,7 @@ describe('发通知:编写', () => {
 })
 
 describe('发通知:可选对象加载', () => {
-  const OPT_KEY = ['admin', 'notices', 'options']
+  const OPT_KEY = ['notices', 'options']
   it('keeps the draft when a background refetch of the options fails', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(<QueryClientProvider client={client}><NoticesPage /></QueryClientProvider>)
@@ -292,10 +292,26 @@ describe('发通知:对象选项来自 noticeOptions', () => {
     render(<QueryClientProvider client={client}><NoticesPage /></QueryClientProvider>)
     await fill()
     expect(screen.getByLabelText('发给')).toHaveValue('school')
-    act(() => { client.setQueryData(['admin', 'notices', 'options'], options({ school_wide: false })) })
+    act(() => { client.setQueryData(['notices', 'options'], options({ school_wide: false })) })
     await waitFor(() => expect(screen.getByLabelText('发给')).toHaveValue('grade'))
     clickSend()
     expect((await confirmDialog()).getByText('确认发给 三年级老师?')).toBeInTheDocument()
+  })
+
+  it('falls back to the first grade when a refreshed options drops the picked grade', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><NoticesPage /></QueryClientProvider>)
+    await fill('grade')
+    fireEvent.change(screen.getByLabelText('年级'), { target: { value: 'g4' } })
+    act(() => {
+      client.setQueryData(['notices', 'options'], options({
+        grades: [{ id: 'g3', name: '三年级' }], classes: [{ id: 'c31', name: '三年一班', grade_id: 'g3' }],
+      }))
+    })
+    clickSend()
+    fireEvent.click((await confirmDialog()).getByRole('button', { name: '确认发送' }))
+    await waitFor(() => expect(adminApi.sendNotice).toHaveBeenCalledWith(
+      expect.objectContaining({ target: { kind: 'grade', grade_id: 'g3' } })))
   })
 
   it('omits 全校老师 when school_wide is false', async () => {
@@ -440,6 +456,7 @@ describe('发通知:指定的人失效(409)', () => {
     expect(within(screen.getByRole('list', { name: '已选择的人' })).queryByText('王芳')).toBeNull()
     expect(screen.queryByText('已不可选')).toBeNull()
     expect(screen.queryByRole('button', { name: '去掉这些人' })).toBeNull()
+    expect(screen.queryByText('有 1 位已不能接收通知,请去掉后重发')).toBeNull()
     clickSend()
     fireEvent.click((await confirmDialog()).getByRole('button', { name: '确认发送' }))
     await waitFor(() => expect(adminApi.sendNotice).toHaveBeenLastCalledWith(

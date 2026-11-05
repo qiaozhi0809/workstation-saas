@@ -115,7 +115,7 @@ function SentList({ page, setPage }: { page: number; setPage(p: number): void })
 
 export default function NoticesPage() {
   // 对象选项(L44):school_wide 决定有没有"全校",年级 / 班级是发送人能发的范围
-  const opts = useQuery({ queryKey: ['admin', 'notices', 'options'], queryFn: adminApi.noticeOptions })
+  const opts = useQuery({ queryKey: ['notices', 'options'], queryFn: adminApi.noticeOptions })
   // "我发出的"的页码提升到这里:发送成功后回到第 1 页(L49)
   const [page, setPage] = useState(1)
 
