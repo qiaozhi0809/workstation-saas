@@ -1,0 +1,34 @@
+# D13 试验冒烟:postgres + redis + 待测镜像。不使用 172.30.0.0/24 固定子网(用 compose 默认网络)。
+# 仅含虚构开发数据与假密码(WS_ENV=dev),不含任何真实密钥。
+name: ws-m5a-d
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: workstation
+      POSTGRES_PASSWORD: workstation
+      POSTGRES_DB: workstation
+    ports: ["15514:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workstation"]
+      interval: 1s
+      retries: 30
+  redis:
+    image: redis:7-alpine
+    ports: ["16514:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 1s
+      retries: 30
+  app:
+    image: ${WS_TRIAL_IMAGE:?set WS_TRIAL_IMAGE}
+    profiles: ["app"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    environment:
+      WS_ENV: dev
+      WS_DATABASE_URL: postgresql+psycopg://workstation:workstation@postgres:5432/workstation
+      WS_REDIS_URL: redis://redis:6379/0
+      PORT: "8080"
+    ports: ["8254:8080"]
