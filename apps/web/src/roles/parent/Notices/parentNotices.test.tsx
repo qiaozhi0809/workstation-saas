@@ -192,8 +192,10 @@ it('shows 此通知已撤回 and no ack form for a recalled notice', async () =>
     item({ recalled: true, content: null, ack: { kind: 'confirm' }, can_ack: false }),
   ]))
   renderAt()
-  fireEvent.click(await screen.findByText('周五春游'))
+  await screen.findByText('周五春游')
   expect(screen.getAllByText('此通知已撤回').length).toBeGreaterThan(0)
+  expect(screen.queryByRole('button', { name: /周五春游/ })).toBeNull() // 已撤回的条目不是按钮
+  fireEvent.click(screen.getByText('周五春游'))
   expect(screen.queryByRole('button', { name: '已知晓' })).toBeNull()
   expect(noticesApi.read).not.toHaveBeenCalled()
   expect(screen.queryByText('待回执')).toBeNull()

@@ -48,6 +48,7 @@ export default function AckStatsDialog({ noticeId, open = true, onClose }: {
     queryKey: ['notices', noticeId, 'acks'],
     queryFn: () => noticesApi.acks(noticeId),
     enabled: open,
+    staleTime: 0, // 回执随时在变:关掉再打开必须重新取,不能先显示 30 秒前的缓存
   })
   const exp = useMutation({
     mutationFn: () => noticesApi.exportAcks(noticeId),

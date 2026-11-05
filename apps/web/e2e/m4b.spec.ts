@@ -124,8 +124,6 @@ test('class notice reaches an open parent phone without refresh; the parent acks
     await mobile.getByLabel('留言').fill('')
     await mobile.getByRole('button', { name: '提交回执' }).click()
     await expect(mobile.getByText(/已回执:不参加/)).toBeVisible()
-    // 统计弹窗的查询沿用全局 staleTime 30 秒,重开会先显示缓存(见 G-1):刷新页面再看新数据
-    await page.reload()
     await page.getByRole('button', { name: `查看回执 ${title}` }).click()
     const again = page.getByRole('dialog', { name: '回执统计' })
     await expect(again.getByRole('row').filter({ hasText: '王小一' })).toContainText('不参加')
@@ -201,7 +199,7 @@ test('a notice past its deadline shows "已截止" and a recalled one shows "此
     // 撤回:家长页面不刷新,这条变成"此通知已撤回"
     const res = await request.post(`${API}/classes/${CLASS_3_2}/notices/${recallId}/recall`, { headers: auth(teacher) })
     expect(res.ok(), await res.text()).toBeTruthy()
-    await expect(mobile.getByRole('button', { name: new RegExp(recallTitle) }).getByText('此通知已撤回')).toBeVisible()
+    await expect(mobile.getByRole('listitem').filter({ hasText: recallTitle }).getByText('此通知已撤回')).toBeVisible()
 
     // 截止:等过了截止时间再刷新(can_ack 由后端按服务器时间给出),展开后显示"已截止"、没有"已知晓"按钮
     await expect.poll(() => Date.now(), { timeout: 15_000 }).toBeGreaterThan(Date.parse(deadline) + 2_000)
@@ -266,6 +264,13 @@ test('unlinking a parent whose only child it was logs the open parent page out w
     const temp = body.temp_password
     expect(temp, '新账号应当带一次性临时密码').toBeTruthy()
 
+    // 记下页面开的 WebSocket 与收到的帧:解绑后要看到这条连接收到 session.revoked,而不是靠重连认证失败才回登录页
+    const sockets: { frames: string[] }[] = []
+    mobile.on('websocket', (ws) => {
+      const s = { frames: [] as string[] }
+      sockets.push(s)
+      ws.on('framereceived', (f) => s.frames.push(String(f.payload)))
+    })
     await signIn(mobile, phone, temp)
     await expect(mobile.getByRole('heading', { name: '首次登录请先修改密码' })).toBeVisible()
     await mobile.getByLabel('旧密码').fill(temp)
@@ -273,12 +278,15 @@ test('unlinking a parent whose only child it was logs the open parent page out w
     await mobile.getByLabel('确认新密码').fill('E2e-pass-2026')
     await mobile.getByRole('button', { name: '保存' }).click()
     await expect(mobile).toHaveURL(/\/parent\/today/)
-    await mobile.waitForLoadState('networkidle') // 等实时连接建立
+    // 等实时连接握手完成(服务端回 ready),再解绑
+    await expect.poll(() => sockets.some((s) => s.frames.some((f) => f.includes('"ready"')))).toBe(true)
 
     // 解绑:这是他唯一的孩子,账号归档 → 页面不刷新就回到登录页
     const del = await request.delete(`${API}/parent-links/${linkId}`, { headers: auth(teacher) })
     expect(del.ok(), await del.text()).toBeTruthy()
     linkId = null
+    // 先是已连上的这条连接收到 session.revoked,然后页面回到登录页
+    await expect.poll(() => sockets.some((s) => s.frames.some((f) => f.includes('session.revoked')))).toBe(true)
     await expect(mobile).toHaveURL(/\/login/)
   } finally {
     await ctx.close()
