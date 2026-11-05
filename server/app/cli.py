@@ -13,7 +13,7 @@ from uuid import UUID
 
 import httpx
 from redis import Redis
-from sqlalchemy import create_engine, text
+from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.ai.client import AIUpstreamError, ChatMessage, Delta
@@ -207,6 +207,31 @@ def parent_archive(
     return 0
 
 
+def migrate(ns: argparse.Namespace, *, engine: Engine, out: TextIO) -> int:
+    """迁移预检 + alembic upgrade head。退出码:0 通过 / 已最新,2 预检不通过,1 其他错误。"""
+    from alembic import command
+
+    from app.deploy import precheck
+
+    try:
+        pending = precheck.pending_revisions(engine)
+        if not pending:
+            out.write("数据库已是最新版本,无需迁移。\n")
+            return 0
+        report = precheck.run_precheck(engine, pending)
+        out.write(precheck.render(report, pending))
+        if not report.ok:
+            return 2
+        if ns.check_only:
+            return 0
+        command.upgrade(precheck.alembic_config(engine), "head")
+        out.write(f"已迁移到 {precheck.head_revision(engine)}\n")
+        return 0
+    except Exception as exc:
+        out.write(f"迁移失败:{type(exc).__name__}: {exc}\n")
+        return 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="app.cli")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -225,6 +250,8 @@ def build_parser() -> argparse.ArgumentParser:
     mask = s.add_mutually_exclusive_group()
     mask.add_argument("--mask-forced", dest="mask_forced", action="store_true", default=None)
     mask.add_argument("--no-mask-forced", dest="mask_forced", action="store_false")
+    mg = sub.add_parser("migrate", help="迁移预检并升级数据库到最新版本")
+    mg.add_argument("--check-only", action="store_true", help="只预检,不迁移")
     pa = sub.add_parser("parent-archive", help="归档只读满一年的家长绑定与账号")
     pa.add_argument("--dry-run", action="store_true", help="只统计,不改数据")
     yu = sub.add_parser("year-upgrade", help="学年升级:生成方案、预览、执行、回滚")
@@ -248,6 +275,13 @@ def main() -> None:
     ns = build_parser().parse_args()
     if ns.command == "seed-dev":
         print(seed_dev())
+    elif ns.command == "migrate":
+        engine = create_engine(get_settings().database_url)
+        try:
+            code = migrate(ns, engine=engine, out=sys.stdout)
+        finally:
+            engine.dispose()
+        sys.exit(code)
     elif ns.command == "ai-config":
         engine = create_engine(get_settings().database_url)
         try:
