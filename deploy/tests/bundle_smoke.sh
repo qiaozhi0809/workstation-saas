@@ -31,12 +31,14 @@ want="$(awk 'NR==1 {print $1}' "$PKG.sha256")"
 pass "sha256 与文件名都对"
 
 echo "== 2/5 归档结构(与 upgrade.sh 的安全检查一致)"
+# 先把清单读进变量再检查:tar 失败要能发现,管道里 grep -q 提前退出也不会让检查静默通过
 list="$(tar -tzf "$PKG")" || fail "离线包无法读取"
-printf '%s\n' "$list" | grep -Eq '(^/|(^|/)\.\.(/|$))' && fail "含绝对路径或 .."
-tar -tvzf "$PKG" | grep -Evq '^[-d]' && fail "含符号链接、硬链接或特殊文件"
+vlist="$(tar -tvzf "$PKG")" || fail "离线包无法读取(-tv)"
+if printf '%s\n' "$list" | grep -Eq '(^/|(^|/)\.\.(/|$))'; then fail "含绝对路径或 .."; fi
+if printf '%s\n' "$vlist" | grep -Evq '^[-d]'; then fail "含符号链接、硬链接或特殊文件"; fi
 tops="$(printf '%s\n' "$list" | sed 's#^\./##' | awk -F/ 'NF > 0 && $1 != "" { print $1 }' | sort -u)"
 [ "$tops" = "$NAME" ] || fail "顶层应只有目录 $NAME,实际:$tops"
-printf '%s\n' "$list" | grep -Eq '(^|/)\._' && fail "含 macOS 的 ._ 元数据文件"
+if printf '%s\n' "$list" | grep -Eq '(^|/)\._'; then fail "含 macOS 的 ._ 元数据文件"; fi
 pass "顶层只有 $NAME,无链接、无 ._ 文件"
 
 echo "== 3/5 解包并核对契约里的全部文件"
@@ -54,8 +56,22 @@ for f in scripts/install.sh scripts/backup.sh scripts/restore.sh scripts/upgrade
   bash -n "$D/$f" || fail "$f 语法检查失败"
 done
 bash -n "$D/scripts/lib.sh" || fail "lib.sh 语法检查失败"
+# 内容必须与仓库源文件逐个一致(防止拷错来源、拷了旧文件)
 cmp -s "$D/README.md" "$ROOT/deploy/README.md" || fail "README.md 与 deploy/README.md 不一致"
-pass "契约文件齐全,VERSION 对,脚本可执行且语法正确,README 与仓库一致"
+for f in docker-compose.yml .env.example Caddyfile.internal Caddyfile.custom Caddyfile.acme; do
+  cmp -s "$D/$f" "$ROOT/deploy/prod/$f" || fail "$f 与 deploy/prod/$f 不一致"
+done
+for f in "$ROOT"/deploy/prod/scripts/*.sh "$ROOT"/deploy/prod/systemd/*; do
+  rel="${f#"$ROOT"/deploy/prod/}"
+  cmp -s "$D/$rel" "$f" || fail "$rel 与 deploy/prod/$rel 不一致"
+done
+# 文件清单与契约完全相等,不许多出文件
+actual="$(cd "$D" && find . -type f | LC_ALL=C sort)"
+expected="$(printf '%s\n' ./VERSION ./docker-compose.yml ./.env.example ./Caddyfile.internal ./Caddyfile.custom ./Caddyfile.acme ./README.md \
+  "./images/workstation-images-$VERSION.tar" ./scripts/lib.sh ./scripts/install.sh ./scripts/backup.sh ./scripts/restore.sh \
+  ./scripts/upgrade.sh ./scripts/diagnose.sh ./systemd/workstation-backup.service ./systemd/workstation-backup.timer | LC_ALL=C sort)"
+[ "$actual" = "$expected" ] || fail "文件清单与契约不一致:$(printf '%s\n' "$actual" | LC_ALL=C comm -3 - <(printf '%s\n' "$expected") | tr '\n' ' ')"
+pass "契约文件齐全且无多余文件,内容与仓库一致,VERSION 对,脚本可执行且语法正确"
 
 echo "== 4/5 不含密钥与运行时产物"
 extra="$(cd "$D" && find . \( -name '.env' -o -name 'Caddyfile' -o -path './data' -o -path './backups' -o -path './certs' -o -path './dist' -o -name '.git' \) -print)"
@@ -76,6 +92,22 @@ done
 for img in postgres:16-alpine redis:7-alpine; do
   grep -qE "image: $img\$" "$D/docker-compose.yml" || fail "compose 里没有引用 $img,镜像清单需要同步"
 done
-pass "镜像包含 workstation-app / workstation-web / postgres:16-alpine / redis:7-alpine"
+# 学校服务器是 x86_64:四个镜像的 config 都必须是目标架构(默认 amd64),在 Apple 芯片上打包最容易打错
+ARCH="${WS_BUNDLE_ARCH:-amd64}"
+tar -xf "$imgtar" -C "$TMP" manifest.json
+python3 -I - "$imgtar" "$ARCH" <<'PY' || fail "镜像架构不是 $ARCH"
+import json, sys, tarfile
+path, want = sys.argv[1:3]
+with tarfile.open(path) as tf:
+    manifest = json.load(tf.extractfile("manifest.json"))
+    for entry in manifest:
+        cfg = json.load(tf.extractfile(entry["Config"]))
+        if cfg.get("architecture") != want or cfg.get("os") != "linux":
+            print("镜像 %s 是 %s/%s" % (entry.get("RepoTags"), cfg.get("os"), cfg.get("architecture")), file=sys.stderr)
+            sys.exit(1)
+    if not manifest:
+        sys.exit(1)
+PY
+pass "镜像包含 workstation-app / workstation-web / postgres:16-alpine / redis:7-alpine,且都是 linux/$ARCH"
 
 echo "bundle_smoke 全部通过"

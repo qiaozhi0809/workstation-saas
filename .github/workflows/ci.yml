@@ -211,8 +211,12 @@ jobs:
   deploy:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    # 显式 bash:-eo pipefail。默认的 `bash -e` 没有 pipefail,`脚本 | tee` 会吞掉脚本的退出码
+    defaults:
+      run:
+        shell: bash
     env:
-      WS_VERSION: 0.0.0-ci
+      WS_TEST_VERSION: 0.0.0-ci
       WS_TEST_PROJECT: ws-m5a-ci
       WS_HTTP_PORT: 18080
       WS_HTTPS_PORT: 18443
@@ -224,36 +228,36 @@ jobs:
         run: shellcheck -S warning deploy/prod/scripts/*.sh deploy/tests/*.sh deploy/release/*.sh
 
       - name: Build offline bundle
-        run: deploy/release/build-bundle.sh "$WS_VERSION"
+        run: deploy/release/build-bundle.sh "$WS_TEST_VERSION"
 
       - name: Bundle smoke
-        run: deploy/tests/bundle_smoke.sh "$WS_VERSION"
+        run: deploy/tests/bundle_smoke.sh "$WS_TEST_VERSION"
 
       - name: Unpack bundle
         run: |
           mkdir -p "$RUNNER_TEMP/bundle"
-          tar -xzf "dist/workstation-deploy-$WS_VERSION.tar.gz" -C "$RUNNER_TEMP/bundle"
-          echo "WS_DEPLOY_SRC=$RUNNER_TEMP/bundle/workstation-deploy-$WS_VERSION" >> "$GITHUB_ENV"
+          tar -xzf "dist/workstation-deploy-$WS_TEST_VERSION.tar.gz" -C "$RUNNER_TEMP/bundle"
+          echo "WS_TEST_DEPLOY_SRC=$RUNNER_TEMP/bundle/workstation-deploy-$WS_TEST_VERSION" >> "$GITHUB_ENV"
+          echo "WS_BUNDLE_PKG=$PWD/dist/workstation-deploy-$WS_TEST_VERSION.tar.gz" >> "$GITHUB_ENV"
 
-      # 部署测试设了 WS_INSTALL_SKIP_LOAD=1(镜像已在本机),所以这里单独验证离线包里的镜像 tar 能被 docker load
-      - name: Image tar loads
-        run: |
-          docker image rm "workstation-app:$WS_VERSION" "workstation-web:$WS_VERSION"
-          docker load -i "$WS_DEPLOY_SRC/images/workstation-images-$WS_VERSION.tar"
-          docker image inspect "workstation-app:$WS_VERSION" "workstation-web:$WS_VERSION" postgres:16-alpine redis:7-alpine > /dev/null
-          # 验证完就删掉这个 200MB+ 的 tar:各部署测试会把解开的目录复制到各自的临时目录,不必每次都带着它
-          rm "$WS_DEPLOY_SRC/images/workstation-images-$WS_VERSION.tar"
+      # 删掉本机构建出的镜像:离线包是唯一来源。bundle_upgrade 排在第一个,它真的 docker load 包里的镜像 tar,
+      # 之后的测试沿用已载入的镜像(_common.sh 的 WS_INSTALL_SKIP_LOAD=1)
+      - name: Remove locally built images
+        run: docker image rm "workstation-app:$WS_TEST_VERSION" "workstation-web:$WS_TEST_VERSION" postgres:16-alpine redis:7-alpine
 
       # 一个脚本一个脚本地跑;每个脚本后台抓各服务日志,失败时作为 artifact 上传
       - name: Deploy tests
         run: |
-          for t in install_fresh install_twice backup_restore restore_rejects upgrade_same upgrade_precheck_fail; do
+          for t in bundle_upgrade install_fresh install_twice backup_restore restore_rejects upgrade_same upgrade_precheck_fail; do
             echo "::group::$t"
             stop="$RUNNER_TEMP/stop-$t"
             deploy/tests/bundle_collect_logs.sh "$WS_TEST_PROJECT" "$RUNNER_TEMP/service-logs/$t" "$stop" &
             collector=$!
             rc=0
-            "deploy/tests/$t.sh" 2>&1 | tee "$RUNNER_TEMP/service-logs-$t.out" || rc=${PIPESTATUS[0]}
+            set +e
+            "deploy/tests/$t.sh" 2>&1 | tee "$RUNNER_TEMP/service-logs-$t.out"
+            rc=${PIPESTATUS[0]}
+            set -e
             touch "$stop"
             wait "$collector" || true
             mkdir -p "$RUNNER_TEMP/service-logs/$t"
