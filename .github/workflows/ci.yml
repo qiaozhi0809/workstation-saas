@@ -225,7 +225,9 @@ jobs:
 
       # runner 自带 shellcheck;-S warning 与本地、计划一致
       - name: Shellcheck
-        run: shellcheck -S warning deploy/prod/scripts/*.sh deploy/tests/*.sh deploy/release/*.sh
+        # 排除 SC2120:runner 上较新的 shellcheck 在 lib.sh 的 secret_values 上报"没人传参数"(其实是可选参数的写法);
+        # lib.sh 是段 B 的文件,待 B 加 `# shellcheck disable=SC2120` 后可去掉(缺口 E-7)
+        run: shellcheck -S warning -e SC2120 deploy/prod/scripts/*.sh deploy/tests/*.sh deploy/release/*.sh
 
       - name: Build offline bundle
         run: deploy/release/build-bundle.sh "$WS_TEST_VERSION"
