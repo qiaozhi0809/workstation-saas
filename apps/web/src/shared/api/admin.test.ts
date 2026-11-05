@@ -186,3 +186,8 @@ it('导出方法非 2xx 抛 ApiError', async () => {
   await expect(adminApi.exportScoreReport('ge1')).rejects.toBeInstanceOf(ApiError)
   await expect(adminApi.exportAttendance('2026-11')).rejects.toMatchObject({ status: 403, code: 'FORBIDDEN' })
 })
+
+it('noticeOptions: GET /admin/notices/options', async () => {
+  await adminApi.noticeOptions()
+  expect(lastCall()).toMatchObject({ method: 'GET', url: '/api/v1/admin/notices/options' })
+})

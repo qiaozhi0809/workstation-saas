@@ -19,6 +19,7 @@ export type ClassPerm =
   | 'ai.use'
   | 'ai.class'
   | 'parent.manage'
+  | 'class.notice'
 
 export interface Board {
   left_title: string

@@ -161,15 +161,47 @@ export type NoticeTarget =
   | { kind: 'grade'; grade_id: string }
   | { kind: 'class'; class_id: string }
   | { kind: 'users'; user_ids: string[] }
-export interface NoticeInput { title: string; content: string; target: NoticeTarget }
+export type AckSpec =
+  | { kind: 'none' }
+  | { kind: 'confirm' }
+  | { kind: 'choice'; options: string[]; allow_note: boolean }
+export type Audience = 'teachers' | 'parents'
+export interface NoticeInput {
+  title: string; content: string; target: NoticeTarget
+  audience?: Audience
+  ack?: AckSpec
+  ack_deadline?: string | null
+}
 export interface NoticeSent {
   id: string; title: string; content: string; target_label: string
   created_at: string; recalled_at: string | null; recipients: number; read: number
+  audience: Audience; ack: AckSpec; ack_deadline: string | null; acked: number; students_without_parent: number
 }
 export interface InboxItem {
   id: string; title: string; content: string | null; from_name: string | null
   created_at: string; read_at: string | null; recalled: boolean
+  ack: AckSpec; ack_deadline: string | null
+  my_ack: { choice: number | null; note: string | null; acked_at: string } | null
+  students: string[]
+  can_ack: boolean
 }
+export interface NoticeOptions {
+  school_wide: boolean
+  grades: { id: string; name: string }[]
+  classes: { id: string; name: string; grade_id: string }[]
+}
+export interface AckInput { choice: number | null; note: string | null }
+export interface AckRow {
+  user_id: string; user_name: string
+  student_id: string | null; student_name: string | null; class_name: string | null
+  read_at: string | null; choice: number | null; note: string | null; acked_at: string | null
+}
+export interface AckStats {
+  audience: Audience; ack: AckSpec; ack_deadline: string | null
+  total: number; read: number; acked: number; counts: number[]; students_without_parent: number
+  rows: AckRow[]
+}
+export interface ClassNoticeInput { title: string; content: string; ack?: AckSpec; ack_deadline?: string | null }
 export interface Inbox { items: InboxItem[]; total: number; unread: number }
 export interface NoticePerson { user_id: string; name: string; tags: string[] }
 export interface NoticeRecipients {

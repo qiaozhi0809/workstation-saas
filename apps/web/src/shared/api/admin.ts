@@ -2,8 +2,8 @@ import type {
   Account, AccountCreate, AccountInput, AccountPage, AdminRole, AdminRoleInput, AiConfigSave, AiConfigView,
   AiUsage, AttendanceClassDetail, AttendanceReport, AuditActions, AuditRow, BoardView,
   ClassAdmin, ClassInput, GradeAdmin, GradeExam, GradeExamInput, GradeInput, HistoryClass, HistoryExam,
-  HistoryScores, HistoryStudent, HistoryYear, ImportRow, NoticeInput, NoticePerson, NoticeRecipients,
-  NoticeSent, SchoolInfo, ScoreStudentRow, ScoreSummary, StaffInput, Switches,
+  HistoryScores, HistoryStudent, HistoryYear, ImportRow, NoticeInput, NoticeOptions, NoticePerson,
+  NoticeRecipients, NoticeSent, SchoolInfo, ScoreStudentRow, ScoreSummary, StaffInput, Switches,
   TagPool, TagPoolSave, TodayView, UpgradeLatest, UpgradePlan, UpgradePreview, YearAdmin, YearUpdate,
 } from '@/shared/types/admin'
 import { api, authedFetch, toApiError } from './client'
@@ -119,6 +119,7 @@ export const adminApi = {
   noticeRecipients: (id: string) =>
     api<NoticeRecipients>('GET', `/admin/notices/${seg(id)}/recipients`),
   recallNotice: (id: string) => api<NoticeSent>('POST', `/admin/notices/${seg(id)}/recall`),
+  noticeOptions: () => api<NoticeOptions>('GET', '/admin/notices/options'),
   noticePeople: (q: string) => api<NoticePerson[]>('GET', `/admin/notices/people${qs({ q })}`),
   // ---- 学年升级 ----
   upgradeSuggest: (b: { name: string; start_date: string; end_date: string }) =>

@@ -17,7 +17,8 @@ vi.mock('@/shared/components/Toast', () => ({ toast: vi.fn() }))
 
 const sent = (id: string, over: Partial<NoticeSent> = {}): NoticeSent => ({
   id, title: `通知${id}`, content: '正文', target_label: '全校老师', created_at: '2026-11-04T01:00:00Z',
-  recalled_at: null, recipients: 10, read: 4, ...over,
+  recalled_at: null, recipients: 10, read: 4,
+  audience: 'teachers', ack: { kind: 'none' }, ack_deadline: null, acked: 0, students_without_parent: 0, ...over,
 })
 const board = (over: Partial<BoardView> = {}): BoardView => ({
   grades: [{ id: 'g3', name: '三年级' }, { id: 'g4', name: '四年级' }], grade_id: 'g3',
