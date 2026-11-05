@@ -28,7 +28,12 @@ async function phoneContext(browser: Browser) {
   return { ctx, page: await ctx.newPage() }
 }
 
-interface InboxItemLite { id: string; title: string; recalled: boolean; can_ack: boolean }
+interface InboxItemLite {
+  id: string
+  title: string
+  recalled: boolean
+  can_ack: boolean
+}
 
 async function inboxOf(request: APIRequestContext, token: string): Promise<InboxItemLite[]> {
   return (await adminGet<{ items: InboxItemLite[] }>(request, token, '/notices?page=1')).items
@@ -36,29 +41,36 @@ async function inboxOf(request: APIRequestContext, token: string): Promise<Inbox
 
 /** 经接口发班级公告(家长对象),返回通知 id。 */
 async function sendClassNotice(
-  request: APIRequestContext, token: string, data: Record<string, unknown>,
+  request: APIRequestContext,
+  token: string,
+  data: Record<string, unknown>,
 ): Promise<string> {
-  const res = await request.post(`${API}/classes/${CLASS_3_2}/notices`, { headers: auth(token), data })
+  const res = await request.post(`${API}/classes/${CLASS_3_2}/notices`, {
+    headers: auth(token),
+    data,
+  })
   expect(res.ok(), await res.text()).toBeTruthy()
   return ((await res.json()) as { id: string }).id
 }
 
 /** 撤回某老师在三年二班发出的、标题带指定前缀且未撤回的班级公告(兜底清理;没有就什么也不做)。 */
 async function recallClassNotices(request: APIRequestContext, token: string, titlePart: string) {
-  const list = await adminGet<{ items: { id: string; title: string; recalled_at: string | null }[] }>(
-    request, token, `/classes/${CLASS_3_2}/notices?page=1`,
-  )
+  const list = await adminGet<{
+    items: { id: string; title: string; recalled_at: string | null }[]
+  }>(request, token, `/classes/${CLASS_3_2}/notices?page=1`)
   for (const n of list.items.filter((x) => x.title.includes(titlePart) && !x.recalled_at)) {
-    const res = await request.post(`${API}/classes/${CLASS_3_2}/notices/${n.id}/recall`, { headers: auth(token) })
+    const res = await request.post(`${API}/classes/${CLASS_3_2}/notices/${n.id}/recall`, {
+      headers: auth(token),
+    })
     expect(res.ok(), await res.text()).toBeTruthy()
   }
 }
 
 /** 撤回校长 / 年级组长发出的、标题带指定前缀且未撤回的通知(兜底清理)。 */
 async function recallAdminNotices(request: APIRequestContext, token: string, titlePart: string) {
-  const list = await adminGet<{ items: { id: string; title: string; recalled_at: string | null }[] }>(
-    request, token, '/admin/notices?page=1',
-  )
+  const list = await adminGet<{
+    items: { id: string; title: string; recalled_at: string | null }[]
+  }>(request, token, '/admin/notices?page=1')
   for (const n of list.items.filter((x) => x.title.includes(titlePart) && !x.recalled_at)) {
     const res = await request.post(`${API}/admin/notices/${n.id}/recall`, { headers: auth(token) })
     expect(res.ok(), await res.text()).toBeTruthy()
@@ -67,11 +79,19 @@ async function recallAdminNotices(request: APIRequestContext, token: string, tit
 
 /** 家长端底部"通知"页签上的未读数(页签没有数字徽标时为 0)。 */
 async function parentUnread(page: Page): Promise<number> {
-  const text = (await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: /通知/ }).textContent()) ?? ''
+  const text =
+    (await page
+      .getByRole('navigation', { name: '主导航' })
+      .getByRole('link', { name: /通知/ })
+      .textContent()) ?? ''
   return Number(/(\d+) 条未读/.exec(text)?.[1] ?? 0)
 }
 
-test('class notice reaches an open parent phone without refresh; the parent acks, the teacher sees and exports it', async ({ page, browser, request }) => {
+test('class notice reaches an open parent phone without refresh; the parent acks, the teacher sees and exports it', async ({
+  page,
+  browser,
+  request,
+}) => {
   const title = `E2E周五家长会${uniq()}`
   const teacher = await login(request, 'teacher01')
   const { ctx, page: mobile } = await phoneContext(browser)
@@ -100,7 +120,10 @@ test('class notice reaches an open parent phone without refresh; the parent acks
     await expect.poll(() => parentUnread(mobile)).toBe(before + 1)
 
     // 家长打开通知页 → 展开 → 选"参加"并留言
-    await mobile.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: /通知/ }).click()
+    await mobile
+      .getByRole('navigation', { name: '主导航' })
+      .getByRole('link', { name: /通知/ })
+      .click()
     await expect(mobile).toHaveURL(/\/parent\/notices/)
     await mobile.getByRole('button', { name: new RegExp(title) }).click()
     await mobile.getByRole('radio', { name: '参加', exact: true }).check()
@@ -113,7 +136,10 @@ test('class notice reaches an open parent phone without refresh; the parent acks
     const dialog = page.getByRole('dialog', { name: '回执统计' })
     const row = dialog.getByRole('row').filter({ hasText: '王小一' })
     await expect(row).toContainText('参加(我会准时到)')
-    const [download] = await Promise.all([page.waitForEvent('download'), dialog.getByRole('button', { name: '导出 CSV' }).click()])
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      dialog.getByRole('button', { name: '导出 CSV' }).click(),
+    ])
     expect(download.suggestedFilename()).toMatch(/^回执名单-.+\.csv$/)
     await page.keyboard.press('Escape')
     await expect(dialog).toHaveCount(0)
@@ -134,7 +160,11 @@ test('class notice reaches an open parent phone without refresh; the parent acks
   }
 })
 
-test('principal sends to grade-3 parents: only the primary parent of a grade-3 child gets it; a grade head has no school-wide option', async ({ page, browser, request }) => {
+test('principal sends to grade-3 parents: only the primary parent of a grade-3 child gets it; a grade head has no school-wide option', async ({
+  page,
+  browser,
+  request,
+}) => {
   const title = `E2E三年级家长${uniq()}`
   const principal = await login(request, 'principal01')
   try {
@@ -158,7 +188,10 @@ test('principal sends to grade-3 parents: only the primary parent of a grade-3 c
     const got = (await inboxOf(request, li)).find((n) => n.title === title)
     expect(got, '主家长应当收到').toBeTruthy()
     expect(got!.can_ack).toBe(true)
-    expect((await inboxOf(request, zhou)).some((n) => n.title === title), '次要家长不应收到').toBe(false)
+    expect(
+      (await inboxOf(request, zhou)).some((n) => n.title === title),
+      '次要家长不应收到',
+    ).toBe(false)
 
     // 年级组长的对象里没有"全校家长"
     const ctx = await browser.newContext({ baseURL: BASE_URL })
@@ -167,7 +200,10 @@ test('principal sends to grade-3 parents: only the primary parent of a grade-3 c
       await signIn(head, 'gradehead03')
       await head.goto('/admin/notices')
       await head.getByRole('radio', { name: '发给家长' }).check()
-      const kinds = await head.getByLabel('发给', { exact: true }).locator('option').allTextContents()
+      const kinds = await head
+        .getByLabel('发给', { exact: true })
+        .locator('option')
+        .allTextContents()
       expect(kinds).toContain('某个年级')
       expect(kinds).not.toContain('全校家长')
     } finally {
@@ -178,7 +214,10 @@ test('principal sends to grade-3 parents: only the primary parent of a grade-3 c
   }
 })
 
-test('a notice past its deadline shows "已截止" and a recalled one shows "此通知已撤回" on the parent phone', async ({ browser, request }) => {
+test('a notice past its deadline shows "已截止" and a recalled one shows "此通知已撤回" on the parent phone', async ({
+  browser,
+  request,
+}) => {
   // 契约要求截止时间晚于现在,且没有改截止的接口:发一条几秒后截止的,等它过期再刷新
   const deadlineTitle = `E2E截止${uniq()}`
   const recallTitle = `E2E撤回${uniq()}`
@@ -187,9 +226,15 @@ test('a notice past its deadline shows "已截止" and a recalled one shows "此
   try {
     const deadline = new Date(Date.now() + 7_000).toISOString()
     await sendClassNotice(request, teacher, {
-      title: deadlineTitle, content: '请在截止前回执。', ack: { kind: 'confirm' }, ack_deadline: deadline,
+      title: deadlineTitle,
+      content: '请在截止前回执。',
+      ack: { kind: 'confirm' },
+      ack_deadline: deadline,
     })
-    const recallId = await sendClassNotice(request, teacher, { title: recallTitle, content: '这条马上撤回。' })
+    const recallId = await sendClassNotice(request, teacher, {
+      title: recallTitle,
+      content: '这条马上撤回。',
+    })
 
     await signIn(mobile, LI_PARENT)
     await mobile.goto('/parent/notices')
@@ -197,12 +242,18 @@ test('a notice past its deadline shows "已截止" and a recalled one shows "此
     await expect(mobile.getByRole('button', { name: new RegExp(recallTitle) })).toBeVisible()
 
     // 撤回:家长页面不刷新,这条变成"此通知已撤回"
-    const res = await request.post(`${API}/classes/${CLASS_3_2}/notices/${recallId}/recall`, { headers: auth(teacher) })
+    const res = await request.post(`${API}/classes/${CLASS_3_2}/notices/${recallId}/recall`, {
+      headers: auth(teacher),
+    })
     expect(res.ok(), await res.text()).toBeTruthy()
-    await expect(mobile.getByRole('listitem').filter({ hasText: recallTitle }).getByText('此通知已撤回')).toBeVisible()
+    await expect(
+      mobile.getByRole('listitem').filter({ hasText: recallTitle }).getByText('此通知已撤回'),
+    ).toBeVisible()
 
     // 截止:等过了截止时间再刷新(can_ack 由后端按服务器时间给出),展开后显示"已截止"、没有"已知晓"按钮
-    await expect.poll(() => Date.now(), { timeout: 15_000 }).toBeGreaterThan(Date.parse(deadline) + 2_000)
+    await expect
+      .poll(() => Date.now(), { timeout: 15_000 })
+      .toBeGreaterThan(Date.parse(deadline) + 2_000)
     await mobile.reload()
     await mobile.getByRole('button', { name: new RegExp(deadlineTitle) }).click()
     await expect(mobile.getByText('已截止', { exact: true })).toBeVisible()
@@ -214,7 +265,11 @@ test('a notice past its deadline shows "已截止" and a recalled one shows "此
   }
 })
 
-test('a teacher acks a school-wide staff notice from the bell and the principal sees the count go up', async ({ page, browser, request }) => {
+test('a teacher acks a school-wide staff notice from the bell and the principal sees the count go up', async ({
+  page,
+  browser,
+  request,
+}) => {
   const title = `E2E教师回执${uniq()}`
   const principal = await login(request, 'principal01')
   const teacherCtx = await browser.newContext({ baseURL: BASE_URL })
@@ -222,7 +277,13 @@ test('a teacher acks a school-wide staff notice from the bell and the principal 
   try {
     const res = await request.post(`${API}/admin/notices`, {
       headers: auth(principal),
-      data: { title, content: '请各位老师确认已阅。', target: { kind: 'school' }, audience: 'teachers', ack: { kind: 'confirm' } },
+      data: {
+        title,
+        content: '请各位老师确认已阅。',
+        target: { kind: 'school' },
+        audience: 'teachers',
+        ack: { kind: 'confirm' },
+      },
     })
     expect(res.ok(), await res.text()).toBeTruthy()
     const { id } = (await res.json()) as { id: string }
@@ -237,7 +298,10 @@ test('a teacher acks a school-wide staff notice from the bell and the principal 
     // 校长的"我发出的":回执 1 / N;统计接口里 acked = 1
     await signIn(page, 'principal01')
     await page.goto('/admin/notices')
-    const sent = page.getByRole('region', { name: '我发出的' }).getByRole('listitem').filter({ hasText: title })
+    const sent = page
+      .getByRole('region', { name: '我发出的' })
+      .getByRole('listitem')
+      .filter({ hasText: title })
     await expect(sent.getByText(/^回执 1 \/ \d+$/)).toBeVisible()
     const stats = await adminGet<{ acked: number }>(request, principal, `/notices/${id}/acks`)
     expect(stats.acked).toBe(1)
@@ -247,7 +311,10 @@ test('a teacher acks a school-wide staff notice from the bell and the principal 
   }
 })
 
-test('unlinking a parent whose only child it was logs the open parent page out without a refresh', async ({ browser, request }) => {
+test('unlinking a parent whose only child it was logs the open parent page out without a refresh', async ({
+  browser,
+  request,
+}) => {
   // 139 号段:种子与其他用例只用 138 / 199,随机号不会撞上已有账号;不用种子家长(归档后同号再加会 409,种子还原不了)
   const phone = `13900${String(Math.floor(Math.random() * 1_000_000)).padStart(6, '0')}`
   const teacher = await login(request, 'teacher01')
@@ -256,7 +323,8 @@ test('unlinking a parent whose only child it was logs the open parent page out w
   const { ctx, page: mobile } = await phoneContext(browser)
   try {
     const created = await request.post(`${API}/students/${zhang.student_id}/parents`, {
-      headers: auth(teacher), data: { phone, name: 'E2E实时家长', relation: '其他' },
+      headers: auth(teacher),
+      data: { phone, name: 'E2E实时家长', relation: '其他' },
     })
     expect(created.ok(), await created.text()).toBeTruthy()
     const body = (await created.json()) as { parent: { link_id: string }; temp_password: string }
@@ -279,14 +347,18 @@ test('unlinking a parent whose only child it was logs the open parent page out w
     await mobile.getByRole('button', { name: '保存' }).click()
     await expect(mobile).toHaveURL(/\/parent\/today/)
     // 等实时连接握手完成(服务端回 ready),再解绑
-    await expect.poll(() => sockets.some((s) => s.frames.some((f) => f.includes('"ready"')))).toBe(true)
+    await expect
+      .poll(() => sockets.some((s) => s.frames.some((f) => f.includes('"ready"'))))
+      .toBe(true)
 
     // 解绑:这是他唯一的孩子,账号归档 → 页面不刷新就回到登录页
     const del = await request.delete(`${API}/parent-links/${linkId}`, { headers: auth(teacher) })
     expect(del.ok(), await del.text()).toBeTruthy()
     linkId = null
     // 先是已连上的这条连接收到 session.revoked,然后页面回到登录页
-    await expect.poll(() => sockets.some((s) => s.frames.some((f) => f.includes('session.revoked')))).toBe(true)
+    await expect
+      .poll(() => sockets.some((s) => s.frames.some((f) => f.includes('session.revoked'))))
+      .toBe(true)
     await expect(mobile).toHaveURL(/\/login/)
   } finally {
     await ctx.close()

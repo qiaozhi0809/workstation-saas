@@ -12,13 +12,29 @@ import CommentsTab from './CommentsTab'
 import ProfileActions from './ProfileActions'
 
 vi.mock('@/shared/api/classroom', () => ({ classroomApi: { summary: vi.fn() } }))
-vi.mock('@/shared/api/comments', () => ({ commentsApi: { list: vi.fn(), create: vi.fn(), remove: vi.fn(), setParentVisible: vi.fn() } }))
+vi.mock('@/shared/api/comments', () => ({
+  commentsApi: { list: vi.fn(), create: vi.fn(), remove: vi.fn(), setParentVisible: vi.fn() },
+}))
 
-const profile: StudentProfile = { id: 's1', mk: 'S0001', name: '王小一', class_id: 'c1', enrollment_id: 'e1' }
+const profile: StudentProfile = {
+  id: 's1',
+  mk: 'S0001',
+  name: '王小一',
+  class_id: 'c1',
+  enrollment_id: 'e1',
+}
 
 const cm = (over: Partial<Comment>): Comment => ({
-  id: 'm1', semester: '2026-2027 第一学期', content: '学习认真,进步明显', generated_by_ai: false, current_year: true,
-  created_by_name: '李老师', can_delete: true, created_at: '2026-10-30T08:00:00Z', parent_visible: false, ...over,
+  id: 'm1',
+  semester: '2026-2027 第一学期',
+  content: '学习认真,进步明显',
+  generated_by_ai: false,
+  current_year: true,
+  created_by_name: '李老师',
+  can_delete: true,
+  created_at: '2026-10-30T08:00:00Z',
+  parent_visible: false,
+  ...over,
 })
 
 function Loc() {
@@ -27,10 +43,22 @@ function Loc() {
 }
 
 function setup(ui: React.ReactElement, perms: ClassPerm[]) {
-  vi.mocked(classroomApi.summary).mockResolvedValue({ my_perms: perms, today: '2026-11-02', timezone: 'Asia/Shanghai' } as never)
+  vi.mocked(classroomApi.summary).mockResolvedValue({
+    my_perms: perms,
+    today: '2026-11-02',
+    timezone: 'Asia/Shanghai',
+  } as never)
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const invalidate = vi.spyOn(client, 'invalidateQueries')
-  render(<QueryClientProvider client={client}><MemoryRouter>{ui}<Loc /><Toaster /></MemoryRouter></QueryClientProvider>)
+  render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter>
+        {ui}
+        <Loc />
+        <Toaster />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  )
   return { invalidate, client }
 }
 
@@ -44,7 +72,12 @@ beforeEach(() => {
 it('lists comments newest first with AI / handwritten tags', async () => {
   vi.mocked(commentsApi.list).mockResolvedValue({
     items: [
-      cm({ id: 'm2', content: 'AI 写的评语', generated_by_ai: true, created_at: '2026-10-31T08:00:00Z' }),
+      cm({
+        id: 'm2',
+        content: 'AI 写的评语',
+        generated_by_ai: true,
+        created_at: '2026-10-31T08:00:00Z',
+      }),
       cm({ id: 'm1', content: '手写的评语', created_at: '2026-10-30T08:00:00Z' }),
     ],
   })
@@ -66,7 +99,12 @@ it('saves a handwritten comment', async () => {
   expect(save).toBeDisabled()
   fireEvent.change(box, { target: { value: ' 本学期表现优秀 ' } })
   fireEvent.click(save)
-  await waitFor(() => expect(commentsApi.create).toHaveBeenCalledWith('s1', { content: '本学期表现优秀', generated_by_ai: false }))
+  await waitFor(() =>
+    expect(commentsApi.create).toHaveBeenCalledWith('s1', {
+      content: '本学期表现优秀',
+      generated_by_ai: false,
+    }),
+  )
   await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['comments', 's1'] }))
   await waitFor(() => expect(box).toHaveValue(''))
 })
@@ -131,9 +169,19 @@ it('shows an empty state without comments', async () => {
 it('shows a retryable error when the classroom summary fails', async () => {
   vi.mocked(classroomApi.summary).mockRejectedValueOnce(new Error('boom'))
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(<QueryClientProvider client={client}><MemoryRouter><CommentsTab profile={profile} /></MemoryRouter></QueryClientProvider>)
+  render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter>
+        <CommentsTab profile={profile} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  )
   expect(await screen.findByRole('alert')).toBeInTheDocument()
-  vi.mocked(classroomApi.summary).mockResolvedValue({ my_perms: ['comment.read'], today: '2026-11-02', timezone: 'Asia/Shanghai' } as never)
+  vi.mocked(classroomApi.summary).mockResolvedValue({
+    my_perms: ['comment.read'],
+    today: '2026-11-02',
+    timezone: 'Asia/Shanghai',
+  } as never)
   fireEvent.click(screen.getByRole('button', { name: '重试' }))
   expect(await screen.findByText('还没有评语')).toBeInTheDocument()
 })
@@ -178,7 +226,12 @@ it('toggles 给家长看 via setParentVisible and updates the display', async ()
   vi.mocked(commentsApi.list).mockResolvedValue({ items: [cm({ parent_visible: true })] })
   fireEvent.click(sw)
   await waitFor(() => expect(commentsApi.setParentVisible).toHaveBeenCalledWith('m1', true))
-  await waitFor(() => expect(screen.getByRole('switch', { name: '给家长看' })).toHaveAttribute('aria-checked', 'true'))
+  await waitFor(() =>
+    expect(screen.getByRole('switch', { name: '给家长看' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    ),
+  )
 })
 
 it('hints that unconfirmed AI comments are hidden from parents', async () => {

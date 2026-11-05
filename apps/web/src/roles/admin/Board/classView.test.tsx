@@ -9,7 +9,11 @@ import { boardClass } from './boardFixtures'
 
 vi.mock('./api', () => ({ boardClassApi: { detail: vi.fn() } }))
 vi.mock('@/roles/teacher/StudentProfile/StudentProfileDrawer', () => ({
-  default: ({ studentId }: { studentId: string }) => <div role="dialog" aria-label="学生档案">档案 {studentId}</div>,
+  default: ({ studentId }: { studentId: string }) => (
+    <div role="dialog" aria-label="学生档案">
+      档案 {studentId}
+    </div>
+  ),
 }))
 
 function Url() {
@@ -19,10 +23,20 @@ function Url() {
 
 function setup(entry = '/admin/classes/c1') {
   return render(
-    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
       <MemoryRouter initialEntries={[entry]}>
         <Routes>
-          <Route path="/admin/classes/:id" element={<><ClassViewPage /><Url /></>} />
+          <Route
+            path="/admin/classes/:id"
+            element={
+              <>
+                <ClassViewPage />
+                <Url />
+              </>
+            }
+          />
           <Route path="/admin/board" element={<div>看板页</div>} />
         </Routes>
       </MemoryRouter>
@@ -34,7 +48,10 @@ beforeEach(() => {
   vi.resetAllMocks()
   vi.mocked(boardClassApi.detail).mockImplementation(async (id) => {
     if (id === 'nope') throw new ApiError(404, 'NOT_FOUND', '班级不存在')
-    return { ...boardClass({ id }), absentees: [{ student_id: 's2', name: '李小二', status: 'absent', reason: '感冒' }] }
+    return {
+      ...boardClass({ id }),
+      absentees: [{ student_id: 's2', name: '李小二', status: 'absent', reason: '感冒' }],
+    }
   })
 })
 afterEach(cleanup)
@@ -42,7 +59,9 @@ afterEach(cleanup)
 describe('单班只读页', () => {
   it('显示班名、教室、班主任与今日考勤汇总', async () => {
     setup()
-    expect(await screen.findByRole('heading', { level: 1, name: '三年一班 · 301 · 班主任 赵老师' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { level: 1, name: '三年一班 · 301 · 班主任 赵老师' }),
+    ).toBeInTheDocument()
     const sum = screen.getByRole('region', { name: '今日考勤' })
     expect(within(sum).getByText('出勤 2/3')).toBeInTheDocument()
     expect(within(sum).getByRole('button', { name: /李小二/ })).toHaveTextContent('缺勤')

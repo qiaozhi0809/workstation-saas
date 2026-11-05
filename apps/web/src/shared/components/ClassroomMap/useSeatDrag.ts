@@ -4,7 +4,12 @@ import { capture, moved, useClickGuard } from './pointer'
 import type { MapCell } from './SeatLayer'
 import type { Cell } from './types'
 
-export interface DragState { from: MapCell & { seat: Seat }; x: number; y: number; over: string | null }
+export interface DragState {
+  from: MapCell & { seat: Seat }
+  x: number
+  y: number
+  over: string | null
+}
 
 interface Options {
   stageRef: RefObject<HTMLElement>
@@ -13,7 +18,8 @@ interface Options {
   onDrop?: (from: Cell, to: Cell) => void
 }
 
-const seatKeyOf = (el: Element | null | undefined) => el?.closest?.('[data-seat]')?.getAttribute('data-seat') ?? null
+const seatKeyOf = (el: Element | null | undefined) =>
+  el?.closest?.('[data-seat]')?.getAttribute('data-seat') ?? null
 
 // 指针下的座位:优先 elementFromPoint(拖拽时指针被舞台捕获),取不到用事件目标
 function keyAt(stage: HTMLElement | null, e: PointerEvent): string | null {
@@ -25,7 +31,13 @@ function keyAt(stage: HTMLElement | null, e: PointerEvent): string | null {
 // 座位拖拽:仅传入 onDrop 时启用;按在有人且未锁定的座位上、移动超过 6px 才开始
 export function useSeatDrag({ stageRef, cellAt, locked, onDrop }: Options) {
   const [drag, setDrag] = useState<DragState | null>(null)
-  const press = useRef<{ id: number; x: number; y: number; from: DragState['from']; state: 'pending' | 'drag' | 'cancelled' } | null>(null)
+  const press = useRef<{
+    id: number
+    x: number
+    y: number
+    from: DragState['from']
+    state: 'pending' | 'drag' | 'cancelled'
+  } | null>(null)
   const guard = useClickGuard()
 
   const local = (e: PointerEvent) => {
@@ -39,7 +51,9 @@ export function useSeatDrag({ stageRef, cellAt, locked, onDrop }: Options) {
 
   useEffect(() => {
     if (!drag) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') cancel() }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') cancel()
+    }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [drag, cancel])
@@ -47,9 +61,16 @@ export function useSeatDrag({ stageRef, cellAt, locked, onDrop }: Options) {
   // 返回 true 表示这次按下归拖拽管(平移不再接手)
   const onPointerDown = (e: PointerEvent): boolean => {
     if (!onDrop || e.button !== 0 || e.isPrimary === false) return false
-    const key = seatKeyOf(e.target as Element), cell = key ? cellAt(key) : undefined
+    const key = seatKeyOf(e.target as Element),
+      cell = key ? cellAt(key) : undefined
     if (!cell?.seat || locked(cell.seat)) return false
-    press.current = { id: e.pointerId, x: e.clientX, y: e.clientY, from: cell as DragState['from'], state: 'pending' }
+    press.current = {
+      id: e.pointerId,
+      x: e.clientX,
+      y: e.clientY,
+      from: cell as DragState['from'],
+      state: 'pending',
+    }
     return true
   }
   // 可放下的格子:另一格,且格内若有人则不能是固定座位

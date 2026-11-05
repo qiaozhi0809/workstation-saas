@@ -10,7 +10,13 @@ beforeEach(() => {
   useAuthStore.setState({
     accessToken: 'a',
     refreshToken: 'r',
-    user: { id: 'u', display_name: 'x', contexts: ['teacher'], admin_perms: [], must_change_password: false },
+    user: {
+      id: 'u',
+      display_name: 'x',
+      contexts: ['teacher'],
+      admin_perms: [],
+      must_change_password: false,
+    },
   })
 })
 
@@ -21,9 +27,26 @@ const cases: [string, () => Promise<unknown>, string, string, unknown?][] = [
   ['create', () => parentLinksApi.create('s1', input), 'POST', '/students/s1/parents', input],
   ['setPrimary', () => parentLinksApi.setPrimary('l1'), 'POST', '/parent-links/l1/primary'],
   ['unlink', () => parentLinksApi.unlink('l1'), 'DELETE', '/parent-links/l1'],
-  ['resetPassword', () => parentLinksApi.resetPassword('l1'), 'POST', '/parent-links/l1/reset-password'],
-  ['setParentVisible', () => commentsApi.setParentVisible('m1', true), 'PUT', '/comments/m1/parent-visible', { visible: true }],
-  ['setParentVisible off', () => commentsApi.setParentVisible('m1', false), 'PUT', '/comments/m1/parent-visible', { visible: false }],
+  [
+    'resetPassword',
+    () => parentLinksApi.resetPassword('l1'),
+    'POST',
+    '/parent-links/l1/reset-password',
+  ],
+  [
+    'setParentVisible',
+    () => commentsApi.setParentVisible('m1', true),
+    'PUT',
+    '/comments/m1/parent-visible',
+    { visible: true },
+  ],
+  [
+    'setParentVisible off',
+    () => commentsApi.setParentVisible('m1', false),
+    'PUT',
+    '/comments/m1/parent-visible',
+    { visible: false },
+  ],
 ]
 
 it.each(cases)('%s', async (_n, call, method, url, body) => {

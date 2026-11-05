@@ -13,22 +13,32 @@ const PARENT_NOTE = '家长端下次刷新即生效'
 const AI_NOTE = '对之后 AI 生成的评语生效'
 const MONITOR_NOTE = '监控上线后生效'
 
-const GROUPS: { title: string; items: { key: keyof Switches; label: string; note?: string }[] }[] = [
-  { title: '教室', items: [
-    { key: 'star_of_week', label: '本周之星' },
-    { key: 'birthdays', label: '本月寿星' },
-    { key: 'teacher_review_frequency', label: '教师可见互相的点评频率' },
-  ] },
-  { title: '家长端', items: [
-    { key: 'parent_rank', label: '家长可见排名', note: PARENT_NOTE },
-    { key: 'parent_negative_review', label: '家长收到负向点评', note: PARENT_NOTE },
-    { key: 'ai_review_before_send', label: 'AI 内容需审核后下发', note: AI_NOTE },
-  ] },
-  { title: '监控', items: [
-    { key: 'monitor', label: '监控模块总开关', note: MONITOR_NOTE },
-    { key: 'parent_monitor', label: '家长可看监控', note: 'v1 不开放' },
-  ] },
-]
+const GROUPS: { title: string; items: { key: keyof Switches; label: string; note?: string }[] }[] =
+  [
+    {
+      title: '教室',
+      items: [
+        { key: 'star_of_week', label: '本周之星' },
+        { key: 'birthdays', label: '本月寿星' },
+        { key: 'teacher_review_frequency', label: '教师可见互相的点评频率' },
+      ],
+    },
+    {
+      title: '家长端',
+      items: [
+        { key: 'parent_rank', label: '家长可见排名', note: PARENT_NOTE },
+        { key: 'parent_negative_review', label: '家长收到负向点评', note: PARENT_NOTE },
+        { key: 'ai_review_before_send', label: 'AI 内容需审核后下发', note: AI_NOTE },
+      ],
+    },
+    {
+      title: '监控',
+      items: [
+        { key: 'monitor', label: '监控模块总开关', note: MONITOR_NOTE },
+        { key: 'parent_monitor', label: '家长可看监控', note: 'v1 不开放' },
+      ],
+    },
+  ]
 
 export default function SwitchesCard() {
   const qc = useQueryClient()
@@ -39,8 +49,13 @@ export default function SwitchesCard() {
 
   if (q.isPending) return <LoadingState />
   if (q.isError) {
-    return <ErrorState title={q.error instanceof ApiError ? q.error.message : '加载失败,请重试'}
-      onRetry={() => void q.refetch()} retrying={q.isFetching} />
+    return (
+      <ErrorState
+        title={q.error instanceof ApiError ? q.error.message : '加载失败,请重试'}
+        onRetry={() => void q.refetch()}
+        retrying={q.isFetching}
+      />
+    )
   }
   const value = draft ?? q.data
 
@@ -64,7 +79,9 @@ export default function SwitchesCard() {
 
   return (
     <Card>
-      <CardHeader><CardTitle>功能开关</CardTitle></CardHeader>
+      <CardHeader>
+        <CardTitle>功能开关</CardTitle>
+      </CardHeader>
       <CardContent className="space-y-4">
         {GROUPS.map((g) => (
           <fieldset key={g.title} aria-label={g.title} className="space-y-2">
@@ -73,9 +90,16 @@ export default function SwitchesCard() {
               const locked = it.key === 'parent_monitor'
               return (
                 <div key={it.key} className="flex items-start gap-3">
-                  <input type="checkbox" role="switch" id={`sw-${it.key}`} aria-label={it.label} className="mt-1"
-                    checked={locked ? false : value[it.key]} disabled={locked}
-                    onChange={(e) => setDraft({ ...value, [it.key]: e.target.checked })} />
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    id={`sw-${it.key}`}
+                    aria-label={it.label}
+                    className="mt-1"
+                    checked={locked ? false : value[it.key]}
+                    disabled={locked}
+                    onChange={(e) => setDraft({ ...value, [it.key]: e.target.checked })}
+                  />
                   <div className="text-sm">
                     <label htmlFor={`sw-${it.key}`}>{it.label}</label>
                     {it.note && <p className="text-xs text-muted-foreground">{it.note}</p>}
@@ -85,9 +109,15 @@ export default function SwitchesCard() {
             })}
           </fieldset>
         ))}
-        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+        {error && (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        )}
         <div className="flex justify-end">
-          <Button type="button" disabled={busy} onClick={() => void save()}>保存开关</Button>
+          <Button type="button" disabled={busy} onClick={() => void save()}>
+            保存开关
+          </Button>
         </div>
       </CardContent>
     </Card>

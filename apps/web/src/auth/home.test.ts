@@ -1,7 +1,10 @@
 import { expect, it } from 'vitest'
 import { homeFor } from './home'
 
-const u = (contexts: ('teacher' | 'admin' | 'parent')[], must = false) => ({ contexts, must_change_password: must })
+const u = (contexts: ('teacher' | 'admin' | 'parent')[], must = false) => ({
+  contexts,
+  must_change_password: must,
+})
 
 it('routes by identity', () => {
   expect(homeFor(u(['teacher']), null)).toBe('/teacher')

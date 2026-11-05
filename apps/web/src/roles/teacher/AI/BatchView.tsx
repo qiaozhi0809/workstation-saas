@@ -14,7 +14,10 @@ import { useBatchRunner } from './useBatchRunner'
 
 const NOT_CONFIGURED = '学校还没有配置 AI 服务,请联系管理员;可以先复制提示词'
 
-const STATUS: Record<AiItemStatus, { label: string; variant: 'neutral' | 'info' | 'danger' | 'success' }> = {
+const STATUS: Record<
+  AiItemStatus,
+  { label: string; variant: 'neutral' | 'info' | 'danger' | 'success' }
+> = {
   wait: { label: '排队中', variant: 'neutral' },
   run: { label: '生成中', variant: 'info' },
   err: { label: '失败', variant: 'danger' },
@@ -42,15 +45,20 @@ export default function BatchView({ chat, classId, perms }: Props) {
   const unsaved = done.filter((i) => !saved.has(i.id))
 
   const saveAll = useMutation({
-    mutationFn: (batch: AiBatchItem[]) => commentsApi.bulk(classId, {
-      items: batch.map((i) => ({ student_id: i.student_id, content: i.content })),
-      generated_by_ai: true,
-    }),
+    mutationFn: (batch: AiBatchItem[]) =>
+      commentsApi.bulk(classId, {
+        items: batch.map((i) => ({ student_id: i.student_id, content: i.content })),
+        generated_by_ai: true,
+      }),
     onSuccess: (r, batch) => {
       const dup = batch.length - r.created
-      toast(r.created === 0 ? '这些评语已经保存过了'
-        : dup > 0 ? `已保存 ${r.created} 条,另有 ${dup} 条之前已保存`
-        : `已保存 ${r.created} 条评语`)
+      toast(
+        r.created === 0
+          ? '这些评语已经保存过了'
+          : dup > 0
+            ? `已保存 ${r.created} 条,另有 ${dup} 条之前已保存`
+            : `已保存 ${r.created} 条评语`,
+      )
       markSaved(batch.map((i) => i.id))
       for (const i of batch) void qc.invalidateQueries({ queryKey: ['comments', i.student_id] })
     },
@@ -77,14 +85,25 @@ export default function BatchView({ chat, classId, perms }: Props) {
             style={{ width: items.length ? `${(done.length / items.length) * 100}%` : '0%' }}
           />
         </div>
-        <span className="text-sm text-muted-foreground">完成 {done.length}/{items.length}</span>
+        <span className="text-sm text-muted-foreground">
+          完成 {done.length}/{items.length}
+        </span>
         {running ? (
-          <Button size="sm" variant="outline" onClick={stop}>停止</Button>
+          <Button size="sm" variant="outline" onClick={stop}>
+            停止
+          </Button>
         ) : pending ? (
-          <Button size="sm" onClick={start}>{done.length > 0 || items.some((i) => i.status === 'err') ? '继续生成' : '开始生成'}</Button>
+          <Button size="sm" onClick={start}>
+            {done.length > 0 || items.some((i) => i.status === 'err') ? '继续生成' : '开始生成'}
+          </Button>
         ) : null}
         {canSave && unsaved.length > 0 && (
-          <Button size="sm" variant="outline" disabled={saveAll.isPending} onClick={() => saveAll.mutate(unsaved)}>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={saveAll.isPending}
+            onClick={() => saveAll.mutate(unsaved)}
+          >
             {saved.size === 0 ? '全部保存到档案' : `保存其余 ${unsaved.length} 条`}
           </Button>
         )}
@@ -93,7 +112,9 @@ export default function BatchView({ chat, classId, perms }: Props) {
       {notConfigured && !running && (
         <div className="space-y-2 rounded-lg border border-destructive p-3">
           <p className="text-sm text-destructive">{NOT_CONFIGURED}</p>
-          <Button size="sm" variant="outline" onClick={openPrompt}>复制提示词</Button>
+          <Button size="sm" variant="outline" onClick={openPrompt}>
+            复制提示词
+          </Button>
         </div>
       )}
 
@@ -115,7 +136,14 @@ export default function BatchView({ chat, classId, perms }: Props) {
   )
 }
 
-function ItemCard({ item, live, liveText, canSave, saved, onSaved }: {
+function ItemCard({
+  item,
+  live,
+  liveText,
+  canSave,
+  saved,
+  onSaved,
+}: {
   item: AiBatchItem
   live: boolean
   liveText: string
@@ -127,7 +155,8 @@ function ItemCard({ item, live, liveText, canSave, saved, onSaved }: {
   const status: AiItemStatus = live ? 'run' : item.status
   const text = live ? liveText : item.content
   const save = useMutation({
-    mutationFn: () => commentsApi.create(item.student_id, { content: item.content, generated_by_ai: true }),
+    mutationFn: () =>
+      commentsApi.create(item.student_id, { content: item.content, generated_by_ai: true }),
     onSuccess: () => {
       toast('已保存到档案的评语')
       onSaved()
@@ -147,14 +176,25 @@ function ItemCard({ item, live, liveText, canSave, saved, onSaved }: {
       {text !== '' && <Markdown text={text} />}
       {status === 'done' && !live && (
         <div className="flex flex-wrap gap-1">
-          <Button size="sm" variant="ghost" onClick={() => {
-            void navigator.clipboard.writeText(item.content).then(
-              () => toast('已复制'),
-              () => toast('复制失败,请手动选中文字复制'),
-            )
-          }}>复制</Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              void navigator.clipboard.writeText(item.content).then(
+                () => toast('已复制'),
+                () => toast('复制失败,请手动选中文字复制'),
+              )
+            }}
+          >
+            复制
+          </Button>
           {canSave && (
-            <Button size="sm" variant="ghost" disabled={save.isPending || saved} onClick={() => save.mutate()}>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={save.isPending || saved}
+              onClick={() => save.mutate()}
+            >
               {saved ? '已保存' : '保存到档案'}
             </Button>
           )}

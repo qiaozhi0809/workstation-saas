@@ -21,7 +21,8 @@ beforeEach(() => {
   defaultApiMocks()
 })
 
-const openPanel = async () => fireEvent.click(await screen.findByRole('button', { name: '待办与点评' }))
+const openPanel = async () =>
+  fireEvent.click(await screen.findByRole('button', { name: '待办与点评' }))
 
 it('opens 待办与点评 as a side panel with the todo, review and exam sections, and returns focus on close', async () => {
   setup()
@@ -71,9 +72,9 @@ it('does not submit a blank todo', async () => {
 })
 
 it('toggles and deletes a todo', async () => {
-  vi.mocked(todosApi.list).mockResolvedValue({ items: [
-    { id: 't1', content: '收回执', done: false, created_at: '2026-11-02T01:00:00Z' },
-  ] })
+  vi.mocked(todosApi.list).mockResolvedValue({
+    items: [{ id: 't1', content: '收回执', done: false, created_at: '2026-11-02T01:00:00Z' }],
+  })
   setup()
   await openPanel()
   fireEvent.click(await screen.findByRole('checkbox', { name: '收回执' }))
@@ -83,9 +84,10 @@ it('toggles and deletes a todo', async () => {
 })
 
 it('shows recent reviews without naming other teachers', async () => {
-  vi.mocked(reviewsApi.list).mockResolvedValue({ next_cursor: null, items: [
-    review({ given_by_me: false, given_at: '2026-11-02T02:05:00Z' }),
-  ] })
+  vi.mocked(reviewsApi.list).mockResolvedValue({
+    next_cursor: null,
+    items: [review({ given_by_me: false, given_at: '2026-11-02T02:05:00Z' })],
+  })
   setup()
   await openPanel()
   expect(await screen.findByText('王小一 积极发言 +1 · 老师 · 10:05')).toBeInTheDocument()
@@ -94,9 +96,18 @@ it('shows recent reviews without naming other teachers', async () => {
 
 it('marks reviews of students no longer in the class as transferred out', async () => {
   // 名单只含在读学生;转出学生的点评记录还在,后端 feed 带 student_name / transferred
-  vi.mocked(reviewsApi.list).mockResolvedValue({ next_cursor: null, items: [
-    review({ id: 'r9', enrollment_id: 'e9', student_name: '陈转出', transferred: true, given_at: '2026-11-02T02:05:00Z' }),
-  ] })
+  vi.mocked(reviewsApi.list).mockResolvedValue({
+    next_cursor: null,
+    items: [
+      review({
+        id: 'r9',
+        enrollment_id: 'e9',
+        student_name: '陈转出',
+        transferred: true,
+        given_at: '2026-11-02T02:05:00Z',
+      }),
+    ],
+  })
   setup()
   await openPanel()
   expect(await screen.findByText('陈转出（已转出） 积极发言 +1 · 我 · 10:05')).toBeInTheDocument()
@@ -104,16 +115,24 @@ it('marks reviews of students no longer in the class as transferred out', async 
 })
 
 const exam = (id: string, date: string, scores: Record<string, number>): GradebookExam => ({
-  id, name: `考试${id}`, exam_type: '月考', date, subjects: [{ name: '语文', full: 100 }],
-  grade_exam_id: null, created_by_me: true, progress: { entered: 3, total: 3 },
+  id,
+  name: `考试${id}`,
+  exam_type: '月考',
+  date,
+  subjects: [{ name: '语文', full: 100 }],
+  grade_exam_id: null,
+  created_by_me: true,
+  progress: { entered: 3, total: 3 },
   scores: Object.fromEntries(Object.entries(scores).map(([e, v]) => [e, { 语文: v }])),
 })
 
 it('shows the latest exam summary in the side panel', async () => {
-  vi.mocked(examsApi.gradebook).mockResolvedValue({ exams: [
-    exam('x1', '2026-09-20', { e1: 50, e2: 60, e3: 70 }),
-    exam('x2', '2026-10-20', { e1: 95, e2: 85, e3: 55 }),
-  ] })
+  vi.mocked(examsApi.gradebook).mockResolvedValue({
+    exams: [
+      exam('x1', '2026-09-20', { e1: 50, e2: 60, e3: 70 }),
+      exam('x2', '2026-10-20', { e1: 95, e2: 85, e3: 55 }),
+    ],
+  })
   setup()
   await openPanel()
   const dlg = await screen.findByRole('dialog', { name: '待办与点评' })
@@ -122,7 +141,10 @@ it('shows the latest exam summary in the side panel', async () => {
   expect(within(dlg).getByText('平均 78.3/100')).toBeInTheDocument()
   expect(within(dlg).getByText('及格率 67% · 优秀率 67%')).toBeInTheDocument()
   expect(within(dlg).getByRole('img', { name: '历次平均得分率' })).toBeInTheDocument()
-  expect(within(dlg).getByRole('link', { name: '查看分析' })).toHaveAttribute('href', '/teacher/analysis?exam=x2')
+  expect(within(dlg).getByRole('link', { name: '查看分析' })).toHaveAttribute(
+    'href',
+    '/teacher/analysis?exam=x2',
+  )
 })
 
 it('says there are no exam scores yet', async () => {
@@ -133,7 +155,9 @@ it('says there are no exam scores yet', async () => {
 })
 
 it('shows the sparkline only with two exams that have stats', async () => {
-  vi.mocked(examsApi.gradebook).mockResolvedValue({ exams: [exam('x1', '2026-09-20', { e1: 50, e2: 60, e3: 70 })] })
+  vi.mocked(examsApi.gradebook).mockResolvedValue({
+    exams: [exam('x1', '2026-09-20', { e1: 50, e2: 60, e3: 70 })],
+  })
   setup()
   await openPanel()
   const dlg = await screen.findByRole('dialog', { name: '待办与点评' })

@@ -29,7 +29,11 @@ export interface ClassContext {
  * 标题只给读屏用(<h1 sr-only>);缺 need 权限时显示"你在本班没有这项权限"。
  * 换班级时 children 整体重建(key = 班级 id)。
  */
-export default function ClassGate({ title, need, children }: {
+export default function ClassGate({
+  title,
+  need,
+  children,
+}: {
   title: string
   need?: ClassPerm
   children(ctx: ClassContext): ReactNode
@@ -42,11 +46,28 @@ export default function ClassGate({ title, need, children }: {
   let body: ReactNode
   if (classes.isLoading) body = <LoadingState />
   else if (classes.isError && !classes.data) {
-    body = <ErrorState title="班级加载失败" onRetry={() => void classes.refetch()} retrying={classes.isFetching} />
+    body = (
+      <ErrorState
+        title="班级加载失败"
+        onRetry={() => void classes.refetch()}
+        retrying={classes.isFetching}
+      />
+    )
   } else if (items.length === 0) {
-    body = <EmptyState icon={School} title="没有可查看的班级" description="请联系学校管理员为你分配班级" />
+    body = (
+      <EmptyState
+        icon={School}
+        title="没有可查看的班级"
+        description="请联系学校管理员为你分配班级"
+      />
+    )
   } else if (!cls) body = <LoadingState />
-  else body = <GateBody key={cls.id} cls={cls} need={need}>{children}</GateBody>
+  else
+    body = (
+      <GateBody key={cls.id} cls={cls} need={need}>
+        {children}
+      </GateBody>
+    )
 
   return (
     <>
@@ -56,20 +77,39 @@ export default function ClassGate({ title, need, children }: {
   )
 }
 
-function GateBody({ cls, need, children }: {
+function GateBody({
+  cls,
+  need,
+  children,
+}: {
   cls: ClassView
   need?: ClassPerm
   children(ctx: ClassContext): ReactNode
 }) {
   // 与教室页 / TeacherLayout 同一个 key,共用缓存
-  const summary = useQuery({ queryKey: ['classroom', cls.id], queryFn: () => classroomApi.summary(cls.id) })
+  const summary = useQuery({
+    queryKey: ['classroom', cls.id],
+    queryFn: () => classroomApi.summary(cls.id),
+  })
   if (summary.isLoading) return <LoadingState />
   if (!summary.data) {
-    return <ErrorState title="班级概况加载失败" onRetry={() => void summary.refetch()} retrying={summary.isFetching} />
+    return (
+      <ErrorState
+        title="班级概况加载失败"
+        onRetry={() => void summary.refetch()}
+        retrying={summary.isFetching}
+      />
+    )
   }
   const perms = summary.data.my_perms
   if (need && !perms.includes(need)) {
-    return <EmptyState icon={Lock} title="你在本班没有这项权限" description="如需使用,请联系班主任或学校管理员" />
+    return (
+      <EmptyState
+        icon={Lock}
+        title="你在本班没有这项权限"
+        description="如需使用,请联系班主任或学校管理员"
+      />
+    )
   }
   return <>{children({ cls, summary: summary.data, perms, subjects: summary.data.my_subjects })}</>
 }

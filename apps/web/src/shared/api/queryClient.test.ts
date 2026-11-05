@@ -25,7 +25,15 @@ it('uses a 30s staleTime', () => {
 })
 
 it('clears the query cache when the access token goes from set to null', () => {
-  useAuthStore.getState().setTokens('a', 'r', { id: 'u', display_name: 't', contexts: ['teacher'], admin_perms: [], must_change_password: false })
+  useAuthStore
+    .getState()
+    .setTokens('a', 'r', {
+      id: 'u',
+      display_name: 't',
+      contexts: ['teacher'],
+      admin_perms: [],
+      must_change_password: false,
+    })
   queryClient.setQueryData(['k'], 1)
   useAuthStore.getState().updateAccess('b')
   expect(queryClient.getQueryData(['k'])).toBe(1)
@@ -34,17 +42,41 @@ it('clears the query cache when the access token goes from set to null', () => {
 })
 
 it('resets the selected class on logout', () => {
-  useAuthStore.getState().setTokens('a', 'r', { id: 'u', display_name: 't', contexts: ['teacher'], admin_perms: [], must_change_password: false })
+  useAuthStore
+    .getState()
+    .setTokens('a', 'r', {
+      id: 'u',
+      display_name: 't',
+      contexts: ['teacher'],
+      admin_perms: [],
+      must_change_password: false,
+    })
   useTeacherStore.setState({ classId: 'c1' })
   useAuthStore.getState().logout()
   expect(useTeacherStore.getState().classId).toBeNull()
 })
 
 it('clears the cache and class when the user changes without logout', () => {
-  useAuthStore.getState().setTokens('a', 'r', { id: 'u1', display_name: 't', contexts: ['teacher'], admin_perms: [], must_change_password: false })
+  useAuthStore
+    .getState()
+    .setTokens('a', 'r', {
+      id: 'u1',
+      display_name: 't',
+      contexts: ['teacher'],
+      admin_perms: [],
+      must_change_password: false,
+    })
   queryClient.setQueryData(['k'], 1)
   useTeacherStore.setState({ classId: 'c1' })
-  useAuthStore.getState().setTokens('b', 'r2', { id: 'u2', display_name: 't2', contexts: ['teacher'], admin_perms: [], must_change_password: false })
+  useAuthStore
+    .getState()
+    .setTokens('b', 'r2', {
+      id: 'u2',
+      display_name: 't2',
+      contexts: ['teacher'],
+      admin_perms: [],
+      must_change_password: false,
+    })
   expect(queryClient.getQueryData(['k'])).toBeUndefined()
   expect(useTeacherStore.getState().classId).toBeNull()
 })

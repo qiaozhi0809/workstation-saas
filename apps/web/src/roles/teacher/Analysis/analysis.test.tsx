@@ -17,18 +17,37 @@ vi.mock('@/shared/api/classroom')
 vi.mock('@/shared/api/exams')
 vi.mock('@/shared/api/students')
 
-const subjects = [{ name: '语文', full: 100 }, { name: '数学', full: 100 }]
-function exam(id: string, name: string, date: string, scores: GradebookExam['scores']): GradebookExam {
+const subjects = [
+  { name: '语文', full: 100 },
+  { name: '数学', full: 100 },
+]
+function exam(
+  id: string,
+  name: string,
+  date: string,
+  scores: GradebookExam['scores'],
+): GradebookExam {
   return {
-    id, name, exam_type: '月考', date, subjects, grade_exam_id: null, created_by_me: true,
-    progress: { entered: 3, total: 3 }, scores,
+    id,
+    name,
+    exam_type: '月考',
+    date,
+    subjects,
+    grade_exam_id: null,
+    created_by_me: true,
+    progress: { entered: 3, total: 3 },
+    scores,
   }
 }
 const first = exam('x1', '第一次月考', '2026-09-20', {
-  e1: { 语文: 70, 数学: 70 }, e2: { 语文: 60, 数学: 60 }, e3: { 语文: 50, 数学: 50 },
+  e1: { 语文: 70, 数学: 70 },
+  e2: { 语文: 60, 数学: 60 },
+  e3: { 语文: 50, 数学: 50 },
 })
 const second = exam('x2', '期中考试', '2026-10-20', {
-  e1: { 语文: 90, 数学: 90 }, e2: { 语文: 90, 数学: 90 }, e3: { 语文: 50, 数学: 50 },
+  e1: { 语文: 90, 数学: 90 },
+  e2: { 语文: 90, 数学: 90 },
+  e3: { 语文: 50, 数学: 50 },
 })
 const unscored = exam('x3', '期末考试', '2026-12-20', {})
 
@@ -39,19 +58,32 @@ function Url() {
 
 function setup(book: GradebookExam[], entry = '/teacher/analysis') {
   vi.mocked(examsApi.gradebook).mockResolvedValue({ exams: book })
-  act(() => { useTeacherStore.setState({ classId: 'c1' }) })
+  act(() => {
+    useTeacherStore.setState({ classId: 'c1' })
+  })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return { client, ...render(
-    <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={[entry]}>
-        <Routes>
-          <Route path="/teacher/analysis" element={<><AnalysisPage chartWidth={300} /><Url /></>} />
-          <Route path="/teacher/scores" element={<div>成绩页</div>} />
-          <Route path="/teacher/ai" element={<Url />} />
-        </Routes>
-      </MemoryRouter>
-    </QueryClientProvider>,
-  ) }
+  return {
+    client,
+    ...render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={[entry]}>
+          <Routes>
+            <Route
+              path="/teacher/analysis"
+              element={
+                <>
+                  <AnalysisPage chartWidth={300} />
+                  <Url />
+                </>
+              }
+            />
+            <Route path="/teacher/scores" element={<div>成绩页</div>} />
+            <Route path="/teacher/ai" element={<Url />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    ),
+  }
 }
 
 beforeEach(() => {
@@ -63,7 +95,9 @@ beforeEach(() => {
 
 // 各科明细表头也有「平均分」,所以只取 KPI 卡片里的那个
 const avgCard = async () =>
-  (await screen.findAllByText('平均分')).map((el) => el.closest('div[data-kpi]')).find(Boolean) as HTMLElement
+  (await screen.findAllByText('平均分'))
+    .map((el) => el.closest('div[data-kpi]'))
+    .find(Boolean) as HTMLElement
 
 describe('AnalysisPage', () => {
   it('defaults to the latest exam compared with the previous one', async () => {
@@ -85,7 +119,9 @@ describe('AnalysisPage', () => {
 
   it('says flat instead of an arrow with zero points for sub-rounding differences', async () => {
     const tiny = exam('x2', '期中考试', '2026-10-20', {
-      e1: { 语文: 70.01, 数学: 70 }, e2: { 语文: 60, 数学: 60 }, e3: { 语文: 50, 数学: 50 },
+      e1: { 语文: 70.01, 数学: 70 },
+      e2: { 语文: 60, 数学: 60 },
+      e3: { 语文: 50, 数学: 50 },
     })
     setup([first, tiny])
     const card = await avgCard()
@@ -97,7 +133,9 @@ describe('AnalysisPage', () => {
     const { client } = setup([first, second])
     await avgCard()
     vi.mocked(examsApi.gradebook).mockRejectedValue(new Error('boom'))
-    await act(async () => { await client.refetchQueries({ queryKey: ['gradebook', 'c1'] }) })
+    await act(async () => {
+      await client.refetchQueries({ queryKey: ['gradebook', 'c1'] })
+    })
     expect(screen.queryByText('成绩加载失败')).toBeNull()
     expect(await avgCard()).toBeInTheDocument()
   })
@@ -127,7 +165,10 @@ describe('AnalysisPage', () => {
   it('shows the empty state without scores', async () => {
     setup([unscored])
     expect(await screen.findByText('还没有考试成绩')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: '去录入成绩' })).toHaveAttribute('href', '/teacher/scores')
+    expect(screen.getByRole('link', { name: '去录入成绩' })).toHaveAttribute(
+      'href',
+      '/teacher/scores',
+    )
   })
 })
 
@@ -139,32 +180,42 @@ describe('AnalysisPage AI shortcuts', () => {
     withPerms(['exam.read', 'ai.use'])
     setup([first, second])
     fireEvent.click(await screen.findByRole('button', { name: 'AI 写分析报告' }))
-    expect(await screen.findByTestId('url')).toHaveTextContent('/teacher/ai?tpl=report&exam=x2&vs=x1')
+    expect(await screen.findByTestId('url')).toHaveTextContent(
+      '/teacher/ai?tpl=report&exam=x2&vs=x1',
+    )
   })
 
   it('omits the compare exam from the report link when not comparing', async () => {
     withPerms(['exam.read', 'ai.use'])
     setup([first, second], '/teacher/analysis?exam=x2&cmp=none')
     fireEvent.click(await screen.findByRole('button', { name: 'AI 写分析报告' }))
-    expect(await screen.findByTestId('url')).toHaveTextContent(/^\/teacher\/ai\?tpl=report&exam=x2$/)
+    expect(await screen.findByTestId('url')).toHaveTextContent(
+      /^\/teacher\/ai\?tpl=report&exam=x2$/,
+    )
   })
 
   it('shows the parent batch button only for homeroom with a compare exam', async () => {
     withPerms(['exam.read', 'ai.use'])
     const a = setup([first, second])
     await screen.findByRole('button', { name: 'AI 写分析报告' })
-    expect(screen.queryByRole('button', { name: '给退步同学家长写沟通消息' })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: '给退步同学家长写沟通消息' }),
+    ).not.toBeInTheDocument()
     a.unmount()
 
     withPerms(['exam.read', 'ai.use', 'ai.class'])
     const b = setup([first, second], '/teacher/analysis?exam=x2&cmp=none')
     await screen.findByRole('button', { name: 'AI 写分析报告' })
-    expect(screen.queryByRole('button', { name: '给退步同学家长写沟通消息' })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: '给退步同学家长写沟通消息' }),
+    ).not.toBeInTheDocument()
     b.unmount()
 
     setup([first, second])
     fireEvent.click(await screen.findByRole('button', { name: '给退步同学家长写沟通消息' }))
-    expect(await screen.findByTestId('url')).toHaveTextContent('/teacher/ai?tpl=parent-batch&exam=x2&vs=x1')
+    expect(await screen.findByTestId('url')).toHaveTextContent(
+      '/teacher/ai?tpl=parent-batch&exam=x2&vs=x1',
+    )
   })
 
   it('hides the report button without ai.use', async () => {
@@ -179,7 +230,9 @@ describe('AnalysisPage AI shortcuts', () => {
     setup([unscored])
     await screen.findByText('还没有考试成绩')
     expect(screen.queryByRole('button', { name: 'AI 写分析报告' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '给退步同学家长写沟通消息' })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: '给退步同学家长写沟通消息' }),
+    ).not.toBeInTheDocument()
   })
 })
 

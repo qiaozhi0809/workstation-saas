@@ -3,7 +3,13 @@ import { Button } from '@/shared/components/ui/button'
 import { Textarea } from '@/shared/components/ui/textarea'
 
 /** 对话底部的追问输入框:Enter 发送 / Shift+Enter 换行 / 输入法组合中不处理;生成中显示"停止"。 */
-export default function ThreadComposer({ value, onChange, streaming, onSend, onStop }: {
+export default function ThreadComposer({
+  value,
+  onChange,
+  streaming,
+  onSend,
+  onStop,
+}: {
   /** 草稿由父组件持有:请求没发出去时可以放回输入框 */
   value: string
   onChange(v: string): void
@@ -27,7 +33,8 @@ export default function ThreadComposer({ value, onChange, streaming, onSend, onS
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing || e.keyCode === 229) return
+          if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing || e.keyCode === 229)
+            return
           e.preventDefault()
           send()
         }}
@@ -39,7 +46,9 @@ export default function ThreadComposer({ value, onChange, streaming, onSend, onS
           停止
         </Button>
       ) : (
-        <Button onClick={send} disabled={!trimmed}>发送</Button>
+        <Button onClick={send} disabled={!trimmed}>
+          发送
+        </Button>
       )}
     </div>
   )

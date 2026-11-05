@@ -8,13 +8,29 @@ import { studentsApi } from '@/shared/api/students'
 import StudentProfileDrawer from './StudentProfileDrawer'
 import { useStudentDrawer } from './useStudentDrawer'
 
-vi.mock('@/shared/api/classroom', () => ({ classroomApi: { summary: vi.fn().mockResolvedValue({ my_perms: [] }) } }))
+vi.mock('@/shared/api/classroom', () => ({
+  classroomApi: { summary: vi.fn().mockResolvedValue({ my_perms: [] }) },
+}))
 vi.mock('@/shared/api/students', () => ({ studentsApi: { detail: vi.fn() } }))
-vi.mock('@/shared/api/comments', () => ({ commentsApi: { list: vi.fn().mockResolvedValue({ items: [] }), create: vi.fn(), remove: vi.fn() } }))
-vi.mock('@/shared/api/growth', () => ({ growthApi: { list: vi.fn().mockResolvedValue({ items: [] }), create: vi.fn(), remove: vi.fn() } }))
-vi.mock('@/shared/api/reviews', () => ({ reviewsApi: { listForStudent: vi.fn(), revokeItem: vi.fn(), summary: vi.fn() } }))
+vi.mock('@/shared/api/comments', () => ({
+  commentsApi: { list: vi.fn().mockResolvedValue({ items: [] }), create: vi.fn(), remove: vi.fn() },
+}))
+vi.mock('@/shared/api/growth', () => ({
+  growthApi: { list: vi.fn().mockResolvedValue({ items: [] }), create: vi.fn(), remove: vi.fn() },
+}))
+vi.mock('@/shared/api/reviews', () => ({
+  reviewsApi: { listForStudent: vi.fn(), revokeItem: vi.fn(), summary: vi.fn() },
+}))
 
-const student = { id: 's1', enrollment_id: 'e1', mk: 'S0001', name: '王小一', class_id: 'c', gender: '男', family_structure: '双亲家庭' }
+const student = {
+  id: 's1',
+  enrollment_id: 'e1',
+  mk: 'S0001',
+  name: '王小一',
+  class_id: 'c',
+  gender: '男',
+  family_structure: '双亲家庭',
+}
 
 function Url() {
   const { pathname, search } = useLocation()
@@ -28,16 +44,27 @@ function Host() {
 }
 
 // 抽屉由地址参数驱动:?student=s1[&tab=…];关闭后只去掉这两个参数,留在当前页
-const renderDrawer = (entry = '/teacher/classroom?student=s1') => render(
-  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-    <MemoryRouter initialEntries={[entry]}>
-      <Url />
-      <Routes>
-        <Route path="/teacher/classroom" element={<><div>教室页</div><Host /></>} />
-      </Routes>
-    </MemoryRouter>
-  </QueryClientProvider>,
-)
+const renderDrawer = (entry = '/teacher/classroom?student=s1') =>
+  render(
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      <MemoryRouter initialEntries={[entry]}>
+        <Url />
+        <Routes>
+          <Route
+            path="/teacher/classroom"
+            element={
+              <>
+                <div>教室页</div>
+                <Host />
+              </>
+            }
+          />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  )
 const url = () => screen.getByTestId('url').textContent
 
 beforeEach(() => {
@@ -133,14 +160,31 @@ it('shows the comments tab content', async () => {
 it('replaces history on close so Back does not reopen the drawer', async () => {
   function Back() {
     const navigate = useNavigate()
-    return <button type="button" onClick={() => navigate(-1)}>返回</button>
+    return (
+      <button type="button" onClick={() => navigate(-1)}>
+        返回
+      </button>
+    )
   }
   render(
-    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <MemoryRouter initialEntries={['/teacher/classroom', '/teacher/classroom?student=s1']} initialIndex={1}>
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      <MemoryRouter
+        initialEntries={['/teacher/classroom', '/teacher/classroom?student=s1']}
+        initialIndex={1}
+      >
         <Back />
         <Routes>
-          <Route path="/teacher/classroom" element={<><div>教室页</div><Host /></>} />
+          <Route
+            path="/teacher/classroom"
+            element={
+              <>
+                <div>教室页</div>
+                <Host />
+              </>
+            }
+          />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -154,7 +198,9 @@ it('replaces history on close so Back does not reopen the drawer', async () => {
 })
 
 it('retries a failed load', async () => {
-  vi.mocked(studentsApi.detail).mockRejectedValueOnce(new Error('boom')).mockResolvedValueOnce(student)
+  vi.mocked(studentsApi.detail)
+    .mockRejectedValueOnce(new Error('boom'))
+    .mockResolvedValueOnce(student)
   renderDrawer()
   fireEvent.click(await screen.findByRole('button', { name: '重试' }))
   expect(await screen.findByRole('dialog', { name: '王小一' })).toBeInTheDocument()
@@ -164,7 +210,12 @@ it('gives no clickable 重试 while the refetch is in flight', async () => {
   let resolve!: (v: typeof student) => void
   vi.mocked(studentsApi.detail)
     .mockRejectedValueOnce(new Error('boom'))
-    .mockImplementationOnce(() => new Promise((r) => { resolve = r }))
+    .mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          resolve = r
+        }),
+    )
   renderDrawer()
   const retry = await screen.findByRole('button', { name: '重试' })
   expect(retry).toBeEnabled()
@@ -173,7 +224,9 @@ it('gives no clickable 重试 while the refetch is in flight', async () => {
     const btn = screen.queryByRole('button', { name: '重试' })
     expect(btn === null || (btn as HTMLButtonElement).disabled).toBe(true)
   })
-  await act(async () => { resolve(student) })
+  await act(async () => {
+    resolve(student)
+  })
   expect(await screen.findByRole('dialog', { name: '王小一' })).toBeInTheDocument()
 })
 

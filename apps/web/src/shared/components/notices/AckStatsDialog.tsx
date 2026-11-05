@@ -33,12 +33,17 @@ function saveBlob(filename: string, blob: Blob): void {
 }
 
 function ackText(data: AckStats, r: AckRow): string {
-  const label = data.ack.kind === 'choice' && r.choice !== null ? (data.ack.options[r.choice] ?? '') : '已知晓'
+  const label =
+    data.ack.kind === 'choice' && r.choice !== null ? (data.ack.options[r.choice] ?? '') : '已知晓'
   return r.note ? `${label}(${r.note})` : label
 }
 
 /** 发送人看的回执统计:计数、选项条形、三个名单、导出 CSV */
-export default function AckStatsDialog({ noticeId, open = true, onClose }: {
+export default function AckStatsDialog({
+  noticeId,
+  open = true,
+  onClose,
+}: {
   noticeId: string
   open?: boolean
   onClose?(): void
@@ -59,7 +64,13 @@ export default function AckStatsDialog({ noticeId, open = true, onClose }: {
   return (
     <Modal open={open} onClose={() => onClose?.()} title="回执统计" className="max-w-2xl">
       {q.isPending && <LoadingState />}
-      {q.isError && <ErrorState title="回执统计加载失败" onRetry={() => void q.refetch()} retrying={q.isFetching} />}
+      {q.isError && (
+        <ErrorState
+          title="回执统计加载失败"
+          onRetry={() => void q.refetch()}
+          retrying={q.isFetching}
+        />
+      )}
       {data && <Body data={data} tab={tab} setTab={setTab} />}
       {data && (
         <div className="flex items-center justify-end gap-3">
@@ -68,7 +79,13 @@ export default function AckStatsDialog({ noticeId, open = true, onClose }: {
               {exp.error instanceof ApiError ? exp.error.message : '导出失败,请重试'}
             </span>
           )}
-          <Button type="button" variant="outline" size="sm" disabled={exp.isPending} onClick={() => exp.mutate()}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={exp.isPending}
+            onClick={() => exp.mutate()}
+          >
             导出 CSV
           </Button>
         </div>
@@ -95,9 +112,15 @@ function Body({ data, tab, setTab }: { data: AckStats; tab: Tab; setTab(t: Tab):
             const n = data.counts[i] ?? 0
             return (
               <li key={i} className="flex flex-col gap-1 text-sm">
-                <span className="flex justify-between"><span>{opt}</span><span>{n} 人</span></span>
+                <span className="flex justify-between">
+                  <span>{opt}</span>
+                  <span>{n} 人</span>
+                </span>
                 <span aria-hidden="true" className="h-2 rounded bg-muted">
-                  <span className="block h-2 rounded bg-primary" style={{ width: `${(n / max) * 100}%` }} />
+                  <span
+                    className="block h-2 rounded bg-primary"
+                    style={{ width: `${(n / max) * 100}%` }}
+                  />
                 </span>
               </li>
             )
@@ -106,7 +129,9 @@ function Body({ data, tab, setTab }: { data: AckStats; tab: Tab; setTab(t: Tab):
       )}
 
       {data.students_without_parent > 0 && (
-        <p className="text-sm text-muted-foreground">另有 {data.students_without_parent} 名学生还没有绑定家长</p>
+        <p className="text-sm text-muted-foreground">
+          另有 {data.students_without_parent} 名学生还没有绑定家长
+        </p>
       )}
 
       <SegmentedTabs label="名单" items={TABS} value={tab} onChange={setTab} />
@@ -119,7 +144,11 @@ function Body({ data, tab, setTab }: { data: AckStats; tab: Tab; setTab(t: Tab):
             <thead>
               <tr className="border-b text-muted-foreground">
                 {parents ? (
-                  <><th className="py-1 pr-3 font-medium">班级</th><th className="py-1 pr-3 font-medium">学生</th><th className="py-1 pr-3 font-medium">家长</th></>
+                  <>
+                    <th className="py-1 pr-3 font-medium">班级</th>
+                    <th className="py-1 pr-3 font-medium">学生</th>
+                    <th className="py-1 pr-3 font-medium">家长</th>
+                  </>
                 ) : (
                   <th className="py-1 pr-3 font-medium">姓名</th>
                 )}
@@ -130,7 +159,11 @@ function Body({ data, tab, setTab }: { data: AckStats; tab: Tab; setTab(t: Tab):
               {rows.map((r) => (
                 <tr key={`${r.user_id}:${r.student_id ?? ''}`} className="border-b last:border-0">
                   {parents ? (
-                    <><td className="py-1 pr-3">{r.class_name}</td><td className="py-1 pr-3">{r.student_name}</td><td className="py-1 pr-3">{r.user_name}</td></>
+                    <>
+                      <td className="py-1 pr-3">{r.class_name}</td>
+                      <td className="py-1 pr-3">{r.student_name}</td>
+                      <td className="py-1 pr-3">{r.user_name}</td>
+                    </>
                   ) : (
                     <td className="py-1 pr-3">{r.user_name}</td>
                   )}

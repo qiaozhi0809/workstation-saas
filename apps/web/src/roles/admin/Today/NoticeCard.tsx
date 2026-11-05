@@ -5,11 +5,17 @@ import type { TodayView } from '@/shared/types/admin'
 export function NoticeCard({ notices }: { notices: TodayView['my_notices'] }) {
   if (!notices || notices.length === 0) return null
   return (
-    <section aria-label="我发出的通知" className="flex flex-col gap-3 rounded-lg border bg-card p-4">
+    <section
+      aria-label="我发出的通知"
+      className="flex flex-col gap-3 rounded-lg border bg-card p-4"
+    >
       <h2 className="text-base font-semibold">我发出的通知</h2>
       <ul className="flex flex-col divide-y">
         {notices.map((n) => (
-          <li key={n.id} className="flex flex-wrap items-center justify-between gap-2 py-1.5 text-sm">
+          <li
+            key={n.id}
+            className="flex flex-wrap items-center justify-between gap-2 py-1.5 text-sm"
+          >
             <span className="min-w-0 break-words font-medium">{n.title}</span>
             <span className="text-muted-foreground">
               {n.recipients > 0
@@ -19,7 +25,12 @@ export function NoticeCard({ notices }: { notices: TodayView['my_notices'] }) {
           </li>
         ))}
       </ul>
-      <Link to="/admin/notices" className="text-sm font-medium text-primary underline-offset-4 hover:underline">去发通知</Link>
+      <Link
+        to="/admin/notices"
+        className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+      >
+        去发通知
+      </Link>
     </section>
   )
 }

@@ -33,11 +33,22 @@ export default function GrowthTimeline({ records }: { records: ParentGrowthRecor
             {g.items.map((r) => (
               <li key={r.id} className="rounded-xl border bg-card p-3 text-sm text-card-foreground">
                 <div className="flex items-center gap-2">
-                  <span className={cn('rounded-md px-2 py-0.5 text-xs font-medium', TAG[r.type] ?? TAG.其他)}>{r.type}</span>
-                  <time className="text-xs text-muted-foreground" dateTime={r.date}>{r.date}</time>
+                  <span
+                    className={cn(
+                      'rounded-md px-2 py-0.5 text-xs font-medium',
+                      TAG[r.type] ?? TAG.其他,
+                    )}
+                  >
+                    {r.type}
+                  </span>
+                  <time className="text-xs text-muted-foreground" dateTime={r.date}>
+                    {r.date}
+                  </time>
                 </div>
                 <p className="mt-1 break-words whitespace-pre-wrap">{r.content}</p>
-                {r.created_by_name && <p className="mt-1 text-xs text-muted-foreground">{r.created_by_name}</p>}
+                {r.created_by_name && (
+                  <p className="mt-1 text-xs text-muted-foreground">{r.created_by_name}</p>
+                )}
               </li>
             ))}
           </ul>

@@ -22,10 +22,24 @@ afterEach(() => {
   delete (HTMLElement.prototype as unknown as Record<string, unknown>).clientHeight
 })
 
-const day = (date: string) => ({ date, confirmed_at: null, items: [
-  { enrollment_id: 'e1', status: 'leave' as const, reason: null, marked_at: '2026-11-02T01:00:00Z' },
-  { enrollment_id: 'e2', status: 'late' as const, reason: null, marked_at: '2026-11-02T01:00:00Z' },
-] })
+const day = (date: string) => ({
+  date,
+  confirmed_at: null,
+  items: [
+    {
+      enrollment_id: 'e1',
+      status: 'leave' as const,
+      reason: null,
+      marked_at: '2026-11-02T01:00:00Z',
+    },
+    {
+      enrollment_id: 'e2',
+      status: 'late' as const,
+      reason: null,
+      marked_at: '2026-11-02T01:00:00Z',
+    },
+  ],
+})
 
 beforeEach(() => {
   vi.resetAllMocks()
@@ -81,5 +95,7 @@ it('titles the board with the viewed date when it is not today', async () => {
   expect(within(board() as unknown as HTMLElement).getByText('今日出勤')).toBeInTheDocument()
   fireEvent.click(await screen.findByRole('button', { name: /^考勤日期/ }))
   fireEvent.change(await screen.findByLabelText('考勤日期'), { target: { value: '2026-10-30' } })
-  await waitFor(() => expect(within(board() as unknown as HTMLElement).getByText('10/30 出勤')).toBeInTheDocument())
+  await waitFor(() =>
+    expect(within(board() as unknown as HTMLElement).getByText('10/30 出勤')).toBeInTheDocument(),
+  )
 })

@@ -10,7 +10,15 @@ import { studentsApi } from '@/shared/api/students'
 import { ScoreRadar } from '@/shared/components/charts/ScoreRadar'
 import { TrendLine } from '@/shared/components/charts/TrendLine'
 import { daysUntilBirthday, formatMonthDay } from '@/shared/lib/date'
-import { examStats, examTable, latestExam, previousExam, rankChanges, studentTrend, subjectStats } from '@/shared/lib/grades'
+import {
+  examStats,
+  examTable,
+  latestExam,
+  previousExam,
+  rankChanges,
+  studentTrend,
+  subjectStats,
+} from '@/shared/lib/grades'
 import { Badge } from '@/shared/components/ui/badge'
 import { Button } from '@/shared/components/ui/button'
 import { NativeSelect } from '@/shared/components/ui/native-select'
@@ -22,8 +30,19 @@ import { useStudentDrawer } from './useStudentDrawer'
 
 // eslint-disable-next-line react-refresh/only-export-components
 export const CLASS_ROLE_PRESETS = [
-  '班长', '副班长', '学习委员', '纪律委员', '体育委员', '文艺委员', '劳动委员', '宣传委员', '心理委员',
-  '语文课代表', '数学课代表', '英语课代表', '小组长',
+  '班长',
+  '副班长',
+  '学习委员',
+  '纪律委员',
+  '体育委员',
+  '文艺委员',
+  '劳动委员',
+  '宣传委员',
+  '心理委员',
+  '语文课代表',
+  '数学课代表',
+  '英语课代表',
+  '小组长',
 ]
 
 function ClassRoleRow({ student }: { student: StudentProfile }) {
@@ -37,27 +56,43 @@ function ClassRoleRow({ student }: { student: StudentProfile }) {
     setValue(current)
   }
   const save = useMutation({
-    mutationFn: (next: string) => studentsApi.setClassRole(student.class_id, student.enrollment_id, next || null),
-    onSuccess: () => Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['student', student.id] }),
-      queryClient.invalidateQueries({ queryKey: ['class-students', student.class_id] }),
-      queryClient.invalidateQueries({ queryKey: ['student-records', student.class_id] }),
-    ]),
+    mutationFn: (next: string) =>
+      studentsApi.setClassRole(student.class_id, student.enrollment_id, next || null),
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['student', student.id] }),
+        queryClient.invalidateQueries({ queryKey: ['class-students', student.class_id] }),
+        queryClient.invalidateQueries({ queryKey: ['student-records', student.class_id] }),
+      ]),
     onError: (err) => {
       setValue(current)
       toast(err instanceof ApiError ? err.message : '保存失败,请重试')
     },
   })
-  const options = value && !CLASS_ROLE_PRESETS.includes(value) ? [...CLASS_ROLE_PRESETS, value] : CLASS_ROLE_PRESETS
+  const options =
+    value && !CLASS_ROLE_PRESETS.includes(value)
+      ? [...CLASS_ROLE_PRESETS, value]
+      : CLASS_ROLE_PRESETS
 
   return (
     <div className="flex gap-3 py-1">
       <dt className="w-20 shrink-0 text-muted-foreground">职务</dt>
       <dd>
-        <NativeSelect aria-label="职务" className="h-8" value={value}
-          onChange={(e) => { setValue(e.target.value); save.mutate(e.target.value) }}>
+        <NativeSelect
+          aria-label="职务"
+          className="h-8"
+          value={value}
+          onChange={(e) => {
+            setValue(e.target.value)
+            save.mutate(e.target.value)
+          }}
+        >
           <option value="">无</option>
-          {options.map((o) => <option key={o} value={o}>{o}</option>)}
+          {options.map((o) => (
+            <option key={o} value={o}>
+              {o}
+            </option>
+          ))}
         </NativeSelect>
       </dd>
     </div>
@@ -81,8 +116,13 @@ function PointsCard({ student }: { student: StudentProfile }) {
   })
   if (!data) return <KpiCard title="累计积分" value="—" />
   const mine = data.items.find((r) => r.enrollment_id === student.enrollment_id)
-  return <KpiCard title="累计积分" value={String(mine?.total ?? 0)}
-    hint={`点评 ${(mine?.plus_count ?? 0) + (mine?.minus_count ?? 0)} 次`} />
+  return (
+    <KpiCard
+      title="累计积分"
+      value={String(mine?.total ?? 0)}
+      hint={`点评 ${(mine?.plus_count ?? 0) + (mine?.minus_count ?? 0)} 次`}
+    />
+  )
 }
 
 function AttendanceCard({ student, today }: { student: StudentProfile; today: string }) {
@@ -94,17 +134,37 @@ function AttendanceCard({ student, today }: { student: StudentProfile; today: st
   })
   if (!data) return <KpiCard title="本月考勤" value="—" />
   const mine = data.items.filter((r) => r.enrollment_id === student.enrollment_id)
-  if (mine.length === 0) return <KpiCard title="本月考勤" value="全勤" hint={`${Number(month.slice(5))}月无请假缺勤迟到`} />
+  if (mine.length === 0)
+    return (
+      <KpiCard title="本月考勤" value="全勤" hint={`${Number(month.slice(5))}月无请假缺勤迟到`} />
+    )
   const count = (status: string) => mine.filter((r) => r.status === status).length
   const days = new Set(mine.filter((r) => r.status !== 'late').map((r) => r.date)).size
-  return <KpiCard title="本月考勤" value={`${days} 天未到`}
-    hint={`请假 ${count('leave')} · 缺勤 ${count('absent')} · 迟到 ${count('late')}`} />
+  return (
+    <KpiCard
+      title="本月考勤"
+      value={`${days} 天未到`}
+      hint={`请假 ${count('leave')} · 缺勤 ${count('absent')} · 迟到 ${count('late')}`}
+    />
+  )
 }
 
-function BirthdayCard({ birthdate, today }: { birthdate: string | null | undefined; today: string }) {
+function BirthdayCard({
+  birthdate,
+  today,
+}: {
+  birthdate: string | null | undefined
+  today: string
+}) {
   if (!birthdate) return <KpiCard title="生日" value="未填" />
   const days = daysUntilBirthday(birthdate, today)
-  return <KpiCard title="生日" value={formatMonthDay(birthdate)} hint={days === 0 ? '就是今天' : `${days} 天后`} />
+  return (
+    <KpiCard
+      title="生日"
+      value={formatMonthDay(birthdate)}
+      hint={days === 0 ? '就是今天' : `${days} 天后`}
+    />
+  )
 }
 
 const roundOrNull = (v: number | null) => (v === null ? null : Math.round(v))
@@ -132,7 +192,15 @@ function ScoreBlocks({ student, enabled }: { student: StudentProfile; enabled: b
   const classRate = withMe.map((e) => examStats(e, ids)?.rate ?? null)
   const axes = latest.subjects.flatMap((s) => {
     const v = latest.scores[me]?.[s.name]
-    return typeof v === 'number' ? [{ name: s.name, mine: Math.round((v / s.full) * 100), avg: roundOrNull(subjectStats(latest, s.name, ids)?.rate ?? null) }] : []
+    return typeof v === 'number'
+      ? [
+          {
+            name: s.name,
+            mine: Math.round((v / s.full) * 100),
+            avg: roundOrNull(subjectStats(latest, s.name, ids)?.rate ?? null),
+          },
+        ]
+      : []
   })
 
   return (
@@ -143,27 +211,37 @@ function ScoreBlocks({ student, enabled }: { student: StudentProfile; enabled: b
           <span className="text-2xl font-semibold">{row?.total ?? '—'}</span>
           {row?.rank != null && <span className="text-sm">第 {row.rank} 名</span>}
           {change !== undefined && change !== 0 && (
-            <span className="text-sm text-muted-foreground">{change > 0 ? `↑${change}` : `↓${-change}`}</span>
+            <span className="text-sm text-muted-foreground">
+              {change > 0 ? `↑${change}` : `↓${-change}`}
+            </span>
           )}
         </div>
       </section>
       <section>
         <h3 className="mb-1 text-sm font-medium">总分得分率</h3>
-        <TrendLine label="总分得分率" labels={trend.map((p) => p.name)} domain={[40, 100]} endLabel
+        <TrendLine
+          label="总分得分率"
+          labels={trend.map((p) => p.name)}
+          domain={[40, 100]}
+          endLabel
           format={(v) => `${Math.round(v)}%`}
           series={[
             { key: 'avg', label: '班级平均', values: classRate, muted: true },
             { key: 'me', label: student.name, values: trend.map((p) => p.rate) },
-          ]} />
+          ]}
+        />
       </section>
       {axes.length > 0 && (
         <section>
           <h3 className="mb-1 text-sm font-medium">学科画像</h3>
-          <ScoreRadar label="学科画像" axes={axes.map((a) => a.name)}
+          <ScoreRadar
+            label="学科画像"
+            axes={axes.map((a) => a.name)}
             series={[
               { key: 'me', label: student.name, values: axes.map((a) => a.mine) },
               { key: 'avg', label: '班级平均', values: axes.map((a) => a.avg), muted: true },
-            ]} />
+            ]}
+          />
         </section>
       )}
     </div>
@@ -182,7 +260,15 @@ function RecentGrowth({ student }: { student: StudentProfile }) {
     <section className="mt-4">
       <div className="mb-1 flex items-center justify-between">
         <h3 className="text-sm font-medium">最近成长记录</h3>
-        <Button type="button" variant="ghost" size="sm" className="h-7 px-2" onClick={() => open(student.id, '成长记录')}>查看全部</Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2"
+          onClick={() => open(student.id, '成长记录')}
+        >
+          查看全部
+        </Button>
       </div>
       <ul className="space-y-1 text-sm">
         {data.items.slice(0, 3).map((r) => (
@@ -209,16 +295,25 @@ export default function OverviewTab({ student }: { student: StudentProfile }) {
         <Field label="编号" value={student.mk} />
         <Field label="学号" value={student.student_no} />
         <Field label="性别" value={student.gender} />
-        {canEdit ? <ClassRoleRow student={student} /> : <Field label="职务" value={student.class_role} />}
+        {canEdit ? (
+          <ClassRoleRow student={student} />
+        ) : (
+          <Field label="职务" value={student.class_role} />
+        )}
       </dl>
       {summary.data && (
         <div role="group" aria-label="概况指标" className="mt-4 grid grid-cols-3 gap-2">
           {summary.data.my_perms.includes('review.read') && <PointsCard student={student} />}
-          {summary.data.my_perms.includes('attendance.read') && <AttendanceCard student={student} today={summary.data.today} />}
+          {summary.data.my_perms.includes('attendance.read') && (
+            <AttendanceCard student={student} today={summary.data.today} />
+          )}
           <BirthdayCard birthdate={student.birthdate} today={summary.data.today} />
         </div>
       )}
-      <ScoreBlocks student={student} enabled={summary.data?.my_perms.includes('exam.read') ?? false} />
+      <ScoreBlocks
+        student={student}
+        enabled={summary.data?.my_perms.includes('exam.read') ?? false}
+      />
       {summary.data?.my_perms.includes('growth.read') && <RecentGrowth student={student} />}
     </>
   )

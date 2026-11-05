@@ -7,20 +7,37 @@ import RequirePerm from './RequirePerm'
 
 const renderWith = (perms: AdminPerm[]) => {
   useAuthStore.setState({
-    accessToken: 'a', refreshToken: 'r',
-    user: { id: 'u', display_name: 't', contexts: ['admin'], admin_perms: perms, must_change_password: false },
+    accessToken: 'a',
+    refreshToken: 'r',
+    user: {
+      id: 'u',
+      display_name: 't',
+      contexts: ['admin'],
+      admin_perms: perms,
+      must_change_password: false,
+    },
   })
   return render(
     <MemoryRouter initialEntries={['/admin/org']}>
       <Routes>
         <Route path="/admin" element={<div>admin home</div>} />
-        <Route path="/admin/org" element={<RequirePerm perm="org.manage"><div>org page</div></RequirePerm>} />
+        <Route
+          path="/admin/org"
+          element={
+            <RequirePerm perm="org.manage">
+              <div>org page</div>
+            </RequirePerm>
+          }
+        />
       </Routes>
     </MemoryRouter>,
   )
 }
 
-afterEach(() => { cleanup(); useAuthStore.getState().logout() })
+afterEach(() => {
+  cleanup()
+  useAuthStore.getState().logout()
+})
 
 it('renders children when the perm is held', () => {
   renderWith(['org.manage'])

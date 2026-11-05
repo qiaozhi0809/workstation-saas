@@ -4,7 +4,10 @@ import { cn } from '@/shared/lib/utils'
 import type { AiCategory, AiTemplate, AiTemplates } from '@/shared/types/ai'
 
 /** 模板分类 + 卡片;只列 hidden=false,不可用的卡片禁用并写明原因。 */
-export default function TemplateGrid({ templates, onPick }: {
+export default function TemplateGrid({
+  templates,
+  onPick,
+}: {
   templates: AiTemplates
   onPick(t: AiTemplate): void
 }) {

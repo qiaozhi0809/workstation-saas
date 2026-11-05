@@ -15,7 +15,10 @@ export default function TodoSection() {
   const onError = (err: Error) => toast(err.message)
   const create = useMutation({
     mutationFn: (content: string) => todosApi.create(content),
-    onSuccess: () => { setText(''); refresh() },
+    onSuccess: () => {
+      setText('')
+      refresh()
+    },
     onError,
   })
   const update = useMutation({
@@ -23,7 +26,11 @@ export default function TodoSection() {
     onSuccess: refresh,
     onError,
   })
-  const remove = useMutation({ mutationFn: (id: string) => todosApi.remove(id), onSuccess: refresh, onError })
+  const remove = useMutation({
+    mutationFn: (id: string) => todosApi.remove(id),
+    onSuccess: refresh,
+    onError,
+  })
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key !== 'Enter') return
@@ -40,18 +47,35 @@ export default function TodoSection() {
       <ul className="mt-1 flex flex-col gap-1 text-sm">
         {(todos.data?.items ?? []).map((t) => (
           <li key={t.id} className="flex items-center gap-2">
-            <input type="checkbox" aria-label={t.content} checked={t.done}
-              onChange={() => update.mutate({ id: t.id, done: !t.done })} />
-            <span className={`flex-1 ${t.done ? 'text-muted-foreground line-through' : ''}`}>{t.content}</span>
-            <Button type="button" variant="ghost" size="icon" className="h-7 w-7" aria-label={`删除 ${t.content}`}
-              onClick={() => remove.mutate(t.id)}>
+            <input
+              type="checkbox"
+              aria-label={t.content}
+              checked={t.done}
+              onChange={() => update.mutate({ id: t.id, done: !t.done })}
+            />
+            <span className={`flex-1 ${t.done ? 'text-muted-foreground line-through' : ''}`}>
+              {t.content}
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              aria-label={`删除 ${t.content}`}
+              onClick={() => remove.mutate(t.id)}
+            >
               <Trash2 aria-hidden />
             </Button>
           </li>
         ))}
       </ul>
-      <Input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onKeyDown}
-        placeholder="添加一件要做的事" className="mt-2 h-8" />
+      <Input
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={onKeyDown}
+        placeholder="添加一件要做的事"
+        className="mt-2 h-8"
+      />
     </Card>
   )
 }

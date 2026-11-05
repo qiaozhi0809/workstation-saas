@@ -7,7 +7,12 @@ import type { Context } from '@/shared/types/admin'
 import ChangePasswordDialog from './ChangePasswordDialog'
 
 /** 头像菜单:首字当头像,修改密码 / 切换端 / 退出登录收在里面 */
-export default function AccountMenu({ name, onLogout, switchTo, preferences = true }: {
+export default function AccountMenu({
+  name,
+  onLogout,
+  switchTo,
+  preferences = true,
+}: {
   name: string | undefined
   onLogout(): void
   switchTo?: { label: string; to: string; context: Context }[]
@@ -26,7 +31,12 @@ export default function AccountMenu({ name, onLogout, switchTo, preferences = tr
         label="账号菜单"
         side="bottom"
         align="end"
-        triggerProps={{ variant: 'ghost', className: 'min-h-11 min-w-11 gap-1 px-1.5', 'aria-label': '账号菜单', title: name }}
+        triggerProps={{
+          variant: 'ghost',
+          className: 'min-h-11 min-w-11 gap-1 px-1.5',
+          'aria-label': '账号菜单',
+          title: name,
+        }}
         trigger={
           <>
             <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-sm font-medium text-primary-foreground">
@@ -40,7 +50,11 @@ export default function AccountMenu({ name, onLogout, switchTo, preferences = tr
         {/* 排座有未保存修改时,站内跳转由教室页的路由守卫确认 */}
         {preferences && <MenuLinkItem to="/teacher/preferences">我的偏好</MenuLinkItem>}
         <MenuItem onSelect={() => setPwOpen(true)}>修改密码</MenuItem>
-        {switchTo?.map((s) => <MenuItem key={s.context} onSelect={() => onSwitch(s)}>{s.label}</MenuItem>)}
+        {switchTo?.map((s) => (
+          <MenuItem key={s.context} onSelect={() => onSwitch(s)}>
+            {s.label}
+          </MenuItem>
+        ))}
         <MenuItem onSelect={onLogout}>退出登录</MenuItem>
       </Menu>
       <ChangePasswordDialog open={pwOpen} onClose={() => setPwOpen(false)} />

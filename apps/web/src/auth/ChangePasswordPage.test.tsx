@@ -8,7 +8,13 @@ import ChangePasswordPage from './ChangePasswordPage'
 
 vi.mock('@/shared/api/auth', () => ({ authApi: { changePassword: vi.fn(), me: vi.fn() } }))
 
-const user = { id: 'u', display_name: 't', contexts: ['teacher' as const], admin_perms: [], must_change_password: true }
+const user = {
+  id: 'u',
+  display_name: 't',
+  contexts: ['teacher' as const],
+  admin_perms: [],
+  must_change_password: true,
+}
 
 const fill = (oldPw: string, newPw: string, confirm: string) => {
   fireEvent.change(screen.getByLabelText('旧密码'), { target: { value: oldPw } })
@@ -17,21 +23,25 @@ const fill = (oldPw: string, newPw: string, confirm: string) => {
   fireEvent.click(screen.getByRole('button', { name: '保存' }))
 }
 
-const renderPage = () => render(
-  <MemoryRouter initialEntries={['/change-password']}>
-    <Routes>
-      <Route path="/change-password" element={<ChangePasswordPage />} />
-      <Route path="/login" element={<div>login page</div>} />
-      <Route path="/teacher" element={<div>teacher home</div>} />
-    </Routes>
-  </MemoryRouter>,
-)
+const renderPage = () =>
+  render(
+    <MemoryRouter initialEntries={['/change-password']}>
+      <Routes>
+        <Route path="/change-password" element={<ChangePasswordPage />} />
+        <Route path="/login" element={<div>login page</div>} />
+        <Route path="/teacher" element={<div>teacher home</div>} />
+      </Routes>
+    </MemoryRouter>,
+  )
 
 beforeEach(() => {
   vi.clearAllMocks()
   useAuthStore.setState({ accessToken: 'a', refreshToken: 'rt', user, lastContext: null })
 })
-afterEach(() => { cleanup(); useAuthStore.getState().logout() })
+afterEach(() => {
+  cleanup()
+  useAuthStore.getState().logout()
+})
 
 it('shows the heading and the rule hint', () => {
   renderPage()
@@ -47,7 +57,9 @@ it('blocks mismatched passwords without a request', () => {
 })
 
 it('shows the backend message on PASSWORD_WEAK', async () => {
-  vi.mocked(authApi.changePassword).mockRejectedValue(new ApiError(400, 'PASSWORD_WEAK', '密码太简单了'))
+  vi.mocked(authApi.changePassword).mockRejectedValue(
+    new ApiError(400, 'PASSWORD_WEAK', '密码太简单了'),
+  )
   renderPage()
   fill('old', 'abc12345', 'abc12345')
   expect(await screen.findByRole('alert')).toHaveTextContent('密码太简单了')
@@ -59,7 +71,11 @@ it('on success refetches me and goes home', async () => {
   renderPage()
   fill('old', 'abc12345', 'abc12345')
   expect(await screen.findByText('teacher home')).toBeInTheDocument()
-  expect(authApi.changePassword).toHaveBeenCalledWith({ old_password: 'old', new_password: 'abc12345', refresh_token: 'rt' })
+  expect(authApi.changePassword).toHaveBeenCalledWith({
+    old_password: 'old',
+    new_password: 'abc12345',
+    refresh_token: 'rt',
+  })
   await waitFor(() => expect(useAuthStore.getState().user?.must_change_password).toBe(false))
 })
 

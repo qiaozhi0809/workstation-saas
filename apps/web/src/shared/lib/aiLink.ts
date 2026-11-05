@@ -2,8 +2,21 @@ import type { AiTemplateId } from '@/shared/types/ai'
 
 /** 全部模板编号;`satisfies` 保证每项都属于 AiTemplateId(漏改类型时编译报错) */
 const TEMPLATE_IDS = [
-  'lesson', 'ppt', 'homework', 'meeting', 'activity', 'summary', 'notice', 'parent',
-  'pmeeting', 'comments', 'report', 'talk', 'birthday', 'comment1', 'parent-batch',
+  'lesson',
+  'ppt',
+  'homework',
+  'meeting',
+  'activity',
+  'summary',
+  'notice',
+  'parent',
+  'pmeeting',
+  'comments',
+  'report',
+  'talk',
+  'birthday',
+  'comment1',
+  'parent-batch',
 ] as const satisfies readonly AiTemplateId[]
 
 /** 其他页面跳到 AI 助手并预选模板 / 学生 / 考试(学生参数叫 stu,避开档案抽屉的 student) */

@@ -19,15 +19,28 @@ type TabId = (typeof TABS)[number]['id']
 
 function GrowthTab({ sid }: { sid: string }) {
   const q = useQuery({ queryKey: ['parent', sid, 'growth'], queryFn: () => parentApi.growth(sid) })
-  if (q.isError) return <ErrorState title="成长记录加载失败" onRetry={() => void q.refetch()} retrying={q.isFetching} />
+  if (q.isError)
+    return (
+      <ErrorState
+        title="成长记录加载失败"
+        onRetry={() => void q.refetch()}
+        retrying={q.isFetching}
+      />
+    )
   if (!q.data) return <LoadingState />
   if (q.data.items.length === 0) return <EmptyState title="还没有成长记录" />
   return <GrowthTimeline records={q.data.items} />
 }
 
 function CommentsTab({ sid }: { sid: string }) {
-  const q = useQuery({ queryKey: ['parent', sid, 'comments'], queryFn: () => parentApi.comments(sid) })
-  if (q.isError) return <ErrorState title="评语加载失败" onRetry={() => void q.refetch()} retrying={q.isFetching} />
+  const q = useQuery({
+    queryKey: ['parent', sid, 'comments'],
+    queryFn: () => parentApi.comments(sid),
+  })
+  if (q.isError)
+    return (
+      <ErrorState title="评语加载失败" onRetry={() => void q.refetch()} retrying={q.isFetching} />
+    )
   if (!q.data) return <LoadingState />
   if (q.data.items.length === 0) return <EmptyState title="还没有评语" />
   return <CommentList comments={q.data.items} />
@@ -56,11 +69,17 @@ function GrowthTabs({ sid }: { sid: string }) {
   return (
     <div className="mx-auto max-w-2xl space-y-3 p-4">
       <h1 className="text-lg font-semibold">成长</h1>
-      <div role="tablist" aria-label="成长分类" className="grid grid-cols-3 gap-1 rounded-xl bg-muted p-1">
+      <div
+        role="tablist"
+        aria-label="成长分类"
+        className="grid grid-cols-3 gap-1 rounded-xl bg-muted p-1"
+      >
         {TABS.map((t, i) => (
           <button
             key={t.id}
-            ref={(el) => { refs.current[t.id] = el }}
+            ref={(el) => {
+              refs.current[t.id] = el
+            }}
             id={`growth-tab-${t.id}`}
             role="tab"
             type="button"

@@ -10,12 +10,36 @@ import ArchiveTab from './ArchiveTab'
 vi.mock('@/shared/api/classes', () => ({ classesApi: { mine: vi.fn() } }))
 vi.mock('@/shared/api/students', () => ({ studentsApi: { saveMyNotes: vi.fn() } }))
 
-const bare: StudentProfile = { id: 's', enrollment_id: 'e1', mk: 'S0002', name: '李小二', class_id: 'c' }
-const klass = (role: ClassView['role']): ClassView => ({ id: 'c', name: '一班', grade_name: '七年级', seat_rows: 6, seat_cols: 8, desk_size: 2, seat_layout: 'manual', seat_order: 'row', podium_left: 0, podium_right: 0, room: '', role })
+const bare: StudentProfile = {
+  id: 's',
+  enrollment_id: 'e1',
+  mk: 'S0002',
+  name: '李小二',
+  class_id: 'c',
+}
+const klass = (role: ClassView['role']): ClassView => ({
+  id: 'c',
+  name: '一班',
+  grade_name: '七年级',
+  seat_rows: 6,
+  seat_cols: 8,
+  desk_size: 2,
+  seat_layout: 'manual',
+  seat_order: 'row',
+  podium_left: 0,
+  podium_right: 0,
+  room: '',
+  role,
+})
 
 function renderTab(student: StudentProfile) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(<QueryClientProvider client={client}><ArchiveTab student={student} /><Toaster /></QueryClientProvider>)
+  render(
+    <QueryClientProvider client={client}>
+      <ArchiveTab student={student} />
+      <Toaster />
+    </QueryClientProvider>,
+  )
 }
 
 beforeEach(() => {
@@ -38,7 +62,10 @@ it('lists contacts with copy buttons', async () => {
   const writeText = vi.fn().mockResolvedValue(undefined)
   Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
   renderTab({
-    ...bare, boarding: true, family_note: '奶奶接送', note: '怕黑',
+    ...bare,
+    boarding: true,
+    family_note: '奶奶接送',
+    note: '怕黑',
     contacts: [
       { name: '李大', relation: '父亲', phone: '13800000011', job: '工程师' },
       { name: '赵美', relation: '母亲', phone: '13800000012', job: '' },
@@ -60,7 +87,10 @@ it('lists contacts with copy buttons', async () => {
 
 it('shows my notes for the homeroom teacher of the class', async () => {
   vi.mocked(classesApi.mine).mockResolvedValue({ items: [klass('homeroom_teacher')] })
-  renderTab({ ...bare, teacher_notes: { text: '细心', updated_at: new Date(2026, 10, 2, 9, 5).toISOString() } })
+  renderTab({
+    ...bare,
+    teacher_notes: { text: '细心', updated_at: new Date(2026, 10, 2, 9, 5).toISOString() },
+  })
   expect(await screen.findByText('我的笔记')).toBeInTheDocument()
   expect(screen.getByRole('textbox')).toHaveValue('细心')
 })

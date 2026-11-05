@@ -21,7 +21,14 @@ import ClassGate, { type ClassContext } from '../ClassGate'
 import { useStudentDrawer } from '../StudentProfile/useStudentDrawer'
 import { rosterCsv } from './exportRoster'
 import ImportDialog from './ImportDialog'
-import { buildRows, filterRows, sortRows, type RosterFilter, type RosterRow, type RosterSort } from './rosterView'
+import {
+  buildRows,
+  filterRows,
+  sortRows,
+  type RosterFilter,
+  type RosterRow,
+  type RosterSort,
+} from './rosterView'
 import StudentForm from './StudentForm'
 
 const FILTERS: { value: RosterFilter; label: string }[] = [
@@ -49,18 +56,28 @@ function Roster({ ctx: { cls, summary, perms } }: { ctx: ClassContext }) {
   const canExport = perms.includes('student.export')
   const canManage = perms.includes('student.manage')
 
-  const records = useQuery({ queryKey: ['student-records', classId], queryFn: () => studentsApi.records(classId) })
+  const records = useQuery({
+    queryKey: ['student-records', classId],
+    queryFn: () => studentsApi.records(classId),
+  })
   const review = useQuery({
-    queryKey: ['review-summary', classId], queryFn: () => reviewsApi.summary(classId), enabled: canReview,
+    queryKey: ['review-summary', classId],
+    queryFn: () => reviewsApi.summary(classId),
+    enabled: canReview,
   })
   const gradebook = useQuery({
-    queryKey: ['gradebook', classId], queryFn: () => examsApi.gradebook(classId), enabled: canExam,
+    queryKey: ['gradebook', classId],
+    queryFn: () => examsApi.gradebook(classId),
+    enabled: canExam,
   })
 
   const items = records.data?.items
   const points = useMemo(
     // 积分汇总未加载好(或失败)时为 null:显示 —、导出留空,而不是误显示 0
-    () => (canReview && review.data ? new Map(review.data.items.map((i) => [i.enrollment_id, i.total])) : null),
+    () =>
+      canReview && review.data
+        ? new Map(review.data.items.map((i) => [i.enrollment_id, i.total]))
+        : null,
     [canReview, review.data],
   )
   const ranks = useMemo(() => {
@@ -76,7 +93,10 @@ function Roster({ ctx: { cls, summary, perms } }: { ctx: ClassContext }) {
     return map
   }, [items, gradebook.data])
 
-  const rows = useMemo(() => (items ? buildRows(items, ranks, points, today) : []), [items, ranks, points, today])
+  const rows = useMemo(
+    () => (items ? buildRows(items, ranks, points, today) : []),
+    [items, ranks, points, today],
+  )
 
   const [q, setQ] = useState('')
   const [filter, setFilter] = useState<RosterFilter>('all')
@@ -97,33 +117,58 @@ function Roster({ ctx: { cls, summary, perms } }: { ctx: ClassContext }) {
       if (action === 'add') setEditor({})
       else setImporting(true)
     }
-    setParams((prev) => { const out = new URLSearchParams(prev); out.delete('action'); return out }, { replace: true })
+    setParams(
+      (prev) => {
+        const out = new URLSearchParams(prev)
+        out.delete('action')
+        return out
+      },
+      { replace: true },
+    )
   }, [action, canManage, setParams])
 
   if (records.isLoading) return <LoadingState />
   if (!items) {
-    return <ErrorState title="学生名单加载失败" onRetry={() => void records.refetch()} retrying={records.isFetching} />
+    return (
+      <ErrorState
+        title="学生名单加载失败"
+        onRetry={() => void records.refetch()}
+        retrying={records.isFetching}
+      />
+    )
   }
   const dialogs = (
     <>
-      {editor && <StudentForm cls={cls} record={editor.record} roster={items} onClose={() => setEditor(null)} />}
+      {editor && (
+        <StudentForm
+          cls={cls}
+          record={editor.record}
+          roster={items}
+          onClose={() => setEditor(null)}
+        />
+      )}
       {importing && <ImportDialog cls={cls} onClose={() => setImporting(false)} />}
     </>
   )
   const manageButtons = canManage && (
     <>
       <Button type="button" size="sm" onClick={() => setEditor({})}>
-        <UserPlus aria-hidden="true" className="mr-1 h-4 w-4" />添加学生
+        <UserPlus aria-hidden="true" className="mr-1 h-4 w-4" />
+        添加学生
       </Button>
       <Button type="button" variant="outline" size="sm" onClick={() => setImporting(true)}>
-        <Upload aria-hidden="true" className="mr-1 h-4 w-4" />批量导入
+        <Upload aria-hidden="true" className="mr-1 h-4 w-4" />
+        批量导入
       </Button>
     </>
   )
   if (items.length === 0) {
     return (
       <>
-        <EmptyState title="还没有学生" action={manageButtons ? <div className="flex gap-2">{manageButtons}</div> : undefined} />
+        <EmptyState
+          title="还没有学生"
+          action={manageButtons ? <div className="flex gap-2">{manageButtons}</div> : undefined}
+        />
         {dialogs}
       </>
     )
@@ -136,7 +181,10 @@ function Roster({ ctx: { cls, summary, perms } }: { ctx: ClassContext }) {
 
   const toggleSort = (next: RosterSort) => {
     if (next === sort) setDir(dir === 'asc' ? 'desc' : 'asc')
-    else { setSort(next); setDir(next === 'points' ? 'desc' : 'asc') }
+    else {
+      setSort(next)
+      setDir(next === 'points' ? 'desc' : 'asc')
+    }
   }
 
   const sortProps = { sort, dir, onSort: toggleSort }
@@ -158,25 +206,48 @@ function Roster({ ctx: { cls, summary, perms } }: { ctx: ClassContext }) {
     <div className="min-w-0 space-y-3 p-4">
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative w-full max-w-xs">
-          <Search aria-hidden="true" className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Search
+            aria-hidden="true"
+            className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground"
+          />
           <Input
-            type="search" aria-label="搜索学生" placeholder="姓名 / 学号 / 标签" className="pl-8"
-            value={q} onChange={(e) => setQ(e.target.value)}
+            type="search"
+            aria-label="搜索学生"
+            placeholder="姓名 / 学号 / 标签"
+            className="pl-8"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
           />
         </div>
         <div className="ml-auto flex items-center gap-2">
-          {exportError && <span role="alert" className="text-sm text-destructive">导出失败,请重试</span>}
+          {exportError && (
+            <span role="alert" className="text-sm text-destructive">
+              导出失败,请重试
+            </span>
+          )}
           {manageButtons}
           {canExport && (
-            <Button type="button" variant="outline" size="sm" disabled={exporting} onClick={() => void exportRoster()}>
-              <Download aria-hidden="true" className="mr-1 h-4 w-4" />导出名单
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={exporting}
+              onClick={() => void exportRoster()}
+            >
+              <Download aria-hidden="true" className="mr-1 h-4 w-4" />
+              导出名单
             </Button>
           )}
         </div>
       </div>
       <div className="overflow-x-auto">
         <div className="w-max whitespace-nowrap">
-          <SegmentedTabs<RosterFilter> label="筛选" items={FILTERS} value={filter} onChange={setFilter} />
+          <SegmentedTabs<RosterFilter>
+            label="筛选"
+            items={FILTERS}
+            value={filter}
+            onChange={setFilter}
+          />
         </div>
       </div>
       {visible.length === 0 ? (
@@ -186,24 +257,50 @@ function Roster({ ctx: { cls, summary, perms } }: { ctx: ClassContext }) {
           <table className="w-full text-sm">
             <thead className="bg-muted text-muted-foreground">
               <tr>
-                <SortHead by="no" {...sortProps}>学号</SortHead>
-                <SortHead by="name" {...sortProps}>姓名</SortHead>
+                <SortHead by="no" {...sortProps}>
+                  学号
+                </SortHead>
+                <SortHead by="name" {...sortProps}>
+                  姓名
+                </SortHead>
                 <Head>性别</Head>
                 <Head>座位</Head>
                 <Head>职务</Head>
-                <SortHead by="birthday" {...sortProps}>生日</SortHead>
+                <SortHead by="birthday" {...sortProps}>
+                  生日
+                </SortHead>
                 {showContacts && <Head>主要联系人</Head>}
                 {showTags && <Head>标签</Head>}
-                {canExam && <SortHead by="rank" {...sortProps}>排名</SortHead>}
-                {canReview && <SortHead by="points" {...sortProps}>积分</SortHead>}
-                {canManage && <th scope="col" className="whitespace-nowrap px-3 py-2"><span className="sr-only">操作</span></th>}
+                {canExam && (
+                  <SortHead by="rank" {...sortProps}>
+                    排名
+                  </SortHead>
+                )}
+                {canReview && (
+                  <SortHead by="points" {...sortProps}>
+                    积分
+                  </SortHead>
+                )}
+                {canManage && (
+                  <th scope="col" className="whitespace-nowrap px-3 py-2">
+                    <span className="sr-only">操作</span>
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody>
               {visible.map((r) => (
                 <StudentRow
-                  key={r.enrollment_id} row={r} grid={grid} showContacts={showContacts} showTags={showTags} canExam={canExam} canReview={canReview} canManage={canManage}
-                  onOpen={() => drawer.open(r.student_id)} onEdit={() => setEditor({ record: r })}
+                  key={r.enrollment_id}
+                  row={r}
+                  grid={grid}
+                  showContacts={showContacts}
+                  showTags={showTags}
+                  canExam={canExam}
+                  canReview={canReview}
+                  canManage={canManage}
+                  onOpen={() => drawer.open(r.student_id)}
+                  onEdit={() => setEditor({ record: r })}
                 />
               ))}
             </tbody>
@@ -215,32 +312,63 @@ function Roster({ ctx: { cls, summary, perms } }: { ctx: ClassContext }) {
   )
 }
 
-function SortHead({ by, sort, dir, onSort, children }: {
-  by: RosterSort; sort: RosterSort; dir: 'asc' | 'desc'; onSort(by: RosterSort): void; children: string
+function SortHead({
+  by,
+  sort,
+  dir,
+  onSort,
+  children,
+}: {
+  by: RosterSort
+  sort: RosterSort
+  dir: 'asc' | 'desc'
+  onSort(by: RosterSort): void
+  children: string
 }) {
   return (
-    <th scope="col" aria-sort={sort === by ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'} className="whitespace-nowrap px-3 py-2 text-left font-medium">
-      <button type="button" onClick={() => onSort(by)} className="inline-flex items-center gap-1 hover:text-foreground">
+    <th
+      scope="col"
+      aria-sort={sort === by ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+      className="whitespace-nowrap px-3 py-2 text-left font-medium"
+    >
+      <button
+        type="button"
+        onClick={() => onSort(by)}
+        className="inline-flex items-center gap-1 hover:text-foreground"
+      >
         {children}
-        {sort === by && (dir === 'asc' ? <ArrowUp aria-hidden="true" className="h-3 w-3" /> : <ArrowDown aria-hidden="true" className="h-3 w-3" />)}
+        {sort === by &&
+          (dir === 'asc' ? (
+            <ArrowUp aria-hidden="true" className="h-3 w-3" />
+          ) : (
+            <ArrowDown aria-hidden="true" className="h-3 w-3" />
+          ))}
       </button>
     </th>
   )
 }
 
 function Head({ children }: { children: string }) {
-  return <th scope="col" className="whitespace-nowrap px-3 py-2 text-left font-medium">{children}</th>
+  return (
+    <th scope="col" className="whitespace-nowrap px-3 py-2 text-left font-medium">
+      {children}
+    </th>
+  )
 }
 
 function seatText(r: StudentRecord, grid: DeskGrid): string {
-  return r.seat_row !== null && r.seat_col !== null ? cellText({ row: r.seat_row, col: r.seat_col }, grid) : '—'
+  return r.seat_row !== null && r.seat_col !== null
+    ? cellText({ row: r.seat_row, col: r.seat_col }, grid)
+    : '—'
 }
 
 const NARROW = '(max-width: 639px)'
 
 /** 手机宽度(375)下隐藏次要列,其余靠表格自己横向滚动。 */
 function useNarrow(): boolean {
-  const [narrow, setNarrow] = useState(() => typeof window.matchMedia === 'function' && window.matchMedia(NARROW).matches)
+  const [narrow, setNarrow] = useState(
+    () => typeof window.matchMedia === 'function' && window.matchMedia(NARROW).matches,
+  )
   useEffect(() => {
     if (typeof window.matchMedia !== 'function') return
     const mql = window.matchMedia(NARROW)
@@ -252,9 +380,26 @@ function useNarrow(): boolean {
   return narrow
 }
 
-function StudentRow({ row: r, grid, showContacts, showTags, canExam, canReview, canManage, onOpen, onEdit }: {
-  row: RosterRow; grid: DeskGrid; showContacts: boolean; showTags: boolean; canExam: boolean; canReview: boolean; canManage: boolean
-  onOpen(): void; onEdit(): void
+function StudentRow({
+  row: r,
+  grid,
+  showContacts,
+  showTags,
+  canExam,
+  canReview,
+  canManage,
+  onOpen,
+  onEdit,
+}: {
+  row: RosterRow
+  grid: DeskGrid
+  showContacts: boolean
+  showTags: boolean
+  canExam: boolean
+  canReview: boolean
+  canManage: boolean
+  onOpen(): void
+  onEdit(): void
 }) {
   const contact = r.contacts?.[0]
   const tags = r.tags ?? []
@@ -262,34 +407,63 @@ function StudentRow({ row: r, grid, showContacts, showTags, canExam, canReview, 
     <tr className="cursor-pointer border-t hover:bg-muted/50" onClick={onOpen}>
       <td className="whitespace-nowrap px-3 py-2">{r.student_no ?? '—'}</td>
       <td className="whitespace-nowrap px-3 py-2 font-medium">
-        <button type="button" className="text-left hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" onClick={(e) => { e.stopPropagation(); onOpen() }}>{r.name}</button>
+        <button
+          type="button"
+          className="text-left hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          onClick={(e) => {
+            e.stopPropagation()
+            onOpen()
+          }}
+        >
+          {r.name}
+        </button>
       </td>
       <td className="whitespace-nowrap px-3 py-2">{r.gender ?? '—'}</td>
       <td className="whitespace-nowrap px-3 py-2">{seatText(r, grid)}</td>
       <td className="whitespace-nowrap px-3 py-2">{r.class_role ?? '—'}</td>
       <td className="whitespace-nowrap px-3 py-2">
         {r.birthdate ? (
-          <span {...(r.daysToBirthday === 0 ? { 'data-birthday-today': true } : {})} className={cn(r.daysToBirthday === 0 && 'font-medium text-destructive')}>
-            {r.birthdate}{r.daysToBirthday === 0 && ' 今天生日'}
+          <span
+            {...(r.daysToBirthday === 0 ? { 'data-birthday-today': true } : {})}
+            className={cn(r.daysToBirthday === 0 && 'font-medium text-destructive')}
+          >
+            {r.birthdate}
+            {r.daysToBirthday === 0 && ' 今天生日'}
           </span>
-        ) : '—'}
+        ) : (
+          '—'
+        )}
       </td>
-      {showContacts && <td className="whitespace-nowrap px-3 py-2">{contact ? `${contact.name} ${contact.phone}` : '—'}</td>}
+      {showContacts && (
+        <td className="whitespace-nowrap px-3 py-2">
+          {contact ? `${contact.name} ${contact.phone}` : '—'}
+        </td>
+      )}
       {showTags && (
         <td className="min-w-[8rem] px-3 py-2">
           <div className="flex flex-wrap gap-1">
-            {tags.slice(0, MAX_TAGS).map((t) => <Badge key={t} variant="neutral">{t}</Badge>)}
-            {tags.length > MAX_TAGS && <Badge variant="outline">{`+${tags.length - MAX_TAGS}`}</Badge>}
+            {tags.slice(0, MAX_TAGS).map((t) => (
+              <Badge key={t} variant="neutral">
+                {t}
+              </Badge>
+            ))}
+            {tags.length > MAX_TAGS && (
+              <Badge variant="outline">{`+${tags.length - MAX_TAGS}`}</Badge>
+            )}
           </div>
         </td>
       )}
       {canExam && (
         <td className="whitespace-nowrap px-3 py-2">
-          {r.rank === null ? '—' : (
+          {r.rank === null ? (
+            '—'
+          ) : (
             <span className="inline-flex items-center gap-1">
               <span data-testid="rank">{r.rank}</span>
               {r.rankChange !== null && r.rankChange !== 0 && (
-                <span className={cn('text-xs', r.rankChange > 0 ? 'text-success' : 'text-destructive')}>
+                <span
+                  className={cn('text-xs', r.rankChange > 0 ? 'text-success' : 'text-destructive')}
+                >
                   {r.rankChange > 0 ? `↑${r.rankChange}` : `↓${-r.rankChange}`}
                 </span>
               )}
@@ -300,7 +474,17 @@ function StudentRow({ row: r, grid, showContacts, showTags, canExam, canReview, 
       {canReview && <td className="whitespace-nowrap px-3 py-2">{r.points ?? '—'}</td>}
       {canManage && (
         <td className="whitespace-nowrap px-3 py-2">
-          <Button type="button" variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onEdit() }}>编辑</Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={(e) => {
+              e.stopPropagation()
+              onEdit()
+            }}
+          >
+            编辑
+          </Button>
         </td>
       )}
     </tr>

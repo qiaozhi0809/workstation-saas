@@ -24,25 +24,33 @@ export function createRealtimeClient(opts: RealtimeOptions): { start(): void; st
   const WS = opts.WebSocketImpl ?? WebSocket
   let ws: WebSocket | null = null
   let timer: ReturnType<typeof setTimeout> | null = null
-  let active = false       // start 之后、stop 之前
-  let terminal = false     // 4403 / session.revoked:不再重连
+  let active = false // start 之后、stop 之前
+  let terminal = false // 4403 / session.revoked:不再重连
   let everDropped = false
   let attempt = 0
   let ready = false
-  let gen = 0              // start/stop 递增,作废进行中的刷新回调
+  let gen = 0 // start/stop 递增,作废进行中的刷新回调
   let refreshedSinceReady = false
 
-  const emit = (e: RealtimeEvent) => { if (active) opts.onEvent(e) }
+  const emit = (e: RealtimeEvent) => {
+    if (active) opts.onEvent(e)
+  }
 
   const finish = () => {
     terminal = true
-    if (timer) { clearTimeout(timer); timer = null }
+    if (timer) {
+      clearTimeout(timer)
+      timer = null
+    }
   }
 
   const scheduleReconnect = () => {
     const delay = BACKOFF_S[Math.min(attempt, BACKOFF_S.length - 1)]
     attempt += 1
-    timer = setTimeout(() => { timer = null; connect() }, delay * 1000)
+    timer = setTimeout(() => {
+      timer = null
+      connect()
+    }, delay * 1000)
   }
 
   const connect = () => {
@@ -59,7 +67,11 @@ export function createRealtimeClient(opts: RealtimeOptions): { start(): void; st
     sock.onmessage = (m: MessageEvent) => {
       if (ws !== sock || !active) return
       let msg: { type?: string } & Record<string, unknown>
-      try { msg = JSON.parse(String(m.data)) } catch { return }
+      try {
+        msg = JSON.parse(String(m.data))
+      } catch {
+        return
+      }
       if (msg.type === 'ready') {
         ready = true
         attempt = 0
@@ -86,7 +98,10 @@ export function createRealtimeClient(opts: RealtimeOptions): { start(): void; st
         emit({ type: 'session.revoked' })
       } else if (e.code === 4401) {
         // 令牌失效:刷新成功立即再连;被拒停止;网络错误按退避表再连(下次仍 4401 可再试刷新)
-        if (refreshedSinceReady) { finish(); return }   // 刷新成功后仍被拒:停止,避免紧循环
+        if (refreshedSinceReady) {
+          finish()
+          return
+        } // 刷新成功后仍被拒:停止,避免紧循环
         const myGen = gen
         void tryRefreshAccessToken().then((result) => {
           if (!active || terminal || gen !== myGen) return
@@ -100,11 +115,13 @@ export function createRealtimeClient(opts: RealtimeOptions): { start(): void; st
           }
         })
       } else {
-        refreshedSinceReady = false   // 非令牌原因的断线:之后再遇 4401 允许重新刷新
+        refreshedSinceReady = false // 非令牌原因的断线:之后再遇 4401 允许重新刷新
         scheduleReconnect()
       }
     }
-    sock.onerror = () => { /* 随后会触发 close,在那里处理重连 */ }
+    sock.onerror = () => {
+      /* 随后会触发 close,在那里处理重连 */
+    }
   }
 
   return {
@@ -119,7 +136,10 @@ export function createRealtimeClient(opts: RealtimeOptions): { start(): void; st
     stop() {
       active = false
       gen += 1
-      if (timer) { clearTimeout(timer); timer = null }
+      if (timer) {
+        clearTimeout(timer)
+        timer = null
+      }
       const sock = ws
       ws = null
       if (sock) sock.close()

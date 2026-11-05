@@ -30,18 +30,55 @@ import ClassroomPage from './ClassroomPage'
 import type { ClassroomUiMode } from './ModeBar'
 
 export const ALL_PERMS: ClassPerm[] = [
-  'attendance.read', 'attendance.write', 'review.read', 'review.write',
-  'seating.write', 'board.write', 'student.write_basic',
-  'exam.read', 'exam.write', 'score.write', 'score.export', 'student.manage', 'student.export',
+  'attendance.read',
+  'attendance.write',
+  'review.read',
+  'review.write',
+  'seating.write',
+  'board.write',
+  'student.write_basic',
+  'exam.read',
+  'exam.write',
+  'score.write',
+  'score.export',
+  'student.manage',
+  'student.export',
 ]
 
 export const classFixture: ClassView = {
-  id: 'c1', name: '三年二班', grade_name: '三年级', seat_rows: 3, seat_cols: 4, desk_size: 2, seat_layout: 'manual', seat_order: 'row', podium_left: 0, podium_right: 0, room: '', role: 'homeroom_teacher',
+  id: 'c1',
+  name: '三年二班',
+  grade_name: '三年级',
+  seat_rows: 3,
+  seat_cols: 4,
+  desk_size: 2,
+  seat_layout: 'manual',
+  seat_order: 'row',
+  podium_left: 0,
+  podium_right: 0,
+  room: '',
+  role: 'homeroom_teacher',
 }
 
-const student = (n: number, name: string, col: number, gender: string, birthdate: string): StudentSeat => ({
-  enrollment_id: `e${n}`, student_id: `s${n}`, name, mk: `S000${n}`, seat_row: 1, seat_col: col,
-  avatar_seed: null, gender, student_no: `202600${n}`, birthdate, class_role: null, seat_locked: false,
+const student = (
+  n: number,
+  name: string,
+  col: number,
+  gender: string,
+  birthdate: string,
+): StudentSeat => ({
+  enrollment_id: `e${n}`,
+  student_id: `s${n}`,
+  name,
+  mk: `S000${n}`,
+  seat_row: 1,
+  seat_col: col,
+  avatar_seed: null,
+  gender,
+  student_no: `202600${n}`,
+  birthdate,
+  class_role: null,
+  seat_locked: false,
 })
 
 export const rosterFixture: StudentSeat[] = [
@@ -62,8 +99,12 @@ export function summaryFixture(over: Partial<ClassroomSummary> = {}): ClassroomS
     my_perms: ALL_PERMS,
     my_subjects: [],
     board: {
-      left_title: '今日课程', left_text: '', right_title: '今日事项', right_text: '',
-      countdown_label: null, countdown_date: null,
+      left_title: '今日课程',
+      left_text: '',
+      right_title: '今日事项',
+      right_text: '',
+      countdown_label: null,
+      countdown_date: null,
     },
     ...over,
   }
@@ -71,10 +112,17 @@ export function summaryFixture(over: Partial<ClassroomSummary> = {}): ClassroomS
 
 export function review(over: Partial<Review> = {}): Review {
   return {
-    id: 'r1', op_id: 'op1', enrollment_id: 'e1', category: 'individual',
-    reason_text: '积极发言', score_delta: 1, subject: null,
-    given_at: '2026-11-02T01:00:00Z', given_by_me: true,
-    student_name: '王小一', transferred: false,
+    id: 'r1',
+    op_id: 'op1',
+    enrollment_id: 'e1',
+    category: 'individual',
+    reason_text: '积极发言',
+    score_delta: 1,
+    subject: null,
+    given_at: '2026-11-02T01:00:00Z',
+    given_by_me: true,
+    student_name: '王小一',
+    transferred: false,
     ...over,
   }
 }
@@ -83,16 +131,28 @@ export const preferencesFixture: Preferences = {
   teacher_figure: 'female',
   idle_animation: true,
   review_reasons: [
-    { text: '积极发言', delta: 1 }, { text: '作业优秀', delta: 1 }, { text: '乐于助人', delta: 1 },
-    { text: '值日认真', delta: 1 }, { text: '考试进步', delta: 2 }, { text: '为班争光', delta: 3 },
-    { text: '上课走神', delta: -1 }, { text: '作业未交', delta: -1 }, { text: '迟到', delta: -1 },
+    { text: '积极发言', delta: 1 },
+    { text: '作业优秀', delta: 1 },
+    { text: '乐于助人', delta: 1 },
+    { text: '值日认真', delta: 1 },
+    { text: '考试进步', delta: 2 },
+    { text: '为班争光', delta: 3 },
+    { text: '上课走神', delta: -1 },
+    { text: '作业未交', delta: -1 },
+    { text: '迟到', delta: -1 },
     { text: '违反纪律', delta: -2 },
   ],
 }
 
 export const reviewSummaryFixture: ReviewSummary = {
   week_start: '2026-11-02',
-  items: rosterFixture.map((s) => ({ enrollment_id: s.enrollment_id, total: 0, week: 0, plus_count: 0, minus_count: 0 })),
+  items: rosterFixture.map((s) => ({
+    enrollment_id: s.enrollment_id,
+    total: 0,
+    week: 0,
+    plus_count: 0,
+    minus_count: 0,
+  })),
 }
 
 /** 给 9 个 API 模块的每个函数设好默认返回值(写操作回显请求)。 */
@@ -101,38 +161,74 @@ export function defaultApiMocks() {
 
   vi.mocked(studentsApi.listInClass).mockResolvedValue({ items: rosterFixture })
   vi.mocked(studentsApi.detail).mockResolvedValue({
-    id: 's1', enrollment_id: 'e1', mk: 'S0001', name: '王小一', class_id: 'c1',
+    id: 's1',
+    enrollment_id: 'e1',
+    mk: 'S0001',
+    name: '王小一',
+    class_id: 'c1',
   })
-  vi.mocked(studentsApi.setClassRole).mockImplementation(async (_c, enrollment_id, class_role) => ({ enrollment_id, class_role }))
+  vi.mocked(studentsApi.setClassRole).mockImplementation(async (_c, enrollment_id, class_role) => ({
+    enrollment_id,
+    class_role,
+  }))
 
   vi.mocked(classroomApi.summary).mockResolvedValue(summaryFixture())
   vi.mocked(classroomApi.saveBoard).mockImplementation(async (_c, board) => board)
 
-  vi.mocked(attendanceApi.day).mockImplementation(async (_c, date) => ({ date, confirmed_at: null, items: [] }))
-  vi.mocked(attendanceApi.set).mockImplementation(async (_c, _d, enrollment_id, body) =>
-    ({ enrollment_id, status: body.status, reason: body.reason ?? null }))
-  vi.mocked(attendanceApi.confirm).mockImplementation(async (_c, date) =>
-    ({ date, confirmed_at: '2026-11-02T01:00:00Z', items: [] }))
+  vi.mocked(attendanceApi.day).mockImplementation(async (_c, date) => ({
+    date,
+    confirmed_at: null,
+    items: [],
+  }))
+  vi.mocked(attendanceApi.set).mockImplementation(async (_c, _d, enrollment_id, body) => ({
+    enrollment_id,
+    status: body.status,
+    reason: body.reason ?? null,
+  }))
+  vi.mocked(attendanceApi.confirm).mockImplementation(async (_c, date) => ({
+    date,
+    confirmed_at: '2026-11-02T01:00:00Z',
+    items: [],
+  }))
   vi.mocked(attendanceApi.month).mockImplementation(async (_c, month) => ({ month, items: [] }))
 
   vi.mocked(reviewsApi.list).mockResolvedValue({ items: [], next_cursor: null })
   vi.mocked(reviewsApi.summary).mockResolvedValue(reviewSummaryFixture)
   vi.mocked(reviewsApi.create).mockImplementation(async (_c, body) => ({
-    items: (body.enrollment_ids ?? rosterFixture.map((s) => s.enrollment_id)).map((enrollment_id, i) => review({
-      id: `${body.op_id}-${i}`, op_id: body.op_id, enrollment_id, category: body.category,
-      reason_text: body.reason_text, score_delta: body.score_delta, subject: body.subject ?? null,
-    })),
+    items: (body.enrollment_ids ?? rosterFixture.map((s) => s.enrollment_id)).map(
+      (enrollment_id, i) =>
+        review({
+          id: `${body.op_id}-${i}`,
+          op_id: body.op_id,
+          enrollment_id,
+          category: body.category,
+          reason_text: body.reason_text,
+          score_delta: body.score_delta,
+          subject: body.subject ?? null,
+        }),
+    ),
   }))
   vi.mocked(reviewsApi.revoke).mockImplementation(async (_c, op_id) => ({ op_id, revoked: 1 }))
 
-  vi.mocked(seatingApi.save).mockImplementation(async (_c, body) =>
-    ({ version: body.base_version + 1, rows: body.rows, cols: body.cols }))
+  vi.mocked(seatingApi.save).mockImplementation(async (_c, body) => ({
+    version: body.base_version + 1,
+    rows: body.rows,
+    cols: body.cols,
+  }))
 
   vi.mocked(todosApi.list).mockResolvedValue({ items: [] })
-  vi.mocked(todosApi.create).mockImplementation(async (content) =>
-    ({ id: 't1', content, done: false, created_at: '2026-11-02T01:00:00Z' }))
-  vi.mocked(todosApi.update).mockImplementation(async (id, patch) =>
-    ({ id, content: patch.content ?? '', done: patch.done ?? false, created_at: '2026-11-02T01:00:00Z' }))
+  vi.mocked(todosApi.create).mockImplementation(async (content) => ({
+    id: 't1',
+    content,
+    done: false,
+    created_at: '2026-11-02T01:00:00Z',
+  }))
+  vi.mocked(todosApi.update).mockImplementation(async (id, patch) => ({
+    id,
+    content: patch.content ?? '',
+    done: patch.done ?? false,
+    created_at: '2026-11-02T01:00:00Z',
+  }))
   vi.mocked(todosApi.remove).mockResolvedValue(undefined)
 
   vi.mocked(examsApi.gradebook).mockResolvedValue({ exams: [] })
@@ -142,7 +238,11 @@ export function defaultApiMocks() {
 }
 
 const MODE_OF: Record<'日常' | '考勤' | '点评' | '成绩' | '排座', ClassroomUiMode> = {
-  日常: 'daily', 考勤: 'attendance', 点评: 'review', 成绩: 'grades', 排座: 'seating',
+  日常: 'daily',
+  考勤: 'attendance',
+  点评: 'review',
+  成绩: 'grades',
+  排座: 'seating',
 }
 
 export interface SetupOptions {
@@ -171,17 +271,34 @@ function Url() {
 }
 
 /** 渲染教室页(QueryClient 关重试 + 内存 data router + Toaster),返回 render 结果、QueryClient 与 router。 */
-export function setup({ mode, perms, subjects, roster, classId = 'c1', search }: SetupOptions = {}) {
+export function setup({
+  mode,
+  perms,
+  subjects,
+  roster,
+  classId = 'c1',
+  search,
+}: SetupOptions = {}) {
   if (roster) vi.mocked(studentsApi.listInClass).mockResolvedValue({ items: roster })
   if (perms || subjects) {
-    vi.mocked(classroomApi.summary).mockResolvedValue(summaryFixture({
-      ...(perms ? { my_perms: perms } : {}),
-      ...(subjects ? { my_subjects: subjects } : {}),
-    }))
+    vi.mocked(classroomApi.summary).mockResolvedValue(
+      summaryFixture({
+        ...(perms ? { my_perms: perms } : {}),
+        ...(subjects ? { my_subjects: subjects } : {}),
+      }),
+    )
   }
   act(() => {
     useTeacherStore.setState({ classId })
-    useAuthStore.setState({ user: { id: 'u1', display_name: '王老师', contexts: ['teacher'], admin_perms: [], must_change_password: false } })
+    useAuthStore.setState({
+      user: {
+        id: 'u1',
+        display_name: '王老师',
+        contexts: ['teacher'],
+        admin_perms: [],
+        must_change_password: false,
+      },
+    })
   })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const ui = mode && mode !== '日常' ? MODE_OF[mode] : null
@@ -189,10 +306,21 @@ export function setup({ mode, perms, subjects, roster, classId = 'c1', search }:
   const query = [ui ? `mode=${ui}` : '', extra].filter(Boolean).join('&')
   const entry = query ? `/teacher/classroom?${query}` : '/teacher/classroom'
   // data router:页面里的 useBlocker 只能在它下面用
-  const router = createMemoryRouter([
-    { path: '/teacher/classroom', element: <><ClassroomPage /><Url /></> },
-    { path: '/teacher/preferences', element: <Loc /> },
-  ], { initialEntries: [entry] })
+  const router = createMemoryRouter(
+    [
+      {
+        path: '/teacher/classroom',
+        element: (
+          <>
+            <ClassroomPage />
+            <Url />
+          </>
+        ),
+      },
+      { path: '/teacher/preferences', element: <Loc /> },
+    ],
+    { initialEntries: [entry] },
+  )
   const result = render(
     <QueryClientProvider client={client}>
       <RouterProvider router={router} />

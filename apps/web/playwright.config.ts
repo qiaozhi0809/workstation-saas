@@ -37,6 +37,10 @@ export default defineConfig({
     { name: 'm4a', testMatch: M4A, dependencies: ['m3b'] },
     // m4b 发班级公告 / 年级家长 / 全校老师通知(结束时全部撤回)、建家长账号(结束时解绑,账号归档留库),不改其他共享数据
     { name: 'm4b', testMatch: M4B, dependencies: ['m4a'] },
-    { name: 'readonly', testIgnore: [MUTATING, GRADES, STUDENTS, AI, PROFILE, DESKS, ADMIN, M3B, M4A, M4B], dependencies: ['m4b'] },
+    {
+      name: 'readonly',
+      testIgnore: [MUTATING, GRADES, STUDENTS, AI, PROFILE, DESKS, ADMIN, M3B, M4A, M4B],
+      dependencies: ['m4b'],
+    },
   ],
 })

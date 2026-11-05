@@ -28,7 +28,12 @@ export function cellState(v: ScoreValue | undefined, full: number): CellState {
 }
 
 /** id 均为 enrollment_id */
-export interface Row { id: string; total: number | null; rank: number | null; subs: Record<string, ScoreValue | undefined> }
+export interface Row {
+  id: string
+  total: number | null
+  rank: number | null
+  subs: Record<string, ScoreValue | undefined>
+}
 
 function examFull(exam: GradebookExam): number {
   return exam.subjects.reduce((sum, s) => sum + s.full, 0)
@@ -57,17 +62,24 @@ export function examTable(exam: GradebookExam, ids: string[]): Row[] {
   let prevRank = 0
   rows.forEach((r, i) => {
     if (r.total === null) return
-    if (r.total !== prev) { prevRank = i + 1; prev = r.total }
+    if (r.total !== prev) {
+      prevRank = i + 1
+      prev = r.total
+    }
     r.rank = prevRank
   })
   return rows
 }
 
 export interface SubjectStats {
-  name: string; full: number; n: number; avg: number
+  name: string
+  full: number
+  n: number
+  avg: number
   /** 得分率,百分数 0-100(avg / full x 100) */
   rate: number
-  max: number; min: number
+  max: number
+  min: number
   /** 及格率,小数 0-1 */
   passRate: number
   /** 优秀率,小数 0-1 */
@@ -77,7 +89,11 @@ export interface SubjectStats {
 }
 
 /** ids:enrollment_id 列表 */
-export function subjectStats(exam: GradebookExam, subject: string, ids: string[]): SubjectStats | null {
+export function subjectStats(
+  exam: GradebookExam,
+  subject: string,
+  ids: string[],
+): SubjectStats | null {
   const sub = exam.subjects.find((s) => s.name === subject)
   if (!sub) return null
   const vals: number[] = []
@@ -91,8 +107,13 @@ export function subjectStats(exam: GradebookExam, subject: string, ids: string[]
   const pass = sub.full * PASS_RATIO
   const good = sub.full * GOOD_RATIO
   return {
-    name: sub.name, full: sub.full, n, avg, rate: (avg / sub.full) * 100,
-    max: Math.max(...vals), min: Math.min(...vals),
+    name: sub.name,
+    full: sub.full,
+    n,
+    avg,
+    rate: (avg / sub.full) * 100,
+    max: Math.max(...vals),
+    min: Math.min(...vals),
     passRate: vals.filter((v) => v >= pass).length / n,
     goodRate: vals.filter((v) => v >= good).length / n,
     low: vals.filter((v) => v < pass).length,
@@ -100,7 +121,9 @@ export function subjectStats(exam: GradebookExam, subject: string, ids: string[]
 }
 
 export interface ExamStats {
-  full: number; n: number; avg: number
+  full: number
+  n: number
+  avg: number
   /** 得分率,百分数 0-100(avg / full x 100) */
   rate: number
   max: number
@@ -113,7 +136,8 @@ export interface ExamStats {
   goodRate: number
   /** 总分的总体标准差(除以 n) */
   sd: number
-  table: Row[]; subjects: SubjectStats[]
+  table: Row[]
+  subjects: SubjectStats[]
 }
 
 /** ids:enrollment_id 列表 */
@@ -132,17 +156,27 @@ export function examStats(exam: GradebookExam, ids: string[]): ExamStats | null 
     return st ? [st] : []
   })
   return {
-    full, n, avg, rate: (avg / full) * 100, max,
+    full,
+    n,
+    avg,
+    rate: (avg / full) * 100,
+    max,
     maxIds: table.filter((r) => r.total === max).map((r) => r.id),
     min: Math.min(...totals),
     passRate: totals.filter((t) => t >= pass).length / n,
     goodRate: totals.filter((t) => t >= good).length / n,
     sd: Math.sqrt(totals.reduce((a, t) => a + (t - avg) ** 2, 0) / n),
-    table, subjects,
+    table,
+    subjects,
   }
 }
 
-export interface Band { lo: number; hi: number; count: number; tone: 'low' | 'mid' | 'good' }
+export interface Band {
+  lo: number
+  hi: number
+  count: number
+  tone: 'low' | 'mid' | 'good'
+}
 
 export function scoreBands(totals: number[], full: number): Band[] {
   if (!(full > 0)) return []
@@ -150,14 +184,17 @@ export function scoreBands(totals: number[], full: number): Band[] {
   const fullTenths = Math.round(full * 10)
   const counts = new Array<number>(10).fill(0)
   // 分数与满分都按"十分位整数"分档,避免 full/10 的浮点误差
-  for (const t of totals) counts[Math.min(9, Math.max(0, Math.floor((Math.round(t * 10) * 10) / fullTenths)))] += 1
+  for (const t of totals)
+    counts[Math.min(9, Math.max(0, Math.floor((Math.round(t * 10) * 10) / fullTenths)))] += 1
   const first = counts.findIndex((c) => c > 0)
   if (first < 0) return []
   const bands: Band[] = []
   for (let i = first; i < 10; i++) {
     // 十等分:lo = i/10 满分;< 60% 为 low,>= 85%(即最后一档)为 good
     bands.push({
-      lo: r1((i * full) / 10), hi: r1(((i + 1) * full) / 10), count: counts[i],
+      lo: r1((i * full) / 10),
+      hi: r1(((i + 1) * full) / 10),
+      count: counts[i],
       tone: i < 6 ? 'low' : i >= 9 ? 'good' : 'mid',
     })
   }
@@ -171,7 +208,9 @@ export function trendDomain(values: number[]): [number, number] {
 }
 
 function hasScore(exam: GradebookExam): boolean {
-  return Object.values(exam.scores).some((rec) => Object.values(rec).some((v) => typeof v === 'number'))
+  return Object.values(exam.scores).some((rec) =>
+    Object.values(rec).some((v) => typeof v === 'number'),
+  )
 }
 
 /** Any numeric score in the exam's scores map counts (the gradebook only contains active enrollments). */
@@ -205,10 +244,20 @@ export interface Attention {
   failing: { id: string; count: number }[]
 }
 
-export function attention(exam: GradebookExam, cur: Row[], changes: Map<string, number>): Attention {
+export function attention(
+  exam: GradebookExam,
+  cur: Row[],
+  changes: Map<string, number>,
+): Attention {
   const entries = [...changes].map(([id, change]) => ({ id, change }))
-  const risers = entries.filter((e) => e.change > 0).sort((a, b) => b.change - a.change).slice(0, 5)
-  const fallers = entries.filter((e) => e.change <= -5).sort((a, b) => a.change - b.change).slice(0, 6)
+  const risers = entries
+    .filter((e) => e.change > 0)
+    .sort((a, b) => b.change - a.change)
+    .slice(0, 5)
+  const fallers = entries
+    .filter((e) => e.change <= -5)
+    .sort((a, b) => a.change - b.change)
+    .slice(0, 6)
   const failing = cur
     .map((r) => ({
       id: r.id,
@@ -224,7 +273,14 @@ export function attention(exam: GradebookExam, cur: Row[], changes: Map<string, 
 }
 
 /** rate: percent 0-100 (total / full x 100), same unit as SubjectStats.rate and ExamStats.rate */
-export interface TrendPoint { examId: string; name: string; total: number | null; rank: number | null; n: number; rate: number | null }
+export interface TrendPoint {
+  examId: string
+  name: string
+  total: number | null
+  rank: number | null
+  n: number
+  rate: number | null
+}
 
 /** id 与 ids 都是 enrollment_id(不是 student_id) */
 export function studentTrend(book: GradebookExam[], id: string, ids: string[]): TrendPoint[] {
@@ -234,7 +290,10 @@ export function studentTrend(book: GradebookExam[], id: string, ids: string[]): 
     const total = row?.total ?? null
     const full = examFull(exam)
     return {
-      examId: exam.id, name: exam.name, total, rank: row?.rank ?? null,
+      examId: exam.id,
+      name: exam.name,
+      total,
+      rank: row?.rank ?? null,
       n: table.filter((r) => r.total !== null).length,
       rate: total === null || full === 0 ? null : (total / full) * 100,
     }

@@ -3,7 +3,13 @@ import { useEscapeLayer } from '@/shared/hooks/useEscapeLayer'
 import { useFullscreenHost } from '@/shared/hooks/useFullscreenHost'
 import { cn } from '@/shared/lib/utils'
 import { useRestoreFocus } from './useRestoreFocus'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/shared/components/ui/dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/shared/components/ui/dialog'
 
 export interface ModalProps {
   open: boolean
@@ -18,13 +24,24 @@ export interface ModalProps {
 }
 
 export default function Modal({
-  open, onClose, title, description, dismissOnOutside = true, className, children,
+  open,
+  onClose,
+  title,
+  description,
+  dismissOnOutside = true,
+  className,
+  children,
 }: ModalProps) {
   const host = useFullscreenHost()
   const restoreFocus = useRestoreFocus(open)
   useEscapeLayer(open, onClose)
   return (
-    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose() }}>
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) onClose()
+      }}
+    >
       <DialogContent
         container={host}
         aria-modal="true"

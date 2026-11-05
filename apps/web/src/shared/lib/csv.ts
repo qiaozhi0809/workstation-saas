@@ -11,7 +11,11 @@ export function toCSV(rows: Cell[][]): string {
   return '﻿' + rows.map((row) => row.map(encodeCell).join(',')).join('\r\n')
 }
 
-export function downloadText(filename: string, text: string, mime = 'text/csv;charset=utf-8'): void {
+export function downloadText(
+  filename: string,
+  text: string,
+  mime = 'text/csv;charset=utf-8',
+): void {
   const url = URL.createObjectURL(new Blob([text], { type: mime }))
   const a = document.createElement('a')
   a.href = url

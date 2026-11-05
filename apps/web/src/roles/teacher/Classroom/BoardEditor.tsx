@@ -18,8 +18,12 @@ const MAX_LABEL = 12
 const len = (s: string) => Array.from(s).length
 
 interface Form {
-  left_title: string; left_text: string; right_title: string; right_text: string
-  countdown_label: string; countdown_date: string
+  left_title: string
+  left_text: string
+  right_title: string
+  right_text: string
+  countdown_label: string
+  countdown_date: string
 }
 
 /** 与契约一致的前端校验,返回第一条错误(没有则 null)。 */
@@ -38,12 +42,23 @@ function validate(f: Form): string | null {
   return null
 }
 
-export default function BoardEditor({ classId, board, onClose }: { classId: string; board: Board; onClose(): void }) {
+export default function BoardEditor({
+  classId,
+  board,
+  onClose,
+}: {
+  classId: string
+  board: Board
+  onClose(): void
+}) {
   const queryClient = useQueryClient()
   const [form, setForm] = useState<Form>(() => ({
-    left_title: board.left_title, left_text: board.left_text,
-    right_title: board.right_title, right_text: board.right_text,
-    countdown_label: board.countdown_label ?? '', countdown_date: board.countdown_date ?? '',
+    left_title: board.left_title,
+    left_text: board.left_text,
+    right_title: board.right_title,
+    right_text: board.right_text,
+    countdown_label: board.countdown_label ?? '',
+    countdown_date: board.countdown_date ?? '',
   }))
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -63,9 +78,12 @@ export default function BoardEditor({ classId, board, onClose }: { classId: stri
     setSaving(true)
     const label = form.countdown_label.trim()
     const payload: Board = {
-      left_title: form.left_title.trim(), left_text: form.left_text,
-      right_title: form.right_title.trim(), right_text: form.right_text,
-      countdown_label: label || null, countdown_date: form.countdown_date || null,
+      left_title: form.left_title.trim(),
+      left_text: form.left_text,
+      right_title: form.right_title.trim(),
+      right_text: form.right_text,
+      countdown_label: label || null,
+      countdown_date: form.countdown_date || null,
     }
     try {
       await classroomApi.saveBoard(classId, payload)
@@ -79,18 +97,38 @@ export default function BoardEditor({ classId, board, onClose }: { classId: stri
   }
 
   return (
-    <Modal open onClose={onClose} title="编辑黑板" dismissOnOutside={false} className="sm:max-w-[560px]">
+    <Modal
+      open
+      onClose={onClose}
+      title="编辑黑板"
+      dismissOnOutside={false}
+      className="sm:max-w-[560px]"
+    >
       <form onSubmit={submit} className="flex flex-col gap-4">
         <div className="grid gap-4 sm:grid-cols-2">
-          {([['left', '左'], ['right', '右']] as const).map(([side, name]) => (
+          {(
+            [
+              ['left', '左'],
+              ['right', '右'],
+            ] as const
+          ).map(([side, name]) => (
             <div key={side} className="flex flex-col gap-3">
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor={`${id}-${side}-title`}>{`${name}黑板标题`}</Label>
-                <Input id={`${id}-${side}-title`} value={form[`${side}_title`]} onChange={set(`${side}_title`)} />
+                <Input
+                  id={`${id}-${side}-title`}
+                  value={form[`${side}_title`]}
+                  onChange={set(`${side}_title`)}
+                />
               </div>
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor={`${id}-${side}-text`}>{`${name}黑板内容`}</Label>
-                <Textarea id={`${id}-${side}-text`} rows={4} value={form[`${side}_text`]} onChange={set(`${side}_text`)} />
+                <Textarea
+                  id={`${id}-${side}-text`}
+                  rows={4}
+                  value={form[`${side}_text`]}
+                  onChange={set(`${side}_text`)}
+                />
               </div>
             </div>
           ))}
@@ -98,17 +136,34 @@ export default function BoardEditor({ classId, board, onClose }: { classId: stri
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor={`${id}-countdown-label`}>倒计时名称</Label>
-            <Input id={`${id}-countdown-label`} value={form.countdown_label} onChange={set('countdown_label')} />
+            <Input
+              id={`${id}-countdown-label`}
+              value={form.countdown_label}
+              onChange={set('countdown_label')}
+            />
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor={`${id}-countdown-date`}>倒计时日期</Label>
-            <Input id={`${id}-countdown-date`} type="date" value={form.countdown_date} onChange={set('countdown_date')} />
+            <Input
+              id={`${id}-countdown-date`}
+              type="date"
+              value={form.countdown_date}
+              onChange={set('countdown_date')}
+            />
           </div>
         </div>
-        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+        {error && (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        )}
         <div className="flex justify-end gap-2">
-          <Button type="button" variant="outline" onClick={onClose}>取消</Button>
-          <Button type="submit" disabled={saving}>保存</Button>
+          <Button type="button" variant="outline" onClick={onClose}>
+            取消
+          </Button>
+          <Button type="submit" disabled={saving}>
+            保存
+          </Button>
         </div>
       </form>
     </Modal>

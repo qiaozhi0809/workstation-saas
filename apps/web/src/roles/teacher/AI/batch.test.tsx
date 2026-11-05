@@ -18,34 +18,62 @@ vi.mock('@/shared/api/exams')
 vi.mock('@/shared/api/comments')
 
 const item = (n: number, over: Partial<AiBatchItem> = {}): AiBatchItem => ({
-  id: `i${n}`, student_id: `s${n}`, student_name: `学生${n}`, note: null,
-  status: 'wait', content: '', error: null, ...over,
+  id: `i${n}`,
+  student_id: `s${n}`,
+  student_name: `学生${n}`,
+  note: null,
+  status: 'wait',
+  content: '',
+  error: null,
+  ...over,
 })
 const chatFixture = (items: AiBatchItem[], over: Partial<AiChat> = {}): AiChat => ({
-  id: 'b1', title: '期末评语', template_id: 'comments', updated_at: '2026-11-02T01:30:00Z',
-  class_id: 'c1', student_id: null, save_as: 'comment', mask: true, batch_only: true,
-  messages: [], items, ...over,
+  id: 'b1',
+  title: '期末评语',
+  template_id: 'comments',
+  updated_at: '2026-11-02T01:30:00Z',
+  class_id: 'c1',
+  student_id: null,
+  save_as: 'comment',
+  mask: true,
+  batch_only: true,
+  messages: [],
+  items,
+  ...over,
 })
 const PERMS: ClassPerm[] = [...ALL_PERMS, 'ai.use', 'comment.write']
 const page = (entry = '/teacher/ai/b1', perms: ClassPerm[] = PERMS) =>
   setupAi({ element: <AiThreadPage />, path: '/teacher/ai/:chatId', entry, perms })
 
-interface Run { itemId: string; h: SseHandlers; signal?: AbortSignal; resolve(): void; reject(e: unknown): void }
+interface Run {
+  itemId: string
+  h: SseHandlers
+  signal?: AbortSignal
+  resolve(): void
+  reject(e: unknown): void
+}
 function controlledRun() {
   const calls: Run[] = []
-  vi.mocked(aiApi.runItem).mockImplementation((_c, itemId, h, signal) =>
-    new Promise<void>((resolve, reject) => {
-      calls.push({ itemId, h, signal, resolve, reject })
-      signal?.addEventListener('abort', () => reject(new DOMException('已中止', 'AbortError')))
-    }))
+  vi.mocked(aiApi.runItem).mockImplementation(
+    (_c, itemId, h, signal) =>
+      new Promise<void>((resolve, reject) => {
+        calls.push({ itemId, h, signal, resolve, reject })
+        signal?.addEventListener('abort', () => reject(new DOMException('已中止', 'AbortError')))
+      }),
+  )
   return calls
 }
 /** 服务端状态 */
 let server: AiBatchItem[]
-const setServer = (items: AiBatchItem[]) => { server = items }
+const setServer = (items: AiBatchItem[]) => {
+  server = items
+}
 const finish = (c: Run, content: string) => {
   setServer(server.map((i) => (i.id === c.itemId ? { ...i, status: 'done', content } : i)))
-  act(() => { c.h.onDone?.({} as never); c.resolve() })
+  act(() => {
+    c.h.onDone?.({} as never)
+    c.resolve()
+  })
 }
 
 beforeEach(() => {
@@ -90,7 +118,10 @@ describe('BatchView', () => {
     fireEvent.click(await screen.findByRole('button', { name: '开始生成' }))
     await waitFor(() => expect(calls).toHaveLength(1))
     setServer([item(1, { status: 'err', error: '额度不足' }), item(2)])
-    act(() => { calls[0].h.onError?.({ code: 'X', message: '额度不足' }); calls[0].resolve() })
+    act(() => {
+      calls[0].h.onError?.({ code: 'X', message: '额度不足' })
+      calls[0].resolve()
+    })
     await waitFor(() => expect(calls).toHaveLength(2))
     expect(calls[1].itemId).toBe('i2')
     finish(calls[1], '二')
@@ -110,20 +141,31 @@ describe('BatchView', () => {
     act(() => calls[0].h.onDelta('写到一半'))
     fireEvent.click(await screen.findByRole('button', { name: '停止' }))
     expect(calls[0].signal?.aborted).toBe(true)
-    expect(await screen.findByRole('button', { name: '开始生成' }, { timeout: 2500 })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('button', { name: '开始生成' }, { timeout: 2500 }),
+    ).toBeInTheDocument()
     expect(calls).toHaveLength(1)
     expect(screen.getAllByText('排队中')).toHaveLength(3)
   })
 
   it('saves all finished comments in one request', async () => {
-    setServer([item(1, { status: 'done', content: '甲' }), item(2, { status: 'done', content: '乙' }), item(3)])
+    setServer([
+      item(1, { status: 'done', content: '甲' }),
+      item(2, { status: 'done', content: '乙' }),
+      item(3),
+    ])
     vi.mocked(commentsApi.bulk).mockResolvedValue({ created: 2 })
     page()
     fireEvent.click(await screen.findByRole('button', { name: '全部保存到档案' }))
-    await waitFor(() => expect(commentsApi.bulk).toHaveBeenCalledWith('c1', {
-      items: [{ student_id: 's1', content: '甲' }, { student_id: 's2', content: '乙' }],
-      generated_by_ai: true,
-    }))
+    await waitFor(() =>
+      expect(commentsApi.bulk).toHaveBeenCalledWith('c1', {
+        items: [
+          { student_id: 's1', content: '甲' },
+          { student_id: 's2', content: '乙' },
+        ],
+        generated_by_ai: true,
+      }),
+    )
     expect(await screen.findByText('已保存 2 条评语')).toBeInTheDocument()
   })
 
@@ -133,7 +175,12 @@ describe('BatchView', () => {
     page()
     const card = (await screen.findByText('学生1')).closest('li') as HTMLElement
     fireEvent.click(within(card).getByRole('button', { name: '保存到档案' }))
-    await waitFor(() => expect(commentsApi.create).toHaveBeenCalledWith('s1', { content: '甲', generated_by_ai: true }))
+    await waitFor(() =>
+      expect(commentsApi.create).toHaveBeenCalledWith('s1', {
+        content: '甲',
+        generated_by_ai: true,
+      }),
+    )
     expect(await screen.findByText('已保存到档案的评语')).toBeInTheDocument()
   })
 
@@ -171,7 +218,9 @@ describe('BatchView', () => {
     vi.mocked(aiApi.runItem).mockRejectedValueOnce(new ApiError(503, 'AI_NOT_CONFIGURED', 'x'))
     vi.mocked(aiApi.chatPrompt).mockResolvedValue({ prompt: '提示词全文', mapping: [] })
     fireEvent.click(await screen.findByRole('button', { name: '开始生成' }))
-    expect(await screen.findByText('学校还没有配置 AI 服务,请联系管理员;可以先复制提示词')).toBeInTheDocument()
+    expect(
+      await screen.findByText('学校还没有配置 AI 服务,请联系管理员;可以先复制提示词'),
+    ).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '复制提示词' }))
     expect(await screen.findByDisplayValue('提示词全文')).toBeInTheDocument()
   })
@@ -187,7 +236,10 @@ describe('BatchView', () => {
   })
 
   it('F1: save-all twice only sends newly finished items; per-item button becomes 已保存', async () => {
-    setServer([item(1, { status: 'done', content: '甲' }), item(2, { status: 'err', error: '额度' })])
+    setServer([
+      item(1, { status: 'done', content: '甲' }),
+      item(2, { status: 'err', error: '额度' }),
+    ])
     vi.mocked(commentsApi.bulk).mockResolvedValue({ created: 1 })
     vi.mocked(commentsApi.create).mockResolvedValue({} as never)
     const calls = controlledRun()
@@ -204,13 +256,18 @@ describe('BatchView', () => {
     fireEvent.click(await screen.findByRole('button', { name: '保存其余 1 条' }))
     await waitFor(() => expect(commentsApi.bulk).toHaveBeenCalledTimes(2))
     expect(vi.mocked(commentsApi.bulk).mock.calls[1][1]).toEqual({
-      items: [{ student_id: 's2', content: '乙' }], generated_by_ai: true,
+      items: [{ student_id: 's2', content: '乙' }],
+      generated_by_ai: true,
     })
   })
 
   it('N4: bulk save toast reflects how many were already saved', async () => {
     const three = [1, 2, 3].map((n) => item(n, { status: 'done', content: `评${n}` }))
-    for (const [created, text] of [[0, '这些评语已经保存过了'], [1, '已保存 1 条,另有 2 条之前已保存'], [3, '已保存 3 条评语']] as const) {
+    for (const [created, text] of [
+      [0, '这些评语已经保存过了'],
+      [1, '已保存 1 条,另有 2 条之前已保存'],
+      [3, '已保存 3 条评语'],
+    ] as const) {
       vi.mocked(commentsApi.bulk).mockReset()
       setServer(three)
       vi.mocked(commentsApi.bulk).mockResolvedValue({ created })
@@ -222,7 +279,10 @@ describe('BatchView', () => {
   })
 
   it('F1: a single saved item is disabled afterwards and excluded from save-all', async () => {
-    setServer([item(1, { status: 'done', content: '甲' }), item(2, { status: 'done', content: '乙' })])
+    setServer([
+      item(1, { status: 'done', content: '甲' }),
+      item(2, { status: 'done', content: '乙' }),
+    ])
     vi.mocked(commentsApi.create).mockResolvedValue({} as never)
     vi.mocked(commentsApi.bulk).mockResolvedValue({ created: 1 })
     page()
@@ -231,7 +291,9 @@ describe('BatchView', () => {
     expect(await within(card).findByRole('button', { name: '已保存' })).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: '保存其余 1 条' }))
     await waitFor(() => expect(commentsApi.bulk).toHaveBeenCalled())
-    expect(vi.mocked(commentsApi.bulk).mock.calls[0][1].items).toEqual([{ student_id: 's2', content: '乙' }])
+    expect(vi.mocked(commentsApi.bulk).mock.calls[0][1].items).toEqual([
+      { student_id: 's2', content: '乙' },
+    ])
   })
 
   it('M3: flushes the buffered tail when the item finishes before the next tick', async () => {
@@ -240,29 +302,41 @@ describe('BatchView', () => {
     fireEvent.click(await screen.findByRole('button', { name: '开始生成' }))
     await waitFor(() => expect(calls).toHaveLength(1))
     vi.mocked(aiApi.getChat).mockReturnValue(new Promise(() => {}))
-    act(() => { calls[0].h.onDelta('尾巴文字'); calls[0].h.onDone?.({} as never); calls[0].resolve() })
+    act(() => {
+      calls[0].h.onDelta('尾巴文字')
+      calls[0].h.onDone?.({} as never)
+      calls[0].resolve()
+    })
     expect(await screen.findByText('尾巴文字')).toBeInTheDocument()
   })
 
   it.each(['AI_KEY_INVALID', 'AI_QUOTA', 'AI_MODEL_NOT_FOUND', 'AI_UNREACHABLE'])(
-    'M4: %s ends the loop and toasts the message', async (code) => {
+    'M4: %s ends the loop and toasts the message',
+    async (code) => {
       const calls = controlledRun()
       page()
       fireEvent.click(await screen.findByRole('button', { name: '开始生成' }))
       await waitFor(() => expect(calls).toHaveLength(1))
       setServer([item(1, { status: 'err', error: '额度不足' }), item(2), item(3)])
-      act(() => { calls[0].h.onError?.({ code, message: '服务商拒绝了请求' }); calls[0].resolve() })
+      act(() => {
+        calls[0].h.onError?.({ code, message: '服务商拒绝了请求' })
+        calls[0].resolve()
+      })
       expect((await screen.findAllByText('服务商拒绝了请求')).length).toBeGreaterThan(0)
       await screen.findByRole('button', { name: '继续生成' })
       expect(calls).toHaveLength(1)
-    })
+    },
+  )
 
   it('M4: a transient provider error continues with the next item', async () => {
     const calls = controlledRun()
     page()
     fireEvent.click(await screen.findByRole('button', { name: '开始生成' }))
     await waitFor(() => expect(calls).toHaveLength(1))
-    act(() => { calls[0].h.onError?.({ code: 'AI_UPSTREAM', message: '上游出错' }); calls[0].resolve() })
+    act(() => {
+      calls[0].h.onError?.({ code: 'AI_UPSTREAM', message: '上游出错' })
+      calls[0].resolve()
+    })
     await waitFor(() => expect(calls).toHaveLength(2))
   })
 

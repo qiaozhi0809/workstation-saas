@@ -35,7 +35,9 @@ export function useReviewSubject(perms: readonly ClassPerm[], mySubjects: string
 }
 
 type Body = Omit<ReviewCreate, 'op_id' | 'subject'>
-interface Handlers { onSuccess?(items: Review[], opId: string): void }
+interface Handlers {
+  onSuccess?(items: Review[], opId: string): void
+}
 
 /**
  * 发一次点评(一次用户操作 = 一个 op_id)。同步守卫挡住重渲染前的连点;
@@ -55,20 +57,27 @@ export function useReviewSubmit(classId: string, subject: string) {
     const op_id = retry.current?.key === key ? retry.current.opId : newOpId()
     inflight.current = true
     retry.current = null
-    post.mutate({ op_id, ...body }, {
-      onSuccess: (res) => {
-        retry.current = null
-        void qc.invalidateQueries({ queryKey: ['review-summary', classId] })
-        void qc.invalidateQueries({ queryKey: ['reviews', classId] })
-        void qc.invalidateQueries({ queryKey: ['student-reviews', classId] })
-        h.onSuccess?.(res.items, op_id)
+    post.mutate(
+      { op_id, ...body },
+      {
+        onSuccess: (res) => {
+          retry.current = null
+          void qc.invalidateQueries({ queryKey: ['review-summary', classId] })
+          void qc.invalidateQueries({ queryKey: ['reviews', classId] })
+          void qc.invalidateQueries({ queryKey: ['student-reviews', classId] })
+          h.onSuccess?.(res.items, op_id)
+        },
+        onError: (err) => {
+          if (!(err instanceof ApiError) || err.status >= 500) retry.current = { key, opId: op_id }
+          toast(
+            err instanceof ApiError && err.code === 'NO_TARGETS' ? '今天全班都请假了' : err.message,
+          )
+        },
+        onSettled: () => {
+          inflight.current = false
+        },
       },
-      onError: (err) => {
-        if (!(err instanceof ApiError) || err.status >= 500) retry.current = { key, opId: op_id }
-        toast(err instanceof ApiError && err.code === 'NO_TARGETS' ? '今天全班都请假了' : err.message)
-      },
-      onSettled: () => { inflight.current = false },
-    })
+    )
   }
 
   return { submit, pending: post.isPending }

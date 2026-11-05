@@ -12,7 +12,10 @@ function escapeHtml(s: string): string {
 
 /** 标题 → 文件名:非法字符换成 _,去首尾空格,最多 60 字,空标题用"AI 草稿" */
 function fileName(title: string): string {
-  const base = title.replace(/[\\/:*?"<>|]/g, '_').trim().slice(0, 60)
+  const base = title
+    .replace(/[\\/:*?"<>|]/g, '_')
+    .trim()
+    .slice(0, 60)
   return `${base || 'AI 草稿'}.doc`
 }
 

@@ -15,9 +15,13 @@ import AdminLayout from './AdminLayout'
 import type { AdminPage } from './pages'
 
 vi.mock('@/shared/api/admin', () => ({ adminApi: { school: vi.fn() } }))
-vi.mock('@/shared/api/notices', () => ({ noticesApi: { inbox: vi.fn(), read: vi.fn(), readAll: vi.fn() } }))
+vi.mock('@/shared/api/notices', () => ({
+  noticesApi: { inbox: vi.fn(), read: vi.fn(), readAll: vi.fn() },
+}))
 
-const h = vi.hoisted(() => ({ made: [] as { opts: { onEvent(e: unknown): void }; start: () => void; stop: () => void }[] }))
+const h = vi.hoisted(() => ({
+  made: [] as { opts: { onEvent(e: unknown): void }; start: () => void; stop: () => void }[],
+}))
 vi.mock('@/shared/realtime/client', async (orig) => ({
   ...(await orig<typeof import('@/shared/realtime/client')>()),
   createRealtimeClient: (opts: { onEvent(e: unknown): void }) => {
@@ -28,29 +32,59 @@ vi.mock('@/shared/realtime/client', async (orig) => ({
 }))
 
 const pages: AdminPage[] = [
-  { path: 'org', label: '组织架构', icon: Building2, perm: 'org.manage', element: <div>org page</div> },
-  { path: 'accounts', label: '账号', icon: Users, perm: 'account.manage', element: <div>accounts page</div> },
+  {
+    path: 'org',
+    label: '组织架构',
+    icon: Building2,
+    perm: 'org.manage',
+    element: <div>org page</div>,
+  },
+  {
+    path: 'accounts',
+    label: '账号',
+    icon: Users,
+    perm: 'account.manage',
+    element: <div>accounts page</div>,
+  },
 ]
 
-const setUser = (contexts: Context[], admin_perms: ('account.manage' | 'org.manage')[], lastContext: Context | null = null) =>
+const setUser = (
+  contexts: Context[],
+  admin_perms: ('account.manage' | 'org.manage')[],
+  lastContext: Context | null = null,
+) =>
   useAuthStore.setState({
-    accessToken: 'a', refreshToken: 'r', lastContext,
+    accessToken: 'a',
+    refreshToken: 'r',
+    lastContext,
     user: { id: 'u', display_name: '张主任', contexts, admin_perms, must_change_password: false },
   })
 
-const renderAt = (entry: string) => render(
-  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-    <MemoryRouter initialEntries={[entry]}>
-      <Routes>
-        <Route path="/admin" element={<ProtectedRoute context="admin"><AdminLayout pages={pages} /></ProtectedRoute>}>
-          <Route index element={<AdminHome pages={pages} />} />
-          {pages.map((p) => <Route key={p.path} path={p.path} element={p.element} />)}
-        </Route>
-        <Route path="/teacher" element={<div>teacher home</div>} />
-      </Routes>
-    </MemoryRouter>
-  </QueryClientProvider>,
-)
+const renderAt = (entry: string) =>
+  render(
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      <MemoryRouter initialEntries={[entry]}>
+        <Routes>
+          <Route
+            path="/admin"
+            element={
+              <ProtectedRoute context="admin">
+                <AdminLayout pages={pages} />
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<AdminHome pages={pages} />} />
+            {pages.map((p) => (
+              <Route key={p.path} path={p.path} element={p.element} />
+            ))}
+          </Route>
+          <Route path="/teacher" element={<div>teacher home</div>} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  )
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -58,14 +92,21 @@ beforeEach(() => {
   vi.mocked(noticesApi.inbox).mockResolvedValue({ items: [], total: 0, unread: 1 })
   vi.mocked(adminApi.school).mockResolvedValue({ name: '虚构实验学校', address: null })
 })
-afterEach(() => { cleanup(); useAuthStore.getState().logout() })
+afterEach(() => {
+  cleanup()
+  useAuthStore.getState().logout()
+})
 
 it('lists only the pages the user may use and lands on the first of them', async () => {
   setUser(['admin'], ['account.manage'])
   renderAt('/admin')
   expect(await screen.findByText('accounts page')).toBeInTheDocument()
   const nav = screen.getByRole('navigation', { name: '主导航' })
-  expect(within(nav).getAllByRole('link').map((l) => l.getAttribute('href'))).toEqual(['/admin/accounts'])
+  expect(
+    within(nav)
+      .getAllByRole('link')
+      .map((l) => l.getAttribute('href')),
+  ).toEqual(['/admin/accounts'])
 })
 
 it('shows the school name for an org.manage admin', async () => {
@@ -120,16 +161,25 @@ function Probe() {
 }
 
 const renderRouted = (entry: string) => {
-  const router = createMemoryRouter([
-    {
-      path: '/admin',
-      element: <ProtectedRoute context="admin"><AdminLayout pages={pages} /></ProtectedRoute>,
-      children: [{ path: 'org', element: <Probe /> }],
-    },
-    { path: '/change-password', element: <div>改密码页</div> },
-  ], { initialEntries: [entry] })
+  const router = createMemoryRouter(
+    [
+      {
+        path: '/admin',
+        element: (
+          <ProtectedRoute context="admin">
+            <AdminLayout pages={pages} />
+          </ProtectedRoute>
+        ),
+        children: [{ path: 'org', element: <Probe /> }],
+      },
+      { path: '/change-password', element: <div>改密码页</div> },
+    ],
+    { initialEntries: [entry] },
+  )
   render(
-    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
       <RouterProvider router={router} />
     </QueryClientProvider>,
   )
@@ -142,7 +192,13 @@ it('delivers realtime events to the bell and to subscribers inside the admin she
   expect(h.made).toHaveLength(1)
   vi.mocked(noticesApi.inbox).mockResolvedValue({ items: [], total: 0, unread: 2 })
   await act(async () => {
-    h.made[0].opts.onEvent({ type: 'notice.new', id: 'n1', title: '周五放假', from_name: '陈校长', created_at: '2026-11-04T01:00:00Z' })
+    h.made[0].opts.onEvent({
+      type: 'notice.new',
+      id: 'n1',
+      title: '周五放假',
+      from_name: '陈校长',
+      created_at: '2026-11-04T01:00:00Z',
+    })
   })
   expect(screen.getByTestId('probe')).toHaveTextContent('周五放假')
   expect(await screen.findByRole('button', { name: '通知,2 条未读' })).toBeInTheDocument()
@@ -160,8 +216,15 @@ it('stops the realtime client when the admin shell unmounts', async () => {
 
 it('opens no realtime connection on /change-password', async () => {
   useAuthStore.setState({
-    accessToken: 'a', refreshToken: 'r',
-    user: { id: 'u', display_name: '张主任', contexts: ['admin'], admin_perms: ['org.manage'], must_change_password: true },
+    accessToken: 'a',
+    refreshToken: 'r',
+    user: {
+      id: 'u',
+      display_name: '张主任',
+      contexts: ['admin'],
+      admin_perms: ['org.manage'],
+      must_change_password: true,
+    },
   })
   renderRouted('/admin/org')
   expect(await screen.findByText('改密码页')).toBeInTheDocument()

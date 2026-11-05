@@ -16,7 +16,13 @@ export interface GradesMode {
 }
 
 /** 成绩模式:桌面按名次五等分着色,进退 5 名以上的挂角标,没有成绩的变淡。 */
-export function useGradesMode({ classId, enabled, presenting, roster, onOpenScores }: {
+export function useGradesMode({
+  classId,
+  enabled,
+  presenting,
+  roster,
+  onOpenScores,
+}: {
   classId: string
   enabled: boolean
   presenting: boolean
@@ -44,7 +50,10 @@ export function useGradesMode({ classId, enabled, presenting, roster, onOpenScor
     const n = cur.filter((r) => r.rank !== null).length
     const out: Record<string, SeatView> = {}
     for (const r of cur) {
-      if (r.total === null || r.rank === null) { out[r.id] = { ghost: true, badge: { text: '无成绩', tone: 'gray' } }; continue }
+      if (r.total === null || r.rank === null) {
+        out[r.id] = { ghost: true, badge: { text: '无成绩', tone: 'gray' } }
+        continue
+      }
       const view: SeatView = { tint: rankTint(r.rank, n) }
       const c = changes.get(r.id) ?? 0
       if (c >= BIG_MOVE) view.badge = { text: `#${r.rank} ↑${c}`, tone: 'green', strong: true }
@@ -55,7 +64,12 @@ export function useGradesMode({ classId, enabled, presenting, roster, onOpenScor
   }, [enabled, presenting, exams, selected, roster])
 
   let bar: ReactNode = null
-  if (gradebook.isError && !gradebook.data) bar = <p role="alert" className="text-sm text-destructive">成绩加载失败</p>
+  if (gradebook.isError && !gradebook.data)
+    bar = (
+      <p role="alert" className="text-sm text-destructive">
+        成绩加载失败
+      </p>
+    )
   else if (exams) {
     bar = (
       <GradesBar

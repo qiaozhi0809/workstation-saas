@@ -15,13 +15,21 @@ const hoisted = vi.hoisted(() => ({
 // 测试用的路由表里没有学生页,跳转改为记录调用
 vi.mock('react-router-dom', async (orig) => {
   const actual = await orig<typeof import('react-router-dom')>()
-  return { ...actual, useNavigate: () => { const real = actual.useNavigate(); return hoisted.navigate ?? real } }
+  return {
+    ...actual,
+    useNavigate: () => {
+      const real = actual.useNavigate()
+      return hoisted.navigate ?? real
+    },
+  }
 })
 // 默认走真实的排座逻辑;个别用例注入一个带 reload 的假实现,并记下页面传进去的 onOpenLayout
 vi.mock('./seating/useSeatingMode', async (orig) => {
   const actual = await orig<typeof import('./seating/useSeatingMode')>()
   return {
-    useSeatingMode: (o: Parameters<typeof actual.useSeatingMode>[0] & { onOpenLayout?: () => void }) => {
+    useSeatingMode: (
+      o: Parameters<typeof actual.useSeatingMode>[0] & { onOpenLayout?: () => void },
+    ) => {
       hoisted.onOpenLayout = o.onOpenLayout
       return hoisted.seating ? hoisted.seating(o) : actual.useSeatingMode(o)
     },
@@ -29,10 +37,22 @@ vi.mock('./seating/useSeatingMode', async (orig) => {
 })
 // 对话框本身由自己的测试覆盖;这里只看页面怎么接它
 vi.mock('./settings/ClassSettingsDialog', () => ({
-  default: (p: { seatVersion: number; onSaved(r: unknown): void; onGo(to: string): void; onClose(): void }) => (
+  default: (p: {
+    seatVersion: number
+    onSaved(r: unknown): void
+    onGo(to: string): void
+    onClose(): void
+  }) => (
     <div role="dialog" aria-label="班级设置对话框">
       <span>{`v${p.seatVersion}`}</span>
-      <button onClick={() => { p.onSaved({ moved: 0 }); p.onClose() }}>模拟保存</button>
+      <button
+        onClick={() => {
+          p.onSaved({ moved: 0 })
+          p.onClose()
+        }}
+      >
+        模拟保存
+      </button>
       <button onClick={() => p.onGo('add')}>去添加</button>
       <button onClick={() => p.onGo('import')}>去导入</button>
       <button onClick={() => p.onGo('list')}>去名单</button>
@@ -117,7 +137,9 @@ it('renders class title and seated students for the selected class', async () =>
 it('opens the profile drawer (?student=) when a seat is clicked in daily mode', async () => {
   setup()
   fireEvent.click(await screen.findByRole('button', { name: /^王小一，/ }))
-  await vi.waitFor(() => expect(screen.getByTestId('url')).toHaveTextContent(/^\/teacher\/classroom\?student=s1$/))
+  await vi.waitFor(() =>
+    expect(screen.getByTestId('url')).toHaveTextContent(/^\/teacher\/classroom\?student=s1$/),
+  )
 })
 
 it('shows a class-list error when my-classes fails', async () => {
@@ -258,7 +280,11 @@ it('keeps the loaded page when background refetches of classes, roster or attend
   vi.mocked(attendanceApi.day).mockRejectedValue(new Error('500'))
   await act(() => client.refetchQueries())
   await waitFor(() => {
-    for (const key of [['my-classes'], ['class-students', 'c1'], ['attendance', 'c1', '2026-11-02']]) {
+    for (const key of [
+      ['my-classes'],
+      ['class-students', 'c1'],
+      ['attendance', 'c1', '2026-11-02'],
+    ]) {
       expect(client.getQueryState(key)?.status).toBe('error')
     }
   })
@@ -269,8 +295,21 @@ it('keeps the loaded page when background refetches of classes, roster or attend
   expect(screen.getByRole('button', { name: '随机点名' })).toBeEnabled()
 })
 
-const leaveE1 = () => vi.mocked(attendanceApi.day).mockImplementation(async (_c, date) => ({ date, confirmed_at: null,
-  items: [{ enrollment_id: 'e1', status: 'leave' as const, reason: null, marked_at: '2026-11-02T01:00:00Z' }] }))
+const leaveE1 = () =>
+  vi
+    .mocked(attendanceApi.day)
+    .mockImplementation(async (_c, date) => ({
+      date,
+      confirmed_at: null,
+      items: [
+        {
+          enrollment_id: 'e1',
+          status: 'leave' as const,
+          reason: null,
+          marked_at: '2026-11-02T01:00:00Z',
+        },
+      ],
+    }))
 
 it('does not project attendance in daily or review mode while presenting', async () => {
   leaveE1()
@@ -315,13 +354,18 @@ const hoverCard = async (container: HTMLElement, seat: string) => {
   })
 }
 
-it('shows number, role, today\'s attendance and this week\'s points in the hover card', async () => {
+it("shows number, role, today's attendance and this week's points in the hover card", async () => {
   leaveE1()
-  vi.mocked(reviewsApi.summary).mockResolvedValue({ week_start: '2026-11-02', items: [
-    { enrollment_id: 'e1', total: 5, week: 3, plus_count: 5, minus_count: 0 },
-    { enrollment_id: 'e2', total: 0, week: 0, plus_count: 0, minus_count: 0 },
-  ] })
-  const { container } = setup({ roster: rosterFixture.map((s) => (s.enrollment_id === 'e1' ? { ...s, class_role: '班长' } : s)) })
+  vi.mocked(reviewsApi.summary).mockResolvedValue({
+    week_start: '2026-11-02',
+    items: [
+      { enrollment_id: 'e1', total: 5, week: 3, plus_count: 5, minus_count: 0 },
+      { enrollment_id: 'e2', total: 0, week: 0, plus_count: 0, minus_count: 0 },
+    ],
+  })
+  const { container } = setup({
+    roster: rosterFixture.map((s) => (s.enrollment_id === 'e1' ? { ...s, class_role: '班长' } : s)),
+  })
   await screen.findByText('请假')
   const card = await hoverCard(container, '1-1')
   expect(within(card).getByText('王小一')).toBeInTheDocument()
@@ -344,7 +388,9 @@ it('leaves weekly points out of the hover card without review.read', async () =>
 })
 
 it('retries loading the class list', async () => {
-  vi.mocked(classesApi.mine).mockRejectedValueOnce(new Error('boom')).mockResolvedValue({ items: [classFixture] })
+  vi.mocked(classesApi.mine)
+    .mockRejectedValueOnce(new Error('boom'))
+    .mockResolvedValue({ items: [classFixture] })
   setup()
   fireEvent.click(await screen.findByRole('button', { name: '重试' }))
   expect(await screen.findByRole('heading', { name: classFixture.name })).toBeInTheDocument()
@@ -380,15 +426,25 @@ it('keeps the dock inside the fullscreen root while presenting', async () => {
   setup()
   fireEvent.click(await screen.findByRole('button', { name: '全屏' }))
   await screen.findByRole('button', { name: '退出全屏' })
-  expect((document.fullscreenElement as Element).contains(screen.getByRole('tablist', { name: '教室模式' }))).toBe(true)
+  expect(
+    (document.fullscreenElement as Element).contains(
+      screen.getByRole('tablist', { name: '教室模式' }),
+    ),
+  ).toBe(true)
 })
 
 it('keeps other search params when switching modes', async () => {
   setup({ search: '?foo=1&bar=2' })
   fireEvent.click(await screen.findByRole('tab', { name: '点评' }))
-  await waitFor(() => expect(screen.getByTestId('url')).toHaveTextContent('/teacher/classroom?foo=1&bar=2&mode=review'))
+  await waitFor(() =>
+    expect(screen.getByTestId('url')).toHaveTextContent(
+      '/teacher/classroom?foo=1&bar=2&mode=review',
+    ),
+  )
   fireEvent.click(screen.getByRole('tab', { name: '日常' }))
-  await waitFor(() => expect(screen.getByTestId('url')).toHaveTextContent(/^\/teacher\/classroom\?foo=1&bar=2$/))
+  await waitFor(() =>
+    expect(screen.getByTestId('url')).toHaveTextContent(/^\/teacher\/classroom\?foo=1&bar=2$/),
+  )
 })
 
 const moreMenu = async () => {
@@ -408,7 +464,7 @@ it('does not offer class settings without seating.write', async () => {
 })
 
 it('opens the dialog with the seat version and routes its onGo targets', async () => {
-  const navigate = hoisted.navigate = vi.fn()
+  const navigate = (hoisted.navigate = vi.fn())
   setup()
   await moreMenu()
   fireEvent.click(await screen.findByRole('menuitem', { name: '班级设置' }))
@@ -418,7 +474,7 @@ it('opens the dialog with the seat version and routes its onGo targets', async (
 })
 
 it('routes 去导入 and 去名单 to the students page', async () => {
-  const navigate = hoisted.navigate = vi.fn()
+  const navigate = (hoisted.navigate = vi.fn())
   setup()
   await moreMenu()
   fireEvent.click(await screen.findByRole('menuitem', { name: '班级设置' }))
@@ -430,7 +486,14 @@ it('routes 去导入 and 去名单 to the students page', async () => {
 
 it('refreshes queries and reloads the seating draft after saving the layout', async () => {
   const reload = vi.fn().mockResolvedValue(undefined)
-  hoisted.seating = () => ({ ready: false, failed: false, dirty: false, pending: null, retry: vi.fn(), reload })
+  hoisted.seating = () => ({
+    ready: false,
+    failed: false,
+    dirty: false,
+    pending: null,
+    retry: vi.fn(),
+    reload,
+  })
   try {
     const { client } = setup({ mode: '排座' })
     const spy = vi.spyOn(client, 'invalidateQueries')
@@ -449,7 +512,14 @@ it('refreshes queries and reloads the seating draft after saving the layout', as
 
 it('does not reload the seating draft after saving outside the seating mode', async () => {
   const reload = vi.fn().mockResolvedValue(undefined)
-  hoisted.seating = () => ({ ready: false, failed: false, dirty: false, pending: null, retry: vi.fn(), reload })
+  hoisted.seating = () => ({
+    ready: false,
+    failed: false,
+    dirty: false,
+    pending: null,
+    retry: vi.fn(),
+    reload,
+  })
   try {
     setup()
     await moreMenu()
@@ -463,13 +533,21 @@ it('does not reload the seating draft after saving outside the seating mode', as
 })
 
 it('passes desk size and podium seats to the map', async () => {
-  vi.mocked(classesApi.mine).mockResolvedValue({ items: [{ ...classFixture, desk_size: 3, podium_left: 1, seat_cols: 6 }] })
+  vi.mocked(classesApi.mine).mockResolvedValue({
+    items: [{ ...classFixture, desk_size: 3, podium_left: 1, seat_cols: 6 }],
+  })
   const { container } = setup()
   await waitFor(() => expect(container.querySelector('[data-seat="0--1"]')).not.toBeNull())
 })
 
 it('disables class settings in the menu while the seating draft is dirty', async () => {
-  hoisted.seating = () => ({ ready: false, failed: false, dirty: true, pending: null, retry: vi.fn() })
+  hoisted.seating = () => ({
+    ready: false,
+    failed: false,
+    dirty: true,
+    pending: null,
+    retry: vi.fn(),
+  })
   try {
     setup({ mode: '排座' })
     await moreMenu()
@@ -493,13 +571,17 @@ it('also invalidates the students page records after saving the layout', async (
 })
 
 it('refreshes my-classes before navigating to the students page', async () => {
-  const navigate = hoisted.navigate = vi.fn()
+  const navigate = (hoisted.navigate = vi.fn())
   setup()
   await moreMenu()
   fireEvent.click(await screen.findByRole('menuitem', { name: '班级设置' }))
   await screen.findByRole('button', { name: '去添加' })
-  let release!: (v: { items: typeof classFixture[] }) => void
-  vi.mocked(classesApi.mine).mockReturnValue(new Promise((r) => { release = r }))
+  let release!: (v: { items: (typeof classFixture)[] }) => void
+  vi.mocked(classesApi.mine).mockReturnValue(
+    new Promise((r) => {
+      release = r
+    }),
+  )
   fireEvent.click(screen.getByRole('button', { name: '去添加' }))
   await waitFor(() => expect(classesApi.mine).toHaveBeenCalled())
   expect(navigate).not.toHaveBeenCalled()
@@ -508,7 +590,9 @@ it('refreshes my-classes before navigating to the students page', async () => {
 })
 
 it('colors the hover card avatar with the map group of three-seat desks and podium seats', async () => {
-  vi.mocked(classesApi.mine).mockResolvedValue({ items: [{ ...classFixture, desk_size: 3, seat_cols: 9, podium_right: 1 }] })
+  vi.mocked(classesApi.mine).mockResolvedValue({
+    items: [{ ...classFixture, desk_size: 3, seat_cols: 9, podium_right: 1 }],
+  })
   const roster = [
     { ...rosterFixture[0], seat_row: 1, seat_col: 4 },
     { ...rosterFixture[1], seat_row: 0, seat_col: 1 },
@@ -525,15 +609,49 @@ it('colors the hover card avatar with the map group of three-seat desks and podi
 })
 
 // 班级是双人桌;排座草稿已改为三人桌、9 列:第 3 列按草稿属第 1 组(groupOf(3, 3) = 0),按双人桌会算成第 2 组
-const draftSeating = (seat: typeof rosterFixture[number]) => () => ({
-  ready: true, dirty: false, pending: null, seats: [seat], rows: 2, cols: 9, deskSize: 3, podium: { left: 0, right: 0 }, views: {},
-  onSeatClick: undefined, onEmptySeatClick: undefined, onSeatDrop: undefined, reload: vi.fn(),
+const draftSeating = (seat: (typeof rosterFixture)[number]) => () => ({
+  ready: true,
+  dirty: false,
+  pending: null,
+  seats: [seat],
+  rows: 2,
+  cols: 9,
+  deskSize: 3,
+  podium: { left: 0, right: 0 },
+  views: {},
+  onSeatClick: undefined,
+  onEmptySeatClick: undefined,
+  onSeatDrop: undefined,
+  reload: vi.fn(),
   bar: {
-    deskSize: 3, layoutBlocked: false, canUndo: false, dirty: false, busy: false, selected: null, conflict: false, canMentor: false,
-    onShuffle: vi.fn(), onPair: vi.fn(), onMentor: vi.fn(), onUndo: vi.fn(), onDiscard: vi.fn(), onToggleLock: vi.fn(),
-    onPrint: vi.fn(), onSave: vi.fn(), onReload: vi.fn(), onKeepEditing: vi.fn(),
+    deskSize: 3,
+    layoutBlocked: false,
+    canUndo: false,
+    dirty: false,
+    busy: false,
+    selected: null,
+    conflict: false,
+    canMentor: false,
+    onShuffle: vi.fn(),
+    onPair: vi.fn(),
+    onMentor: vi.fn(),
+    onUndo: vi.fn(),
+    onDiscard: vi.fn(),
+    onToggleLock: vi.fn(),
+    onPrint: vi.fn(),
+    onSave: vi.fn(),
+    onReload: vi.fn(),
+    onKeepEditing: vi.fn(),
   },
-  tray: { students: [], selectedId: null, canUnseat: false, busy: false, seedOf: (id: string) => id, onSelect: vi.fn(), onUnseat: vi.fn() },
+  tray: {
+    students: [],
+    selectedId: null,
+    canUnseat: false,
+    busy: false,
+    seedOf: (id: string) => id,
+    onSelect: vi.fn(),
+    onUnseat: vi.fn(),
+  },
 })
 
 it('hover card group follows the draft desk size', async () => {
@@ -545,7 +663,9 @@ it('hover card group follows the draft desk size', async () => {
     const card = await hoverCard(container, '1-3')
     expect(card.innerHTML).toContain('#3fb8a9')
     expect(card.innerHTML).not.toContain('#f08a5d')
-  } finally { hoisted.seating = null }
+  } finally {
+    hoisted.seating = null
+  }
 })
 
 it('pick card group follows the draft desk size', async () => {
@@ -554,14 +674,19 @@ it('pick card group follows the draft desk size', async () => {
   const seat = { ...rosterFixture[0], seat_row: 1, seat_col: 3 }
   hoisted.seating = draftSeating(seat)
   const original = window.matchMedia
-  window.matchMedia = vi.fn().mockReturnValue({ matches: true, addEventListener() {}, removeEventListener() {} }) as never
+  window.matchMedia = vi
+    .fn()
+    .mockReturnValue({ matches: true, addEventListener() {}, removeEventListener() {} }) as never
   try {
     setup({ roster: [seat] })
     fireEvent.click(await screen.findByRole('button', { name: '随机点名' }))
     const card = await screen.findByRole('dialog', { name: '随机点名' })
     expect(card.innerHTML).toContain('#3fb8a9')
     expect(card.innerHTML).not.toContain('#f08a5d')
-  } finally { hoisted.seating = null; window.matchMedia = original }
+  } finally {
+    hoisted.seating = null
+    window.matchMedia = original
+  }
 })
 
 it('falls back to double desks when the class has no desk size yet', async () => {

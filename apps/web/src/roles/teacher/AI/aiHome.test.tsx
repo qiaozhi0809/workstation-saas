@@ -53,10 +53,16 @@ describe('AiHomePage', () => {
     fireEvent.keyDown(ta, { key: 'Enter', keyCode: 229, isComposing: true })
     expect(aiApi.createChat).not.toHaveBeenCalled()
     fireEvent.keyDown(ta, { key: 'Enter' })
-    await waitFor(() => expect(aiApi.createChat).toHaveBeenCalledWith({
-      class_id: 'c1', template_id: null, values: {}, text: '帮我写开场白',
-      context: { class: true, student_id: 's1', exam_id: null }, mask: true,
-    }))
+    await waitFor(() =>
+      expect(aiApi.createChat).toHaveBeenCalledWith({
+        class_id: 'c1',
+        template_id: null,
+        values: {},
+        text: '帮我写开场白',
+        context: { class: true, student_id: 's1', exam_id: null },
+        mask: true,
+      }),
+    )
     await waitFor(() => expect(screen.getByTestId('url')).toHaveTextContent('/teacher/ai/c1?go=1'))
   })
 
@@ -75,9 +81,14 @@ describe('AiHomePage', () => {
   })
 
   it('opens the copy-prompt dialog when AI is not configured', async () => {
-    vi.mocked(aiApi.status).mockResolvedValue({ ...statusFixture, configured: false, provider_label: null })
+    vi.mocked(aiApi.status).mockResolvedValue({
+      ...statusFixture,
+      configured: false,
+      provider_label: null,
+    })
     vi.mocked(aiApi.prompt).mockResolvedValue({
-      prompt: '请帮我写发言稿', mapping: [{ code: '【学生01】', name: '王小一' }],
+      prompt: '请帮我写发言稿',
+      mapping: [{ code: '【学生01】', name: '王小一' }],
     })
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
@@ -158,7 +169,9 @@ describe('AiHomePage', () => {
   })
 })
 
-function examsCalled() { return vi.mocked(examsApi.list).mock.calls.length > 0 }
+function examsCalled() {
+  return vi.mocked(examsApi.list).mock.calls.length > 0
+}
 function render2(status: Parameters<typeof StatusPill>[0]['status']) {
   const r = render(<StatusPill status={status} />)
   return r

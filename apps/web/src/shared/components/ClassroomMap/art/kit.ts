@@ -11,7 +11,8 @@ export const shade = (c: string, t = 0.15) => mix(c, '#000000', t)
 
 // 估算文字宽度(中日韩字符按 1em,其余 0.58em)
 const cw = (ch: string, fs: number) => (/[⺀-￿]/.test(ch) ? fs : fs * 0.58)
-export const textW = (text: string, fs: number) => Array.from(text).reduce((w, ch) => w + cw(ch, fs), 0)
+export const textW = (text: string, fs: number) =>
+  Array.from(text).reduce((w, ch) => w + cw(ch, fs), 0)
 
 // 超出 maxW 时截断加省略号
 export function clip(text: string, maxW: number, fs: number): string {

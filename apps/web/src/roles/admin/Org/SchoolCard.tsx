@@ -17,14 +17,29 @@ function SchoolForm({ initial }: { initial: SchoolInfo }) {
   const [address, setAddress] = useState(initial.address ?? '')
   const save = useMutation({
     mutationFn: () => adminApi.saveSchool({ name: name.trim(), address: address.trim() || null }),
-    onSuccess: () => { toast('学校信息已保存'); void qc.invalidateQueries({ queryKey: ['admin', 'school'] }) },
+    onSuccess: () => {
+      toast('学校信息已保存')
+      void qc.invalidateQueries({ queryKey: ['admin', 'school'] })
+    },
   })
   return (
     <CardContent className="grid gap-3">
-      <Field label="学校名称"><Input value={name} maxLength={40} onChange={(e) => setName(e.target.value)} /></Field>
-      <Field label="学校地址"><Input value={address} maxLength={100} onChange={(e) => setAddress(e.target.value)} /></Field>
-      {save.isError && <p role="alert" className="text-sm text-destructive">{errMsg(save.error)}</p>}
-      <div><Button disabled={!name.trim() || save.isPending} onClick={() => save.mutate()}>保存学校信息</Button></div>
+      <Field label="学校名称">
+        <Input value={name} maxLength={40} onChange={(e) => setName(e.target.value)} />
+      </Field>
+      <Field label="学校地址">
+        <Input value={address} maxLength={100} onChange={(e) => setAddress(e.target.value)} />
+      </Field>
+      {save.isError && (
+        <p role="alert" className="text-sm text-destructive">
+          {errMsg(save.error)}
+        </p>
+      )}
+      <div>
+        <Button disabled={!name.trim() || save.isPending} onClick={() => save.mutate()}>
+          保存学校信息
+        </Button>
+      </div>
     </CardContent>
   )
 }
@@ -33,10 +48,20 @@ export default function SchoolCard() {
   const q = useQuery({ queryKey: ['admin', 'school'], queryFn: adminApi.school })
   return (
     <Card>
-      <CardHeader><CardTitle>学校</CardTitle></CardHeader>
-      {q.data ? <SchoolForm initial={q.data} />
-        : q.isError ? <ErrorState title="学校信息加载失败" description={errMsg(q.error)} onRetry={() => void q.refetch()} />
-        : <LoadingState />}
+      <CardHeader>
+        <CardTitle>学校</CardTitle>
+      </CardHeader>
+      {q.data ? (
+        <SchoolForm initial={q.data} />
+      ) : q.isError ? (
+        <ErrorState
+          title="学校信息加载失败"
+          description={errMsg(q.error)}
+          onRetry={() => void q.refetch()}
+        />
+      ) : (
+        <LoadingState />
+      )}
     </Card>
   )
 }

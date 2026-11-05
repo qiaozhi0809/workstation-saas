@@ -4,103 +4,280 @@ import type { StudentSeat } from './student'
 export type Context = 'teacher' | 'admin' | 'parent'
 export type AdminPerm =
   | 'school.view' // 计算得出:有校长 / 主任 / 年级组长任一身份(能看业务数据)
-  | 'org.manage' | 'account.manage' | 'settings.manage' | 'audit.read'
-  | 'ai.usage' | 'notice.send' | 'exam.grade_write' | 'year.upgrade'
+  | 'org.manage'
+  | 'account.manage'
+  | 'settings.manage'
+  | 'audit.read'
+  | 'ai.usage'
+  | 'notice.send'
+  | 'exam.grade_write'
+  | 'year.upgrade'
 
 export interface UserBrief {
-  id: string; display_name: string
+  id: string
+  display_name: string
   contexts: Context[]
   admin_perms: AdminPerm[]
   must_change_password: boolean
 }
-export interface ChangePassword { old_password: string; new_password: string; refresh_token: string }
+export interface ChangePassword {
+  old_password: string
+  new_password: string
+  refresh_token: string
+}
 
 export type Stage = '小学' | '初中' | '高中'
-export interface SchoolInfo { name: string; address: string | null }
-export interface YearAdmin {
-  id: string; name: string; start_date: string; end_date: string
-  term2_start: string | null; is_active: boolean
+export interface SchoolInfo {
+  name: string
+  address: string | null
 }
-export interface YearUpdate { name: string; start_date: string; end_date: string; term2_start: string | null }
-export interface GradeAdmin { id: string; name: string; stage: Stage | null; effective_stage: Stage; display_order: number; class_count: number }
-export interface GradeInput { name: string; stage: Stage | null; display_order: number }
-export interface StaffBrief { assignment_id: string; user_id: string; display_name: string }
+export interface YearAdmin {
+  id: string
+  name: string
+  start_date: string
+  end_date: string
+  term2_start: string | null
+  is_active: boolean
+}
+export interface YearUpdate {
+  name: string
+  start_date: string
+  end_date: string
+  term2_start: string | null
+}
+export interface GradeAdmin {
+  id: string
+  name: string
+  stage: Stage | null
+  effective_stage: Stage
+  display_order: number
+  class_count: number
+}
+export interface GradeInput {
+  name: string
+  stage: Stage | null
+  display_order: number
+}
+export interface StaffBrief {
+  assignment_id: string
+  user_id: string
+  display_name: string
+}
 export interface ClassAdmin {
-  id: string; name: string; grade_id: string; grade_name: string; room: string
+  id: string
+  name: string
+  grade_id: string
+  grade_name: string
+  room: string
   student_count: number
   homeroom: StaffBrief | null
   assistants: StaffBrief[]
   subjects: { subject: string; teachers: StaffBrief[] }[]
-  desk_size: 1 | 2 | 3; seat_layout: 'auto' | 'manual'
-  seat_rows: number; seat_cols: number; podium_left: number; podium_right: number
+  desk_size: 1 | 2 | 3
+  seat_layout: 'auto' | 'manual'
+  seat_rows: number
+  seat_cols: number
+  podium_left: number
+  podium_right: number
 }
-export interface ClassInput { grade_id: string; name: string; room: string }
-export interface StaffInput { user_id: string; identity: 'homeroom' | 'assistant' | 'subject'; subject: string | null }
+export interface ClassInput {
+  grade_id: string
+  name: string
+  room: string
+}
+export interface StaffInput {
+  user_id: string
+  identity: 'homeroom' | 'assistant' | 'subject'
+  subject: string | null
+}
 export type AdminRoleType = 'principal' | 'dean' | 'grade_head' | 'it_admin'
-export interface AdminRole { binding_id: string; user_id: string; display_name: string; role: AdminRoleType; grade_id: string | null; grade_name: string | null }
-export interface AdminRoleInput { user_id: string; role: AdminRoleType; grade_id: string | null }
-
-export interface RoleTag { role: string; label: string }
-export interface Account {
-  id: string; login_name: string; display_name: string
-  phone: string | null; employee_no: string | null; subjects: string[]
-  status: 'active' | 'frozen'; must_change_password: boolean
-  last_login_at: string | null; roles: RoleTag[]
+export interface AdminRole {
+  binding_id: string
+  user_id: string
+  display_name: string
+  role: AdminRoleType
+  grade_id: string | null
+  grade_name: string | null
 }
-export interface AccountInput { display_name: string; phone: string | null; employee_no: string | null; subjects: string[] }
-export interface AccountCreate extends AccountInput { login_name: string }
-export interface AccountPage { items: Account[]; total: number }
-export interface ImportRow { line: number; login_name: string; display_name: string; employee_no: string | null; subjects: string[]; phone: string | null; error: string | null }
+export interface AdminRoleInput {
+  user_id: string
+  role: AdminRoleType
+  grade_id: string | null
+}
 
-export interface TagPool { tags: string[] }
-export interface TagPoolSave { tags: string[]; renames: { from: string; to: string }[] }
+export interface RoleTag {
+  role: string
+  label: string
+}
+export interface Account {
+  id: string
+  login_name: string
+  display_name: string
+  phone: string | null
+  employee_no: string | null
+  subjects: string[]
+  status: 'active' | 'frozen'
+  must_change_password: boolean
+  last_login_at: string | null
+  roles: RoleTag[]
+}
+export interface AccountInput {
+  display_name: string
+  phone: string | null
+  employee_no: string | null
+  subjects: string[]
+}
+export interface AccountCreate extends AccountInput {
+  login_name: string
+}
+export interface AccountPage {
+  items: Account[]
+  total: number
+}
+export interface ImportRow {
+  line: number
+  login_name: string
+  display_name: string
+  employee_no: string | null
+  subjects: string[]
+  phone: string | null
+  error: string | null
+}
+
+export interface TagPool {
+  tags: string[]
+}
+export interface TagPoolSave {
+  tags: string[]
+  renames: { from: string; to: string }[]
+}
 export interface Switches {
-  parent_rank: boolean; parent_negative_review: boolean; teacher_review_frequency: boolean
-  monitor: boolean; parent_monitor: boolean; ai_review_before_send: boolean
-  star_of_week: boolean; birthdays: boolean
+  parent_rank: boolean
+  parent_negative_review: boolean
+  teacher_review_frequency: boolean
+  monitor: boolean
+  parent_monitor: boolean
+  ai_review_before_send: boolean
+  star_of_week: boolean
+  birthdays: boolean
 }
 
 export type AttendanceStatus = 'leave' | 'absent' | 'late'
 export interface TodayView {
-  date: string; scope_label: string
-  totals: { students: number; present: number; leave: number; absent: number; late: number; classes: number; confirmed_classes: number }
-  absentees: { class_id: string; class_name: string; student_id: string; name: string; status: 'leave' | 'absent'; reason: string | null }[]
+  date: string
+  scope_label: string
+  totals: {
+    students: number
+    present: number
+    leave: number
+    absent: number
+    late: number
+    classes: number
+    confirmed_classes: number
+  }
+  absentees: {
+    class_id: string
+    class_name: string
+    student_id: string
+    name: string
+    status: 'leave' | 'absent'
+    reason: string | null
+  }[]
   unconfirmed: { class_id: string; class_name: string; homeroom_name: string | null }[]
   week_reviews: {
     classes: { class_id: string; class_name: string; plus: number; minus: number; net: number }[]
-    bottom: { class_id: string; class_name: string; student_id: string; name: string; net: number }[]
+    bottom: {
+      class_id: string
+      class_name: string
+      student_id: string
+      name: string
+      net: number
+    }[]
     teachers: { user_id: string; display_name: string; count: number }[]
   }
-  grade_exam?: { id: string; name: string; grade_name: string; entered: number; expected: number } | null
+  grade_exam?: {
+    id: string
+    name: string
+    grade_name: string
+    entered: number
+    expected: number
+  } | null
   my_notices?: { id: string; title: string; created_at: string; recipients: number; read: number }[]
 }
 export interface BoardClass {
-  id: string; name: string; room: string; homeroom_name: string | null
-  seat_rows: number; seat_cols: number; desk_size: 1 | 2 | 3; podium_left: number; podium_right: number
+  id: string
+  name: string
+  room: string
+  homeroom_name: string | null
+  seat_rows: number
+  seat_cols: number
+  desk_size: 1 | 2 | 3
+  podium_left: number
+  podium_right: number
   seats: StudentSeat[]
   attendance: Record<string, AttendanceStatus>
-  metrics: { students: number; present: number; leave: number; absent: number; late: number; confirmed: boolean; week_net: number }
+  metrics: {
+    students: number
+    present: number
+    leave: number
+    absent: number
+    late: number
+    confirmed: boolean
+    week_net: number
+  }
 }
-export interface BoardView { grades: { id: string; name: string }[]; grade_id: string | null; classes: BoardClass[] }
+export interface BoardView {
+  grades: { id: string; name: string }[]
+  grade_id: string | null
+  classes: BoardClass[]
+}
 
 // ---- M3b:年级联考 ----
-export interface GradeExamClass { class_id: string; class_name: string; exam_id: string; entered: number; expected: number }
+export interface GradeExamClass {
+  class_id: string
+  class_name: string
+  exam_id: string
+  entered: number
+  expected: number
+}
 export interface GradeExam {
-  id: string; grade_id: string; grade_name: string
-  name: string; exam_type: ExamType; date: string; subjects: SubjectFull[]
+  id: string
+  grade_id: string
+  grade_name: string
+  name: string
+  exam_type: ExamType
+  date: string
+  subjects: SubjectFull[]
   classes: GradeExamClass[]
   missing_classes: { class_id: string; class_name: string }[]
 }
-export interface GradeExamInput { grade_id: string; name: string; exam_type: ExamType; date: string; subjects: SubjectFull[] }
+export interface GradeExamInput {
+  grade_id: string
+  name: string
+  exam_type: ExamType
+  date: string
+  subjects: SubjectFull[]
+}
 
 // ---- 成绩汇总 ----
 export interface SubjectStat {
-  subject: string; full: number
-  count: number; missing: number
-  avg: number | null; max: number | null; min: number | null
-  pass_rate: number | null; good_rate: number | null
+  subject: string
+  full: number
+  count: number
+  missing: number
+  avg: number | null
+  max: number | null
+  min: number | null
+  pass_rate: number | null
+  good_rate: number | null
 }
-export interface TotalStat { full: number; count: number; avg: number | null; max: number | null; min: number | null }
+export interface TotalStat {
+  full: number
+  count: number
+  avg: number | null
+  max: number | null
+  min: number | null
+}
 export interface ScoreSummary {
   grade_exam: { id: string; name: string; date: string; grade_name: string }
   subjects: SubjectFull[]
@@ -108,50 +285,98 @@ export interface ScoreSummary {
   grade: { subjects: SubjectStat[]; total: TotalStat }
 }
 export interface ScoreStudentRow {
-  student_id: string; name: string; student_no: string | null; class_id: string; class_name: string
-  scores: Record<string, number | null>; total: number | null
-  class_rank: number | null; grade_rank: number | null
+  student_id: string
+  name: string
+  student_no: string | null
+  class_id: string
+  class_name: string
+  scores: Record<string, number | null>
+  total: number | null
+  class_rank: number | null
+  grade_rank: number | null
 }
 
 // ---- 月度考勤报告 ----
-export interface AttendanceCounts { days: number; expected: number; present: number; leave: number; absent: number; late: number; rate: number | null }
+export interface AttendanceCounts {
+  days: number
+  expected: number
+  present: number
+  leave: number
+  absent: number
+  late: number
+  rate: number | null
+}
 export interface AttendanceReport {
-  month: string; scope_label: string
+  month: string
+  scope_label: string
   classes: ({ class_id: string; class_name: string; grade_name: string } & AttendanceCounts)[]
   total: AttendanceCounts
 }
 export interface AttendanceClassDetail {
-  month: string; class_id: string; class_name: string; days: number
-  students: { student_id: string; name: string; student_no: string | null; leave: number; absent: number; late: number }[]
+  month: string
+  class_id: string
+  class_name: string
+  days: number
+  students: {
+    student_id: string
+    name: string
+    student_no: string | null
+    leave: number
+    absent: number
+    late: number
+  }[]
 }
 
 // ---- 审计 ----
 export interface AuditRow {
-  id: string; at: string
-  user_id: string | null; user_name: string | null
-  action: string; action_label: string
-  object_type: string | null; object_id: string | null; object_label: string | null
-  ip: string | null; success: boolean; extra: Record<string, unknown> | null
+  id: string
+  at: string
+  user_id: string | null
+  user_name: string | null
+  action: string
+  action_label: string
+  object_type: string | null
+  object_id: string | null
+  object_label: string | null
+  ip: string | null
+  success: boolean
+  extra: Record<string, unknown> | null
 }
-export interface AuditActions { groups: { key: string; label: string; actions: { action: string; label: string }[] }[] }
+export interface AuditActions {
+  groups: { key: string; label: string; actions: { action: string; label: string }[] }[]
+}
 
 // ---- AI 使用与配置 ----
 export interface AiUsageRow {
-  user_id: string; display_name: string; calls: number; failed: number
-  prompt_tokens: number; completion_tokens: number
+  user_id: string
+  display_name: string
+  calls: number
+  failed: number
+  prompt_tokens: number
+  completion_tokens: number
   top_templates: { template: string; label: string; count: number }[]
 }
 export interface AiUsage {
-  month: string; rows: AiUsageRow[]
+  month: string
+  rows: AiUsageRow[]
   total: { calls: number; failed: number; prompt_tokens: number; completion_tokens: number }
 }
 export interface AiConfigView {
-  provider: string | null; base_url: string | null; model: string | null; temperature: number | null
-  mask_forced: boolean; key_set: boolean; key_undecryptable: boolean
+  provider: string | null
+  base_url: string | null
+  model: string | null
+  temperature: number | null
+  mask_forced: boolean
+  key_set: boolean
+  key_undecryptable: boolean
   providers: { id: string; label: string; base_url: string; models: string[] }[]
 }
 export interface AiConfigSave {
-  provider: string; base_url: string; model: string; temperature: number; mask_forced: boolean
+  provider: string
+  base_url: string
+  model: string
+  temperature: number
+  mask_forced: boolean
   api_key: string | null
 }
 
@@ -167,20 +392,38 @@ export type AckSpec =
   | { kind: 'choice'; options: string[]; allow_note: boolean }
 export type Audience = 'teachers' | 'parents'
 export interface NoticeInput {
-  title: string; content: string; target: NoticeTarget
+  title: string
+  content: string
+  target: NoticeTarget
   audience?: Audience
   ack?: AckSpec
   ack_deadline?: string | null
 }
 export interface NoticeSent {
-  id: string; title: string; content: string; target_label: string
-  created_at: string; recalled_at: string | null; recipients: number; read: number
-  audience: Audience; ack: AckSpec; ack_deadline: string | null; acked: number; students_without_parent: number
+  id: string
+  title: string
+  content: string
+  target_label: string
+  created_at: string
+  recalled_at: string | null
+  recipients: number
+  read: number
+  audience: Audience
+  ack: AckSpec
+  ack_deadline: string | null
+  acked: number
+  students_without_parent: number
 }
 export interface InboxItem {
-  id: string; title: string; content: string | null; from_name: string | null
-  created_at: string; read_at: string | null; recalled: boolean
-  ack: AckSpec; ack_deadline: string | null
+  id: string
+  title: string
+  content: string | null
+  from_name: string | null
+  created_at: string
+  read_at: string | null
+  recalled: boolean
+  ack: AckSpec
+  ack_deadline: string | null
   my_ack: { choice: number | null; note: string | null; acked_at: string } | null
   students: string[]
   can_ack: boolean
@@ -190,20 +433,48 @@ export interface NoticeOptions {
   grades: { id: string; name: string }[]
   classes: { id: string; name: string; grade_id: string }[]
 }
-export interface AckInput { choice: number | null; note: string | null }
+export interface AckInput {
+  choice: number | null
+  note: string | null
+}
 export interface AckRow {
-  user_id: string; user_name: string
-  student_id: string | null; student_name: string | null; class_name: string | null
-  read_at: string | null; choice: number | null; note: string | null; acked_at: string | null
+  user_id: string
+  user_name: string
+  student_id: string | null
+  student_name: string | null
+  class_name: string | null
+  read_at: string | null
+  choice: number | null
+  note: string | null
+  acked_at: string | null
 }
 export interface AckStats {
-  audience: Audience; ack: AckSpec; ack_deadline: string | null
-  total: number; read: number; acked: number; counts: number[]; students_without_parent: number
+  audience: Audience
+  ack: AckSpec
+  ack_deadline: string | null
+  total: number
+  read: number
+  acked: number
+  counts: number[]
+  students_without_parent: number
   rows: AckRow[]
 }
-export interface ClassNoticeInput { title: string; content: string; ack?: AckSpec; ack_deadline?: string | null }
-export interface Inbox { items: InboxItem[]; total: number; unread: number }
-export interface NoticePerson { user_id: string; name: string; tags: string[] }
+export interface ClassNoticeInput {
+  title: string
+  content: string
+  ack?: AckSpec
+  ack_deadline?: string | null
+}
+export interface Inbox {
+  items: InboxItem[]
+  total: number
+  unread: number
+}
+export interface NoticePerson {
+  user_id: string
+  name: string
+  tags: string[]
+}
 export interface NoticeRecipients {
   read: { user_id: string; name: string; read_at: string }[]
   unread: { user_id: string; name: string }[]
@@ -211,22 +482,34 @@ export interface NoticeRecipients {
 
 // ---- 学年升级 ----
 export interface UpgradeClassPlan {
-  from_class_id: string; from_name?: string | null
+  from_class_id: string
+  from_name?: string | null
   action: 'promote' | 'graduate'
-  to_grade_name?: string | null; to_name?: string | null
-  homeroom_teacher_id?: string | null; teacher_name?: string | null
+  to_grade_name?: string | null
+  to_name?: string | null
+  homeroom_teacher_id?: string | null
+  teacher_name?: string | null
   keep_teachers: boolean
 }
 export interface UpgradeStudentPlan {
-  enrollment_id: string; name?: string | null
+  enrollment_id: string
+  name?: string | null
   action: 'repeat' | 'leave'
   to?: { successor_of?: string | null; new_class?: number | null } | null
 }
 export interface UpgradeNewClassPlan {
-  grade_name: string; name: string; homeroom_teacher_id?: string | null
-  seat_rows: number; seat_cols: number; desk_size: 1 | 2 | 3; seat_layout: 'auto' | 'manual'
+  grade_name: string
+  name: string
+  homeroom_teacher_id?: string | null
+  seat_rows: number
+  seat_cols: number
+  desk_size: 1 | 2 | 3
+  seat_layout: 'auto' | 'manual'
 }
-export interface GradeHeadPlan { grade_name: string; user_ids: string[] }
+export interface GradeHeadPlan {
+  grade_name: string
+  user_ids: string[]
+}
 export interface UpgradePlan {
   version: 1
   from_year_id: string
@@ -237,19 +520,65 @@ export interface UpgradePlan {
   grade_heads?: GradeHeadPlan[] | null
 }
 export interface ClassPreview {
-  from_name: string; action: 'promote' | 'graduate' | 'new' | string
-  to_label: string; teacher_name: string | null
-  follow: number; repeat_in: number; repeat_out: number; leave: number; graduate: number
+  from_name: string
+  action: 'promote' | 'graduate' | 'new' | string
+  to_label: string
+  teacher_name: string | null
+  follow: number
+  repeat_in: number
+  repeat_out: number
+  leave: number
+  graduate: number
 }
-export interface UpgradePreview { new_year: string; classes: ClassPreview[]; new_classes: string[]; warnings: string[] }
-export interface UpgradeLatest { id: string; executed_at: string; from_year_name: string; to_year_name: string; rolled_back: boolean }
+export interface UpgradePreview {
+  new_year: string
+  classes: ClassPreview[]
+  new_classes: string[]
+  warnings: string[]
+}
+export interface UpgradeLatest {
+  id: string
+  executed_at: string
+  from_year_name: string
+  to_year_name: string
+  rolled_back: boolean
+}
 
 // ---- 往年班级只读查看 ----
-export interface HistoryYear { id: string; name: string; start_date: string; end_date: string }
-export interface HistoryClass { class_id: string; class_name: string; grade_name: string; homeroom_name: string | null; students: number }
-export interface HistoryStudent { student_id: string; name: string; student_no: string | null; status: string }
-export interface HistoryExam { id: string; name: string; exam_type: ExamType; date: string; subjects: SubjectFull[] }
+export interface HistoryYear {
+  id: string
+  name: string
+  start_date: string
+  end_date: string
+}
+export interface HistoryClass {
+  class_id: string
+  class_name: string
+  grade_name: string
+  homeroom_name: string | null
+  students: number
+}
+export interface HistoryStudent {
+  student_id: string
+  name: string
+  student_no: string | null
+  status: string
+}
+export interface HistoryExam {
+  id: string
+  name: string
+  exam_type: ExamType
+  date: string
+  subjects: SubjectFull[]
+}
 export interface HistoryScores {
   exam: HistoryExam
-  students: { student_id: string; name: string; student_no: string | null; scores: Record<string, number | null>; total: number | null; class_rank: number | null }[]
+  students: {
+    student_id: string
+    name: string
+    student_no: string | null
+    scores: Record<string, number | null>
+    total: number | null
+    class_rank: number | null
+  }[]
 }

@@ -5,7 +5,11 @@ import { Card } from '@/shared/components/ui/card'
 import type { StudentSeat } from '@/shared/types/student'
 import { signed } from '../review/signed'
 
-export default function FeedSection({ classId, roster, timezone }: {
+export default function FeedSection({
+  classId,
+  roster,
+  timezone,
+}: {
   classId: string
   roster: StudentSeat[]
   timezone: string

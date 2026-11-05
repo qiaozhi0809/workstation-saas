@@ -15,7 +15,10 @@ import ProfileActions from './ProfileActions'
 import ScoresTab from './ScoresTab'
 import { PROFILE_TABS, useStudentDrawer, type ProfileTab } from './useStudentDrawer'
 
-const TAB_ITEMS: readonly { value: ProfileTab; label: string }[] = PROFILE_TABS.map((t) => ({ value: t, label: t }))
+const TAB_ITEMS: readonly { value: ProfileTab; label: string }[] = PROFILE_TABS.map((t) => ({
+  value: t,
+  label: t,
+}))
 
 const errorText = (error: unknown) => {
   if (error instanceof ApiError && error.status === 403) return '没有权限查看该学生'
@@ -43,15 +46,34 @@ export default function StudentProfileDrawer({ studentId }: { studentId: string 
   const retryable = !(error instanceof ApiError && (error.status === 403 || error.status === 404))
 
   return (
-    <SidePanel open onClose={close} title={data ? data.name : error ? '学生档案' : '加载中…'} className="w-full sm:max-w-[480px]">
-      {error && <ErrorState title={errorText(error)} onRetry={retryable ? () => void refetch() : undefined} retrying={isFetching} />}
+    <SidePanel
+      open
+      onClose={close}
+      title={data ? data.name : error ? '学生档案' : '加载中…'}
+      className="w-full sm:max-w-[480px]"
+    >
+      {error && (
+        <ErrorState
+          title={errorText(error)}
+          onRetry={retryable ? () => void refetch() : undefined}
+          retrying={isFetching}
+        />
+      )}
       {!data && !error && <LoadingState />}
       {data && (
         <>
           <ProfileActions profile={data} />
-          <SegmentedTabs<ProfileTab> label="档案分区" variant="underline" items={tabItems} value={tab} onChange={(t) => open(studentId, t)} />
+          <SegmentedTabs<ProfileTab>
+            label="档案分区"
+            variant="underline"
+            items={tabItems}
+            value={tab}
+            onChange={(t) => open(studentId, t)}
+          />
           <div role="tabpanel" aria-label={tab}>
-            {(tab === '概览' || (tab === '家长' && !canManageParents)) && <OverviewTab student={data} />}
+            {(tab === '概览' || (tab === '家长' && !canManageParents)) && (
+              <OverviewTab student={data} />
+            )}
             {tab === '档案' && <ArchiveTab student={data} />}
             {tab === '成绩' && <ScoresTab profile={data} />}
             {tab === '成长记录' && <GrowthTab profile={data} />}

@@ -21,9 +21,17 @@ vi.mock('@/shared/api/students', () => ({ studentsApi: { listInClass: vi.fn() } 
 vi.mock('@/shared/components/Toast', () => ({ toast: vi.fn() }))
 
 const EXAM: Exam = {
-  id: 'e1', name: '十月月考', exam_type: '月考', date: '2026-10-20',
-  subjects: [{ name: '语文', full: 100 }, { name: '数学', full: 100 }],
-  grade_exam_id: null, created_by_me: true, progress: { entered: 3, total: 3 },
+  id: 'e1',
+  name: '十月月考',
+  exam_type: '月考',
+  date: '2026-10-20',
+  subjects: [
+    { name: '语文', full: 100 },
+    { name: '数学', full: 100 },
+  ],
+  grade_exam_id: null,
+  created_by_me: true,
+  progress: { entered: 3, total: 3 },
 }
 // e1 王小一 80/70;e2 李小二 50/缺考;e3 张小三 无记录
 const SHEET: ScoreSheet = {
@@ -34,21 +42,46 @@ const SHEET: ScoreSheet = {
   ],
 }
 
-function setup(opts: { cls?: Partial<ClassView>; subjects?: string[]; sheet?: ScoreSheet; roster?: StudentSeat[] } = {}) {
+function setup(
+  opts: {
+    cls?: Partial<ClassView>
+    subjects?: string[]
+    sheet?: ScoreSheet
+    roster?: StudentSeat[]
+  } = {},
+) {
   vi.mocked(classesApi.mine).mockResolvedValue({ items: [{ ...classFixture, ...opts.cls }] })
-  vi.mocked(classroomApi.summary).mockResolvedValue(summaryFixture({
-    my_perms: ['exam.read', 'exam.write', 'score.write'], my_subjects: opts.subjects ?? [],
-  }))
+  vi.mocked(classroomApi.summary).mockResolvedValue(
+    summaryFixture({
+      my_perms: ['exam.read', 'exam.write', 'score.write'],
+      my_subjects: opts.subjects ?? [],
+    }),
+  )
   vi.mocked(examsApi.list).mockResolvedValue({ items: [EXAM] })
   vi.mocked(examsApi.sheet).mockResolvedValue(opts.sheet ?? SHEET)
   vi.mocked(examsApi.saveScores).mockResolvedValue({ updated: 1 })
   vi.mocked(studentsApi.listInClass).mockResolvedValue({ items: opts.roster ?? rosterFixture })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  const router = createMemoryRouter([
-    { path: '/teacher/scores', element: <><Link to="/teacher/analysis">分析</Link><ScoresPage /></> },
-    { path: '/teacher/analysis', element: <p>分析页</p> },
-  ], { initialEntries: ['/teacher/scores'] })
-  const view = render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>)
+  const router = createMemoryRouter(
+    [
+      {
+        path: '/teacher/scores',
+        element: (
+          <>
+            <Link to="/teacher/analysis">分析</Link>
+            <ScoresPage />
+          </>
+        ),
+      },
+      { path: '/teacher/analysis', element: <p>分析页</p> },
+    ],
+    { initialEntries: ['/teacher/scores'] },
+  )
+  const view = render(
+    <QueryClientProvider client={client}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  )
   return { router, unmount: view.unmount }
 }
 
@@ -56,14 +89,20 @@ const cell = async (name: string, subject: string) =>
   (await screen.findByLabelText(`${name} ${subject}`)) as HTMLInputElement
 const type = (el: HTMLElement, value: string) => fireEvent.change(el, { target: { value } })
 const sent = () => vi.mocked(examsApi.saveScores).mock.calls
-const ms = (n: number) => act(async () => { await vi.advanceTimersByTimeAsync(n) })
+const ms = (n: number) =>
+  act(async () => {
+    await vi.advanceTimersByTimeAsync(n)
+  })
 
 beforeEach(() => {
   vi.resetAllMocks()
   vi.useFakeTimers({ shouldAdvanceTime: true })
   useTeacherStore.setState({ classId: 'c1', unsaved: { seating: false, scores: false } })
 })
-afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
+afterEach(() => {
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+})
 
 it('moves with Enter, arrows and Shift+Enter', async () => {
   setup()
@@ -200,7 +239,9 @@ it('asks only once when a header confirm is followed by navigation', async () =>
   type(await cell('王小一', '语文'), '91')
   // 顶栏退出登录:先 confirmLeave(),再 navigate('/login')
   expect(confirmLeave()).toBe(true)
-  await act(async () => { await router.navigate('/teacher/analysis') })
+  await act(async () => {
+    await router.navigate('/teacher/analysis')
+  })
   expect(router.state.location.pathname).toBe('/teacher/analysis')
   expect(confirmSpy).toHaveBeenCalledTimes(1)
 })
@@ -211,13 +252,19 @@ it('keeps headers and identity cells on one line so narrow screens scroll instea
   const tr = c.closest('tr') as HTMLElement
   for (const h of screen.getAllByRole('columnheader')) expect(h).toHaveClass('whitespace-nowrap')
   const cells = within(tr)
-  for (const el of [cells.getByText('王小一'), cells.getByTestId('total'), cells.getByTestId('rank')]) expect(el).toHaveClass('whitespace-nowrap')
+  for (const el of [
+    cells.getByText('王小一'),
+    cells.getByTestId('total'),
+    cells.getByTestId('rank'),
+  ])
+    expect(el).toHaveClass('whitespace-nowrap')
   expect(tr.querySelector('td')).toHaveClass('whitespace-nowrap')
 })
 
 it('updates totals and ranks as you type', async () => {
   setup()
-  const row = async (name: string) => within((await cell(name, '语文')).closest('tr') as HTMLElement)
+  const row = async (name: string) =>
+    within((await cell(name, '语文')).closest('tr') as HTMLElement)
   expect((await row('王小一')).getByTestId('total')).toHaveTextContent('150')
   expect((await row('王小一')).getByTestId('rank')).toHaveTextContent('1')
   expect((await row('张小三')).getByTestId('rank')).toHaveTextContent('—')
@@ -256,11 +303,18 @@ it('never saves an earlier keystroke when the final text is over-full or invalid
 
 it('sorts students by numeric student number', async () => {
   const seat = (n: number, name: string, no: string): StudentSeat => ({
-    ...rosterFixture[0], enrollment_id: `e${n}`, student_id: `s${n}`, name, student_no: no,
+    ...rosterFixture[0],
+    enrollment_id: `e${n}`,
+    student_id: `s${n}`,
+    name,
+    student_no: no,
   })
   setup({ roster: [seat(1, '王小一', '10'), seat(2, '李小二', '2'), seat(3, '张小三', '1')] })
   await cell('王小一', '语文')
-  const order = screen.getAllByRole('row').slice(1).map((r) => within(r).getAllByRole('cell')[0].textContent)
+  const order = screen
+    .getAllByRole('row')
+    .slice(1)
+    .map((r) => within(r).getAllByRole('cell')[0].textContent)
   expect(order).toEqual(['1', '2', '10'])
 })
 
@@ -279,13 +333,20 @@ it('sends cells whose save failed when the grid unmounts', async () => {
 it('does not stay stuck on failed when the only in-flight cell was discarded', async () => {
   setup()
   let fail: (e: Error) => void = () => {}
-  vi.mocked(examsApi.saveScores).mockImplementationOnce(() => new Promise((_, rej) => { fail = rej }))
+  vi.mocked(examsApi.saveScores).mockImplementationOnce(
+    () =>
+      new Promise((_, rej) => {
+        fail = rej
+      }),
+  )
   const a = await cell('王小一', '语文')
   type(a, '91')
   await ms(700)
   expect(sent()).toHaveLength(1)
   type(a, 'abc')
-  await act(async () => { fail(new Error('boom')) })
+  await act(async () => {
+    fail(new Error('boom'))
+  })
   await ms(10)
   expect(screen.queryByText('保存失败')).toBeNull()
 })

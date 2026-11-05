@@ -12,7 +12,11 @@ import type { ClassPerm } from '@/shared/types/classroom'
 import { stripMarkdown } from './stripMarkdown'
 
 /** 助手消息的错误框:红框 + 错误文字 + 重试 / 改为复制提示词。 */
-export function ErrorBox({ message, onRetry, onCopyPrompt }: {
+export function ErrorBox({
+  message,
+  onRetry,
+  onCopyPrompt,
+}: {
   message: string
   /** 不传 = 不显示重试(只有最后一条消息可以重试) */
   onRetry?(): void
@@ -22,8 +26,14 @@ export function ErrorBox({ message, onRetry, onCopyPrompt }: {
     <div data-testid="error-box" className="space-y-2 rounded-lg border border-destructive p-3">
       <p className="text-sm text-destructive">{message}</p>
       <div className="flex gap-2">
-        {onRetry && <Button size="sm" variant="outline" onClick={onRetry}>重试</Button>}
-        <Button size="sm" variant="outline" onClick={onCopyPrompt}>改为复制提示词</Button>
+        {onRetry && (
+          <Button size="sm" variant="outline" onClick={onRetry}>
+            重试
+          </Button>
+        )}
+        <Button size="sm" variant="outline" onClick={onCopyPrompt}>
+          改为复制提示词
+        </Button>
       </div>
     </div>
   )
@@ -32,7 +42,10 @@ export function ErrorBox({ message, onRetry, onCopyPrompt }: {
 /** 助手消息的头部图标。 */
 export function AssistantIcon() {
   return (
-    <span aria-hidden="true" className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+    <span
+      aria-hidden="true"
+      className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
+    >
       <Sparkles className="h-3.5 w-3.5" />
     </span>
   )
@@ -50,11 +63,21 @@ interface Props {
   onCopyPrompt(): void
 }
 
-export default function MessageItem({ chat, message, perms, today, canRegenerate, onRegenerate, onRetry, onCopyPrompt }: Props) {
+export default function MessageItem({
+  chat,
+  message,
+  perms,
+  today,
+  canRegenerate,
+  onRegenerate,
+  onRetry,
+  onCopyPrompt,
+}: Props) {
   const qc = useQueryClient()
   const studentId = chat.student_id
   const saveComment = useMutation({
-    mutationFn: () => commentsApi.create(studentId as string, { content: message.content, generated_by_ai: true }),
+    mutationFn: () =>
+      commentsApi.create(studentId as string, { content: message.content, generated_by_ai: true }),
     onSuccess: () => {
       toast('已保存到档案的评语')
       void qc.invalidateQueries({ queryKey: ['comments', studentId] })
@@ -62,9 +85,12 @@ export default function MessageItem({ chat, message, perms, today, canRegenerate
     onError: (e) => toast(e instanceof ApiError ? e.message : '保存失败,请重试'),
   })
   const saveGrowth = useMutation({
-    mutationFn: () => growthApi.create(studentId as string, {
-      type: '其他', date: today, content: stripMarkdown(message.content).slice(0, 200),
-    }),
+    mutationFn: () =>
+      growthApi.create(studentId as string, {
+        type: '其他',
+        date: today,
+        content: stripMarkdown(message.content).slice(0, 200),
+      }),
     onSuccess: () => {
       toast('已记到成长记录')
       void qc.invalidateQueries({ queryKey: ['growth', studentId] })
@@ -87,7 +113,11 @@ export default function MessageItem({ chat, message, perms, today, canRegenerate
       <div className="flex gap-2">
         <AssistantIcon />
         <div className="min-w-0 flex-1">
-          <ErrorBox message={message.error ?? '生成失败了'} onRetry={onRetry} onCopyPrompt={onCopyPrompt} />
+          <ErrorBox
+            message={message.error ?? '生成失败了'}
+            onRetry={onRetry}
+            onCopyPrompt={onCopyPrompt}
+          />
         </div>
       </div>
     )
@@ -104,27 +134,50 @@ export default function MessageItem({ chat, message, perms, today, canRegenerate
         {message.status === 'stopped' && <p className="text-xs text-muted-foreground">(已停止)</p>}
         {finished && (
           <div className="mt-1 flex flex-wrap gap-1">
-            <Button size="sm" variant="ghost" onClick={() => {
-              void navigator.clipboard.writeText(message.content).then(
-                () => toast('已复制'),
-                () => toast('复制失败,请手动选中文字复制'),
-              )
-            }}>复制</Button>
-            <Button size="sm" variant="ghost" aria-label="导出该条 Word" onClick={() => exportWord(chat.title, message.content)}>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                void navigator.clipboard.writeText(message.content).then(
+                  () => toast('已复制'),
+                  () => toast('复制失败,请手动选中文字复制'),
+                )
+              }}
+            >
+              复制
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-label="导出该条 Word"
+              onClick={() => exportWord(chat.title, message.content)}
+            >
               导出 Word
             </Button>
             {canComment && (
-              <Button size="sm" variant="ghost" disabled={saveComment.isPending || saveComment.isSuccess} onClick={() => saveComment.mutate()}>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={saveComment.isPending || saveComment.isSuccess}
+                onClick={() => saveComment.mutate()}
+              >
                 {saveComment.isSuccess ? '已保存' : '保存为评语'}
               </Button>
             )}
             {canGrowth && (
-              <Button size="sm" variant="ghost" disabled={saveGrowth.isPending || saveGrowth.isSuccess} onClick={() => saveGrowth.mutate()}>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={saveGrowth.isPending || saveGrowth.isSuccess}
+                onClick={() => saveGrowth.mutate()}
+              >
                 {saveGrowth.isSuccess ? '已记录' : '记到成长记录'}
               </Button>
             )}
             {canRegenerate && (
-              <Button size="sm" variant="ghost" onClick={onRegenerate}>重新生成</Button>
+              <Button size="sm" variant="ghost" onClick={onRegenerate}>
+                重新生成
+              </Button>
             )}
           </div>
         )}

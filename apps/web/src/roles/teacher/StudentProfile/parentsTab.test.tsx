@@ -16,23 +16,61 @@ import StudentProfileDrawer from './StudentProfileDrawer'
 vi.mock('@/shared/api/classroom', () => ({ classroomApi: { summary: vi.fn() } }))
 vi.mock('@/shared/api/students', () => ({ studentsApi: { detail: vi.fn() } }))
 vi.mock('@/shared/api/parentLinks', () => ({
-  parentLinksApi: { list: vi.fn(), create: vi.fn(), setPrimary: vi.fn(), unlink: vi.fn(), resetPassword: vi.fn() },
+  parentLinksApi: {
+    list: vi.fn(),
+    create: vi.fn(),
+    setPrimary: vi.fn(),
+    unlink: vi.fn(),
+    resetPassword: vi.fn(),
+  },
 }))
-vi.mock('@/shared/api/comments', () => ({ commentsApi: { list: vi.fn().mockResolvedValue({ items: [] }) } }))
-vi.mock('@/shared/api/growth', () => ({ growthApi: { list: vi.fn().mockResolvedValue({ items: [] }) } }))
-vi.mock('@/shared/api/reviews', () => ({ reviewsApi: { listForStudent: vi.fn(), summary: vi.fn() } }))
+vi.mock('@/shared/api/comments', () => ({
+  commentsApi: { list: vi.fn().mockResolvedValue({ items: [] }) },
+}))
+vi.mock('@/shared/api/growth', () => ({
+  growthApi: { list: vi.fn().mockResolvedValue({ items: [] }) },
+}))
+vi.mock('@/shared/api/reviews', () => ({
+  reviewsApi: { listForStudent: vi.fn(), summary: vi.fn() },
+}))
 
-const profile: StudentProfile = { id: 's1', mk: 'S0001', name: '王小一', class_id: 'c1', enrollment_id: 'e1' }
+const profile: StudentProfile = {
+  id: 's1',
+  mk: 'S0001',
+  name: '王小一',
+  class_id: 'c1',
+  enrollment_id: 'e1',
+}
 
 const pr = (over: Partial<ParentOfStudent>): ParentOfStudent => ({
-  link_id: 'l1', user_id: 'u1', name: '王妈妈', relation: '母亲', phone: '13800000001', is_primary: true,
-  status: 'active', account_status: 'active', shared_account: false, must_change_password: false, ...over,
+  link_id: 'l1',
+  user_id: 'u1',
+  name: '王妈妈',
+  relation: '母亲',
+  phone: '13800000001',
+  is_primary: true,
+  status: 'active',
+  account_status: 'active',
+  shared_account: false,
+  must_change_password: false,
+  ...over,
 })
 
 function mount(ui: React.ReactElement, perms: ClassPerm[] = ['parent.manage']) {
-  vi.mocked(classroomApi.summary).mockResolvedValue({ my_perms: perms, today: '2026-11-02', timezone: 'Asia/Shanghai' } as never)
+  vi.mocked(classroomApi.summary).mockResolvedValue({
+    my_perms: perms,
+    today: '2026-11-02',
+    timezone: 'Asia/Shanghai',
+  } as never)
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  const utils = render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/x?student=s1']}>{ui}<Toaster /></MemoryRouter></QueryClientProvider>)
+  const utils = render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={['/x?student=s1']}>
+        {ui}
+        <Toaster />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  )
   return { client, ...utils }
 }
 
@@ -62,7 +100,16 @@ it('drawer hides the 家长 tab without parent.manage and shows it with', async 
 it('lists parents with badges', async () => {
   vi.mocked(parentLinksApi.list).mockResolvedValue([
     pr({}),
-    pr({ link_id: 'l2', name: '王爷爷', relation: '祖辈', phone: '13800000002', is_primary: false, status: 'readonly', account_status: 'frozen', must_change_password: true }),
+    pr({
+      link_id: 'l2',
+      name: '王爷爷',
+      relation: '祖辈',
+      phone: '13800000002',
+      is_primary: false,
+      status: 'readonly',
+      account_status: 'frozen',
+      must_change_password: true,
+    }),
   ])
   mount(<ParentsTab profile={profile} />)
   const items = await screen.findAllByRole('listitem')
@@ -76,7 +123,10 @@ it('lists parents with badges', async () => {
 })
 
 it('new account shows a one-time password dialog that is gone after closing and reopening', async () => {
-  vi.mocked(parentLinksApi.create).mockResolvedValue({ parent: pr({ link_id: 'l9', phone: '13800000009' }), temp_password: 'Abc12345' })
+  vi.mocked(parentLinksApi.create).mockResolvedValue({
+    parent: pr({ link_id: 'l9', phone: '13800000009' }),
+    temp_password: 'Abc12345',
+  })
   const writeText = vi.fn().mockResolvedValue(undefined)
   Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
   const log = vi.spyOn(console, 'log')
@@ -85,14 +135,36 @@ it('new account shows a one-time password dialog that is gone after closing and 
   fill('13800000009', ' 张爸爸 ')
   fireEvent.change(screen.getByLabelText('关系'), { target: { value: '父亲' } })
   fireEvent.click(screen.getByRole('button', { name: '添加家长' }))
-  await waitFor(() => expect(parentLinksApi.create).toHaveBeenCalledWith('s1', { phone: '13800000009', name: '张爸爸', relation: '父亲' }))
+  await waitFor(() =>
+    expect(parentLinksApi.create).toHaveBeenCalledWith('s1', {
+      phone: '13800000009',
+      name: '张爸爸',
+      relation: '父亲',
+    }),
+  )
   const dlg = await screen.findByRole('dialog')
-  expect(dlg).toHaveTextContent('家长账号已建好,登录名 13800000009,临时密码 Abc12345。请当面或电话告诉家长,关闭后无法再次查看。')
+  expect(dlg).toHaveTextContent(
+    '家长账号已建好,登录名 13800000009,临时密码 Abc12345。请当面或电话告诉家长,关闭后无法再次查看。',
+  )
   fireEvent.click(within(dlg).getByRole('button', { name: '复制' }))
   await waitFor(() => expect(writeText).toHaveBeenCalledWith('Abc12345'))
   // 密码不进 query 缓存、storage、console
-  expect(JSON.stringify(client.getQueryCache().getAll().map((q) => q.state.data))).not.toContain('Abc12345')
-  expect(JSON.stringify(client.getMutationCache().getAll().map((m) => m.state.data))).not.toContain('Abc12345')
+  expect(
+    JSON.stringify(
+      client
+        .getQueryCache()
+        .getAll()
+        .map((q) => q.state.data),
+    ),
+  ).not.toContain('Abc12345')
+  expect(
+    JSON.stringify(
+      client
+        .getMutationCache()
+        .getAll()
+        .map((m) => m.state.data),
+    ),
+  ).not.toContain('Abc12345')
   expect(JSON.stringify({ ...localStorage })).not.toContain('Abc12345')
   expect(log).not.toHaveBeenCalled()
   fireEvent.click(within(dlg).getByRole('button', { name: '关闭' }))
@@ -110,12 +182,16 @@ it('binding to an existing account toasts and shows no dialog', async () => {
   await screen.findByText('王妈妈')
   fill('13800000003', '李阿姨')
   fireEvent.click(screen.getByRole('button', { name: '添加家长' }))
-  expect(await screen.findByText('该手机号已有账号,已绑定到这个孩子,家长用原来的密码登录')).toBeInTheDocument()
+  expect(
+    await screen.findByText('该手机号已有账号,已绑定到这个孩子,家长用原来的密码登录'),
+  ).toBeInTheDocument()
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 })
 
 it('shows the backend message on 409', async () => {
-  vi.mocked(parentLinksApi.create).mockRejectedValue(new ApiError(409, 'PHONE_TAKEN_INACTIVE', '这个手机号的账号已停用,请联系信息中心'))
+  vi.mocked(parentLinksApi.create).mockRejectedValue(
+    new ApiError(409, 'PHONE_TAKEN_INACTIVE', '这个手机号的账号已停用,请联系信息中心'),
+  )
   mount(<ParentsTab profile={profile} />)
   await screen.findByText('王妈妈')
   fill('13800000004', '赵')
@@ -142,7 +218,10 @@ it('disables adding at 4 parents and says why', async () => {
 })
 
 it('sets primary, unlinks after confirm, and resets via the one-time dialog', async () => {
-  vi.mocked(parentLinksApi.list).mockResolvedValue([pr({}), pr({ link_id: 'l2', name: '王爷爷', is_primary: false, phone: '13800000002' })])
+  vi.mocked(parentLinksApi.list).mockResolvedValue([
+    pr({}),
+    pr({ link_id: 'l2', name: '王爷爷', is_primary: false, phone: '13800000002' }),
+  ])
   vi.mocked(parentLinksApi.setPrimary).mockResolvedValue([])
   vi.mocked(parentLinksApi.unlink).mockResolvedValue(undefined)
   vi.mocked(parentLinksApi.resetPassword).mockResolvedValue({ temp_password: 'Zz98765' })

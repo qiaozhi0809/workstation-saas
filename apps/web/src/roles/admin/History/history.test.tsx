@@ -4,24 +4,65 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { adminApi } from '@/shared/api/admin'
 import { ApiError } from '@/shared/api/client'
-import type { HistoryClass, HistoryExam, HistoryScores, HistoryStudent, HistoryYear } from '@/shared/types/admin'
+import type {
+  HistoryClass,
+  HistoryExam,
+  HistoryScores,
+  HistoryStudent,
+  HistoryYear,
+} from '@/shared/types/admin'
 import HistoryClassPage from './HistoryClassPage'
 import HistoryPage from './HistoryPage'
 
 vi.mock('@/shared/api/admin')
 
-const y25: HistoryYear = { id: 'y25', name: '2025-2026 学年', start_date: '2025-09-01', end_date: '2026-07-15' }
-const y24: HistoryYear = { id: 'y24', name: '2024-2025 学年', start_date: '2024-09-01', end_date: '2025-07-15' }
+const y25: HistoryYear = {
+  id: 'y25',
+  name: '2025-2026 学年',
+  start_date: '2025-09-01',
+  end_date: '2026-07-15',
+}
+const y24: HistoryYear = {
+  id: 'y24',
+  name: '2024-2025 学年',
+  start_date: '2024-09-01',
+  end_date: '2025-07-15',
+}
 
 const cls = (over: Partial<HistoryClass>): HistoryClass => ({
-  class_id: 'c1', class_name: '高一1班', grade_name: '高一', homeroom_name: '赵老师', students: 42, ...over,
+  class_id: 'c1',
+  class_name: '高一1班',
+  grade_name: '高一',
+  homeroom_name: '赵老师',
+  students: 42,
+  ...over,
 })
 const CLASSES_25: HistoryClass[] = [
-  cls({ class_id: 'c1', class_name: '高一1班', grade_name: '高一', homeroom_name: '赵老师', students: 42 }),
-  cls({ class_id: 'c2', class_name: '高一2班', grade_name: '高一', homeroom_name: null, students: 40 }),
-  cls({ class_id: 'c3', class_name: '高二1班', grade_name: '高二', homeroom_name: '钱老师', students: 38 }),
+  cls({
+    class_id: 'c1',
+    class_name: '高一1班',
+    grade_name: '高一',
+    homeroom_name: '赵老师',
+    students: 42,
+  }),
+  cls({
+    class_id: 'c2',
+    class_name: '高一2班',
+    grade_name: '高一',
+    homeroom_name: null,
+    students: 40,
+  }),
+  cls({
+    class_id: 'c3',
+    class_name: '高二1班',
+    grade_name: '高二',
+    homeroom_name: '钱老师',
+    students: 38,
+  }),
 ]
-const CLASSES_24: HistoryClass[] = [cls({ class_id: 'c9', class_name: '初三1班', grade_name: '初三', students: 35 })]
+const CLASSES_24: HistoryClass[] = [
+  cls({ class_id: 'c9', class_name: '初三1班', grade_name: '初三', students: 35 }),
+]
 
 const STUDENTS: HistoryStudent[] = [
   { student_id: 's1', name: '张小三', student_no: '2501', status: 'active' },
@@ -33,22 +74,48 @@ const STUDENTS: HistoryStudent[] = [
 ]
 
 const exam = (over: Partial<HistoryExam>): HistoryExam => ({
-  id: 'e2', name: '期末考试', exam_type: '期末', date: '2026-06-30',
-  subjects: [{ name: '语文', full: 150 }, { name: '数学', full: 150 }], ...over,
+  id: 'e2',
+  name: '期末考试',
+  exam_type: '期末',
+  date: '2026-06-30',
+  subjects: [
+    { name: '语文', full: 150 },
+    { name: '数学', full: 150 },
+  ],
+  ...over,
 })
-const EXAMS: HistoryExam[] = [exam({ id: 'e2' }), exam({ id: 'e1', name: '期中考试', exam_type: '期中', date: '2025-11-10' })]
+const EXAMS: HistoryExam[] = [
+  exam({ id: 'e2' }),
+  exam({ id: 'e1', name: '期中考试', exam_type: '期中', date: '2025-11-10' }),
+]
 
 const scores = (e: HistoryExam): HistoryScores => ({
   exam: e,
   students: [
-    { student_id: 's1', name: '张小三', student_no: '2501', scores: { 语文: 120, 数学: 135 }, total: 255, class_rank: 1 },
-    { student_id: 's2', name: '李小二', student_no: null, scores: { 语文: 110, 数学: null }, total: null, class_rank: null },
+    {
+      student_id: 's1',
+      name: '张小三',
+      student_no: '2501',
+      scores: { 语文: 120, 数学: 135 },
+      total: 255,
+      class_rank: 1,
+    },
+    {
+      student_id: 's2',
+      name: '李小二',
+      student_no: null,
+      scores: { 语文: 110, 数学: null },
+      total: null,
+      class_rank: null,
+    },
   ],
 })
 
 function setup(entry = '/admin/history') {
   return render(
-    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
       <MemoryRouter initialEntries={[entry]}>
         <Routes>
           <Route path="/admin/history" element={<HistoryPage />} />
@@ -62,10 +129,14 @@ function setup(entry = '/admin/history') {
 beforeEach(() => {
   vi.resetAllMocks()
   vi.mocked(adminApi.historyYears).mockResolvedValue([y25, y24])
-  vi.mocked(adminApi.historyClasses).mockImplementation(async (yid) => (yid === 'y25' ? CLASSES_25 : CLASSES_24))
+  vi.mocked(adminApi.historyClasses).mockImplementation(async (yid) =>
+    yid === 'y25' ? CLASSES_25 : CLASSES_24,
+  )
   vi.mocked(adminApi.historyStudents).mockResolvedValue({ students: STUDENTS })
   vi.mocked(adminApi.historyExams).mockResolvedValue(EXAMS)
-  vi.mocked(adminApi.historyScores).mockImplementation(async (eid) => scores(EXAMS.find((e) => e.id === eid) ?? EXAMS[0]))
+  vi.mocked(adminApi.historyScores).mockImplementation(async (eid) =>
+    scores(EXAMS.find((e) => e.id === eid) ?? EXAMS[0]),
+  )
 })
 afterEach(cleanup)
 
@@ -75,7 +146,9 @@ describe('往年班级列表页', () => {
   it('没有往年数据时显示空状态', async () => {
     vi.mocked(adminApi.historyYears).mockResolvedValue([])
     setup()
-    expect(await screen.findByText('还没有往年数据,完成第一次学年升级后会出现在这里')).toBeInTheDocument()
+    expect(
+      await screen.findByText('还没有往年数据,完成第一次学年升级后会出现在这里'),
+    ).toBeInTheDocument()
     expect(adminApi.historyClasses).not.toHaveBeenCalled()
   })
 
@@ -84,13 +157,19 @@ describe('往年班级列表页', () => {
     expect(await screen.findByRole('heading', { level: 1, name: '往年班级' })).toBeInTheDocument()
     const sel = await screen.findByRole('combobox', { name: '学年' })
     expect(sel).toHaveValue('y25')
-    expect(within(sel).getAllByRole('option').map((o) => o.textContent)).toEqual([y25.name, y24.name])
+    expect(
+      within(sel)
+        .getAllByRole('option')
+        .map((o) => o.textContent),
+    ).toEqual([y25.name, y24.name])
     await waitFor(() => expect(adminApi.historyClasses).toHaveBeenCalledWith('y25'))
   })
 
   it('切换学年后以新学年 id 请求班级', async () => {
     setup()
-    fireEvent.change(await screen.findByRole('combobox', { name: '学年' }), { target: { value: 'y24' } })
+    fireEvent.change(await screen.findByRole('combobox', { name: '学年' }), {
+      target: { value: 'y24' },
+    })
     await waitFor(() => expect(adminApi.historyClasses).toHaveBeenCalledWith('y24'))
     expect(await screen.findByText('初三1班')).toBeInTheDocument()
     expect(screen.queryByText('高一1班')).toBeNull()
@@ -106,7 +185,10 @@ describe('往年班级列表页', () => {
     expect(c1).toHaveTextContent('班主任 赵老师')
     expect(c1).toHaveTextContent('42 人')
     expect(screen.getByRole('link', { name: /高一2班/ })).toHaveTextContent('未设班主任')
-    expect(screen.getByRole('link', { name: /高二1班/ })).toHaveAttribute('href', '/admin/history/classes/c3?year=y25')
+    expect(screen.getByRole('link', { name: /高二1班/ })).toHaveAttribute(
+      'href',
+      '/admin/history/classes/c3?year=y25',
+    )
   })
 
   it('年级组长看不到往年班时提示该学年没有可查看的班级', async () => {
@@ -128,13 +210,17 @@ describe('往年班级列表页', () => {
   })
 
   it('学年不存在(404)显示该学年不存在', async () => {
-    vi.mocked(adminApi.historyClasses).mockRejectedValue(new ApiError(404, 'YEAR_NOT_FOUND', '学年不存在'))
+    vi.mocked(adminApi.historyClasses).mockRejectedValue(
+      new ApiError(404, 'YEAR_NOT_FOUND', '学年不存在'),
+    )
     setup()
     expect(await screen.findByText('该学年不存在')).toBeInTheDocument()
   })
 
   it('请求失败显示错误并可重试', async () => {
-    vi.mocked(adminApi.historyClasses).mockRejectedValueOnce(new ApiError(500, 'INTERNAL', '出错了'))
+    vi.mocked(adminApi.historyClasses).mockRejectedValueOnce(
+      new ApiError(500, 'INTERNAL', '出错了'),
+    )
     setup()
     fireEvent.click(await screen.findByRole('button', { name: '重试' }))
     expect(await screen.findByText('高一1班')).toBeInTheDocument()
@@ -143,15 +229,21 @@ describe('往年班级列表页', () => {
   it('点班级进入单班页', async () => {
     setup()
     fireEvent.click(await screen.findByRole('link', { name: /高二1班/ }))
-    expect(await screen.findByRole('heading', { level: 1, name: '2025-2026 学年 高二1班' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { level: 1, name: '2025-2026 学年 高二1班' }),
+    ).toBeInTheDocument()
     expect(adminApi.historyStudents).toHaveBeenCalledWith('c3')
   })
 
   it('从较早学年的班返回时回到原来那个学年的列表', async () => {
     setup()
-    fireEvent.change(await screen.findByRole('combobox', { name: '学年' }), { target: { value: 'y24' } })
+    fireEvent.change(await screen.findByRole('combobox', { name: '学年' }), {
+      target: { value: 'y24' },
+    })
     fireEvent.click(await screen.findByRole('link', { name: /初三1班/ }))
-    expect(await screen.findByRole('heading', { level: 1, name: '2024-2025 学年 初三1班' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { level: 1, name: '2024-2025 学年 初三1班' }),
+    ).toBeInTheDocument()
     fireEvent.click(screen.getByRole('link', { name: '← 往年班级' }))
     expect(await screen.findByRole('heading', { level: 1, name: '往年班级' })).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: '学年' })).toHaveValue('y24')
@@ -169,8 +261,13 @@ describe('往年班级列表页', () => {
 describe('往年单班页', () => {
   it('标题显示学年名与班名,返回链接回列表', async () => {
     setup('/admin/history/classes/c1?year=y25')
-    expect(await screen.findByRole('heading', { level: 1, name: '2025-2026 学年 高一1班' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: '← 往年班级' })).toHaveAttribute('href', '/admin/history?year=y25')
+    expect(
+      await screen.findByRole('heading', { level: 1, name: '2025-2026 学年 高一1班' }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '← 往年班级' })).toHaveAttribute(
+      'href',
+      '/admin/history?year=y25',
+    )
   })
 
   it('缺少 year 参数时标题退化为往年班级且不请求学年数据', async () => {
@@ -189,7 +286,11 @@ describe('往年单班页', () => {
   it('名单默认展示,状态映射为中文,缺学号显示破折号,未知状态原样', async () => {
     setup('/admin/history/classes/c1?year=y25')
     const table = await screen.findByRole('table')
-    expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['学号', '姓名', '状态'])
+    expect(
+      within(table)
+        .getAllByRole('columnheader')
+        .map((h) => h.textContent),
+    ).toEqual(['学号', '姓名', '状态'])
     const row = (name: string) => within(table).getByRole('row', { name: new RegExp(name) })
     expect(row('张小三')).toHaveTextContent('2501')
     expect(row('张小三')).toHaveTextContent('在读')
@@ -216,7 +317,11 @@ describe('往年单班页', () => {
     const sel = await screen.findByRole('combobox', { name: '考试' })
     expect(adminApi.historyExams).toHaveBeenCalledWith('c1')
     expect(sel).toHaveValue('e2')
-    expect(within(sel).getAllByRole('option').map((o) => o.textContent)).toEqual(['期末考试(2026-06-30)', '期中考试(2025-11-10)'])
+    expect(
+      within(sel)
+        .getAllByRole('option')
+        .map((o) => o.textContent),
+    ).toEqual(['期末考试(2026-06-30)', '期中考试(2025-11-10)'])
     await waitFor(() => expect(adminApi.historyScores).toHaveBeenCalledWith('e2'))
   })
 
@@ -224,19 +329,32 @@ describe('往年单班页', () => {
     setup('/admin/history/classes/c1?year=y25')
     fireEvent.click(await screen.findByRole('tab', { name: '成绩' }))
     const table = await screen.findByRole('table')
-    expect(within(table).getAllByRole('columnheader').map((h) => h.textContent))
-      .toEqual(['学号', '姓名', '语文 /150', '数学 /150', '总分', '班级名次'])
+    expect(
+      within(table)
+        .getAllByRole('columnheader')
+        .map((h) => h.textContent),
+    ).toEqual(['学号', '姓名', '语文 /150', '数学 /150', '总分', '班级名次'])
     const r1 = within(table).getByRole('row', { name: /张小三/ })
-    expect(within(r1).getAllByRole('cell').map((c) => c.textContent)).toEqual(['2501', '张小三', '120', '135', '255', '1'])
+    expect(
+      within(r1)
+        .getAllByRole('cell')
+        .map((c) => c.textContent),
+    ).toEqual(['2501', '张小三', '120', '135', '255', '1'])
     const r2 = within(table).getByRole('row', { name: /李小二/ })
-    expect(within(r2).getAllByRole('cell').map((c) => c.textContent)).toEqual(['—', '李小二', '110', '—', '—', '—'])
+    expect(
+      within(r2)
+        .getAllByRole('cell')
+        .map((c) => c.textContent),
+    ).toEqual(['—', '李小二', '110', '—', '—', '—'])
     expect(table.parentElement).toHaveClass('overflow-x-auto')
   })
 
   it('切换考试重新请求成绩', async () => {
     setup('/admin/history/classes/c1?year=y25')
     fireEvent.click(await screen.findByRole('tab', { name: '成绩' }))
-    fireEvent.change(await screen.findByRole('combobox', { name: '考试' }), { target: { value: 'e1' } })
+    fireEvent.change(await screen.findByRole('combobox', { name: '考试' }), {
+      target: { value: 'e1' },
+    })
     await waitFor(() => expect(adminApi.historyScores).toHaveBeenLastCalledWith('e1'))
     expect(await screen.findByRole('combobox', { name: '考试' })).toHaveValue('e1')
   })
@@ -263,7 +381,9 @@ describe('往年单班页', () => {
   })
 
   it('名单加载失败显示错误并可重试', async () => {
-    vi.mocked(adminApi.historyStudents).mockRejectedValueOnce(new ApiError(500, 'INTERNAL', '出错了'))
+    vi.mocked(adminApi.historyStudents).mockRejectedValueOnce(
+      new ApiError(500, 'INTERNAL', '出错了'),
+    )
     setup('/admin/history/classes/c1?year=y25')
     fireEvent.click(await screen.findByRole('button', { name: '重试' }))
     expect(await screen.findByText('张小三')).toBeInTheDocument()

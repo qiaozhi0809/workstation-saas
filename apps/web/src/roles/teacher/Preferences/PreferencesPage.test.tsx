@@ -10,14 +10,21 @@ import PreferencesPage from './PreferencesPage'
 
 vi.mock('@/shared/api/preferences', () => ({ preferencesApi: { get: vi.fn(), save: vi.fn() } }))
 
-const loaded: Preferences = { teacher_figure: 'female', idle_animation: true, review_reasons: [{ text: '积极发言', delta: 1 }] }
+const loaded: Preferences = {
+  teacher_figure: 'female',
+  idle_animation: true,
+  review_reasons: [{ text: '积极发言', delta: 1 }],
+}
 
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const invalidate = vi.spyOn(client, 'invalidateQueries')
   render(
     <QueryClientProvider client={client}>
-      <MemoryRouter><PreferencesPage /><Toaster /></MemoryRouter>
+      <MemoryRouter>
+        <PreferencesPage />
+        <Toaster />
+      </MemoryRouter>
     </QueryClientProvider>,
   )
   return { invalidate, client }
@@ -30,28 +37,42 @@ beforeEach(() => {
 })
 
 it('loads, validates and saves preferences', async () => {
-  vi.mocked(preferencesApi.get).mockResolvedValue({ teacher_figure: 'female', idle_animation: true,
-    review_reasons: [{ text: '积极发言', delta: 1 }] })
+  vi.mocked(preferencesApi.get).mockResolvedValue({
+    teacher_figure: 'female',
+    idle_animation: true,
+    review_reasons: [{ text: '积极发言', delta: 1 }],
+  })
   const { invalidate } = renderPage()
   fireEvent.click(await screen.findByLabelText('男老师'))
   fireEvent.click(screen.getByLabelText('空闲小动画'))
   fireEvent.click(screen.getByRole('button', { name: '添加理由' }))
-  const texts = screen.getAllByLabelText('理由'), deltas = screen.getAllByLabelText('分值')
+  const texts = screen.getAllByLabelText('理由'),
+    deltas = screen.getAllByLabelText('分值')
   fireEvent.change(texts[1], { target: { value: '回答问题' } })
   fireEvent.change(deltas[1], { target: { value: '0' } })
   fireEvent.click(screen.getByRole('button', { name: '保存' }))
   expect(await screen.findByText('分值不能为 0')).toBeInTheDocument()
   fireEvent.change(deltas[1], { target: { value: '2' } })
   fireEvent.click(screen.getByRole('button', { name: '保存' }))
-  await waitFor(() => expect(preferencesApi.save).toHaveBeenCalledWith({ teacher_figure: 'male',
-    idle_animation: false, review_reasons: [{ text: '积极发言', delta: 1 }, { text: '回答问题', delta: 2 }] }))
+  await waitFor(() =>
+    expect(preferencesApi.save).toHaveBeenCalledWith({
+      teacher_figure: 'male',
+      idle_animation: false,
+      review_reasons: [
+        { text: '积极发言', delta: 1 },
+        { text: '回答问题', delta: 2 },
+      ],
+    }),
+  )
   expect(await screen.findByText('已保存')).toBeInTheDocument()
   expect(invalidate).toHaveBeenCalledWith({ queryKey: ['preferences'] })
 })
 
 it('keeps at least one reason and at most twenty', async () => {
-  vi.mocked(preferencesApi.get).mockResolvedValue({ ...loaded,
-    review_reasons: Array.from({ length: 19 }, (_, i) => ({ text: `理由${i}`, delta: 1 })) })
+  vi.mocked(preferencesApi.get).mockResolvedValue({
+    ...loaded,
+    review_reasons: Array.from({ length: 19 }, (_, i) => ({ text: `理由${i}`, delta: 1 })),
+  })
   renderPage()
   const add = await screen.findByRole('button', { name: '添加理由' })
   expect(add).toBeEnabled()
@@ -116,5 +137,6 @@ it('keeps the form and its edits when a background refetch fails', async () => {
 
 it('groups settings under labelled fieldsets', async () => {
   renderPage()
-  for (const name of ['老师形象', '教室', '点评理由']) expect(await screen.findByRole('group', { name })).toBeInTheDocument()
+  for (const name of ['老师形象', '教室', '点评理由'])
+    expect(await screen.findByRole('group', { name })).toBeInTheDocument()
 })

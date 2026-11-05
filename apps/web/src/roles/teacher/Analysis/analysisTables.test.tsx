@@ -17,32 +17,67 @@ vi.mock('@/shared/api/classroom')
 vi.mock('@/shared/api/exams')
 vi.mock('@/shared/api/students')
 
-const twoSubjects = [{ name: '语文', full: 100 }, { name: '数学', full: 100 }]
-function exam(id: string, name: string, date: string, scores: GradebookExam['scores'],
-  subjects = twoSubjects): GradebookExam {
+const twoSubjects = [
+  { name: '语文', full: 100 },
+  { name: '数学', full: 100 },
+]
+function exam(
+  id: string,
+  name: string,
+  date: string,
+  scores: GradebookExam['scores'],
+  subjects = twoSubjects,
+): GradebookExam {
   return {
-    id, name, exam_type: '月考', date, subjects, grade_exam_id: null, created_by_me: true,
-    progress: { entered: 3, total: 3 }, scores,
+    id,
+    name,
+    exam_type: '月考',
+    date,
+    subjects,
+    grade_exam_id: null,
+    created_by_me: true,
+    progress: { entered: 3, total: 3 },
+    scores,
   }
 }
 
 const first = exam('x1', '第一次月考', '2026-09-20', {
-  e1: { 语文: 70, 数学: 70 }, e2: { 语文: 60, 数学: 60 }, e3: { 语文: 50, 数学: 50 },
+  e1: { 语文: 70, 数学: 70 },
+  e2: { 语文: 60, 数学: 60 },
+  e3: { 语文: 50, 数学: 50 },
 })
 const second = exam('x2', '期中考试', '2026-10-20', {
-  e1: { 语文: 90, 数学: 90 }, e2: { 语文: 90, 数学: 90 }, e3: { 语文: 50, 数学: null },
+  e1: { 语文: 90, 数学: 90 },
+  e2: { 语文: 90, 数学: 90 },
+  e3: { 语文: 50, 数学: null },
 })
 
 const names7 = ['王小一', '李小二', '张小三', '赵小四', '钱小五', '孙小六', '周小七']
 const roster7: StudentSeat[] = names7.map((name, i) => ({
-  ...rosterFixture[0], enrollment_id: `e${i + 1}`, student_id: `s${i + 1}`, name, mk: `S100${i + 1}`,
+  ...rosterFixture[0],
+  enrollment_id: `e${i + 1}`,
+  student_id: `s${i + 1}`,
+  name,
+  mk: `S100${i + 1}`,
 }))
 const pair = (v: number) => ({ 语文: v, 数学: v })
 const prev7 = exam('p1', '上次月考', '2026-09-20', {
-  e1: pair(90), e2: pair(80), e3: pair(70), e4: pair(60), e5: pair(50), e6: pair(40), e7: pair(30),
+  e1: pair(90),
+  e2: pair(80),
+  e3: pair(70),
+  e4: pair(60),
+  e5: pair(50),
+  e6: pair(40),
+  e7: pair(30),
 })
 const cur7 = exam('p2', '本次月考', '2026-10-20', {
-  e1: pair(30), e2: pair(80), e3: pair(70), e4: pair(60), e5: pair(50), e6: pair(40), e7: pair(95),
+  e1: pair(30),
+  e2: pair(80),
+  e3: pair(70),
+  e4: pair(60),
+  e5: pair(50),
+  e6: pair(40),
+  e7: pair(95),
 })
 
 function Url() {
@@ -50,18 +85,39 @@ function Url() {
   return <div data-testid="url">{pathname + search}</div>
 }
 
-const urlParams = () => new URLSearchParams((screen.getByTestId('url').textContent ?? '').split('?')[1] ?? '')
+const urlParams = () =>
+  new URLSearchParams((screen.getByTestId('url').textContent ?? '').split('?')[1] ?? '')
 
-function setup(book: GradebookExam[], entry = '/teacher/analysis', roster: StudentSeat[] = rosterFixture) {
+function setup(
+  book: GradebookExam[],
+  entry = '/teacher/analysis',
+  roster: StudentSeat[] = rosterFixture,
+) {
   vi.mocked(examsApi.gradebook).mockResolvedValue({ exams: book })
   vi.mocked(studentsApi.listInClass).mockResolvedValue({ items: roster })
-  act(() => { useTeacherStore.setState({ classId: 'c1' }) })
+  act(() => {
+    useTeacherStore.setState({ classId: 'c1' })
+  })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const router = createMemoryRouter(
-    [{ path: '/teacher/analysis', element: <><AnalysisPage chartWidth={300} /><Url /></> }],
+    [
+      {
+        path: '/teacher/analysis',
+        element: (
+          <>
+            <AnalysisPage chartWidth={300} />
+            <Url />
+          </>
+        ),
+      },
+    ],
     { initialEntries: [entry] },
   )
-  return render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>)
+  return render(
+    <QueryClientProvider client={client}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  )
 }
 
 beforeEach(() => {
@@ -71,7 +127,8 @@ beforeEach(() => {
 })
 
 const rankRegion = async () => within(await screen.findByRole('region', { name: '成绩排名' }))
-const groupOf = async (title: string) => within((await screen.findByText(title)).closest('section') as HTMLElement)
+const groupOf = async (title: string) =>
+  within((await screen.findByText(title)).closest('section') as HTMLElement)
 
 describe('RankTable', () => {
   it('lists ranks with changes and opens the scores tab on click', async () => {
@@ -137,8 +194,13 @@ describe('AttentionPanel', () => {
   })
 
   it('drops the two-subject group for a single visible subject', async () => {
-    const one = exam('o1', '单科测验', '2026-10-20', { e1: { 语文: 30 }, e2: { 语文: 90 }, e3: { 语文: 20 } },
-      [{ name: '语文', full: 100 }])
+    const one = exam(
+      'o1',
+      '单科测验',
+      '2026-10-20',
+      { e1: { 语文: 30 }, e2: { 语文: 90 }, e3: { 语文: 20 } },
+      [{ name: '语文', full: 100 }],
+    )
     setup([one])
     await screen.findByText('进步之星')
     expect(screen.queryByText('两科及以上不及格')).not.toBeInTheDocument()
@@ -149,7 +211,18 @@ describe('SubjectTable', () => {
   it('shows the subject table with pass-rate changes only when comparing', async () => {
     setup([first, second], '/teacher/analysis?exam=x2&cmp=x1')
     const region = within(await screen.findByRole('region', { name: '各科明细' }))
-    for (const h of ['科目', '满分', '平均分', '得分率', '最高', '最低', '及格率', '优秀率', '不及格人数', '得分率变化']) {
+    for (const h of [
+      '科目',
+      '满分',
+      '平均分',
+      '得分率',
+      '最高',
+      '最低',
+      '及格率',
+      '优秀率',
+      '不及格人数',
+      '得分率变化',
+    ]) {
       expect(region.getByRole('columnheader', { name: h })).toBeInTheDocument()
     }
     const chinese = region.getByRole('row', { name: /语文/ })
@@ -161,8 +234,13 @@ describe('SubjectTable', () => {
   })
 
   it('shows a dash for a subject missing from the comparison exam', async () => {
-    const other = exam('o1', '旧测验', '2026-09-01', { e1: { 英语: 80 }, e2: { 英语: 80 }, e3: { 英语: 80 } },
-      [{ name: '英语', full: 100 }])
+    const other = exam(
+      'o1',
+      '旧测验',
+      '2026-09-01',
+      { e1: { 英语: 80 }, e2: { 英语: 80 }, e3: { 英语: 80 } },
+      [{ name: '英语', full: 100 }],
+    )
     setup([other, second], '/teacher/analysis?exam=x2&cmp=o1')
     const region = within(await screen.findByRole('region', { name: '各科明细' }))
     expect(within(region.getByRole('row', { name: /语文/ })).getByText('—')).toBeInTheDocument()

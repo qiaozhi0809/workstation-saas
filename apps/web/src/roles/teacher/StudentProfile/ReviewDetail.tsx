@@ -55,14 +55,24 @@ export default function ReviewDetail({ profile }: { profile: StudentProfile }) {
         <ul className="space-y-2">
           {data.items.map((r) => (
             <li key={r.id} className="flex items-center gap-2 text-sm">
-              <span className="shrink-0 text-muted-foreground">{formatInTz(r.given_at, timeZone).slice(5)}</span>
+              <span className="shrink-0 text-muted-foreground">
+                {formatInTz(r.given_at, timeZone).slice(5)}
+              </span>
               <span className="min-w-0 flex-1 break-words">{r.reason_text}</span>
               <span className={`shrink-0 font-medium ${TONE_TEXT[scoreTone(r.score_delta)]}`}>
                 {r.score_delta > 0 ? `+${r.score_delta}` : String(r.score_delta)}
               </span>
               {r.given_by_me && canWrite && (
-                <Button type="button" variant="ghost" size="sm" className="h-7 px-2" disabled={revoke.isPending}
-                  onClick={() => revoke.mutate(r.id)}>撤销</Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2"
+                  disabled={revoke.isPending}
+                  onClick={() => revoke.mutate(r.id)}
+                >
+                  撤销
+                </Button>
               )}
             </li>
           ))}

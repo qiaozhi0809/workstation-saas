@@ -45,10 +45,14 @@ export function seatingPrintHtml(input: {
     const s = at.get(`0,${col}`)
     return s ? `<span class="ps">${label(s)}</span>` : '<span class="ps e">空</span>'
   }
-  const left = Array.from({ length: grid.podiumLeft }, (_, i) => -(grid.podiumLeft - i)).map(podiumSeat)
+  const left = Array.from({ length: grid.podiumLeft }, (_, i) => -(grid.podiumLeft - i)).map(
+    podiumSeat,
+  )
   const right = Array.from({ length: grid.podiumRight }, (_, i) => i + 1).map(podiumSeat)
   const podiumRow = `<div class="podium-row">${left.join('')}<div class="podium">讲台</div>${right.join('')}</div>`
-  const subtitle = escapeHtml([schoolName, room, today].filter(Boolean).join(' · ') + ' · 讲台在上方')
+  const subtitle = escapeHtml(
+    [schoolName, room, today].filter(Boolean).join(' · ') + ' · 讲台在上方',
+  )
   const title = escapeHtml(className)
   return `<!doctype html>
 <html lang="zh-CN">

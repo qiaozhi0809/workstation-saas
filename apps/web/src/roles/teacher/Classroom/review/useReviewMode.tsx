@@ -28,7 +28,11 @@ export function reviewViews(summary: ReviewSummary | undefined): Record<string, 
   for (const t of summary?.items ?? []) {
     if (t.total === 0) continue
     out[t.enrollment_id] = {
-      badge: { text: signed(t.total), tone: t.total > 0 ? 'green' : 'coral', ...(Math.abs(t.total) >= STRONG ? { strong: true } : {}) },
+      badge: {
+        text: signed(t.total),
+        tone: t.total > 0 ? 'green' : 'coral',
+        ...(Math.abs(t.total) >= STRONG ? { strong: true } : {}),
+      },
     }
   }
   return out
@@ -56,7 +60,10 @@ interface Options {
   stageRef: RefObject<HTMLElement>
 }
 
-interface Open { seat: StudentSeat; anchor: SeatAnchor }
+interface Open {
+  seat: StudentSeat
+  anchor: SeatAnchor
+}
 
 export function useReviewMode(o: Options) {
   const { classId, enabled, canWrite } = o
@@ -68,10 +75,20 @@ export function useReviewMode(o: Options) {
 
   useEffect(() => {
     const set = timers.current
-    return () => { set.forEach(clearTimeout); set.clear() }
+    return () => {
+      set.forEach(clearTimeout)
+      set.clear()
+    }
   }, [])
-  useEffect(() => { if (!enabled) { setOpen(null); setBoard(false) } }, [enabled])
-  useEffect(() => { setOpen(null) }, [o.presenting])
+  useEffect(() => {
+    if (!enabled) {
+      setOpen(null)
+      setBoard(false)
+    }
+  }, [enabled])
+  useEffect(() => {
+    setOpen(null)
+  }, [o.presenting])
 
   const revoke = async (opId: string) => {
     try {
@@ -86,7 +103,10 @@ export function useReviewMode(o: Options) {
 
   const pushFloats = (items: Review[]) => {
     const fx: FloatFx[] = items.map((r) => ({
-      key: r.id, enrollmentId: r.enrollment_id, text: signed(r.score_delta), tone: r.score_delta > 0 ? 'plus' : 'minus',
+      key: r.id,
+      enrollmentId: r.enrollment_id,
+      text: signed(r.score_delta),
+      tone: r.score_delta > 0 ? 'plus' : 'minus',
     }))
     setFloats((cur) => [...cur, ...fx])
     const t = setTimeout(() => {
@@ -97,22 +117,34 @@ export function useReviewMode(o: Options) {
   }
 
   const { submit, pending } = useReviewSubmit(classId, o.subject.value)
-  const give = (body: Parameters<typeof submit>[0], summaryText: string) => submit(body, {
-    onSuccess: (items, opId) => {
-      pushFloats(items)
-      setOpen(null)
-      toast(summaryText, { action: { label: '撤销', onClick: () => void revoke(items[0]?.op_id ?? opId) }, ms: UNDO_MS })
-    },
-  })
+  const give = (body: Parameters<typeof submit>[0], summaryText: string) =>
+    submit(body, {
+      onSuccess: (items, opId) => {
+        pushFloats(items)
+        setOpen(null)
+        toast(summaryText, {
+          action: { label: '撤销', onClick: () => void revoke(items[0]?.op_id ?? opId) },
+          ms: UNDO_MS,
+        })
+      },
+    })
 
-  const giveSeat = (seat: StudentSeat, p: ReasonPick) => give({
-    category: 'individual', enrollment_ids: [seat.enrollment_id], reason_text: p.text, score_delta: p.delta,
-  }, `已给 ${seat.name} ${p.text} ${signed(p.delta)}`)
+  const giveSeat = (seat: StudentSeat, p: ReasonPick) =>
+    give(
+      {
+        category: 'individual',
+        enrollment_ids: [seat.enrollment_id],
+        reason_text: p.text,
+        score_delta: p.delta,
+      },
+      `已给 ${seat.name} ${p.text} ${signed(p.delta)}`,
+    )
 
-  const giveClass = () => give(
-    { category: 'whole_class', reason_text: WHOLE_CLASS_REASON, score_delta: 1 },
-    `已给全班 ${WHOLE_CLASS_REASON} +1`,
-  )
+  const giveClass = () =>
+    give(
+      { category: 'whole_class', reason_text: WHOLE_CLASS_REASON, score_delta: 1 },
+      `已给全班 ${WHOLE_CLASS_REASON} +1`,
+    )
 
   const exportAll = async () => {
     if (!o.timezone) return
@@ -124,7 +156,10 @@ export function useReviewMode(o: Options) {
         items.push(...page.items)
         cursor = page.next_cursor ?? undefined
       } while (cursor)
-      csv.downloadText(`${o.className}-点评.csv`, csv.toCSV(reviewRows(items, o.roster as RosterRow[], o.timezone)))
+      csv.downloadText(
+        `${o.className}-点评.csv`,
+        csv.toCSV(reviewRows(items, o.roster as RosterRow[], o.timezone)),
+      )
     } catch (err) {
       toast(err instanceof Error ? err.message : '导出失败')
     }
@@ -134,7 +169,12 @@ export function useReviewMode(o: Options) {
     const r = o.stageRef.current?.getBoundingClientRect()
     setOpen({
       seat,
-      anchor: { left: anchor.left - (r?.left ?? 0), top: anchor.top - (r?.top ?? 0), width: anchor.width, height: anchor.height },
+      anchor: {
+        left: anchor.left - (r?.left ?? 0),
+        top: anchor.top - (r?.top ?? 0),
+        width: anchor.width,
+        height: anchor.height,
+      },
     })
   }
 
@@ -147,10 +187,20 @@ export function useReviewMode(o: Options) {
   const toolbar: ReactNode = (
     <>
       {canWrite && (
-        <Button type="button" variant="outline" disabled={pending} onClick={giveClass}>全班 +1</Button>
+        <Button type="button" variant="outline" disabled={pending} onClick={giveClass}>
+          全班 +1
+        </Button>
       )}
-      {o.canRead && <Button type="button" variant="outline" onClick={() => setBoard(true)}>积分榜</Button>}
-      {o.canRead && <Button type="button" variant="outline" onClick={() => void exportAll()}>导出点评</Button>}
+      {o.canRead && (
+        <Button type="button" variant="outline" onClick={() => setBoard(true)}>
+          积分榜
+        </Button>
+      )}
+      {o.canRead && (
+        <Button type="button" variant="outline" onClick={() => void exportAll()}>
+          导出点评
+        </Button>
+      )}
     </>
   )
 
@@ -169,11 +219,20 @@ export function useReviewMode(o: Options) {
     />
   )
   const leaderboard: ReactNode = enabled && board && (
-    <Leaderboard roster={o.roster} groupOf={o.groupOf} summary={o.summary} onClose={() => setBoard(false)} />
+    <Leaderboard
+      roster={o.roster}
+      groupOf={o.groupOf}
+      summary={o.summary}
+      onClose={() => setBoard(false)}
+    />
   )
 
   return {
-    views, floats, toolbar, popover, leaderboard,
+    views,
+    floats,
+    toolbar,
+    popover,
+    leaderboard,
     onSeatClick: canWrite ? onSeatClick : undefined,
     closePopover: () => setOpen(null),
   }

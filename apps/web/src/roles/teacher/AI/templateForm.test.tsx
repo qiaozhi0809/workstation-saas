@@ -7,7 +7,12 @@ import { examsApi } from '@/shared/api/exams'
 import type { AiChat } from '@/shared/types/ai'
 import AiHomePage from './AiHomePage'
 import {
-  defaultAiMocks, examsFixture, formTemplateFixture, hiddenTemplateFixture, setupAi, statusFixture,
+  defaultAiMocks,
+  examsFixture,
+  formTemplateFixture,
+  hiddenTemplateFixture,
+  setupAi,
+  statusFixture,
   templatesFixture,
 } from './aiTestUtils'
 import TemplateForm from './TemplateForm'
@@ -24,7 +29,15 @@ const onClose = vi.fn()
 
 const form = (status = statusFixture, initial?: Record<string, never>) =>
   setupAi({
-    element: <TemplateForm template={formTemplateFixture} classId="c1" status={status} initial={initial} onClose={onClose} />,
+    element: (
+      <TemplateForm
+        template={formTemplateFixture}
+        classId="c1"
+        status={status}
+        initial={initial}
+        onClose={onClose}
+      />
+    ),
   })
 
 beforeEach(() => {
@@ -55,7 +68,9 @@ describe('TemplateForm', () => {
     // 考试:新 → 旧,默认第一场;对比考试默认前一场,并有「不对比」
     await waitFor(() => expect(screen.getByLabelText('考试')).toHaveValue('x3'))
     expect(screen.getByLabelText('对比考试')).toHaveValue('x2')
-    expect(within(screen.getByLabelText('对比考试')).getByRole('option', { name: '不对比' })).toBeInTheDocument()
+    expect(
+      within(screen.getByLabelText('对比考试')).getByRole('option', { name: '不对比' }),
+    ).toBeInTheDocument()
     // 必填项标 *
     expect(screen.getAllByText('*')).toHaveLength(3)
     // 隐去姓名默认勾选
@@ -102,9 +117,18 @@ describe('TemplateForm', () => {
     click(screen.getByRole('button', { name: '复制提示词' }))
     expect(await screen.findByLabelText('提示词内容')).toHaveValue('请分析成绩')
     expect(aiApi.prompt).toHaveBeenCalledWith({
-      class_id: 'c1', template_id: 'report', mask: true,
+      class_id: 'c1',
+      template_id: 'report',
+      mask: true,
       values: {
-        topic: '期中复盘', note: '', tone: '温和', tips: true, who: 's2', group: ['s1'], cur: 'x3', prev: 'x2',
+        topic: '期中复盘',
+        note: '',
+        tone: '温和',
+        tips: true,
+        who: 's2',
+        group: ['s1'],
+        cur: 'x3',
+        prev: 'x2',
       },
     })
   })
@@ -120,10 +144,16 @@ describe('TemplateForm', () => {
     await waitFor(() => expect(screen.getByLabelText('考试')).toHaveValue('x3'))
     type(screen.getByLabelText('对比考试'), '')
     click(screen.getByRole('button', { name: '开始生成' }))
-    await waitFor(() => expect(screen.getByTestId('url')).toHaveTextContent('/teacher/ai/chat9?go=1'))
-    expect(aiApi.createChat).toHaveBeenCalledWith(expect.objectContaining({
-      template_id: 'report', mask: true, values: expect.objectContaining({ prev: null, cur: 'x3', who: '' }),
-    }))
+    await waitFor(() =>
+      expect(screen.getByTestId('url')).toHaveTextContent('/teacher/ai/chat9?go=1'),
+    )
+    expect(aiApi.createChat).toHaveBeenCalledWith(
+      expect.objectContaining({
+        template_id: 'report',
+        mask: true,
+        values: expect.objectContaining({ prev: null, cur: 'x3', who: '' }),
+      }),
+    )
   })
 
   it('shows field errors from the server', async () => {
@@ -147,13 +177,18 @@ describe('TemplateForm', () => {
     expect(screen.getByRole('dialog', { name: '成绩分析' })).toBeInTheDocument()
   })
 
-  it.each(['tips', 'nope'])('M1: AI_FIELD_INVALID for a field without an error slot (%s) falls back to a toast', async (field) => {
-    vi.mocked(aiApi.createChat).mockRejectedValue(new ApiError(422, 'AI_FIELD_INVALID', '这个选项不合法', { field }))
-    form()
-    click(await screen.findByRole('button', { name: '开始生成' }))
-    expect(await screen.findByText('这个选项不合法')).toBeInTheDocument()
-    expect(screen.queryByRole('alert')).toBeNull()
-  })
+  it.each(['tips', 'nope'])(
+    'M1: AI_FIELD_INVALID for a field without an error slot (%s) falls back to a toast',
+    async (field) => {
+      vi.mocked(aiApi.createChat).mockRejectedValue(
+        new ApiError(422, 'AI_FIELD_INVALID', '这个选项不合法', { field }),
+      )
+      form()
+      click(await screen.findByRole('button', { name: '开始生成' }))
+      expect(await screen.findByText('这个选项不合法')).toBeInTheDocument()
+      expect(screen.queryByRole('alert')).toBeNull()
+    },
+  )
 
   it('toasts when no student regressed and on other errors', async () => {
     vi.mocked(aiApi.createChat)
@@ -228,7 +263,17 @@ describe('home greeting', () => {
   ])('greets display name %j as %s', async (display_name, text) => {
     // 先让用户为空,避免 setupAi 的默认姓名先渲染
     setupAi({ element: <AiHomePage /> })
-    act(() => useAuthStore.setState({ user: { id: 'u1', display_name, contexts: ['teacher'], admin_perms: [], must_change_password: false } }))
+    act(() =>
+      useAuthStore.setState({
+        user: {
+          id: 'u1',
+          display_name,
+          contexts: ['teacher'],
+          admin_perms: [],
+          must_change_password: false,
+        },
+      }),
+    )
     expect(await screen.findByText(text)).toBeInTheDocument()
   })
 })

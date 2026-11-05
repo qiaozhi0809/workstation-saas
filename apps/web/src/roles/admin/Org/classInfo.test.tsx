@@ -9,8 +9,11 @@ import ClassInfoPage from './ClassInfoPage'
 
 vi.mock('@/shared/api/admin', () => ({
   adminApi: {
-    class: vi.fn(), updateClass: vi.fn(), grades: vi.fn(),
-    addStaff: vi.fn(), endStaff: vi.fn(),
+    class: vi.fn(),
+    updateClass: vi.fn(),
+    grades: vi.fn(),
+    addStaff: vi.fn(),
+    endStaff: vi.fn(),
   },
 }))
 vi.mock('./orgApi', () => ({ orgApi: { people: vi.fn() } }))
@@ -18,27 +21,62 @@ const api = vi.mocked(adminApi)
 const org = vi.mocked(orgApi)
 
 const cls: ClassAdmin = {
-  id: 'c1', name: '三年二班', grade_id: 'g3', grade_name: '三年级', room: '301', student_count: 40,
-  homeroom: { assignment_id: 'a1', user_id: 'u1', display_name: '李老师' }, assistants: [],
-  subjects: [{ subject: '语文', teachers: [{ assignment_id: 'a2', user_id: 'u2', display_name: '王老师' }] }],
-  desk_size: 2, seat_layout: 'auto', seat_rows: 6, seat_cols: 4, podium_left: 0, podium_right: 0,
+  id: 'c1',
+  name: '三年二班',
+  grade_id: 'g3',
+  grade_name: '三年级',
+  room: '301',
+  student_count: 40,
+  homeroom: { assignment_id: 'a1', user_id: 'u1', display_name: '李老师' },
+  assistants: [],
+  subjects: [
+    { subject: '语文', teachers: [{ assignment_id: 'a2', user_id: 'u2', display_name: '王老师' }] },
+  ],
+  desk_size: 2,
+  seat_layout: 'auto',
+  seat_rows: 6,
+  seat_cols: 4,
+  podium_left: 0,
+  podium_right: 0,
 }
-const acc: OrgPerson = { user_id: 'u5', name: '赵老师', login_name: 'teacher05', subjects: ['数学'] }
+const acc: OrgPerson = {
+  user_id: 'u5',
+  name: '赵老师',
+  login_name: 'teacher05',
+  subjects: ['数学'],
+}
 
 beforeEach(() => {
   api.class.mockResolvedValue(cls)
-  api.grades.mockResolvedValue([{ id: 'g3', name: '三年级', stage: null, effective_stage: '小学', display_order: 3, class_count: 1 }])
+  api.grades.mockResolvedValue([
+    {
+      id: 'g3',
+      name: '三年级',
+      stage: null,
+      effective_stage: '小学',
+      display_order: 3,
+      class_count: 1,
+    },
+  ])
   org.people.mockResolvedValue([acc])
 })
-afterEach(() => { cleanup(); vi.clearAllMocks() })
+afterEach(() => {
+  cleanup()
+  vi.clearAllMocks()
+})
 
-const renderPage = () => render(
-  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-    <MemoryRouter initialEntries={['/admin/org/classes/c1']}>
-      <Routes><Route path="/admin/org/classes/:id" element={<ClassInfoPage />} /></Routes>
-    </MemoryRouter>
-  </QueryClientProvider>,
-)
+const renderPage = () =>
+  render(
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      <MemoryRouter initialEntries={['/admin/org/classes/c1']}>
+        <Routes>
+          <Route path="/admin/org/classes/:id" element={<ClassInfoPage />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  )
 
 it('disables 添加 for a subject teacher until a subject is chosen', async () => {
   renderPage()
@@ -58,7 +96,13 @@ it('asks for confirmation naming the outgoing homeroom teacher', async () => {
   expect(await screen.findByText(/原班主任 李老师 将卸任/)).toBeInTheDocument()
   expect(api.addStaff).not.toHaveBeenCalled()
   fireEvent.click(screen.getByRole('button', { name: '确认更换' }))
-  await waitFor(() => expect(api.addStaff).toHaveBeenCalledWith('c1', { user_id: 'u5', identity: 'homeroom', subject: null }))
+  await waitFor(() =>
+    expect(api.addStaff).toHaveBeenCalledWith('c1', {
+      user_id: 'u5',
+      identity: 'homeroom',
+      subject: null,
+    }),
+  )
 })
 
 it('summarises the desk layout', async () => {
@@ -104,5 +148,11 @@ it('searches people via the org lookup (debounced) and submits the picked user_i
   fireEvent.click(await screen.findByRole('button', { name: /赵老师/ }))
   fireEvent.change(screen.getByLabelText('科目'), { target: { value: '数学' } })
   fireEvent.click(screen.getByRole('button', { name: '添加' }))
-  await waitFor(() => expect(api.addStaff).toHaveBeenCalledWith('c1', { user_id: 'u5', identity: 'subject', subject: '数学' }))
+  await waitFor(() =>
+    expect(api.addStaff).toHaveBeenCalledWith('c1', {
+      user_id: 'u5',
+      identity: 'subject',
+      subject: '数学',
+    }),
+  )
 })

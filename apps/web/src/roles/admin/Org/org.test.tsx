@@ -10,25 +10,67 @@ import OrgPage from './OrgPage'
 
 vi.mock('@/shared/api/admin', () => ({
   adminApi: {
-    school: vi.fn(), saveSchool: vi.fn(), years: vi.fn(), saveYear: vi.fn(),
-    grades: vi.fn(), createGrade: vi.fn(), updateGrade: vi.fn(), deleteGrade: vi.fn(),
-    classes: vi.fn(), createClass: vi.fn(), deleteClass: vi.fn(),
-    roles: vi.fn(), addRole: vi.fn(), endRole: vi.fn(),
+    school: vi.fn(),
+    saveSchool: vi.fn(),
+    years: vi.fn(),
+    saveYear: vi.fn(),
+    grades: vi.fn(),
+    createGrade: vi.fn(),
+    updateGrade: vi.fn(),
+    deleteGrade: vi.fn(),
+    classes: vi.fn(),
+    createClass: vi.fn(),
+    deleteClass: vi.fn(),
+    roles: vi.fn(),
+    addRole: vi.fn(),
+    endRole: vi.fn(),
   },
 }))
 vi.mock('./orgApi', () => ({ orgApi: { people: vi.fn() } }))
 const api = vi.mocked(adminApi)
 const org = vi.mocked(orgApi)
 
-const year: YearAdmin = { id: 'y1', name: '2026-2027学年', start_date: '2026-09-01', end_date: '2027-07-10', term2_start: '2027-02-20', is_active: true }
-const grade = (id: string, name: string, order: number, n = 1): GradeAdmin =>
-  ({ id, name, stage: null, effective_stage: '小学', display_order: order, class_count: n })
-const cls: ClassAdmin = {
-  id: 'c1', name: '三年二班', grade_id: 'g3', grade_name: '三年级', room: '301', student_count: 40,
-  homeroom: { assignment_id: 'a1', user_id: 'u1', display_name: '李老师' }, assistants: [], subjects: [],
-  desk_size: 2, seat_layout: 'auto', seat_rows: 6, seat_cols: 8, podium_left: 0, podium_right: 0,
+const year: YearAdmin = {
+  id: 'y1',
+  name: '2026-2027学年',
+  start_date: '2026-09-01',
+  end_date: '2027-07-10',
+  term2_start: '2027-02-20',
+  is_active: true,
 }
-const itRole: AdminRole = { binding_id: 'b1', user_id: 'u9', display_name: '周信息', role: 'it_admin', grade_id: null, grade_name: null }
+const grade = (id: string, name: string, order: number, n = 1): GradeAdmin => ({
+  id,
+  name,
+  stage: null,
+  effective_stage: '小学',
+  display_order: order,
+  class_count: n,
+})
+const cls: ClassAdmin = {
+  id: 'c1',
+  name: '三年二班',
+  grade_id: 'g3',
+  grade_name: '三年级',
+  room: '301',
+  student_count: 40,
+  homeroom: { assignment_id: 'a1', user_id: 'u1', display_name: '李老师' },
+  assistants: [],
+  subjects: [],
+  desk_size: 2,
+  seat_layout: 'auto',
+  seat_rows: 6,
+  seat_cols: 8,
+  podium_left: 0,
+  podium_right: 0,
+}
+const itRole: AdminRole = {
+  binding_id: 'b1',
+  user_id: 'u9',
+  display_name: '周信息',
+  role: 'it_admin',
+  grade_id: null,
+  grade_name: null,
+}
 
 let grades: GradeAdmin[]
 
@@ -41,13 +83,21 @@ beforeEach(() => {
   api.roles.mockResolvedValue([itRole])
   org.people.mockResolvedValue([])
 })
-afterEach(() => { cleanup(); vi.clearAllMocks() })
+afterEach(() => {
+  cleanup()
+  vi.clearAllMocks()
+})
 
-const renderPage = () => render(
-  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-    <MemoryRouter><OrgPage /></MemoryRouter>
-  </QueryClientProvider>,
-)
+const renderPage = () =>
+  render(
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      <MemoryRouter>
+        <OrgPage />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  )
 
 it('blocks a term-2 date earlier than the start date', async () => {
   renderPage()
@@ -96,8 +146,16 @@ it('moves a grade by swapping display_order', async () => {
   renderPage()
   fireEvent.click(await screen.findByRole('button', { name: '上移 四年级' }))
   await waitFor(() => expect(api.updateGrade).toHaveBeenCalledTimes(2))
-  expect(api.updateGrade).toHaveBeenCalledWith('g4', { name: '四年级', stage: null, display_order: 0 })
-  expect(api.updateGrade).toHaveBeenCalledWith('g3', { name: '三年级', stage: null, display_order: 1 })
+  expect(api.updateGrade).toHaveBeenCalledWith('g4', {
+    name: '四年级',
+    stage: null,
+    display_order: 0,
+  })
+  expect(api.updateGrade).toHaveBeenCalledWith('g3', {
+    name: '三年级',
+    stage: null,
+    display_order: 1,
+  })
 })
 
 it('renumbers grades sharing a display_order so the swap yields distinct orders', async () => {
@@ -106,7 +164,9 @@ it('renumbers grades sharing a display_order so the swap yields distinct orders'
   renderPage()
   fireEvent.click(await screen.findByRole('button', { name: '上移 四年级' }))
   await waitFor(() => expect(api.updateGrade).toHaveBeenCalledTimes(2))
-  const orders = Object.fromEntries(api.updateGrade.mock.calls.map(([id, b]) => [id, b.display_order]))
+  const orders = Object.fromEntries(
+    api.updateGrade.mock.calls.map(([id, b]) => [id, b.display_order]),
+  )
   // g3 已是 1,无需再发;最终 g4=0、g3=1、g5=2 互不相同
   expect(orders).toEqual({ g4: 0, g5: 2 })
 })
@@ -122,7 +182,9 @@ it('does not send a PUT for grades whose order is unchanged', async () => {
 
 it('falls back to the first grade when the selected grade is deleted', async () => {
   grades = [grade('g3', '三年级', 3), grade('g4', '四年级', 4)]
-  api.deleteGrade.mockImplementation(async (id) => { grades = grades.filter((g) => g.id !== id) })
+  api.deleteGrade.mockImplementation(async (id) => {
+    grades = grades.filter((g) => g.id !== id)
+  })
   renderPage()
   fireEvent.click(await screen.findByRole('button', { name: /^四年级/ }))
   await waitFor(() => expect(api.classes).toHaveBeenCalledWith('g4'))

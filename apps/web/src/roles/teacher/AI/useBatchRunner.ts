@@ -56,51 +56,71 @@ export function useBatchRunner(chat: AiChat) {
     }
   }, [])
 
-  const runOne = useCallback(async (itemId: string): Promise<Outcome> => {
-    const mine = new AbortController()
-    ctrl.current = mine
-    buf.current = ''
-    setLiveText('')
-    setCurrentId(itemId)
-    timer.current = setInterval(() => setLiveText(buf.current), FLUSH_MS)
-    let finished = false
-    let outcome: Outcome = 'next'
-    let aborted = false
-    try {
-      await aiApi.runItem(chat.id, itemId, {
-        onDelta: (t) => { buf.current += t },
-        onDone: () => { finished = true },
-        onError: (e) => {
-          finished = true
-          if (PERMANENT.has(e.code)) { outcome = 'end'; toast(e.message) }
-        },
-      }, mine.signal)
-      if (!finished) { toast(BROKEN); outcome = 'end' }
-    } catch (e) {
-      outcome = 'end'
-      if (e instanceof Error && e.name === 'AbortError') aborted = true
-      else if (e instanceof ApiError) {
-        if (e.code === 'AI_NOT_CONFIGURED') setNotConfigured(true)
-        else if (e.code === 'AI_BUSY') toast('这个对话正在生成,请稍候')
-        else toast(e.message)
-      } else toast(BROKEN)
-    }
-    clearTimer()
-    if (mounted.current) setLiveText(buf.current)
-    ctrl.current = null
-    if (aborted) await new Promise((r) => setTimeout(r, ABORT_REFETCH_MS))
-    if (mounted.current) {
-      await qc.invalidateQueries({ queryKey: ['ai-chat', chat.id] })
+  const runOne = useCallback(
+    async (itemId: string): Promise<Outcome> => {
+      const mine = new AbortController()
+      ctrl.current = mine
       buf.current = ''
       setLiveText('')
-      setCurrentId(null)
-    }
-    return outcome
-  }, [chat.id, qc])
+      setCurrentId(itemId)
+      timer.current = setInterval(() => setLiveText(buf.current), FLUSH_MS)
+      let finished = false
+      let outcome: Outcome = 'next'
+      let aborted = false
+      try {
+        await aiApi.runItem(
+          chat.id,
+          itemId,
+          {
+            onDelta: (t) => {
+              buf.current += t
+            },
+            onDone: () => {
+              finished = true
+            },
+            onError: (e) => {
+              finished = true
+              if (PERMANENT.has(e.code)) {
+                outcome = 'end'
+                toast(e.message)
+              }
+            },
+          },
+          mine.signal,
+        )
+        if (!finished) {
+          toast(BROKEN)
+          outcome = 'end'
+        }
+      } catch (e) {
+        outcome = 'end'
+        if (e instanceof Error && e.name === 'AbortError') aborted = true
+        else if (e instanceof ApiError) {
+          if (e.code === 'AI_NOT_CONFIGURED') setNotConfigured(true)
+          else if (e.code === 'AI_BUSY') toast('这个对话正在生成,请稍候')
+          else toast(e.message)
+        } else toast(BROKEN)
+      }
+      clearTimer()
+      if (mounted.current) setLiveText(buf.current)
+      ctrl.current = null
+      if (aborted) await new Promise((r) => setTimeout(r, ABORT_REFETCH_MS))
+      if (mounted.current) {
+        await qc.invalidateQueries({ queryKey: ['ai-chat', chat.id] })
+        buf.current = ''
+        setLiveText('')
+        setCurrentId(null)
+      }
+      return outcome
+    },
+    [chat.id, qc],
+  )
 
   const start = useCallback(() => {
     if (active.current) return
-    const queue = itemsRef.current.filter((i) => i.status === 'wait' || i.status === 'err').map((i) => i.id)
+    const queue = itemsRef.current
+      .filter((i) => i.status === 'wait' || i.status === 'err')
+      .map((i) => i.id)
     if (queue.length === 0) return
     active.current = true
     stopped.current = false

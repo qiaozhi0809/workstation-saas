@@ -20,11 +20,23 @@ const FUTURE = '2099-12-31T10:00:00Z'
 const PAST = '2000-01-01T10:00:00Z'
 
 // ---------- AckSettings ----------
-function Harness({ initial = { kind: 'none' } as AckSpec, onDeadline = vi.fn(), initialDeadline = null as string | null }) {
+function Harness({
+  initial = { kind: 'none' } as AckSpec,
+  onDeadline = vi.fn(),
+  initialDeadline = null as string | null,
+}) {
   const [v, setV] = useState<AckSpec>(initial)
   const [d, setD] = useState<string | null>(initialDeadline)
   return (
-    <AckSettings value={v} onChange={setV} deadline={d} onDeadlineChange={(x) => { setD(x); onDeadline(x) }} />
+    <AckSettings
+      value={v}
+      onChange={setV}
+      deadline={d}
+      onDeadlineChange={(x) => {
+        setD(x)
+        onDeadline(x)
+      }}
+    />
   )
 }
 const typeOpt = (n: number, text: string) =>
@@ -67,7 +79,9 @@ describe('AckSettings', () => {
   it('选项可增删,2 到 5 个', () => {
     render(<Harness initial={{ kind: 'choice', options: ['去', '不去'], allow_note: false }} />)
     const add = screen.getByRole('button', { name: '添加选项' })
-    fireEvent.click(add); fireEvent.click(add); fireEvent.click(add)
+    fireEvent.click(add)
+    fireEvent.click(add)
+    fireEvent.click(add)
     expect(screen.getByLabelText('选项 5')).toBeInTheDocument()
     expect(screen.queryByLabelText('选项 6')).toBeNull()
     expect(screen.getByRole('button', { name: '添加选项' })).toBeDisabled()
@@ -75,7 +89,7 @@ describe('AckSettings', () => {
     expect(screen.queryByLabelText('选项 5')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '删除选项 4' }))
     fireEvent.click(screen.getByRole('button', { name: '删除选项 3' }))
-    expect(screen.queryByRole('button', { name: /删除选项/ })).toBeNull()   // 只剩 2 个不能再删
+    expect(screen.queryByRole('button', { name: /删除选项/ })).toBeNull() // 只剩 2 个不能再删
     expect(screen.getByLabelText('选项 2')).toBeInTheDocument()
   })
 
@@ -113,23 +127,48 @@ describe('AckSettings', () => {
 
   it('选项输入把值回传给 onChange', () => {
     const onChange = vi.fn()
-    render(<AckSettings value={{ kind: 'choice', options: ['', ''], allow_note: false }} onChange={onChange} />)
+    render(
+      <AckSettings
+        value={{ kind: 'choice', options: ['', ''], allow_note: false }}
+        onChange={onChange}
+      />,
+    )
     typeOpt(1, '去')
-    expect(onChange).toHaveBeenLastCalledWith({ kind: 'choice', options: ['去', ''], allow_note: false })
+    expect(onChange).toHaveBeenLastCalledWith({
+      kind: 'choice',
+      options: ['去', ''],
+      allow_note: false,
+    })
   })
 })
 
 // ---------- AckForm ----------
 const item = (over: Partial<InboxItem> = {}): InboxItem => ({
-  id: 'n1', title: '家长会', content: '周五晚', from_name: '王老师',
-  created_at: '2026-11-04T01:00:00Z', read_at: null, recalled: false,
-  ack: { kind: 'confirm' }, ack_deadline: null, my_ack: null, students: [], can_ack: true, ...over,
+  id: 'n1',
+  title: '家长会',
+  content: '周五晚',
+  from_name: '王老师',
+  created_at: '2026-11-04T01:00:00Z',
+  read_at: null,
+  recalled: false,
+  ack: { kind: 'confirm' },
+  ack_deadline: null,
+  my_ack: null,
+  students: [],
+  can_ack: true,
+  ...over,
 })
 const choiceAck: AckSpec = { kind: 'choice', options: ['参加', '不参加'], allow_note: true }
 const renderForm = (it: InboxItem, onSubmitted?: () => void) => {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  })
   const spy = vi.spyOn(qc, 'invalidateQueries')
-  render(<QueryClientProvider client={qc}><AckForm item={it} onSubmitted={onSubmitted} /></QueryClientProvider>)
+  render(
+    <QueryClientProvider client={qc}>
+      <AckForm item={it} onSubmitted={onSubmitted} />
+    </QueryClientProvider>,
+  )
   return spy
 }
 
@@ -145,7 +184,9 @@ describe('AckForm', () => {
     const onSubmitted = vi.fn()
     const spy = renderForm(item(), onSubmitted)
     fireEvent.click(screen.getByRole('button', { name: '已知晓' }))
-    await waitFor(() => expect(noticesApi.ack).toHaveBeenCalledWith('n1', { choice: null, note: null }))
+    await waitFor(() =>
+      expect(noticesApi.ack).toHaveBeenCalledWith('n1', { choice: null, note: null }),
+    )
     await waitFor(() => expect(onSubmitted).toHaveBeenCalled())
     expect(spy).toHaveBeenCalledWith({ queryKey: ['notices', 'inbox'] })
     expect(await screen.findByText(/^已回执:已知晓,/)).toBeInTheDocument()
@@ -160,7 +201,9 @@ describe('AckForm', () => {
     fireEvent.change(screen.getByLabelText('留言'), { target: { value: '  有事  ' } })
     expect(screen.getByText('6 / 200')).toBeInTheDocument()
     fireEvent.click(submit)
-    await waitFor(() => expect(noticesApi.ack).toHaveBeenCalledWith('n1', { choice: 1, note: '有事' }))
+    await waitFor(() =>
+      expect(noticesApi.ack).toHaveBeenCalledWith('n1', { choice: 1, note: '有事' }),
+    )
   })
 
   it('choice 不允许留言时没有留言框,note 为 null', async () => {
@@ -169,7 +212,9 @@ describe('AckForm', () => {
     expect(screen.queryByLabelText('留言')).toBeNull()
     fireEvent.click(screen.getByRole('radio', { name: 'A' }))
     fireEvent.click(screen.getByRole('button', { name: '提交回执' }))
-    await waitFor(() => expect(noticesApi.ack).toHaveBeenCalledWith('n1', { choice: 0, note: null }))
+    await waitFor(() =>
+      expect(noticesApi.ack).toHaveBeenCalledWith('n1', { choice: 0, note: null }),
+    )
   })
 
   it('留言框最多 200 字', () => {
@@ -179,9 +224,12 @@ describe('AckForm', () => {
 
   it('已回执:显示选项与时间和"修改",点修改可改选并重新提交', async () => {
     vi.mocked(noticesApi.ack).mockResolvedValue(undefined)
-    renderForm(item({
-      ack: choiceAck, my_ack: { choice: 0, note: '会到', acked_at: '2026-11-04T03:00:00Z' },
-    }))
+    renderForm(
+      item({
+        ack: choiceAck,
+        my_ack: { choice: 0, note: '会到', acked_at: '2026-11-04T03:00:00Z' },
+      }),
+    )
     expect(screen.getByText(/^已回执:参加,\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '提交回执' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '修改' }))
@@ -189,7 +237,9 @@ describe('AckForm', () => {
     expect(screen.getByLabelText('留言')).toHaveValue('会到')
     fireEvent.click(screen.getByRole('radio', { name: '不参加' }))
     fireEvent.click(screen.getByRole('button', { name: '提交回执' }))
-    await waitFor(() => expect(noticesApi.ack).toHaveBeenCalledWith('n1', { choice: 1, note: '会到' }))
+    await waitFor(() =>
+      expect(noticesApi.ack).toHaveBeenCalledWith('n1', { choice: 1, note: '会到' }),
+    )
     expect(await screen.findByText(/^已回执:不参加,/)).toBeInTheDocument()
   })
 
@@ -204,9 +254,12 @@ describe('AckForm', () => {
   })
 
   it('choice 点修改后取消,回到已回执视图', () => {
-    renderForm(item({
-      ack: choiceAck, my_ack: { choice: 0, note: null, acked_at: '2026-11-04T03:00:00Z' },
-    }))
+    renderForm(
+      item({
+        ack: choiceAck,
+        my_ack: { choice: 0, note: null, acked_at: '2026-11-04T03:00:00Z' },
+      }),
+    )
     fireEvent.click(screen.getByRole('button', { name: '修改' }))
     fireEvent.click(screen.getByRole('button', { name: '取消' }))
     expect(screen.queryByRole('button', { name: '提交回执' })).toBeNull()
@@ -243,9 +296,13 @@ describe('AckForm', () => {
   })
 
   it('已回执但不能再改:显示回执,不显示修改', () => {
-    renderForm(item({
-      can_ack: false, ack_deadline: PAST, my_ack: { choice: null, note: null, acked_at: '2026-11-04T03:00:00Z' },
-    }))
+    renderForm(
+      item({
+        can_ack: false,
+        ack_deadline: PAST,
+        my_ack: { choice: null, note: null, acked_at: '2026-11-04T03:00:00Z' },
+      }),
+    )
     expect(screen.getByText(/^已回执:已知晓,/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '修改' })).toBeNull()
     expect(screen.getByText('已截止')).toBeInTheDocument()
@@ -267,23 +324,64 @@ describe('AckForm', () => {
 
 // ---------- AckStatsDialog ----------
 const row = (over: Partial<AckRow> = {}): AckRow => ({
-  user_id: 'u1', user_name: '张妈妈', student_id: 's1', student_name: '张小明', class_name: '三年二班',
-  read_at: null, choice: null, note: null, acked_at: null, ...over,
+  user_id: 'u1',
+  user_name: '张妈妈',
+  student_id: 's1',
+  student_name: '张小明',
+  class_name: '三年二班',
+  read_at: null,
+  choice: null,
+  note: null,
+  acked_at: null,
+  ...over,
 })
 const parentRows: AckRow[] = [
-  row({ user_id: 'u1', user_name: '张妈妈', student_id: 's1', student_name: '张小明', read_at: '2026-11-04T02:00:00Z', choice: 0, note: '会到', acked_at: '2026-11-04T03:00:00Z' }),
-  row({ user_id: 'u2', user_name: '李爸爸', student_id: 's2', student_name: '李小红', read_at: '2026-11-04T02:30:00Z' }),
+  row({
+    user_id: 'u1',
+    user_name: '张妈妈',
+    student_id: 's1',
+    student_name: '张小明',
+    read_at: '2026-11-04T02:00:00Z',
+    choice: 0,
+    note: '会到',
+    acked_at: '2026-11-04T03:00:00Z',
+  }),
+  row({
+    user_id: 'u2',
+    user_name: '李爸爸',
+    student_id: 's2',
+    student_name: '李小红',
+    read_at: '2026-11-04T02:30:00Z',
+  }),
   row({ user_id: 'u3', user_name: '王妈妈', student_id: 's3', student_name: '王小刚' }),
-  row({ user_id: 'u3', user_name: '王妈妈', student_id: 's4', student_name: '王小丽', class_name: '三年一班' }),
+  row({
+    user_id: 'u3',
+    user_name: '王妈妈',
+    student_id: 's4',
+    student_name: '王小丽',
+    class_name: '三年一班',
+  }),
 ]
 const stats = (over: Partial<AckStats> = {}): AckStats => ({
-  audience: 'parents', ack: choiceAck, ack_deadline: null, total: 4, read: 2, acked: 1,
-  counts: [1, 0], students_without_parent: 0, rows: parentRows, ...over,
+  audience: 'parents',
+  ack: choiceAck,
+  ack_deadline: null,
+  total: 4,
+  read: 2,
+  acked: 1,
+  counts: [1, 0],
+  students_without_parent: 0,
+  rows: parentRows,
+  ...over,
 })
 const renderStats = (s: AckStats, onClose = vi.fn()) => {
   vi.mocked(noticesApi.acks).mockResolvedValue(s)
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(<QueryClientProvider client={qc}><AckStatsDialog noticeId="n1" onClose={onClose} /></QueryClientProvider>)
+  render(
+    <QueryClientProvider client={qc}>
+      <AckStatsDialog noticeId="n1" onClose={onClose} />
+    </QueryClientProvider>,
+  )
   return qc
 }
 
@@ -294,7 +392,11 @@ describe('AckStatsDialog', () => {
     cleanup()
     vi.mocked(noticesApi.acks).mockClear()
     vi.mocked(noticesApi.acks).mockResolvedValue(stats({ read: 3, acked: 2 }))
-    render(<QueryClientProvider client={qc}><AckStatsDialog noticeId="n1" onClose={vi.fn()} /></QueryClientProvider>)
+    render(
+      <QueryClientProvider client={qc}>
+        <AckStatsDialog noticeId="n1" onClose={vi.fn()} />
+      </QueryClientProvider>,
+    )
     expect(await screen.findByText('已读 3 / 4 · 已回执 2 / 4')).toBeInTheDocument()
     expect(noticesApi.acks).toHaveBeenCalledTimes(1)
   })
@@ -323,11 +425,19 @@ describe('AckStatsDialog', () => {
     renderStats(stats())
     await screen.findByText('已读 2 / 4 · 已回执 1 / 4')
     const tabs = screen.getByRole('tablist', { name: '名单' })
-    expect(within(tabs).getAllByRole('tab').map((t) => t.textContent)).toEqual(['已回执', '未回执', '未读'])
+    expect(
+      within(tabs)
+        .getAllByRole('tab')
+        .map((t) => t.textContent),
+    ).toEqual(['已回执', '未回执', '未读'])
     // 默认:已回执
     expect(screen.getByRole('tab', { name: '已回执' })).toHaveAttribute('aria-selected', 'true')
     let table = screen.getByRole('table')
-    expect(within(table).getAllByRole('columnheader').map((c) => c.textContent)).toEqual(['班级', '学生', '家长', '回执'])
+    expect(
+      within(table)
+        .getAllByRole('columnheader')
+        .map((c) => c.textContent),
+    ).toEqual(['班级', '学生', '家长', '回执'])
     let body = within(table).getAllByRole('row').slice(1)
     expect(body).toHaveLength(1)
     expect(body[0]).toHaveTextContent('三年二班')
@@ -340,7 +450,9 @@ describe('AckStatsDialog', () => {
     table = screen.getByRole('table')
     body = within(table).getAllByRole('row').slice(1)
     expect(body.map((r) => r.textContent)).toEqual([
-      expect.stringContaining('李小红'), expect.stringContaining('王小刚'), expect.stringContaining('王小丽'),
+      expect.stringContaining('李小红'),
+      expect.stringContaining('王小刚'),
+      expect.stringContaining('王小丽'),
     ])
 
     fireEvent.click(screen.getByRole('tab', { name: '未读' }))
@@ -353,20 +465,54 @@ describe('AckStatsDialog', () => {
   })
 
   it('老师对象显示姓名', async () => {
-    renderStats(stats({
-      audience: 'teachers', ack: { kind: 'confirm' }, counts: [], total: 2, read: 1, acked: 0,
-      rows: [
-        row({ user_id: 't1', user_name: '赵老师', student_id: null, student_name: null, class_name: null, read_at: '2026-11-04T02:00:00Z' }),
-        row({ user_id: 't2', user_name: '钱老师', student_id: null, student_name: null, class_name: null }),
-      ],
-    }))
+    renderStats(
+      stats({
+        audience: 'teachers',
+        ack: { kind: 'confirm' },
+        counts: [],
+        total: 2,
+        read: 1,
+        acked: 0,
+        rows: [
+          row({
+            user_id: 't1',
+            user_name: '赵老师',
+            student_id: null,
+            student_name: null,
+            class_name: null,
+            read_at: '2026-11-04T02:00:00Z',
+          }),
+          row({
+            user_id: 't2',
+            user_name: '钱老师',
+            student_id: null,
+            student_name: null,
+            class_name: null,
+          }),
+        ],
+      }),
+    )
     await screen.findByText('已读 1 / 2 · 已回执 0 / 2')
     fireEvent.click(screen.getByRole('tab', { name: '未回执' }))
     const table = screen.getByRole('table')
-    expect(within(table).getAllByRole('columnheader').map((c) => c.textContent)).toEqual(['姓名'])
-    expect(within(table).getAllByRole('row').slice(1).map((r) => r.textContent)).toEqual(['赵老师', '钱老师'])
+    expect(
+      within(table)
+        .getAllByRole('columnheader')
+        .map((c) => c.textContent),
+    ).toEqual(['姓名'])
+    expect(
+      within(table)
+        .getAllByRole('row')
+        .slice(1)
+        .map((r) => r.textContent),
+    ).toEqual(['赵老师', '钱老师'])
     fireEvent.click(screen.getByRole('tab', { name: '未读' }))
-    expect(within(screen.getByRole('table')).getAllByRole('row').slice(1).map((r) => r.textContent)).toEqual(['钱老师'])
+    expect(
+      within(screen.getByRole('table'))
+        .getAllByRole('row')
+        .slice(1)
+        .map((r) => r.textContent),
+    ).toEqual(['钱老师'])
   })
 
   it('空名单显示空提示', async () => {
@@ -402,7 +548,9 @@ describe('AckStatsDialog', () => {
   })
 
   it('导出失败显示后端 message', async () => {
-    vi.mocked(noticesApi.exportAcks).mockRejectedValue(new ApiError(404, 'NOT_FOUND', '没有这条通知'))
+    vi.mocked(noticesApi.exportAcks).mockRejectedValue(
+      new ApiError(404, 'NOT_FOUND', '没有这条通知'),
+    )
     renderStats(stats())
     await screen.findByText('已读 2 / 4 · 已回执 1 / 4')
     fireEvent.click(screen.getByRole('button', { name: '导出 CSV' }))
@@ -412,7 +560,11 @@ describe('AckStatsDialog', () => {
   it('加载失败显示错误并可重试', async () => {
     vi.mocked(noticesApi.acks).mockRejectedValueOnce(new ApiError(500, 'X', '服务器错误'))
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    render(<QueryClientProvider client={qc}><AckStatsDialog noticeId="n1" /></QueryClientProvider>)
+    render(
+      <QueryClientProvider client={qc}>
+        <AckStatsDialog noticeId="n1" />
+      </QueryClientProvider>,
+    )
     expect(await screen.findByText('回执统计加载失败')).toBeInTheDocument()
     vi.mocked(noticesApi.acks).mockResolvedValue(stats())
     fireEvent.click(screen.getByRole('button', { name: '重试' }))

@@ -13,7 +13,9 @@ function renderMenu(onA = vi.fn()) {
       <Menu label="更多操作" trigger="⋯" triggerProps={{ 'aria-label': '更多操作' }}>
         <MenuLabel>王老师</MenuLabel>
         <MenuItem onSelect={onA}>放弃修改</MenuItem>
-        <MenuItem onSelect={vi.fn()} disabled>固定座位</MenuItem>
+        <MenuItem onSelect={vi.fn()} disabled>
+          固定座位
+        </MenuItem>
         <MenuLinkItem to="/teacher/preferences">我的偏好</MenuLinkItem>
       </Menu>
       <button>外面</button>
@@ -198,7 +200,10 @@ it('aria-disabled menu items get no hover highlight', () => {
   renderMenu()
   fireEvent.click(menuTrigger())
   const fixed = screen.getByRole('menuitem', { name: '固定座位' })
-  expect(fixed).toHaveClass('aria-disabled:hover:bg-transparent', 'aria-disabled:hover:text-inherit')
+  expect(fixed).toHaveClass(
+    'aria-disabled:hover:bg-transparent',
+    'aria-disabled:hover:text-inherit',
+  )
 })
 
 it('popover focuses a [data-autofocus] element before the first focusable one', () => {

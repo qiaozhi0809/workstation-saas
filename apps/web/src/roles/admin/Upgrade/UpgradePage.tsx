@@ -30,23 +30,45 @@ export default function UpgradePage() {
   const [askRegen, setAskRegen] = useState(false)
   const [askDiscard, setAskDiscard] = useState(false)
 
-  const classes = useQuery({ queryKey: ['admin', 'classes', null], queryFn: () => adminApi.classes(), enabled: plan !== null })
-  const years = useQuery({ queryKey: ['admin', 'years'], queryFn: adminApi.years, enabled: plan !== null })
-  const roles = useQuery({ queryKey: ['admin', 'roles'], queryFn: adminApi.roles, enabled: plan !== null })
+  const classes = useQuery({
+    queryKey: ['admin', 'classes', null],
+    queryFn: () => adminApi.classes(),
+    enabled: plan !== null,
+  })
+  const years = useQuery({
+    queryKey: ['admin', 'years'],
+    queryFn: adminApi.years,
+    enabled: plan !== null,
+  })
+  const roles = useQuery({
+    queryKey: ['admin', 'roles'],
+    queryFn: adminApi.roles,
+    enabled: plan !== null,
+  })
   // 草稿里的方案基于的学年已不是进行中的学年
   const activeYear = years.data?.find((y) => y.is_active)
   const draftOld = plan !== null && activeYear !== undefined && activeYear.id !== plan.from_year_id
   const gradeOf = (id: string) => classes.data?.find((c) => c.id === id)?.grade_name ?? null
-  const headNames = new Map((roles.data ?? []).filter((r) => r.role === 'grade_head').map((r) => [r.user_id, r.display_name]))
-  const nameOf = (id: string | null | undefined) => (id ? (draft.ui.names[id] ?? headNames.get(id) ?? null) : null)
+  const headNames = new Map(
+    (roles.data ?? [])
+      .filter((r) => r.role === 'grade_head')
+      .map((r) => [r.user_id, r.display_name]),
+  )
+  const nameOf = (id: string | null | undefined) =>
+    id ? (draft.ui.names[id] ?? headNames.get(id) ?? null) : null
 
-  const goto = (s: StepKey) => { setNotice(null); d.setStep(s) }
+  const goto = (s: StepKey) => {
+    setNotice(null)
+    d.setStep(s)
+  }
 
   /** 方案问题 / 过期当场处理并返回 true;其他错误交还调用方 */
   const handleError = (e: unknown): boolean => {
     const p = problemOf(e)
     if (p) {
-      setProblem(p); setStale(false); setNotice(null)
+      setProblem(p)
+      setStale(false)
+      setNotice(null)
       if (p.section) {
         d.setStep(stepOfSection(p.section))
         if (p.section === 'students' && p.index !== null && plan) {
@@ -57,32 +79,56 @@ export default function UpgradePage() {
       }
       return true
     }
-    if (isStale(e)) { setStale(true); setProblem(null); setNotice(null); return true }
+    if (isStale(e)) {
+      setStale(true)
+      setProblem(null)
+      setNotice(null)
+      return true
+    }
     return false
   }
 
   const suggest = useMutation({
-    mutationFn: () => adminApi.upgradeSuggest({
-      name: draft.year.name.trim(), start_date: draft.year.start_date, end_date: draft.year.end_date,
-    }),
+    mutationFn: () =>
+      adminApi.upgradeSuggest({
+        name: draft.year.name.trim(),
+        start_date: draft.year.start_date,
+        end_date: draft.year.end_date,
+      }),
     onSuccess: (raw) => {
       const next = syncGradeHeads(normalizePlan(raw))
       const names: Record<string, string> = {}
-      next.classes.forEach((c) => { if (c.homeroom_teacher_id && c.teacher_name) names[c.homeroom_teacher_id] = c.teacher_name })
+      next.classes.forEach((c) => {
+        if (c.homeroom_teacher_id && c.teacher_name) names[c.homeroom_teacher_id] = c.teacher_name
+      })
       d.setPlan(next)
       d.setUi({ studentClassId: null, studentClasses: {} })
       d.rememberNames(names)
       d.setStep('classes')
-      setProblem(null); setStale(false); setNotice(null); setDone(false)
+      setProblem(null)
+      setStale(false)
+      setNotice(null)
+      setDone(false)
     },
-    onError: (e) => { if (!handleError(e)) setNotice(errMsg(e)) },
+    onError: (e) => {
+      if (!handleError(e)) setNotice(errMsg(e))
+    },
   })
-  const regenerate = () => { setAskRegen(false); suggest.mutate() }
+  const regenerate = () => {
+    setAskRegen(false)
+    suggest.mutate()
+  }
 
-  const edit = (fn: Parameters<typeof d.editPlan>[0]) => { setProblem(null); d.editPlan(fn) }
+  const edit = (fn: Parameters<typeof d.editPlan>[0]) => {
+    setProblem(null)
+    d.editPlan(fn)
+  }
   const applied = () => {
     d.clear()
-    setProblem(null); setStale(false); setNotice(null); setDone(true)
+    setProblem(null)
+    setStale(false)
+    setNotice(null)
+    setDone(true)
     void refreshYearData(qc)
   }
 
@@ -93,13 +139,25 @@ export default function UpgradePage() {
     <div className="grid gap-4 p-4">
       <h1 className="text-xl font-semibold">学年升级</h1>
       <UpgradeLatestCard onRolledBack={() => setDone(false)} />
-      {done && <p role="status" className="rounded-md border border-success/40 bg-success/10 px-3 py-2 text-sm">升级已执行,新学年已生效</p>}
+      {done && (
+        <p
+          role="status"
+          className="rounded-md border border-success/40 bg-success/10 px-3 py-2 text-sm"
+        >
+          升级已执行,新学年已生效
+        </p>
+      )}
       <nav aria-label="升级步骤">
         <ol className="flex flex-wrap gap-2">
           {STEPS.map((s, i) => (
             <li key={s.key}>
-              <Button variant={s.key === step ? 'default' : 'outline'} size="sm" aria-current={s.key === step ? 'step' : undefined}
-                disabled={s.key !== 'year' && plan === null} onClick={() => goto(s.key)}>
+              <Button
+                variant={s.key === step ? 'default' : 'outline'}
+                size="sm"
+                aria-current={s.key === step ? 'step' : undefined}
+                disabled={s.key !== 'year' && plan === null}
+                onClick={() => goto(s.key)}
+              >
                 {i + 1}. {s.label}
               </Button>
             </li>
@@ -107,41 +165,118 @@ export default function UpgradePage() {
         </ol>
       </nav>
       {(stale || draftOld) && (
-        <div role="alert" className="flex flex-wrap items-center gap-3 rounded-md border border-destructive px-3 py-2 text-sm text-destructive">
+        <div
+          role="alert"
+          className="flex flex-wrap items-center gap-3 rounded-md border border-destructive px-3 py-2 text-sm text-destructive"
+        >
           <span>{stale ? '方案已过期,请重新生成' : '草稿基于旧学年,请重新生成'}</span>
-          <Button size="sm" variant="outline" disabled={suggest.isPending} onClick={() => suggest.mutate()}>重新生成</Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={suggest.isPending}
+            onClick={() => suggest.mutate()}
+          >
+            重新生成
+          </Button>
         </div>
       )}
-      {problem && <p role="alert" className="text-sm text-destructive">方案校验未通过,请修改标红的位置:{problem.message}</p>}
-      {notice && <p role="alert" className="text-sm text-destructive">{notice}</p>}
+      {problem && (
+        <p role="alert" className="text-sm text-destructive">
+          方案校验未通过,请修改标红的位置:{problem.message}
+        </p>
+      )}
+      {notice && (
+        <p role="alert" className="text-sm text-destructive">
+          {notice}
+        </p>
+      )}
       <Card>
         <CardContent className={cn('pt-6')}>
           {step === 'year' && (
-            <StepYear year={draft.year} hasPlan={plan !== null} busy={suggest.isPending} problem={problem}
-              onChange={(patch) => { setProblem(null); d.setYear(patch) }} onSuggest={() => (plan ? setAskRegen(true) : suggest.mutate())} />
+            <StepYear
+              year={draft.year}
+              hasPlan={plan !== null}
+              busy={suggest.isPending}
+              problem={problem}
+              onChange={(patch) => {
+                setProblem(null)
+                d.setYear(patch)
+              }}
+              onSuggest={() => (plan ? setAskRegen(true) : suggest.mutate())}
+            />
           )}
           {stepProps && step === 'classes' && <StepClasses {...stepProps} gradeOf={gradeOf} />}
           {stepProps && step === 'students' && (
-            <StepStudents plan={stepProps.plan} edit={edit} problem={problem} gradeOf={gradeOf} markedClass={draft.ui.studentClasses}
-              classId={draft.ui.studentClassId} onClassChange={(id) => d.setUi({ studentClassId: id })}
-              onMark={(eid, cid) => d.setUi({ studentClasses: { ...draft.ui.studentClasses, [eid]: cid } })} />
+            <StepStudents
+              plan={stepProps.plan}
+              edit={edit}
+              problem={problem}
+              gradeOf={gradeOf}
+              markedClass={draft.ui.studentClasses}
+              classId={draft.ui.studentClassId}
+              onClassChange={(id) => d.setUi({ studentClassId: id })}
+              onMark={(eid, cid) =>
+                d.setUi({ studentClasses: { ...draft.ui.studentClasses, [eid]: cid } })
+              }
+            />
           )}
           {stepProps && step === 'newClasses' && <StepNewClasses {...stepProps} />}
           {stepProps && step === 'people' && <StepPeople {...stepProps} />}
-          {plan && step === 'preview' && <StepPreview plan={plan} blocked={stale || draftOld} onApplied={applied} onError={handleError} />}
+          {plan && step === 'preview' && (
+            <StepPreview
+              plan={plan}
+              blocked={stale || draftOld}
+              onApplied={applied}
+              onError={handleError}
+            />
+          )}
         </CardContent>
       </Card>
       <div className="flex flex-wrap items-center gap-2">
-        <Button variant="outline" disabled={idx <= 0} onClick={() => goto(STEPS[idx - 1].key)}>上一步</Button>
-        <Button variant="outline" disabled={plan === null || idx >= STEPS.length - 1} onClick={() => goto(STEPS[idx + 1].key)}>下一步</Button>
-        <Button variant="ghost" className="ml-auto" disabled={plan === null && !draft.year.name && !draft.year.start_date && !draft.year.end_date} onClick={() => setAskDiscard(true)}>放弃草稿</Button>
+        <Button variant="outline" disabled={idx <= 0} onClick={() => goto(STEPS[idx - 1].key)}>
+          上一步
+        </Button>
+        <Button
+          variant="outline"
+          disabled={plan === null || idx >= STEPS.length - 1}
+          onClick={() => goto(STEPS[idx + 1].key)}
+        >
+          下一步
+        </Button>
+        <Button
+          variant="ghost"
+          className="ml-auto"
+          disabled={
+            plan === null && !draft.year.name && !draft.year.start_date && !draft.year.end_date
+          }
+          onClick={() => setAskDiscard(true)}
+        >
+          放弃草稿
+        </Button>
       </div>
-      <ConfirmBox open={askRegen} title="重新生成建议" confirmLabel="覆盖并重新生成" onConfirm={regenerate} onClose={() => setAskRegen(false)}>
+      <ConfirmBox
+        open={askRegen}
+        title="重新生成建议"
+        confirmLabel="覆盖并重新生成"
+        onConfirm={regenerate}
+        onClose={() => setAskRegen(false)}
+      >
         <p>重新生成会覆盖当前草稿里的所有改动</p>
       </ConfirmBox>
-      <ConfirmBox open={askDiscard} title="放弃草稿" confirmLabel="确认放弃"
-        onConfirm={() => { d.clear(); setProblem(null); setStale(false); setNotice(null); setDone(false); setAskDiscard(false) }}
-        onClose={() => setAskDiscard(false)}>
+      <ConfirmBox
+        open={askDiscard}
+        title="放弃草稿"
+        confirmLabel="确认放弃"
+        onConfirm={() => {
+          d.clear()
+          setProblem(null)
+          setStale(false)
+          setNotice(null)
+          setDone(false)
+          setAskDiscard(false)
+        }}
+        onClose={() => setAskDiscard(false)}
+      >
         <p>草稿方案将被清除,无法恢复</p>
       </ConfirmBox>
     </div>
