@@ -28,6 +28,7 @@ from app.models import Enrollment, RoleBinding, SchoolClass, Student, User
 from app.models.parents import Parent, ParentLink
 from app.rbac.bindings import Binding, can
 from app.rbac.roles import PARENT_ROLES, Perm, Role
+from app.ws.hub import publish
 
 MAX_PARENTS = 4
 _PHONE_RE = re.compile(r"^1[3-9][0-9]{9}$")
@@ -400,7 +401,8 @@ def unlink(
     )
     _end_binding(db, user_id, student.id)
     if was_primary:
-        rest = _live_links(db, student.id)
+        # 继任者只从在用绑定里选(和 set_primary 同口径);只读的保持次要,没有就不设主家长
+        rest = [lk for lk in _live_links(db, student.id) if lk.status == "active"]
         if rest:
             heir = min(rest, key=lambda lk: (lk.created_at, lk.id))
             _set_flag(db, heir, True)
@@ -431,6 +433,8 @@ def unlink(
     db.commit()
     for uid in archived:
         sessions.revoke_all(redis, uid)
+    if archived:
+        publish(redis, archived, {"type": "session.revoked"})
 
 
 def reset_parent_password(

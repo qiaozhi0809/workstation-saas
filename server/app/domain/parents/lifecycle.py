@@ -1,4 +1,13 @@
-"""家长绑定的生命周期:孩子不在读 -> 只读 -> 满一年归档。"""
+"""家长绑定的生命周期:孩子不在读 -> 只读 -> 满一年归档。
+
+不变式(L62):有 active 注册的学生,其未结束的绑定都是 active;没有的都是 readonly。
+现有三条路径守住它:移出学生和学年升级毕业调 close_links_for,学年回滚调 reopen_links
+(按升级快照里记录的绑定 id)。目前没有让已有学生重新获得 active 注册的入口
+(create_student / import_students 都新建 Student,也没有转班)。将来任何这样的新入口
+(转班、撤销移出)都必须在同一事务里把该生未满 365 天的 readonly 绑定恢复为 active
+(readonly_since 置空);收件人解析同时要求在读注册和 active 绑定,漏恢复只会少发不会多发。
+由 test_links_follow_enrollment_invariant 锁住。
+"""
 
 from collections.abc import Sequence
 from dataclasses import dataclass

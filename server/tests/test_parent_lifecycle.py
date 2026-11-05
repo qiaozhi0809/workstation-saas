@@ -88,6 +88,45 @@ def test_remove_student_readonly(client, settings, db):
     assert "teacher" in brief.contexts
 
 
+def _assert_links_follow_enrollment(db):
+    """有 active 注册的学生,未结束的绑定都是 active;没有的都是 readonly。"""
+    bad = db.execute(
+        text(
+            "SELECT s.mk, pl.status FROM parent_links pl JOIN students s ON s.id = pl.student_id"
+            " WHERE pl.status <> 'ended' AND pl.status <> CASE WHEN EXISTS ("
+            " SELECT 1 FROM enrollments e WHERE e.student_id = s.id AND e.status = 'active')"
+            " THEN 'active' ELSE 'readonly' END"
+        )
+    ).all()
+    assert bad == []
+
+
+def test_links_follow_enrollment_invariant(client, settings, db):
+    """L62:任何让学生重新获得 active 注册的新入口(转班、撤销移出)都必须同时恢复绑定。
+    现有三条路径(移出、升级毕业、回滚)每一步之后,绑定状态都跟着注册状态走。"""
+    _assert_links_follow_enrollment(db)
+    # 路径一:移出学生
+    eid = db.execute(
+        text(
+            "SELECT e.id FROM enrollments e JOIN students s ON s.id = e.student_id"
+            " WHERE s.mk = 'S0002' AND e.status = 'active'"
+        )
+    ).scalar_one()
+    res = client.delete(f"/api/v1/classes/{CLASS_ID}/students/{eid}", headers=auth(settings))
+    assert res.status_code == 204, res.text
+    assert _link(db, TEACHER04, "S0002").status == "readonly"
+    _assert_links_follow_enrollment(db)
+    # 路径二:升级毕业
+    up = apply(db, SCHOOL, _graduate_four(db), now=NOW)
+    assert _link(db, PARENT01, "S0017").status == "readonly"
+    _assert_links_follow_enrollment(db)
+    # 路径三:回滚(只恢复升级里关掉的绑定,先前移出的 S0002 仍只读)
+    rollback(db, SCHOOL, now=NOW + timedelta(days=1), upgrade_id=up.id)
+    assert _link(db, PARENT01, "S0017").status == "active"
+    assert _link(db, TEACHER04, "S0002").status == "readonly"
+    _assert_links_follow_enrollment(db)
+
+
 def _age(db, user_id, mk, days=366):
     db.execute(
         text(
