@@ -173,7 +173,7 @@ Step N+(1-k): Commit          → git add && git commit
 | 部署脚本测试 | bash + Docker | `bash deploy/tests/compose_smoke.sh`、`install_fresh.sh`、`install_twice.sh`、`upgrade_same.sh`、`upgrade_precheck_fail.sh`、`backup_restore.sh`、`restore_rejects.sh`(都在 `deploy/tests/`) |
 | 部署脚本 Lint | shellcheck | `docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck-alpine:stable shellcheck -S warning -x deploy/prod/scripts/*.sh deploy/tests/*.sh` |
 
-部署测试脚本须以**非 root** 用户运行,且该用户在 `docker` 组里;**逐个跑**,不要并行(它们共用 compose 项目名 `ws-m5a-b`、端口 18080 / 18443 与固定子网 `172.30.0.0/24`,可用 `WS_TEST_PROJECT`、`WS_HTTP_PORT`、`WS_HTTPS_PORT`、`WS_VERSION` 覆盖);镜像须先用 `make image VERSION=0.0.0-seg-b`(或 `WS_VERSION` 指定的标签)构建好。
+部署测试脚本须以**非 root** 用户运行,且该用户在 `docker` 组里;**逐个跑**,不要并行(它们共用 compose 项目名 `ws-m5a-b`、端口 18080 / 18443 与固定子网 `172.30.0.0/24`,可用 `WS_TEST_PROJECT`(`compose_smoke.sh` 另兼容旧名 `WS_SMOKE_PROJECT`)、`WS_HTTP_PORT`、`WS_HTTPS_PORT`、`WS_TEST_VERSION`(旧名 `WS_VERSION` 仍有效)、`WS_TEST_DEPLOY_SRC`(被测部署目录,默认 `deploy/prod`)覆盖);镜像须先用 `make image VERSION=0.0.0-seg-b`(或 `WS_VERSION` 指定的标签)构建好。
 
 **不要 mock 数据库和 Redis**。用 testcontainers 跑真服务(plan Task 3 提供 conftest);本机需先启动 Docker。
 

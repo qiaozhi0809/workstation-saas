@@ -24,14 +24,14 @@
 
 - 1 台 x86_64 服务器或工控机,2 核 4 GB 内存起步,磁盘建议 50-100 GB(安装时要求部署目录所在磁盘至少有 20 GB 可用)。
 - 操作系统:**Ubuntu 22.04 LTS 或 24.04 LTS,x86_64**。v1 **不支持 Windows Server**(2026-11-05 用户定);其他 Linux 发行版不在支持范围内,`install.sh` 会拒绝(确需尝试可加 `--force`,后果自负)。
-- 已安装 Docker Engine 与 `docker compose` 插件(离线机器请提前装好)。运行脚本的用户要能使用 docker:要么是 root,要么在 `docker` 组里(`sudo usermod -aG docker $USER`,重新登录后生效)。
+- 已安装 Docker Engine 与 `docker compose` 插件(离线机器请提前装好)。**`docker compose` 插件版本不低于 2.20**(用到 `up --pull never` 与 compose 文件顶层的 `name:`);`docker compose version --short` 可查看版本,低于 2.20 时 `install.sh`、`upgrade.sh`、`restore.sh` 会拒绝运行。运行脚本的用户要能使用 docker:要么是 root,要么在 `docker` 组里(`sudo usermod -aG docker $USER`,重新登录后生效)。
 - 脚本依赖的命令:`bash`、`docker`、`docker compose`、`tar`、`gzip`、`sha256sum`、`openssl`、`awk`、`grep`、`sed`、`find`。Ubuntu 默认都有(`docker` 需自行安装)。
 - 部署目录路径里**不能含空格,也不能含 `%`、`$`、`&`**(会让脚本与 systemd 定时备份出错)。建议放在 `/opt/workstation` 这类简单路径。
 - 安装与升级全程**不需要外网**(只有证书方式选"公网域名自动申请"时才联网)。
 
 ## 2. 拿到离线包后
 
-离线包是 `workstation-deploy-<版本>.tar.gz`,旁边应有同名的 `.sha256` 校验文件。
+离线包的文件名是 `workstation-deploy-<版本>.tar.gz`,旁边应有校验文件 `workstation-deploy-<版本>.tar.gz.sha256`(`upgrade.sh` 也接受去掉 `.tar.gz` 的 `workstation-deploy-<版本>.sha256`,两个都有时用前者)。校验文件只取第一行的第一列(与 `sha256sum` 输出格式一致)。
 
 1. 校验完整性:`sha256sum workstation-deploy-<版本>.tar.gz`,输出的第一列应与 `.sha256` 文件第一列一致。
 2. 解开并进入目录:
@@ -74,7 +74,7 @@ WS_INSTALL_TLS=1 \
 |---|---|
 | `WS_INSTALL_SCHOOL_NAME` | 学校名称,必填 |
 | `WS_INSTALL_ADMIN_LOGIN` | 管理员登录名,默认 `admin`(3-32 位字母、数字、`.` `_` `-`) |
-| `WS_INSTALL_ADMIN_PASSWORD_FILE` | 存放管理员密码的文件,取第一行;**更稳妥**(环境变量会留在调用者的环境里) |
+| `WS_INSTALL_ADMIN_PASSWORD_FILE` | 存放管理员密码的文件,取第一行;**更稳妥**(环境变量会留在调用者的环境里)。**文件权限设为 600(`chmod 600`),装完后立即删除** |
 | `WS_INSTALL_ADMIN_PASSWORD` | 管理员密码;与上一个二选一,必填其一 |
 | `WS_INSTALL_SITE` | 访问地址(域名或 IP,只能含字母、数字、`.` `-` `_`),必填 |
 | `WS_INSTALL_TLS` | 证书方式:`1`/`internal` 内部证书(默认)、`2`/`custom` 自备证书、`3`/`acme` 公网自动申请 |
@@ -187,7 +187,7 @@ WS_INSTALL_TLS=1 \
 
 ### 流程
 
-1. 先校验(不动数据库):归档完整、`manifest.json` 格式、各文件 sha256、`env` 含必需键、大版本一致、备份的迁移版本不比当前镜像新、磁盘空间够。任何一项不过都直接拒绝。
+1. 先校验(不动数据库):归档完整、`manifest.json` 格式、各文件 sha256、`env` 含必需键、大版本一致、备份的迁移版本不比当前镜像新、磁盘空间够(恢复期间新旧两个库同时存在,要求可用空间不小于"当前数据库大小"与"备份里 db.dump 大小的 6 倍"中较大者的 1.2 倍)。任何一项不过都直接拒绝。
 2. 先把备份恢复进临时库(此时系统仍在服务,正式库不受影响)。
 3. 停止 app 与 scheduler,把正式库改名、临时库改名为正式库;成功后才删旧库。中途失败会自动还原,或明确提示"状态不确定、备份完好、重跑命令"。
 4. 处理 `.env`、写回 Caddy 数据、重启 web、清空 Redis(所有人需要重新登录)、启动服务并等应用就绪。
@@ -206,7 +206,7 @@ WS_INSTALL_TLS=1 \
 2. 把备份文件复制到新机器(例如放进部署目录的 `backups/`)。
 3. 执行 `./scripts/install.sh`(交互或非交互)装出一套全新系统,学校名、管理员随意填(之后会被备份覆盖)。**站点地址、端口、证书方式用新机器要用的值**——它们不会从备份恢复。
 4. 执行 `./scripts/restore.sh <备份文件> --yes`。
-5. 内部证书方式:Caddy 数据已随备份恢复,根证书与旧机器相同,终端不用重装;如果新机器的访问地址变了,证书需要重新签发,终端要重新信任。
+5. 内部证书方式:Caddy 数据(含内部 CA 的根证书与私钥)已随备份恢复,新机器用的还是旧机器的根证书。即使新机器的访问地址变了,新地址的证书也由**同一个根证书**签发,所以各终端**不需要重新安装根证书**(第 4 节方式 1 第 4 点)。
 6. 用管理员账号(备份里的,不是第 3 步填的)登录,检查数据。
 
 ## 9. 升级与降级
@@ -217,7 +217,7 @@ WS_INSTALL_TLS=1 \
 ./scripts/upgrade.sh /path/to/workstation-deploy-<新版本>.tar.gz
 ```
 
-脚本依次:校验离线包(有 `.sha256` 时核对)→ **强制备份**(失败就停)→ 载入新镜像 → 用新镜像对现有数据库做**迁移预检** → 覆盖程序文件(不动 `.env`、`Caddyfile`、`certs/`、`data/`、`backups/`)→ 重启并等应用就绪。新版本 `.env.example` 里新增的配置项会按默认值追加进 `.env` 并提示,请核对。
+脚本依次:校验离线包(有 `.sha256` 时核对,命名见第 2 节)→ **强制备份**(失败就停)→ 载入新镜像 → 用新镜像对现有数据库做**迁移预检** → 覆盖程序文件(不动 `.env`、`Caddyfile`、`certs/`、`data/`、`backups/`)→ 重启并确认 app 健康、scheduler 在运行、web 健康(缺一都按失败处理,并打印回退办法)。新版本 `.env.example` 里新增的配置项会按默认值追加进 `.env` 并提示,请核对。
 
 - 迁移预检不通过时(退出码 2):在覆盖任何文件、动任何服务之前就停下,系统仍运行在旧版本,屏幕上有报告与定位 SQL,按报告处理数据后重试。
 - 大版本不同(如 1.x → 2.x)与低于当前版本的离线包都会被拒绝。
