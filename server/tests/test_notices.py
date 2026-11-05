@@ -827,7 +827,8 @@ def test_two_children_one_notice(client, db, settings):
     h = auth(settings, LI)
     item = inbox(client, settings, LI)["items"][0]
     assert item["students"] == ["魏小七", "王小一"]  # 按学号
-    assert client.post(f"{INBOX}/{nid}/ack", json={"choice": None, "note": None}, headers=h)
+    ack = client.post(f"{INBOX}/{nid}/ack", json={"choice": None, "note": None}, headers=h)
+    assert ack.status_code == 204
     stats = client.get(f"{INBOX}/{nid}/acks", headers=auth(settings, PRINCIPAL)).json()
     mine = [r for r in stats["rows"] if r["user_id"] == LI]
     assert len(mine) == 2 and all(r["acked_at"] is not None for r in mine)
@@ -977,7 +978,7 @@ def test_parent_token_denied_on_sender_endpoints(client, db, settings):
             AuditLog.success.is_(False),
         )
     ).all()
-    assert len(denied) >= 6
+    assert len(denied) == 7
 
 
 def test_ack_other_parents_notice_404(client, db, settings):
@@ -1085,3 +1086,17 @@ def test_inbox_new_fields_for_teacher_notice(client, db, settings):
     plain = send(client, settings, PRINCIPAL, {"kind": "class", "class_id": C32}).json()["id"]
     got = {i["id"]: i for i in inbox(client, settings, T01)["items"]}
     assert got[plain]["ack"] == {"kind": "none"} and got[plain]["can_ack"] is False
+
+
+def test_unauthorized_sender_bad_deadline_is_403_not_400(client, db, settings):
+    past = "2000-01-01T00:00:00+00:00"
+    res = send_parents(client, settings, GRADE_HEAD3, TARGET_SCHOOL, ack=CONFIRM, ack_deadline=past)
+    assert res.status_code == 403
+    denied = db.scalars(
+        select(AuditLog).where(
+            AuditLog.user_id == UUID(GRADE_HEAD3),
+            AuditLog.action == "notice.send",
+            AuditLog.success.is_(False),
+        )
+    ).all()
+    assert len(denied) == 1

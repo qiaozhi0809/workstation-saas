@@ -516,7 +516,6 @@ def send(
 ) -> NoticeSent:
     """收件人在此刻确定并落库;先提交,再发布 notice.new(发布失败不影响已发出的通知)。"""
     year = require_active_year(db, sender.school_id)
-    ack_cols = _ack_columns(body, now)
     pairs: list[tuple[UUID, UUID]] = []
     target = body.target.model_dump(mode="json")
     if body.audience == "parents":
@@ -526,6 +525,7 @@ def send(
         target["students_without_parent"] = without
     else:
         recipients, label = resolve_recipients(db, sender, bindings, body.target, year, request)
+    ack_cols = _ack_columns(body, now)  # 先判权(上面),再校验回执设置与截止时间
     if not recipients:
         raise ApiError(400, "NO_RECIPIENTS", "没有可接收的人")
     notice = Notice(

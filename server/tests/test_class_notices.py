@@ -151,3 +151,13 @@ def test_parent_token_denied_on_class_notices(client, db, settings):
         assert len(denied) == 3 and not any(r.success for r in denied)
     assert count_notices(db) == before
     assert db.get(Notice, UUID(n)).recalled_at is None
+
+
+def test_class_id_mismatch_hidden_from_class_path(client, db, settings):
+    n = post(client, settings, T01).json()["id"]
+    db.get(Notice, UUID(n)).class_id = UUID(C31)  # 同一发件人,但归属别的班
+    db.flush()
+    h = auth(settings, T01)
+    assert [i["id"] for i in client.get(url(), headers=h).json()["items"]] == []
+    assert client.post(url(tail=f"/{n}/recall"), headers=h).status_code == 404
+    assert db.get(Notice, UUID(n)).recalled_at is None

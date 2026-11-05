@@ -113,7 +113,7 @@ class NoticeOptions(BaseModel):
 
 class AckInput(BaseModel):
     choice: int | None = None
-    note: str | None = None
+    note: str | None = Field(default=None, max_length=1000)  # 宽松上限;业务上限 200 见 service
 
 
 class AckRow(BaseModel):
