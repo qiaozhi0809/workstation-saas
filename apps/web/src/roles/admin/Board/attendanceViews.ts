@@ -8,9 +8,15 @@ const CHIP: Record<AttendanceStatus, NonNullable<SeatView['chip']>> = {
   late: { text: '迟', tone: 'blue' },
 }
 
-export const STATUS_TEXT: Record<AttendanceStatus, string> = { leave: '请假', absent: '缺勤', late: '迟到' }
+export const STATUS_TEXT: Record<AttendanceStatus, string> = {
+  leave: '请假',
+  absent: '缺勤',
+  late: '迟到',
+}
 
-export function attendanceViews(attendance: Record<string, AttendanceStatus>): Record<string, SeatView> {
+export function attendanceViews(
+  attendance: Record<string, AttendanceStatus>,
+): Record<string, SeatView> {
   const out: Record<string, SeatView> = {}
   for (const [id, status] of Object.entries(attendance)) {
     out[id] = { ghost: status !== 'late', chip: CHIP[status] }

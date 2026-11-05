@@ -9,7 +9,13 @@ import { Button } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
 import { Label } from '@/shared/components/ui/label'
 import { Textarea } from '@/shared/components/ui/textarea'
-import type { AckSpec, Audience, NoticeOptions, NoticePerson, NoticeTarget } from '@/shared/types/admin'
+import type {
+  AckSpec,
+  Audience,
+  NoticeOptions,
+  NoticePerson,
+  NoticeTarget,
+} from '@/shared/types/admin'
 import TargetPicker, { MAX_USERS, type TargetKind } from './TargetPicker'
 import { kindsFor } from './targetKinds'
 
@@ -18,13 +24,22 @@ const ackText = (a: AckSpec) =>
 
 /** 409 RECIPIENT_UNAVAILABLE 的 details.user_ids;不是 409 或 details 无效时返回 null */
 function unavailableIds(err: unknown): string[] | null {
-  if (!(err instanceof ApiError) || err.status !== 409 || err.code !== 'RECIPIENT_UNAVAILABLE') return null
+  if (!(err instanceof ApiError) || err.status !== 409 || err.code !== 'RECIPIENT_UNAVAILABLE')
+    return null
   const ids = (err.details as { user_ids?: unknown } | null | undefined)?.user_ids
-  return Array.isArray(ids) && ids.length > 0 && ids.every((x) => typeof x === 'string') ? (ids as string[]) : null
+  return Array.isArray(ids) && ids.length > 0 && ids.every((x) => typeof x === 'string')
+    ? (ids as string[])
+    : null
 }
 
 /** 左侧编写区。options:发送人可选的范围(school_wide=false 为年级组长,没有"全校");onSent:发送成功后回调 */
-export default function NoticeComposer({ options, onSent }: { options: NoticeOptions; onSent?(): void }) {
+export default function NoticeComposer({
+  options,
+  onSent,
+}: {
+  options: NoticeOptions
+  onSent?(): void
+}) {
   const qc = useQueryClient()
   const schoolWide = options.school_wide
   const [title, setTitle] = useState('')
@@ -45,10 +60,15 @@ export default function NoticeComposer({ options, onSent }: { options: NoticeOpt
   const [result, setResult] = useState('')
 
   // options 刷新后 school_wide 可能变化:当前对象不在合法范围内时校正
-  const kind: TargetKind = kindsFor(audience, schoolWide).includes(pickedKind) ? pickedKind : (schoolWide ? 'school' : 'grade')
+  const kind: TargetKind = kindsFor(audience, schoolWide).includes(pickedKind)
+    ? pickedKind
+    : schoolWide
+      ? 'school'
+      : 'grade'
   const grades = options.grades
   // options 刷新后已选年级 / 班级可能不在范围内:回落到第一个年级,班级视为未选
-  const gradeId = (pickedGrade && grades.some((g) => g.id === pickedGrade) ? pickedGrade : grades[0]?.id) ?? ''
+  const gradeId =
+    (pickedGrade && grades.some((g) => g.id === pickedGrade) ? pickedGrade : grades[0]?.id) ?? ''
   const klass = options.classes.find((c) => c.id === classId && c.grade_id === gradeId)
   const who = audience === 'parents' ? '家长' : '老师'
 
@@ -63,15 +83,30 @@ export default function NoticeComposer({ options, onSent }: { options: NoticeOpt
   } else if (kind === 'class' && klass) {
     target = { kind: 'class', class_id: klass.id }
     label = `${klass.name}${who}`
-  } else if (audience === 'teachers' && kind === 'users' && users.length > 0 && users.length <= MAX_USERS) {
+  } else if (
+    audience === 'teachers' &&
+    kind === 'users' &&
+    users.length > 0 &&
+    users.length <= MAX_USERS
+  ) {
     target = { kind: 'users', user_ids: users.map((u) => u.user_id) }
     label = `指定 ${users.length} 人`
   }
   const canSend = title.trim() !== '' && content.trim() !== '' && target !== null
 
-  const clearUnavailable = () => { setUnavailable(new Set()); setUnavailableMessage('') }
-  const changeGrade = (id: string) => { setPickedGrade(id); setClassId('') }
-  const changeKind = (k: TargetKind) => { setKind(k); setClassId(''); clearUnavailable() }
+  const clearUnavailable = () => {
+    setUnavailable(new Set())
+    setUnavailableMessage('')
+  }
+  const changeGrade = (id: string) => {
+    setPickedGrade(id)
+    setClassId('')
+  }
+  const changeKind = (k: TargetKind) => {
+    setKind(k)
+    setClassId('')
+    clearUnavailable()
+  }
   // 家长对象没有"指定的人":切换时把落在 users 上的对象和已选的人重置到合法值
   const changeAudience = (a: Audience) => {
     setAudience(a)
@@ -79,7 +114,10 @@ export default function NoticeComposer({ options, onSent }: { options: NoticeOpt
       setKind(schoolWide ? 'school' : 'grade')
       setClassId('')
     }
-    if (a === 'parents') { setUsers([]); clearUnavailable() }
+    if (a === 'parents') {
+      setUsers([])
+      clearUnavailable()
+    }
   }
   const changeUsers = (next: NoticePerson[]) => {
     setUsers(next)
@@ -100,12 +138,19 @@ export default function NoticeComposer({ options, onSent }: { options: NoticeOpt
   const send = async () => {
     if (!target || busy) return
     const ackErr = ackSpecError(ack, deadline)
-    if (ackErr) { setError(ackErr); return }
+    if (ackErr) {
+      setError(ackErr)
+      return
+    }
     setError('')
     setBusy(true)
     try {
       const res = await adminApi.sendNotice({
-        title: title.trim(), content: content.trim(), target, audience, ...normalizeAck(ack, deadline),
+        title: title.trim(),
+        content: content.trim(),
+        target,
+        audience,
+        ...normalizeAck(ack, deadline),
       })
       setResult(`已发给 ${res.recipients} 人`)
       setTitle('')
@@ -138,31 +183,73 @@ export default function NoticeComposer({ options, onSent }: { options: NoticeOpt
       <h2 className="text-base font-semibold">写通知</h2>
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="notice-title">标题</Label>
-        <Input id="notice-title" maxLength={50} value={title} onChange={(e) => setTitle(e.target.value)} />
+        <Input
+          id="notice-title"
+          maxLength={50}
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+        />
       </div>
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="notice-content">正文</Label>
-        <Textarea id="notice-content" rows={6} maxLength={2000} value={content} onChange={(e) => setContent(e.target.value)} />
+        <Textarea
+          id="notice-content"
+          rows={6}
+          maxLength={2000}
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+        />
       </div>
       <div role="radiogroup" aria-label="对象类型" className="flex gap-4">
         {(['teachers', 'parents'] as const).map((a) => (
           <label key={a} className="flex items-center gap-1.5 text-sm">
-            <input type="radio" name="notice-audience" checked={audience === a} onChange={() => changeAudience(a)} />
+            <input
+              type="radio"
+              name="notice-audience"
+              checked={audience === a}
+              onChange={() => changeAudience(a)}
+            />
             {a === 'teachers' ? '发给老师' : '发给家长'}
           </label>
         ))}
       </div>
       <TargetPicker
-        audience={audience} options={options} kind={kind} onKind={changeKind}
-        gradeId={gradeId} onGrade={changeGrade} classId={classId} onClass={setClassId}
-        users={users} onUsers={changeUsers} unavailable={unavailable} unavailableMessage={unavailableMessage}
+        audience={audience}
+        options={options}
+        kind={kind}
+        onKind={changeKind}
+        gradeId={gradeId}
+        onGrade={changeGrade}
+        classId={classId}
+        onClass={setClassId}
+        users={users}
+        onUsers={changeUsers}
+        unavailable={unavailable}
+        unavailableMessage={unavailableMessage}
       />
-      <AckSettings key={ackKey} value={ack} onChange={(v) => { setError(''); setAck(v) }}
-        deadline={deadline} onDeadlineChange={(d) => { setError(''); setDeadline(d) }} />
+      <AckSettings
+        key={ackKey}
+        value={ack}
+        onChange={(v) => {
+          setError('')
+          setAck(v)
+        }}
+        deadline={deadline}
+        onDeadlineChange={(d) => {
+          setError('')
+          setDeadline(d)
+        }}
+      />
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-1">
-          <p role="status" className="text-sm text-muted-foreground">{result}</p>
-          {error && !confirming && <p role="alert" className="text-sm text-destructive">{error}</p>}
+          <p role="status" className="text-sm text-muted-foreground">
+            {result}
+          </p>
+          {error && !confirming && (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
         </div>
         <Button type="button" disabled={!canSend} onClick={openConfirm}>
           发送
@@ -172,10 +259,18 @@ export default function NoticeComposer({ options, onSent }: { options: NoticeOpt
         <Modal open onClose={() => setConfirming(false)} title="发送通知">
           <p className="text-sm">{`确认发给 ${label}?`}</p>
           <p className="mt-1 text-sm text-muted-foreground">{`回执:${ackText(ack)}`}</p>
-          {error && <p role="alert" className="mt-2 text-sm text-destructive">{error}</p>}
+          {error && (
+            <p role="alert" className="mt-2 text-sm text-destructive">
+              {error}
+            </p>
+          )}
           <div className="mt-4 flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => setConfirming(false)}>取消</Button>
-            <Button type="button" disabled={busy} onClick={() => void send()}>确认发送</Button>
+            <Button type="button" variant="outline" onClick={() => setConfirming(false)}>
+              取消
+            </Button>
+            <Button type="button" disabled={busy} onClick={() => void send()}>
+              确认发送
+            </Button>
           </div>
         </Modal>
       )}

@@ -40,9 +40,13 @@ function ConfigForm({ view }: { view: AiConfigView }) {
 
   // 已存了配置,换服务商或换服务地址的主机时,旧 Key 不能沿用
   const keyEmpty = apiKey.trim() === ''
-  const needKeyRenew = view.key_set && !view.key_undecryptable && keyEmpty
-    && view.provider !== null && view.base_url !== null
-    && (provider !== view.provider || !sameOrigin(baseUrl, view.base_url))
+  const needKeyRenew =
+    view.key_set &&
+    !view.key_undecryptable &&
+    keyEmpty &&
+    view.provider !== null &&
+    view.base_url !== null &&
+    (provider !== view.provider || !sameOrigin(baseUrl, view.base_url))
 
   const current = view.providers.find((p) => p.id === provider)
   const models = current?.models ?? []
@@ -50,7 +54,10 @@ function ConfigForm({ view }: { view: AiConfigView }) {
   const pickProvider = (id: string) => {
     setProvider(id)
     const p = view.providers.find((x) => x.id === id)
-    if (p) { setBaseUrl(p.base_url); setModel(p.models[0] ?? '') }
+    if (p) {
+      setBaseUrl(p.base_url)
+      setModel(p.models[0] ?? '')
+    }
     setTest(null)
   }
 
@@ -62,16 +69,27 @@ function ConfigForm({ view }: { view: AiConfigView }) {
     if (!baseUrl.trim()) return fail('请填写接口地址')
     if (!/^https?:\/\//.test(baseUrl.trim())) return fail('接口地址要以 http:// 或 https:// 开头')
     if (!model.trim()) return fail('请填写模型')
-    if (temperature.trim() === '' || !Number.isFinite(t) || t < 0 || t > 2) return fail('温度需要在 0 到 2 之间')
-    if (needKeyRenew) { setError(''); return null } // 页面上已经有常驻提示
+    if (temperature.trim() === '' || !Number.isFinite(t) || t < 0 || t > 2)
+      return fail('温度需要在 0 到 2 之间')
+    if (needKeyRenew) {
+      setError('')
+      return null
+    } // 页面上已经有常驻提示
     if (!key && (!view.key_set || view.key_undecryptable)) return fail('请填写 API Key')
     setError('')
     return {
-      provider, base_url: baseUrl.trim(), model: model.trim(), temperature: t,
-      mask_forced: maskForced, api_key: key || null,
+      provider,
+      base_url: baseUrl.trim(),
+      model: model.trim(),
+      temperature: t,
+      mask_forced: maskForced,
+      api_key: key || null,
     }
   }
-  function fail(msg: string): null { setError(msg); return null }
+  function fail(msg: string): null {
+    setError(msg)
+    return null
+  }
 
   const onTest = async () => {
     const body = build()
@@ -121,75 +139,158 @@ function ConfigForm({ view }: { view: AiConfigView }) {
 
   return (
     <Card>
-      <CardHeader><CardTitle>AI 助手服务</CardTitle></CardHeader>
+      <CardHeader>
+        <CardTitle>AI 助手服务</CardTitle>
+      </CardHeader>
       <CardContent className="space-y-4">
         {view.key_undecryptable && (
-          <p role="alert" className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
+          <p
+            role="alert"
+            className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning"
+          >
             已保存的 API Key 无法解密,请重新输入 API Key 后保存。
           </p>
         )}
         {needKeyRenew && (
-          <p role="alert" className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
+          <p
+            role="alert"
+            className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning"
+          >
             {KEY_RENEW_NOTICE}
           </p>
         )}
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="grid gap-1 text-sm">
             服务商
-            <NativeSelect aria-label="服务商" className="w-full" value={provider} onChange={(e) => pickProvider(e.target.value)}>
+            <NativeSelect
+              aria-label="服务商"
+              className="w-full"
+              value={provider}
+              onChange={(e) => pickProvider(e.target.value)}
+            >
               {!provider && <option value="">请选择</option>}
-              {view.providers.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+              {view.providers.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
+                </option>
+              ))}
             </NativeSelect>
           </label>
           <label className="grid gap-1 text-sm">
             模型
-            <Input aria-label="模型" list="ai-model-suggestions" value={model} onChange={(e) => setModel(e.target.value)} />
+            <Input
+              aria-label="模型"
+              list="ai-model-suggestions"
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+            />
             <datalist id="ai-model-suggestions">
-              {models.map((m) => <option key={m} value={m} />)}
+              {models.map((m) => (
+                <option key={m} value={m} />
+              ))}
             </datalist>
           </label>
           <label className="grid gap-1 text-sm sm:col-span-2">
             接口地址
-            <Input aria-label="接口地址" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />
+            <Input
+              aria-label="接口地址"
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+            />
           </label>
           <label className="grid gap-1 text-sm">
             温度
-            <Input aria-label="温度" type="number" step="0.1" min={0} max={2} value={temperature}
-              onChange={(e) => setTemperature(e.target.value)} />
+            <Input
+              aria-label="温度"
+              type="number"
+              step="0.1"
+              min={0}
+              max={2}
+              value={temperature}
+              onChange={(e) => setTemperature(e.target.value)}
+            />
           </label>
           <label className="grid gap-1 text-sm">
             API Key
-            <Input aria-label="API Key" type="password" autoComplete="off" value={apiKey}
-              placeholder={view.key_set ? '已配置,留空则不修改' : ''} onChange={(e) => setApiKey(e.target.value)} />
+            <Input
+              aria-label="API Key"
+              type="password"
+              autoComplete="off"
+              value={apiKey}
+              placeholder={view.key_set ? '已配置,留空则不修改' : ''}
+              onChange={(e) => setApiKey(e.target.value)}
+            />
           </label>
         </div>
 
         <div className="flex items-start gap-3">
-          <input type="checkbox" role="switch" id="ai-mask" aria-label="强制隐去学生姓名" className="mt-1"
-            checked={maskForced} onChange={(e) => setMaskForced(e.target.checked)} />
+          <input
+            type="checkbox"
+            role="switch"
+            id="ai-mask"
+            aria-label="强制隐去学生姓名"
+            className="mt-1"
+            checked={maskForced}
+            onChange={(e) => setMaskForced(e.target.checked)}
+          />
           <div className="text-sm">
             <label htmlFor="ai-mask">强制隐去学生姓名</label>
-            <p className="text-xs text-muted-foreground">打开后,发给 AI 的内容里学生姓名一律替换掉,老师不能关闭</p>
+            <p className="text-xs text-muted-foreground">
+              打开后,发给 AI 的内容里学生姓名一律替换掉,老师不能关闭
+            </p>
           </div>
         </div>
 
-        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+        {error && (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        )}
         {test && (
-          <p role="status" className={test.ok ? 'text-sm text-success' : 'text-sm text-destructive'}>{test.message}</p>
+          <p
+            role="status"
+            className={test.ok ? 'text-sm text-success' : 'text-sm text-destructive'}
+          >
+            {test.message}
+          </p>
         )}
 
         <div className="flex flex-wrap justify-end gap-2">
-          <Button type="button" variant="outline" className="mr-auto text-destructive" disabled={busy !== ''}
-            onClick={() => { setClearError(''); setConfirmClear(true) }}>
+          <Button
+            type="button"
+            variant="outline"
+            className="mr-auto text-destructive"
+            disabled={busy !== ''}
+            onClick={() => {
+              setClearError('')
+              setConfirmClear(true)
+            }}
+          >
             清除配置
           </Button>
-          <Button type="button" variant="outline" disabled={busy !== ''} onClick={() => void onTest()}>测试连接</Button>
-          <Button type="button" disabled={busy !== ''} onClick={() => void onSave()}>保存</Button>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={busy !== ''}
+            onClick={() => void onTest()}
+          >
+            测试连接
+          </Button>
+          <Button type="button" disabled={busy !== ''} onClick={() => void onSave()}>
+            保存
+          </Button>
         </div>
       </CardContent>
 
-      <ConfirmBox open={confirmClear} title="清除 AI 配置" confirmLabel="清除" busy={busy === 'clear'}
-        error={clearError} onConfirm={() => void onClear()} onClose={() => setConfirmClear(false)}>
+      <ConfirmBox
+        open={confirmClear}
+        title="清除 AI 配置"
+        confirmLabel="清除"
+        busy={busy === 'clear'}
+        error={clearError}
+        onConfirm={() => void onClear()}
+        onClose={() => setConfirmClear(false)}
+      >
         <p>清除后全校老师都无法使用 AI 助手</p>
       </ConfirmBox>
     </Card>
@@ -201,12 +302,28 @@ export default function AiConfigPage() {
   return (
     <div className="mx-auto w-full max-w-3xl space-y-4 p-4 md:p-6">
       <h1 className="text-lg font-semibold">AI 配置</h1>
-      {q.isPending ? <LoadingState /> : q.isError ? (
-        <ErrorState title={q.error instanceof ApiError ? q.error.message : '加载失败,请重试'}
-          onRetry={() => void q.refetch()} retrying={q.isFetching} />
+      {q.isPending ? (
+        <LoadingState />
+      ) : q.isError ? (
+        <ErrorState
+          title={q.error instanceof ApiError ? q.error.message : '加载失败,请重试'}
+          onRetry={() => void q.refetch()}
+          retrying={q.isFetching}
+        />
       ) : (
         // 服务端配置变了(保存 / 清除后)就重建表单,让输入框回到服务端的值
-        <ConfigForm key={JSON.stringify([q.data.provider, q.data.base_url, q.data.model, q.data.temperature, q.data.mask_forced, q.data.key_set, q.data.key_undecryptable])} view={q.data} />
+        <ConfigForm
+          key={JSON.stringify([
+            q.data.provider,
+            q.data.base_url,
+            q.data.model,
+            q.data.temperature,
+            q.data.mask_forced,
+            q.data.key_set,
+            q.data.key_undecryptable,
+          ])}
+          view={q.data}
+        />
       )}
     </div>
   )

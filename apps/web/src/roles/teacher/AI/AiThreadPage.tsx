@@ -37,7 +37,11 @@ function NotFound() {
   return (
     <EmptyState
       title="找不到这个对话"
-      action={<Link to="/teacher/ai" className="text-sm text-primary underline">← 返回 AI 助手</Link>}
+      action={
+        <Link to="/teacher/ai" className="text-sm text-primary underline">
+          ← 返回 AI 助手
+        </Link>
+      }
     />
   )
 }
@@ -50,7 +54,13 @@ function ThreadBody({ ctx }: { ctx: ClassContext }) {
   if (chatQ.isLoading) return <LoadingState />
   if (chatQ.isError && !chatQ.data) {
     if (chatQ.error instanceof ApiError && chatQ.error.code === 'NOT_FOUND') return <NotFound />
-    return <ErrorState title="对话加载失败" onRetry={() => void chatQ.refetch()} retrying={chatQ.isFetching} />
+    return (
+      <ErrorState
+        title="对话加载失败"
+        onRetry={() => void chatQ.refetch()}
+        retrying={chatQ.isFetching}
+      />
+    )
   }
   const chat = chatQ.data
   if (!chat) return <LoadingState />
@@ -60,7 +70,11 @@ function ThreadBody({ ctx }: { ctx: ClassContext }) {
     return (
       <EmptyState
         title="这个对话属于其他班级"
-        action={<Button onClick={() => useTeacherStore.getState().setClass(chat.class_id)}>切换到{other.name}</Button>}
+        action={
+          <Button onClick={() => useTeacherStore.getState().setClass(chat.class_id)}>
+            切换到{other.name}
+          </Button>
+        }
       />
     )
   }
@@ -75,7 +89,11 @@ function Thread({ ctx, chat, chatId }: { ctx: ClassContext; chat: AiChat; chatId
   // 请求没发出去(忙 / 未配置等)时,把老师输入的追问放回输入框
   const [draft, setDraft] = useState('')
   const { streaming, text, error, lastBody, start, stop } = useAiStream(
-    chatId, ctx.cls.id, (body) => { if (body.text) setDraft((d) => d || (body.text as string)) },
+    chatId,
+    ctx.cls.id,
+    (body) => {
+      if (body.text) setDraft((d) => d || (body.text as string))
+    },
   )
   const [pendingUser, setPendingUser] = useState<string | null>(null)
   const [prompt, setPrompt] = useState<AiPrompt | null>(null)
@@ -90,7 +108,9 @@ function Thread({ ctx, chat, chatId }: { ctx: ClassContext; chat: AiChat; chatId
   const all = chat.messages
   const last = all[all.length - 1]
   // 只有"重新生成"时,最后一条助手回复才由流式气泡代替;追问时旧回复保留
-  const shown = live ? all.slice(0, Math.max(0, lastBody?.regenerate ? baseRef.current - 1 : baseRef.current)) : all
+  const shown = live
+    ? all.slice(0, Math.max(0, lastBody?.regenerate ? baseRef.current - 1 : baseRef.current))
+    : all
 
   // ?go=1:最后一条是还没回复的用户消息时自动开始,只一次
   useEffect(() => {
@@ -98,17 +118,23 @@ function Thread({ ctx, chat, chatId }: { ctx: ClassContext; chat: AiChat; chatId
     if (goHandled.current) return
     if (new URLSearchParams(location.search).get('go') !== '1') return
     goHandled.current = true
-    if (last?.role === 'user') { baseRef.current = lenRef.current; start({}) }
+    if (last?.role === 'user') {
+      baseRef.current = lenRef.current
+      start({})
+    }
     navigate({ pathname: location.pathname }, { replace: true })
   }, [chat.batch_only, last?.role, location.pathname, location.search, navigate, start])
 
-  useEffect(() => { if (!live) setPendingUser(null) }, [live])
+  useEffect(() => {
+    if (!live) setPendingUser(null)
+  }, [live])
 
   // 内容变化时,离底部不到 180px 才跟随滚动
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
-    if (el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX) el.scrollTop = el.scrollHeight
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX)
+      el.scrollTop = el.scrollHeight
   }, [all.length, text, error, pendingUser])
 
   const remove = useMutation({
@@ -137,7 +163,8 @@ function Thread({ ctx, chat, chatId }: { ctx: ClassContext; chat: AiChat; chatId
   // 重试:按重新取到的对话末尾和上一次请求决定怎么重来,避免误删好回复或丢掉追问
   const retry = () => {
     if (last?.role === 'user') run({})
-    else if (last && (last.status === 'error' || last.status === 'streaming')) run({ regenerate: true })
+    else if (last && (last.status === 'error' || last.status === 'streaming'))
+      run({ regenerate: true })
     else if (lastBody?.text) run({ text: lastBody.text })
     else run({ regenerate: true })
   }
@@ -156,21 +183,33 @@ function Thread({ ctx, chat, chatId }: { ctx: ClassContext; chat: AiChat; chatId
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
-        <Link to="/teacher/ai" className="text-sm text-muted-foreground hover:text-foreground">← 新对话</Link>
-        <h2 className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{chat.title}</h2>
+        <Link to="/teacher/ai" className="text-sm text-muted-foreground hover:text-foreground">
+          ← 新对话
+        </Link>
+        <h2 className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+          {chat.title}
+        </h2>
         <StatusPill status={status.data} />
-        <Button size="sm" variant="outline" onClick={exportAll}>导出 Word</Button>
+        <Button size="sm" variant="outline" onClick={exportAll}>
+          导出 Word
+        </Button>
         <Button
           size="sm"
           variant="outline"
           disabled={remove.isPending}
-          onClick={() => { if (window.confirm('删除这个对话?')) remove.mutate() }}
+          onClick={() => {
+            if (window.confirm('删除这个对话?')) remove.mutate()
+          }}
         >
           删除
         </Button>
       </header>
 
-      <div ref={scrollRef} data-testid="thread-scroll" className="min-h-0 flex-1 space-y-4 overflow-y-auto px-3 py-4">
+      <div
+        ref={scrollRef}
+        data-testid="thread-scroll"
+        className="min-h-0 flex-1 space-y-4 overflow-y-auto px-3 py-4"
+      >
         {shown.map((m, i) => (
           <MessageItem
             key={m.id}
@@ -186,13 +225,17 @@ function Thread({ ctx, chat, chatId }: { ctx: ClassContext; chat: AiChat; chatId
         ))}
         {!chat.batch_only && !live && !showHookError && last?.role === 'user' && (
           <div className="flex justify-end">
-            <Button size="sm" variant="outline" onClick={() => run({})}>重新生成</Button>
+            <Button size="sm" variant="outline" onClick={() => run({})}>
+              重新生成
+            </Button>
           </div>
         )}
         {chat.batch_only && <BatchView chat={chat} classId={ctx.cls.id} perms={ctx.perms} />}
         {pendingUser !== null && live && (
           <div className="flex justify-end">
-            <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl bg-muted px-3 py-2 text-sm text-foreground">{pendingUser}</div>
+            <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl bg-muted px-3 py-2 text-sm text-foreground">
+              {pendingUser}
+            </div>
           </div>
         )}
         {live && (
@@ -204,24 +247,37 @@ function Thread({ ctx, chat, chatId }: { ctx: ClassContext; chat: AiChat; chatId
                 <Markdown text={text} />
               </div>
               {streaming && (
-                <span data-testid="stream-cursor" aria-hidden="true" className="inline-block h-4 w-1.5 animate-pulse bg-foreground align-middle" />
+                <span
+                  data-testid="stream-cursor"
+                  aria-hidden="true"
+                  className="inline-block h-4 w-1.5 animate-pulse bg-foreground align-middle"
+                />
               )}
             </div>
           </div>
         )}
-        {showHookError && (
-          error.code === 'AI_NOT_CONFIGURED' ? (
+        {showHookError &&
+          (error.code === 'AI_NOT_CONFIGURED' ? (
             <div className="space-y-2 rounded-lg border border-destructive p-3">
               <p className="text-sm text-destructive">{NOT_CONFIGURED}</p>
-              <Button size="sm" variant="outline" onClick={openPrompt}>复制提示词</Button>
+              <Button size="sm" variant="outline" onClick={openPrompt}>
+                复制提示词
+              </Button>
             </div>
           ) : (
             <ErrorBox message={error.message} onRetry={retry} onCopyPrompt={openPrompt} />
-          )
-        )}
+          ))}
       </div>
 
-      {!chat.batch_only && <ThreadComposer value={draft} onChange={setDraft} streaming={streaming} onSend={send} onStop={stop} />}
+      {!chat.batch_only && (
+        <ThreadComposer
+          value={draft}
+          onChange={setDraft}
+          streaming={streaming}
+          onSend={send}
+          onStop={stop}
+        />
+      )}
       {prompt && <CopyPromptDialog prompt={prompt} onClose={() => setPrompt(null)} />}
     </div>
   )

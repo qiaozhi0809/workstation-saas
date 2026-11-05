@@ -9,13 +9,19 @@ import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { Button } from '@/shared/components/ui/button'
 
 const pad = (n: number) => String(n).padStart(2, '0')
-const thisMonth = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}` }
+const thisMonth = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`
+}
 const shiftMonth = (m: string, delta: number) => {
   const [y, mo] = m.split('-').map(Number)
   const d = new Date(y, mo - 1 + delta, 1)
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`
 }
-const monthLabel = (m: string) => { const [y, mo] = m.split('-').map(Number); return `${y}年${mo}月` }
+const monthLabel = (m: string) => {
+  const [y, mo] = m.split('-').map(Number)
+  return `${y}年${mo}月`
+}
 
 const HEADS = ['老师', '调用次数', '失败', '输入 token', '输出 token', '常用场景']
 const NUM = 'whitespace-nowrap px-3 py-2 text-right tabular-nums'
@@ -37,19 +43,34 @@ export default function AiUsagePage() {
       </div>
 
       <div className="flex items-center gap-1">
-        <Button variant="outline" size="icon" aria-label="上一月" onClick={() => setMonth((m) => shiftMonth(m, -1))}>
+        <Button
+          variant="outline"
+          size="icon"
+          aria-label="上一月"
+          onClick={() => setMonth((m) => shiftMonth(m, -1))}
+        >
           <ChevronLeft aria-hidden="true" />
         </Button>
-        <span className="min-w-24 text-center text-sm font-medium" aria-live="polite">{monthLabel(month)}</span>
-        <Button variant="outline" size="icon" aria-label="下一月" disabled={isCurrent}
-          onClick={() => setMonth((m) => shiftMonth(m, 1))}>
+        <span className="min-w-24 text-center text-sm font-medium" aria-live="polite">
+          {monthLabel(month)}
+        </span>
+        <Button
+          variant="outline"
+          size="icon"
+          aria-label="下一月"
+          disabled={isCurrent}
+          onClick={() => setMonth((m) => shiftMonth(m, 1))}
+        >
           <ChevronRight aria-hidden="true" />
         </Button>
       </div>
 
       {q.isError ? (
-        <ErrorState title={q.error instanceof ApiError ? q.error.message : '加载失败,请重试'}
-          onRetry={() => void q.refetch()} retrying={q.isFetching} />
+        <ErrorState
+          title={q.error instanceof ApiError ? q.error.message : '加载失败,请重试'}
+          onRetry={() => void q.refetch()}
+          retrying={q.isFetching}
+        />
       ) : !q.data ? (
         <LoadingState />
       ) : q.data.rows.length === 0 ? (
@@ -60,8 +81,13 @@ export default function AiUsagePage() {
             <thead className="bg-muted text-left text-muted-foreground">
               <tr>
                 {HEADS.map((h, i) => (
-                  <th key={h} scope="col"
-                    className={`whitespace-nowrap px-3 py-2 font-medium ${i >= 1 && i <= 4 ? 'text-right' : ''}`}>{h}</th>
+                  <th
+                    key={h}
+                    scope="col"
+                    className={`whitespace-nowrap px-3 py-2 font-medium ${i >= 1 && i <= 4 ? 'text-right' : ''}`}
+                  >
+                    {h}
+                  </th>
                 ))}
               </tr>
             </thead>
@@ -74,7 +100,9 @@ export default function AiUsagePage() {
                   <td className={NUM}>{r.prompt_tokens}</td>
                   <td className={NUM}>{r.completion_tokens}</td>
                   <td className="px-3 py-2">
-                    {r.top_templates.length === 0 ? '—' : r.top_templates.map((t) => `${t.label} × ${t.count}`).join('、')}
+                    {r.top_templates.length === 0
+                      ? '—'
+                      : r.top_templates.map((t) => `${t.label} × ${t.count}`).join('、')}
                   </td>
                 </tr>
               ))}

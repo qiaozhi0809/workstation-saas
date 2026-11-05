@@ -17,7 +17,9 @@ vi.mock('@/shared/api/exams')
 
 const originalMatchMedia = window.matchMedia
 const reduceMotion = () => {
-  window.matchMedia = vi.fn().mockReturnValue({ matches: true, addEventListener() {}, removeEventListener() {} })
+  window.matchMedia = vi
+    .fn()
+    .mockReturnValue({ matches: true, addEventListener() {}, removeEventListener() {} })
 }
 
 beforeEach(() => {
@@ -33,8 +35,11 @@ afterEach(() => {
 
 it('spins then shows the picked student, skipping students on leave', async () => {
   vi.spyOn(Math, 'random').mockReturnValue(0)
-  vi.mocked(attendanceApi.day).mockResolvedValue({ date: '2026-11-02', confirmed_at: null,
-    items: [{ enrollment_id: 'e1', status: 'leave', reason: null, marked_at: '' }] })
+  vi.mocked(attendanceApi.day).mockResolvedValue({
+    date: '2026-11-02',
+    confirmed_at: null,
+    items: [{ enrollment_id: 'e1', status: 'leave', reason: null, marked_at: '' }],
+  })
   setup()
   fireEvent.click(await screen.findByRole('button', { name: '随机点名' }))
   expect(screen.getByRole('button', { name: '随机点名' })).toBeDisabled()
@@ -45,13 +50,25 @@ it('spins then shows the picked student, skipping students on leave', async () =
 })
 
 it('shows the empty message when nobody can be picked', async () => {
-  vi.mocked(attendanceApi.day).mockResolvedValue({ date: '2026-11-02', confirmed_at: null,
-    items: ['e1', 'e2', 'e3'].map((id) => ({ enrollment_id: id, status: 'leave' as const, reason: null, marked_at: '' })) })
+  vi.mocked(attendanceApi.day).mockResolvedValue({
+    date: '2026-11-02',
+    confirmed_at: null,
+    items: ['e1', 'e2', 'e3'].map((id) => ({
+      enrollment_id: id,
+      status: 'leave' as const,
+      reason: null,
+      marked_at: '',
+    })),
+  })
   setup()
   fireEvent.click(await screen.findByRole('button', { name: '随机点名' }))
   expect(await screen.findByText('今天没有可点名的同学')).toBeInTheDocument()
   const card = screen.getByRole('dialog', { name: '随机点名' })
-  expect(within(card).getAllByRole('button').map((b) => b.textContent)).toEqual(['关闭'])
+  expect(
+    within(card)
+      .getAllByRole('button')
+      .map((b) => b.textContent),
+  ).toEqual(['关闭'])
 })
 
 it('picks immediately with reduced motion and rewards the answer', async () => {
@@ -59,15 +76,27 @@ it('picks immediately with reduced motion and rewards the answer', async () => {
   setup()
   fireEvent.click(await screen.findByRole('button', { name: '随机点名' }))
   fireEvent.click(await screen.findByRole('button', { name: '回答得好 +1' }))
-  await waitFor(() => expect(reviewsApi.create).toHaveBeenCalledWith('c1', expect.objectContaining({
-    category: 'individual', reason_text: '回答问题', score_delta: 1 })))
+  await waitFor(() =>
+    expect(reviewsApi.create).toHaveBeenCalledWith(
+      'c1',
+      expect.objectContaining({
+        category: 'individual',
+        reason_text: '回答问题',
+        score_delta: 1,
+      }),
+    ),
+  )
   await waitFor(() => expect(screen.queryByRole('dialog', { name: '随机点名' })).toBeNull())
 })
 
 it('rewards only once when the button is double-clicked', async () => {
   reduceMotion()
   let resolve!: (v: { items: [] }) => void
-  vi.mocked(reviewsApi.create).mockReturnValue(new Promise((r) => { resolve = r }))
+  vi.mocked(reviewsApi.create).mockReturnValue(
+    new Promise((r) => {
+      resolve = r
+    }),
+  )
   setup()
   fireEvent.click(await screen.findByRole('button', { name: '随机点名' }))
   const btn = await screen.findByRole('button', { name: '回答得好 +1' })
@@ -113,7 +142,11 @@ it('reuses the op id when a reward is retried after an ambiguous failure', async
 })
 
 it('rewards in the subject last chosen in the review popover', async () => {
-  setup({ mode: '点评', subjects: ['物理', '化学'], perms: ['attendance.read', 'review.read', 'review.write'] })
+  setup({
+    mode: '点评',
+    subjects: ['物理', '化学'],
+    perms: ['attendance.read', 'review.read', 'review.write'],
+  })
   fireEvent.click(await screen.findByRole('button', { name: /^王小一，/ }))
   fireEvent.change(await screen.findByLabelText('科目'), { target: { value: '化学' } })
   fireEvent.keyDown(window, { key: 'Escape' })
@@ -123,8 +156,15 @@ it('rewards in the subject last chosen in the review popover', async () => {
   fireEvent.click(screen.getByRole('button', { name: '更多操作' }))
   fireEvent.click(screen.getByRole('menuitem', { name: '随机点名' }))
   fireEvent.click(await screen.findByRole('button', { name: '回答得好 +1' }))
-  await waitFor(() => expect(reviewsApi.create).toHaveBeenCalledWith('c1', expect.objectContaining({
-    reason_text: '回答问题', subject: '化学' })))
+  await waitFor(() =>
+    expect(reviewsApi.create).toHaveBeenCalledWith(
+      'c1',
+      expect.objectContaining({
+        reason_text: '回答问题',
+        subject: '化学',
+      }),
+    ),
+  )
 })
 
 it('shows only the name on the card while presenting', async () => {
@@ -139,7 +179,11 @@ it('shows only the name on the card while presenting', async () => {
   })
   try {
     vi.spyOn(Math, 'random').mockReturnValue(0)
-    setup({ roster: rosterFixture.map((s) => (s.enrollment_id === 'e1' ? { ...s, class_role: '班长' } : s)) })
+    setup({
+      roster: rosterFixture.map((s) =>
+        s.enrollment_id === 'e1' ? { ...s, class_role: '班长' } : s,
+      ),
+    })
     fireEvent.click(await screen.findByRole('button', { name: '全屏' }))
     await screen.findByRole('button', { name: '退出全屏' })
     fireEvent.click(await screen.findByRole('button', { name: '随机点名' }))
@@ -159,7 +203,11 @@ it('keeps 随机点名 and 编辑黑板 as plain buttons in daily mode and moves
   expect(screen.getByRole('button', { name: '编辑黑板' })).toBeInTheDocument()
   // 日常模式下 ⋯ 里只有"班级设置",随机点名 / 编辑黑板仍是平铺按钮
   fireEvent.click(screen.getByRole('button', { name: '更多操作' }))
-  expect(within(screen.getByRole('menu', { name: '更多操作' })).getAllByRole('menuitem').map((i) => i.textContent)).toEqual(['班级设置'])
+  expect(
+    within(screen.getByRole('menu', { name: '更多操作' }))
+      .getAllByRole('menuitem')
+      .map((i) => i.textContent),
+  ).toEqual(['班级设置'])
   fireEvent.keyDown(document.body, { key: 'Escape' })
   fireEvent.click(screen.getByRole('tab', { name: '考勤' }))
   await screen.findByRole('button', { name: '更多操作' })

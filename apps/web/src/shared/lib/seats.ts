@@ -1,8 +1,17 @@
 import type { ClassView } from '@/shared/types/class'
 import type { DeskSize } from '@/shared/types/seating'
 
-export interface DeskGrid { rows: number; cols: number; deskSize: DeskSize; podiumLeft: number; podiumRight: number }
-export interface SeatCell { row: number; col: number }
+export interface DeskGrid {
+  rows: number
+  cols: number
+  deskSize: DeskSize
+  podiumLeft: number
+  podiumRight: number
+}
+export interface SeatCell {
+  row: number
+  col: number
+}
 
 export const DESK_TYPES: { n: DeskSize; label: string }[] = [
   { n: 1, label: '单人单列' },
@@ -13,7 +22,13 @@ export const DESK_TYPES: { n: DeskSize; label: string }[] = [
 export function gridOf(
   cls: Pick<ClassView, 'seat_rows' | 'seat_cols' | 'desk_size' | 'podium_left' | 'podium_right'>,
 ): DeskGrid {
-  return { rows: cls.seat_rows, cols: cls.seat_cols, deskSize: cls.desk_size, podiumLeft: cls.podium_left, podiumRight: cls.podium_right }
+  return {
+    rows: cls.seat_rows,
+    cols: cls.seat_cols,
+    deskSize: cls.desk_size,
+    podiumLeft: cls.podium_left,
+    podiumRight: cls.podium_right,
+  }
 }
 
 export function colRange(desk: DeskSize): [number, number] {

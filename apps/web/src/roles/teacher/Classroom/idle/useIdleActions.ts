@@ -27,7 +27,10 @@ export function useIdleActions({ ids, enabled, paused, rand = Math.random }: Opt
     const timers = new Set<ReturnType<typeof setTimeout>>()
     const current: Record<string, IdleAction> = {}
     const later = (fn: () => void, ms: number) => {
-      const t = setTimeout(() => { timers.delete(t); fn() }, ms)
+      const t = setTimeout(() => {
+        timers.delete(t)
+        fn()
+      }, ms)
       timers.add(t)
     }
     const interval = setInterval(() => {
@@ -39,7 +42,10 @@ export function useIdleActions({ ids, enabled, paused, rand = Math.random }: Opt
       const action = WEIGHTED[Math.floor(r() * WEIGHTED.length)]
       current[id] = action
       setIdle({ ...current })
-      later(() => { delete current[id]; setIdle({ ...current }) }, DURATION[action])
+      later(() => {
+        delete current[id]
+        setIdle({ ...current })
+      }, DURATION[action])
       if (r() < SIP_CHANCE) {
         setTeacher('sip')
         later(() => setTeacher('idle'), SIP_MS)

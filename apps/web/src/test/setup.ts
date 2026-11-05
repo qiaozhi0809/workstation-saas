@@ -1,7 +1,11 @@
 import '@testing-library/jest-dom/vitest'
 
 if (!('ResizeObserver' in globalThis)) {
-  globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} }
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
 }
 
 if (typeof window !== 'undefined' && !('PointerEvent' in window)) {
@@ -14,5 +18,9 @@ if (typeof window !== 'undefined' && !('PointerEvent' in window)) {
       this.pointerType = init.pointerType ?? 'mouse'
     }
   }
-  Object.defineProperty(window, 'PointerEvent', { value: PointerEventStub, configurable: true, writable: true })
+  Object.defineProperty(window, 'PointerEvent', {
+    value: PointerEventStub,
+    configurable: true,
+    writable: true,
+  })
 }

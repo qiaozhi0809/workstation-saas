@@ -34,27 +34,38 @@ function optionsError(options: string[]): string | null {
  * - deadline(ISO 或 null)/ onDeadlineChange(ISO 或 null):截止时间,可选;不传 deadline 时组件内部自己记着,只用于显示错误。
  * 校验错误只显示,不阻止调用方;调用方提交前需自行拦截(选项 2 到 5 个且不重复,截止时间晚于现在)。
  */
-export default function AckSettings({ value, onChange, deadline, onDeadlineChange }: {
+export default function AckSettings({
+  value,
+  onChange,
+  deadline,
+  onDeadlineChange,
+}: {
   value: AckSpec
   onChange(v: AckSpec): void
   deadline?: string | null
   onDeadlineChange?(iso: string | null): void
 }) {
   const [local, setLocal] = useState(() => toLocalInput(deadline))
-  const dlError = local !== '' && new Date(local).getTime() <= Date.now() ? '截止时间要晚于现在' : null
+  const dlError =
+    local !== '' && new Date(local).getTime() <= Date.now() ? '截止时间要晚于现在' : null
 
   const pick = (kind: AckSpec['kind']) => {
     if (kind === value.kind) return
     if (kind === 'choice') onChange({ kind, options: ['', ''], allow_note: false })
     else onChange({ kind })
-    if (kind === 'none') { setLocal(''); onDeadlineChange?.(null) }
+    if (kind === 'none') {
+      setLocal('')
+      onDeadlineChange?.(null)
+    }
   }
   const setOptions = (options: string[]) => {
     if (value.kind === 'choice') onChange({ ...value, options })
   }
   const onDeadline = (v: string) => {
     setLocal(v)
-    onDeadlineChange?.(v === '' || Number.isNaN(new Date(v).getTime()) ? null : new Date(v).toISOString())
+    onDeadlineChange?.(
+      v === '' || Number.isNaN(new Date(v).getTime()) ? null : new Date(v).toISOString(),
+    )
   }
 
   const choiceError = value.kind === 'choice' ? optionsError(value.options) : null
@@ -64,7 +75,12 @@ export default function AckSettings({ value, onChange, deadline, onDeadlineChang
       <div role="radiogroup" aria-label="回执" className="flex flex-wrap gap-4">
         {KINDS.map((k) => (
           <label key={k.kind} className="flex items-center gap-1.5 text-sm">
-            <input type="radio" name="ack-kind" checked={value.kind === k.kind} onChange={() => pick(k.kind)} />
+            <input
+              type="radio"
+              name="ack-kind"
+              checked={value.kind === k.kind}
+              onChange={() => pick(k.kind)}
+            />
             {k.label}
           </label>
         ))}
@@ -78,11 +94,16 @@ export default function AckSettings({ value, onChange, deadline, onDeadlineChang
                 aria-label={`选项 ${i + 1}`}
                 maxLength={MAX_OPTION_LEN}
                 value={opt}
-                onChange={(e) => setOptions(value.options.map((o, j) => (j === i ? e.target.value : o)))}
+                onChange={(e) =>
+                  setOptions(value.options.map((o, j) => (j === i ? e.target.value : o)))
+                }
               />
               {value.options.length > MIN_OPTIONS && (
                 <Button
-                  type="button" variant="ghost" size="sm" aria-label={`删除选项 ${i + 1}`}
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  aria-label={`删除选项 ${i + 1}`}
                   onClick={() => setOptions(value.options.filter((_, j) => j !== i))}
                 >
                   删除
@@ -92,7 +113,9 @@ export default function AckSettings({ value, onChange, deadline, onDeadlineChang
           ))}
           <div>
             <Button
-              type="button" variant="outline" size="sm"
+              type="button"
+              variant="outline"
+              size="sm"
               disabled={value.options.length >= MAX_OPTIONS}
               onClick={() => setOptions([...value.options, ''])}
             >
@@ -101,12 +124,17 @@ export default function AckSettings({ value, onChange, deadline, onDeadlineChang
           </div>
           <label className="flex items-center gap-1.5 text-sm">
             <input
-              type="checkbox" checked={value.allow_note}
+              type="checkbox"
+              checked={value.allow_note}
               onChange={(e) => onChange({ ...value, allow_note: e.target.checked })}
             />
             允许留言
           </label>
-          {choiceError && <p role="alert" className="text-sm text-destructive">{choiceError}</p>}
+          {choiceError && (
+            <p role="alert" className="text-sm text-destructive">
+              {choiceError}
+            </p>
+          )}
         </div>
       )}
 
@@ -114,9 +142,19 @@ export default function AckSettings({ value, onChange, deadline, onDeadlineChang
         <div className="flex flex-col gap-1">
           <label className="flex items-center gap-2 text-sm">
             <span className="shrink-0">截止时间</span>
-            <Input type="datetime-local" aria-label="截止时间" className="min-w-0" value={local} onChange={(e) => onDeadline(e.target.value)} />
+            <Input
+              type="datetime-local"
+              aria-label="截止时间"
+              className="min-w-0"
+              value={local}
+              onChange={(e) => onDeadline(e.target.value)}
+            />
           </label>
-          {dlError && <p role="alert" className="text-sm text-destructive">{dlError}</p>}
+          {dlError && (
+            <p role="alert" className="text-sm text-destructive">
+              {dlError}
+            </p>
+          )}
         </div>
       )}
     </div>

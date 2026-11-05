@@ -5,7 +5,9 @@ const stage = { w: 1000, h: 600 }
 
 it('places the card to the right by default', () => {
   expect(placeCard({ left: 100, top: 200, width: 80, height: 80 }, card, stage)).toEqual({
-    left: 192, top: 180, side: 'right',
+    left: 192,
+    top: 180,
+    side: 'right',
   })
 })
 

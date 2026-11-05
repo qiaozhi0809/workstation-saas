@@ -7,15 +7,27 @@ import type { ParentChild } from '@/shared/types/parent'
 const KEY = 'ws-parent-child'
 
 const remembered = (): string | null => {
-  try { return localStorage.getItem(KEY) } catch { return null }
+  try {
+    return localStorage.getItem(KEY)
+  } catch {
+    return null
+  }
 }
 const remember = (id: string) => {
-  try { localStorage.setItem(KEY, id) } catch { /* 无存储环境:只靠地址栏 */ }
+  try {
+    localStorage.setItem(KEY, id)
+  } catch {
+    /* 无存储环境:只靠地址栏 */
+  }
 }
 
 /** 当前孩子:?child= → 上次记住的 → 列表第一个;不在列表里的 id 自动换成第一个并改写地址栏。active=false 时不发请求、不改地址栏 */
 export function useChildState(active = true) {
-  const list = useQuery({ queryKey: ['parent', 'children'], queryFn: parentApi.children, enabled: active })
+  const list = useQuery({
+    queryKey: ['parent', 'children'],
+    queryFn: parentApi.children,
+    enabled: active,
+  })
   const [params] = useSearchParams()
   const location = useLocation()
   const navigate = useNavigate()
@@ -27,14 +39,17 @@ export function useChildState(active = true) {
   }
   const children = list.data
   const wanted = params.get('child') ?? remembered()
-  const child: ParentChild | null = children ? (children.find((c) => c.student_id === wanted) ?? children[0] ?? null) : null
+  const child: ParentChild | null = children
+    ? (children.find((c) => c.student_id === wanted) ?? children[0] ?? null)
+    : null
   const id = child?.student_id ?? null
 
   useEffect(() => {
     if (!id || !active) return
     remember(id)
     // /parent 本身由 ParentIndex 带着 child 跳转,这里不插手
-    if (params.get('child') !== id && !/^\/parent\/?$/.test(location.pathname)) navigate(withChild(id), { replace: true })
+    if (params.get('child') !== id && !/^\/parent\/?$/.test(location.pathname))
+      navigate(withChild(id), { replace: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, location.pathname, location.search])
 

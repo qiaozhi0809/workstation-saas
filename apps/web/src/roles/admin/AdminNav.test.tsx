@@ -8,23 +8,53 @@ import AdminNav from './AdminNav'
 import { ADMIN_PAGES, type AdminPage } from './pages'
 
 const PERMS: Record<string, AdminPerm[]> = {
-  principal: ['school.view', 'org.manage', 'account.manage', 'settings.manage', 'audit.read', 'ai.usage', 'notice.send', 'exam.grade_write', 'year.upgrade'],
-  dean: ['school.view', 'org.manage', 'ai.usage', 'notice.send', 'exam.grade_write', 'year.upgrade'],
+  principal: [
+    'school.view',
+    'org.manage',
+    'account.manage',
+    'settings.manage',
+    'audit.read',
+    'ai.usage',
+    'notice.send',
+    'exam.grade_write',
+    'year.upgrade',
+  ],
+  dean: [
+    'school.view',
+    'org.manage',
+    'ai.usage',
+    'notice.send',
+    'exam.grade_write',
+    'year.upgrade',
+  ],
   gradeHead: ['school.view', 'notice.send', 'exam.grade_write'],
   itAdmin: ['org.manage', 'account.manage', 'settings.manage', 'audit.read'],
 }
 
-const setPerms = (admin_perms: AdminPerm[]) => useAuthStore.setState({
-  accessToken: 'a', refreshToken: 'r', lastContext: null,
-  user: { id: 'u', display_name: '张主任', contexts: ['admin'], admin_perms, must_change_password: false },
-})
+const setPerms = (admin_perms: AdminPerm[]) =>
+  useAuthStore.setState({
+    accessToken: 'a',
+    refreshToken: 'r',
+    lastContext: null,
+    user: {
+      id: 'u',
+      display_name: '张主任',
+      contexts: ['admin'],
+      admin_perms,
+      must_change_password: false,
+    },
+  })
 
-const renderNav = (pages: AdminPage[] = ADMIN_PAGES, entry = '/admin/today') => render(
-  <MemoryRouter initialEntries={[entry]}><AdminNav pages={pages} /></MemoryRouter>,
-)
+const renderNav = (pages: AdminPage[] = ADMIN_PAGES, entry = '/admin/today') =>
+  render(
+    <MemoryRouter initialEntries={[entry]}>
+      <AdminNav pages={pages} />
+    </MemoryRouter>,
+  )
 const nav = () => screen.getByRole('navigation', { name: '主导航' })
 /** 顶层入口:直接显示的链接与组按钮,按 DOM 顺序 */
-const top = () => Array.from(nav().querySelectorAll('a, button')).map((el) => el.textContent?.trim())
+const top = () =>
+  Array.from(nav().querySelectorAll('a, button')).map((el) => el.textContent?.trim())
 
 /** 按 min-width 查询串与当前宽度求值的 matchMedia;resize 会通知已订阅的监听器 */
 function mockViewport(width: number) {
@@ -34,17 +64,35 @@ function mockViewport(width: number) {
   vi.stubGlobal('matchMedia', (q: string) => {
     const min = Number(/min-width:\s*(\d+)px/.exec(q)?.[1] ?? 0)
     return {
-      get matches() { return w >= min },
+      get matches() {
+        return w >= min
+      },
       media: q,
-      addEventListener: (_: string, fn: () => void) => { listeners.add(fn) },
-      removeEventListener: (_: string, fn: () => void) => { removed(); listeners.delete(fn) },
+      addEventListener: (_: string, fn: () => void) => {
+        listeners.add(fn)
+      },
+      removeEventListener: (_: string, fn: () => void) => {
+        removed()
+        listeners.delete(fn)
+      },
     }
   })
-  return { listeners, removed, resize: (n: number) => { w = n; act(() => listeners.forEach((f) => f())) } }
+  return {
+    listeners,
+    removed,
+    resize: (n: number) => {
+      w = n
+      act(() => listeners.forEach((f) => f()))
+    },
+  }
 }
 
 beforeEach(() => setPerms(PERMS.principal))
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); useAuthStore.getState().logout() })
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+  useAuthStore.getState().logout()
+})
 
 describe('grouped nav (≥ 768)', () => {
   it('shows direct links and three groups for a principal, in page order', () => {
@@ -63,24 +111,39 @@ describe('grouped nav (≥ 768)', () => {
       const items = within(screen.getByRole('menu', { name })).getAllByRole('menuitem')
       return items.map((i) => [i.textContent?.trim(), i.getAttribute('href')])
     }
-    expect(open('联考与报表')).toEqual([['年级联考', '/admin/grade-exams'], ['成绩汇总', '/admin/reports/scores'], ['考勤报告', '/admin/reports/attendance']])
-    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
-    expect(open('学校管理')).toEqual([
-      ['组织架构', '/admin/org'], ['账号', '/admin/accounts'], ['学校设置', '/admin/settings'], ['学年升级', '/admin/upgrade'], ['往年班级', '/admin/history'],
+    expect(open('联考与报表')).toEqual([
+      ['年级联考', '/admin/grade-exams'],
+      ['成绩汇总', '/admin/reports/scores'],
+      ['考勤报告', '/admin/reports/attendance'],
     ])
     fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
-    expect(open('系统')).toEqual([['审计日志', '/admin/audit'], ['AI 使用', '/admin/ai/usage'], ['AI 配置', '/admin/ai/config']])
+    expect(open('学校管理')).toEqual([
+      ['组织架构', '/admin/org'],
+      ['账号', '/admin/accounts'],
+      ['学校设置', '/admin/settings'],
+      ['学年升级', '/admin/upgrade'],
+      ['往年班级', '/admin/history'],
+    ])
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
+    expect(open('系统')).toEqual([
+      ['审计日志', '/admin/audit'],
+      ['AI 使用', '/admin/ai/usage'],
+      ['AI 配置', '/admin/ai/config'],
+    ])
   })
 
   it.each([
     ['dean', ['今日关注', '全校看板', '学校管理', '联考与报表', 'AI 使用', '通知']],
     ['gradeHead', ['今日关注', '全校看板', '联考与报表', '通知', '往年班级']],
     ['itAdmin', ['学校管理', '系统']],
-  ])('filters by permission for %s: empty groups vanish, single-item groups become plain links', (role, expected) => {
-    setPerms(PERMS[role])
-    renderNav()
-    expect(top()).toEqual(expected)
-  })
+  ])(
+    'filters by permission for %s: empty groups vanish, single-item groups become plain links',
+    (role, expected) => {
+      setPerms(PERMS[role])
+      renderNav()
+      expect(top()).toEqual(expected)
+    },
+  )
 
   it('turns a one-item group into a real link, not a dropdown', () => {
     setPerms(PERMS.dean)
@@ -99,7 +162,10 @@ describe('grouped nav (≥ 768)', () => {
 
   it('marks the group button active on any of its routes, including hidden sub-routes', () => {
     renderNav(ADMIN_PAGES, '/admin/reports/attendance')
-    expect(screen.getByRole('button', { name: '联考与报表' })).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByRole('button', { name: '联考与报表' })).toHaveAttribute(
+      'aria-current',
+      'true',
+    )
     expect(screen.getByRole('button', { name: '学校管理' })).not.toHaveAttribute('aria-current')
     cleanup()
     renderNav(ADMIN_PAGES, '/admin/history/classes/c1')
@@ -142,8 +208,22 @@ describe('grouped nav (≥ 768)', () => {
   it('is data-driven: any page with a group lands in that group', () => {
     const pages: AdminPage[] = [
       { path: 'today', label: '今日关注', icon: Sun, perm: 'school.view', element: null },
-      { path: 'x-one', label: '甲页', icon: Building2, perm: 'org.manage', element: null, group: 'system' },
-      { path: 'x-two', label: '乙页', icon: Users, perm: 'account.manage', element: null, group: 'system' },
+      {
+        path: 'x-one',
+        label: '甲页',
+        icon: Building2,
+        perm: 'org.manage',
+        element: null,
+        group: 'system',
+      },
+      {
+        path: 'x-two',
+        label: '乙页',
+        icon: Users,
+        perm: 'account.manage',
+        element: null,
+        group: 'system',
+      },
     ]
     setPerms(['school.view', 'org.manage', 'account.manage'])
     renderNav(pages, '/admin/x-two')
@@ -152,7 +232,9 @@ describe('grouped nav (≥ 768)', () => {
   })
 
   it('shows pages without a group as plain links', () => {
-    const pages: AdminPage[] = [{ path: 'org', label: '组织架构', icon: Building2, perm: 'org.manage', element: null }]
+    const pages: AdminPage[] = [
+      { path: 'org', label: '组织架构', icon: Building2, perm: 'org.manage', element: null },
+    ]
     setPerms(['org.manage'])
     renderNav(pages, '/admin/org')
     expect(top()).toEqual(['组织架构'])
@@ -165,10 +247,25 @@ describe('narrow nav (< 768)', () => {
     renderNav()
     const el = nav()
     expect(within(el).queryAllByRole('button')).toHaveLength(0)
-    expect(within(el).getAllByRole('link').map((l) => l.getAttribute('href'))).toEqual([
-      '/admin/today', '/admin/board', '/admin/org', '/admin/accounts', '/admin/settings', '/admin/grade-exams',
-      '/admin/reports/scores', '/admin/reports/attendance', '/admin/audit', '/admin/ai/usage', '/admin/ai/config',
-      '/admin/notices', '/admin/upgrade', '/admin/history',
+    expect(
+      within(el)
+        .getAllByRole('link')
+        .map((l) => l.getAttribute('href')),
+    ).toEqual([
+      '/admin/today',
+      '/admin/board',
+      '/admin/org',
+      '/admin/accounts',
+      '/admin/settings',
+      '/admin/grade-exams',
+      '/admin/reports/scores',
+      '/admin/reports/attendance',
+      '/admin/audit',
+      '/admin/ai/usage',
+      '/admin/ai/config',
+      '/admin/notices',
+      '/admin/upgrade',
+      '/admin/history',
     ])
     expect(el).toHaveClass('relative', 'overflow-x-auto')
   })

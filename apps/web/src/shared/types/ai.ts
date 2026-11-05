@@ -27,14 +27,7 @@ export type AiTemplateId =
 export type AiCategory = 'rec' | 'teach' | 'manage' | 'home' | 'grow'
 
 export type AiFieldType =
-  | 'text'
-  | 'textarea'
-  | 'select'
-  | 'check'
-  | 'student'
-  | 'students'
-  | 'exam'
-  | 'exam0'
+  'text' | 'textarea' | 'select' | 'check' | 'student' | 'students' | 'exam' | 'exam0'
 
 export interface AiField {
   key: string

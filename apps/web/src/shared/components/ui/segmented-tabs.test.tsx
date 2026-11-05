@@ -4,8 +4,18 @@ import { SegmentedTabs } from './segmented-tabs'
 describe('SegmentedTabs', () => {
   it('arrow keys move focus without activating; Enter activates', () => {
     const onChange = vi.fn()
-    render(<SegmentedTabs label="教室模式" value="daily" onChange={onChange}
-      items={[{ value: 'daily', label: '日常' }, { value: 'attendance', label: '考勤' }, { value: 'review', label: '点评' }]} />)
+    render(
+      <SegmentedTabs
+        label="教室模式"
+        value="daily"
+        onChange={onChange}
+        items={[
+          { value: 'daily', label: '日常' },
+          { value: 'attendance', label: '考勤' },
+          { value: 'review', label: '点评' },
+        ]}
+      />,
+    )
     const [daily, att, review] = screen.getAllByRole('tab')
     expect(daily).toHaveAttribute('tabindex', '0')
     expect(att).toHaveAttribute('tabindex', '-1')
@@ -23,7 +33,11 @@ describe('SegmentedTabs', () => {
     expect(onChange).toHaveBeenCalledTimes(1)
   })
 
-  const items = [{ value: 'a', label: '甲' }, { value: 'b', label: '乙' }, { value: 'c', label: '丙' }]
+  const items = [
+    { value: 'a', label: '甲' },
+    { value: 'b', label: '乙' },
+    { value: 'c', label: '丙' },
+  ]
 
   it('End moves focus to the last tab', () => {
     render(<SegmentedTabs label="x" value="a" onChange={() => {}} items={items} />)
@@ -50,7 +64,9 @@ describe('SegmentedTabs', () => {
   })
 
   it('underline variant: unselected tab has a transparent border', () => {
-    render(<SegmentedTabs label="x" variant="underline" value="a" onChange={() => {}} items={items} />)
+    render(
+      <SegmentedTabs label="x" variant="underline" value="a" onChange={() => {}} items={items} />,
+    )
     const tabs = screen.getAllByRole('tab')
     expect(tabs[1]).toHaveClass('border-transparent')
     expect(tabs[0]).toHaveClass('border-primary')

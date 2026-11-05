@@ -10,7 +10,13 @@ const META: Record<ThemeMode, { label: string; Icon: typeof Sun }> = {
 }
 
 /** showLabel:图标旁显示文字(窄屏菜单里用);可访问名称不变 */
-export default function ThemeToggle({ className, showLabel = false }: { className?: string; showLabel?: boolean }) {
+export default function ThemeToggle({
+  className,
+  showLabel = false,
+}: {
+  className?: string
+  showLabel?: boolean
+}) {
   const mode = useThemeStore((s) => s.mode)
   const setMode = useThemeStore((s) => s.setMode)
   const { label, Icon } = META[mode]

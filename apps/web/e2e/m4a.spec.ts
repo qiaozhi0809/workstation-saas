@@ -1,6 +1,14 @@
 import { expect, test, type APIRequestContext, type Browser, type Page } from '@playwright/test'
 import {
-  adminGet, createExam, deleteE2eExams, getSwitches, login, putScores, putSwitches, rosterEnrollmentIds, studentRecord,
+  adminGet,
+  createExam,
+  deleteE2eExams,
+  getSwitches,
+  login,
+  putScores,
+  putSwitches,
+  rosterEnrollmentIds,
+  studentRecord,
 } from './helpers/api'
 
 const API = '/api/v1'
@@ -31,21 +39,35 @@ async function phoneContext(browser: Browser) {
 
 /** 当前这一页没有横向滚动条。 */
 async function expectNoHorizontalScroll(page: Page) {
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  )
   expect(overflow).toBeLessThanOrEqual(0)
 }
 
 async function rollbackIfNeeded(request: APIRequestContext) {
   const principal = await login(request, 'principal01')
-  const latest = await adminGet<{ id: string; rolled_back: boolean } | null>(request, principal, '/admin/years/upgrade/latest')
+  const latest = await adminGet<{ id: string; rolled_back: boolean } | null>(
+    request,
+    principal,
+    '/admin/years/upgrade/latest',
+  )
   if (latest && !latest.rolled_back) {
-    const res = await request.post(`${API}/admin/years/upgrade/rollback`, { headers: auth(principal), data: { upgrade_id: latest.id } })
+    const res = await request.post(`${API}/admin/years/upgrade/rollback`, {
+      headers: auth(principal),
+      data: { upgrade_id: latest.id },
+    })
     expect(res.ok(), await res.text()).toBeTruthy()
   }
 }
 
 /** 解绑某学生名下指定手机号的家长(用例自建绑定的兜底清理;没有就什么也不做)。 */
-async function unlinkParent(request: APIRequestContext, token: string, studentId: string, phone: string) {
+async function unlinkParent(
+  request: APIRequestContext,
+  token: string,
+  studentId: string,
+  phone: string,
+) {
   const list = await request.get(`${API}/students/${studentId}/parents`, { headers: auth(token) })
   expect(list.ok(), await list.text()).toBeTruthy()
   const links = (await list.json()) as { link_id: string; phone: string }[]
@@ -57,12 +79,28 @@ async function unlinkParent(request: APIRequestContext, token: string, studentId
 
 /** 三年二班建一场考试并给全班录语文分(王小一在内)。 */
 async function createClassExam(request: APIRequestContext, teacherToken: string): Promise<void> {
-  const id = await createExam(request, teacherToken, CLASS_3_2, { name: EXAM, date: '2026-10-20', subjects: [{ name: '语文', full: 100 }] })
+  const id = await createExam(request, teacherToken, CLASS_3_2, {
+    name: EXAM,
+    date: '2026-10-20',
+    subjects: [{ name: '语文', full: 100 }],
+  })
   const ids = await rosterEnrollmentIds(request, teacherToken, CLASS_3_2)
-  await putScores(request, teacherToken, CLASS_3_2, id, '语文', ids, ids.map((_, i) => 95 - i * 3))
+  await putScores(
+    request,
+    teacherToken,
+    CLASS_3_2,
+    id,
+    '语文',
+    ids,
+    ids.map((_, i) => 95 - i * 3),
+  )
 }
 
-test('homeroom teacher creates a parent account who signs in on a phone and sees only the own child', async ({ page, browser, request }) => {
+test('homeroom teacher creates a parent account who signs in on a phone and sees only the own child', async ({
+  page,
+  browser,
+  request,
+}) => {
   // 139 号段:种子与其他用例只用 138 / 199,随机号不会撞上已有账号(撞上会绑到原账号、不出临时密码)
   const phone = `13900${String(Math.floor(Math.random() * 1_000_000)).padStart(6, '0')}`
   const teacher = await login(request, 'teacher01')
@@ -111,7 +149,10 @@ test('homeroom teacher creates a parent account who signs in on a phone and sees
   }
 })
 
-test('a parent with two children switches between them and the school rank switch changes the grade page', async ({ page, request }) => {
+test('a parent with two children switches between them and the school rank switch changes the grade page', async ({
+  page,
+  request,
+}) => {
   const teacher = await login(request, 'teacher01')
   const principal = await login(request, 'principal01')
   const switches = await getSwitches(request, principal)
@@ -134,7 +175,10 @@ test('a parent with two children switches between them and the school rank switc
     await expect(switcher.locator('option:checked')).toHaveText('王小一')
 
     // 开关关:成绩详情是段位;开关开:变成名次
-    await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '成绩' }).click()
+    await page
+      .getByRole('navigation', { name: '主导航' })
+      .getByRole('link', { name: '成绩' })
+      .click()
     await page.getByRole('button', { name: new RegExp(EXAM) }).click()
     await expect(page.getByTestId('rank-line')).toHaveText(/班级前 \d+%/)
 
@@ -148,7 +192,9 @@ test('a parent with two children switches between them and the school rank switc
   }
 })
 
-test('a teacher who is also a parent switches to the parent view and sees the own child', async ({ page }) => {
+test('a teacher who is also a parent switches to the parent view and sees the own child', async ({
+  page,
+}) => {
   await signIn(page, 'teacher04')
   await expect(page).toHaveURL(/\/teacher/)
   await page.getByRole('button', { name: '账号菜单' }).click()
@@ -163,28 +209,53 @@ test('a teacher who is also a parent switches to the parent view and sees the ow
 
 // 学年升级放最后:四年一班毕业 → 李家长名下的魏小七变只读;回滚后恢复在读。
 test.describe('graduation', () => {
-  test.beforeEach(async ({ request }) => { await rollbackIfNeeded(request) })
+  test.beforeEach(async ({ request }) => {
+    await rollbackIfNeeded(request)
+  })
   test.afterEach(async ({ request }) => {
     await rollbackIfNeeded(request)
     await deleteE2eExams(request, await login(request, 'teacher05'), CLASS_4_1)
   })
 
-  test('graduated child turns read-only for the parent and rolling back restores it', async ({ page, request }) => {
+  test('graduated child turns read-only for the parent and rolling back restores it', async ({
+    page,
+    request,
+  }) => {
     // 毕业前给四年一班建一场考试并录魏小七的分
     const t5 = await login(request, 'teacher05')
     const wei = await studentRecord(request, t5, CLASS_4_1, '魏小七')
-    const examId = await createExam(request, t5, CLASS_4_1, { name: EXAM, date: '2026-10-21', subjects: [{ name: '数学', full: 100 }] })
+    const examId = await createExam(request, t5, CLASS_4_1, {
+      name: EXAM,
+      date: '2026-10-21',
+      subjects: [{ name: '数学', full: 100 }],
+    })
     await putScores(request, t5, CLASS_4_1, examId, '数学', [wei.enrollment_id], [91])
 
     // 校长经 API 升级:四年一班毕业,其余照建议方案
     const principal = await login(request, 'principal01')
     const suggested = await request.post(`${API}/admin/years/upgrade/suggest`, {
-      headers: auth(principal), data: { name: '2027-2028', start_date: '2027-09-01', end_date: '2028-07-15' },
+      headers: auth(principal),
+      data: { name: '2027-2028', start_date: '2027-09-01', end_date: '2028-07-15' },
     })
     expect(suggested.ok(), await suggested.text()).toBeTruthy()
-    const plan = (await suggested.json()) as { classes: { from_class_id: string; action: string; to_grade_name: string | null; to_name: string | null }[]; grade_heads: unknown[] }
-    for (const c of plan.classes.filter((x) => x.from_class_id === CLASS_4_1)) { c.action = 'graduate'; c.to_grade_name = null; c.to_name = null }
-    const done = await request.post(`${API}/admin/years/upgrade`, { headers: auth(principal), data: plan })
+    const plan = (await suggested.json()) as {
+      classes: {
+        from_class_id: string
+        action: string
+        to_grade_name: string | null
+        to_name: string | null
+      }[]
+      grade_heads: unknown[]
+    }
+    for (const c of plan.classes.filter((x) => x.from_class_id === CLASS_4_1)) {
+      c.action = 'graduate'
+      c.to_grade_name = null
+      c.to_name = null
+    }
+    const done = await request.post(`${API}/admin/years/upgrade`, {
+      headers: auth(principal),
+      data: plan,
+    })
     expect(done.ok(), await done.text()).toBeTruthy()
     const { upgrade_id } = (await done.json()) as { upgrade_id: string }
 
@@ -196,18 +267,29 @@ test.describe('graduation', () => {
     await expect(page.getByText(/毕业 \/ 离校,可以继续查看在校期间的成长与成绩/)).toBeVisible()
     await expect(page.getByRole('region', { name: '今日出勤' })).toHaveCount(0)
     await expect(page.getByRole('region', { name: '班级座位' })).toHaveCount(0)
-    await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '成绩' }).click()
+    await page
+      .getByRole('navigation', { name: '主导航' })
+      .getByRole('link', { name: '成绩' })
+      .click()
     await page.getByRole('button', { name: new RegExp(EXAM) }).click()
     await expect(page.getByRole('cell', { name: '91 / 100' })).toBeVisible()
 
     // 回滚(带 upgrade_id)→ 恢复在读
-    const back = await request.post(`${API}/admin/years/upgrade/rollback`, { headers: auth(principal), data: { upgrade_id } })
+    const back = await request.post(`${API}/admin/years/upgrade/rollback`, {
+      headers: auth(principal),
+      data: { upgrade_id },
+    })
     expect(back.ok(), await back.text()).toBeTruthy()
     await page.reload()
     await expect(page.getByLabel('切换孩子').locator('option')).toHaveCount(2)
-    await expect(page.getByLabel('切换孩子').locator('option', { hasText: '已毕业/离校' })).toHaveCount(0)
+    await expect(
+      page.getByLabel('切换孩子').locator('option', { hasText: '已毕业/离校' }),
+    ).toHaveCount(0)
     await expect(page.getByLabel('切换孩子').locator('option:checked')).toHaveText('魏小七')
-    await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '今日' }).click()
+    await page
+      .getByRole('navigation', { name: '主导航' })
+      .getByRole('link', { name: '今日' })
+      .click()
     await expect(page).toHaveURL(/\/parent\/today/)
     await expect(page.getByRole('region', { name: '今日出勤' })).toBeVisible()
   })

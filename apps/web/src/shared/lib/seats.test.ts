@@ -1,9 +1,22 @@
 import { expect, it } from 'vitest'
-import { colRange, gridCells, groupOf, gridOf, inGrid, isPodium, podiumCells, seatText } from './seats'
+import {
+  colRange,
+  gridCells,
+  groupOf,
+  gridOf,
+  inGrid,
+  isPodium,
+  podiumCells,
+  seatText,
+} from './seats'
 
 const g = { rows: 2, cols: 6, deskSize: 3, podiumLeft: 2, podiumRight: 1 } as const
 it('lists podium cells left first then right', () => {
-  expect(podiumCells(g)).toEqual([{ row: 0, col: -1 }, { row: 0, col: -2 }, { row: 0, col: 1 }])
+  expect(podiumCells(g)).toEqual([
+    { row: 0, col: -1 },
+    { row: 0, col: -2 },
+    { row: 0, col: 1 },
+  ])
 })
 it('names seats', () => {
   expect(seatText({ row: 2, col: 3 }, g)).toBe('2排3列')
@@ -26,7 +39,10 @@ it('checks cells', () => {
 })
 it('lists grid cells row-major', () => {
   expect(gridCells({ ...g, rows: 2, cols: 2 })).toEqual([
-    { row: 1, col: 1 }, { row: 1, col: 2 }, { row: 2, col: 1 }, { row: 2, col: 2 },
+    { row: 1, col: 1 },
+    { row: 1, col: 2 },
+    { row: 2, col: 1 },
+    { row: 2, col: 2 },
   ])
 })
 it('column ranges per desk size', () => {
@@ -35,8 +51,9 @@ it('column ranges per desk size', () => {
   expect(colRange(3)).toEqual([3, 12])
 })
 it('builds grid from class and detects podium', () => {
-  expect(gridOf({ seat_rows: 4, seat_cols: 6, desk_size: 2, podium_left: 1, podium_right: 0 }))
-    .toEqual({ rows: 4, cols: 6, deskSize: 2, podiumLeft: 1, podiumRight: 0 })
+  expect(
+    gridOf({ seat_rows: 4, seat_cols: 6, desk_size: 2, podium_left: 1, podium_right: 0 }),
+  ).toEqual({ rows: 4, cols: 6, deskSize: 2, podiumLeft: 1, podiumRight: 0 })
   expect(isPodium({ row: 0 })).toBe(true)
   expect(isPodium({ row: null })).toBe(false)
 })

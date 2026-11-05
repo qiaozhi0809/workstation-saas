@@ -29,47 +29,86 @@ afterEach(() => {
   useAuthStore.getState().logout()
 })
 
-it('submits trimmed login name and unicode password', async () => {   // Review Focus #5
+it('submits trimmed login name and unicode password', async () => {
+  // Review Focus #5
   vi.mocked(authApi.login).mockResolvedValue({
-    access_token: 'a', refresh_token: 'r', expires_at: 'x', user: { id: 'u', display_name: 't', contexts: ['teacher'], admin_perms: [], must_change_password: false },
+    access_token: 'a',
+    refresh_token: 'r',
+    expires_at: 'x',
+    user: {
+      id: 'u',
+      display_name: 't',
+      contexts: ['teacher'],
+      admin_perms: [],
+      must_change_password: false,
+    },
   })
-  render(<MemoryRouter><LoginPage /></MemoryRouter>)
+  render(
+    <MemoryRouter>
+      <LoginPage />
+    </MemoryRouter>,
+  )
   fill(' teacher01 ', '中文🎉')
   await waitFor(() => expect(authApi.login).toHaveBeenCalledWith('teacher01', '中文🎉'))
 })
 
 it('shows lockout message', async () => {
   vi.mocked(authApi.login).mockRejectedValue(new ApiError(429, 'ACCOUNT_LOCKED', 'locked'))
-  render(<MemoryRouter><LoginPage /></MemoryRouter>)
+  render(
+    <MemoryRouter>
+      <LoginPage />
+    </MemoryRouter>,
+  )
   fill('teacher01', 'x')
   expect(await screen.findByText('失败次数过多,请 15 分钟后再试')).toBeInTheDocument()
 })
 
 it('shows invalid credentials message', async () => {
   vi.mocked(authApi.login).mockRejectedValue(new ApiError(401, 'INVALID_CREDENTIALS', 'bad'))
-  render(<MemoryRouter><LoginPage /></MemoryRouter>)
+  render(
+    <MemoryRouter>
+      <LoginPage />
+    </MemoryRouter>,
+  )
   fill('teacher01', 'x')
   expect(await screen.findByRole('alert')).toHaveTextContent('登录名或密码不正确')
 })
 
 it('shows invalid credentials message for a 400 BAD_REQUEST', async () => {
   vi.mocked(authApi.login).mockRejectedValue(new ApiError(400, 'BAD_REQUEST', 'bad input'))
-  render(<MemoryRouter><LoginPage /></MemoryRouter>)
+  render(
+    <MemoryRouter>
+      <LoginPage />
+    </MemoryRouter>,
+  )
   fill('   ', 'x')
   expect(await screen.findByRole('alert')).toHaveTextContent('登录名或密码不正确')
 })
 
 it('shows generic message for other errors', async () => {
   vi.mocked(authApi.login).mockRejectedValue(new Error('network'))
-  render(<MemoryRouter><LoginPage /></MemoryRouter>)
+  render(
+    <MemoryRouter>
+      <LoginPage />
+    </MemoryRouter>,
+  )
   fill('teacher01', 'x')
   expect(await screen.findByRole('alert')).toHaveTextContent('登录失败,请稍后再试')
 })
 
 it('stores tokens and navigates to /teacher on success', async () => {
-  const user: User = { id: 'u', display_name: 't', contexts: ['teacher'], admin_perms: [], must_change_password: false }
+  const user: User = {
+    id: 'u',
+    display_name: 't',
+    contexts: ['teacher'],
+    admin_perms: [],
+    must_change_password: false,
+  }
   vi.mocked(authApi.login).mockResolvedValue({
-    access_token: 'a', refresh_token: 'r', expires_at: 'x', user,
+    access_token: 'a',
+    refresh_token: 'r',
+    expires_at: 'x',
+    user,
   })
   render(
     <MemoryRouter initialEntries={['/login']}>
@@ -89,23 +128,46 @@ it('stores tokens and navigates to /teacher on success', async () => {
 
 it('disables the button while pending and clears the error on resubmit', async () => {
   vi.mocked(authApi.login).mockRejectedValueOnce(new ApiError(401, 'INVALID_CREDENTIALS', 'bad'))
-  render(<MemoryRouter><LoginPage /></MemoryRouter>)
+  render(
+    <MemoryRouter>
+      <LoginPage />
+    </MemoryRouter>,
+  )
   fill('teacher01', 'x')
   expect(await screen.findByRole('alert')).toBeInTheDocument()
 
   let resolve!: (v: LoginResponse) => void
-  vi.mocked(authApi.login).mockReturnValueOnce(new Promise((r) => { resolve = r }))
+  vi.mocked(authApi.login).mockReturnValueOnce(
+    new Promise((r) => {
+      resolve = r
+    }),
+  )
   fireEvent.click(screen.getByRole('button', { name: '登录' }))
   const btn = await screen.findByRole('button', { name: '登录中…' })
   expect(btn).toBeDisabled()
   expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-  resolve({ access_token: 'a', refresh_token: 'r', expires_at: 'x', user: { id: 'u', display_name: 't', contexts: ['teacher'], admin_perms: [], must_change_password: false } })
+  resolve({
+    access_token: 'a',
+    refresh_token: 'r',
+    expires_at: 'x',
+    user: {
+      id: 'u',
+      display_name: 't',
+      contexts: ['teacher'],
+      admin_perms: [],
+      must_change_password: false,
+    },
+  })
   await waitFor(() => expect(useAuthStore.getState().accessToken).toBe('a'))
 })
 
 it('marks the submit button busy while signing in', async () => {
   vi.mocked(authApi.login).mockReturnValue(new Promise(() => {}))
-  render(<MemoryRouter><LoginPage /></MemoryRouter>)
+  render(
+    <MemoryRouter>
+      <LoginPage />
+    </MemoryRouter>,
+  )
   fill('teacher01', 'dev123')
   const busy = await screen.findByRole('button', { name: '登录中…' })
   expect(busy).toBeDisabled()
@@ -115,8 +177,17 @@ it('marks the submit button busy while signing in', async () => {
 const loginAs = async (user: Partial<User>, lastContext: 'teacher' | 'admin' | null = null) => {
   useAuthStore.setState({ lastContext })
   vi.mocked(authApi.login).mockResolvedValue({
-    access_token: 'a', refresh_token: 'r', expires_at: 'x',
-    user: { id: 'u', display_name: 't', contexts: ['teacher'], admin_perms: [], must_change_password: false, ...user },
+    access_token: 'a',
+    refresh_token: 'r',
+    expires_at: 'x',
+    user: {
+      id: 'u',
+      display_name: 't',
+      contexts: ['teacher'],
+      admin_perms: [],
+      must_change_password: false,
+      ...user,
+    },
   })
   render(
     <MemoryRouter initialEntries={['/login']}>
@@ -148,7 +219,9 @@ it('sends a dual-identity user to the last used context', async () => {
 
 it('keeps a must-change-password account without identity on the login page', async () => {
   await loginAs({ contexts: [], must_change_password: true })
-  expect(await screen.findByRole('alert')).toHaveTextContent('这个账号还没有分配身份,请联系学校信息中心')
+  expect(await screen.findByRole('alert')).toHaveTextContent(
+    '这个账号还没有分配身份,请联系学校信息中心',
+  )
   expect(screen.queryByText('change pw')).toBeNull()
   expect(useAuthStore.getState().accessToken).toBeNull()
 })
@@ -160,7 +233,9 @@ it('sends a user who must change password to /change-password', async () => {
 
 it('stays on the login page with a hint when the account has no identity', async () => {
   await loginAs({ contexts: [] })
-  expect(await screen.findByRole('alert')).toHaveTextContent('这个账号还没有分配身份,请联系学校信息中心')
+  expect(await screen.findByRole('alert')).toHaveTextContent(
+    '这个账号还没有分配身份,请联系学校信息中心',
+  )
   expect(screen.queryByText('teacher home')).toBeNull()
   expect(useAuthStore.getState().accessToken).toBeNull()
 })
@@ -173,20 +248,36 @@ it('revokes the refresh token when discarding a login without identity', async (
 
 it('shows the one-shot flash once, then clears it', () => {
   setLoginFlash('你的账号已被停用')
-  render(<MemoryRouter><LoginPage /></MemoryRouter>)
+  render(
+    <MemoryRouter>
+      <LoginPage />
+    </MemoryRouter>,
+  )
   expect(screen.getByText('你的账号已被停用')).toBeInTheDocument()
   expect(peekLoginFlash()).toBeNull()
 })
 
 it('StrictMode 下仍显示提示,之后已清除', () => {
   setLoginFlash('你的账号已被停用')
-  render(<StrictMode><MemoryRouter><LoginPage /></MemoryRouter></StrictMode>)
+  render(
+    <StrictMode>
+      <MemoryRouter>
+        <LoginPage />
+      </MemoryRouter>
+    </StrictMode>,
+  )
   expect(screen.getByText('你的账号已被停用')).toBeInTheDocument()
   expect(peekLoginFlash()).toBeNull()
 })
 
 it('redirects an already signed-in user to the home of the last context', () => {
-  const user: User = { id: 'u', display_name: 't', contexts: ['teacher', 'parent'], admin_perms: [], must_change_password: false }
+  const user: User = {
+    id: 'u',
+    display_name: 't',
+    contexts: ['teacher', 'parent'],
+    admin_perms: [],
+    must_change_password: false,
+  }
   useAuthStore.setState({ accessToken: 'a', refreshToken: 'r', user, lastContext: 'parent' })
   render(
     <MemoryRouter initialEntries={['/login']}>
@@ -202,7 +293,13 @@ it('redirects an already signed-in user to the home of the last context', () => 
 })
 
 it('redirects a signed-in user who must change the password to /change-password', () => {
-  const user: User = { id: 'u', display_name: 't', contexts: ['parent'], admin_perms: [], must_change_password: true }
+  const user: User = {
+    id: 'u',
+    display_name: 't',
+    contexts: ['parent'],
+    admin_perms: [],
+    must_change_password: true,
+  }
   useAuthStore.setState({ accessToken: 'a', refreshToken: 'r', user, lastContext: null })
   render(
     <MemoryRouter initialEntries={['/login']}>
@@ -217,19 +314,41 @@ it('redirects a signed-in user who must change the password to /change-password'
 
 it('stays on the login form when there is a token but no user yet', () => {
   useAuthStore.setState({ accessToken: 'a', refreshToken: 'r', user: null })
-  render(<MemoryRouter><LoginPage /></MemoryRouter>)
+  render(
+    <MemoryRouter>
+      <LoginPage />
+    </MemoryRouter>,
+  )
   expect(screen.getByLabelText('登录名')).toBeInTheDocument()
 })
 
 it('shows the login form instead of crashing for an old-shape persisted user (no contexts)', () => {
-  useAuthStore.setState({ accessToken: 'a', refreshToken: 'r', user: { id: 'u', display_name: 't' } as unknown as User })
-  render(<MemoryRouter initialEntries={['/login']}><LoginPage /></MemoryRouter>)
+  useAuthStore.setState({
+    accessToken: 'a',
+    refreshToken: 'r',
+    user: { id: 'u', display_name: 't' } as unknown as User,
+  })
+  render(
+    <MemoryRouter initialEntries={['/login']}>
+      <LoginPage />
+    </MemoryRouter>,
+  )
   expect(screen.getByLabelText('登录名')).toBeInTheDocument()
 })
 
 it('stays on the login form when the signed-in user has no identity', () => {
-  const user: User = { id: 'u', display_name: 't', contexts: [], admin_perms: [], must_change_password: false }
+  const user: User = {
+    id: 'u',
+    display_name: 't',
+    contexts: [],
+    admin_perms: [],
+    must_change_password: false,
+  }
   useAuthStore.setState({ accessToken: 'a', refreshToken: 'r', user, lastContext: null })
-  render(<MemoryRouter initialEntries={['/login']}><LoginPage /></MemoryRouter>)
+  render(
+    <MemoryRouter initialEntries={['/login']}>
+      <LoginPage />
+    </MemoryRouter>,
+  )
   expect(screen.getByLabelText('登录名')).toBeInTheDocument()
 })

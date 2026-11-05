@@ -2,7 +2,12 @@ import { cleanup, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import TeacherNav from './TeacherNav'
 
-const renderAt = (entry: string) => render(<MemoryRouter initialEntries={[entry]}><TeacherNav /></MemoryRouter>)
+const renderAt = (entry: string) =>
+  render(
+    <MemoryRouter initialEntries={[entry]}>
+      <TeacherNav />
+    </MemoryRouter>,
+  )
 
 it('puts the AI link right after 学生', () => {
   renderAt('/teacher/classroom')
@@ -20,7 +25,12 @@ it('highlights the AI link on the home page and on a chat page', () => {
   expect(screen.getByRole('link', { name: '学生' })).not.toHaveAttribute('aria-current')
 })
 
-const renderWith = (perms?: string[]) => render(<MemoryRouter initialEntries={['/teacher/classroom']}><TeacherNav perms={perms} /></MemoryRouter>)
+const renderWith = (perms?: string[]) =>
+  render(
+    <MemoryRouter initialEntries={['/teacher/classroom']}>
+      <TeacherNav perms={perms} />
+    </MemoryRouter>,
+  )
 
 it('hides 班级公告 without class.notice', () => {
   renderWith(['attendance.read'])

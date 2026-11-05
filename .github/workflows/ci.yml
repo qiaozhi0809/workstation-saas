@@ -74,6 +74,9 @@ jobs:
       - name: ESLint
         run: npm run lint
 
+      - name: Prettier format check
+        run: npm run format:check
+
       - name: Typecheck
         run: npx tsc -b
 

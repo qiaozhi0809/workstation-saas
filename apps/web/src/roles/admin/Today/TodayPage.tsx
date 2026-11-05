@@ -25,7 +25,15 @@ export default function TodayPage() {
   const { studentId, open } = useStudentDrawer()
   const q = useQuery({ queryKey: ['admin', 'today'], queryFn: adminApi.today })
 
-  if (q.isError) return <ErrorState title="加载失败" onRetry={() => void q.refetch()} retrying={q.isFetching} className="p-6" />
+  if (q.isError)
+    return (
+      <ErrorState
+        title="加载失败"
+        onRetry={() => void q.refetch()}
+        retrying={q.isFetching}
+        className="p-6"
+      />
+    )
   if (!q.data) return <LoadingState />
   const d = q.data
 
@@ -42,9 +50,15 @@ export default function TodayPage() {
           <NoticeCard notices={d.my_notices} />
         </div>
       )}
-      <Section title="今日缺勤与请假"><AbsenteeList items={d.absentees} onOpen={open} /></Section>
-      <Section title="还没确认考勤的班级"><UnconfirmedList items={d.unconfirmed} /></Section>
-      <Section title="本周点评"><WeekReviews data={d.week_reviews} /></Section>
+      <Section title="今日缺勤与请假">
+        <AbsenteeList items={d.absentees} onOpen={open} />
+      </Section>
+      <Section title="还没确认考勤的班级">
+        <UnconfirmedList items={d.unconfirmed} />
+      </Section>
+      <Section title="本周点评">
+        <WeekReviews data={d.week_reviews} />
+      </Section>
       {studentId && <StudentProfileDrawer key={studentId} studentId={studentId} />}
     </div>
   )

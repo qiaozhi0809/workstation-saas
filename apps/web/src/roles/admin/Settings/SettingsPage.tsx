@@ -1,4 +1,5 @@
 import SwitchesCard from './SwitchesCard'
+import SystemCard from './SystemCard'
 import TagPoolCard from './TagPoolCard'
 
 export default function SettingsPage() {
@@ -7,6 +8,7 @@ export default function SettingsPage() {
       <h1 className="text-lg font-semibold">学校设置</h1>
       <TagPoolCard />
       <SwitchesCard />
+      <SystemCard />
     </div>
   )
 }

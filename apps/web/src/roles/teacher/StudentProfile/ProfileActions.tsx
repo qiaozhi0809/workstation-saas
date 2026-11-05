@@ -18,11 +18,23 @@ export default function ProfileActions({ profile }: { profile: StudentProfile })
   return (
     <div className="mb-3 flex flex-wrap gap-2">
       {perms.includes('comment.write') && (
-        <Button type="button" variant="outline" size="sm"
-          onClick={() => navigate(aiLink({ tpl: 'comment1', studentId: profile.id }))}>AI 写评语</Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => navigate(aiLink({ tpl: 'comment1', studentId: profile.id }))}
+        >
+          AI 写评语
+        </Button>
       )}
-      <Button type="button" variant="outline" size="sm"
-        onClick={() => navigate(aiLink({ tpl: 'parent', studentId: profile.id }))}>家长沟通</Button>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={() => navigate(aiLink({ tpl: 'parent', studentId: profile.id }))}
+      >
+        家长沟通
+      </Button>
     </div>
   )
 }

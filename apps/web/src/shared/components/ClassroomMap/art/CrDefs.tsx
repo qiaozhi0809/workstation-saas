@@ -4,7 +4,14 @@ import { SHADOW_ID } from './palette'
 export default function CrDefs() {
   return (
     <defs>
-      <filter id={SHADOW_ID} x="-30%" y="-30%" width="160%" height="160%" colorInterpolationFilters="sRGB">
+      <filter
+        id={SHADOW_ID}
+        x="-30%"
+        y="-30%"
+        width="160%"
+        height="160%"
+        colorInterpolationFilters="sRGB"
+      >
         <feDropShadow dx={4} dy={4} stdDeviation={3} floodColor="#6b5640" floodOpacity={0.22} />
       </filter>
     </defs>

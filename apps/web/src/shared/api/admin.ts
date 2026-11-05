@@ -1,10 +1,49 @@
 import type {
-  Account, AccountCreate, AccountInput, AccountPage, AdminRole, AdminRoleInput, AiConfigSave, AiConfigView,
-  AiUsage, AttendanceClassDetail, AttendanceReport, AuditActions, AuditRow, BoardView,
-  ClassAdmin, ClassInput, GradeAdmin, GradeExam, GradeExamInput, GradeInput, HistoryClass, HistoryExam,
-  HistoryScores, HistoryStudent, HistoryYear, ImportRow, NoticeInput, NoticeOptions, NoticePerson,
-  NoticeRecipients, NoticeSent, SchoolInfo, ScoreStudentRow, ScoreSummary, StaffInput, Switches,
-  TagPool, TagPoolSave, TodayView, UpgradeLatest, UpgradePlan, UpgradePreview, YearAdmin, YearUpdate,
+  Account,
+  AccountCreate,
+  AccountInput,
+  AccountPage,
+  AdminRole,
+  AdminRoleInput,
+  AiConfigSave,
+  AiConfigView,
+  AiUsage,
+  AttendanceClassDetail,
+  AttendanceReport,
+  AuditActions,
+  AuditRow,
+  BoardView,
+  ClassAdmin,
+  ClassInput,
+  GradeAdmin,
+  GradeExam,
+  GradeExamInput,
+  GradeInput,
+  HistoryClass,
+  HistoryExam,
+  HistoryScores,
+  HistoryStudent,
+  HistoryYear,
+  ImportRow,
+  NoticeInput,
+  NoticeOptions,
+  NoticePerson,
+  NoticeRecipients,
+  NoticeSent,
+  SchoolInfo,
+  SystemInfo,
+  ScoreStudentRow,
+  ScoreSummary,
+  StaffInput,
+  Switches,
+  TagPool,
+  TagPoolSave,
+  TodayView,
+  UpgradeLatest,
+  UpgradePlan,
+  UpgradePreview,
+  YearAdmin,
+  YearUpdate,
 } from '@/shared/types/admin'
 import { api, authedFetch, toApiError } from './client'
 
@@ -20,11 +59,23 @@ function qs(params: Record<string, string | number | null | undefined>): string 
   return s ? `?${s}` : ''
 }
 
-export interface AccountFilters { q?: string; role?: string; status?: string; page?: number }
+export interface AccountFilters {
+  q?: string
+  role?: string
+  status?: string
+  page?: number
+}
 
 export interface AuditFilters {
-  from?: string; to?: string; user_id?: string; group?: string; action?: string
-  object_type?: string; object_id?: string; success?: boolean; page?: number
+  from?: string
+  to?: string
+  user_id?: string
+  group?: string
+  action?: string
+  object_type?: string
+  object_id?: string
+  success?: boolean
+  page?: number
 }
 
 /** 带 Bearer 下载文件(令牌走请求头,不进 URL);非 2xx 抛 ApiError */
@@ -35,6 +86,14 @@ async function download(path: string): Promise<Blob> {
 }
 
 export const adminApi = {
+  systemInfo: () => api<SystemInfo>('GET', '/admin/system/info'),
+  /** 带 Bearer 取回诊断包 zip(令牌走请求头,不进 URL);非 2xx 抛 ApiError */
+  downloadDiagnostics: async (): Promise<{ blob: Blob; filename: string }> => {
+    const res = await authedFetch('GET', '/admin/system/diagnostics')
+    if (!res.ok) throw await toApiError(res)
+    const m = /filename="?([^";]+)"?/.exec(res.headers.get('Content-Disposition') ?? '')
+    return { blob: await res.blob(), filename: m?.[1] ?? 'ws-diagnostics.zip' }
+  },
   school: () => api<SchoolInfo>('GET', '/admin/school'),
   saveSchool: (b: SchoolInfo) => api<SchoolInfo>('PUT', '/admin/school', b),
   years: () => api<YearAdmin[]>('GET', '/admin/years'),
@@ -47,7 +106,8 @@ export const adminApi = {
     api<ClassAdmin[]>('GET', `/admin/classes${qs({ grade_id: gradeId })}`),
   class: (id: string) => api<ClassAdmin>('GET', `/admin/classes/${seg(id)}`),
   createClass: (b: ClassInput) => api<ClassAdmin>('POST', '/admin/classes', b),
-  updateClass: (id: string, b: ClassInput) => api<ClassAdmin>('PUT', `/admin/classes/${seg(id)}`, b),
+  updateClass: (id: string, b: ClassInput) =>
+    api<ClassAdmin>('PUT', `/admin/classes/${seg(id)}`, b),
   deleteClass: (id: string) => api<void>('DELETE', `/admin/classes/${seg(id)}`),
   addStaff: (classId: string, b: StaffInput) =>
     api<ClassAdmin>('POST', `/admin/classes/${seg(classId)}/staff`, b),
@@ -56,10 +116,14 @@ export const adminApi = {
   addRole: (b: AdminRoleInput) => api<AdminRole>('POST', '/admin/roles', b),
   endRole: (bindingId: string) => api<void>('DELETE', `/admin/roles/${seg(bindingId)}`),
   accounts: (f: AccountFilters = {}) =>
-    api<AccountPage>('GET', `/admin/accounts${qs({ q: f.q, role: f.role, status: f.status, page: f.page })}`),
+    api<AccountPage>(
+      'GET',
+      `/admin/accounts${qs({ q: f.q, role: f.role, status: f.status, page: f.page })}`,
+    ),
   createAccount: (b: AccountCreate) =>
     api<{ account: Account; temp_password: string }>('POST', '/admin/accounts', b),
-  updateAccount: (id: string, b: AccountInput) => api<Account>('PUT', `/admin/accounts/${seg(id)}`, b),
+  updateAccount: (id: string, b: AccountInput) =>
+    api<Account>('PUT', `/admin/accounts/${seg(id)}`, b),
   resetPassword: (id: string) =>
     api<{ temp_password: string }>('POST', `/admin/accounts/${seg(id)}/reset-password`),
   freeze: (id: string) => api<Account>('POST', `/admin/accounts/${seg(id)}/freeze`),
@@ -68,7 +132,10 @@ export const adminApi = {
     api<{ rows: ImportRow[] }>('POST', '/admin/accounts/import/preview', { csv }),
   importAccounts: (csv: string) =>
     api<{ created: { login_name: string; display_name: string; temp_password: string }[] }>(
-      'POST', '/admin/accounts/import', { csv }),
+      'POST',
+      '/admin/accounts/import',
+      { csv },
+    ),
   saveTagPool: (b: TagPoolSave) => api<TagPool>('PUT', '/admin/settings/tag-pool', b),
   switches: () => api<Switches>('GET', '/admin/settings/switches'),
   saveSwitches: (b: Switches) => api<Switches>('PUT', '/admin/settings/switches', b),
@@ -87,24 +154,38 @@ export const adminApi = {
   scoreReport: (gradeExamId: string) =>
     api<ScoreSummary>('GET', `/admin/reports/scores${qs({ grade_exam_id: gradeExamId })}`),
   scoreStudents: (gradeExamId: string, classId?: string | null) =>
-    api<{ students: ScoreStudentRow[] }>('GET',
-      `/admin/reports/scores/students${qs({ grade_exam_id: gradeExamId, class_id: classId })}`),
+    api<{ students: ScoreStudentRow[] }>(
+      'GET',
+      `/admin/reports/scores/students${qs({ grade_exam_id: gradeExamId, class_id: classId })}`,
+    ),
   exportScoreReport: (gradeExamId: string): Promise<Blob> =>
     download(`/admin/reports/scores/export${qs({ grade_exam_id: gradeExamId })}`),
   attendanceReport: (month: string, gradeId?: string | null) =>
     api<AttendanceReport>('GET', `/admin/reports/attendance${qs({ month, grade_id: gradeId })}`),
   attendanceClass: (month: string, classId: string) =>
-    api<AttendanceClassDetail>('GET', `/admin/reports/attendance/class${qs({ month, class_id: classId })}`),
+    api<AttendanceClassDetail>(
+      'GET',
+      `/admin/reports/attendance/class${qs({ month, class_id: classId })}`,
+    ),
   exportAttendance: (month: string, gradeId?: string | null): Promise<Blob> =>
     download(`/admin/reports/attendance/export${qs({ month, grade_id: gradeId })}`),
   // ---- 审计 ----
   auditActions: () => api<AuditActions>('GET', '/admin/audit/actions'),
   audit: (f: AuditFilters = {}) =>
-    api<{ items: AuditRow[]; total: number }>('GET', `/admin/audit${qs({
-      from: f.from, to: f.to, user_id: f.user_id, group: f.group, action: f.action,
-      object_type: f.object_type, object_id: f.object_id,
-      success: f.success === undefined ? undefined : String(f.success), page: f.page,
-    })}`),
+    api<{ items: AuditRow[]; total: number }>(
+      'GET',
+      `/admin/audit${qs({
+        from: f.from,
+        to: f.to,
+        user_id: f.user_id,
+        group: f.group,
+        action: f.action,
+        object_type: f.object_type,
+        object_id: f.object_id,
+        success: f.success === undefined ? undefined : String(f.success),
+        page: f.page,
+      })}`,
+    ),
   // ---- AI ----
   aiUsage: (month: string) => api<AiUsage>('GET', `/admin/ai/usage${qs({ month })}`),
   aiConfig: () => api<AiConfigView>('GET', '/admin/ai/config'),

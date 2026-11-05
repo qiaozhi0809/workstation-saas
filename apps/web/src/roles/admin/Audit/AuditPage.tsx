@@ -30,7 +30,10 @@ const HEADS = ['时间', '操作人', '操作', '对象', 'IP', '结果']
 
 export default function AuditPage() {
   const [filter, setFilter] = useState<AuditFilterValue>(() => ({
-    ...defaultRange(), user: null, group: '', deniedOnly: false,
+    ...defaultRange(),
+    user: null,
+    group: '',
+    deniedOnly: false,
   }))
   const [page, setPage] = useState(1)
   const [open, setOpen] = useState<Set<string>>(new Set())
@@ -43,7 +46,11 @@ export default function AuditPage() {
     ...(filter.deniedOnly && { success: false }),
     page,
   }
-  const actions = useQuery({ queryKey: ['audit-actions'], queryFn: adminApi.auditActions, staleTime: Infinity })
+  const actions = useQuery({
+    queryKey: ['audit-actions'],
+    queryFn: adminApi.auditActions,
+    staleTime: Infinity,
+  })
   const list = useQuery({
     queryKey: ['audit', query],
     queryFn: () => adminApi.audit(query),
@@ -55,13 +62,17 @@ export default function AuditPage() {
     setPage(1)
     setOpen(new Set())
   }
-  const toggle = (id: string) => setOpen((s) => {
-    const n = new Set(s)
-    if (n.has(id)) n.delete(id)
-    else n.add(id)
-    return n
-  })
-  const goto = (p: number) => { setPage(p); setOpen(new Set()) }
+  const toggle = (id: string) =>
+    setOpen((s) => {
+      const n = new Set(s)
+      if (n.has(id)) n.delete(id)
+      else n.add(id)
+      return n
+    })
+  const goto = (p: number) => {
+    setPage(p)
+    setOpen(new Set())
+  }
 
   const total = list.data?.total ?? 0
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE))
@@ -72,8 +83,11 @@ export default function AuditPage() {
       <AuditFilters value={filter} actions={actions.data} onChange={change} />
 
       {list.isError ? (
-        <ErrorState title={list.error instanceof ApiError ? list.error.message : '加载失败,请重试'}
-          onRetry={() => void list.refetch()} retrying={list.isFetching} />
+        <ErrorState
+          title={list.error instanceof ApiError ? list.error.message : '加载失败,请重试'}
+          onRetry={() => void list.refetch()}
+          retrying={list.isFetching}
+        />
       ) : !list.data ? (
         <LoadingState />
       ) : list.data.items.length === 0 ? (
@@ -83,7 +97,11 @@ export default function AuditPage() {
           <table className="w-full min-w-[48rem] text-sm">
             <thead className="bg-muted text-left text-muted-foreground">
               <tr>
-                {HEADS.map((h) => <th key={h} scope="col" className="whitespace-nowrap px-3 py-2 font-medium">{h}</th>)}
+                {HEADS.map((h) => (
+                  <th key={h} scope="col" className="whitespace-nowrap px-3 py-2 font-medium">
+                    {h}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
@@ -92,17 +110,32 @@ export default function AuditPage() {
                 const expanded = open.has(r.id)
                 return (
                   <Fragment key={r.id}>
-                    <tr data-failed={r.success ? 'false' : 'true'}
-                      className={cn('border-t align-middle', !r.success && 'bg-destructive/5 text-destructive')}>
+                    <tr
+                      data-failed={r.success ? 'false' : 'true'}
+                      className={cn(
+                        'border-t align-middle',
+                        !r.success && 'bg-destructive/5 text-destructive',
+                      )}
+                    >
                       <td className="whitespace-nowrap px-3 py-2">{fmtTime(r.at)}</td>
                       <td className="whitespace-nowrap px-3 py-2">{r.user_name ?? '—'}</td>
                       <td className="px-3 py-2">
                         <span className="inline-flex items-center gap-1">
                           {hasExtra && (
-                            <Button type="button" variant="ghost" size="icon" className="h-6 w-6"
-                              aria-expanded={expanded} aria-label={`${expanded ? '收起' : '展开'} ${r.action_label}`}
-                              onClick={() => toggle(r.id)}>
-                              {expanded ? <ChevronDown aria-hidden="true" /> : <ChevronRight aria-hidden="true" />}
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              aria-expanded={expanded}
+                              aria-label={`${expanded ? '收起' : '展开'} ${r.action_label}`}
+                              onClick={() => toggle(r.id)}
+                            >
+                              {expanded ? (
+                                <ChevronDown aria-hidden="true" />
+                              ) : (
+                                <ChevronRight aria-hidden="true" />
+                              )}
                             </Button>
                           )}
                           {r.action_label}
@@ -111,7 +144,9 @@ export default function AuditPage() {
                       <td className="px-3 py-2">{r.object_label ?? r.object_id ?? '—'}</td>
                       <td className="whitespace-nowrap px-3 py-2">{r.ip ?? '—'}</td>
                       <td className="whitespace-nowrap px-3 py-2">
-                        <Badge variant={r.success ? 'success' : 'danger'}>{r.success ? '成功' : '被拒'}</Badge>
+                        <Badge variant={r.success ? 'success' : 'danger'}>
+                          {r.success ? '成功' : '被拒'}
+                        </Badge>
                       </td>
                     </tr>
                     {hasExtra && expanded && (
@@ -132,8 +167,24 @@ export default function AuditPage() {
       {total > PAGE_SIZE && (
         <div className="flex items-center justify-end gap-2 text-sm">
           <span className="text-muted-foreground">{`共 ${total} 条,第 ${page} / ${pages} 页`}</span>
-          <Button type="button" variant="outline" size="sm" disabled={page <= 1} onClick={() => goto(page - 1)}>上一页</Button>
-          <Button type="button" variant="outline" size="sm" disabled={page >= pages} onClick={() => goto(page + 1)}>下一页</Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={page <= 1}
+            onClick={() => goto(page - 1)}
+          >
+            上一页
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={page >= pages}
+            onClick={() => goto(page + 1)}
+          >
+            下一页
+          </Button>
         </div>
       )}
     </div>

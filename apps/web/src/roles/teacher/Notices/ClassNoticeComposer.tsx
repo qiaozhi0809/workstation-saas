@@ -12,7 +12,11 @@ import { Textarea } from '@/shared/components/ui/textarea'
 import type { AckSpec, NoticeSent } from '@/shared/types/admin'
 
 /** 班级公告编写区。AckSettings 只在首次渲染取 props,发送成功后由上层换 key 重置 */
-export default function ClassNoticeComposer({ classId, className, onSent }: {
+export default function ClassNoticeComposer({
+  classId,
+  className,
+  onSent,
+}: {
   classId: string
   className: string
   onSent(res: NoticeSent): void
@@ -27,11 +31,17 @@ export default function ClassNoticeComposer({ classId, className, onSent }: {
   const send = useMutation({
     mutationFn: () => {
       const { ack: a, ack_deadline } = normalizeAck(ack, deadline)
-      return classNoticesApi.send(classId, { title: title.trim(), content: content.trim(), ack: a, ack_deadline })
+      return classNoticesApi.send(classId, {
+        title: title.trim(),
+        content: content.trim(),
+        ack: a,
+        ack_deadline,
+      })
     },
     onSuccess: (res) => {
       toast(`已发给 ${res.recipients} 位家长`)
-      if (res.students_without_parent > 0) toast(`另有 ${res.students_without_parent} 名学生还没有绑定家长,他们收不到`)
+      if (res.students_without_parent > 0)
+        toast(`另有 ${res.students_without_parent} 名学生还没有绑定家长,他们收不到`)
       void qc.invalidateQueries({ queryKey: ['class-notices', classId] })
     },
     onError: (err) => setError(err instanceof ApiError ? err.message : '发送失败,请重试'),
@@ -40,7 +50,10 @@ export default function ClassNoticeComposer({ classId, className, onSent }: {
   const submit = () => {
     if (send.isPending) return
     const bad = ackSpecError(ack, deadline)
-    if (bad) { setError(bad); return }
+    if (bad) {
+      setError(bad)
+      return
+    }
     setError('')
     // 回调挂在 mutate 上:换班卸载后不会清掉新班的草稿
     send.mutate(undefined, { onSuccess: onSent })
@@ -54,16 +67,38 @@ export default function ClassNoticeComposer({ classId, className, onSent }: {
       <p className="text-sm text-muted-foreground">{`${className}全体家长`}</p>
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="class-notice-title">标题</Label>
-        <Input id="class-notice-title" maxLength={50} value={title} onChange={(e) => setTitle(e.target.value)} />
+        <Input
+          id="class-notice-title"
+          maxLength={50}
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+        />
       </div>
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="class-notice-content">正文</Label>
-        <Textarea id="class-notice-content" rows={6} maxLength={2000} value={content} onChange={(e) => setContent(e.target.value)} />
+        <Textarea
+          id="class-notice-content"
+          rows={6}
+          maxLength={2000}
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+        />
       </div>
-      <AckSettings value={ack} onChange={setAck} deadline={deadline} onDeadlineChange={setDeadline} />
-      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+      <AckSettings
+        value={ack}
+        onChange={setAck}
+        deadline={deadline}
+        onDeadlineChange={setDeadline}
+      />
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
       <div className="flex items-center justify-end gap-3">
-        <Button type="button" disabled={!canSend || send.isPending} onClick={submit}>发送</Button>
+        <Button type="button" disabled={!canSend || send.isPending} onClick={submit}>
+          发送
+        </Button>
       </div>
     </section>
   )

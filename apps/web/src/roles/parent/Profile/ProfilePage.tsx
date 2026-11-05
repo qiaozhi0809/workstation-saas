@@ -14,7 +14,9 @@ const Item = ({ label, value }: { label: string; value: string | null | undefine
   return (
     <div className="flex gap-3 py-1">
       <dt className="w-20 shrink-0 text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 break-words">{text ? text : <span className="text-muted-foreground">暂无</span>}</dd>
+      <dd className="min-w-0 break-words">
+        {text ? text : <span className="text-muted-foreground">暂无</span>}
+      </dd>
     </div>
   )
 }
@@ -31,10 +33,19 @@ export default function ProfilePage() {
   const qc = useQueryClient()
   const [editing, setEditing] = useState(false)
   // 切换孩子时退出编辑,免得把 A 的联系人写到 B
-  useEffect(() => { setEditing(false) }, [sid])
-  const q = useQuery({ queryKey: ['parent', sid, 'profile'], queryFn: () => parentApi.profile(sid), enabled: !!child })
+  useEffect(() => {
+    setEditing(false)
+  }, [sid])
+  const q = useQuery({
+    queryKey: ['parent', sid, 'profile'],
+    queryFn: () => parentApi.profile(sid),
+    enabled: !!child,
+  })
   if (!child) return null
-  if (q.isError) return <ErrorState title="档案加载失败" onRetry={() => void q.refetch()} retrying={q.isFetching} />
+  if (q.isError)
+    return (
+      <ErrorState title="档案加载失败" onRetry={() => void q.refetch()} retrying={q.isFetching} />
+    )
   if (!q.data) return <LoadingState />
   const p = q.data
   const contacts: Contact[] = p.contacts ?? []
@@ -67,7 +78,12 @@ export default function ProfilePage() {
         </dl>
         <h3 className="mb-1 mt-3 text-sm font-medium">联系人</h3>
         {editing ? (
-          <ContactsForm key={sid} initial={contacts} onSave={save} onCancel={() => setEditing(false)} />
+          <ContactsForm
+            key={sid}
+            initial={contacts}
+            onSave={save}
+            onCancel={() => setEditing(false)}
+          />
         ) : (
           <>
             {contacts.length === 0 ? (
@@ -77,7 +93,10 @@ export default function ProfilePage() {
                 {contacts.map((c, i) => (
                   <li key={i} className="rounded-md border p-2">
                     <div className="flex flex-wrap items-center justify-between gap-x-2">
-                      <span className="min-w-0 break-words"><span className="font-medium">{c.name}</span> <span className="text-muted-foreground">{c.relation}</span></span>
+                      <span className="min-w-0 break-words">
+                        <span className="font-medium">{c.name}</span>{' '}
+                        <span className="text-muted-foreground">{c.relation}</span>
+                      </span>
                       <span className="break-all">{c.phone}</span>
                     </div>
                     {c.job && <div className="break-words text-muted-foreground">{c.job}</div>}
@@ -86,13 +105,21 @@ export default function ProfilePage() {
               </ul>
             )}
             {p.can_edit_contacts && (
-              <Button variant="outline" className="mt-3 h-11 min-w-[44px]" onClick={() => setEditing(true)}>编辑联系人</Button>
+              <Button
+                variant="outline"
+                className="mt-3 h-11 min-w-[44px]"
+                onClick={() => setEditing(true)}
+              >
+                编辑联系人
+              </Button>
             )}
           </>
         )}
       </Group>
       <Group title="学习情况">
-        <dl><Item label="学习情况" value={p.learning_summary} /></dl>
+        <dl>
+          <Item label="学习情况" value={p.learning_summary} />
+        </dl>
       </Group>
       <Group title="性格特长与健康">
         <dl>
@@ -101,9 +128,15 @@ export default function ProfilePage() {
         </dl>
       </Group>
       <Group title="标签">
-        {tags.length === 0 ? <p className="text-muted-foreground">暂无</p> : (
+        {tags.length === 0 ? (
+          <p className="text-muted-foreground">暂无</p>
+        ) : (
           <ul className="flex flex-wrap gap-2">
-            {tags.map((t) => <li key={t} className="rounded-full bg-secondary px-3 py-1 text-secondary-foreground">{t}</li>)}
+            {tags.map((t) => (
+              <li key={t} className="rounded-full bg-secondary px-3 py-1 text-secondary-foreground">
+                {t}
+              </li>
+            ))}
           </ul>
         )}
       </Group>

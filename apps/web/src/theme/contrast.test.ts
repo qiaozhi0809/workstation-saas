@@ -47,11 +47,18 @@ function tint(fg: HSL, bg: HSL, alpha: number): [number, number, number] {
 }
 
 const TEXT_PAIRS: [string, string][] = [
-  ['foreground', 'background'], ['card-foreground', 'card'], ['popover-foreground', 'popover'],
-  ['muted-foreground', 'background'], ['muted-foreground', 'muted'],
-  ['primary-foreground', 'primary'], ['secondary-foreground', 'secondary'], ['accent-foreground', 'accent'],
+  ['foreground', 'background'],
+  ['card-foreground', 'card'],
+  ['popover-foreground', 'popover'],
+  ['muted-foreground', 'background'],
+  ['muted-foreground', 'muted'],
+  ['primary-foreground', 'primary'],
+  ['secondary-foreground', 'secondary'],
+  ['accent-foreground', 'accent'],
   ...(['destructive', 'success', 'warning', 'info'] as const).flatMap((t): [string, string][] => [
-    [t, 'background'], [t, 'muted'], [`${t}-foreground`, t],
+    [t, 'background'],
+    [t, 'muted'],
+    [`${t}-foreground`, t],
   ]),
 ]
 const STATUS = ['destructive', 'success', 'warning', 'info']
@@ -62,10 +69,13 @@ for (const theme of ['light', 'dark'] as const) {
     it.each(TEXT_PAIRS)('%s on %s is at least 4.5:1', (fg, bg) => {
       expect(contrast(t[fg], t[bg])).toBeGreaterThanOrEqual(4.5)
     })
-    it.each(STATUS)('%s text on its 10%% tint (over background and muted) is at least 4.5:1', (s) => {
-      expect(ratio(toRgb(t[s]), tint(t[s], t.background, 0.1))).toBeGreaterThanOrEqual(4.5)
-      expect(ratio(toRgb(t[s]), tint(t[s], t.muted, 0.1))).toBeGreaterThanOrEqual(4.5)
-    })
+    it.each(STATUS)(
+      '%s text on its 10%% tint (over background and muted) is at least 4.5:1',
+      (s) => {
+        expect(ratio(toRgb(t[s]), tint(t[s], t.background, 0.1))).toBeGreaterThanOrEqual(4.5)
+        expect(ratio(toRgb(t[s]), tint(t[s], t.muted, 0.1))).toBeGreaterThanOrEqual(4.5)
+      },
+    )
     it('chart-4 (lightest series colour) on background is at least 3:1', () => {
       expect(contrast(t['chart-4'], t.background)).toBeGreaterThanOrEqual(3)
     })

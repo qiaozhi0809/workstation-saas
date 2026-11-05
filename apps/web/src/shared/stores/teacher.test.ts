@@ -1,5 +1,10 @@
 import { beforeEach, expect, it, vi } from 'vitest'
-import { confirmLeave, SCORES_LEAVE_CONFIRM, SEATING_LEAVE_CONFIRM, useTeacherStore } from './teacher'
+import {
+  confirmLeave,
+  SCORES_LEAVE_CONFIRM,
+  SEATING_LEAVE_CONFIRM,
+  useTeacherStore,
+} from './teacher'
 
 beforeEach(() => {
   useTeacherStore.setState({ classId: null, unsaved: { seating: false, scores: false } })

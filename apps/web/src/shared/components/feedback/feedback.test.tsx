@@ -36,7 +36,14 @@ describe('ErrorState', () => {
 
 describe('EmptyState', () => {
   it('renders title, description and action', () => {
-    render(<EmptyState icon={Inbox} title="没有数据" description="先添加一些" action={<button>添加</button>} />)
+    render(
+      <EmptyState
+        icon={Inbox}
+        title="没有数据"
+        description="先添加一些"
+        action={<button>添加</button>}
+      />,
+    )
     expect(screen.getByText('没有数据')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '没有数据' })).toBeInTheDocument()
     expect(screen.getByText('先添加一些')).toBeInTheDocument()

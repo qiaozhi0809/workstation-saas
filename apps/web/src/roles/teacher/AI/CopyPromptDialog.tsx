@@ -5,7 +5,13 @@ import { Textarea } from '@/shared/components/ui/textarea'
 import type { AiPrompt } from '@/shared/types/ai'
 
 /** 复制提示词对话框:只读提示词 + 复制按钮;隐去姓名时附编号对照表。 */
-export default function CopyPromptDialog({ prompt, onClose }: { prompt: AiPrompt; onClose(): void }) {
+export default function CopyPromptDialog({
+  prompt,
+  onClose,
+}: {
+  prompt: AiPrompt
+  onClose(): void
+}) {
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(prompt.prompt)

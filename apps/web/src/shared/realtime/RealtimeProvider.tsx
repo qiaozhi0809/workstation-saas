@@ -13,11 +13,15 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
   const loggedIn = useAuthStore((s) => s.accessToken !== null)
   const subs = useRef(new Set<(e: RealtimeEvent) => void>())
   const navRef = useRef(navigate)
-  useEffect(() => { navRef.current = navigate })
+  useEffect(() => {
+    navRef.current = navigate
+  })
 
   const subscribe = useCallback<RealtimeSubscribe>((fn) => {
     subs.current.add(fn)
-    return () => { subs.current.delete(fn) }
+    return () => {
+      subs.current.delete(fn)
+    }
   }, [])
 
   useEffect(() => {
@@ -32,7 +36,11 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
           navRef.current('/login', { replace: true })
         }
         for (const fn of [...subs.current]) {
-          try { fn(e) } catch (err) { console.error('realtime subscriber failed', err) }
+          try {
+            fn(e)
+          } catch (err) {
+            console.error('realtime subscriber failed', err)
+          }
         }
       },
     })

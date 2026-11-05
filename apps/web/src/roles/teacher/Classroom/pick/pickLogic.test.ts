@@ -1,10 +1,17 @@
 import { choosePick, cooldownSize, pickPool, spinDelays } from './pickLogic'
 
-const s = (id: string, row: number | null = 1) => ({ enrollment_id: id, seat_row: row, seat_col: row })
+const s = (id: string, row: number | null = 1) => ({
+  enrollment_id: id,
+  seat_row: row,
+  seat_col: row,
+})
 const status: Record<string, 'leave' | 'absent' | 'late'> = { b: 'leave', c: 'absent', d: 'late' }
 
 it('pools seated students who are not on leave or absent', () => {
-  expect(pickPool([s('a'), s('b'), s('c'), s('d'), s('e', null)], (id) => status[id])).toEqual(['a', 'd'])
+  expect(pickPool([s('a'), s('b'), s('c'), s('d'), s('e', null)], (id) => status[id])).toEqual([
+    'a',
+    'd',
+  ])
 })
 
 it('pickPool is empty when everyone is on leave', () => {

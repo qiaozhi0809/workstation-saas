@@ -24,15 +24,28 @@ vi.mock('@/shared/api/growth')
 vi.mock('@/shared/lib/exportWord')
 
 const msg = (over: Partial<AiMessage> & Pick<AiMessage, 'id' | 'role'>): AiMessage => ({
-  content: '', status: 'done', error: null, created_at: '2026-11-02T01:00:00Z', ...over,
+  content: '',
+  status: 'done',
+  error: null,
+  created_at: '2026-11-02T01:00:00Z',
+  ...over,
 })
 const userMsg = msg({ id: 'm1', role: 'user', content: '帮我写发言稿' })
 const replyMsg = msg({ id: 'm2', role: 'assistant', content: '## 开场\n\n**各位家长**好' })
 
 const chatFixture = (over: Partial<AiChat> = {}): AiChat => ({
-  id: 't1', title: '期中家长会发言稿', template_id: 'pmeeting', updated_at: '2026-11-02T01:30:00Z',
-  class_id: 'c1', student_id: null, save_as: null, mask: true, batch_only: false,
-  messages: [userMsg, replyMsg], items: [], ...over,
+  id: 't1',
+  title: '期中家长会发言稿',
+  template_id: 'pmeeting',
+  updated_at: '2026-11-02T01:30:00Z',
+  class_id: 'c1',
+  student_id: null,
+  save_as: null,
+  mask: true,
+  batch_only: false,
+  messages: [userMsg, replyMsg],
+  items: [],
+  ...over,
 })
 
 const PERMS: ClassPerm[] = [...ALL_PERMS, 'ai.use', 'comment.write', 'growth.write']
@@ -49,11 +62,13 @@ interface Pending {
 /** 把 aiApi.reply 换成"手动驱动"的版本 */
 function controlledReply() {
   const calls: Pending[] = []
-  vi.mocked(aiApi.reply).mockImplementation((_id, body, h, signal) =>
-    new Promise<void>((resolve, reject) => {
-      calls.push({ h, signal, body, resolve, reject })
-      signal?.addEventListener('abort', () => reject(new DOMException('已中止', 'AbortError')))
-    }))
+  vi.mocked(aiApi.reply).mockImplementation(
+    (_id, body, h, signal) =>
+      new Promise<void>((resolve, reject) => {
+        calls.push({ h, signal, body, resolve, reject })
+        signal?.addEventListener('abort', () => reject(new DOMException('已中止', 'AbortError')))
+      }),
+  )
   return calls
 }
 const type = (el: HTMLElement, v: string) => fireEvent.change(el, { target: { value: v } })
@@ -99,13 +114,21 @@ describe('AiThreadPage streaming', () => {
       type(box, '再详细点')
       fireEvent.keyDown(box, { key: 'Enter' })
       expect(calls).toHaveLength(1)
-      const seen = () => Array.from(document.querySelectorAll('[data-testid="stream-text"]'))
-        .map((e) => e.textContent ?? '')
-      act(() => { for (let i = 0; i < 20; i++) calls[0].h.onDelta('字') })
+      const seen = () =>
+        Array.from(document.querySelectorAll('[data-testid="stream-text"]')).map(
+          (e) => e.textContent ?? '',
+        )
+      act(() => {
+        for (let i = 0; i < 20; i++) calls[0].h.onDelta('字')
+      })
       const before = seen().filter(Boolean).length
-      await act(async () => { await vi.advanceTimersByTimeAsync(50) })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(50)
+      })
       expect(seen().join('')).toBe('')
-      await act(async () => { await vi.advanceTimersByTimeAsync(100) })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(100)
+      })
       expect(seen().join('')).toBe('字'.repeat(20))
       expect(before).toBe(0)
     } finally {
@@ -122,10 +145,16 @@ describe('AiThreadPage streaming', () => {
     await waitFor(() => expect(calls).toHaveLength(1))
     act(() => calls[0].h.onDelta('写到一半'))
     await screen.findByText(/写到一半/)
-    vi.mocked(aiApi.getChat).mockResolvedValue(chatFixture({
-      messages: [userMsg, replyMsg, msg({ id: 'm3', role: 'user', content: '再写一版' }),
-        msg({ id: 'm4', role: 'assistant', content: '写到一半', status: 'stopped' })],
-    }))
+    vi.mocked(aiApi.getChat).mockResolvedValue(
+      chatFixture({
+        messages: [
+          userMsg,
+          replyMsg,
+          msg({ id: 'm3', role: 'user', content: '再写一版' }),
+          msg({ id: 'm4', role: 'assistant', content: '写到一半', status: 'stopped' }),
+        ],
+      }),
+    )
     fireEvent.click(screen.getByRole('button', { name: '停止' }))
     expect(calls[0].signal?.aborted).toBe(true)
     expect(screen.getByText(/写到一半/)).toBeInTheDocument()
@@ -142,7 +171,10 @@ describe('AiThreadPage streaming', () => {
     type(box, '再来')
     fireEvent.keyDown(box, { key: 'Enter' })
     await waitFor(() => expect(calls).toHaveLength(1))
-    act(() => { calls[0].h.onError?.({ code: 'AI_KEY_INVALID', message: '密钥无效' }); calls[0].resolve() })
+    act(() => {
+      calls[0].h.onError?.({ code: 'AI_KEY_INVALID', message: '密钥无效' })
+      calls[0].resolve()
+    })
     const err = await screen.findByText('密钥无效')
     expect(err.closest('[data-testid="error-box"]')).toHaveClass('border-destructive')
     fireEvent.click(screen.getByRole('button', { name: '改为复制提示词' }))
@@ -157,9 +189,14 @@ describe('AiThreadPage streaming', () => {
 
   it('retries a persisted error reply with regenerate', async () => {
     const calls = controlledReply()
-    vi.mocked(aiApi.getChat).mockResolvedValue(chatFixture({
-      messages: [userMsg, msg({ id: 'm2', role: 'assistant', status: 'error', error: '密钥无效' })],
-    }))
+    vi.mocked(aiApi.getChat).mockResolvedValue(
+      chatFixture({
+        messages: [
+          userMsg,
+          msg({ id: 'm2', role: 'assistant', status: 'error', error: '密钥无效' }),
+        ],
+      }),
+    )
     thread()
     expect(await screen.findByText('密钥无效')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '重试' }))
@@ -175,7 +212,10 @@ describe('AiThreadPage streaming', () => {
     type(box, '再来')
     fireEvent.keyDown(box, { key: 'Enter' })
     await waitFor(() => expect(calls).toHaveLength(1))
-    act(() => { calls[0].h.onError?.({ code: 'X', message: '出错了' }); calls[0].resolve() })
+    act(() => {
+      calls[0].h.onError?.({ code: 'X', message: '出错了' })
+      calls[0].resolve()
+    })
     fireEvent.click(await screen.findByRole('button', { name: '重试' }))
     await waitFor(() => expect(calls).toHaveLength(2))
     expect(calls[1].body).toEqual({})
@@ -188,7 +228,10 @@ describe('AiThreadPage streaming', () => {
     type(box, '再来')
     fireEvent.keyDown(box, { key: 'Enter' })
     await waitFor(() => expect(calls).toHaveLength(1))
-    act(() => { calls[0].h.onDelta('半截'); calls[0].resolve() })
+    act(() => {
+      calls[0].h.onDelta('半截')
+      calls[0].resolve()
+    })
     expect(await screen.findByText('连接中断了,可以点「重试」')).toBeInTheDocument()
     await waitFor(() => expect(vi.mocked(aiApi.getChat).mock.calls.length).toBeGreaterThan(1))
   })
@@ -204,13 +247,19 @@ describe('AiThreadPage streaming', () => {
 
   it('shows the not-configured state', async () => {
     vi.mocked(aiApi.reply).mockRejectedValue(new ApiError(503, 'AI_NOT_CONFIGURED', 'x'))
-    vi.mocked(aiApi.status).mockResolvedValue({ ...statusFixture, configured: false, provider_label: null })
+    vi.mocked(aiApi.status).mockResolvedValue({
+      ...statusFixture,
+      configured: false,
+      provider_label: null,
+    })
     vi.mocked(aiApi.chatPrompt).mockResolvedValue({ prompt: '提示词全文', mapping: [] })
     thread()
     const box = await screen.findByLabelText('继续追问…')
     type(box, '再来')
     fireEvent.keyDown(box, { key: 'Enter' })
-    expect(await screen.findByText('学校还没有配置 AI 服务,请联系管理员;可以先复制提示词')).toBeInTheDocument()
+    expect(
+      await screen.findByText('学校还没有配置 AI 服务,请联系管理员;可以先复制提示词'),
+    ).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '复制提示词' }))
     expect(await screen.findByDisplayValue('提示词全文')).toBeInTheDocument()
   })
@@ -233,14 +282,20 @@ describe('AiThreadPage toolbar and composer', () => {
   it('saves a reply as a comment and to growth records', async () => {
     const long = `# 标题\n\n**${'好'.repeat(300)}**`
     vi.mocked(aiApi.getChat).mockResolvedValue({
-      ...saveChat(), messages: [userMsg, msg({ id: 'm2', role: 'assistant', content: long })],
+      ...saveChat(),
+      messages: [userMsg, msg({ id: 'm2', role: 'assistant', content: long })],
     })
     vi.mocked(commentsApi.create).mockResolvedValue({} as never)
     vi.mocked(growthApi.create).mockResolvedValue({} as never)
     const { client } = thread()
     const spy = vi.spyOn(client, 'invalidateQueries')
     fireEvent.click(await screen.findByRole('button', { name: '保存为评语' }))
-    await waitFor(() => expect(commentsApi.create).toHaveBeenCalledWith('s1', { content: long, generated_by_ai: true }))
+    await waitFor(() =>
+      expect(commentsApi.create).toHaveBeenCalledWith('s1', {
+        content: long,
+        generated_by_ai: true,
+      }),
+    )
     expect(await screen.findByText('已保存到档案的评语')).toBeInTheDocument()
     await waitFor(() => expect(spy).toHaveBeenCalledWith({ queryKey: ['comments', 's1'] }))
     fireEvent.click(screen.getByRole('button', { name: '记到成长记录' }))
@@ -285,8 +340,13 @@ describe('AiThreadPage toolbar and composer', () => {
     act(() => calls[0].h.onDelta('新回复'))
     await screen.findByText(/新回复/)
     expect(screen.getByText('开场')).toBeInTheDocument()
-    act(() => { calls[0].h.onDone?.({ status: 'done' }); calls[0].resolve() })
-    await waitFor(() => expect(screen.queryByRole('button', { name: '停止' })).not.toBeInTheDocument())
+    act(() => {
+      calls[0].h.onDone?.({ status: 'done' })
+      calls[0].resolve()
+    })
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: '停止' })).not.toBeInTheDocument(),
+    )
     fireEvent.click(await screen.findByRole('button', { name: '重新生成' }))
     await waitFor(() => expect(calls).toHaveLength(2))
     expect(calls[1].body).toEqual({ regenerate: true })
@@ -300,8 +360,13 @@ describe('AiThreadPage toolbar and composer', () => {
     fireEvent.keyDown(box, { key: 'Enter' })
     await waitFor(() => expect(calls).toHaveLength(1))
     vi.mocked(aiApi.getChat).mockReturnValue(new Promise(() => {}))
-    act(() => { calls[0].h.onDone?.({ status: 'done' }); calls[0].resolve() })
-    await waitFor(() => expect(screen.queryByRole('button', { name: '停止' })).not.toBeInTheDocument())
+    act(() => {
+      calls[0].h.onDone?.({ status: 'done' })
+      calls[0].resolve()
+    })
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: '停止' })).not.toBeInTheDocument(),
+    )
     type(box, '第二问')
     fireEvent.keyDown(box, { key: 'Enter' })
     await waitFor(() => expect(calls).toHaveLength(2))
@@ -312,7 +377,10 @@ describe('AiThreadPage toolbar and composer', () => {
   it('exports the whole chat and a single message to Word', async () => {
     thread()
     fireEvent.click(await screen.findByRole('button', { name: '导出 Word' }))
-    expect(exportWord).toHaveBeenCalledWith('期中家长会发言稿', '**老师:**帮我写发言稿\n\n---\n\n## 开场\n\n**各位家长**好')
+    expect(exportWord).toHaveBeenCalledWith(
+      '期中家长会发言稿',
+      '**老师:**帮我写发言稿\n\n---\n\n## 开场\n\n**各位家长**好',
+    )
     fireEvent.click(screen.getByRole('button', { name: '导出该条 Word' }))
     expect(exportWord).toHaveBeenLastCalledWith('期中家长会发言稿', replyMsg.content)
   })
@@ -341,7 +409,13 @@ describe('AiThreadPage toolbar and composer', () => {
     let top = 100
     Object.defineProperty(sc, 'scrollHeight', { value: 1000, configurable: true })
     Object.defineProperty(sc, 'clientHeight', { value: 400, configurable: true })
-    Object.defineProperty(sc, 'scrollTop', { get: () => top, set: (v: number) => { top = v }, configurable: true })
+    Object.defineProperty(sc, 'scrollTop', {
+      get: () => top,
+      set: (v: number) => {
+        top = v
+      },
+      configurable: true,
+    })
     type(box, '再来')
     fireEvent.keyDown(box, { key: 'Enter' })
     await waitFor(() => expect(calls).toHaveLength(1))
@@ -365,10 +439,16 @@ describe('AiThreadPage final-review fixes', () => {
     await waitFor(() => expect(calls).toHaveLength(1))
     act(() => calls[0].h.onDelta('正在写'))
     await screen.findByText(/正在写/)
-    vi.mocked(aiApi.getChat).mockResolvedValue(chatFixture({
-      messages: [userMsg, replyMsg, msg({ id: 'm3', role: 'user', content: '追问内容' }),
-        msg({ id: 'm4', role: 'assistant', content: '', status: 'streaming' })],
-    }))
+    vi.mocked(aiApi.getChat).mockResolvedValue(
+      chatFixture({
+        messages: [
+          userMsg,
+          replyMsg,
+          msg({ id: 'm3', role: 'user', content: '追问内容' }),
+          msg({ id: 'm4', role: 'assistant', content: '', status: 'streaming' }),
+        ],
+      }),
+    )
     const before = vi.mocked(aiApi.getChat).mock.calls.length
     await act(async () => {
       await client.invalidateQueries({ queryKey: ['ai-chat', 't1'] })
@@ -401,11 +481,16 @@ describe('AiThreadPage final-review fixes', () => {
   })
 
   it('F6: only the last message offers 重试', async () => {
-    vi.mocked(aiApi.getChat).mockResolvedValue(chatFixture({
-      messages: [userMsg, msg({ id: 'e1', role: 'assistant', status: 'error', error: '第一次失败' }),
-        msg({ id: 'm3', role: 'user', content: '再来' }),
-        msg({ id: 'e2', role: 'assistant', status: 'error', error: '第二次失败' })],
-    }))
+    vi.mocked(aiApi.getChat).mockResolvedValue(
+      chatFixture({
+        messages: [
+          userMsg,
+          msg({ id: 'e1', role: 'assistant', status: 'error', error: '第一次失败' }),
+          msg({ id: 'm3', role: 'user', content: '再来' }),
+          msg({ id: 'e2', role: 'assistant', status: 'error', error: '第二次失败' }),
+        ],
+      }),
+    )
     thread()
     await screen.findByText('第二次失败')
     expect(screen.getAllByRole('button', { name: '重试' })).toHaveLength(1)
@@ -415,12 +500,18 @@ describe('AiThreadPage final-review fixes', () => {
   })
 
   it('M2: whole-chat export only includes finished assistant messages', async () => {
-    vi.mocked(aiApi.getChat).mockResolvedValue(chatFixture({
-      messages: [userMsg, replyMsg, msg({ id: 'm3', role: 'user', content: '再来' }),
-        msg({ id: 'm4', role: 'assistant', status: 'error', error: '失败' }),
-        msg({ id: 'm5', role: 'assistant', content: '半截', status: 'stopped' }),
-        msg({ id: 'm6', role: 'assistant', content: '', status: 'streaming' })],
-    }))
+    vi.mocked(aiApi.getChat).mockResolvedValue(
+      chatFixture({
+        messages: [
+          userMsg,
+          replyMsg,
+          msg({ id: 'm3', role: 'user', content: '再来' }),
+          msg({ id: 'm4', role: 'assistant', status: 'error', error: '失败' }),
+          msg({ id: 'm5', role: 'assistant', content: '半截', status: 'stopped' }),
+          msg({ id: 'm6', role: 'assistant', content: '', status: 'streaming' }),
+        ],
+      }),
+    )
     thread()
     fireEvent.click(await screen.findByRole('button', { name: '导出 Word' }))
     expect(exportWord).toHaveBeenCalledWith(
@@ -434,7 +525,10 @@ describe('AiThreadPage final-review fixes', () => {
     thread()
     fireEvent.click(await screen.findByRole('button', { name: '重新生成' }))
     await waitFor(() => expect(calls).toHaveLength(1))
-    act(() => { calls[0].h.onError?.({ code: 'X', message: '重新生成失败' }); calls[0].resolve() })
+    act(() => {
+      calls[0].h.onError?.({ code: 'X', message: '重新生成失败' })
+      calls[0].resolve()
+    })
     fireEvent.click(await screen.findByRole('button', { name: '重试' }))
     await waitFor(() => expect(calls).toHaveLength(2))
     expect(calls[1].body).toEqual({ regenerate: true })
@@ -447,14 +541,19 @@ describe('AiThreadPage final-review fixes', () => {
     type(box, '换个说法')
     fireEvent.keyDown(box, { key: 'Enter' })
     await waitFor(() => expect(calls).toHaveLength(1))
-    act(() => { calls[0].h.onError?.({ code: 'X', message: '追问失败' }); calls[0].resolve() })
+    act(() => {
+      calls[0].h.onError?.({ code: 'X', message: '追问失败' })
+      calls[0].resolve()
+    })
     fireEvent.click(await screen.findByRole('button', { name: '重试' }))
     await waitFor(() => expect(calls).toHaveLength(2))
     expect(calls[1].body).toEqual({ text: '换个说法' })
   })
 
   it('F1: 保存为评语 / 记到成长记录 are disabled after success', async () => {
-    vi.mocked(aiApi.getChat).mockResolvedValue(chatFixture({ save_as: 'comment', student_id: 's1' }))
+    vi.mocked(aiApi.getChat).mockResolvedValue(
+      chatFixture({ save_as: 'comment', student_id: 's1' }),
+    )
     vi.mocked(commentsApi.create).mockResolvedValue({} as never)
     vi.mocked(growthApi.create).mockResolvedValue({} as never)
     thread()
@@ -473,7 +572,9 @@ describe('AiThreadPage final-review fixes', () => {
 describe('AiThreadPage routing guards', () => {
   it('offers to switch class for a chat of another class', async () => {
     vi.mocked(aiApi.getChat).mockResolvedValue(chatFixture({ class_id: 'c2' }))
-    vi.mocked(classesApi.mine).mockResolvedValue({ items: [classFixture, { ...classFixture, id: 'c2', name: '四年一班' }] })
+    vi.mocked(classesApi.mine).mockResolvedValue({
+      items: [classFixture, { ...classFixture, id: 'c2', name: '四年一班' }],
+    })
     thread()
     expect(await screen.findByText('这个对话属于其他班级')).toBeInTheDocument()
     expect(screen.queryByLabelText('继续追问…')).not.toBeInTheDocument()

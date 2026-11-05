@@ -18,7 +18,11 @@ const BROKEN: AiStreamError = { code: 'AI_STREAM_BROKEN', message: '连接中断
  * 对话回复的流式状态:delta 先累计到 ref,每 100 ms 刷一次 state;
  * 流结束(完成 / 出错 / 中止)后失效对话与对话列表,等重新取到服务端落库的消息再清掉流式文字。
  */
-export function useAiStream(chatId: string, classId: string, onRejected?: (body: AiReplyInput) => void) {
+export function useAiStream(
+  chatId: string,
+  classId: string,
+  onRejected?: (body: AiReplyInput) => void,
+) {
   const qc = useQueryClient()
   const rejectedRef = useRef(onRejected)
   rejectedRef.current = onRejected
@@ -50,63 +54,83 @@ export function useAiStream(chatId: string, classId: string, onRejected?: (body:
   }, [])
 
   /** 返回 false 表示上一次生成还没结束,这次请求被拒绝。 */
-  const start = useCallback((body: AiReplyInput): boolean => {
-    if (ctrl.current) return false
-    const mine = new AbortController()
-    ctrl.current = mine
-    buf.current = ''
-    setText('')
-    setError(null)
-    setLastBody(body)
-    setStreaming(true)
-    timer.current = setInterval(() => setText(buf.current), FLUSH_MS)
+  const start = useCallback(
+    (body: AiReplyInput): boolean => {
+      if (ctrl.current) return false
+      const mine = new AbortController()
+      ctrl.current = mine
+      buf.current = ''
+      setText('')
+      setError(null)
+      setLastBody(body)
+      setStreaming(true)
+      timer.current = setInterval(() => setText(buf.current), FLUSH_MS)
 
-    let finished = false
-    let streamError: AiStreamError | null = null
-    let aborted = false
-    let neverStarted = false
+      let finished = false
+      let streamError: AiStreamError | null = null
+      let aborted = false
+      let neverStarted = false
 
-    aiApi
-      .reply(chatId, body, {
-        onDelta: (t) => { buf.current += t },
-        onDone: () => { finished = true },
-        onError: (e) => { finished = true; streamError = e },
-      }, mine.signal)
-      .then(() => {
-        if (!finished) streamError = BROKEN
-      })
-      .catch((e: unknown) => {
-        if (e instanceof Error && e.name === 'AbortError') { aborted = true; return }
-        if (e instanceof ApiError) {
-          neverStarted = true
-          rejectedRef.current?.(body)
-          if (e.code === 'AI_BUSY') toast('这个对话正在生成,请稍候')
-          else streamError = { code: e.code, message: e.message }
-          return
-        }
-        streamError = BROKEN
-      })
-      .then(async () => {
-        clearTimer()
-        // 流一结束就释放,之后(含中止后的延迟刷新期间)可以立刻开始下一次
-        if (ctrl.current === mine) ctrl.current = null
-        setStreaming(false)
-        if (streamError) setError(streamError)
-        setText(neverStarted ? '' : buf.current)
-        if (aborted) await new Promise((r) => setTimeout(r, ABORT_REFETCH_MS))
-        await Promise.all([
-          qc.invalidateQueries({ queryKey: ['ai-chat', chatId] }),
-          qc.invalidateQueries({ queryKey: ['ai-chats', classId] }),
-        ])
-        if (ctrl.current === null) {
-          buf.current = ''
-          setText('')
-        }
-      })
-    return true
-  }, [chatId, classId, qc])
+      aiApi
+        .reply(
+          chatId,
+          body,
+          {
+            onDelta: (t) => {
+              buf.current += t
+            },
+            onDone: () => {
+              finished = true
+            },
+            onError: (e) => {
+              finished = true
+              streamError = e
+            },
+          },
+          mine.signal,
+        )
+        .then(() => {
+          if (!finished) streamError = BROKEN
+        })
+        .catch((e: unknown) => {
+          if (e instanceof Error && e.name === 'AbortError') {
+            aborted = true
+            return
+          }
+          if (e instanceof ApiError) {
+            neverStarted = true
+            rejectedRef.current?.(body)
+            if (e.code === 'AI_BUSY') toast('这个对话正在生成,请稍候')
+            else streamError = { code: e.code, message: e.message }
+            return
+          }
+          streamError = BROKEN
+        })
+        .then(async () => {
+          clearTimer()
+          // 流一结束就释放,之后(含中止后的延迟刷新期间)可以立刻开始下一次
+          if (ctrl.current === mine) ctrl.current = null
+          setStreaming(false)
+          if (streamError) setError(streamError)
+          setText(neverStarted ? '' : buf.current)
+          if (aborted) await new Promise((r) => setTimeout(r, ABORT_REFETCH_MS))
+          await Promise.all([
+            qc.invalidateQueries({ queryKey: ['ai-chat', chatId] }),
+            qc.invalidateQueries({ queryKey: ['ai-chats', classId] }),
+          ])
+          if (ctrl.current === null) {
+            buf.current = ''
+            setText('')
+          }
+        })
+      return true
+    },
+    [chatId, classId, qc],
+  )
 
-  const stop = useCallback(() => { ctrl.current?.abort() }, [])
+  const stop = useCallback(() => {
+    ctrl.current?.abort()
+  }, [])
 
   return { streaming, text, error, lastBody, start, stop }
 }

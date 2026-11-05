@@ -15,7 +15,9 @@ function Loc() {
 
 function setup() {
   return render(
-    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
       <MemoryRouter initialEntries={['/admin/board']}>
         <Routes>
           <Route path="/admin/board" element={<BoardPage />} />
@@ -29,7 +31,10 @@ function setup() {
 beforeEach(() => {
   vi.resetAllMocks()
   vi.mocked(adminApi.board).mockImplementation(async (g) =>
-    g === 'g4' ? boardView({ grade_id: 'g4', classes: [boardClass({ id: 'c9', name: '四年一班' })] }) : boardView())
+    g === 'g4'
+      ? boardView({ grade_id: 'g4', classes: [boardClass({ id: 'c9', name: '四年一班' })] })
+      : boardView(),
+  )
 })
 afterEach(cleanup)
 
@@ -45,8 +50,12 @@ describe('全校看板', () => {
 
   it('地址带 ?grade= 时按该年级打开', async () => {
     render(
-      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-        <MemoryRouter initialEntries={['/admin/board?grade=g4']}><BoardPage /></MemoryRouter>
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <MemoryRouter initialEntries={['/admin/board?grade=g4']}>
+          <BoardPage />
+        </MemoryRouter>
       </QueryClientProvider>,
     )
     expect(await screen.findByText('四年一班')).toBeInTheDocument()
@@ -83,7 +92,8 @@ describe('全校看板', () => {
   it('网格随宽度 1 / 2 / 3 / 4 列', async () => {
     setup()
     const grid = (await screen.findByText('三年一班')).closest('[data-class-grid]') as HTMLElement
-    for (const c of ['grid-cols-1', 'md:grid-cols-2', 'lg:grid-cols-3', 'xl:grid-cols-4']) expect(grid).toHaveClass(c)
+    for (const c of ['grid-cols-1', 'md:grid-cols-2', 'lg:grid-cols-3', 'xl:grid-cols-4'])
+      expect(grid).toHaveClass(c)
   })
 
   it('页面没有缩放按钮', async () => {

@@ -15,7 +15,13 @@ function savedLabel(iso: string) {
   return `${d.getMonth() + 1}月${d.getDate()}日 ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-export default function NotesSection({ studentId, note }: { studentId: string; note?: TeacherNote }) {
+export default function NotesSection({
+  studentId,
+  note,
+}: {
+  studentId: string
+  note?: TeacherNote
+}) {
   const queryClient = useQueryClient()
   const [text, setText] = useState(note?.text ?? '')
   const [savedAt, setSavedAt] = useState(note?.updated_at)
@@ -34,12 +40,21 @@ export default function NotesSection({ studentId, note }: { studentId: string; n
         <h3 className="text-sm font-medium">我的笔记</h3>
         <p className="text-xs text-muted-foreground">只有你自己能看到</p>
       </div>
-      <Textarea aria-label="我的笔记" maxLength={MAX} value={text} onChange={(e) => setText(e.target.value)} />
+      <Textarea
+        aria-label="我的笔记"
+        maxLength={MAX}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+      />
       <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-        <span>{text.length}/{MAX}</span>
+        <span>
+          {text.length}/{MAX}
+        </span>
         <div className="flex items-center gap-3">
           {savedAt && <span>已保存 {savedLabel(savedAt)}</span>}
-          <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending}>保存</Button>
+          <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending}>
+            保存
+          </Button>
         </div>
       </div>
     </section>

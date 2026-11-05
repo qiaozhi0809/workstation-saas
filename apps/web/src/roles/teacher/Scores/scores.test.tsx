@@ -23,9 +23,15 @@ vi.mock('@/shared/api/students', () => ({ studentsApi: { listInClass: vi.fn() } 
 const SUBJECTS = ['语文', '数学', '英语', '道法', '科学'].map((name) => ({ name, full: 100 }))
 
 const exam = (id: string, name: string, over: Partial<Exam> = {}): Exam => ({
-  id, name, exam_type: '月考', date: '2026-10-20',
-  subjects: SUBJECTS.slice(0, 2), grade_exam_id: null, created_by_me: true,
-  progress: { entered: 10, total: 10 }, ...over,
+  id,
+  name,
+  exam_type: '月考',
+  date: '2026-10-20',
+  subjects: SUBJECTS.slice(0, 2),
+  grade_exam_id: null,
+  created_by_me: true,
+  progress: { entered: 10, total: 10 },
+  ...over,
 })
 const E1 = exam('e1', '十月月考')
 const E2 = exam('e2', '九月月考', { date: '2026-09-20', progress: { entered: 4, total: 10 } })
@@ -35,28 +41,52 @@ function Url() {
   return <p data-testid="url">{l.pathname + l.search}</p>
 }
 
-function setup(opts: {
-  cls?: Partial<ClassView>; perms?: ClassPerm[]; subjects?: string[]; exams?: Exam[]; url?: string
-} = {}) {
+function setup(
+  opts: {
+    cls?: Partial<ClassView>
+    perms?: ClassPerm[]
+    subjects?: string[]
+    exams?: Exam[]
+    url?: string
+  } = {},
+) {
   vi.mocked(classesApi.mine).mockResolvedValue({ items: [{ ...classFixture, ...opts.cls }] })
-  vi.mocked(classroomApi.summary).mockResolvedValue(summaryFixture({
-    my_perms: opts.perms ?? ['exam.read', 'exam.write'], my_subjects: opts.subjects ?? [],
-  }))
+  vi.mocked(classroomApi.summary).mockResolvedValue(
+    summaryFixture({
+      my_perms: opts.perms ?? ['exam.read', 'exam.write'],
+      my_subjects: opts.subjects ?? [],
+    }),
+  )
   vi.mocked(examsApi.list).mockResolvedValue({ items: opts.exams ?? [E1, E2] })
   vi.mocked(examsApi.subjects).mockResolvedValue({ items: SUBJECTS })
   vi.mocked(examsApi.sheet).mockResolvedValue({ exam: E1, items: [] })
   vi.mocked(studentsApi.listInClass).mockResolvedValue({ items: [] })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const router = createMemoryRouter(
-    [{ path: '/teacher/scores', element: <><ScoresPage /><Url /></> }],
+    [
+      {
+        path: '/teacher/scores',
+        element: (
+          <>
+            <ScoresPage />
+            <Url />
+          </>
+        ),
+      },
+    ],
     { initialEntries: [opts.url ?? '/teacher/scores'] },
   )
-  render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>)
+  render(
+    <QueryClientProvider client={client}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  )
   return { client }
 }
 
 const list = async () => within(await screen.findByRole('navigation', { name: '考试列表' }))
-const fillName = async (v: string) => fireEvent.change(await screen.findByLabelText('考试名称'), { target: { value: v } })
+const fillName = async (v: string) =>
+  fireEvent.change(await screen.findByLabelText('考试名称'), { target: { value: v } })
 
 beforeEach(() => {
   vi.resetAllMocks()
@@ -88,10 +118,15 @@ it('creates an exam with chosen subjects and a custom one', async () => {
   fireEvent.click(screen.getByRole('button', { name: '保存' }))
   await waitFor(() => expect(examsApi.create).toHaveBeenCalledTimes(1))
   expect(examsApi.create).toHaveBeenCalledWith('c1', {
-    name: '十一月月考', exam_type: '月考', date: '2026-11-02',
+    name: '十一月月考',
+    exam_type: '月考',
+    date: '2026-11-02',
     subjects: [
-      { name: '语文', full: 100 }, { name: '数学', full: 100 }, { name: '英语', full: 100 },
-      { name: '科学', full: 100 }, { name: '书法', full: 20 },
+      { name: '语文', full: 100 },
+      { name: '数学', full: 100 },
+      { name: '英语', full: 100 },
+      { name: '科学', full: 100 },
+      { name: '书法', full: 20 },
     ],
   })
 })
@@ -106,7 +141,8 @@ it('ignores Enter while an IME composition is in progress', async () => {
 
 it('limits a subject teacher to their own subjects', async () => {
   setup({
-    cls: { role: 'subject_teacher' }, subjects: ['数学'],
+    cls: { role: 'subject_teacher' },
+    subjects: ['数学'],
     exams: [exam('e1', '十月月考', { created_by_me: false })],
   })
   await list()
@@ -120,7 +156,8 @@ it('limits a subject teacher to their own subjects', async () => {
 
 it('submits only the shown subjects when a subject teacher edits', async () => {
   setup({
-    cls: { role: 'subject_teacher' }, subjects: ['数学'],
+    cls: { role: 'subject_teacher' },
+    subjects: ['数学'],
     exams: [exam('e1', '十月月考', { subjects: [{ name: '数学', full: 100 }] })],
   })
   vi.mocked(examsApi.update).mockResolvedValue(E1)
@@ -130,7 +167,10 @@ it('submits only the shown subjects when a subject teacher edits', async () => {
   fireEvent.click(screen.getByRole('button', { name: '保存' }))
   await waitFor(() => expect(examsApi.update).toHaveBeenCalledTimes(1))
   expect(examsApi.update).toHaveBeenCalledWith('c1', 'e1', {
-    name: '十月月考(改)', exam_type: '月考', date: '2026-10-20', subjects: [{ name: '数学', full: 100 }],
+    name: '十月月考(改)',
+    exam_type: '月考',
+    date: '2026-10-20',
+    subjects: [{ name: '数学', full: 100 }],
   })
 })
 
@@ -144,7 +184,9 @@ it('deletes after confirmation and clears the exam param', async () => {
   expect(screen.getByText('删除「九月月考」及其全部分数?')).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: '确认删除' }))
   await waitFor(() => expect(examsApi.remove).toHaveBeenCalledWith('c1', 'e2'))
-  await waitFor(() => expect(screen.getByTestId('url')).toHaveTextContent('/teacher/scores?student=s1'))
+  await waitFor(() =>
+    expect(screen.getByTestId('url')).toHaveTextContent('/teacher/scores?student=s1'),
+  )
 })
 
 it('explains that other teachers’ subjects block deletion', async () => {
@@ -210,7 +252,9 @@ it('rejects a full score that is not an integer within 1-1000 without calling th
 
 it('shows the server message for other API errors', async () => {
   setup()
-  vi.mocked(examsApi.create).mockRejectedValue(new ApiError(400, 'SUBJECT_NOT_ALLOWED', '只能使用你任教的科目'))
+  vi.mocked(examsApi.create).mockRejectedValue(
+    new ApiError(400, 'SUBJECT_NOT_ALLOWED', '只能使用你任教的科目'),
+  )
   fireEvent.click(await screen.findByRole('button', { name: '新建考试' }))
   await fillName('新考试')
   fireEvent.click(await screen.findByRole('button', { name: '保存' }))
@@ -228,7 +272,9 @@ it('warns before removing a subject that already has scores, then submits on con
   expect(screen.getByText('去掉「数学」会同时删除该科已录的分数')).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: '保存' }))
   await waitFor(() => expect(examsApi.update).toHaveBeenCalledTimes(1))
-  expect(vi.mocked(examsApi.update).mock.calls[0][2].subjects).toEqual([{ name: '语文', full: 100 }])
+  expect(vi.mocked(examsApi.update).mock.calls[0][2].subjects).toEqual([
+    { name: '语文', full: 100 },
+  ])
 })
 
 it('limits the new subject name to 10 characters', async () => {
@@ -257,7 +303,9 @@ it('tags a grade exam in the list and hides edit and delete for it', async () =>
 it('marks a grade exam in the narrow select too', async () => {
   setup({ exams: [LINKED, E1] })
   await list()
-  expect(screen.getByRole('option', { name: '十一月联考(2026-11-03) · 年级联考' })).toBeInTheDocument()
+  expect(
+    screen.getByRole('option', { name: '十一月联考(2026-11-03) · 年级联考' }),
+  ).toBeInTheDocument()
 })
 
 it('refuses to open the edit form for a grade exam', async () => {
@@ -265,8 +313,15 @@ it('refuses to open the edit form for a grade exam', async () => {
   vi.mocked(examsApi.subjects).mockResolvedValue({ items: SUBJECTS })
   render(
     <QueryClientProvider client={client}>
-      <ExamForm classId="c1" exam={LINKED} today="2026-11-04" mySubjects={[]} canAllSubjects
-        onClose={vi.fn()} onSaved={vi.fn()} />
+      <ExamForm
+        classId="c1"
+        exam={LINKED}
+        today="2026-11-04"
+        mySubjects={[]}
+        canAllSubjects
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+      />
     </QueryClientProvider>,
   )
   const dlg = within(await screen.findByRole('dialog'))

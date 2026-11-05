@@ -30,9 +30,22 @@ function ClassDetail({ month, classId }: { month: string; classId: string }) {
     queryKey: ['report', 'attendance', month, classId],
     queryFn: () => adminApi.attendanceClass(month, classId),
   })
-  if (q.isError) return <ErrorState title="学生明细加载失败" onRetry={() => void q.refetch()} retrying={q.isFetching} />
-  if (!q.data) return <p className="py-2 text-sm text-muted-foreground" role="status">加载中…</p>
-  if (q.data.students.length === 0) return <p className="py-2 text-sm text-muted-foreground">本月该班没有学生记录</p>
+  if (q.isError)
+    return (
+      <ErrorState
+        title="学生明细加载失败"
+        onRetry={() => void q.refetch()}
+        retrying={q.isFetching}
+      />
+    )
+  if (!q.data)
+    return (
+      <p className="py-2 text-sm text-muted-foreground" role="status">
+        加载中…
+      </p>
+    )
+  if (q.data.students.length === 0)
+    return <p className="py-2 text-sm text-muted-foreground">本月该班没有学生记录</p>
   return (
     <table className="w-full text-sm">
       <thead className="text-xs text-muted-foreground">
@@ -59,7 +72,13 @@ function ClassDetail({ month, classId }: { month: string; classId: string }) {
   )
 }
 
-export default function AttendanceClassTable({ month, report }: { month: string; report: AttendanceReport }) {
+export default function AttendanceClassTable({
+  month,
+  report,
+}: {
+  month: string
+  report: AttendanceReport
+}) {
   const [open, setOpen] = useState<string | null>(null)
   return (
     <div className="overflow-x-auto rounded-lg border">
@@ -84,10 +103,16 @@ export default function AttendanceClassTable({ month, report }: { month: string;
               <Fragment key={c.class_id}>
                 <tr className="border-t">
                   <td className="px-3 py-2 text-left">
-                    <button type="button" aria-expanded={expanded}
+                    <button
+                      type="button"
+                      aria-expanded={expanded}
                       onClick={() => setOpen(expanded ? null : c.class_id)}
-                      className="flex items-center gap-1 rounded font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                      <Icon className="h-4 w-4 shrink-0 text-muted-foreground print:hidden" aria-hidden="true" />
+                      className="flex items-center gap-1 rounded font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <Icon
+                        className="h-4 w-4 shrink-0 text-muted-foreground print:hidden"
+                        aria-hidden="true"
+                      />
                       {c.class_name}
                     </button>
                   </td>
@@ -95,7 +120,9 @@ export default function AttendanceClassTable({ month, report }: { month: string;
                 </tr>
                 {expanded && (
                   <tr className="bg-muted/30">
-                    <td colSpan={COLS} className="px-3 py-2"><ClassDetail month={month} classId={c.class_id} /></td>
+                    <td colSpan={COLS} className="px-3 py-2">
+                      <ClassDetail month={month} classId={c.class_id} />
+                    </td>
                   </tr>
                 )}
               </Fragment>

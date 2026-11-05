@@ -4,11 +4,22 @@ import StudentFigure, { genderOf, hairStyleOf, type Pose } from './StudentFigure
 import TeacherFigure, { pointerAngle } from './TeacherFigure'
 
 const fig = (pose: Pose) =>
-  render(<svg><StudentFigure x={0} y={0} gender="female" seed="s1" color="#3fb8a9" pose={pose} /></svg>)
+  render(
+    <svg>
+      <StudentFigure x={0} y={0} gender="female" seed="s1" color="#3fb8a9" pose={pose} />
+    </svg>,
+  )
 
 it('maps stored gender values', () => {
   expect(['女', 'F', 'female', '男', 'M', 'male', '其他', null].map(genderOf)).toEqual([
-    'female', 'female', 'female', 'male', 'male', 'male', null, null,
+    'female',
+    'female',
+    'female',
+    'male',
+    'male',
+    'male',
+    null,
+    null,
   ])
 })
 
@@ -38,7 +49,9 @@ it('points the teacher at a target', () => {
   expect(pointerAngle({ x: 0, y: 0 }, { x: 100, y: 0 })).toBe(0)
   expect(pointerAngle({ x: 0, y: 0 }, { x: 0, y: 100 })).toBe(90)
   const { container } = render(
-    <svg><TeacherFigure x={0} y={0} figure="male" action="point" pointAt={{ x: 0, y: 100 }} /></svg>,
+    <svg>
+      <TeacherFigure x={0} y={0} figure="male" action="point" pointAt={{ x: 0, y: 100 }} />
+    </svg>,
   )
   expect(container.querySelector('[data-figure="male"][data-action="point"]')).not.toBeNull()
   expect(container.querySelector('.cr-pointer')?.getAttribute('transform')).toContain('rotate(90')

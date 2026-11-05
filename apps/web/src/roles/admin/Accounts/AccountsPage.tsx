@@ -19,10 +19,20 @@ import TempPasswordDialog, { type TempPassword } from './TempPasswordDialog'
 
 const PAGE_SIZE = 50
 const ROLE_OPTIONS = [
-  ['', '全部'], ['homeroom_teacher', '班主任'], ['assistant_teacher', '副班主任'], ['subject_teacher', '任课老师'],
-  ['principal', '校长'], ['dean', '教导主任'], ['grade_head', '年级组长'], ['it_admin', '信息中心'],
+  ['', '全部'],
+  ['homeroom_teacher', '班主任'],
+  ['assistant_teacher', '副班主任'],
+  ['subject_teacher', '任课老师'],
+  ['principal', '校长'],
+  ['dean', '教导主任'],
+  ['grade_head', '年级组长'],
+  ['it_admin', '信息中心'],
 ]
-const STATUS_OPTIONS = [['', '全部'], ['active', '在用'], ['frozen', '已冻结']]
+const STATUS_OPTIONS = [
+  ['', '全部'],
+  ['active', '在用'],
+  ['frozen', '已冻结'],
+]
 
 type Dialog = { kind: 'form'; account?: Account } | { kind: 'import' } | null
 
@@ -42,7 +52,10 @@ export default function AccountsPage() {
   const [temp, setTemp] = useState<{ entries: TempPassword[]; batch: boolean } | null>(null)
 
   useEffect(() => {
-    const t = setTimeout(() => { setQ(search.trim()); setPage(1) }, 300)
+    const t = setTimeout(() => {
+      setQ(search.trim())
+      setPage(1)
+    }, 300)
     return () => clearTimeout(t)
   }, [search])
 
@@ -57,7 +70,16 @@ export default function AccountsPage() {
   const resetPassword = async (a: Account) => {
     try {
       const res = await adminApi.resetPassword(a.id)
-      setTemp({ entries: [{ login_name: a.login_name, display_name: a.display_name, temp_password: res.temp_password }], batch: false })
+      setTemp({
+        entries: [
+          {
+            login_name: a.login_name,
+            display_name: a.display_name,
+            temp_password: res.temp_password,
+          },
+        ],
+        batch: false,
+      })
     } catch (err) {
       toast(err instanceof ApiError ? err.message : '重置失败,请重试')
     }
@@ -89,36 +111,69 @@ export default function AccountsPage() {
 
   const total = list.data?.total ?? 0
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE))
-  const change = (fn: () => void) => { fn(); setPage(1) }
+  const change = (fn: () => void) => {
+    fn()
+    setPage(1)
+  }
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-4 p-4 md:p-6">
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="mr-auto text-lg font-semibold">账号</h1>
-        <Button type="button" variant="outline" onClick={() => setDialog({ kind: 'import' })}>批量导入</Button>
-        <Button type="button" onClick={() => setDialog({ kind: 'form' })}>新建账号</Button>
+        <Button type="button" variant="outline" onClick={() => setDialog({ kind: 'import' })}>
+          批量导入
+        </Button>
+        <Button type="button" onClick={() => setDialog({ kind: 'form' })}>
+          新建账号
+        </Button>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Input aria-label="搜索姓名或登录名" placeholder="搜索姓名或登录名" className="w-56" value={search}
-          onChange={(e) => setSearch(e.target.value)} />
+        <Input
+          aria-label="搜索姓名或登录名"
+          placeholder="搜索姓名或登录名"
+          className="w-56"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
         <label className="flex items-center gap-1.5 text-sm">
           身份
-          <NativeSelect aria-label="身份" value={role} onChange={(e) => change(() => setRole(e.target.value))}>
-            {ROLE_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          <NativeSelect
+            aria-label="身份"
+            value={role}
+            onChange={(e) => change(() => setRole(e.target.value))}
+          >
+            {ROLE_OPTIONS.map(([v, l]) => (
+              <option key={v} value={v}>
+                {l}
+              </option>
+            ))}
           </NativeSelect>
         </label>
         <label className="flex items-center gap-1.5 text-sm">
           状态
-          <NativeSelect aria-label="状态" value={status} onChange={(e) => change(() => setStatus(e.target.value))}>
-            {STATUS_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          <NativeSelect
+            aria-label="状态"
+            value={status}
+            onChange={(e) => change(() => setStatus(e.target.value))}
+          >
+            {STATUS_OPTIONS.map(([v, l]) => (
+              <option key={v} value={v}>
+                {l}
+              </option>
+            ))}
           </NativeSelect>
         </label>
       </div>
 
-      {list.isPending ? <LoadingState /> : list.isError ? (
-        <ErrorState title={list.error instanceof ApiError ? list.error.message : '加载失败,请重试'}
-          onRetry={() => void list.refetch()} retrying={list.isFetching} />
+      {list.isPending ? (
+        <LoadingState />
+      ) : list.isError ? (
+        <ErrorState
+          title={list.error instanceof ApiError ? list.error.message : '加载失败,请重试'}
+          onRetry={() => void list.refetch()}
+          retrying={list.isFetching}
+        />
       ) : list.data.items.length === 0 ? (
         <EmptyState title="没有符合条件的账号" />
       ) : (
@@ -127,17 +182,26 @@ export default function AccountsPage() {
             <thead className="bg-muted text-left text-muted-foreground">
               <tr>
                 {['姓名', '登录名', '身份', '工号', '最后登录', '状态', '操作'].map((h) => (
-                  <th key={h} scope="col" className="whitespace-nowrap px-3 py-2 font-medium">{h}</th>
+                  <th key={h} scope="col" className="whitespace-nowrap px-3 py-2 font-medium">
+                    {h}
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {list.data.items.map((a) => (
-                <AccountRow key={a.id} account={a} isSelf={a.id === selfId}
+                <AccountRow
+                  key={a.id}
+                  account={a}
+                  isSelf={a.id === selfId}
                   onEdit={() => setDialog({ kind: 'form', account: a })}
                   onReset={() => void resetPassword(a)}
-                  onFreeze={() => { setFreezeError(''); setFreezing(a) }}
-                  onUnfreeze={() => void unfreeze(a)} />
+                  onFreeze={() => {
+                    setFreezeError('')
+                    setFreezing(a)
+                  }}
+                  onUnfreeze={() => void unfreeze(a)}
+                />
               ))}
             </tbody>
           </table>
@@ -147,30 +211,76 @@ export default function AccountsPage() {
       {total > PAGE_SIZE && (
         <div className="flex items-center justify-end gap-2 text-sm">
           <span className="text-muted-foreground">{`共 ${total} 个账号,第 ${page} / ${pages} 页`}</span>
-          <Button type="button" variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>上一页</Button>
-          <Button type="button" variant="outline" size="sm" disabled={page >= pages} onClick={() => setPage(page + 1)}>下一页</Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={page <= 1}
+            onClick={() => setPage(page - 1)}
+          >
+            上一页
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={page >= pages}
+            onClick={() => setPage(page + 1)}
+          >
+            下一页
+          </Button>
         </div>
       )}
 
       {dialog?.kind === 'form' && (
-        <AccountForm account={dialog.account} onClose={() => setDialog(null)}
-          onCreated={(t) => { setDialog(null); setTemp({ entries: [t], batch: false }) }} />
+        <AccountForm
+          account={dialog.account}
+          onClose={() => setDialog(null)}
+          onCreated={(t) => {
+            setDialog(null)
+            setTemp({ entries: [t], batch: false })
+          }}
+        />
       )}
       {dialog?.kind === 'import' && (
-        <ImportAccountsDialog onClose={() => setDialog(null)}
-          onImported={(created) => { setDialog(null); setTemp({ entries: created, batch: true }) }} />
+        <ImportAccountsDialog
+          onClose={() => setDialog(null)}
+          onImported={(created) => {
+            setDialog(null)
+            setTemp({ entries: created, batch: true })
+          }}
+        />
       )}
       {freezing && (
         <Modal open onClose={() => setFreezing(null)} title="冻结账号">
           <p className="text-sm">{`冻结后 ${freezing.display_name} 会立即退出登录,不能再登录;历史记录保留。`}</p>
-          {freezeError && <p role="alert" className="mt-2 text-sm text-destructive">{freezeError}</p>}
+          {freezeError && (
+            <p role="alert" className="mt-2 text-sm text-destructive">
+              {freezeError}
+            </p>
+          )}
           <div className="mt-4 flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => setFreezing(null)}>取消</Button>
-            <Button type="button" variant="destructive" disabled={freezeBusy} onClick={() => void freeze()}>确认冻结</Button>
+            <Button type="button" variant="outline" onClick={() => setFreezing(null)}>
+              取消
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={freezeBusy}
+              onClick={() => void freeze()}
+            >
+              确认冻结
+            </Button>
           </div>
         </Modal>
       )}
-      {temp && <TempPasswordDialog entries={temp.entries} batch={temp.batch} onClose={() => setTemp(null)} />}
+      {temp && (
+        <TempPasswordDialog
+          entries={temp.entries}
+          batch={temp.batch}
+          onClose={() => setTemp(null)}
+        />
+      )}
     </div>
   )
 }

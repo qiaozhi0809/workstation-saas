@@ -12,7 +12,11 @@ interface Options {
   reducedMotion?: () => boolean
 }
 
-export function usePick({ pool, rand = Math.random, reducedMotion = prefersReducedMotion }: Options) {
+export function usePick({
+  pool,
+  rand = Math.random,
+  reducedMotion = prefersReducedMotion,
+}: Options) {
   const [state, setState] = useState<PickState>('idle')
   const [spotlightId, setSpotlightId] = useState<string | null>(null)
   const [pickedId, setPickedId] = useState<string | null>(null)
@@ -32,19 +36,31 @@ export function usePick({ pool, rand = Math.random, reducedMotion = prefersReduc
     setPickedId(null)
     const chosen = choosePick(pool, recent.current, rand)
     recent.current = chosen.recent
-    if (chosen.id === null) { setState('empty'); return }
+    if (chosen.id === null) {
+      setState('empty')
+      return
+    }
     const id = chosen.id
-    if (reducedMotion()) { setPickedId(id); setState('picked'); return }
+    if (reducedMotion()) {
+      setPickedId(id)
+      setState('picked')
+      return
+    }
     setState('spinning')
     const delays = spinDelays()
     let at = 0
     delays.forEach((d, i) => {
       at += d
       const last = i === delays.length - 1
-      timers.current.push(setTimeout(() => {
-        if (last) { setSpotlightId(id); setPickedId(id); setState('picked') }
-        else setSpotlightId(pool[Math.min(pool.length - 1, Math.floor(rand() * pool.length))])
-      }, at))
+      timers.current.push(
+        setTimeout(() => {
+          if (last) {
+            setSpotlightId(id)
+            setPickedId(id)
+            setState('picked')
+          } else setSpotlightId(pool[Math.min(pool.length - 1, Math.floor(rand() * pool.length))])
+        }, at),
+      )
     })
   }
 
@@ -61,9 +77,15 @@ export function usePick({ pool, rand = Math.random, reducedMotion = prefersReduc
 /** "回答得好 +1":与点评共用提交逻辑(同步守卫、结果不明时重试沿用 op_id、当前科目),成功后回调。 */
 export function usePickReward(classId: string, subject: string, onDone: () => void) {
   const { submit, pending } = useReviewSubmit(classId, subject)
-  const reward = (enrollmentId: string) => submit(
-    { category: 'individual', enrollment_ids: [enrollmentId], reason_text: '回答问题', score_delta: 1 },
-    { onSuccess: onDone },
-  )
+  const reward = (enrollmentId: string) =>
+    submit(
+      {
+        category: 'individual',
+        enrollment_ids: [enrollmentId],
+        reason_text: '回答问题',
+        score_delta: 1,
+      },
+      { onSuccess: onDone },
+    )
   return { reward, pending }
 }

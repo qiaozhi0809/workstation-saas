@@ -4,7 +4,13 @@ import { contextHome } from '@/auth/home'
 import { useAuthStore } from '@/shared/stores/auth'
 import type { Context } from '@/shared/types/admin'
 
-export default function ProtectedRoute({ children, context }: { children: ReactNode; context?: Context }) {
+export default function ProtectedRoute({
+  children,
+  context,
+}: {
+  children: ReactNode
+  context?: Context
+}) {
   const accessToken = useAuthStore((s) => s.accessToken)
   const user = useAuthStore((s) => s.user)
   if (!accessToken) return <Navigate to="/login" replace />

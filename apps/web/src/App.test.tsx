@@ -12,7 +12,9 @@ import App from './App'
 vi.mock('@/shared/api/classes', () => ({ classesApi: { mine: vi.fn() } }))
 vi.mock('@/shared/api/classroom', () => ({ classroomApi: { summary: vi.fn() } }))
 vi.mock('@/shared/api/students', () => ({ studentsApi: { detail: vi.fn(), listInClass: vi.fn() } }))
-vi.mock('@/shared/api/notices', () => ({ noticesApi: { inbox: vi.fn(), read: vi.fn(), readAll: vi.fn() } }))
+vi.mock('@/shared/api/notices', () => ({
+  noticesApi: { inbox: vi.fn(), read: vi.fn(), readAll: vi.fn() },
+}))
 vi.mock('@/shared/realtime/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/shared/realtime/client')>()),
   createRealtimeClient: () => ({ start: vi.fn(), stop: vi.fn() }),
@@ -43,22 +45,61 @@ describe('App routing', () => {
     vi.mocked(classroomApi.summary).mockReturnValue(never)
     vi.mocked(studentsApi.detail).mockReturnValue(never)
     vi.mocked(studentsApi.listInClass).mockReturnValue(never)
-    useAuthStore.setState({ accessToken: 'at', refreshToken: 'rt', user: { id: 'u1', display_name: '王老师', contexts: ['teacher'], admin_perms: [], must_change_password: false } })
+    useAuthStore.setState({
+      accessToken: 'at',
+      refreshToken: 'rt',
+      user: {
+        id: 'u1',
+        display_name: '王老师',
+        contexts: ['teacher'],
+        admin_perms: [],
+        must_change_password: false,
+      },
+    })
     window.history.pushState({}, '', '/teacher/students/a%20b')
     render(<App />)
-    await waitFor(() => expect(window.location.pathname + window.location.search).toBe('/teacher/classroom?student=a%20b'))
+    await waitFor(() =>
+      expect(window.location.pathname + window.location.search).toBe(
+        '/teacher/classroom?student=a%20b',
+      ),
+    )
     act(() => useAuthStore.setState({ accessToken: null, refreshToken: null, user: null }))
   })
 
   describe('AI routes', () => {
-    const cls = { id: 'c1', name: '三年二班', grade_name: '三年级', seat_rows: 6, seat_cols: 4, desk_size: 2 as const, seat_layout: 'manual' as const, seat_order: 'row' as const, podium_left: 0, podium_right: 0, room: '', role: 'subject_teacher' as const }
+    const cls = {
+      id: 'c1',
+      name: '三年二班',
+      grade_name: '三年级',
+      seat_rows: 6,
+      seat_cols: 4,
+      desk_size: 2 as const,
+      seat_layout: 'manual' as const,
+      seat_order: 'row' as const,
+      podium_left: 0,
+      podium_right: 0,
+      room: '',
+      role: 'subject_teacher' as const,
+    }
 
     beforeEach(() => {
       vi.mocked(classesApi.mine).mockResolvedValue({ items: [cls] })
       useTeacherStore.setState({ classId: 'c1' })
-      useAuthStore.setState({ accessToken: 'at', refreshToken: 'rt', user: { id: 'u1', display_name: '王老师', contexts: ['teacher'], admin_perms: [], must_change_password: false } })
+      useAuthStore.setState({
+        accessToken: 'at',
+        refreshToken: 'rt',
+        user: {
+          id: 'u1',
+          display_name: '王老师',
+          contexts: ['teacher'],
+          admin_perms: [],
+          must_change_password: false,
+        },
+      })
     })
-    afterEach(() => act(() => useAuthStore.setState({ accessToken: null, refreshToken: null, user: null })))
+    afterEach(() =>
+      act(() => useAuthStore.setState({ accessToken: null, refreshToken: null, user: null })),
+    )
 
     it('routes /teacher/ai and /teacher/ai/:chatId', async () => {
       vi.mocked(classroomApi.summary).mockResolvedValue(summaryFixture({ my_perms: ['ai.use'] }))

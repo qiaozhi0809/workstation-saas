@@ -21,9 +21,17 @@ vi.mock('@/shared/api/students', () => ({ studentsApi: { listInClass: vi.fn() } 
 vi.mock('@/shared/components/Toast', () => ({ toast: vi.fn() }))
 
 const EXAM: Exam = {
-  id: 'x1', name: '十月月考', exam_type: '月考', date: '2026-10-20',
-  subjects: [{ name: '语文', full: 100 }, { name: '数学', full: 100 }],
-  grade_exam_id: null, created_by_me: true, progress: { entered: 0, total: 3 },
+  id: 'x1',
+  name: '十月月考',
+  exam_type: '月考',
+  date: '2026-10-20',
+  subjects: [
+    { name: '语文', full: 100 },
+    { name: '数学', full: 100 },
+  ],
+  grade_exam_id: null,
+  created_by_me: true,
+  progress: { entered: 0, total: 3 },
 }
 
 function renderImport(writable: string[] | null = null, roster = rosterFixture) {
@@ -33,13 +41,20 @@ function renderImport(writable: string[] | null = null, roster = rosterFixture) 
   const invalidate = vi.spyOn(client, 'invalidateQueries')
   render(
     <QueryClientProvider client={client}>
-      <HeaderImport classId="c1" exam={EXAM} roster={roster} writable={writable}
-        onClose={onClose} onImported={onImported} />
+      <HeaderImport
+        classId="c1"
+        exam={EXAM}
+        roster={roster}
+        writable={writable}
+        onClose={onClose}
+        onImported={onImported}
+      />
     </QueryClientProvider>,
   )
   return { onClose, onImported, invalidate }
 }
-const paste = (text: string) => fireEvent.change(screen.getByRole('textbox'), { target: { value: text } })
+const paste = (text: string) =>
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: text } })
 const importBtn = () => screen.getByRole('button', { name: '导入' })
 
 beforeEach(() => {
@@ -53,10 +68,18 @@ it('previews matches and imports only matched rows', async () => {
   expect(screen.getByText('识别到 2 行,匹配 1 人;科目:语文')).toBeInTheDocument()
   fireEvent.click(importBtn())
   await waitFor(() => expect(onImported).toHaveBeenCalled())
-  expect(examsApi.saveScores).toHaveBeenCalledWith('c1', 'x1', [{ enrollment_id: 'e1', subject: '语文', value: 90 }])
+  expect(examsApi.saveScores).toHaveBeenCalledWith('c1', 'x1', [
+    { enrollment_id: 'e1', subject: '语文', value: 90 },
+  ])
   expect(toast).toHaveBeenCalledWith('已导入 1 格,1 行没对上名字')
   const keys = invalidate.mock.calls.map((c) => (c[0] as { queryKey: unknown[] }).queryKey)
-  expect(keys).toEqual(expect.arrayContaining([['score-sheet', 'c1', 'x1'], ['exams', 'c1'], ['gradebook', 'c1']]))
+  expect(keys).toEqual(
+    expect.arrayContaining([
+      ['score-sheet', 'c1', 'x1'],
+      ['exams', 'c1'],
+      ['gradebook', 'c1'],
+    ]),
+  )
 })
 
 it('matches by student number first and skips empty cells, maps absent', async () => {
@@ -75,7 +98,9 @@ it('counts invalid and over-full cells without writing them', async () => {
   paste('姓名,语文,数学\n王小一,101,abc\n李小二,88,')
   fireEvent.click(importBtn())
   await waitFor(() => expect(toast).toHaveBeenCalled())
-  expect(examsApi.saveScores).toHaveBeenCalledWith('c1', 'x1', [{ enrollment_id: 'e2', subject: '语文', value: 88 }])
+  expect(examsApi.saveScores).toHaveBeenCalledWith('c1', 'x1', [
+    { enrollment_id: 'e2', subject: '语文', value: 88 },
+  ])
   expect(toast).toHaveBeenCalledWith('已导入 1 格,2 格超出满分或格式不对,未导入')
 })
 
@@ -85,7 +110,9 @@ it('ignores subjects that are not writable', async () => {
   expect(screen.getByText('识别到 1 行,匹配 1 人;科目:数学')).toBeInTheDocument()
   fireEvent.click(importBtn())
   await waitFor(() => expect(examsApi.saveScores).toHaveBeenCalled())
-  expect(examsApi.saveScores).toHaveBeenCalledWith('c1', 'x1', [{ enrollment_id: 'e1', subject: '数学', value: 80 }])
+  expect(examsApi.saveScores).toHaveBeenCalledWith('c1', 'x1', [
+    { enrollment_id: 'e1', subject: '数学', value: 80 },
+  ])
 })
 
 it('explains why nothing can be imported', () => {
@@ -103,7 +130,9 @@ it('counts a repeated student/subject once, later row winning', async () => {
   paste('姓名,语文\n王小一,60\n王小一,70')
   fireEvent.click(importBtn())
   await waitFor(() => expect(toast).toHaveBeenCalledWith('已导入 1 格'))
-  expect(examsApi.saveScores).toHaveBeenCalledWith('c1', 'x1', [{ enrollment_id: 'e1', subject: '语文', value: 70 }])
+  expect(examsApi.saveScores).toHaveBeenCalledWith('c1', 'x1', [
+    { enrollment_id: 'e1', subject: '语文', value: 70 },
+  ])
 })
 
 it('asks for a name or number column', () => {
@@ -117,11 +146,15 @@ it('reads a csv file into the textarea, stripping the BOM', async () => {
   renderImport()
   const file = new File(['﻿姓名,语文\n王小一,90'], 'a.csv', { type: 'text/csv' })
   fireEvent.change(screen.getByLabelText('选择 CSV 文件'), { target: { files: [file] } })
-  await waitFor(() => expect(screen.getByText('识别到 1 行,匹配 1 人;科目:语文')).toBeInTheDocument())
+  await waitFor(() =>
+    expect(screen.getByText('识别到 1 行,匹配 1 人;科目:语文')).toBeInTheDocument(),
+  )
 })
 
 it('keeps the modal open and shows the error when saving fails', async () => {
-  vi.mocked(examsApi.saveScores).mockRejectedValue(new ApiError(403, 'FORBIDDEN', '没有这个科目的录入权限'))
+  vi.mocked(examsApi.saveScores).mockRejectedValue(
+    new ApiError(403, 'FORBIDDEN', '没有这个科目的录入权限'),
+  )
   const { onImported, onClose } = renderImport()
   paste('姓名,语文\n王小一,90')
   fireEvent.click(importBtn())
@@ -131,7 +164,12 @@ it('keeps the modal open and shows the error when saving fails', async () => {
 })
 
 it('sends large imports in chunks of at most 2000 cells', async () => {
-  const many = Array.from({ length: 1100 }, (_, i) => ({ ...rosterFixture[0], enrollment_id: `m${i}`, student_no: `N${i}`, name: `学生${i}` }))
+  const many = Array.from({ length: 1100 }, (_, i) => ({
+    ...rosterFixture[0],
+    enrollment_id: `m${i}`,
+    student_no: `N${i}`,
+    name: `学生${i}`,
+  }))
   renderImport(null, many)
   const rows = many.map((m) => `${m.name},90,80`).join('\n')
   paste(`姓名,语文,数学\n${rows}`)
@@ -144,22 +182,34 @@ it('sends large imports in chunks of at most 2000 cells', async () => {
 function setupPage(perms: string[]) {
   useTeacherStore.setState({ classId: 'c1' })
   vi.mocked(classesApi.mine).mockResolvedValue({ items: [classFixture] })
-  vi.mocked(classroomApi.summary).mockResolvedValue(summaryFixture({
-    my_perms: ['exam.read', ...perms] as never, my_subjects: [],
-  }))
+  vi.mocked(classroomApi.summary).mockResolvedValue(
+    summaryFixture({
+      my_perms: ['exam.read', ...perms] as never,
+      my_subjects: [],
+    }),
+  )
   vi.mocked(examsApi.list).mockResolvedValue({ items: [EXAM] })
   vi.mocked(examsApi.sheet).mockResolvedValue({ exam: EXAM, items: [] })
   vi.mocked(studentsApi.listInClass).mockResolvedValue({ items: rosterFixture })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  const router = createMemoryRouter([{ path: '/teacher/scores', element: <ScoresPage /> }], { initialEntries: ['/teacher/scores'] })
-  render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>)
+  const router = createMemoryRouter([{ path: '/teacher/scores', element: <ScoresPage /> }], {
+    initialEntries: ['/teacher/scores'],
+  })
+  render(
+    <QueryClientProvider client={client}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  )
 }
 
 it('hides export without score.export and shows header buttons by permission', async () => {
   setupPage(['score.write'])
   expect(await screen.findByRole('button', { name: '按表头导入' })).toBeInTheDocument()
   expect(screen.queryByRole('button', { name: '导出' })).not.toBeInTheDocument()
-  expect(screen.getByRole('link', { name: '看分析' })).toHaveAttribute('href', '/teacher/analysis?exam=x1')
+  expect(screen.getByRole('link', { name: '看分析' })).toHaveAttribute(
+    'href',
+    '/teacher/analysis?exam=x1',
+  )
 })
 
 it('shows export with score.export and hides import without score.write', async () => {

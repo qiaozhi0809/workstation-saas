@@ -2,7 +2,12 @@ import { ATTENDANCE_TONE, TONE_FILL, TONE_TEXT, scoreTone } from './tone'
 
 describe('tone', () => {
   it('maps attendance statuses', () => {
-    expect(ATTENDANCE_TONE).toEqual({ present: 'success', leave: 'warning', absent: 'danger', late: 'info' })
+    expect(ATTENDANCE_TONE).toEqual({
+      present: 'success',
+      leave: 'warning',
+      absent: 'danger',
+      late: 'info',
+    })
   })
   it('scoreTone', () => {
     expect(scoreTone(2)).toBe('success')
