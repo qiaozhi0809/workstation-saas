@@ -147,7 +147,6 @@ class ParentProfile(BaseModel):
     boarding: bool | None = None
     family_note: str | None = None
     contacts: list[Contact] | None = None
-    note: str | None = None
     can_edit_contacts: bool
 
 
@@ -435,7 +434,7 @@ def _profile_of(
     profile: StudentProfile = build_profile(
         student, _scope_of(cls, student_id), enrollment, parent_bindings(link), user.id
     )
-    data = profile.model_dump(exclude={"teacher_notes"}, exclude_none=True)
+    data = profile.model_dump(exclude={"teacher_notes", "note"}, exclude_none=True)
     can_edit = link.is_primary and effective_status(link, now) == "active"
     return ParentProfile(**data, can_edit_contacts=can_edit)
 

@@ -62,7 +62,7 @@ export interface ParentToday {
   /** 只读时 null */
   seat_map: MiniSeatMap | null
 }
-export type ParentProfile = Omit<StudentProfile, 'teacher_notes'> & { can_edit_contacts: boolean }
+export type ParentProfile = Omit<StudentProfile, 'teacher_notes' | 'note'> & { can_edit_contacts: boolean }
 export interface ParentGrowthRecord {
   id: string; type: GrowthType; date: string; content: string
   year_name: string; created_by_name: string | null
