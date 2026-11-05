@@ -76,10 +76,13 @@ export default function AckForm({ item, onSubmitted }: { item: InboxItem; onSubm
       )}
 
       {canFill && spec.kind === 'confirm' && (
-        <div>
+        <div className="flex gap-2">
           <Button type="button" size="sm" disabled={mut.isPending} onClick={() => submit({ choice: null, note: null })}>
             已知晓
           </Button>
+          {editing && (
+            <Button type="button" variant="ghost" size="sm" onClick={() => setEditing(false)}>取消</Button>
+          )}
         </div>
       )}
 

@@ -193,6 +193,26 @@ describe('AckForm', () => {
     expect(await screen.findByText(/^已回执:不参加,/)).toBeInTheDocument()
   })
 
+  it('confirm 点修改后有取消,取消回到已回执视图且不提交', () => {
+    renderForm(item({ my_ack: { choice: null, note: null, acked_at: '2026-11-04T03:00:00Z' } }))
+    fireEvent.click(screen.getByRole('button', { name: '修改' }))
+    expect(screen.getByRole('button', { name: '已知晓' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+    expect(screen.queryByRole('button', { name: '已知晓' })).toBeNull()
+    expect(screen.getByText(/^已回执:已知晓,/)).toBeInTheDocument()
+    expect(noticesApi.ack).not.toHaveBeenCalled()
+  })
+
+  it('choice 点修改后取消,回到已回执视图', () => {
+    renderForm(item({
+      ack: choiceAck, my_ack: { choice: 0, note: null, acked_at: '2026-11-04T03:00:00Z' },
+    }))
+    fireEvent.click(screen.getByRole('button', { name: '修改' }))
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+    expect(screen.queryByRole('button', { name: '提交回执' })).toBeNull()
+    expect(screen.getByRole('button', { name: '修改' })).toBeInTheDocument()
+  })
+
   it('confirm 已回执:选项处写"已知晓"', () => {
     renderForm(item({ my_ack: { choice: null, note: null, acked_at: '2026-11-04T03:00:00Z' } }))
     expect(screen.getByText(/^已回执:已知晓,/)).toBeInTheDocument()
