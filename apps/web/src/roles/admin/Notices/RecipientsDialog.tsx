@@ -5,12 +5,13 @@ import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import Modal from '@/shared/components/overlay/Modal'
 import { formatInTz } from '@/shared/lib/date'
+import { localTz } from '@/shared/lib/time'
 import type { NoticeSent } from '@/shared/types/admin'
 
 /** 一条通知的已读 / 未读名单 */
 export default function RecipientsDialog({ notice, onClose }: { notice: NoticeSent; onClose(): void }) {
   const q = useQuery({ queryKey: ['notices', notice.id, 'recipients'], queryFn: () => adminApi.noticeRecipients(notice.id) })
-  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+  const tz = localTz()
   return (
     <Modal open onClose={onClose} title={notice.title} className="max-w-md">
       {q.isError ? (
