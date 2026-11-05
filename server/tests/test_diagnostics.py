@@ -128,6 +128,8 @@ def test_diagnostics_http_masks_secrets_end_to_end(settings, db, redis_client, t
         assert "13800000061" not in text
         assert FAKE_JWT not in text
     assert json.loads(z.read("config.json"))["jwt_secret"] == "***"
+    # 证明 create_app 把 log_dir 接上了、日志真的落盘并被打码
+    assert "1**********" in z.read("logs.jsonl").decode()
 
 
 def test_bundle_contents(engine, settings, db):
@@ -238,7 +240,7 @@ def test_mask_line_bearer_and_jwt():
 
 
 def test_mask_line_multiple():
-    out = mask_line(f"a 13800000061 b 13912345678 c Bearer {FAKE_JWT} d {FAKE_JWT}")
+    out = mask_line(f"a 13800000061 b 13800000062 c Bearer {FAKE_JWT} d {FAKE_JWT}")
     assert out == "a 1********** b 1********** c *** d ***"
 
 
@@ -440,3 +442,83 @@ def test_must_change_password_gets_403(client, settings, db):
             if "error" in res.json()
             else True
         )
+
+
+# ---- 终审:URL 打码绕过与通用键值规则 ----
+
+
+def test_mask_url_password_with_space_quote_backslash():
+    s = Settings(_env_file=None, database_url='postgresql+psycopg://u:p ss"w\\d@h/db')
+    m = mask_settings(s)
+    assert m["database_url"] == "postgresql+psycopg://u:***@h/db"
+    out = mask_line('dsn=postgresql://u:p ss"w\\d@h:5432/db end')
+    assert "p ss" not in out and "w\\d" not in out and "@h:5432/db" in out
+
+
+def test_mask_url_query_password():
+    s = Settings(_env_file=None, database_url="postgresql+psycopg://u@h/db?password=SEKRET1")
+    assert "SEKRET1" not in json.dumps(mask_settings(s))
+    for line in (
+        "url postgresql+psycopg://u@h/db?password=SEKRET1&sslmode=require x",
+        "redis://h:6379/0?token=SEKRET1",
+        "http://h/x?api_key=SEKRET1&a=1",
+    ):
+        out = mask_line(line)
+        assert "SEKRET1" not in out
+    assert "sslmode=require" in mask_line("postgresql://u@h/db?password=S&sslmode=require")
+
+
+def test_mask_settings_unparseable_url_is_fully_masked():
+    s = Settings(_env_file=None, redis_url="not a url ://u:p@ss")
+    assert mask_settings(s)["redis_url"] == "***"
+
+
+GENERIC_CASES = [
+    (json.dumps({"body": '{"password": "X-nested-1"}'}), "X-nested-1"),
+    ("{'password': 'X-repr-2'}", "X-repr-2"),
+    ("login failed password=X-text-3 for u", "X-text-3"),
+    ("GET /x?token=X-query-4&a=1", "X-query-4"),
+    ('{"pwd": "X-pwd-5"}', "X-pwd-5"),
+    ('{"authorization": "Basic X-basic-6"}', "X-basic-6"),
+    ("Authorization: Basic X-basic-7==", "X-basic-7"),
+    ('{"cookie": "sid=X-cookie-8; a=b"}', "X-cookie-8"),
+    ('{"key": "X-key-9"}', "X-key-9"),
+    ('{"ai_key": "X-aikey-10"}', "X-aikey-10"),
+    ('{"x-api-key": "X-apikey-11"}', "X-apikey-11"),
+    ('{"password": ["X-list-12", "b"]}', "X-list-12"),
+    ('{"token": {"a": "X-obj-13"}}', "X-obj-13"),
+    ("input_value={'master_key': 'X-mk-14'}", "X-mk-14"),
+    ("Cookie: sid=X-cookie-15; other=1", "X-cookie-15"),
+    ('{"Password": "X-case-16"}', "X-case-16"),
+]
+
+
+@pytest.mark.parametrize(("line", "secret"), GENERIC_CASES)
+def test_mask_line_generic_key_rule(line, secret):
+    assert secret not in mask_line(line)
+
+
+def test_mask_line_generic_keeps_json_valid_and_other_fields():
+    out = mask_line(json.dumps({"event": "x", "password": "a b", "user": "bob"}))
+    assert json.loads(out) == {"event": "x", "password": "***", "user": "bob"}
+    nested = json.loads(mask_line(json.dumps({"body": '{"password": "P", "n": 1}'})))
+    assert json.loads(nested["body"]) == {"password": "***", "n": 1}
+
+
+def test_mask_line_generic_no_false_positive():
+    for line in ("monkey=banana", "keyboard: qwerty", '{"event": "ok", "n": 1}'):
+        assert mask_line(line) == line
+
+
+def test_bundle_includes_all_jsonl_files_masked(engine, settings, tmp_path):
+    s = settings.model_copy(update={"log_dir": tmp_path})
+    (tmp_path / "app.jsonl").write_text('{"event":"a","p":"13800000061"}\n')
+    (tmp_path / "scheduler.jsonl").write_text('{"event":"s","p":"13800000062"}\n')
+    (tmp_path / "scheduler.jsonl.2026-11-04").write_text('{"event":"s-old","password":"PW-xyz"}\n')
+    (tmp_path / "backup-last.json").write_text('{"file":"x"}')
+    (tmp_path / "other.txt").write_text("not-a-log\n")
+    logs = _zip(build_bundle(engine, s, datetime.now(UTC))).read("logs.jsonl").decode()
+    assert '"event":"a"' in logs and '"event":"s"' in logs and "s-old" in logs
+    for raw in ("13800000061", "13800000062", "PW-xyz"):
+        assert raw not in logs
+    assert "not-a-log" not in logs and '"file":"x"' not in logs

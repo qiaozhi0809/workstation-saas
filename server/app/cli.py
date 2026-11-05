@@ -370,7 +370,12 @@ def main() -> None:
         from app.logging import configure_logging
 
         settings = get_settings()
-        configure_logging(settings.log_level, settings.log_dir, settings.log_retention_days)
+        configure_logging(
+            settings.log_level,
+            settings.log_dir,
+            settings.log_retention_days,
+            file_name="scheduler.jsonl",  # 与 app 各写各的文件,避免同文件多进程轮转冲突
+        )
         if not ns.once:
             scheduler.serve(settings)
             sys.exit(0)

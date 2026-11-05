@@ -134,4 +134,27 @@ def test_scheduler_command_logs_to_file(tmp_path, monkeypatch):
     (handler,) = logging.getLogger(FILE_LOGGER_NAME).handlers
     assert handler.backupCount == 9
     structlog.get_logger().info("from-scheduler")
-    assert "from-scheduler" in (tmp_path / "app.jsonl").read_text()
+    # scheduler 用单独文件名,避免和 app 多 worker 同写一个文件的轮转冲突
+    assert "from-scheduler" in (tmp_path / "scheduler.jsonl").read_text()
+    assert not (tmp_path / "app.jsonl").exists()
+
+
+def test_file_name_parameter(tmp_path):
+    configure_logging("INFO", log_dir=tmp_path, file_name="other.jsonl")
+    structlog.get_logger().info("x")
+    assert (tmp_path / "other.jsonl").exists()
+    assert not (tmp_path / "app.jsonl").exists()
+
+
+def test_create_app_logs_started_event(tmp_path):
+    from app.main import create_app
+    from app.version import APP_VERSION
+
+    s = Settings(_env_file=None, log_dir=tmp_path)
+    create_app(s)
+    lines = [json.loads(ln) for ln in (tmp_path / "app.jsonl").read_text().splitlines()]
+    started = [e for e in lines if e["event"] == "app.started"]
+    assert len(started) == 1
+    assert started[0]["version"] == APP_VERSION and started[0]["env"] == s.env
+    blob = json.dumps(started[0])
+    assert s.jwt_secret not in blob and s.master_key not in blob and "postgresql" not in blob

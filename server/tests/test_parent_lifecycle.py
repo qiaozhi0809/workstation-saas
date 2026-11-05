@@ -288,3 +288,54 @@ def test_archive_audit_via_is_caller_supplied(db):
         text("SELECT extra->>'via' FROM audit_logs WHERE action = 'parent.archive'")
     ).scalar_one()
     assert via == "scheduler"
+
+
+def test_archive_post_commit_failures_do_not_raise(db, redis_client, monkeypatch):
+    from app.ws import hub
+
+    _age(db, PARENT02, "S0001")
+    published: list = []
+    revoked: list = []
+
+    def bad_revoke(redis, uid):
+        revoked.append(uid)
+        raise ConnectionError("redis down")
+
+    monkeypatch.setattr(sessions, "revoke_all", bad_revoke)
+    monkeypatch.setattr(hub, "publish", lambda *a, **k: published.append(a))
+    res = archive_expired(db, SCHOOL, NOW, redis_client)
+    assert res.users == 1 and res.user_ids == [UUID(PARENT02)]
+    assert revoked == [UUID(PARENT02)] and len(published) == 1  # 撤销失败仍发布
+    status = db.execute(
+        text("SELECT status FROM users WHERE id = :u"), {"u": PARENT02}
+    ).scalar_one()
+    assert status == "archived"
+
+
+def test_archive_publish_failure_does_not_raise(db, redis_client, monkeypatch):
+    from app.ws import hub
+
+    _age(db, PARENT02, "S0001")
+
+    def boom(*a, **k):
+        raise ConnectionError("redis down")
+
+    monkeypatch.setattr(hub, "publish", boom)
+    res = archive_expired(db, SCHOOL, NOW, redis_client)
+    assert res.users == 1
+
+
+def test_archive_one_revoke_failure_does_not_skip_others(db, redis_client, monkeypatch):
+    _age(db, PARENT02, "S0001")
+    _age(db, PARENT01, "S0017")
+    _age(db, PARENT01, "S0001")
+    seen: list = []
+
+    def flaky(redis, uid):
+        seen.append(uid)
+        if len(seen) == 1:
+            raise ConnectionError("x")
+
+    monkeypatch.setattr(sessions, "revoke_all", flaky)
+    res = archive_expired(db, SCHOOL, NOW, redis_client)
+    assert res.users == 2 and len(seen) == 2

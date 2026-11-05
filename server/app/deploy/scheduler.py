@@ -91,7 +91,8 @@ def run_due(
             last = _NO_SCHOOL_WARNED.get("t")
             if last is None or t - last >= NO_SCHOOL_WARN_EVERY:
                 _NO_SCHOOL_WARNED["t"] = t
-                log.warning("scheduler.no_school", school_id=str(sid))
+                # 首次安装时先于 init-school 启动属正常,不是告警
+                log.info("scheduler.no_school", school_id=str(sid))
             return []
         now_local = now.astimezone(school_tz(db, sid))
     done: list[str] = []
@@ -138,8 +139,10 @@ def serve(settings: Settings, *, interval: float = 30.0) -> None:
     stop = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     signal.signal(signal.SIGINT, lambda *_: stop.set())
-    engine = create_engine(settings.database_url)
-    redis = Redis.from_url(settings.redis_url, decode_responses=True)
+    engine = create_engine(settings.database_url, connect_args={"connect_timeout": 5})
+    redis = Redis.from_url(
+        settings.redis_url, decode_responses=True, socket_timeout=5, socket_connect_timeout=5
+    )
     factory = sessionmaker(bind=engine)
     log.info("scheduler.start", jobs=[j.name for j in JOBS])
     try:

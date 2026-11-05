@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from uuid import UUID
 
+import structlog
 from redis import Redis
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -25,6 +26,8 @@ from app.rbac.roles import PARENT_ROLES
 from app.ws import hub
 
 _PARENT_ROLES = sorted(r.value for r in PARENT_ROLES)
+
+log = structlog.get_logger()
 
 
 @dataclass(frozen=True)
@@ -107,11 +110,18 @@ def archive_expired(
         )
     if not dry_run:
         db.commit()
+        # 提交之后的失败不往上抛:否则调用方(scheduler)当失败重试,却再也查不到这批账号
         if redis is not None:
             for uid in users:
-                sessions.revoke_all(redis, uid)
+                try:
+                    sessions.revoke_all(redis, uid)
+                except Exception as exc:
+                    log.warning("parent_archive.revoke_failed", error=type(exc).__name__)
             if users:
-                hub.publish(redis, users, {"type": hub.REVOKED})  # 踢掉已打开的 WebSocket
+                try:
+                    hub.publish(redis, users, {"type": hub.REVOKED})  # 踢掉已打开的 WebSocket
+                except Exception as exc:
+                    log.warning("parent_archive.publish_failed", error=type(exc).__name__)
     return ArchiveResult(links=len(links), users=len(users), user_ids=users)
 
 
