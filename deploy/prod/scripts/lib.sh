@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # 部署脚本公共函数(被 install.sh / upgrade.sh 等 source,不单独运行)。
 # 目标环境 Ubuntu 22.04 / 24.04(bash 5);只依赖 bash、coreutils、docker、tar、openssl。
-# 注意:本文件及所有部署脚本都不得开启 set -x,也不得把密钥打印出来。
+# 注意:本文件及所有部署脚本都不得开启 xtrace(逐行回显),也不得把密钥打印出来。
+# 即使调用者的环境里带了 xtrace 开关,也在这里关掉:xtrace 会把 .env 里的密钥打到终端或日志。
+set +x
+unset BASH_XTRACEFD
 
 # 部署目录 = 本文件所在目录(scripts/)的上一级
 DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -59,19 +62,67 @@ read_env() {
   grep -m1 "^$1=" "$ENV_FILE" | cut -d= -f2- || true
 }
 
-# set_env <键> <值>:原地改 .env(键不存在则追加),不打印值。
+# 临时文件登记:脚本退出(含 Ctrl-C、被 kill)时由 lib_cleanup 统一删除,不留半成品。
+# 各脚本需 trap 自己的清理函数(其中调用 lib_cleanup)并把 INT / TERM 转成 exit。
+_WS_TMPS=()
+register_tmp() { _WS_TMPS+=("$1"); }
+lib_cleanup() {
+  local f
+  for f in ${_WS_TMPS[@]+"${_WS_TMPS[@]}"}; do rm -rf "$f"; done
+  return 0
+}
+
+# check_disk:部署目录所在磁盘可用空间门槛(默认 20 GB;WS_INSTALL_MIN_DISK_GB 只在测试里下调)
+check_disk() {
+  local min_gb avail_kb
+  min_gb="${WS_INSTALL_MIN_DISK_GB:-20}"
+  avail_kb="$(df -Pk "$DEPLOY_DIR" | awk 'NR==2 {print $4}')"
+  if [ "$avail_kb" -lt $((min_gb * 1024 * 1024)) ]; then
+    die "部署目录所在磁盘可用空间不足 ${min_gb} GB(当前约 $((avail_kb / 1024 / 1024)) GB)"
+  fi
+}
+
+# set_env <键> <值> [文件]:原地改 .env(键不存在则追加;默认改 $ENV_FILE),不打印值。
 # 值经环境变量交给 awk,不进命令行参数(ps 看不到),也不经 awk 的转义处理。
+# 先写 600 权限的同目录临时文件再 mv;临时文件已登记,中途退出会被清掉。
 set_env() {
-  local key="$1" val="$2" tmp
-  tmp="$(mktemp "$ENV_FILE.XXXXXX")"
+  local key="$1" val="$2" target="${3:-$ENV_FILE}" tmp
+  tmp="$(umask 077; mktemp "$target.XXXXXX")"
+  register_tmp "$tmp"
   chmod 600 "$tmp"
-  WS_SETENV_VAL="$val" awk -v k="$key" '
+  if ! WS_SETENV_VAL="$val" awk -v k="$key" '
     BEGIN { v = ENVIRON["WS_SETENV_VAL"]; done = 0 }
     index($0, k "=") == 1 && !done { print k "=" v; done = 1; next }
     { print }
     END { if (!done) print k "=" v }
-  ' "$ENV_FILE" >"$tmp"
-  mv "$tmp" "$ENV_FILE"
+  ' "$target" >"$tmp"; then
+    rm -f "$tmp"
+    die "写入配置失败"
+  fi
+  mv "$tmp" "$target"
+}
+
+# redact:从标准输入读文本,把 .env 里的 WS_JWT_SECRET / WS_MASTER_KEY / POSTGRES_PASSWORD 的值
+# 以及(若有)管理员密码替换成 ***,再输出。值经环境变量交给 awk,不进命令行。
+# 所有把容器输出回显到终端之前都应过一遍。
+redact() {
+  WS_RD1="$(read_env WS_JWT_SECRET)" WS_RD2="$(read_env WS_MASTER_KEY)"   WS_RD3="$(read_env POSTGRES_PASSWORD)" WS_RD4="${ADMIN_PW:-}" awk '
+    BEGIN {
+      n = 0
+      for (i = 1; i <= 4; i++) { v = ENVIRON["WS_RD" i]; if (length(v) >= 4) s[++n] = v }
+    }
+    {
+      line = $0
+      for (i = 1; i <= n; i++) {
+        out = ""
+        while ((p = index(line, s[i])) > 0) {
+          out = out substr(line, 1, p - 1) "***"
+          line = substr(line, p + length(s[i]))
+        }
+        line = out line
+      }
+      print line
+    }'
 }
 
 # rand_secret <字节数> [urlsafe]:openssl rand -base64;urlsafe 时把 + / 换成 - _(用于放进连接串)
