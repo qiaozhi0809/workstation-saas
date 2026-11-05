@@ -17,10 +17,12 @@ dc --profile app run --rm --no-deps app seed
 
 start=$(python3 -c 'import time; print(time.time())')
 dc --profile app up -d --no-deps app
+ready=0
 for _ in $(seq 1 600); do
-  if curl -fs http://127.0.0.1:8254/api/v1/healthz >/dev/null 2>&1; then break; fi
+  if curl -fs http://127.0.0.1:8254/api/v1/healthz >/dev/null 2>&1; then ready=1; break; fi
   sleep 0.05
 done
+if [ "$ready" != 1 ]; then echo "应用 30 秒内未就绪" >&2; exit 1; fi
 end=$(python3 -c 'import time; print(time.time())')
 python3 -c "print(f'startup_seconds={$end - $start:.2f}')"
 

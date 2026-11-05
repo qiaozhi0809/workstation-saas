@@ -36,7 +36,7 @@ def main() -> None:
         xs = sorted(run("127.0.0.1", port, n, m, p, b))
         print(
             f"{name}: n={n} p50={statistics.median(xs):.2f}ms "
-            f"p95={xs[int(n * 0.95) - 1]:.2f}ms max={xs[-1]:.2f}ms"
+            f"p95={xs[max(int(n * 0.95) - 1, 0)]:.2f}ms max={xs[-1]:.2f}ms"
         )
 
 
