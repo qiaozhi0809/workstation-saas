@@ -211,6 +211,10 @@ jobs:
   deploy:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    # 显式 bash:-eo pipefail。默认的 `bash -e` 没有 pipefail,`脚本 | tee` 会吞掉脚本的退出码
+    defaults:
+      run:
+        shell: bash
     env:
       WS_VERSION: 0.0.0-ci
       WS_TEST_PROJECT: ws-m5a-ci
@@ -234,22 +238,26 @@ jobs:
           mkdir -p "$RUNNER_TEMP/bundle"
           tar -xzf "dist/workstation-deploy-$WS_VERSION.tar.gz" -C "$RUNNER_TEMP/bundle"
           echo "WS_DEPLOY_SRC=$RUNNER_TEMP/bundle/workstation-deploy-$WS_VERSION" >> "$GITHUB_ENV"
+          echo "WS_BUNDLE_PKG=$PWD/dist/workstation-deploy-$WS_VERSION.tar.gz" >> "$GITHUB_ENV"
 
       # 删掉本机构建出的镜像:离线包是唯一来源,install.sh 必须真的 docker load 包里的镜像 tar
       # (WS_DEPLOY_SRC 已设置时,_common.sh 不再给 install 加 WS_INSTALL_SKIP_LOAD)
       - name: Remove locally built images
-        run: docker image rm "workstation-app:$WS_VERSION" "workstation-web:$WS_VERSION"
+        run: docker image rm "workstation-app:$WS_VERSION" "workstation-web:$WS_VERSION" postgres:16-alpine redis:7-alpine
 
       # 一个脚本一个脚本地跑;每个脚本后台抓各服务日志,失败时作为 artifact 上传
       - name: Deploy tests
         run: |
-          for t in install_fresh install_twice backup_restore restore_rejects upgrade_same upgrade_precheck_fail; do
+          for t in install_fresh install_twice backup_restore restore_rejects upgrade_same upgrade_precheck_fail bundle_upgrade; do
             echo "::group::$t"
             stop="$RUNNER_TEMP/stop-$t"
             deploy/tests/bundle_collect_logs.sh "$WS_TEST_PROJECT" "$RUNNER_TEMP/service-logs/$t" "$stop" &
             collector=$!
             rc=0
-            "deploy/tests/$t.sh" 2>&1 | tee "$RUNNER_TEMP/service-logs-$t.out" || rc=${PIPESTATUS[0]}
+            set +e
+            "deploy/tests/$t.sh" 2>&1 | tee "$RUNNER_TEMP/service-logs-$t.out"
+            rc=${PIPESTATUS[0]}
+            set -e
             touch "$stop"
             wait "$collector" || true
             mkdir -p "$RUNNER_TEMP/service-logs/$t"

@@ -17,6 +17,8 @@ fi
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 VERSION="${WS_VERSION:-0.0.0-seg-b}"
+# 不让调用者环境里的 WS_VERSION 泄进 compose:compose 插值时 shell 环境优先于 .env,会让升级后的 .env 失效
+unset WS_VERSION
 PROJECT="${WS_TEST_PROJECT:-ws-m5a-b}"
 HTTP_PORT="${WS_HTTP_PORT:-18080}"
 HTTPS_PORT="${WS_HTTPS_PORT:-18443}"
