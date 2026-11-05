@@ -129,6 +129,16 @@ it('has a load-more button fallback', async () => {
   expect(await screen.findByText('点评2')).toBeInTheDocument()
 })
 
+it('shows a zero-point review as a neutral 0, not a green +0', async () => {
+  vi.mocked(parentApi.reviews).mockResolvedValue({ items: [rev('z', { score_delta: 0 })], next_cursor: null })
+  open()
+  await goTab('点评')
+  const delta = await screen.findByText('0')
+  expect(delta).toHaveClass('text-muted-foreground')
+  expect(delta).not.toHaveClass('text-success')
+  expect(screen.queryByText('+0')).not.toBeInTheDocument()
+})
+
 it('says so when there are no reviews', async () => {
   open()
   await goTab('点评')

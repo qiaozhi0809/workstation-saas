@@ -36,7 +36,7 @@ export default function AppShell({ home, context, nav, actions, overlays, childr
       </a>
       <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b bg-background px-3 md:px-4">
         <div className="flex min-w-0 flex-1 items-center gap-3">
-          <Link to={home} aria-label="班级工作台" title="班级工作台" className="flex shrink-0 items-center rounded-md p-1 text-primary">
+          <Link to={home} aria-label="班级工作台" title="班级工作台" className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md text-primary">
             <GraduationCap className="h-5 w-5" aria-hidden="true" />
           </Link>
           {context && <div className="flex min-w-0 items-center gap-2">{context}</div>}
