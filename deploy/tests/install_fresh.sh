@@ -4,8 +4,10 @@ set -euo pipefail
 # shellcheck source=deploy/tests/_common.sh
 . "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
-echo "== 1/5 准备部署目录并安装"
+echo "== 1/5 准备部署目录并安装(管理员密码经 WS_INSTALL_ADMIN_PASSWORD_FILE 传入)"
 prepare_deploy_dir
+start_ps_sampler
+INSTALL_PW_MODE="file"
 LOG="$TMP/install.log"
 rc=0
 run_install "$LOG" || rc=$?
@@ -19,7 +21,12 @@ echo "== 2/5 .env 与目录"
 perm="$(ls -l "$DEPLOY/.env" | cut -c1-10)"
 [ "$perm" = "-rw-------" ] || fail ".env 权限应为 600,实际:$perm"
 pass ".env 权限为 600"
-if grep -q 'CHANGE_ME' "$DEPLOY/.env"; then fail ".env 里不应含 CHANGE_ME"; fi
+for k in WS_JWT_SECRET WS_MASTER_KEY POSTGRES_PASSWORD; do
+  [ -n "$(env_value "$k")" ] || fail ".env 里的 $k 为空"
+done
+case "$(env_value WS_DATABASE_URL)" in
+  *workstation:@*) fail "WS_DATABASE_URL 里的数据库密码为空" ;;
+esac
 jwt="$(env_value WS_JWT_SECRET)"
 [ "${#jwt}" -ge 48 ] || fail "WS_JWT_SECRET 长度应 >= 48,实际 ${#jwt}"
 mk_bytes="$(printf '%s' "$(env_value WS_MASTER_KEY)" | openssl base64 -d -A | wc -c | tr -d ' ')"
@@ -52,11 +59,11 @@ pass "管理员登录成功且 must_change_password 为 true"
 pass "users 只有管理员一行"
 ok=0
 for _ in $(seq 1 30); do
-  if [ -s "$DEPLOY/data/logs/app.jsonl" ]; then ok=1; break; fi
+  if [ -f "$DEPLOY/data/logs/app.jsonl" ]; then ok=1; break; fi
   sleep 1
 done
 [ "$ok" = 1 ] || fail "data/logs/app.jsonl 未出现"
-pass "data/logs/app.jsonl 已落盘(容器 uid 10001 可写)"
+pass "data/logs/app.jsonl 已创建(容器 uid 10001 可写;当前内容可能为空,见交接文件缺口)"
 # 宿主机用户也要能在日志目录里写 backup-last.json
 : >"$DEPLOY/data/logs/backup-last.json" || fail "宿主机用户无法在 data/logs 里写文件"
 rm -f "$DEPLOY/data/logs/backup-last.json"
@@ -71,10 +78,14 @@ grep -q 'backup.sh' "$LOG" || fail "crontab 提示里没有 backup.sh"
 pass "输出了手动 crontab 提示"
 
 echo "== 5/5 密钥出口扫描(规则 15)"
+selftest_scanner
 dump_logs "$TMP/compose.log"
 assert_no_secrets "安装输出" "$LOG"
 assert_no_secrets "容器日志" "$TMP/compose.log"
-assert_no_secrets "应用日志文件" "$DEPLOY/data/logs/app.jsonl"
-pass "安装输出、容器日志、应用日志里都没有管理员密码与三个密钥"
+assert_logs_dir_clean
+pass "安装输出、容器日志、data/logs 全部文件里都没有管理员密码与三个密钥"
+assert_ps_clean
+assert_deploy_hygiene
+assert_no_xtrace
 
 echo "install_fresh 全部通过"

@@ -3,34 +3,80 @@
 #
 # 流程:校验离线包 → 强制备份 → 载入新镜像 → 用新镜像做迁移预检 → 覆盖程序文件 → 重启并等健康。
 # 预检不通过时,在覆盖任何文件、动任何服务之前就停下(退出码 2),系统仍在旧版本上运行。
-# 本脚本不依赖 compose 的重启策略做回滚;启动失败时只给出手动回退办法(用刚才的备份恢复)。
+# 本脚本不依赖 compose 的重启策略做回滚;覆盖文件开始之后任何一步失败,统一打印手动回退办法
+# (先把 .env 里的 WS_VERSION 改回旧版本,再用刚才的备份执行 restore.sh)。
 #
+# 安全约定:不开 xtrace;不打印密钥;回显容器输出前先过 redact;解包前拒绝绝对路径、..、链接与特殊文件。
 # WS_INSTALL_SKIP_LOAD=1 跳过 docker load(仅测试用:镜像已在本机;正式升级不应设置)。
+set +x
+unset BASH_XTRACEFD
 set -euo pipefail
 
 # shellcheck source=scripts/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 WORK=""
+OVERWRITE_STARTED=0
+OLD_VERSION=""
+BACKUP_FILE=""
+HEALTH_TIMEOUT="${WS_UPGRADE_HEALTH_TIMEOUT:-300}"
+
 cleanup() {
+  local rc=$?
+  trap - EXIT
   if [ -n "$WORK" ] && [ -d "$WORK" ]; then rm -rf "$WORK"; fi
+  lib_cleanup
+  # 覆盖文件之后才失败:打印统一的恢复办法
+  if [ "$rc" -ne 0 ] && [ "$OVERWRITE_STARTED" -eq 1 ]; then
+    {
+      printf '\n升级在覆盖程序文件之后失败了。回到旧版本 %s 的办法(按顺序):\n' "$OLD_VERSION"
+      printf '  1) 先把 .env 里的 WS_VERSION 改回 %s\n' "$OLD_VERSION"
+      printf '  2) 再执行 ./scripts/restore.sh %s\n' "$BACKUP_FILE"
+    } >&2
+  fi
+  exit "$rc"
 }
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 version_ok() { printf '%s' "$1" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$'; }
 major_of() { printf '%s' "${1%%.*}"; }
 
-# 解包前先检查归档里没有绝对路径或 .. 路径
-check_archive_paths() {
-  if tar -tzf "$1" | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
+# version_lt <A> <B>:A 的 主.次.修订 数字小于 B 则返回 0(后缀如 -rc1 不参与比较)
+version_lt() {
+  local a1 a2 a3 b1 b2 b3
+  IFS=.- read -r a1 a2 a3 _ <<<"$1"
+  IFS=.- read -r b1 b2 b3 _ <<<"$2"
+  [ "$((10#$a1))" -lt "$((10#$b1))" ] && return 0
+  [ "$((10#$a1))" -gt "$((10#$b1))" ] && return 1
+  [ "$((10#$a2))" -lt "$((10#$b2))" ] && return 0
+  [ "$((10#$a2))" -gt "$((10#$b2))" ] && return 1
+  [ "$((10#$a3))" -lt "$((10#$b3))" ]
+}
+
+# 解包前检查归档:先把清单读到变量里(tar 读失败要能发现,不能被管道吞掉),再逐项检查。
+check_archive() {
+  local pkg="$1" list vlist tops
+  list="$(tar -tzf "$pkg")" || die "离线包无法读取(文件损坏或不是 tar.gz),已拒绝"
+  [ -n "$list" ] || die "离线包是空的,已拒绝"
+  if printf '%s\n' "$list" | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
     die "离线包里含有不安全的路径(绝对路径或 ..),已拒绝"
   fi
+  vlist="$(tar -tvzf "$pkg")" || die "离线包无法读取(文件损坏或不是 tar.gz),已拒绝"
+  # 只允许普通文件与目录;符号链接、硬链接、设备、管道等一律拒绝
+  if printf '%s\n' "$vlist" | grep -Evq '^[-d]'; then
+    die "离线包里含有链接或特殊文件(符号链接、硬链接、设备等),已拒绝"
+  fi
+  tops="$(printf '%s\n' "$list" | sed 's#^\./##' | awk -F/ 'NF > 0 && $1 != "" { print $1 }' | sort -u)"
+  [ -n "$tops" ] && [ "$(printf '%s\n' "$tops" | wc -l | tr -d '[:space:]')" -eq 1 ] \
+    || die "离线包的顶层必须只有一个目录,已拒绝"
 }
 
 verify_checksum() {
   local pkg="$1" sumfile="$1.sha256" want got
   if [ ! -f "$sumfile" ]; then
-    log_warn "没有找到 $(basename "$sumfile"),跳过离线包校验和检查"
+    log_warn "没有找到 $(basename "$sumfile"):未校验离线包的完整性与来源,请自行确认文件可信"
     return 0
   fi
   want="$(awk 'NR==1 {print $1}' "$sumfile")"
@@ -38,8 +84,6 @@ verify_checksum() {
   [ -n "$want" ] && [ "$want" = "$got" ] || die "离线包校验和不符,文件可能损坏或被改动,已拒绝"
   log_info "离线包校验和通过"
 }
-
-latest_backup() { ls -1t "$DEPLOY_DIR"/backups/ws-backup-*.tar.gz 2>/dev/null | head -n 1 || true; }
 
 # 把新 .env.example 里有、当前 .env 里没有的键(用默认值)追加进 .env
 append_new_env_keys() {
@@ -60,39 +104,54 @@ append_new_env_keys() {
   fi
 }
 
+list_backups() { ls -1 "$DEPLOY_DIR"/backups/ws-backup-*.tar.gz 2>/dev/null | sort || true; }
+
 main() {
   [ "$#" -eq 1 ] || die "用法:./scripts/upgrade.sh <离线包.tar.gz>"
-  local pkg="$1" old_version new_version newdir backup_file out rc
-  [ -f "$pkg" ] || die "找不到离线包:$pkg"
+  local pkg new_version newdir out rc entries before after
+  [ -f "$1" ] || die "找不到离线包:$1"
+  # 包路径先转成绝对路径,后面 cd 到部署目录后仍然有效
+  pkg="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
   [ -f "$ENV_FILE" ] || die "当前目录没有 .env,看起来还没安装;请先运行 scripts/install.sh"
   [ -f "$DEPLOY_DIR/VERSION" ] || die "部署目录里缺少 VERSION 文件"
   require_cmd docker "请先安装 Docker Engine"
   cd "$DEPLOY_DIR"
 
-  # 1. 解包、校验、版本检查
+  # 1. 校验、解包、版本检查(解包目录放在部署目录下的隐藏临时目录,与磁盘门槛检查对应同一块盘)
   verify_checksum "$pkg"
-  check_archive_paths "$pkg"
-  WORK="$(mktemp -d "${TMPDIR:-/tmp}/ws-upgrade.XXXXXX")"
-  tar -xzf "$pkg" -C "$WORK"
-  newdir="$(find "$WORK" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
-  [ -n "$newdir" ] && [ -f "$newdir/VERSION" ] && [ -f "$newdir/docker-compose.yml" ] \
-    && [ -d "$newdir/scripts" ] || die "离线包内容不完整(缺少 VERSION、docker-compose.yml 或 scripts/)"
-  new_version="$(tr -d '[:space:]' <"$newdir/VERSION")"
-  old_version="$(tr -d '[:space:]' <"$DEPLOY_DIR/VERSION")"
-  version_ok "$new_version" || die "离线包里的版本号格式不对:$new_version"
-  version_ok "$old_version" || die "当前版本号格式不对:$old_version"
-  if [ "$(major_of "$new_version")" != "$(major_of "$old_version")" ]; then
-    die "当前版本 $old_version,离线包版本 $new_version:大版本升级需要专门的迁移说明,本脚本拒绝执行"
+  check_archive "$pkg"
+  check_disk
+  WORK="$(mktemp -d "$DEPLOY_DIR/.ws-upgrade.XXXXXX")"
+  tar -xzf "$pkg" -C "$WORK" --no-same-owner || die "解包失败"
+  if [ -n "$(find "$WORK" -type l -o -type b -o -type c -o -type p 2>/dev/null | head -n 1)" ]; then
+    die "离线包解开后含有链接或特殊文件,已拒绝"
   fi
-  log_info "升级 $old_version → $new_version"
+  entries="$(find "$WORK" -mindepth 1 -maxdepth 1 | wc -l | tr -d '[:space:]')"
+  newdir="$(find "$WORK" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+  { [ "$entries" -eq 1 ] && [ -n "$newdir" ]; } || die "离线包的顶层必须只有一个目录,已拒绝"
+  { [ -f "$newdir/VERSION" ] && [ -f "$newdir/docker-compose.yml" ] && [ -d "$newdir/scripts" ]; } \
+    || die "离线包内容不完整(缺少 VERSION、docker-compose.yml 或 scripts/)"
+  new_version="$(tr -d '[:space:]' <"$newdir/VERSION")"
+  OLD_VERSION="$(tr -d '[:space:]' <"$DEPLOY_DIR/VERSION")"
+  version_ok "$new_version" || die "离线包里的版本号格式不对:$new_version"
+  version_ok "$OLD_VERSION" || die "当前版本号格式不对:$OLD_VERSION"
+  if [ "$(major_of "$new_version")" != "$(major_of "$OLD_VERSION")" ]; then
+    die "当前版本 $OLD_VERSION,离线包版本 $new_version:大版本升级需要专门的迁移说明,本脚本拒绝执行"
+  fi
+  if version_lt "$new_version" "$OLD_VERSION"; then
+    die "离线包版本 $new_version 低于当前版本 $OLD_VERSION:不支持降级(数据库可能已迁移到更新的结构)。回退请用备份与 restore.sh"
+  fi
+  log_info "升级 $OLD_VERSION → $new_version"
 
-  # 2. 强制备份,失败就停
+  # 2. 强制备份,失败就停;备份前后各列一次清单,必须出现新文件
   [ -x "$DEPLOY_DIR/scripts/backup.sh" ] || die "找不到 scripts/backup.sh,无法做升级前的强制备份,已停止"
   log_info "升级前强制备份……"
+  before="$(list_backups)"
   "$DEPLOY_DIR/scripts/backup.sh" || die "备份失败,已停止升级(未改动任何文件)"
-  backup_file="$(latest_backup)"
-  [ -n "$backup_file" ] || die "备份脚本没有产出备份文件,已停止升级"
-  log_info "备份完成:$backup_file"
+  after="$(list_backups)"
+  BACKUP_FILE="$(comm -13 <(printf '%s\n' "$before") <(printf '%s\n' "$after") | tail -n 1)"
+  [ -n "$BACKUP_FILE" ] && [ -s "$BACKUP_FILE" ] || die "备份脚本没有产出新的备份文件,已停止升级"
+  log_info "备份完成:$BACKUP_FILE"
 
   # 3. 载入新镜像(旧版本镜像标签不删,便于回退)
   if [ "${WS_INSTALL_SKIP_LOAD:-0}" = "1" ]; then
@@ -112,17 +171,19 @@ main() {
   rc=0
   out="$(WS_VERSION="$new_version" compose run --rm -T --no-deps app cli migrate --check-only 2>&1)" || rc=$?
   if [ "$rc" -eq 2 ]; then
-    printf '%s\n' "$out"
-    printf '\n已停止,系统仍在旧版本 %s 上运行,没有覆盖任何文件。请按上面的报告处理数据后重试。\n' "$old_version"
+    printf '%s\n' "$out" | redact
+    printf '\n已停止,系统仍在旧版本 %s 上运行,没有覆盖任何文件。请按上面的报告处理数据后重试。\n' "$OLD_VERSION"
     exit 2
   elif [ "$rc" -ne 0 ]; then
-    printf '%s\n' "$out" | tail -n 15 >&2
-    die "迁移预检执行失败(退出码 $rc)。系统仍在旧版本 $old_version 上运行,没有覆盖任何文件"
+    printf '%s\n' "$out" | tail -n 15 | redact >&2
+    die "迁移预检执行失败(退出码 $rc)。系统仍在旧版本 $OLD_VERSION 上运行,没有覆盖任何文件"
   fi
   log_info "迁移预检通过"
 
   # 5. 覆盖程序文件(不动 .env、Caddyfile、certs/、data/、backups/)
+  # 从这里开始失败会由 EXIT trap 统一打印恢复办法。
   # 用 replace_file(写临时文件再改名):正在运行的本脚本读的是旧文件,不会被改坏
+  OVERWRITE_STARTED=1
   log_info "更新程序文件……"
   local f name
   mkdir -p "$DEPLOY_DIR/scripts" "$DEPLOY_DIR/systemd"
@@ -145,17 +206,16 @@ main() {
 
   # 6. 重启并等健康
   log_info "重启服务……"
-  if ! out="$(compose up -d 2>&1)"; then
+  if ! out="$(compose up -d --pull never 2>&1)"; then
     log_warn "docker compose up 返回非 0,最后几行输出:"
-    printf '%s\n' "$out" | tail -n 8 >&2
+    printf '%s\n' "$out" | tail -n 8 | redact >&2
   fi
-  if ! wait_healthy app 300; then
-    printf '\n升级后应用没有在 300 秒内就绪。回到旧版本 %s 的办法:\n' "$old_version" >&2
-    printf '  1) ./scripts/restore.sh %s\n' "$backup_file" >&2
-    printf '  2) 把 .env 里的 WS_VERSION 改回 %s 后执行 docker compose up -d\n' "$old_version" >&2
+  if ! wait_healthy app "$HEALTH_TIMEOUT"; then
+    log_warn "升级后应用没有在 ${HEALTH_TIMEOUT} 秒内就绪"
     exit 1
   fi
-  log_info "升级完成:当前版本 $new_version。升级前备份:$backup_file"
+  OVERWRITE_STARTED=0
+  log_info "升级完成:当前版本 $new_version。升级前备份:$BACKUP_FILE"
 }
 
 main "$@"

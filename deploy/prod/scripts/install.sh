@@ -4,7 +4,8 @@
 # 安全约定(重点):
 #   * .env 一经存在就视为"已安装",绝不重新生成密钥(重新生成会让已加密的 AI Key 等全部失效)。
 #   * 管理员密码只经标准输入传给容器里的 init-school;不放命令行参数、不写 .env、不打印、不进日志。
-#   * 本脚本不开 set -x,不打印任何密钥值;错误信息不含密钥。
+#   * 本脚本不开 xtrace(逐行回显),不打印任何密钥值;错误信息不含密钥;回显容器输出前先过 redact。
+#   * .env 先写成 .env.tmp、填完全部密钥后一次 mv 成 .env:有 .env 就一定是完整的。
 #
 # 非交互模式的环境变量:
 #   WS_INSTALL_SCHOOL_NAME(必填) WS_INSTALL_ADMIN_LOGIN(默认 admin) WS_INSTALL_SITE(必填)
@@ -14,16 +15,28 @@
 #   WS_HTTP_PORT、WS_HTTPS_PORT(默认 80 / 443)
 # 其他开关:
 #   WS_INSTALL_MIN_DISK_GB 磁盘可用空间门槛(默认 20,只在测试里下调)
+#   WS_INSTALL_HEALTH_TIMEOUT 等应用就绪的秒数(默认 180,只在测试里下调)
 #   WS_INSTALL_SKIP_LOAD=1 跳过 docker load(仅测试用:镜像已在本机;正式离线包不会设置)
 #
 # data/logs 的权限做法(R10):建成当前用户所有的目录并 chmod 1777(粘滞位)。
 #   理由:容器里的应用以 uid 10001 写 app.jsonl,宿主机上执行 backup.sh 的用户(普通用户 / root)写
 #   backup-last.json,两者 uid 不同;不依赖 setfacl / chown(各文件系统与 NFS 上不一定可用),
 #   也不需要 root。粘滞位保证各用户只能删除、改名自己的文件。已有文件由各自属主维护。
+set +x
+unset BASH_XTRACEFD
 set -euo pipefail
 
 # shellcheck source=scripts/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+
+# 交互输入固定从 fd 3 读:把原标准输入挪到 fd 3,fd 0 改成 /dev/null。
+# 否则 docker / docker compose 子进程会继承并吃掉 stdin,管道喂入的交互输入就丢了
+# (需要 stdin 的地方,如 init-school 的密码,由 printf 管道显式提供)
+exec 3<&0 0</dev/null
+
+trap 'lib_cleanup' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 NON_INTERACTIVE=0
 FORCE=0
@@ -83,15 +96,6 @@ check_docker() {
   require_cmd openssl "请先安装 openssl"
 }
 
-check_disk() {
-  local min_gb avail_kb
-  min_gb="${WS_INSTALL_MIN_DISK_GB:-20}"
-  avail_kb="$(df -Pk "$DEPLOY_DIR" | awk 'NR==2 {print $4}')"
-  if [ "$avail_kb" -lt $((min_gb * 1024 * 1024)) ]; then
-    die "部署目录所在磁盘可用空间不足 ${min_gb} GB(当前约 $((avail_kb / 1024 / 1024)) GB)"
-  fi
-}
-
 check_ports() {
   local http="$1" https="$2" p
   for p in "$http" "$https"; do
@@ -113,7 +117,7 @@ ask() {
   local __var="$1" prompt="$2" def="${3:-}" reply=""
   if [ -n "$def" ]; then prompt="$prompt [$def]"; fi
   printf '%s:' "$prompt" >&2
-  read -r reply || true
+  read -r reply <&3 || true
   if [ -z "$reply" ]; then reply="$def"; fi
   printf -v "$__var" '%s' "$reply"
 }
@@ -122,10 +126,10 @@ read_password_interactive() {
   local p1 p2
   while :; do
     printf '管理员密码(至少 8 位,含字母与数字或符号,输入不显示):' >&2
-    read -rs p1 || true
+    read -rs p1 <&3 || { printf '\n' >&2; die "读取管理员密码时输入已结束(没有更多输入)。请在终端里交互运行,或改用 --non-interactive"; }
     printf '\n' >&2
     printf '请再输入一次:' >&2
-    read -rs p2 || true
+    read -rs p2 <&3 || { printf '\n' >&2; die "读取管理员密码时输入已结束(没有更多输入)"; }
     printf '\n' >&2
     if [ -z "$p1" ]; then log_warn "密码不能为空"; continue; fi
     if [ "$p1" != "$p2" ]; then log_warn "两次输入不一致,请重试"; continue; fi
@@ -163,9 +167,30 @@ collect_school_inputs() {
     ask ADMIN_LOGIN "管理员登录名" "admin"
     read_password_interactive
   fi
-  [ "${#SCHOOL_NAME}" -ge 1 ] && [ "${#SCHOOL_NAME}" -le 50 ] || die "学校名称需为 1-50 个字"
+  validate_school_inputs
+}
+
+# 字符数(按 UTF-8 字符,不是字节)。校名等只经命令行传给容器,密码只在这里检查长度,不会进 ps
+utf8_chars() { printf '%s' "$1" | LC_ALL=C.UTF-8 wc -m | tr -d '[:space:]'; }
+
+# 前置校验:全部在生成 .env 之前做,规则与容器里 init-school 一致,这样不会"装到一半才发现输错了"
+validate_school_inputs() {
+  local n bytes kinds=0
+  n="$(utf8_chars "$SCHOOL_NAME")"
+  { [ "$n" -ge 1 ] && [ "$n" -le 50 ]; } || die "学校名称需为 1-50 个字"
+  case "$SCHOOL_NAME" in
+    [[:space:]]*|*[[:space:]]) die "学校名称首尾不能有空白" ;;
+  esac
   printf '%s' "$ADMIN_LOGIN" | grep -Eq '^[A-Za-z0-9_.-]{3,32}$' \
     || die "管理员登录名需为 3-32 位字母、数字或 . _ -"
+  n="$(utf8_chars "$ADMIN_PW")"
+  [ "$n" -ge 8 ] || die "管理员密码至少 8 位"
+  bytes="$(printf '%s' "$ADMIN_PW" | wc -c | tr -d '[:space:]')"
+  [ "$bytes" -le 72 ] || die "管理员密码不能超过 72 个字节"
+  if printf '%s' "$ADMIN_PW" | LC_ALL=C.UTF-8 grep -q '[[:alpha:]]'; then kinds=$((kinds + 1)); fi
+  if printf '%s' "$ADMIN_PW" | LC_ALL=C.UTF-8 grep -q '[[:digit:]]'; then kinds=$((kinds + 1)); fi
+  if printf '%s' "$ADMIN_PW" | LC_ALL=C.UTF-8 grep -q '[^[:alnum:]]'; then kinds=$((kinds + 1)); fi
+  [ "$kinds" -ge 2 ] || die "管理员密码需包含字母、数字、其他字符中的至少两类"
 }
 
 # 首次安装才需要的站点与证书参数
@@ -200,7 +225,7 @@ collect_site_inputs() {
       openssl x509 -noout -in "$CERT_SRC" >/dev/null 2>&1 || die "证书文件不是有效的 PEM 证书:$CERT_SRC"
       ;;
     acme)
-      printf '%s' "$ACME_EMAIL" | grep -Eq '^[^[:space:]@]+@[^[:space:]@]+$' \
+      printf '%s' "$ACME_EMAIL" | grep -Eq '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+$' \
         || die "公网自动申请需要有效的联系邮箱(WS_INSTALL_ACME_EMAIL)"
       ;;
   esac
@@ -233,24 +258,42 @@ new_uuid() {
   fi
 }
 
-# 建 .env(权限 600,建文件前 umask 077)并填入随机密钥;只在首次安装时调用
+# 建 .env(权限 600)并填入随机密钥;只在首次安装时调用。
+# 原子:先在 umask 077 下写 .env.tmp,填完全部键后才 mv 成 .env;中途失败不会留下残缺的 .env,
+# 否则重跑会被当成"已安装"而不再补密钥。
 generate_env() {
-  local pg
-  (umask 077; cp "$DEPLOY_DIR/.env.example" "$ENV_FILE")
-  chmod 600 "$ENV_FILE"
+  local pg tmp="$ENV_FILE.tmp"
+  rm -f "$tmp"
+  register_tmp "$tmp"
+  (umask 077; cp "$DEPLOY_DIR/.env.example" "$tmp")
+  chmod 600 "$tmp"
   pg="$(rand_secret 24 urlsafe)"
-  set_env WS_VERSION "$(tr -d '[:space:]' <"$DEPLOY_DIR/VERSION")"
-  set_env WS_SCHOOL_ID "$(new_uuid)"
-  set_env POSTGRES_PASSWORD "$pg"
-  set_env WS_DATABASE_URL "postgresql+psycopg://workstation:${pg}@postgres:5432/workstation"
-  set_env WS_JWT_SECRET "$(rand_secret 48)"
-  set_env WS_MASTER_KEY "$(rand_secret 32)"
-  set_env WS_SITE_ADDRESS "$SITE"
-  set_env WS_TLS_MODE "$TLS_MODE"
-  set_env WS_ACME_EMAIL "$ACME_EMAIL"
-  set_env WS_HTTP_PORT "$HTTP_PORT"
-  set_env WS_HTTPS_PORT "$HTTPS_PORT"
+  set_env WS_VERSION "$(tr -d '[:space:]' <"$DEPLOY_DIR/VERSION")" "$tmp"
+  set_env WS_SCHOOL_ID "$(new_uuid)" "$tmp"
+  set_env POSTGRES_PASSWORD "$pg" "$tmp"
+  set_env WS_DATABASE_URL "postgresql+psycopg://workstation:${pg}@postgres:5432/workstation" "$tmp"
+  set_env WS_JWT_SECRET "$(rand_secret 48)" "$tmp"
+  set_env WS_MASTER_KEY "$(rand_secret 32)" "$tmp"
+  set_env WS_SITE_ADDRESS "$SITE" "$tmp"
+  set_env WS_TLS_MODE "$TLS_MODE" "$tmp"
+  set_env WS_ACME_EMAIL "$ACME_EMAIL" "$tmp"
+  set_env WS_HTTP_PORT "$HTTP_PORT" "$tmp"
+  set_env WS_HTTPS_PORT "$HTTPS_PORT" "$tmp"
   pg=""
+  mv "$tmp" "$ENV_FILE"
+}
+
+# "已安装"分支:.env 必须是完整的。缺密钥说明 .env 被损坏或被截断;
+# 绝不在这里重新生成(会让已加密的数据永远解不开),让管理员从备份恢复。
+check_env_complete() {
+  local k
+  for k in WS_JWT_SECRET WS_MASTER_KEY POSTGRES_PASSWORD; do
+    [ -n "$(read_env "$k")" ] \
+      || die ".env 里的 $k 为空,.env 可能被损坏。不会重新生成密钥(会让已加密的数据永远无法解开);请从最近一次备份恢复 .env(备份包里的 env 文件)"
+  done
+  case "$(read_env WS_DATABASE_URL)" in
+    *workstation:@*|"") die ".env 里的 WS_DATABASE_URL 缺少数据库密码,.env 可能被损坏;请从最近一次备份恢复 .env" ;;
+  esac
 }
 
 prepare_dirs() {
@@ -277,58 +320,70 @@ place_caddyfile_and_certs() {
 }
 
 start_services() {
-  local out
+  local out limit
   log_info "启动服务……"
-  if ! out="$(compose up -d 2>&1)"; then
+  # --pull never:镜像都是本机已载入的,不联网拉取
+  if ! out="$(compose up -d --pull never 2>&1)"; then
     log_warn "docker compose up 返回非 0,最后几行输出:"
-    printf '%s\n' "$out" | tail -n 8 >&2
+    printf '%s\n' "$out" | tail -n 8 | redact >&2
   fi
-  if ! wait_healthy app 180; then
-    die "应用服务 180 秒内未就绪。请运行 docker compose -p ${WS_COMPOSE_PROJECT:-workstation} --project-directory '$DEPLOY_DIR' logs app 查看原因"
+  limit="${WS_INSTALL_HEALTH_TIMEOUT:-180}"
+  if ! wait_healthy app "$limit"; then
+    die "应用服务 ${limit} 秒内未就绪。请运行 docker compose -p ${WS_COMPOSE_PROJECT:-workstation} --project-directory '$DEPLOY_DIR' logs app 查看原因"
   fi
   log_info "应用服务已就绪"
 }
 
+# 输出 schools 行数;查询失败时输出空(调用者必须检查,不可当成 0)
 school_count() {
   compose exec -T postgres psql -U workstation -d workstation -tA -c "SELECT count(*) FROM schools" 2>/dev/null | tr -d '[:space:]' || true
 }
 
 init_school() {
-  local out rc=0
+  local out rc=0 shown
   log_info "初始化学校与管理员……"
   # 密码只经标准输入(printf 是 shell 内建,不进 ps)传给容器
   out="$(printf '%s\n' "$ADMIN_PW" | compose run --rm -T --no-deps app cli init-school \
     --name "$SCHOOL_NAME" --admin-login "$ADMIN_LOGIN" --admin-password-stdin 2>&1)" || rc=$?
+  # 先在密码还在内存时脱敏,再清掉密码
+  shown="$(printf '%s\n' "$out" | redact)"
   ADMIN_PW=""
   unset ADMIN_PW
   case "$rc" in
-    0) printf '%s\n' "$out" | tail -n 3 ;;
+    0) printf '%s\n' "$shown" | tail -n 3 ;;
     3) log_info "学校已初始化过,未做任何改动" ;;
     *)
-      printf '%s\n' "$out" | tail -n 6 >&2
+      printf '%s\n' "$shown" | tail -n 6 >&2
       die "初始化学校失败(退出码 $rc)。修正后重新运行本脚本即可继续,不会重新生成密钥"
       ;;
   esac
 }
 
+# 写单元文件并启用定时器;任何一步失败返回非 0(调用者降级为 crontab 提示)
+enable_backup_timer() {
+  local unit content
+  for unit in workstation-backup.service workstation-backup.timer; do
+    [ -f "$DEPLOY_DIR/systemd/$unit" ] || { log_warn "没有找到 systemd 单元文件 systemd/$unit"; return 1; }
+  done
+  for unit in workstation-backup.service workstation-backup.timer; do
+    # 单元模板里的 @DEPLOY_DIR@ 替换为本部署目录
+    content="$(<"$DEPLOY_DIR/systemd/$unit")"
+    printf '%s\n' "${content//@DEPLOY_DIR@/$DEPLOY_DIR}" >"/etc/systemd/system/$unit" || return 1
+  done
+  systemctl daemon-reload || return 1
+  systemctl enable --now workstation-backup.timer || return 1
+}
+
 install_backup_timer() {
-  local unit missing=0 content
   if [ "$(id -u)" -eq 0 ] && command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
-    for unit in workstation-backup.service workstation-backup.timer; do
-      if [ ! -f "$DEPLOY_DIR/systemd/$unit" ]; then missing=1; continue; fi
-      # 单元模板里的 @DEPLOY_DIR@ 替换为本部署目录
-      content="$(<"$DEPLOY_DIR/systemd/$unit")"
-      printf '%s\n' "${content//@DEPLOY_DIR@/$DEPLOY_DIR}" >"/etc/systemd/system/$unit"
-    done
-    if [ "$missing" -eq 0 ]; then
-      systemctl daemon-reload
-      systemctl enable --now workstation-backup.timer
+    if enable_backup_timer; then
       log_info "已启用每日 02:30 自动备份(systemd 定时器 workstation-backup.timer)"
       return 0
     fi
-    log_warn "没有找到 systemd 单元文件(systemd/workstation-backup.*),未能装好自动备份定时器"
+    log_warn "systemd 定时器没有装好(上面是原因),改用 crontab:"
+  else
+    log_warn "未安装自动备份定时器(非 root 或没有 systemd)。请手动添加 crontab(crontab -e):"
   fi
-  log_warn "未安装自动备份定时器(非 root 或没有 systemd)。请手动添加 crontab(crontab -e):"
   printf '    30 2 * * * cd %q && ./scripts/backup.sh >> data/logs/backup.log 2>&1\n' "$DEPLOY_DIR"
 }
 
@@ -366,6 +421,7 @@ print_summary() {
 }
 
 main() {
+  local count
   parse_args "$@"
   cd "$DEPLOY_DIR"
   [ -f "$DEPLOY_DIR/VERSION" ] || die "部署目录里缺少 VERSION 文件,请在解开的离线包目录里运行"
@@ -378,14 +434,20 @@ main() {
     # R9:.env 存在即视为已安装,绝不重新生成密钥
     log_info "检测到 .env:系统已安装,不会重新生成密钥,只确保服务已启动"
     HTTP_PORT="$(read_env WS_HTTP_PORT)"; HTTPS_PORT="$(read_env WS_HTTPS_PORT)"
+    check_env_complete
     check_disk
     prepare_dirs
     start_services
-    if [ "$(school_count)" = "0" ]; then
+    count="$(school_count)"
+    case "$count" in
+      ''|*[!0-9]*) die "无法查询数据库里的学校数量(可能数据库没有就绪或表还没建好),为避免误判已停止。请检查 docker compose logs 后重新运行" ;;
+    esac
+    if [ "$count" = "0" ]; then
       log_warn "数据库里还没有学校(上次安装可能在初始化前中断),现在补做初始化"
       collect_school_inputs
       init_school
     fi
+    export_root_ca
   else
     if [ -d "$DEPLOY_DIR/data/pg" ]; then
       die "发现已有数据但缺少 .env,请从备份恢复 .env(备份包里的 env 文件)。为避免覆盖现有数据,本脚本已停止"
