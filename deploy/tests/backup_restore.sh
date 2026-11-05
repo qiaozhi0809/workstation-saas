@@ -282,21 +282,22 @@ pass "诊断包:文件齐全、600、不含 .env、金丝雀日志里的密钥/�
 echo "-- 6b 以 xtrace 方式运行 backup.sh / diagnose.sh:输出里不得有密钥(S-3)"
 # 脚本第一条命令就是 set +x(并 unset BASH_XTRACEFD),所以即使调用者设了 SHELLOPTS=xtrace 或 bash -x,
 # 只有 "+ set +x" 这样的开头几行会被回显,这几行不含密钥;之后全部静默。
+# (用 env 传 SHELLOPTS:bash 里 SHELLOPTS 是只读变量,写成 `SHELLOPTS=xtrace cmd` 会报错,而且 bash 3.2 下会让脚本悄悄以 0 退出。)
 # 先做正向对照:同样的环境变量下,一个没有 set +x 的脚本确实会把密钥回显到 stderr(扫描器抓得到),证明下面的"干净"有意义。
-WS_XT_CTRL="$(env_value WS_JWT_SECRET)" SHELLOPTS=xtrace bash -c ': "$WS_XT_CTRL"' 2>"$TMP/xt-ctrl.err" || fail "xtrace 对照脚本运行失败"
+env WS_XT_CTRL="$(env_value WS_JWT_SECRET)" SHELLOPTS=xtrace bash -c ': "$WS_XT_CTRL"' 2>"$TMP/xt-ctrl.err" || fail "xtrace 对照脚本运行失败"
 rc=0; scan_file "$TMP/xt-ctrl.err" || rc=$?
 [ "$rc" -eq 1 ] || fail "xtrace 对照:没开 set +x 的脚本在 SHELLOPTS=xtrace 下应当泄露密钥(rc=$rc),说明测试方法无效"
 rm -f "$TMP/xt-ctrl.err"
 mkdir -p "$TMP/diag-out3"
 rc=0
-( cd "$DEPLOY" && SHELLOPTS=xtrace ./scripts/backup.sh --keep 5 ) >"$TMP/xt-backup.out" 2>"$TMP/xt-backup.err" || rc=$?
+( cd "$DEPLOY" && env SHELLOPTS=xtrace ./scripts/backup.sh --keep 5 ) >"$TMP/xt-backup.out" 2>"$TMP/xt-backup.err" || rc=$?
 [ "$rc" -eq 0 ] || { tail -n 10 "$TMP/xt-backup.err" >&2; fail "SHELLOPTS=xtrace 下 backup.sh 退出码 $rc"; }
 rc=0
-( cd "$DEPLOY" && SHELLOPTS=xtrace TMPDIR="$TMP/diag-tmp" ./scripts/diagnose.sh --out "$TMP/diag-out3" ) >"$TMP/xt-diag.out" 2>"$TMP/xt-diag.err" || rc=$?
+( cd "$DEPLOY" && env SHELLOPTS=xtrace TMPDIR="$TMP/diag-tmp" ./scripts/diagnose.sh --out "$TMP/diag-out3" ) >"$TMP/xt-diag.out" 2>"$TMP/xt-diag.err" || rc=$?
 [ "$rc" -eq 0 ] || { tail -n 10 "$TMP/xt-diag.err" >&2; fail "SHELLOPTS=xtrace 下 diagnose.sh 退出码 $rc"; }
 # BASH_XTRACEFD 指向文件的变体:trace 写进该文件(而不是 stderr),同样不得含密钥
 rc=0
-( cd "$DEPLOY" && BASH_XTRACEFD=7 SHELLOPTS=xtrace ./scripts/backup.sh --keep 5 7>"$TMP/xt-fd.txt" ) >"$TMP/xt-fd.out" 2>"$TMP/xt-fd.err" || rc=$?
+( cd "$DEPLOY" && env BASH_XTRACEFD=7 SHELLOPTS=xtrace ./scripts/backup.sh --keep 5 7>"$TMP/xt-fd.txt" ) >"$TMP/xt-fd.out" 2>"$TMP/xt-fd.err" || rc=$?
 [ "$rc" -eq 0 ] || { tail -n 10 "$TMP/xt-fd.err" >&2; fail "BASH_XTRACEFD + xtrace 下 backup.sh 退出码 $rc"; }
 for n in xt-backup.out xt-backup.err xt-diag.out xt-diag.err xt-fd.out xt-fd.err xt-fd.txt; do
   assert_no_secrets "xtrace 方式运行的输出 $n" "$TMP/$n"

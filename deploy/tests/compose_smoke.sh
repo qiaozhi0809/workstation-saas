@@ -219,7 +219,7 @@ sched_state="$(docker inspect -f '{{.State.Running}} {{.RestartCount}}' "$(compo
 [ "$sched_state" = "true 0" ] || fail "scheduler 应在运行且重启次数为 0,实际:$sched_state"
 pass "scheduler 在运行且未重启"
 hc_start="$(docker inspect -f '{{.Config.Healthcheck.StartPeriod}}' "$(compose ps -q app)")"
-[ "$hc_start" = "300000000000" ] || fail "app 的健康检查启动宽限期应为 300s(compose 覆盖),实际(纳秒):$hc_start"
+[ "$hc_start" = "5m0s" ] || fail "app 的健康检查启动宽限期应为 5m0s(300s,compose 覆盖),实际:$hc_start"
 pass "app 健康检查启动宽限期为 300s(只覆盖 start_period,其余沿用镜像)"
 web_health="$(docker inspect -f '{{.State.Health.Status}}' "$(compose ps -q web)")"
 [ "$web_health" = "healthy" ] || fail "web 应为 healthy,实际:$web_health"
