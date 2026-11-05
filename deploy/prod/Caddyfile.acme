@@ -1,0 +1,18 @@
+# 证书方式 acme:自动向公共 CA 申请证书(需公网可达与联网)
+{$WS_SITE_ADDRESS} {
+	tls {$WS_ACME_EMAIL}
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy same-origin
+	}
+	encode gzip
+	handle /api/* {
+		reverse_proxy app:8080
+	}
+	handle {
+		root * /srv/www
+		try_files {path} /index.html
+		file_server
+	}
+}
