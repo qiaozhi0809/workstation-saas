@@ -1,4 +1,6 @@
-.PHONY: dev dev-down backend web migrate seed reset-db test
+.PHONY: dev dev-down backend web migrate seed reset-db test image
+
+VERSION ?= 0.0.0-dev
 
 dev:
 	docker compose -f deploy/docker-compose.dev.yml up -d --wait
@@ -24,3 +26,7 @@ reset-db:
 test:
 	cd server && uv run pytest
 	cd apps/web && npm run test
+
+image:
+	docker build -f deploy/docker/app.Dockerfile --build-arg WS_APP_VERSION=$(VERSION) -t workstation-app:$(VERSION) .
+	docker build -f deploy/docker/web.Dockerfile -t workstation-web:$(VERSION) .

@@ -1,0 +1,10 @@
+[Unit]
+Description=教学工作台每日备份定时器(每天 02:30)
+
+[Timer]
+OnCalendar=*-*-* 02:30:00
+Persistent=true
+Unit=workstation-backup.service
+
+[Install]
+WantedBy=timers.target
