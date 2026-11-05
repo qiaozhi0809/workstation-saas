@@ -9,6 +9,7 @@ from sqlalchemy import create_engine
 
 from app.auth.router import router as auth_router
 from app.config import Settings, get_settings
+from app.deploy.system_router import router as system_router  # M5a 段 A
 from app.domain.accounts.router import router as accounts_router  # M3a 段 E
 from app.domain.ai.router import router as ai_router
 from app.domain.ai_admin.router import router as ai_admin_router  # M3b 段 D
@@ -46,7 +47,7 @@ from app.ws.router import router as ws_router  # M3b 段 A
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
-    configure_logging(settings.log_level)
+    configure_logging(settings.log_level, settings.log_dir, settings.log_retention_days)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -108,5 +109,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     router.include_router(parent_views_router)  # M4a 段 D
     router.include_router(acks_router)  # M4b 段 A
     router.include_router(class_notices_router)  # M4b 段 A
+    router.include_router(system_router)  # M5a 段 A
     app.include_router(router)
     return app
