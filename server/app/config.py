@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     login_lock_seconds: int = 900
     log_level: str = "INFO"
     master_key: str = DEV_MASTER_KEY
+    log_dir: Path | None = None
+    log_retention_days: int = 14
     # 逗号分隔的 IP / CIDR;直连地址在其中时才采信 X-Forwarded-For
     trusted_proxies: Annotated[list[str], NoDecode] = []
     _trusted_networks: list[IPNetwork] = PrivateAttr(default_factory=list)
@@ -46,6 +48,13 @@ class Settings(BaseSettings):
     def _split_trusted_proxies(cls, value: object) -> object:
         if isinstance(value, str):
             return [part.strip() for part in value.split(",")] if value.strip() else []
+        return value
+
+    @field_validator("log_retention_days")
+    @classmethod
+    def _retention_range(cls, value: int) -> int:
+        if not 7 <= value <= 30:
+            raise ValueError("WS_LOG_RETENTION_DAYS 必须在 7–30 之间")
         return value
 
     @model_validator(mode="after")

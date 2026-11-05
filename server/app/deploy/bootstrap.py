@@ -4,6 +4,7 @@ import re
 from typing import Literal
 
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.audit.service import record
@@ -75,6 +76,12 @@ def init_school(
             extra={"school_name": name, "admin_login": admin_login, "via": "cli"},
         )
         db.commit()
+    except IntegrityError:
+        # 并发安装的输家:赢家已提交,按"已初始化过"处理
+        db.rollback()
+        if db.get(School, school_id) is not None:
+            return "exists"
+        raise
     except Exception:
         db.rollback()
         raise

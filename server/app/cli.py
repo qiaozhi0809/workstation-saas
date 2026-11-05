@@ -207,6 +207,21 @@ def parent_archive(
     return 0
 
 
+def scheduler_cmd(
+    ns: argparse.Namespace,
+    *,
+    db_factory: Callable[[], AbstractContextManager[Session]],
+    redis: Redis,
+    out: TextIO,
+) -> int:
+    """--once:跑一次到期任务就退出,打印执行了的任务名;否则常驻(见 deploy/scheduler.py)。"""
+    from app.deploy import scheduler
+
+    for name in scheduler.run_due(db_factory, redis, scheduler.utc_now()):
+        print(name, file=out)
+    return 0
+
+
 def migrate(ns: argparse.Namespace, *, engine: Engine, out: TextIO) -> int:
     """迁移预检 + alembic upgrade head。退出码:0 通过 / 已最新,2 预检不通过,1 其他错误。"""
     from alembic import command
@@ -293,6 +308,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     pa = sub.add_parser("parent-archive", help="归档只读满一年的家长绑定与账号")
     pa.add_argument("--dry-run", action="store_true", help="只统计,不改数据")
+    sc = sub.add_parser("scheduler", help="定时任务(家长归档等);--once 只跑一次到期任务")
+    sc.add_argument("--once", action="store_true", help="跑一次到期任务就退出")
     yu = sub.add_parser("year-upgrade", help="学年升级:生成方案、预览、执行、回滚")
     ya = yu.add_subparsers(dest="action", required=True)
     ys = ya.add_parser("suggest", help="按现有班级生成升级方案 JSON")
@@ -342,6 +359,25 @@ def main() -> None:
         redis = Redis.from_url(get_settings().redis_url, decode_responses=True)
         try:
             code = parent_archive(
+                ns, db_factory=sessionmaker(bind=engine), redis=redis, out=sys.stdout
+            )
+        finally:
+            redis.close()
+            engine.dispose()
+        sys.exit(code)
+    elif ns.command == "scheduler":
+        from app.deploy import scheduler
+        from app.logging import configure_logging
+
+        settings = get_settings()
+        configure_logging(settings.log_level)
+        if not ns.once:
+            scheduler.serve(settings)
+            sys.exit(0)
+        engine = create_engine(settings.database_url)
+        redis = Redis.from_url(settings.redis_url, decode_responses=True)
+        try:
+            code = scheduler_cmd(
                 ns, db_factory=sessionmaker(bind=engine), redis=redis, out=sys.stdout
             )
         finally:
