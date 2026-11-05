@@ -225,8 +225,9 @@ jobs:
 
       # runner 自带 shellcheck;-S warning 与本地、计划一致
       - name: Shellcheck
-        # -x 跟进 source 进来的文件(与段 B 本地一致);不加 -x 时 lib.sh 的可选参数函数会误报 SC2120
-        run: shellcheck -S warning -x deploy/prod/scripts/*.sh deploy/tests/*.sh deploy/release/*.sh
+        # -x 跟进 source(与段 B 本地一致)。再排除 SC2120:runner 上较新的 shellcheck 对 lib.sh 的 secret_values
+        # (可选参数 ${1:-$ENV_FILE},调用者都不传)报警,加 -x 也没用;待 B 的 lib.sh 加 disable 注释后可去掉(E-7)
+        run: shellcheck -S warning -x -e SC2120 deploy/prod/scripts/*.sh deploy/tests/*.sh deploy/release/*.sh
 
       - name: Build offline bundle
         run: deploy/release/build-bundle.sh "$WS_TEST_VERSION"
