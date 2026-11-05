@@ -9,7 +9,8 @@
 #
 # 非交互模式的环境变量:
 #   WS_INSTALL_SCHOOL_NAME(必填) WS_INSTALL_ADMIN_LOGIN(默认 admin) WS_INSTALL_SITE(必填)
-#   WS_INSTALL_ADMIN_PASSWORD 或 WS_INSTALL_ADMIN_PASSWORD_FILE(取文件第一行;更稳妥,环境变量会留在调用者环境里)
+#   WS_INSTALL_ADMIN_PASSWORD 或 WS_INSTALL_ADMIN_PASSWORD_FILE(取文件第一行;更稳妥,环境变量会留在调用者环境里;
+#     密码文件权限请设 600,装完后删除。WS_INSTALL_ADMIN_PASSWORD 在读完参数后立刻读入变量并从环境 unset)
 #   WS_INSTALL_TLS(1/internal 内部证书,2/custom 自备证书,3/acme 自动申请;默认 1)
 #   WS_INSTALL_CERT、WS_INSTALL_KEY(自备证书的文件路径) WS_INSTALL_ACME_EMAIL(acme 用)
 #   WS_HTTP_PORT、WS_HTTPS_PORT(默认 80 / 443)
@@ -26,7 +27,8 @@ set +x
 unset BASH_XTRACEFD
 set -euo pipefail
 
-# shellcheck source=scripts/lib.sh
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 # 交互输入固定从 fd 3 读:把原标准输入挪到 fd 3,fd 0 改成 /dev/null。
@@ -43,6 +45,7 @@ FORCE=0
 SCHOOL_NAME=""
 ADMIN_LOGIN=""
 ADMIN_PW=""
+INSTALL_PW_ENV=""   # 启动时从环境变量 WS_INSTALL_ADMIN_PASSWORD 读入的管理员密码(读完立刻 unset,不让后面起的任何子进程继承)
 SITE=""
 TLS_MODE=""
 ACME_EMAIL=""
@@ -90,6 +93,7 @@ check_os() {
 check_docker() {
   require_cmd docker "请先安装 Docker Engine"
   docker compose version >/dev/null 2>&1 || die "缺少 docker compose 插件,请安装 docker-compose-plugin"
+  require_compose_version
   if ! docker info >/dev/null 2>&1; then
     die "当前用户无法使用 docker。请把用户加入 docker 组(sudo usermod -aG docker \$USER,重新登录后生效),或用 sudo 运行"
   fi
@@ -157,10 +161,9 @@ collect_school_inputs() {
       [ -r "$WS_INSTALL_ADMIN_PASSWORD_FILE" ] || die "读不到密码文件:$WS_INSTALL_ADMIN_PASSWORD_FILE"
       IFS= read -r ADMIN_PW <"$WS_INSTALL_ADMIN_PASSWORD_FILE" || true
     else
-      ADMIN_PW="${WS_INSTALL_ADMIN_PASSWORD:-}"
+      ADMIN_PW="$INSTALL_PW_ENV"
     fi
-    # 环境变量里的密码在调用者环境中;读走之后立刻从本进程环境清除,不让子进程继承
-    unset WS_INSTALL_ADMIN_PASSWORD
+    INSTALL_PW_ENV=""
     [ -n "$ADMIN_PW" ] || die "非交互模式需要 WS_INSTALL_ADMIN_PASSWORD 或 WS_INSTALL_ADMIN_PASSWORD_FILE"
   else
     ask SCHOOL_NAME "学校名称(1-50 字)"
@@ -181,15 +184,15 @@ validate_school_inputs() {
   case "$SCHOOL_NAME" in
     [[:space:]]*|*[[:space:]]) die "学校名称首尾不能有空白" ;;
   esac
-  printf '%s' "$ADMIN_LOGIN" | grep -Eq '^[A-Za-z0-9_.-]{3,32}$' \
+  str_grep "$ADMIN_LOGIN" -Eq '^[A-Za-z0-9_.-]{3,32}$' \
     || die "管理员登录名需为 3-32 位字母、数字或 . _ -"
   n="$(utf8_chars "$ADMIN_PW")"
   [ "$n" -ge 8 ] || die "管理员密码至少 8 位"
   bytes="$(printf '%s' "$ADMIN_PW" | wc -c | tr -d '[:space:]')"
   [ "$bytes" -le 72 ] || die "管理员密码不能超过 72 个字节"
-  if printf '%s' "$ADMIN_PW" | LC_ALL=C.UTF-8 grep -q '[[:alpha:]]'; then kinds=$((kinds + 1)); fi
-  if printf '%s' "$ADMIN_PW" | LC_ALL=C.UTF-8 grep -q '[[:digit:]]'; then kinds=$((kinds + 1)); fi
-  if printf '%s' "$ADMIN_PW" | LC_ALL=C.UTF-8 grep -q '[^[:alnum:]]'; then kinds=$((kinds + 1)); fi
+  if LC_ALL=C.UTF-8 str_grep "$ADMIN_PW" -q '[[:alpha:]]'; then kinds=$((kinds + 1)); fi
+  if LC_ALL=C.UTF-8 str_grep "$ADMIN_PW" -q '[[:digit:]]'; then kinds=$((kinds + 1)); fi
+  if LC_ALL=C.UTF-8 str_grep "$ADMIN_PW" -q '[^[:alnum:]]'; then kinds=$((kinds + 1)); fi
   [ "$kinds" -ge 2 ] || die "管理员密码需包含字母、数字、其他字符中的至少两类"
 }
 
@@ -217,7 +220,7 @@ collect_site_inputs() {
     fi
   fi
   # 地址只允许域名 / IPv4 字符,避免带进 .env 与 Caddyfile 后被当成别的配置
-  printf '%s' "$SITE" | grep -Eq '^[A-Za-z0-9._-]+$' || die "访问地址只能含字母、数字、点、短横线与下划线:$SITE"
+  str_grep "$SITE" -Eq '^[A-Za-z0-9._-]+$' || die "访问地址只能含字母、数字、点、短横线与下划线:$SITE"
   case "$TLS_MODE" in
     custom)
       [ -r "$CERT_SRC" ] || die "自备证书模式需要可读的证书文件(WS_INSTALL_CERT):${CERT_SRC:-未提供}"
@@ -225,7 +228,7 @@ collect_site_inputs() {
       openssl x509 -noout -in "$CERT_SRC" >/dev/null 2>&1 || die "证书文件不是有效的 PEM 证书:$CERT_SRC"
       ;;
     acme)
-      printf '%s' "$ACME_EMAIL" | grep -Eq '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+$' \
+      str_grep "$ACME_EMAIL" -Eq '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+$' \
         || die "公网自动申请需要有效的联系邮箱(WS_INSTALL_ACME_EMAIL)"
       ;;
   esac
@@ -320,18 +323,10 @@ place_caddyfile_and_certs() {
 }
 
 start_services() {
-  local out limit
   log_info "启动服务……"
-  # --pull never:镜像都是本机已载入的,不联网拉取
-  if ! out="$(compose up -d --pull never 2>&1)"; then
-    log_warn "docker compose up 返回非 0,最后几行输出:"
-    printf '%s\n' "$out" | tail -n 8 | redact >&2
-  fi
-  limit="${WS_INSTALL_HEALTH_TIMEOUT:-180}"
-  if ! wait_healthy app "$limit"; then
-    die "应用服务 ${limit} 秒内未就绪。请运行 docker compose -p ${WS_COMPOSE_PROJECT:-workstation} --project-directory '$DEPLOY_DIR' logs app 查看原因"
-  fi
-  log_info "应用服务已就绪"
+  # 全部服务都要起来才算完成:app 健康、scheduler 在运行、web 健康(见 lib.sh 的 start_and_verify;--pull never 不联网拉取)
+  start_and_verify "${WS_INSTALL_HEALTH_TIMEOUT:-180}"
+  log_info "应用、定时任务与 web 服务均已就绪"
 }
 
 # 输出 schools 行数;查询失败时输出空(调用者必须检查,不可当成 0)
@@ -427,6 +422,10 @@ print_summary() {
 main() {
   local count
   parse_args "$@"
+  # 读完参数后立刻把环境变量里的管理员密码收进普通变量并从环境清除:
+  # 之后 docker / docker compose 等任何子进程都不会继承它(环境变量对同用户进程可见)
+  INSTALL_PW_ENV="${WS_INSTALL_ADMIN_PASSWORD:-}"
+  unset WS_INSTALL_ADMIN_PASSWORD
   cd "$DEPLOY_DIR"
   case "$DEPLOY_DIR" in
     *[[:space:]]*|*%*|*\$*|*\&*) die "部署目录路径里不能含空格或 % $ & 这些字符(会让 systemd 定时备份与脚本出错)。请把部署目录改到不含这些字符的路径(例如 /opt/workstation)再安装" ;;

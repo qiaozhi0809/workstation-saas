@@ -41,6 +41,11 @@ services:
       TZ: ${TZ:-Asia/Shanghai}
     volumes:
       - ./data/logs:/var/log/workstation
+    # 只覆盖启动宽限期,其余(检查命令、间隔、重试次数)沿用镜像的 HEALTHCHECK:
+    # app 启动时会自动做数据库迁移,数据量大时可能超过镜像里默认的 60 秒宽限期,
+    # 过早判成 unhealthy 会让依赖它的 scheduler 起不来、安装 / 升级 / 恢复误报失败
+    healthcheck:
+      start_period: 300s
     depends_on:
       postgres:
         condition: service_healthy

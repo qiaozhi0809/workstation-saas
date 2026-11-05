@@ -12,7 +12,8 @@ set +x
 unset BASH_XTRACEFD
 set -euo pipefail
 
-# shellcheck source=scripts/lib.sh
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 umask 077
@@ -47,14 +48,14 @@ main() {
       *) usage >&2; die "不认识的参数:$1" ;;
     esac
   done
-  printf '%s' "$keep" | grep -Eq '^[1-9][0-9]*$' || die "--keep 必须是不小于 1 的整数"
+  str_grep "$keep" -Eq '^[1-9][0-9]*$' || die "--keep 必须是不小于 1 的整数"
 
   [ -f "$ENV_FILE" ] || die "当前目录没有 .env,看起来还没安装;请先运行 scripts/install.sh"
   [ -f "$DEPLOY_DIR/VERSION" ] || die "部署目录里缺少 VERSION 文件"
   require_cmd docker "请先安装 Docker Engine"
   cd "$DEPLOY_DIR"
   version="$(tr -d '[:space:]' <"$DEPLOY_DIR/VERSION")"
-  printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$' || die "VERSION 里的版本号格式不对:$version"
+  str_grep "$version" -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$' || die "VERSION 里的版本号格式不对:$version"
 
   service_running postgres || die "数据库服务没有在运行。请先执行:docker compose -p ${WS_COMPOSE_PROJECT:-workstation} --project-directory '$DEPLOY_DIR' up -d postgres"
   service_running web || die "web 服务没有在运行,取不到 Caddy 数据。请先执行:docker compose -p ${WS_COMPOSE_PROJECT:-workstation} --project-directory '$DEPLOY_DIR' up -d web"
@@ -69,7 +70,7 @@ main() {
 
   # 当前迁移版本(manifest 里记录,恢复时用来拒绝比镜像新的备份)
   migration="$(pg_sh 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tA -c "SELECT version_num FROM alembic_version"' 2>"$errf" | tr -d '[:space:]')" || true
-  printf '%s' "$migration" | grep -Eq '^[0-9A-Za-z_]+$' || { redact <"$errf" >&2; die "读取数据库迁移版本失败(库是否已初始化?)"; }
+  str_grep "$migration" -Eq '^[0-9A-Za-z_]+$' || { redact <"$errf" >&2; die "读取数据库迁移版本失败(库是否已初始化?)"; }
 
   log_info "导出数据库……"
   if ! pg_sh 'pg_dump -Fc -U "$POSTGRES_USER" "$POSTGRES_DB"' >"$stage/db.dump" 2>"$errf"; then

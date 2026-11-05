@@ -3,14 +3,15 @@
 #
 # 生成 ws-host-diagnostics-<时间>.tar.gz(权限 600),内含 docker compose ps、docker version、df -h、
 # free -m、uname -a、各服务最近 24 小时日志。命令不存在或失败时写"不可用",不让脚本失败。
-# 全部内容先经打码再入包:.env 里的每个密钥值(含连接串里的密码)→ ***,手机号 → 1**********,
+# 全部内容先经打码再入包:.env 里键名含 SECRET / KEY / PASSWORD / TOKEN 的每个值与连接串里的密码 → ***,手机号 → 1**********,
 # Bearer 令牌与 JWT 形状的串 → ***。不含 .env;不使用 docker compose config / docker inspect
 # (它们会展开密钥)。密钥值经环境变量交给 awk,不进命令行参数。
 set +x
 unset BASH_XTRACEFD
 set -euo pipefail
 
-# shellcheck source=scripts/lib.sh
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 umask 077
@@ -25,35 +26,10 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-# 连接串里的密码:scheme://用户:密码@主机/...,取第一个 ":"(用户名之后)与最后一个 "@" 之间的部分(贪婪匹配,
-# 密码里含 "@" 时也能整段取到)
-url_password() {
-  printf '%s' "$1" | sed -n -E 's#^[A-Za-z0-9+.-]+://[^:@/]*:(.*)@[^@]*$#\1#p' | head -n 1
-}
-
-# mask:标准输入 → 标准输出。先精确替换密钥值(read_env 已去掉引号与 \r,所以 .env 里写成带引号的形式也能替换,
-# 容器日志里不带引号的值同样会被替换),再交给 lib.sh 的 mask_shapes 按形状打码。
-mask() {
-  WS_DG1="$(read_env WS_JWT_SECRET)" WS_DG2="$(read_env WS_MASTER_KEY)" WS_DG3="$(read_env POSTGRES_PASSWORD)" \
-  WS_DG4="$(url_password "$(read_env WS_DATABASE_URL)")" WS_DG5="$(url_password "$(read_env WS_REDIS_URL)")" awk '
-    BEGIN {
-      n = 0
-      for (i = 1; i <= 5; i++) { v = ENVIRON["WS_DG" i]; if (length(v) >= 4) s[++n] = v }
-    }
-    {
-      line = $0
-      for (i = 1; i <= n; i++) {
-        out = ""
-        while ((p = index(line, s[i])) > 0) {
-          out = out substr(line, 1, p - 1) "***"
-          line = substr(line, p + length(s[i]))
-        }
-        line = out line
-      }
-      print line
-    }' \
-  | mask_shapes
-}
+# mask:标准输入 → 标准输出。先用 lib.sh 的 redact 精确替换 .env 里全部密钥值(键名含 SECRET / KEY / PASSWORD / TOKEN 的值,
+# 以及各连接串里的密码;read_env 已去掉引号与 \r,所以 .env 里写成带引号的形式也能替换,容器日志里不带引号的值同样会被替换),
+# 再交给 mask_shapes 按形状打码(JWT、Bearer、Cookie、手机号等)。
+mask() { redact | mask_shapes; }
 
 # capture <文件名> <命令...>:命令输出(含 stderr)打码后写入;命令不存在或失败时写"不可用"
 capture() {

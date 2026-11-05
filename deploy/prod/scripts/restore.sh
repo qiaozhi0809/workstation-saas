@@ -3,7 +3,7 @@
 #
 # 所有校验都在动数据库之前完成:文件存在可读、归档完整且只含 4 个普通文件(拒绝路径穿越、链接)、
 # manifest.json 严格符合本系统格式、sha256 全部对得上、env 含必需键且值非空、caddy.tar 可完整读出且不含绝对路径 / .. /
-# 链接 / 设备文件、大版本一致、备份的迁移版本不比当前镜像的 head 新、磁盘空间够(db.dump 大小的 3 倍)。
+# 链接 / 设备文件、大版本一致、备份的迁移版本不比当前镜像的 head 新、磁盘空间够(max(当前库大小, db.dump 大小的 6 倍)的 1.2 倍,见"3. 先恢复进临时库"处的说明)。
 # 取镜像 head 的办法:用当前 app 镜像执行 python 读 alembic 的 ScriptDirectory(不连库、不改库)。
 #
 # 恢复顺序与理由:
@@ -20,14 +20,16 @@
 #      结果与当前 .env 不同时,旧 .env 另存为 .env.before-restore-<时间>(600)。
 #   4) web 保持运行,经容器把 Caddy 数据写回(--no-same-owner),再重启 web 让 Caddy 重新加载证书。
 #   5) 清 Redis(会话全部失效,所有人重新登录;在 app 停止期间清,避免与新进程竞争)。
-#   6) compose up -d --pull never 启动全部服务(app 启动时自动迁移到当前版本),等 app 健康。
+#   6) compose up -d --pull never 启动全部服务(app 启动时自动迁移到当前版本),等 app 健康后再 up 一次,
+#      并确认 scheduler 在运行、web 健康(start_and_verify),缺一不报"恢复完成"。
 # 备份 / 恢复 / 升级互斥(backups/.lock)。
 # 安全约定:不开 xtrace;不打印 .env 内容与密钥;回显容器输出前先过 redact;解包用 --no-same-owner。
 set +x
 unset BASH_XTRACEFD
 set -euo pipefail
 
-# shellcheck source=scripts/lib.sh
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 umask 077
@@ -141,23 +143,25 @@ check_archive() {
   gzip -t "$pkg" 2>/dev/null || die "备份文件无法读取(文件损坏、不完整或不是 tar.gz),已拒绝,数据库未改动"
   list="$(tar -tzf "$pkg" 2>/dev/null)" || die "备份文件无法读取(文件损坏、不完整或不是 tar.gz),已拒绝,数据库未改动"
   [ -n "$list" ] || die "备份文件是空的,已拒绝"
-  if printf '%s\n' "$list" | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
+  # 清单 / 条目表一律用 here-string 喂给 grep:不用 printf | grep -q(pipefail 下 grep 提前退出会让管道返回 141,
+  # 检查被绕过——条目很多、第一项就是链接的恶意归档正是这样绕过 grep -Evq 的)
+  if grep -Eq '(^/|(^|/)\.\.(/|$))' <<<"$list"; then
     die "备份文件里含有不安全的路径(绝对路径或 ..),已拒绝,数据库未改动"
   fi
   vlist="$(tar -tvzf "$pkg" 2>/dev/null)" || die "备份文件无法读取(文件损坏、不完整或不是 tar.gz),已拒绝,数据库未改动"
-  if printf '%s\n' "$vlist" | grep -Evq '^-'; then
+  if grep -Evq '^-' <<<"$vlist"; then
     die "备份文件里含有链接、目录或特殊文件,已拒绝,数据库未改动"
   fi
   names="$(printf '%s\n' "$list" | sed 's#^\./##')"
-  if printf '%s\n' "$names" | grep -Evxq 'db\.dump|env|caddy\.tar|manifest\.json'; then
+  if grep -Evxq 'db\.dump|env|caddy\.tar|manifest\.json' <<<"$names"; then
     die "备份文件里有不认识的条目,已拒绝,数据库未改动"
   fi
   dup="$(printf '%s\n' "$names" | sort | uniq -d)"
   [ -z "$dup" ] || die "备份文件里有重复条目,已拒绝,数据库未改动"
-  printf '%s\n' "$names" | grep -qx 'manifest\.json' || die "备份文件里没有 manifest.json,已拒绝,数据库未改动"
+  grep -qx 'manifest\.json' <<<"$names" || die "备份文件里没有 manifest.json,已拒绝,数据库未改动"
   local f
   for f in db.dump env caddy.tar; do
-    printf '%s\n' "$names" | grep -qx "$f" || die "备份文件不完整,缺少 $f,已拒绝,数据库未改动"
+    grep -qx "$f" <<<"$names" || die "备份文件不完整,缺少 $f,已拒绝,数据库未改动"
   done
 }
 
@@ -167,10 +171,10 @@ check_caddy_tar() {
   list="$(tar -tf "$f" 2>/dev/null)" || die "备份里的 caddy.tar 不是有效的归档(读不出来),已拒绝,数据库未改动"
   vlist="$(tar -tvf "$f" 2>/dev/null)" || die "备份里的 caddy.tar 不是有效的归档(读不出来),已拒绝,数据库未改动"
   [ -n "$list" ] || die "备份里的 caddy.tar 是空的,已拒绝,数据库未改动"
-  if printf '%s\n' "$list" | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
+  if grep -Eq '(^/|(^|/)\.\.(/|$))' <<<"$list"; then
     die "备份里的 caddy.tar 含有不安全的路径(绝对路径或 ..),已拒绝,数据库未改动"
   fi
-  if printf '%s\n' "$vlist" | grep -Evq '^[-d]' || printf '%s\n' "$vlist" | grep -Eq ' -> | link to '; then
+  if grep -Evq '^[-d]' <<<"$vlist" || grep -Eq ' -> | link to ' <<<"$vlist"; then
     die "备份里的 caddy.tar 含有链接或设备文件,已拒绝,数据库未改动"
   fi
 }
@@ -178,7 +182,7 @@ check_caddy_tar() {
 manifest_field() { sed -n "s/^  \"$1\": \"\\([^\"]*\\)\",\$/\\1/p" "$2" | head -n 1; }
 
 main() {
-  local arg yes=0 pkg_arg="" bver cur_version bmig created out rc head known name want got ans ts newenv m o need_kb avail_kb line
+  local arg yes=0 pkg_arg="" bver cur_version bmig created out rc head known name want got ans ts newenv m o need_kb avail_kb line dump_bytes cur_bytes est_bytes
   for arg in "$@"; do
     case "$arg" in
       --yes) yes=1 ;;
@@ -195,6 +199,7 @@ main() {
   [ -f "$ENV_FILE" ] || die "当前目录没有 .env,看起来还没安装;请先运行 scripts/install.sh"
   [ -f "$DEPLOY_DIR/VERSION" ] || die "部署目录里缺少 VERSION 文件"
   require_cmd docker "请先安装 Docker Engine"
+  require_compose_version
   cd "$DEPLOY_DIR"
   acquire_lock
   clean_stale_tmp
@@ -267,11 +272,20 @@ print("KNOWN=" + ("1" if sys.argv[1] in {r.revision for r in s.walk_revisions()}
   fi
 
   # ---- 3. 先恢复进临时库(正式库与服务都还没动) ----
-  # 磁盘空间:临时库与旧库会同时存在,要求可用空间不小于 db.dump 大小的 3 倍
-  need_kb=$(( ($(wc -c <"$WORK/db.dump" | tr -d '[:space:]') * 3) / 1024 + 1 ))
+  # 磁盘空间:恢复期间旧库(ws_restore_old)与新库(临时库)同时存在。旧库已占着磁盘,新库还要新增空间。
+  # 估算新增量 = max(当前库的 pg_database_size, db.dump 大小 × 6) × 1.2:
+  #   * pg_dump -Fc 默认压缩,还原后的库通常是 dump 的 2-5 倍(含索引更大),取 6 倍留余量;
+  #   * 备份可能比当前库小(如恢复一份很早的备份),此时按当前库大小估,避免低估;
+  #   * 再乘 1.2 给 WAL 与临时文件留 20% 余量。可用空间不足这个数就在动库之前拒绝。
+  dump_bytes="$(wc -c <"$WORK/db.dump" | tr -d '[:space:]')"
+  cur_bytes="$(pgsql "SELECT pg_database_size(:'db');" | tr -d '[:space:]')" || cur_bytes=""
+  case "$cur_bytes" in ''|*[!0-9]*) die "查询当前数据库大小失败,无法预估磁盘空间,数据库未改动" ;; esac
+  est_bytes=$((dump_bytes * 6))
+  if [ "$cur_bytes" -gt "$est_bytes" ]; then est_bytes="$cur_bytes"; fi
+  need_kb=$(( est_bytes * 12 / 10 / 1024 + 1 ))
   avail_kb="$(df -Pk "$DEPLOY_DIR" | awk 'NR==2 {print $4}')"
   if [ "$avail_kb" -lt "$need_kb" ]; then
-    die "磁盘空间不足:恢复需要约 $((need_kb / 1024)) MB 可用空间(备份数据库大小的 3 倍),当前约 $((avail_kb / 1024)) MB,数据库未改动"
+    die "磁盘空间不足:恢复需要约 $((need_kb / 1024)) MB 可用空间(取当前数据库大小与备份数据库大小 6 倍中较大者的 1.2 倍),当前约 $((avail_kb / 1024)) MB,数据库未改动"
   fi
   # 上一次异常中断可能留下 ws_restore_old:正式库还在就删掉它;正式库不在,说明停在换库中途,先把它改回来
   m="$(db_has main)" || die "查询数据库状态失败,数据库未改动"
@@ -358,11 +372,8 @@ print("KNOWN=" + ("1" if sys.argv[1] in {r.revision for r in s.walk_revisions()}
   log_info "清除登录会话(所有人需要重新登录)……"
   compose exec -T redis redis-cli FLUSHDB </dev/null 2>&1 | redact >/dev/null || die "清除 Redis 会话失败"
   log_info "启动服务(应用启动时会自动迁移到当前版本)……"
-  if ! out="$(compose up -d --pull never 2>&1)"; then
-    log_warn "docker compose up 返回非 0,最后几行输出:"
-    printf '%s\n' "$out" | tail -n 8 | redact >&2
-  fi
-  wait_healthy app "$HEALTH_TIMEOUT" || die "恢复后应用没有在 ${HEALTH_TIMEOUT} 秒内就绪,请查看:docker compose -p ${WS_COMPOSE_PROJECT:-workstation} --project-directory '$DEPLOY_DIR' logs app"
+  # app 健康、scheduler 在运行、web 健康,三者缺一都不能报"恢复完成"(见 lib.sh 的 start_and_verify)
+  start_and_verify "$HEALTH_TIMEOUT"
   STOPPED=0
   log_info "恢复完成:已用 $(basename "$PKG") 恢复数据库、.env 与 Caddy 数据,所有人需要重新登录"
 }
