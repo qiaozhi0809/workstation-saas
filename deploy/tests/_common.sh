@@ -32,6 +32,10 @@ export WS_COMPOSE_PROJECT="$PROJECT"
 export WS_HTTP_PORT="$HTTP_PORT"
 export WS_HTTPS_PORT="$HTTPS_PORT"
 export WS_INSTALL_SKIP_LOAD=1
+# 测离线包(WS_DEPLOY_SRC)时,install.sh 必须真走包里的 docker load,不能用本机已有的镜像。
+# upgrade 测试自己造的包里没有镜像 tar,仍沿用上面的全局开关。
+INSTALL_SKIP_LOAD=1
+[ -z "${WS_DEPLOY_SRC:-}" ] || INSTALL_SKIP_LOAD=0
 export WS_INSTALL_MIN_DISK_GB=1
 
 # 以下为测试用的假值/随机值,只存在于本进程环境与临时目录里
@@ -95,9 +99,16 @@ sha256_of() {
 prepare_deploy_dir() {
   local dir="${1:-$DEPLOY}"
   mkdir -p "$dir"
-  # WS_DEPLOY_SRC 指向离线包解开的目录时,测的是包里的文件(CI deploy job);默认用仓库里的 deploy/prod
-  cp -R "${WS_DEPLOY_SRC:-$ROOT/deploy/prod}/." "$dir/"
-  printf '%s\n' "$VERSION" >"$dir/VERSION"
+  if [ -n "${WS_DEPLOY_SRC:-}" ]; then
+    # 指向离线包解开的目录时,测的是包里的文件(CI deploy job),VERSION 用包里的,与 WS_VERSION 不一致就拒绝
+    [ -f "$WS_DEPLOY_SRC/VERSION" ] || { echo "WS_DEPLOY_SRC($WS_DEPLOY_SRC)里没有 VERSION" >&2; exit 1; }
+    [ "$(tr -d '[:space:]' <"$WS_DEPLOY_SRC/VERSION")" = "$VERSION" ] \
+      || { echo "离线包 VERSION 与 WS_VERSION($VERSION)不一致" >&2; exit 1; }
+    cp -R "$WS_DEPLOY_SRC/." "$dir/"
+  else
+    cp -R "$ROOT/deploy/prod/." "$dir/"
+    printf '%s\n' "$VERSION" >"$dir/VERSION"
+  fi
 }
 
 # 非交互安装,输出(含 stderr)写到 $1;返回安装脚本的退出码。
@@ -109,14 +120,14 @@ run_install() {
     (umask 077; printf '%s\n' "$ADMIN_PW" >"$pwfile")
     if (
       cd "$DEPLOY" || exit 1
-      WS_INSTALL_SCHOOL_NAME="$SCHOOL_NAME" WS_INSTALL_ADMIN_LOGIN="$ADMIN_LOGIN" \
+      WS_INSTALL_SKIP_LOAD="$INSTALL_SKIP_LOAD" WS_INSTALL_SCHOOL_NAME="$SCHOOL_NAME" WS_INSTALL_ADMIN_LOGIN="$ADMIN_LOGIN" \
       WS_INSTALL_ADMIN_PASSWORD_FILE="$pwfile" WS_INSTALL_SITE="localhost" WS_INSTALL_TLS="1" \
         ./scripts/install.sh --non-interactive --force
     ) >"$log" 2>&1; then rc=0; else rc=$?; fi
     rm -f "$pwfile"
   elif (
     cd "$DEPLOY" || exit 1
-    WS_INSTALL_SCHOOL_NAME="$SCHOOL_NAME" \
+    WS_INSTALL_SKIP_LOAD="$INSTALL_SKIP_LOAD" WS_INSTALL_SCHOOL_NAME="$SCHOOL_NAME" \
     WS_INSTALL_ADMIN_LOGIN="$ADMIN_LOGIN" \
     WS_INSTALL_ADMIN_PASSWORD="$ADMIN_PW" \
     WS_INSTALL_SITE="localhost" \
