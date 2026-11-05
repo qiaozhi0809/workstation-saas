@@ -38,6 +38,7 @@ services:
     env_file: .env
     environment:
       WS_LOG_DIR: /var/log/workstation
+      TZ: ${TZ:-Asia/Shanghai}
     volumes:
       - ./data/logs:/var/log/workstation
     depends_on:
@@ -54,6 +55,7 @@ services:
     env_file: .env
     environment:
       WS_LOG_DIR: /var/log/workstation
+      TZ: ${TZ:-Asia/Shanghai}
     volumes:
       - ./data/logs:/var/log/workstation
     # 镜像自带的 HEALTHCHECK 检查 8080 端口,scheduler 不监听端口,关掉
