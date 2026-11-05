@@ -20,7 +20,8 @@ users_before="$(user_count)"
 [ "$(psql_scalar "SELECT count(*) FROM schools")" = "1" ] || fail "第一次安装后 schools 应为 1 行"
 admins_before="$(psql_scalar "SELECT count(*) FROM role_bindings WHERE role_type='it_admin'")"
 [ "$admins_before" = "1" ] || fail "第一次安装后 it_admin 绑定应为 1 条,实际 $admins_before"
-pass "第一次安装完成(users=1、schools=1、it_admin=1)"
+[ "$(psql_scalar "SELECT count(*) FROM academic_years")" = "1" ] || fail "第一次安装后 academic_years 应为 1 行(首个学年,G-1)"
+pass "第一次安装完成(users=1、schools=1、it_admin=1、academic_years=1)"
 
 echo "== 2/6 第二次安装"
 rc=0
@@ -32,6 +33,7 @@ if [ "$rc" -ne 0 ]; then tail -n 20 "$TMP/install2.log" >&2; fail "第二次安�
 [ "$(psql_scalar "SELECT count(*) FROM role_bindings WHERE role_type='it_admin'")" = "$admins_before" ] \
   || fail "第二次安装后 it_admin 绑定数变了"
 grep -q '已安装' "$TMP/install2.log" || fail "第二次安装的输出里没有「已安装」"
+[ "$(psql_scalar "SELECT count(*) FROM academic_years")" = "1" ] || fail "第二次安装后 academic_years 不是 1 行"
 assert_healthz
 assert_login_ok
 dump_logs "$TMP/compose.log"
