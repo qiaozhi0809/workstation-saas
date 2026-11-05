@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -210,6 +211,95 @@ def test_unlink_keeps_account_with_other_child_and_teacher(client, settings, db)
     )
     # 教职工账号即使没有家长绑定了也不归档
     assert _user(db, "teacher04").status == "active"
+
+
+def _stagger(db, *links):
+    # 测试共用一个事务,now() 恒等;手动拉开绑定时间,先传的更早
+    for n, link in enumerate(links, start=1):
+        db.execute(
+            ParentLink.__table__.update()
+            .where(ParentLink.id == UUID(link["link_id"]))
+            .values(created_at=datetime(2026, 11, n, tzinfo=UTC))
+        )
+
+
+def _make_readonly(db, link):
+    db.execute(
+        ParentLink.__table__.update()
+        .where(ParentLink.id == UUID(link["link_id"]))
+        .values(status="readonly", readonly_since=datetime(2026, 11, 1, tzinfo=UTC))
+    )
+
+
+def test_unlink_heir_skips_readonly(client, settings, db):
+    p1 = _add(client, settings, S3, "13800000081").json()["parent"]
+    p2 = _add(client, settings, S3, "13800000082").json()["parent"]
+    p3 = _add(client, settings, S3, "13800000083").json()["parent"]
+    _stagger(db, p1, p2, p3)
+    _make_readonly(db, p2)  # P2 更早但只读,不能继任
+    res = client.delete(f"/api/v1/parent-links/{p1['link_id']}", headers=auth(settings))
+    assert res.status_code == 204
+    rows = {
+        r.id: r
+        for r in db.scalars(
+            select(ParentLink)
+            .where(ParentLink.student_id == UUID(S3))
+            .execution_options(populate_existing=True)
+        )
+    }
+    assert rows[UUID(p3["link_id"])].is_primary is True
+    assert rows[UUID(p2["link_id"])].is_primary is False
+    assert rows[UUID(p2["link_id"])].status == "readonly"
+    assert _roles(db, "13800000083") == ["primary_parent"]
+    assert _roles(db, "13800000082") == ["secondary_parent"]
+
+
+def test_unlink_no_active_heir_leaves_no_primary(client, settings, db):
+    p1 = _add(client, settings, S3, "13800000084").json()["parent"]
+    p2 = _add(client, settings, S3, "13800000085").json()["parent"]
+    _stagger(db, p1, p2)
+    _make_readonly(db, p2)
+    res = client.delete(f"/api/v1/parent-links/{p1['link_id']}", headers=auth(settings))
+    assert res.status_code == 204
+    primaries = db.scalar(
+        select(func.count())
+        .select_from(ParentLink)
+        .where(
+            ParentLink.student_id == UUID(S3),
+            ParentLink.is_primary,
+            ParentLink.status != "ended",
+        )
+    )
+    assert primaries == 0
+    assert _roles(db, "13800000085") == ["secondary_parent"]
+
+
+def _drain(pubsub) -> list[dict]:
+    out = []
+    while (msg := pubsub.get_message(timeout=0.5)) is not None:
+        if msg["type"] == "message":
+            out.append(json.loads(msg["data"]))
+    return out
+
+
+def test_unlink_archive_publishes_revoked(client, settings, db, redis_client):
+    lonely = _add(client, settings, S3, "13800000086").json()["parent"]
+    busy = _add(client, settings, S3, "13800000087").json()["parent"]
+    _add(client, settings, S4, "13800000087")
+    pubsub = redis_client.pubsub()
+    pubsub.subscribe("ws:events")
+    assert pubsub.get_message(timeout=2)["type"] == "subscribe"
+    # 还有别的孩子:账号不归档,不发布
+    res = client.delete(f"/api/v1/parent-links/{busy['link_id']}", headers=auth(settings))
+    assert res.status_code == 204
+    assert _user(db, "13800000087").status == "active"
+    assert _drain(pubsub) == []
+    # 只有这一个孩子:账号归档,提交后发布一次,user_ids 恰好是他
+    res = client.delete(f"/api/v1/parent-links/{lonely['link_id']}", headers=auth(settings))
+    assert res.status_code == 204
+    uid = str(_user(db, "13800000086").id)
+    assert _drain(pubsub) == [{"user_ids": [uid], "event": {"type": "session.revoked"}}]
+    pubsub.close()
 
 
 def test_relink_ended_restores_row(client, settings, db):
