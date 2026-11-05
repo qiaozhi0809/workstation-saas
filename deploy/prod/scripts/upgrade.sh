@@ -116,6 +116,9 @@ main() {
   [ -f "$DEPLOY_DIR/VERSION" ] || die "部署目录里缺少 VERSION 文件"
   require_cmd docker "请先安装 Docker Engine"
   cd "$DEPLOY_DIR"
+  # 与备份 / 恢复互斥;升级里会调用 backup.sh,经环境变量告诉它"锁已由本进程持有"
+  acquire_lock
+  export WS_LOCK_OWNER_PID="$$"
 
   # 1. 校验、解包、版本检查(解包目录放在部署目录下的隐藏临时目录,与磁盘门槛检查对应同一块盘)
   verify_checksum "$pkg"

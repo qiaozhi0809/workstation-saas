@@ -56,10 +56,19 @@ wait_healthy() {
   return 1
 }
 
-# read_env <键>:读 .env 里的值(只取第一处);键不存在时输出空
+# read_env <键> [文件]:读 .env(默认 $ENV_FILE)里的值(只取第一处);键不存在时输出空。
+# 统一去掉首尾的 \r(Windows 换行)与成对的单引号或双引号,这样"带引号"与"不带引号"的写法得到同一个值。
 read_env() {
-  [ -f "$ENV_FILE" ] || return 0
-  grep -m1 "^$1=" "$ENV_FILE" | cut -d= -f2- || true
+  local f="${2:-$ENV_FILE}" v
+  [ -f "$f" ] || return 0
+  v="$(grep -m1 "^$1=" "$f" | cut -d= -f2- || true)"
+  v="${v%$'\r'}"
+  v="${v#$'\r'}"
+  case "$v" in
+    \"*\") v="${v#\"}"; v="${v%\"}" ;;
+    \'*\') v="${v#\'}"; v="${v%\'}" ;;
+  esac
+  printf '%s\n' "$v"
 }
 
 # 临时文件登记:脚本退出(含 Ctrl-C、被 kill)时由 lib_cleanup 统一删除,不留半成品。
@@ -69,7 +78,95 @@ register_tmp() { _WS_TMPS+=("$1"); }
 lib_cleanup() {
   local f
   for f in ${_WS_TMPS[@]+"${_WS_TMPS[@]}"}; do rm -rf "$f"; done
+  release_lock
   return 0
+}
+
+# ---- 互斥锁:备份 / 恢复 / 升级同一时刻只能有一个在跑 ----
+# 用 mkdir 当锁(原子),锁目录里记录持有者 pid;持有者已不存在(被 kill -9、断电)则接管。
+# 升级脚本调用备份脚本时,经环境变量 WS_LOCK_OWNER_PID 告诉子进程"锁是我(父进程)持有的",子进程不再重复加锁。
+_WS_LOCK_DIR=""
+acquire_lock() {
+  local dir="$DEPLOY_DIR/backups/.lock" holder
+  mkdir -p "$DEPLOY_DIR/backups"
+  chmod 700 "$DEPLOY_DIR/backups" 2>/dev/null || true
+  if mkdir "$dir" 2>/dev/null; then
+    printf '%s\n' "$$" >"$dir/pid"
+    _WS_LOCK_DIR="$dir"
+    return 0
+  fi
+  holder="$(cat "$dir/pid" 2>/dev/null || true)"
+  if [ -n "$holder" ] && [ "$holder" = "${WS_LOCK_OWNER_PID:-}" ] && kill -0 "$holder" 2>/dev/null; then
+    return 0
+  fi
+  if [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; then
+    log_warn "发现上一次异常中断留下的锁(进程 $holder 已不存在),已接管"
+    rm -rf "$dir"
+    if mkdir "$dir" 2>/dev/null; then
+      printf '%s\n' "$$" >"$dir/pid"
+      _WS_LOCK_DIR="$dir"
+      return 0
+    fi
+  fi
+  die "另一个备份、恢复或升级正在进行(锁:$dir,持有进程:${holder:-未知})。请等它结束后再试;如果确认没有在运行,删除该目录即可"
+}
+release_lock() {
+  if [ -n "$_WS_LOCK_DIR" ]; then rm -rf "$_WS_LOCK_DIR"; _WS_LOCK_DIR=""; fi
+  return 0
+}
+
+# clean_stale_tmp:清理超过 1 天的备份 / 恢复临时残留(被强行中断时留下的)
+clean_stale_tmp() {
+  find "$DEPLOY_DIR/backups" -maxdepth 1 \( -name '.stage.*' -o -name '.ws-backup.*.partial' \) -mtime +1 -exec rm -rf {} + 2>/dev/null || true
+  find "$DEPLOY_DIR" -maxdepth 1 -name '.ws-restore.*' -mtime +1 -exec rm -rf {} + 2>/dev/null || true
+  return 0
+}
+
+# manifest_valid <文件>:manifest.json 必须是备份脚本写出的格式(逐行严格匹配);通过返回 0。
+# files 里键集合必须恰好是 db.dump、env、caddy.tar 各一次,值是 64 位十六进制,除最后一项外每项行尾有逗号。
+manifest_valid() {
+  awk '
+    BEGIN { st = 0; nf = 0; hex = ""; for (i = 0; i < 64; i++) hex = hex "[0-9a-f]"
+            re = "^    \"(db\\.dump|env|caddy\\.tar)\": \"" hex "\",?$" }
+    st == 0 { if ($0 == "{") { st = 1; next } else bad = 1 }
+    st == 1 { if ($0 ~ /^  "version": "[A-Za-z0-9._-]+",$/) { st = 2; next } else bad = 1 }
+    st == 2 { if ($0 ~ /^  "migration": "[0-9A-Za-z_]+",$/) { st = 3; next } else bad = 1 }
+    st == 3 { if ($0 ~ /^  "created_at": "[0-9T:Z-]+",$/) { st = 4; next } else bad = 1 }
+    st == 4 { if ($0 == "  \"files\": {") { st = 5; next } else bad = 1 }
+    st == 5 {
+      if ($0 ~ re) {
+        nf++
+        key = $0; sub(/^    "/, "", key); sub(/".*$/, "", key)
+        seen[key]++
+        if (seen[key] > 1) bad = 1
+        comma[nf] = ($0 ~ /,$/) ? 1 : 0
+        next
+      } else if ($0 == "  }") { st = 6; next } else bad = 1
+    }
+    st == 6 { if ($0 == "}") { st = 7; next } else bad = 1 }
+    st == 7 { bad = 1 }
+    END {
+      if (nf != 3) bad = 1
+      for (i = 1; i <= nf; i++) { if (i < nf && !comma[i]) bad = 1; if (i == nf && comma[i]) bad = 1 }
+      exit (bad || st != 7) ? 1 : 0
+    }
+  ' "$1"
+}
+
+# mask_shapes:标准输入 → 标准输出。按形状打码(不依赖已知密钥值):JWT、Bearer / Token 授权头、
+# Cookie / Set-Cookie、URL 里的 token 参数、password / secret / token 类的 key=value 与 JSON 字段、手机号
+# (含 +86 / 86 前缀,以及 - 或空格分隔的写法)。只用 POSIX 字符类,兼容 BSD 与 GNU sed。
+mask_shapes() {
+  sed -E \
+    -e 's/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*/***/g' \
+    -e 's/([Aa][Uu][Tt][Hh][Oo][Rr][Ii][Zz][Aa][Tt][Ii][Oo][Nn][[:space:]]*:[[:space:]]*[A-Za-z]+[[:space:]]+)[^[:space:]]+/\1***/g' \
+    -e 's/[Bb][Ee][Aa][Rr][Ee][Rr][[:space:]]+[A-Za-z0-9._~+\/=-]+/Bearer ***/g' \
+    -e 's/([Ss][Ee][Tt]-[Cc][Oo][Oo][Kk][Ii][Ee][[:space:]]*:|[Cc][Oo][Oo][Kk][Ii][Ee][[:space:]]*:).*/\1 ***/g' \
+    -e 's/([?&][A-Za-z0-9_]*([Tt][Oo][Kk][Ee][Nn]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Ss][Ee][Cc][Rr][Ee][Tt])=)[^&[:space:]"'"'"']+/\1***/g' \
+    -e 's/("[A-Za-z0-9_]*([Tt][Oo][Kk][Ee][Nn]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Ss][Ee][Cc][Rr][Ee][Tt])"[[:space:]]*:[[:space:]]*)"[^"]*"/\1"***"/g' \
+    -e 's/([A-Za-z0-9_]*([Tt][Oo][Kk][Ee][Nn]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Ss][Ee][Cc][Rr][Ee][Tt])[[:space:]]*=[[:space:]]*["'"'"']?)[^[:space:]&,;"'"'"']+/\1***/g' \
+    -e 's/(^|[^0-9])(\+?86[- ]?)?1[3-9][0-9][- ]?[0-9]{4}[- ]?[0-9]{4}([^0-9]|$)/\11**********\3/g' \
+    -e 's/(^|[^0-9])(\+?86[- ]?)?1[3-9][0-9][- ]?[0-9]{4}[- ]?[0-9]{4}([^0-9]|$)/\11**********\3/g'
 }
 
 # check_disk:部署目录所在磁盘可用空间门槛(默认 20 GB;WS_INSTALL_MIN_DISK_GB 只在测试里下调)

@@ -6,4 +6,4 @@ Requires=docker.service
 [Service]
 Type=oneshot
 WorkingDirectory=@DEPLOY_DIR@
-ExecStart=@DEPLOY_DIR@/scripts/backup.sh
+ExecStart="@DEPLOY_DIR@/scripts/backup.sh"

@@ -361,14 +361,18 @@ init_school() {
 
 # 写单元文件并启用定时器;任何一步失败返回非 0(调用者降级为 crontab 提示)
 enable_backup_timer() {
-  local unit content
+  local unit content unit_dir pct='%' dollar='$'
+  shopt -u patsub_replacement 2>/dev/null || true
+  unit_dir="${DEPLOY_DIR//$pct/$pct$pct}"
+  unit_dir="${unit_dir//$dollar/$dollar$dollar}"
   for unit in workstation-backup.service workstation-backup.timer; do
     [ -f "$DEPLOY_DIR/systemd/$unit" ] || { log_warn "没有找到 systemd 单元文件 systemd/$unit"; return 1; }
   done
   for unit in workstation-backup.service workstation-backup.timer; do
     # 单元模板里的 @DEPLOY_DIR@ 替换为本部署目录
+    # systemd 里 % 与 $ 有特殊含义,写进单元前转义;bash 5.2 的替换串里 & 也有特殊含义,先关掉(install 已拒绝含这些字符的目录,这里是双保险)
     content="$(<"$DEPLOY_DIR/systemd/$unit")"
-    printf '%s\n' "${content//@DEPLOY_DIR@/$DEPLOY_DIR}" >"/etc/systemd/system/$unit" || return 1
+    printf '%s\n' "${content//@DEPLOY_DIR@/$unit_dir}" >"/etc/systemd/system/$unit" || return 1
   done
   systemctl daemon-reload || return 1
   systemctl enable --now workstation-backup.timer || return 1
@@ -424,6 +428,9 @@ main() {
   local count
   parse_args "$@"
   cd "$DEPLOY_DIR"
+  case "$DEPLOY_DIR" in
+    *[[:space:]]*|*%*|*\$*|*\&*) die "部署目录路径里不能含空格或 % $ & 这些字符(会让 systemd 定时备份与脚本出错)。请把部署目录改到不含这些字符的路径(例如 /opt/workstation)再安装" ;;
+  esac
   [ -f "$DEPLOY_DIR/VERSION" ] || die "部署目录里缺少 VERSION 文件,请在解开的离线包目录里运行"
   [ -f "$DEPLOY_DIR/docker-compose.yml" ] || die "部署目录里缺少 docker-compose.yml"
 
