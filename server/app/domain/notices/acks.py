@@ -16,13 +16,13 @@ from app.models import (
     Enrollment,
     Notice,
     NoticeRecipient,
+    NoticeStudent,
     Parent,
     ParentLink,
     SchoolClass,
     Student,
     User,
 )
-from app.models.notices import NoticeStudent
 
 NOTE_MAX = 200
 BOM = "﻿"

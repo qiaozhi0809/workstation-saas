@@ -222,6 +222,65 @@ def test_users_target_frozen_teacher_with_parent_account_403(client, db, setting
     assert db.scalar(select(func.count()).select_from(Notice)) == 0
 
 
+def _denied_count(db, who) -> int:
+    return len(
+        db.scalars(
+            select(AuditLog).where(
+                AuditLog.user_id == UUID(who),
+                AuditLog.action == "notice.send",
+                AuditLog.success.is_(False),
+            )
+        ).all()
+    )
+
+
+def test_grade_head_unavailable_409_only_for_own_grade_frozen(client, db, settings):
+    # A-1:409 不得泄露范围外账号状态;年级组长只对"本年级当前绑定但已冻结"的人返回 409
+    gh = GRADE_HEAD3
+    own = make_teacher_account(db, login_name="gh_own_frozen")
+    bind(db, own.id, Role.subject_teacher, class_id=C32)
+    own.status = "frozen"
+    other = make_teacher_account(db, login_name="gh_other_frozen")
+    bind(db, other.id, Role.subject_teacher, class_id=C41)
+    other.status = "frozen"
+    unbound = make_teacher_account(db, login_name="gh_unbound")
+    bind(db, unbound.id, Role.subject_teacher, class_id=C32, ended=True)
+    unbound_frozen = make_teacher_account(db, login_name="gh_unbound_frozen")
+    bind(db, unbound_frozen.id, Role.subject_teacher, class_id=C32, ended=True)
+    unbound_frozen.status = "frozen"
+    db.flush()
+
+    res = send(client, settings, gh, {"kind": "users", "user_ids": [T01, str(own.id)]})
+    assert res.status_code == 409
+    assert res.json()["error"]["code"] == "RECIPIENT_UNAVAILABLE"
+    assert res.json()["error"]["details"] == {"user_ids": [str(own.id)]}
+    assert _denied_count(db, gh) == 0
+
+    before = _denied_count(db, gh)
+    for bad in (other, unbound, unbound_frozen):
+        res = send(client, settings, gh, {"kind": "users", "user_ids": [T01, str(bad.id)]})
+        assert res.status_code == 403, bad.login_name
+        assert "user_ids" not in json.dumps(res.json())
+    for bad in (LI, ZHOU):
+        res = send(client, settings, gh, {"kind": "users", "user_ids": [bad]})
+        assert res.status_code == 403
+    assert _denied_count(db, gh) == before + 5
+    # 混合:本年级冻结 + 范围外冻结 → 整体 403
+    mixed = {"kind": "users", "user_ids": [str(own.id), str(other.id)]}
+    res = send(client, settings, gh, mixed)
+    assert res.status_code == 403 and "user_ids" not in json.dumps(res.json())
+
+
+def test_principal_still_409_for_frozen_former_teacher(client, db, settings):
+    frozen = make_teacher_account(db, login_name="pr_frozen")
+    bind(db, frozen.id, Role.subject_teacher, class_id=C41, ended=True)
+    frozen.status = "frozen"
+    db.flush()
+    res = send(client, settings, PRINCIPAL, {"kind": "users", "user_ids": [str(frozen.id)]})
+    assert res.status_code == 409
+    assert res.json()["error"]["details"] == {"user_ids": [str(frozen.id)]}
+
+
 def test_users_target_bounds(client, settings):
     res = send(client, settings, PRINCIPAL, {"kind": "users", "user_ids": []})
     assert res.status_code == 400

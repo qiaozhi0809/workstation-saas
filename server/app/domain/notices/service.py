@@ -43,6 +43,7 @@ from app.models import (
     Grade,
     Notice,
     NoticeRecipient,
+    NoticeStudent,
     Parent,
     ParentLink,
     RoleBinding,
@@ -50,7 +51,6 @@ from app.models import (
     Student,
     User,
 )
-from app.models.notices import NoticeStudent
 from app.rbac.bindings import Binding, Scope, can
 from app.rbac.guard import ensure
 from app.rbac.roles import ADMIN_ROLES, ROLE_PERMS, TEACHER_ROLES, Perm, Role
@@ -244,11 +244,31 @@ def _authorize_scope(
     return cls
 
 
-def _unavailable_ids(db: Session, sender: User, picked: set[UUID], year: AcademicYear) -> set[UUID]:
-    """L46:本校账号,曾有过教师 / 管理岗绑定(任何学年、含已结束),现已非 active 或无当前绑定。
-    从未有过教师 / 管理岗绑定的账号(纯家长等)不算,避免借 409 探出谁是家长。"""
+def _unavailable_ids(
+    db: Session,
+    sender: User,
+    bindings: Sequence[Binding],
+    picked: set[UUID],
+    year: AcademicYear,
+) -> set[UUID]:
+    """L46:只返回"发送人不越权也能确认原本可选"的账号,其余一律交给调用方按越权处理。
+    学校作用域:本校账号,曾有过教师 / 管理岗绑定(任何学年、含已结束),现已非 active 或无当前绑定;
+    从未有过教师 / 管理岗绑定的账号(纯家长等)不算,避免借 409 探出谁是家长。
+    年级组长:仅本年级当前学年仍有绑定(在读班教师绑定或本年级组长岗)但账号已冻结的人。"""
     if not picked:
         return set()
+    if not _school_wide(bindings, year.school_id):
+        grades = sorted(_send_grades(bindings), key=str)
+        return set(
+            db.scalars(
+                select(User.id).where(
+                    User.id.in_(picked),
+                    User.school_id == sender.school_id,
+                    User.status != "active",
+                    User.id.in_(_grade_ids_select(db, year.id, grades)),
+                )
+            )
+        )
     ever_staff = exists().where(
         RoleBinding.user_id == User.id,
         RoleBinding.role_type.in_([r.value for r in (TEACHER_ROLES | ADMIN_ROLES)]),
@@ -285,7 +305,7 @@ def resolve_recipients(
         )
         missing = picked - allowed
         if missing:
-            gone = _unavailable_ids(db, sender, missing, year)
+            gone = _unavailable_ids(db, sender, bindings, missing, year)
             if gone == missing:
                 raise ApiError(
                     409,
@@ -460,8 +480,8 @@ def ack_spec(notice: Notice) -> AckSpec:
 
 
 def without_parent_of(notice: Notice) -> int:
-    """发送那一刻记在 target 里的"没有可通知主家长的学生数"(通知表没有单独的列)。"""
-    return int((notice.target or {}).get("students_without_parent", 0))
+    """发送那一刻记下的"没有可通知主家长的学生数"(notices.students_without_parent 列)。"""
+    return notice.students_without_parent
 
 
 def _sent_view(notice: Notice, recipients: int, read: int, acked: int = 0) -> NoticeSent:
@@ -522,8 +542,8 @@ def send(
         recipients, pairs, without, label = resolve_parent_recipients(
             db, sender, bindings, body.target, year, request
         )
-        target["students_without_parent"] = without
     else:
+        without = 0
         recipients, label = resolve_recipients(db, sender, bindings, body.target, year, request)
     ack_cols = _ack_columns(body, now)  # 先判权(上面),再校验回执设置与截止时间
     if not recipients:
@@ -535,6 +555,7 @@ def send(
         content=body.content,
         target=target,
         target_label=label,
+        students_without_parent=without,
         audience=body.audience,
         created_at=now,
         **ack_cols,
@@ -629,7 +650,7 @@ def send_class_notice(
     )
     if not recipients:
         raise ApiError(400, "NO_RECIPIENTS", "没有可接收的人")
-    target = full.target.model_dump(mode="json") | {"students_without_parent": without}
+    target = full.target.model_dump(mode="json")
     notice = Notice(
         school_id=sender.school_id,
         from_user_id=sender.id,
@@ -638,6 +659,7 @@ def send_class_notice(
         content=body.content,
         target=target,
         target_label=label,
+        students_without_parent=without,
         audience="parents",
         created_at=now,
         **ack_cols,

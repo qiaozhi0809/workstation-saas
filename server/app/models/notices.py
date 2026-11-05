@@ -33,6 +33,7 @@ class Notice(Base):
     class_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("classes.id", ondelete="SET NULL")
     )
+    students_without_parent: Mapped[int] = mapped_column(server_default=text("0"))
     recalled_at: Mapped[datetime | None]
     created_at: Mapped[datetime] = mapped_column(**_NOW)
 

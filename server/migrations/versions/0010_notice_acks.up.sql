@@ -8,6 +8,8 @@ ALTER TABLE notices
   ADD COLUMN ack_allow_note boolean NOT NULL DEFAULT false,
   ADD COLUMN ack_deadline timestamptz,
   ADD COLUMN class_id uuid REFERENCES classes(id) ON DELETE SET NULL,
+  ADD COLUMN students_without_parent integer NOT NULL DEFAULT 0,
+  ADD CONSTRAINT notices_students_without_parent_ck CHECK (students_without_parent >= 0),
   ADD CONSTRAINT notices_ack_options_ck CHECK ((ack_kind = 'choice') = (ack_options IS NOT NULL)),
   ADD CONSTRAINT notices_require_ack_ck CHECK (require_ack = (ack_kind <> 'none'));
 

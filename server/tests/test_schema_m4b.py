@@ -64,16 +64,24 @@ def test_new_columns_and_defaults(db):
     }
     for c in ("audience", "ack_kind", "ack_options", "ack_allow_note", "ack_deadline", "class_id"):
         assert ("notices", c) in cols
+    assert ("notices", "students_without_parent") in cols
     assert ("notice_recipients", "ack_choice") in cols
     nid = _notice(db)
     row = db.execute(
         text(
-            "SELECT audience, ack_kind, ack_options, ack_allow_note, ack_deadline, class_id"
+            "SELECT audience, ack_kind, ack_options, ack_allow_note, ack_deadline, class_id,"
+            " students_without_parent"
             " FROM notices WHERE id = :i"
         ),
         {"i": nid},
     ).one()
-    assert tuple(row) == ("teachers", "none", None, False, None, None)
+    assert tuple(row) == ("teachers", "none", None, False, None, None, 0)
+
+
+def test_students_without_parent_non_negative(db):
+    _notice(db, students_without_parent=3)
+    with pytest.raises(IntegrityError), db.begin_nested():
+        _notice(db, students_without_parent=-1)
 
 
 def test_choice_without_options_rejected(db):
