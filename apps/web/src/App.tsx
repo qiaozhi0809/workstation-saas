@@ -12,6 +12,7 @@ import AdminLayout from '@/roles/admin/AdminLayout'
 import { ADMIN_PAGES } from '@/roles/admin/pages'
 import RequirePerm from '@/roles/admin/RequirePerm'
 import ParentLayout, { ParentIndex } from '@/roles/parent/ParentLayout'
+import ParentNoticesPage from '@/roles/parent/Notices/ParentNoticesPage'
 import GradesPage from '@/roles/parent/Grades/GradesPage'
 import GrowthPage from '@/roles/parent/Growth/GrowthPage'
 import ProfilePage from '@/roles/parent/Profile/ProfilePage'
@@ -24,6 +25,7 @@ import StudentsPage from '@/roles/teacher/Students/StudentsPage'
 import AiHomePage from '@/roles/teacher/AI/AiHomePage'
 import AiThreadPage from '@/roles/teacher/AI/AiThreadPage'
 import PreferencesPage from '@/roles/teacher/Preferences/PreferencesPage'
+import ClassNoticesPage from '@/roles/teacher/Notices/ClassNoticesPage'
 import ProtectedRoute from '@/shared/components/ProtectedRoute'
 import { EmptyState } from '@/shared/components/feedback/EmptyState'
 import { Button } from '@/shared/components/ui/button'
@@ -51,6 +53,7 @@ const routes = createRoutesFromElements(
       <Route path="students/:id" element={<StudentRedirect />} />
       <Route path="ai" element={<AiHomePage />} />
       <Route path="ai/:chatId" element={<AiThreadPage />} />
+      <Route path="notices" element={<ClassNoticesPage />} />
     </Route>
     {ClassroomPlayground && (
       <Route path="/dev/classroom" element={<Suspense fallback={null}><ClassroomPlayground /></Suspense>} />
@@ -66,6 +69,7 @@ const routes = createRoutesFromElements(
       <Route path="growth" element={<GrowthPage />} />
       <Route path="grades" element={<GradesPage />} />
       <Route path="profile" element={<ProfilePage />} />
+      <Route path="notices" element={<ParentNoticesPage />} />
     </Route>
     <Route path="/" element={<Navigate to="/login" replace />} />
     <Route

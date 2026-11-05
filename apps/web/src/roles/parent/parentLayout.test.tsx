@@ -1,10 +1,18 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
+import { noticesApi } from '@/shared/api/notices'
 import { parentApi } from '@/shared/api/parent'
 import { child, mockWidth, renderParent, setParentUser, today } from './testkit'
 
 vi.mock('@/shared/api/parent', () => ({
   parentApi: { children: vi.fn(), today: vi.fn(), profile: vi.fn(), saveContacts: vi.fn() },
+}))
+
+vi.mock('@/shared/api/notices', () => ({ noticesApi: { inbox: vi.fn(), read: vi.fn(), readAll: vi.fn(), ack: vi.fn() } }))
+// 家长壳挂了 RealtimeProvider:不能真连 WebSocket
+vi.mock('@/shared/realtime/client', async (orig) => ({
+  ...(await orig<typeof import('@/shared/realtime/client')>()),
+  createRealtimeClient: () => ({ start: vi.fn(), stop: vi.fn() }),
 }))
 
 const two = [child(), child({ student_id: 's2', name: '王小二', class_name: '五年一班' })]
@@ -16,13 +24,14 @@ beforeEach(() => {
   mockWidth(375)
   vi.mocked(parentApi.children).mockResolvedValue(two)
   vi.mocked(parentApi.today).mockResolvedValue(today())
+  vi.mocked(noticesApi.inbox).mockResolvedValue({ items: [], total: 0, unread: 0 })
 })
 
 it('puts the tabs at the bottom below 768 with safe-area padding, not in the top bar', async () => {
   renderParent()
   await screen.findByText('三年二班')
   const nav = screen.getByRole('navigation', { name: '主导航' })
-  expect(within(nav).getAllByRole('link').map((l) => l.textContent)).toEqual(['今日', '成长', '成绩'])
+  expect(within(nav).getAllByRole('link').map((l) => l.textContent)).toEqual(['今日', '成长', '成绩', '通知'])
   expect(screen.getByRole('banner')).not.toContainElement(nav)
   expect(nav.className).toContain('pb-[env(safe-area-inset-bottom)]')
   for (const l of within(nav).getAllByRole('link')) expect(l.className).toMatch(/min-h-\[44px\]/)
