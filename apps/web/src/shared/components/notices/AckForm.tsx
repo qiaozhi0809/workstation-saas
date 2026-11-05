@@ -30,6 +30,7 @@ export default function AckForm({ item, onSubmitted }: { item: InboxItem; onSubm
 
   const mut = useMutation({
     mutationFn: (body: AckInput) => noticesApi.ack(item.id, body),
+    onError: () => { void qc.invalidateQueries({ queryKey: ['notices', 'inbox'] }) },
     onSuccess: (_d, body) => {
       setMine({ choice: body.choice, note: body.note, acked_at: new Date().toISOString() })
       setEditing(false)

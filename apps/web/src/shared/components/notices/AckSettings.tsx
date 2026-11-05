@@ -47,6 +47,7 @@ export default function AckSettings({ value, onChange, deadline, onDeadlineChang
     if (kind === value.kind) return
     if (kind === 'choice') onChange({ kind, options: ['', ''], allow_note: false })
     else onChange({ kind })
+    if (kind === 'none') { setLocal(''); onDeadlineChange?.(null) }
   }
   const setOptions = (options: string[]) => {
     if (value.kind === 'choice') onChange({ ...value, options })
