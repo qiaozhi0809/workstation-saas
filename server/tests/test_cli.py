@@ -5,6 +5,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
+import pytest
 from sqlalchemy import text
 
 from app.auth import sessions
@@ -165,3 +166,27 @@ def test_init_school_reads_password_from_stdin(db, settings, monkeypatch):
     assert pw not in out
     code, out = run(pw + "\n")
     assert code == 3 and out.strip() == "已初始化过,未做任何改动"
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["migrate", "--bogus"],
+        ["init-school", "--admin-login", "admin01", "--admin-password-stdin"],  # 缺 --name
+        ["init-school", "--name", "x", "--admin-login", "admin01"],  # 缺 --admin-password-stdin
+        ["no-such-command"],
+        [],
+        ["ai-config", "no-such-action"],
+    ],
+)
+def test_usage_errors_exit_1(argv, capsys):
+    with pytest.raises(SystemExit) as ei:
+        build_parser().parse_args(argv)
+    assert ei.value.code == 1
+    assert "usage" in capsys.readouterr().err.lower()
+
+
+def test_help_exits_0(capsys):
+    with pytest.raises(SystemExit) as ei:
+        build_parser().parse_args(["migrate", "--help"])
+    assert ei.value.code == 0

@@ -7,7 +7,7 @@ from contextlib import AbstractContextManager
 from dataclasses import replace
 from datetime import date
 from pathlib import Path
-from typing import TextIO
+from typing import NoReturn, TextIO
 from urllib.parse import urlparse
 from uuid import UUID
 
@@ -280,8 +280,17 @@ def init_school_cmd(
     return 0
 
 
+class _Parser(argparse.ArgumentParser):
+    """用法错误退出码为 1(契约:migrate / init-school 参数错误为 1),而不是 argparse 默认的 2;
+    2 在契约里表示"迁移预检不通过",upgrade.sh 据此判断。--help 仍退出 0。子命令解析器沿用本类。"""
+
+    def error(self, message: str) -> NoReturn:
+        self.print_usage(sys.stderr)
+        self.exit(1, f"{self.prog}: error: {message}\n")
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="app.cli")
+    parser = _Parser(prog="app.cli")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("seed-dev", help="insert the dev seed data if absent")
     ai = sub.add_parser("ai-config", help="查看或设置 AI 服务")
