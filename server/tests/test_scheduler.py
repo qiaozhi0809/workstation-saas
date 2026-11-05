@@ -99,7 +99,8 @@ def test_run_due_skips_without_school(db, redis_client):
     with capture_logs() as logs:
         done = run_due(_factory(db), redis_client, now, [_job(calls)], school_id=uuid4())
     assert done == [] and calls == []
-    assert any(entry["event"] == "scheduler.no_school" for entry in logs)
+    entries = [e for e in logs if e["event"] == "scheduler.no_school"]
+    assert entries and all(e["log_level"] == "info" for e in entries)
 
 
 def test_run_due_skips_when_locked(db, redis_client):
@@ -236,7 +237,7 @@ def test_parent_archive_uses_school_id_from_run_due(db, redis_client, settings, 
     seen: dict = {}
 
     def fake(db_, school_id, now, redis, *, dry_run=False, via="cli"):
-        seen.update(school_id=school_id, via=via)
+        seen.update(school_id=school_id, via=via, dry_run=dry_run)
         return lifecycle.ArchiveResult(links=0, users=0)
 
     monkeypatch.setattr("app.deploy.scheduler.lifecycle.archive_expired", fake)
@@ -246,7 +247,7 @@ def test_parent_archive_uses_school_id_from_run_due(db, redis_client, settings, 
     )
     now = _local(5, 3, 15).astimezone(UTC)
     assert run_due(_factory(db), redis_client, now, school_id=SCHOOL_ID) == ["parent-archive"]
-    assert seen == {"school_id": SCHOOL_ID, "via": "scheduler"}
+    assert seen == {"school_id": SCHOOL_ID, "via": "scheduler", "dry_run": False}
 
 
 def test_no_school_warning_is_throttled(db, redis_client):
@@ -259,3 +260,44 @@ def test_no_school_warning_is_throttled(db, redis_client):
                 _factory(db), redis_client, now, [_job([])], school_id=uuid4(), mono=lambda: t[0]
             )
     assert len([e for e in logs if e["event"] == "scheduler.no_school"]) == 2
+
+
+def test_serve_survives_run_due_errors(settings, monkeypatch):
+    handlers = {}
+    monkeypatch.setattr(_sch.signal, "signal", lambda sig, h: handlers.setdefault(sig, h))
+    created = {}
+
+    class FakeRedis:
+        def close(self):
+            pass
+
+    class FakeEngine:
+        def dispose(self):
+            pass
+
+    def fake_engine(url, **kw):
+        created["engine_kw"] = kw
+        return FakeEngine()
+
+    def fake_redis(url, **kw):
+        created["redis_kw"] = kw
+        return FakeRedis()
+
+    monkeypatch.setattr(_sch, "create_engine", fake_engine)
+    monkeypatch.setattr(_sch.Redis, "from_url", staticmethod(fake_redis))
+    monkeypatch.setattr(_sch, "sessionmaker", lambda bind: None)
+    calls = []
+
+    def fake_run_due(*a, **k):
+        calls.append(1)
+        if len(calls) <= 2:
+            raise RuntimeError("redis down")
+        handlers[_sch.signal.SIGTERM](None, None)  # 第三次:请求停止
+        return []
+
+    monkeypatch.setattr(_sch, "run_due", fake_run_due)
+    _sch.serve(settings, interval=0)
+    assert len(calls) == 3  # 前两次异常没有让循环退出
+    assert created["redis_kw"]["socket_timeout"] == 5
+    assert created["redis_kw"]["socket_connect_timeout"] == 5
+    assert created["engine_kw"]["connect_args"] == {"connect_timeout": 5}

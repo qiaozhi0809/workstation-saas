@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from sqlalchemy import Engine, inspect, text
+from sqlalchemy.engine import make_url
 
 from app.config import Settings
 from app.version import APP_VERSION
@@ -21,11 +22,10 @@ from app.version import APP_VERSION
 MASK = "***"
 MAX_LOG_BYTES = 20 * 1024 * 1024
 LOG_DAYS = 3
-LOG_FILE_PREFIX = "app.jsonl"
+LOG_FILE_GLOB = "*.jsonl*"  # app.jsonl、scheduler.jsonl 及轮转出的 *.jsonl.YYYY-MM-DD
 
 _SENSITIVE_KEY = re.compile(r"secret|key|password|token", re.IGNORECASE)
-# DSN:`://` 之后第一个 `:` 起,到同一串里最后一个 `@` 之前全部是密码(可含 / @ ?)
-_URL_PASSWORD = re.compile(r"(://[^:/@\s\"'\\]*:)[^\s\"'\\]*@")
+_SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.\-]*://")
 _PHONE = re.compile(r"(?<!\d)(?:\+?86[-\s]?)?1[3-9]\d[-\s]?\d{4}[-\s]?\d{4}(?!\d)")
 _BEARER = re.compile(r"Bearer\s+[A-Za-z0-9._~+/=\-]+", re.IGNORECASE)
 _JWT = re.compile(r"eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]*")
@@ -33,16 +33,57 @@ _BCRYPT = re.compile(r"\$2[aby]\$\d\d\$[./A-Za-z0-9]{53}")
 _API_KEY = re.compile(r"sk-[A-Za-z0-9_\-]{16,}")
 # SQLAlchemy 异常里的 [parameters: (...)] 带真实列值(姓名、哈希……),整段抹掉;贪婪到最后一个 ]
 _SQL_PARAMS = re.compile(r"\[parameters: .*\]")
-# JSON 日志里 "xxx_password": "值" 之类的键值(值里可含转义引号)
-_JSON_SECRET = re.compile(
-    r'("[\w\-]*(?:secret|password|passwd|token|api_?key|master_?key)[\w\-]*"\s*:\s*")'
-    r'(?:[^"\\]|\\.)*(")',
+# URL 查询参数里键名含 password/secret/token/key 的值
+_QUERY_SECRET = re.compile(
+    r"([?&;](?:[\w\-]*(?:password|passwd|pwd|secret|token|key)[\w\-]*)=)[^&\s\"'#\\]*",
+    re.IGNORECASE,
+)
+# 通用键值:键名含 secret/password/passwd/pwd/token/authorization/cookie,或以 key 结尾(key、ai_key、
+# x-api-key);键两侧可有 " ' \";值可以是(转义)引号串、[...]、{...}(一层)或到空白/逗号/& 为止
+_KEY_NAME = (
+    r"(?:[\w\-]*(?:secret|password|passwd|pwd|token|authorization|cookie)[\w\-]*"
+    r"|(?:[\w\-]*[_\-])?(?:api_?key|key))"
+)
+_GENERIC = re.compile(
+    r"(?<![\w\-])(?P<pre>\\?[\"']?" + _KEY_NAME + r"\\?[\"']?\s*[:=]\s*)"
+    r"(?P<val>\\\"(?:(?!\\\").)*\\\"|\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*'"
+    r"|\[[^\]]*\]|\{[^}]*\}|[^\s,&;\"'}\]\\]+)",
+    re.IGNORECASE,
+)
+# 请求头风格的无引号值(Authorization: Basic xxx、Cookie: a=b; c=d)整行抹掉
+_AUTH_HEADER = re.compile(
+    r"((?<![\w\-])(?:proxy-)?(?:authorization|set-cookie|cookie)\s*[:=]\s*+)(?![\"'\\*])[^\r\n\"'\\]+",
     re.IGNORECASE,
 )
 
 
+def _mask_generic(m: re.Match[str]) -> str:
+    val = m.group("val")
+    if val.startswith('\\"'):
+        masked = f'\\"{MASK}\\"'
+    elif val[0] in "\"'":
+        masked = f"{val[0]}{MASK}{val[0]}"
+    else:
+        masked = MASK
+    return m.group("pre") + masked
+
+
 def mask_url(value: str) -> str:
-    return _URL_PASSWORD.sub(rf"\1{MASK}@", value)
+    """每个 scheme:// 之后:第一个 ':' 到同一段里最后一个 '@' 之间全部是密码,整段打码
+    (不排除空白、引号、反斜杠);再把查询参数里的密码类值打码。"""
+    matches = list(_SCHEME.finditer(value))
+    spans: list[tuple[int, int]] = []
+    for i, m in enumerate(matches):
+        seg_end = matches[i + 1].start() if i + 1 < len(matches) else len(value)
+        seg = value[m.end() : seg_end]
+        at = seg.rfind("@")
+        colon = seg.find(":")
+        if at < 0 or colon < 0 or colon > at or "/" in seg[:colon]:
+            continue
+        spans.append((m.end() + colon + 1, m.end() + at))
+    for start, end in reversed(spans):
+        value = value[:start] + MASK + value[end:]
+    return _QUERY_SECRET.sub(rf"\1{MASK}", value)
 
 
 def _jsonable(value: Any) -> Any:
@@ -51,6 +92,14 @@ def _jsonable(value: Any) -> Any:
     if isinstance(value, list | tuple | set):
         return [_jsonable(v) for v in value]
     return str(value)
+
+
+def _mask_url_field(value: str) -> str:
+    """URL 型配置值:先打码,再用 make_url 确认还能解析;解析失败则整值 ***。"""
+    try:
+        return make_url(mask_url(value)).render_as_string(hide_password=True)
+    except Exception:
+        return MASK
 
 
 def mask_settings(settings: Settings) -> dict[str, Any]:
@@ -63,18 +112,19 @@ def mask_settings(settings: Settings) -> dict[str, Any]:
             out[name] = MASK
         else:
             v = _jsonable(value)
-            out[name] = mask_url(v) if isinstance(v, str) and "://" in v else v
+            out[name] = _mask_url_field(v) if isinstance(v, str) and "://" in v else v
     return out
 
 
 def mask_line(line: str) -> str:
     line = _SQL_PARAMS.sub(f"[parameters: {MASK}]", line)
     line = mask_url(line)
-    line = _JSON_SECRET.sub(rf"\1{MASK}\2", line)
-    line = _BCRYPT.sub(MASK, line)
-    line = _API_KEY.sub(MASK, line)
     line = _BEARER.sub(MASK, line)
     line = _JWT.sub(MASK, line)
+    line = _BCRYPT.sub(MASK, line)
+    line = _API_KEY.sub(MASK, line)
+    line = _AUTH_HEADER.sub(rf"\1{MASK}", line)
+    line = _GENERIC.sub(_mask_generic, line)
     return _PHONE.sub("1**********", line)
 
 
@@ -166,7 +216,7 @@ def _log_files(log_dir: Path, since: datetime) -> list[Path]:
     """最近 LOG_DAYS 天有改动的应用日志(含轮转文件),由新到旧。"""
     cutoff = since.timestamp()
     found = []
-    for p in log_dir.glob(f"{LOG_FILE_PREFIX}*"):
+    for p in log_dir.glob(LOG_FILE_GLOB):
         try:
             if p.is_file() and p.stat().st_mtime >= cutoff:
                 found.append((p.stat().st_mtime, p))

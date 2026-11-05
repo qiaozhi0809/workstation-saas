@@ -201,3 +201,12 @@ def test_init_school_audit_has_no_password(db, new_settings):
     row = db.scalars(select(AuditLog).where(AuditLog.action == "system.init")).one()
     assert row.user_id is None and row.success is True
     assert PW not in repr(row.extra) and "password" not in repr(row.extra).lower()
+
+
+def test_exists_wins_over_validation_in_api_and_cli(db, new_settings):
+    assert _init(db, new_settings) == "created"
+    # 已初始化后,即使参数非法(空密码、非法登录名),也只回答"已初始化过"
+    assert _init(db, new_settings, admin_login="a b", admin_password="") == "exists"
+    code, out = _run_cli(db, ["--name", "x", "--admin-login", "!", "--admin-password-stdin"], "\n")
+    assert code == 3
+    assert "已初始化过" in out

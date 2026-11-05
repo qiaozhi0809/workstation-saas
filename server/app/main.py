@@ -3,6 +3,7 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+import structlog
 from fastapi import APIRouter, FastAPI
 from redis import Redis
 from sqlalchemy import create_engine
@@ -41,6 +42,7 @@ from app.domain.todos.router import router as todos_router
 from app.domain.years.http import router as years_router  # M3b 段 F
 from app.errors import install_error_handlers
 from app.logging import configure_logging
+from app.version import APP_VERSION
 from app.ws.hub import Hub
 from app.ws.router import router as ws_router  # M3b 段 A
 
@@ -48,6 +50,7 @@ from app.ws.router import router as ws_router  # M3b 段 A
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     configure_logging(settings.log_level, settings.log_dir, settings.log_retention_days)
+    structlog.get_logger().info("app.started", version=APP_VERSION, env=settings.env)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:

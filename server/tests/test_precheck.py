@@ -468,8 +468,10 @@ class _Base:
 def _dirty_seat_dims(b: _Base) -> int:
     b.klass(seat_rows=13)
     b.klass(seat_cols=12, seat_rows=0)
+    b.klass(seat_cols=14)  # 只有列数越界(须为偶数,否则撞 classes_desk_cols):检查两半都要各自生效
+    b.klass(seat_cols=0)
     b.klass()  # 合法班级不计入
-    return 2
+    return 4
 
 
 def _dirty_seat_pair(b: _Base) -> int:
