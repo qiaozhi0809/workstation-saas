@@ -9,8 +9,11 @@ import { noticesApi } from '@/shared/api/notices'
 import { Toaster } from '@/shared/components/Toast'
 import { useTeacherStore } from '@/shared/stores/teacher'
 import type { NoticeSent } from '@/shared/types/admin'
+import { classroomApi } from '@/shared/api/classroom'
+import { summaryFixture } from '../Classroom/pageTestUtils'
 import ClassNoticesPage from './ClassNoticesPage'
 
+vi.mock('@/shared/api/classroom', () => ({ classroomApi: { summary: vi.fn() } }))
 vi.mock('@/shared/api/classes', () => ({ classesApi: { mine: vi.fn() } }))
 vi.mock('@/shared/api/classNotices', () => ({ classNoticesApi: { list: vi.fn(), send: vi.fn(), recall: vi.fn() } }))
 vi.mock('@/shared/api/notices', () => ({ noticesApi: { acks: vi.fn(), exportAcks: vi.fn() } }))
@@ -38,6 +41,7 @@ beforeEach(() => {
   useTeacherStore.setState({ classId: 'c1' })
   vi.mocked(classesApi.mine).mockResolvedValue({ items: [{ id: 'c1', name: '三年二班' } as never] })
   vi.mocked(classNoticesApi.list).mockResolvedValue({ items: [], total: 0 })
+  vi.mocked(classroomApi.summary).mockResolvedValue(summaryFixture({ my_perms: ['class.notice'] }))
 })
 afterEach(cleanup)
 
@@ -155,4 +159,13 @@ it('paginates the sent list', async () => {
   await screen.findByText('周五春游', { selector: 'li *' })
   fireEvent.click(screen.getByRole('button', { name: '下一页' }))
   await waitFor(() => expect(classNoticesApi.list).toHaveBeenCalledWith('c1', 2))
+})
+
+it('shows an empty state without class.notice and makes no class-notice requests', async () => {
+  vi.mocked(classroomApi.summary).mockResolvedValue(summaryFixture({ my_perms: [] }))
+  renderPage()
+  expect(await screen.findByText('只有本班班主任可以发班级公告')).toBeInTheDocument()
+  expect(screen.queryByLabelText('标题')).toBeNull()
+  expect(classNoticesApi.list).not.toHaveBeenCalled()
+  expect(classNoticesApi.send).not.toHaveBeenCalled()
 })

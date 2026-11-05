@@ -2,6 +2,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { useState } from 'react'
 import { ApiError } from '@/shared/api/client'
 import { classesApi } from '@/shared/api/classes'
+import { classroomApi } from '@/shared/api/classroom'
 import { classNoticesApi } from '@/shared/api/classNotices'
 import { EmptyState } from '@/shared/components/feedback/EmptyState'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
@@ -92,13 +93,19 @@ function SentList({ classId }: { classId: string }) {
 export default function ClassNoticesPage() {
   const classId = useTeacherStore((s) => s.classId)
   const classes = useQuery({ queryKey: ['my-classes'], queryFn: classesApi.mine })
+  // 与导航、教室页同一个 key,共用缓存;页面自己也判权,直接打开 URL 不会发班级公告请求
+  const summary = useQuery({ queryKey: ['classroom', classId], queryFn: () => classroomApi.summary(classId!), enabled: !!classId })
   const [composerKey, setComposerKey] = useState(0)
   const cls = classes.data?.items.find((c) => c.id === classId)
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-4 p-4 md:p-6">
       <h1 className="text-xl font-semibold">班级公告</h1>
-      {!classId ? <LoadingState /> : (
+      {!classId || summary.isPending ? <LoadingState /> : summary.isError && !summary.data ? (
+        <ErrorState title="权限加载失败" onRetry={() => void summary.refetch()} retrying={summary.isFetching} />
+      ) : !summary.data?.my_perms.includes('class.notice') ? (
+        <EmptyState title="只有本班班主任可以发班级公告" className="justify-center p-6" />
+      ) : (
         <div className="grid items-start gap-4 md:grid-cols-2">
           {classes.isError && !classes.data ? (
             <ErrorState title="班级加载失败" onRetry={() => void classes.refetch()} retrying={classes.isFetching} />
