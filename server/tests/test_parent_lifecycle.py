@@ -218,3 +218,124 @@ def test_archive_keeps_staff_account_without_current_binding(db):
         db.execute(text("SELECT status FROM users WHERE id = :u"), {"u": TEACHER04}).scalar_one()
         == "active"
     )
+
+
+def _collect(pubsub, want: int = 1, timeout: float = 2.0) -> list[dict]:
+    import json
+    import time
+
+    got: list[dict] = []
+    end = time.monotonic() + timeout
+    while time.monotonic() < end and len(got) < want:
+        msg = pubsub.get_message(ignore_subscribe_messages=True, timeout=0.1)
+        if msg:
+            got.append(json.loads(msg["data"]))
+    return got
+
+
+def test_archive_publishes_revoked(db, redis_client, monkeypatch):
+    from app.ws import hub
+    from app.ws.hub import CHANNEL, REVOKED
+
+    pubsub = redis_client.pubsub()
+    pubsub.subscribe(CHANNEL)
+    pubsub.get_message(timeout=1)  # 订阅确认
+    _age(db, PARENT02, "S0001")  # 只有一个孩子
+    # 测试库在外层事务里,另开连接看不到数据;改为记录发布时 commit 是否已发生
+    seen: list[str] = []
+    committed: list[bool] = []
+    real_commit, real = db.commit, hub.publish
+
+    def commit():
+        real_commit()
+        committed.append(True)
+
+    def spy(redis, user_ids, event):
+        status = db.execute(
+            text("SELECT status FROM users WHERE id = :u"), {"u": PARENT02}
+        ).scalar_one()
+        seen.append(status if committed else "before-commit")
+        real(redis, user_ids, event)
+
+    monkeypatch.setattr(db, "commit", commit)
+    monkeypatch.setattr(hub, "publish", spy)
+    res = archive_expired(db, SCHOOL, NOW, redis_client)
+    assert res.users == 1 and res.user_ids == [UUID(PARENT02)]
+    got = _collect(pubsub)
+    assert seen == ["archived"]  # 发布发生在提交之后
+    assert got == [{"user_ids": [PARENT02], "event": {"type": REVOKED}}]
+    pubsub.close()
+
+
+def test_archive_dry_run_does_not_publish(db, redis_client):
+    from app.ws.hub import CHANNEL
+
+    pubsub = redis_client.pubsub()
+    pubsub.subscribe(CHANNEL)
+    pubsub.get_message(timeout=1)
+    _age(db, PARENT02, "S0001")
+    res = archive_expired(db, SCHOOL, NOW, redis_client, dry_run=True)
+    assert res.users == 1
+    db.rollback()
+    assert _collect(pubsub, timeout=0.5) == []
+    pubsub.close()
+
+
+def test_archive_audit_via_is_caller_supplied(db):
+    _age(db, PARENT02, "S0001")
+    archive_expired(db, SCHOOL, NOW, via="scheduler")
+    via = db.execute(
+        text("SELECT extra->>'via' FROM audit_logs WHERE action = 'parent.archive'")
+    ).scalar_one()
+    assert via == "scheduler"
+
+
+def test_archive_post_commit_failures_do_not_raise(db, redis_client, monkeypatch):
+    from app.ws import hub
+
+    _age(db, PARENT02, "S0001")
+    published: list = []
+    revoked: list = []
+
+    def bad_revoke(redis, uid):
+        revoked.append(uid)
+        raise ConnectionError("redis down")
+
+    monkeypatch.setattr(sessions, "revoke_all", bad_revoke)
+    monkeypatch.setattr(hub, "publish", lambda *a, **k: published.append(a))
+    res = archive_expired(db, SCHOOL, NOW, redis_client)
+    assert res.users == 1 and res.user_ids == [UUID(PARENT02)]
+    assert revoked == [UUID(PARENT02)] and len(published) == 1  # 撤销失败仍发布
+    status = db.execute(
+        text("SELECT status FROM users WHERE id = :u"), {"u": PARENT02}
+    ).scalar_one()
+    assert status == "archived"
+
+
+def test_archive_publish_failure_does_not_raise(db, redis_client, monkeypatch):
+    from app.ws import hub
+
+    _age(db, PARENT02, "S0001")
+
+    def boom(*a, **k):
+        raise ConnectionError("redis down")
+
+    monkeypatch.setattr(hub, "publish", boom)
+    res = archive_expired(db, SCHOOL, NOW, redis_client)
+    assert res.users == 1
+
+
+def test_archive_one_revoke_failure_does_not_skip_others(db, redis_client, monkeypatch):
+    _age(db, PARENT02, "S0001")
+    _age(db, PARENT01, "S0017")
+    _age(db, PARENT01, "S0001")
+    seen: list = []
+
+    def flaky(redis, uid):
+        seen.append(uid)
+        if len(seen) == 1:
+            raise ConnectionError("x")
+
+    monkeypatch.setattr(sessions, "revoke_all", flaky)
+    res = archive_expired(db, SCHOOL, NOW, redis_client)
+    assert res.users == 2 and len(seen) == 2

@@ -10,10 +10,11 @@
 """
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from uuid import UUID
 
+import structlog
 from redis import Redis
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -22,14 +23,18 @@ from app.audit.service import record
 from app.auth import sessions
 from app.domain.parents.access import READONLY_DAYS
 from app.rbac.roles import PARENT_ROLES
+from app.ws import hub
 
 _PARENT_ROLES = sorted(r.value for r in PARENT_ROLES)
+
+log = structlog.get_logger()
 
 
 @dataclass(frozen=True)
 class ArchiveResult:
     links: int
     users: int
+    user_ids: list[UUID] = field(default_factory=list)
 
 
 def close_links_for(db: Session, student_ids: Sequence[UUID], now: datetime) -> list[UUID]:
@@ -69,6 +74,7 @@ def archive_expired(
     redis: Redis | None = None,
     *,
     dry_run: bool = False,
+    via: str = "cli",
 ) -> ArchiveResult:
     """只读满 365 天的绑定改 ended,并结束对应 role_bindings;不再有任何未结束
     role_bindings 且不是教职工的家长账号改 archived、作废刷新令牌(redis 给了才作废)。幂等;
@@ -100,14 +106,23 @@ def archive_expired(
             success=True,
             object_type="user",
             object_id=str(uid),
-            extra={"via": "cli"},
+            extra={"via": via},
         )
     if not dry_run:
         db.commit()
+        # 提交之后的失败不往上抛:否则调用方(scheduler)当失败重试,却再也查不到这批账号
         if redis is not None:
             for uid in users:
-                sessions.revoke_all(redis, uid)
-    return ArchiveResult(links=len(links), users=len(users))
+                try:
+                    sessions.revoke_all(redis, uid)
+                except Exception as exc:
+                    log.warning("parent_archive.revoke_failed", error=type(exc).__name__)
+            if users:
+                try:
+                    hub.publish(redis, users, {"type": hub.REVOKED})  # 踢掉已打开的 WebSocket
+                except Exception as exc:
+                    log.warning("parent_archive.publish_failed", error=type(exc).__name__)
+    return ArchiveResult(links=len(links), users=len(users), user_ids=users)
 
 
 def archive_orphan_accounts(db: Session, user_ids: Sequence[UUID]) -> list[UUID]:

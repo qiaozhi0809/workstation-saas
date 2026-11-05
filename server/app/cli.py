@@ -7,13 +7,13 @@ from contextlib import AbstractContextManager
 from dataclasses import replace
 from datetime import date
 from pathlib import Path
-from typing import TextIO
+from typing import NoReturn, TextIO
 from urllib.parse import urlparse
 from uuid import UUID
 
 import httpx
 from redis import Redis
-from sqlalchemy import create_engine, text
+from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.ai.client import AIUpstreamError, ChatMessage, Delta
@@ -207,8 +207,90 @@ def parent_archive(
     return 0
 
 
+def scheduler_cmd(
+    ns: argparse.Namespace,
+    *,
+    db_factory: Callable[[], AbstractContextManager[Session]],
+    redis: Redis,
+    out: TextIO,
+) -> int:
+    """--once:跑一次到期任务就退出,打印执行了的任务名;否则常驻(见 deploy/scheduler.py)。"""
+    from app.deploy import scheduler
+
+    for name in scheduler.run_due(db_factory, redis, scheduler.utc_now()):
+        print(name, file=out)
+    return 0
+
+
+def migrate(ns: argparse.Namespace, *, engine: Engine, out: TextIO) -> int:
+    """迁移预检 + alembic upgrade head。退出码:0 通过 / 已最新,2 预检不通过,1 其他错误。"""
+    from alembic import command
+
+    from app.deploy import precheck
+
+    try:
+        pending = precheck.pending_revisions(engine)
+        if not pending:
+            out.write("数据库已是最新版本,无需迁移。\n")
+            return 0
+        report = precheck.run_precheck(engine, pending)
+        out.write(precheck.render(report, pending))
+        if not report.ok:
+            return 2
+        if ns.check_only:
+            return 0
+        command.upgrade(precheck.alembic_config(engine), "head")
+        out.write(f"已迁移到 {precheck.head_revision(engine)}\n")
+        return 0
+    except precheck.UnknownVersionError as exc:
+        out.write(f"数据库版本 {exc.version} 高于或不属于本程序版本,请使用对应版本的安装包\n")
+        return 1
+    except Exception as exc:
+        out.write(f"迁移失败:{type(exc).__name__}: {exc}\n")
+        return 1
+
+
+def init_school_cmd(
+    ns: argparse.Namespace,
+    *,
+    db_factory: Callable[[], AbstractContextManager[Session]],
+    stdin: TextIO,
+    out: TextIO,
+) -> int:
+    """首次安装:建学校与信息中心管理员。退出码:0 已创建,3 已初始化过,1 参数错误。"""
+    from app.deploy.bootstrap import InitError, init_school
+
+    password = stdin.readline().rstrip("\r\n")
+    with db_factory() as db:
+        try:
+            result = init_school(
+                db,
+                get_settings(),
+                name=ns.name,
+                admin_login=ns.admin_login,
+                admin_password=password,
+            )
+        except InitError as exc:
+            out.write(f"初始化失败:{exc}\n")
+            return 1
+    if result == "exists":
+        out.write("已初始化过,未做任何改动\n")
+        return 3
+    out.write(f"已创建学校「{ns.name}」和管理员 {ns.admin_login}\n")
+    return 0
+
+
+class _Parser(argparse.ArgumentParser):
+    """用法错误退出码为 1(契约:migrate / init-school 参数错误为 1),而不是 argparse 默认的 2;
+    2 在契约里表示"迁移预检不通过",upgrade.sh 据此判断。--help 仍退出 0。子命令解析器沿用本类。"""
+
+    def error(self, message: str) -> NoReturn:
+        self.print_usage(sys.stderr)
+        self.exit(1, f"{self.prog}: error: {message}\n")
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="app.cli")
+    parser = _Parser(prog="app.cli")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("seed-dev", help="insert the dev seed data if absent")
     ai = sub.add_parser("ai-config", help="查看或设置 AI 服务")
@@ -225,8 +307,18 @@ def build_parser() -> argparse.ArgumentParser:
     mask = s.add_mutually_exclusive_group()
     mask.add_argument("--mask-forced", dest="mask_forced", action="store_true", default=None)
     mask.add_argument("--no-mask-forced", dest="mask_forced", action="store_false")
+    mg = sub.add_parser("migrate", help="迁移预检并升级数据库到最新版本")
+    mg.add_argument("--check-only", action="store_true", help="只预检,不迁移")
+    isc = sub.add_parser("init-school", help="首次安装:创建学校和信息中心管理员")
+    isc.add_argument("--name", required=True, help="校名(1–50 字)")
+    isc.add_argument("--admin-login", required=True, help="管理员登录名(3–32 位字母数字 ._-)")
+    isc.add_argument(
+        "--admin-password-stdin", action="store_true", required=True, help="从标准输入读一行密码"
+    )
     pa = sub.add_parser("parent-archive", help="归档只读满一年的家长绑定与账号")
     pa.add_argument("--dry-run", action="store_true", help="只统计,不改数据")
+    sc = sub.add_parser("scheduler", help="定时任务(家长归档等);--once 只跑一次到期任务")
+    sc.add_argument("--once", action="store_true", help="跑一次到期任务就退出")
     yu = sub.add_parser("year-upgrade", help="学年升级:生成方案、预览、执行、回滚")
     ya = yu.add_subparsers(dest="action", required=True)
     ys = ya.add_parser("suggest", help="按现有班级生成升级方案 JSON")
@@ -248,6 +340,22 @@ def main() -> None:
     ns = build_parser().parse_args()
     if ns.command == "seed-dev":
         print(seed_dev())
+    elif ns.command == "migrate":
+        engine = create_engine(get_settings().database_url)
+        try:
+            code = migrate(ns, engine=engine, out=sys.stdout)
+        finally:
+            engine.dispose()
+        sys.exit(code)
+    elif ns.command == "init-school":
+        engine = create_engine(get_settings().database_url)
+        try:
+            code = init_school_cmd(
+                ns, db_factory=sessionmaker(bind=engine), stdin=sys.stdin, out=sys.stdout
+            )
+        finally:
+            engine.dispose()
+        sys.exit(code)
     elif ns.command == "ai-config":
         engine = create_engine(get_settings().database_url)
         try:
@@ -260,6 +368,30 @@ def main() -> None:
         redis = Redis.from_url(get_settings().redis_url, decode_responses=True)
         try:
             code = parent_archive(
+                ns, db_factory=sessionmaker(bind=engine), redis=redis, out=sys.stdout
+            )
+        finally:
+            redis.close()
+            engine.dispose()
+        sys.exit(code)
+    elif ns.command == "scheduler":
+        from app.deploy import scheduler
+        from app.logging import configure_logging
+
+        settings = get_settings()
+        configure_logging(
+            settings.log_level,
+            settings.log_dir,
+            settings.log_retention_days,
+            file_name="scheduler.jsonl",  # 与 app 各写各的文件,避免同文件多进程轮转冲突
+        )
+        if not ns.once:
+            scheduler.serve(settings)
+            sys.exit(0)
+        engine = create_engine(settings.database_url)
+        redis = Redis.from_url(settings.redis_url, decode_responses=True)
+        try:
+            code = scheduler_cmd(
                 ns, db_factory=sessionmaker(bind=engine), redis=redis, out=sys.stdout
             )
         finally:

@@ -5,10 +5,17 @@ from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
+import pytest
 from sqlalchemy import text
 
 from app.auth import sessions
-from app.cli import build_parser, parent_archive
+from app.cli import build_parser, init_school_cmd, migrate, parent_archive
+from tests.test_precheck import (  # noqa: F401  (fixtures)
+    current_version,
+    fresh_engine,
+    pg_admin_url,
+    upgrade_to,
+)
 
 PARENT02 = "55555555-5555-5555-5555-555555555562"
 
@@ -77,3 +84,109 @@ def test_year_rollback_upgrade_id_option():
     )
     assert str(ns.upgrade_id) == "11111111-1111-1111-1111-111111111111"
     assert build_parser().parse_args(["year-upgrade", "rollback"]).upgrade_id is None
+
+
+def _migrate(engine, *argv):
+    out = io.StringIO()
+    ns = build_parser().parse_args(["migrate", *argv])
+    return migrate(ns, engine=engine, out=out), out.getvalue()
+
+
+def test_migrate_check_only(fresh_engine):  # noqa: F811
+    upgrade_to(fresh_engine, "0001")
+    code, out = _migrate(fresh_engine, "--check-only")
+    assert code == 0
+    assert "迁移预检:待执行 0002" in out
+    assert "预检结果:通过" in out
+    assert current_version(fresh_engine) == "0001"
+
+
+def test_migrate_upgrades_empty_db_then_is_idempotent(fresh_engine):  # noqa: F811
+    code, out = _migrate(fresh_engine)
+    assert code == 0
+    assert "已迁移到 0010" in out
+    assert current_version(fresh_engine) == "0010"
+    code, out = _migrate(fresh_engine)
+    assert code == 0
+    assert "已是最新" in out
+
+
+def test_migrate_other_error_exits_1():
+    from sqlalchemy import create_engine
+
+    bad = create_engine(
+        "postgresql+psycopg://u:p@127.0.0.1:1/none", connect_args={"connect_timeout": 1}
+    )
+    code, out = _migrate(bad)
+    assert code == 1
+    assert "迁移失败" in out
+
+
+def test_migrate_unknown_db_version_exits_1(fresh_engine):  # noqa: F811
+    from sqlalchemy import text as sql_text
+
+    upgrade_to(fresh_engine, "0001")
+    with fresh_engine.begin() as conn:
+        conn.execute(sql_text("UPDATE alembic_version SET version_num = '0099'"))
+    code, out = _migrate(fresh_engine)
+    assert code == 1
+    assert "数据库版本 0099 高于或不属于本程序版本,请使用对应版本的安装包" in out
+    assert current_version(fresh_engine) == "0099"
+
+
+def test_init_school_reads_password_from_stdin(db, settings, monkeypatch):
+    from uuid import uuid4
+
+    s = settings.model_copy(update={"school_id": uuid4()})
+    monkeypatch.setattr("app.cli.get_settings", lambda: s)
+
+    @contextmanager
+    def factory():
+        yield db
+
+    argv = [
+        "init-school",
+        "--name",
+        "试点学校",
+        "--admin-login",
+        "it.admin",
+        "--admin-password-stdin",
+    ]
+    pw = "Test-Pass-123x"
+
+    def run(stdin_text):
+        out = io.StringIO()
+        ns = build_parser().parse_args(argv)
+        code = init_school_cmd(ns, db_factory=factory, stdin=io.StringIO(stdin_text), out=out)
+        return code, out.getvalue()
+
+    code, out = run(pw + "\n")
+    assert code == 0
+    assert out.strip() == "已创建学校「试点学校」和管理员 it.admin"
+    assert pw not in out
+    code, out = run(pw + "\n")
+    assert code == 3 and out.strip() == "已初始化过,未做任何改动"
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["migrate", "--bogus"],
+        ["init-school", "--admin-login", "admin01", "--admin-password-stdin"],  # 缺 --name
+        ["init-school", "--name", "x", "--admin-login", "admin01"],  # 缺 --admin-password-stdin
+        ["no-such-command"],
+        [],
+        ["ai-config", "no-such-action"],
+    ],
+)
+def test_usage_errors_exit_1(argv, capsys):
+    with pytest.raises(SystemExit) as ei:
+        build_parser().parse_args(argv)
+    assert ei.value.code == 1
+    assert "usage" in capsys.readouterr().err.lower()
+
+
+def test_help_exits_0(capsys):
+    with pytest.raises(SystemExit) as ei:
+        build_parser().parse_args(["migrate", "--help"])
+    assert ei.value.code == 0
