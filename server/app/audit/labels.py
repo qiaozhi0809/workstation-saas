@@ -110,6 +110,9 @@ ACTION_LABELS: dict[str, str] = {
     # 审计与其他权限(被拒访问的动作名就是权限点)
     "audit.read": "查看审计日志",
     "school.view": "查看全校概览",
+    # 系统(部署与运维)
+    "system.init": "初始化学校",
+    "system.diagnostics": "导出诊断包",
 }
 
 # 动作名前缀 → 分组
@@ -125,6 +128,7 @@ _PREFIX_GROUPS: dict[str, tuple[str, ...]] = {
     "year": ("year.",),
     "notice": ("notice.",),
     "parent": ("parent.",),
+    "system": ("system.",),
 }
 
 _GROUP_NAMES: dict[str, str] = {
@@ -139,6 +143,7 @@ _GROUP_NAMES: dict[str, str] = {
     "year": "学年",
     "notice": "通知",
     "parent": "家长",
+    "system": "系统",
 }
 
 

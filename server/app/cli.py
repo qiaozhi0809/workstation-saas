@@ -235,6 +235,36 @@ def migrate(ns: argparse.Namespace, *, engine: Engine, out: TextIO) -> int:
         return 1
 
 
+def init_school_cmd(
+    ns: argparse.Namespace,
+    *,
+    db_factory: Callable[[], AbstractContextManager[Session]],
+    stdin: TextIO,
+    out: TextIO,
+) -> int:
+    """首次安装:建学校与信息中心管理员。退出码:0 已创建,3 已初始化过,1 参数错误。"""
+    from app.deploy.bootstrap import InitError, init_school
+
+    password = stdin.readline().rstrip("\r\n")
+    with db_factory() as db:
+        try:
+            result = init_school(
+                db,
+                get_settings(),
+                name=ns.name,
+                admin_login=ns.admin_login,
+                admin_password=password,
+            )
+        except InitError as exc:
+            out.write(f"初始化失败:{exc}\n")
+            return 1
+    if result == "exists":
+        out.write("已初始化过,未做任何改动\n")
+        return 3
+    out.write(f"已创建学校「{ns.name}」和管理员 {ns.admin_login}\n")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="app.cli")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -255,6 +285,12 @@ def build_parser() -> argparse.ArgumentParser:
     mask.add_argument("--no-mask-forced", dest="mask_forced", action="store_false")
     mg = sub.add_parser("migrate", help="迁移预检并升级数据库到最新版本")
     mg.add_argument("--check-only", action="store_true", help="只预检,不迁移")
+    isc = sub.add_parser("init-school", help="首次安装:创建学校和信息中心管理员")
+    isc.add_argument("--name", required=True, help="校名(1–50 字)")
+    isc.add_argument("--admin-login", required=True, help="管理员登录名(3–32 位字母数字 ._-)")
+    isc.add_argument(
+        "--admin-password-stdin", action="store_true", required=True, help="从标准输入读一行密码"
+    )
     pa = sub.add_parser("parent-archive", help="归档只读满一年的家长绑定与账号")
     pa.add_argument("--dry-run", action="store_true", help="只统计,不改数据")
     yu = sub.add_parser("year-upgrade", help="学年升级:生成方案、预览、执行、回滚")
@@ -282,6 +318,15 @@ def main() -> None:
         engine = create_engine(get_settings().database_url)
         try:
             code = migrate(ns, engine=engine, out=sys.stdout)
+        finally:
+            engine.dispose()
+        sys.exit(code)
+    elif ns.command == "init-school":
+        engine = create_engine(get_settings().database_url)
+        try:
+            code = init_school_cmd(
+                ns, db_factory=sessionmaker(bind=engine), stdin=sys.stdin, out=sys.stdout
+            )
         finally:
             engine.dispose()
         sys.exit(code)

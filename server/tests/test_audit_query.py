@@ -32,6 +32,7 @@ GROUP_KEYS = [
     "year",
     "notice",
     "parent",
+    "system",
     "denied",
 ]
 
@@ -78,6 +79,11 @@ def test_actions_groups_fixed(client, settings):
     by_key = {g["key"]: g for g in body["groups"]}
     assert by_key["denied"]["label"] == "被拒的访问"
     assert by_key["denied"]["actions"] == []
+    assert by_key["system"]["label"] == "系统"
+    assert {a["action"] for a in by_key["system"]["actions"]} == {
+        "system.init",
+        "system.diagnostics",
+    }
     assert {"action": "student.update", "label": ACTION_LABELS["student.update"]} in by_key[
         "student"
     ]["actions"]
