@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import func, select, tuple_
 from sqlalchemy.orm import Session
 
-from app.ai.stats import exam_table
+from app.ai.stats import exam_table, round1
 from app.audit.service import record
 from app.domain.attendance.service import day_view
 from app.domain.exams.schemas import ExamType, SubjectFull
@@ -604,10 +604,6 @@ def exams(
     ]
 
 
-def _round1(x: float) -> float:
-    return round(x * 10 + 1e-9) / 10
-
-
 def _band(rank: int | None, ranked: int) -> Literal["前 10%", "前 30%"] | None:
     if rank is None or ranked < 10:
         return None
@@ -684,7 +680,7 @@ def exam_detail(
                 name=s.name,
                 full=s.full,
                 score=me.subs.get(s.name),
-                class_avg=_round1(sum(vals) / len(vals)) if vals else None,
+                class_avg=round1(sum(vals) / len(vals)) if vals else None,
                 class_max=max(vals) if vals else None,
             )
         )

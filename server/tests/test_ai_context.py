@@ -16,6 +16,7 @@ from app.ai.context import (
 from app.ai.stats import exam_stats, exam_table, rank_changes, subject_stats
 from app.domain.classes.service import class_scope_of
 from app.domain.exams.schemas import SubjectFull
+from app.domain.school_settings.service import DEFAULT_GRADING
 from app.models import Enrollment, Exam, SchoolClass, Score, Student, User
 from app.rbac.bindings import load_bindings
 from tests.helpers import enrollment_of, freeze
@@ -55,7 +56,7 @@ def _load(db, exam_id: str):
 
 
 def test_exam_stats_match_frontend_rules(db):
-    st = exam_stats(*_load(db, EXAM_IDS[1]))
+    st = exam_stats(*_load(db, EXAM_IDS[1]), ratios=DEFAULT_GRADING)
     assert st is not None
     assert (round(st.avg, 1), st.max, st.min, st.n) == (236.1, 289, 117, 10)
     assert (round(st.pass_rate * 100), round(st.good_rate * 100), round(st.sd, 1)) == (90, 50, 47.7)
@@ -64,11 +65,11 @@ def test_exam_stats_match_frontend_rules(db):
 
 def test_subject_stats_cover_absent_and_low(db):
     subjects, scores, ids = _load(db, EXAM_IDS[1])
-    en = subject_stats(subjects, scores, "英语", ids)
+    en = subject_stats(subjects, scores, "英语", ids, ratios=DEFAULT_GRADING)
     assert en is not None
     assert en.n == 9  # 陈小五缺考,不计入
     assert round(en.rate, 1) == 82.4
-    assert subject_stats(subjects, scores, "物理", ids) is None
+    assert subject_stats(subjects, scores, "物理", ids, ratios=DEFAULT_GRADING) is None
 
 
 def test_ties_share_rank_and_all_absent_unranked():
@@ -82,9 +83,9 @@ def test_ties_share_rank_and_all_absent_unranked():
     table = exam_table(subjects, scores, [c, a, b])
     assert [(r.total, r.rank) for r in table] == [(270.0, 1), (270.0, 1), (None, None)]
     assert table[2].enrollment_id == c
-    st = exam_stats(subjects, scores, [a, b, c])
+    st = exam_stats(subjects, scores, [a, b, c], ratios=DEFAULT_GRADING)
     assert st is not None and st.n == 2
-    assert exam_stats(subjects, {c: {"语文": None}}, [c]) is None
+    assert exam_stats(subjects, {c: {"语文": None}}, [c], ratios=DEFAULT_GRADING) is None
 
 
 def test_next_rank_after_tie_skips():

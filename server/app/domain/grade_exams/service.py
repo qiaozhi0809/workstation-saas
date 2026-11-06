@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.audit.service import record
 from app.domain.exams.schemas import SubjectFull
 from app.domain.exams.service import subject_full_below_scores
-from app.domain.exams.subjects import merge_subjects
+from app.domain.exams.subjects import catalog_subjects, grade_stage, merge_subjects
 from app.domain.grade_exams.schemas import (
     GradeExamClass,
     GradeExamInput,
@@ -28,6 +28,21 @@ def get_grade_in_school(db: Session, school_id: UUID, grade_id: UUID) -> Grade:
     if grade is None or grade.school_id != school_id:
         raise ApiError(404, "NOT_FOUND", "年级不存在")
     return grade
+
+
+def _ensure_in_catalog(
+    db: Session, grade: Grade, subjects: Sequence[SubjectFull], keep: set[str]
+) -> None:
+    """联考科目必须在该年级学段的科目目录里(L37);``keep`` 是已有联考里可以保留的科目名。"""
+    allowed = {s.name for s in catalog_subjects(db, grade.school_id, grade_stage(grade))} | keep
+    for s in subjects:
+        if s.name not in allowed:
+            raise ApiError(
+                400,
+                "SUBJECT_NOT_IN_CATALOG",
+                f"「{s.name}」不在本学段的科目目录里,请先到学校设置里添加",
+                {"subject": s.name},
+            )
 
 
 def get_grade_exam(
@@ -208,6 +223,7 @@ def create(
     year = require_active_year(db, user.school_id)
     if grade.academic_year_id != year.id:
         raise ApiError(400, "BAD_REQUEST", "只能给当前学年的年级建联考")
+    _ensure_in_catalog(db, grade, body.subjects, set())
     ge = GradeExam(
         school_id=user.school_id,
         academic_year_id=year.id,
@@ -252,6 +268,10 @@ def update(
     """``ge`` must already be locked (get_grade_exam(lock=True)) and permission-checked."""
     if body.grade_id != ge.grade_id:
         raise ApiError(400, "BAD_REQUEST", "联考不能更换年级")
+    # 已有联考里不在目录的科目可以保留(编辑时不强制删),但不能新增目录外的
+    grade = db.get(Grade, ge.grade_id)
+    assert grade is not None
+    _ensure_in_catalog(db, grade, body.subjects, {s["name"] for s in ge.subjects})
     exams = _lock_class_exams(db, ge)
     kept = {s.name for s in body.subjects}
     removed = [s["name"] for s in ge.subjects if s["name"] not in kept]
