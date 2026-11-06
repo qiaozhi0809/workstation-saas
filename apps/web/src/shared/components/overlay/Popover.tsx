@@ -40,7 +40,7 @@ export default function Popover({
   children,
 }: PopoverProps) {
   const { open, toggle, layerId, wrapperRef, triggerRef, layerRef, onWrapperBlur } =
-    useAnchoredLayer(firstFocusable)
+    useAnchoredLayer(firstFocusable, triggerProps?.disabled)
   return (
     <div ref={wrapperRef} className="relative inline-flex" onBlur={onWrapperBlur}>
       <Button

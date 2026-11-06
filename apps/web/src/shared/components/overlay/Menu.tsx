@@ -33,7 +33,7 @@ export default function Menu({
   children,
 }: MenuProps) {
   const { open, setOpen, close, toggle, layerId, wrapperRef, triggerRef, layerRef, onWrapperBlur } =
-    useAnchoredLayer((layer) => items(layer)[0] ?? null)
+    useAnchoredLayer((layer) => items(layer)[0] ?? null, triggerProps?.disabled)
 
   const onTriggerKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
     triggerProps?.onKeyDown?.(e)
