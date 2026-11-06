@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi, type MockInstance } from 'vitest'
 import { adminApi } from '@/shared/api/admin'
 import { ApiError } from '@/shared/api/client'
 import { schoolApi } from '@/shared/api/school'
@@ -164,7 +164,7 @@ it('toasts the backend message when sync fails (L41)', async () => {
 // 老师端的考试列表 / 成绩册 / 班级科目表查询键(与 roles/teacher 下的 useQuery 写法一致)
 const TEACHER_KEYS = ['exams', 'gradebook', 'class-subjects']
 const expectTeacherCachesInvalidated = (
-  spy: ReturnType<typeof vi.spyOn>,
+  spy: MockInstance<QueryClient['invalidateQueries']>,
   classIds: string[],
   untouched: string[] = [],
 ) => {
