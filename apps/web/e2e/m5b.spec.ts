@@ -66,6 +66,20 @@ async function createTeacher(request: APIRequestContext): Promise<TestTeacher> {
     data: { user_id: account.id, identity: 'subject', subject: '语文' },
   })
   expect(assign.ok(), await assign.text()).toBeTruthy()
+  // M5d:新老师第一次进教师端会弹欢迎页;本文件测的是账号安全,先把首次引导记为已看过
+  // (任职之后才写:onboarded 的键必须属于本人已有的语境)。欢迎页本身由 admin.spec 覆盖。
+  const again = await rawLogin(request, loginName, PASSWORD)
+  expect(again.status).toBe(200)
+  const onboarded = await request.put(`${API}/me/preferences`, {
+    headers: auth(again.body.access_token as string),
+    data: {
+      teacher_figure: 'female',
+      idle_animation: true,
+      review_reasons: [{ text: '积极发言', delta: 1 }],
+      onboarded: { teacher: new Date().toISOString() },
+    },
+  })
+  expect(onboarded.ok(), await onboarded.text()).toBeTruthy()
   return teacher
 }
 
