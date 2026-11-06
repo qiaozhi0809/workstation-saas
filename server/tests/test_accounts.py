@@ -1,5 +1,8 @@
+from datetime import timedelta
+
 from sqlalchemy import func, select
 
+from app import clock
 from app.models import User
 from app.models.audit import AuditLog
 from tests.helpers import audit_rows, auth
@@ -485,3 +488,15 @@ def test_freeze_redis_error_leaves_account_active(client, settings, db, monkeypa
     assert res.status_code == 503 and res.json()["error"]["code"] == "SERVICE_UNAVAILABLE"
     db.expire_all()
     assert db.get(User, uid).status == "active"
+
+
+def test_admin_reset_sets_password_changed_at(client, settings, db):
+    uid = _user_id(db, "teacher02")
+    before = clock.utc_now() - timedelta(days=1)
+    db.get(User, uid).password_changed_at = before
+    db.commit()
+    res = client.post(f"{ACCOUNTS}/{uid}/reset-password", headers=_admin(settings))
+    assert res.status_code == 200
+    db.expire_all()
+    after = db.scalar(select(User.password_changed_at).where(User.id == uid))
+    assert after is not None and after > before

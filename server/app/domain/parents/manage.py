@@ -519,6 +519,7 @@ def reset_parent_password(
     temp = generate_temp_password()
     user.password_hash = hash_password(temp)
     user.must_change_password = True
+    user.password_changed_at = clock.utc_now()
     record(
         db,
         user_id=actor.id,

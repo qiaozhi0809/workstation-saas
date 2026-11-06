@@ -9,6 +9,7 @@ from sqlalchemy import and_, exists, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app import clock
 from app.audit.service import record
 from app.auth import sessions
 from app.auth.passwords import generate_temp_password, hash_password, hash_passwords
@@ -314,6 +315,7 @@ def reset_password(
     temp = generate_temp_password()
     user.password_hash = hash_password(temp)
     user.must_change_password = True
+    user.password_changed_at = clock.utc_now()
     record(
         db,
         user_id=actor.id,

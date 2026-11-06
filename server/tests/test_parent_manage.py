@@ -1,5 +1,5 @@
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import pytest
@@ -794,3 +794,16 @@ def test_reset_parent_forbidden_for_everyone_else(client, settings, db, who):
     assert res.json()["error"]["code"] == "FORBIDDEN"
     assert _user(db, "13800000060").password_hash == before
     assert any(a.success is False and str(a.user_id) == who for a in _audits(db, "parent.manage"))
+
+
+def test_parent_reset_sets_password_changed_at(client, settings, db):
+    created = _add(client, settings, S3, "13800000077").json()
+    link = created["parent"]["link_id"]
+    before = datetime.now(UTC) - timedelta(days=1)
+    _user(db, "13800000077").password_changed_at = before
+    db.commit()
+    res = client.post(f"/api/v1/parent-links/{link}/reset-password", headers=auth(settings))
+    assert res.status_code == 200
+    db.expire_all()
+    after = _user(db, "13800000077").password_changed_at
+    assert after is not None and after > before
