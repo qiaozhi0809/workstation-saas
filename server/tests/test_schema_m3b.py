@@ -145,7 +145,7 @@ def test_second_homeroom_allowed_when_previous_ended(db):
 @pytest.fixture
 def scratch_cfg(pg_url):
     admin = create_engine(pg_url, isolation_level="AUTOCOMMIT")
-    name = "m3b_mig"
+    name = f"m3b_mig_{uuid.uuid4().hex[:8]}"
     with admin.connect() as conn:
         conn.execute(text(f"DROP DATABASE IF EXISTS {name}"))
         conn.execute(text(f"CREATE DATABASE {name}"))
@@ -215,4 +215,4 @@ def test_upgrade_fails_readably_on_duplicate_homeroom(scratch_cfg):
             )
     with pytest.raises(ProgrammingError, match=ids["cls"]) as exc:
         command.upgrade(cfg, "0008")
-    assert "2" in str(exc.value)
+    assert "has 2 active homeroom assignments" in str(exc.value)
