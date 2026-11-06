@@ -227,7 +227,8 @@ export function scoreBands(totals: number[], full: number, ratios: Grading): Ban
  * 不会出现 64%、81% 这类刻度(L16)。优先往上补,顶到 100 再往下补。
  */
 export function trendDomain(values: number[]): [number, number] {
-  if (values.length === 0) return [0, 100]
+  // 空数组、NaN、±Infinity 都退回 0–100,否则下面补跨度的循环永远停不下来
+  if (values.length === 0 || !values.every(Number.isFinite)) return [0, 100]
   let lo = Math.max(0, Math.floor((Math.min(...values) - 4) / 5) * 5)
   let hi = Math.min(100, Math.ceil((Math.max(...values) + 4) / 5) * 5)
   while ((hi - lo) % 20 !== 0) {

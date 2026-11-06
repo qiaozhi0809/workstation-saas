@@ -388,6 +388,13 @@ describe('scoreBands / trendDomain / rankTint', () => {
     for (const [lo, hi] of [trendDomain([62, 84]), trendDomain([93, 98]), trendDomain([40, 41])])
       expect((hi - lo) % 20).toBe(0)
   })
+
+  it('falls back to 0–100 instead of looping forever when a value is not finite', () => {
+    // NaN / Infinity 会让 (hi - lo) % 20 永远不是 0
+    expect(trendDomain([NaN])).toEqual([0, 100])
+    expect(trendDomain([70, Number.POSITIVE_INFINITY])).toEqual([0, 100])
+    expect(trendDomain([Number.NEGATIVE_INFINITY, 70])).toEqual([0, 100])
+  })
   it('tints ranks in fifths', () => {
     expect([1, 2, 10].map((r) => rankTint(r, 10))).toEqual([1, 1, 5])
   })
