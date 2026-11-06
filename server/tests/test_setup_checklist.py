@@ -138,6 +138,36 @@ def test_accounts_exclude_it_admin(client, settings, db):
     assert got["done"] is True and got["detail"] == "已有 1 个教职工账号"
 
 
+def test_accounts_count_it_admin_who_also_teaches(client, settings, db):
+    """只排除"在任绑定全是 it_admin"的账号:信息中心兼班主任算教职工,纯信息中心不算。"""
+    db.execute(
+        text(
+            "UPDATE users SET status = 'frozen' WHERE school_id = :s AND id <> :keep"
+            " AND id IN (SELECT user_id FROM teachers)"
+        ),
+        {"s": SCHOOL_ID, "keep": IT_ADMIN},
+    )
+    assert items(client, settings)["accounts"]["done"] is False  # 纯信息中心
+    db.execute(
+        text(
+            "INSERT INTO role_bindings (user_id, role_type, scope, academic_year_id)"
+            " VALUES (:u, 'homeroom_teacher', jsonb_build_object('class_id', CAST(:c AS text)), :y)"
+        ),
+        {"u": IT_ADMIN, "c": CLASS_ID, "y": YEAR_ID},
+    )
+    got = items(client, settings)["accounts"]
+    assert got["done"] is True and got["detail"] == "已有 1 个教职工账号"
+    # 兼任结束(绑定 ended_at 非空)后又只剩纯信息中心
+    db.execute(
+        text(
+            "UPDATE role_bindings SET ended_at = now()"
+            " WHERE user_id = :u AND role_type = 'homeroom_teacher'"
+        ),
+        {"u": IT_ADMIN},
+    )
+    assert items(client, settings)["accounts"]["done"] is False
+
+
 def test_assignments_missing_homeroom(client, settings, db):
     db.execute(
         text(

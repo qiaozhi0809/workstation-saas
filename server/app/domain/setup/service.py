@@ -80,14 +80,17 @@ def _classes(db: Session, school_id: UUID, year: AcademicYear | None) -> SetupIt
 
 
 def _accounts(db: Session, school_id: UUID) -> SetupItem:
-    """除信息中心(it_admin)账号外的在用教职工账号:安装时只有一个信息中心管理员,
-    之后是否给老师们建了账号就看这一项。家长账号没有 teachers 行,不算。"""
+    """除"纯信息中心"账号外的在用教职工账号:安装时只有一个信息中心管理员,
+    之后是否给老师们建了账号就看这一项。只排除在任绑定全是 it_admin 的账号——信息中心
+    兼班主任 / 校长的仍算教职工;家长账号没有 teachers 行,不算。"""
     n = db.scalar(
         text(
             "SELECT count(*) FROM users u JOIN teachers t ON t.user_id = u.id"
             " WHERE u.school_id = :s AND u.status = 'active'"
-            " AND NOT EXISTS (SELECT 1 FROM role_bindings rb WHERE rb.user_id = u.id"
-            "   AND rb.role_type = 'it_admin' AND rb.ended_at IS NULL)"
+            " AND (NOT EXISTS (SELECT 1 FROM role_bindings rb WHERE rb.user_id = u.id"
+            "        AND rb.role_type = 'it_admin' AND rb.ended_at IS NULL)"
+            "   OR EXISTS (SELECT 1 FROM role_bindings rb WHERE rb.user_id = u.id"
+            "        AND rb.role_type <> 'it_admin' AND rb.ended_at IS NULL))"
         ),
         {"s": school_id},
     )
