@@ -17,6 +17,7 @@ from app.domain.ai.router import router as ai_router
 from app.domain.ai_admin.router import router as ai_admin_router  # M3b 段 D
 from app.domain.attendance.router import router as attendance_router
 from app.domain.audit_query.router import router as audit_query_router  # M3b 段 D
+from app.domain.cameras.playback_router import router as camera_playback_router  # M5c 段 A
 from app.domain.cameras.router import router as cameras_router
 from app.domain.cameras.view_router import router as camera_view_router  # M5c 段 A
 from app.domain.classes.router import router as classes_router
@@ -127,5 +128,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     router.include_router(timetable_router)  # M5c 段 A
     router.include_router(cameras_router)  # M5c 段 A
     router.include_router(camera_view_router)  # M5c 段 A
+    router.include_router(camera_playback_router)  # M5c 段 A
     app.include_router(router)
     return app

@@ -310,3 +310,43 @@ def test_wall_orders_grades_and_classes(client, db, settings, on):
     body = _get(client, settings, WALL, PRINCIPAL).json()
     names = [c["class_name"] for c in body["grades"][0]["classes"]]
     assert names == sorted(names)
+
+
+def test_staff_and_parent_judged_as_staff(client, db, settings, monkeypatch, on):
+    from tests.seed_ids import STUDENT_IDS
+
+    cam = _camera(db, "三年二班前", CLASS_ID)
+    freeze(monkeypatch, OUT_PERIOD.isoformat())
+    # 班主任同时是家长:按教职工身份判(R10),看得到本班
+    bind(db, UUID(TEACHER_USER_ID), Role.primary_parent, student_id=STUDENT_IDS[0])
+    body = _get(client, settings, CAMS).json()
+    assert body["reason"] == "homeroom"
+    assert [c["id"] for c in body["cameras"]] == [str(cam.id)]
+    assert _view(db, TEACHER_USER_ID, cam, OUT_PERIOD) == "homeroom"
+    # 只有家长身份的账号:没有教职工绑定 → 403
+    parent_only = make_teacher_account(db, SCHOOL_ID, "parent_only")
+    bind(db, parent_only.id, Role.primary_parent, student_id=STUDENT_IDS[0])
+    assert _view(db, parent_only.id, cam, OUT_PERIOD) is None
+    assert _get(client, settings, CAMS, parent_only.id).status_code == 403
+
+
+def test_other_school_class_404(client, db, settings, on):
+    other_school = UUID(int=0xABCD)
+    db.execute(
+        text("INSERT INTO schools (id, name, timezone) VALUES (:i, '外校', 'Asia/Shanghai')"),
+        {"i": other_school},
+    )
+    cid = make_class(db, "外校一班")
+    db.execute(
+        text("UPDATE classes SET school_id = :s WHERE id = :c"), {"s": other_school, "c": cid}
+    )
+    db.flush()
+    for uid in (TEACHER_USER_ID, PRINCIPAL):
+        res = _get(client, settings, f"/api/v1/classes/{cid}/cameras", uid)
+        assert (res.status_code, res.json()["error"]["code"]) == (404, "NOT_FOUND"), uid
+
+
+def test_frozen_account_401(client, db, settings, on):
+    db.execute(text("UPDATE users SET status = 'frozen' WHERE id = :u"), {"u": TEACHER_USER_ID})
+    db.flush()
+    assert _get(client, settings, CAMS).status_code == 401
