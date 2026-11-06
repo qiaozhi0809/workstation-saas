@@ -144,7 +144,8 @@ def _check_class(db: Session, school_id: UUID, class_id: UUID | None) -> None:
 
 
 def _url(data: CameraInput, settings: Settings) -> str:
-    return validate_rtsp_url(data.rtsp_url, allow_loopback=settings.env == "dev")
+    # settings 带可信网段:解析到 compose 子网的地址也拒绝(L159)
+    return validate_rtsp_url(data.rtsp_url, allow_loopback=settings.env == "dev", settings=settings)
 
 
 def _audit(db, request, user_id, action, camera: Camera) -> None:

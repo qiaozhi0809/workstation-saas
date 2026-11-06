@@ -240,6 +240,38 @@ def test_rtsp_url_errors(client, settings, on):
     assert put.status_code == 400
 
 
+def test_rtsp_url_in_trusted_network_rejected(pg_url, redis_url, db, redis_client, on):
+    """L159:解析到 WS_TRUSTED_PROXIES(compose 子网)的地址虽是私网也拒绝,
+    堵住借"测试连接"探测容器端口。"""
+    from fastapi.testclient import TestClient
+
+    from app.db import get_db
+    from app.main import create_app
+    from app.redis import get_redis
+    from tests.conftest import TEST_JWT_SECRET
+
+    cfg = Settings(
+        _env_file=None,
+        env="dev",
+        database_url=pg_url,
+        redis_url=redis_url,
+        jwt_secret=TEST_JWT_SECRET,
+        trusted_proxies=["172.30.0.0/24"],
+    )
+    app = create_app(cfg)
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[get_redis] = lambda: redis_client
+    c = TestClient(app)
+    h = auth(cfg, IT_ADMIN)
+    res = c.post(URL, headers=h, json=body(rtsp_url="rtsp://172.30.0.5:5432/x"))
+    assert res.status_code == 400 and res.json()["error"]["code"] == "RTSP_URL_NOT_LAN"
+    assert db.scalars(select(Camera)).first() is None
+    ok = c.post(URL, headers=h, json=body(rtsp_url="rtsp://192.168.1.10/live/1"))
+    assert ok.status_code == 201, ok.text
+    put = c.put(f"{URL}/{ok.json()['id']}", headers=h, json=body(rtsp_url="rtsp://172.30.0.9/x"))
+    assert put.status_code == 400 and put.json()["error"]["code"] == "RTSP_URL_NOT_LAN"
+
+
 def test_loopback_allowed_only_in_dev(client, settings, on):
     assert settings.env == "dev"
     res = client.post(

@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import contextlib
+import ipaddress
 import json
 import logging
 import os
@@ -736,6 +737,48 @@ def test_worker_and_probe_use_pinned_ip(
         (probe_argv,) = probe_calls(tmp_path)
         assert "@10.0.0.9/live" in probe_argv and "cam.example.test" not in probe_argv
         assert PASSWORD not in raw and "10.0.0.9" not in raw  # 回写里没有地址,更没有凭据
+
+    run_async(redis_url, body)
+
+
+def test_worker_refuses_trusted_network_host(db, redis_url, fake_ffmpeg, hls_root, tmp_path):
+    """L159:worker 与保存时同口径——解析到可信代理 / compose 子网的地址拒绝拉流、进自检名单。"""
+    denied = [ipaddress.ip_network("172.30.0.0/24")]
+    inside = make_camera(db, "rtsp://172.30.0.5:5432/x")
+    ok = make_camera(db, "rtsp://192.168.1.10/live")
+
+    async def body(redis):
+        sup = make_supervisor(db, redis, fake_ffmpeg, hls_root, denied_networks=denied)
+        await want(redis, inside)
+        await want(redis, ok)
+        await sup.tick(1)
+        await settle(lambda: len(calls(tmp_path)) == 1)
+        assert "192.168.1.10" in calls(tmp_path)[0] and "172.30.0.5" not in calls(tmp_path)[0]
+        st = await state(redis, inside)
+        assert st["status"] == "error" and "内网" in st["last_error"]
+        assert await sup.refresh_public_hosts() == ["172.30.0.5"]
+        await sup.shutdown()
+        key = f"{probe.REPLY_PREFIX}denied"
+
+        @contextmanager
+        def scope():
+            yield db
+
+        await probe.handle_probe(
+            json.dumps({"id": str(inside.id), "reply_key": key}),
+            redis,
+            scope,
+            ffmpeg_bin=str(fake_ffmpeg),
+            master_key=KEY,
+            allow_loopback=False,
+            denied_networks=denied,
+        )
+        r = json.loads(await redis.get(key))
+        assert r["ok"] is False and "内网" in r["message"]
+        assert len(calls(tmp_path)) == 1  # 没有为它起过 ffmpeg
+        # 没配拒绝网段(开发环境)时 172.30.0.5 只是普通私网地址
+        plain = make_supervisor(db, redis, fake_ffmpeg, hls_root)
+        assert await plain.refresh_public_hosts() == []
 
     run_async(redis_url, body)
 

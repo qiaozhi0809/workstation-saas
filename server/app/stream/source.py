@@ -1,7 +1,7 @@
 """worker 读摄像头登记信息:取行、解密凭据、内网判定。明文凭据只返回给调用方,不写任何地方。"""
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from urllib.parse import urlsplit, urlunsplit
@@ -11,11 +11,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import crypto
-from app.domain.cameras.lan import resolve_lan_ips
+from app.domain.cameras.lan import IPNetwork, resolve_lan_ips
 from app.models.cameras import Camera
 from app.stream import ffmpeg, lan
 
 DbFactory = Callable[[], AbstractContextManager[Session]]
+Networks = Iterable[IPNetwork]
 
 
 @dataclass(frozen=True)
@@ -53,20 +54,23 @@ async def load_all(db_factory: DbFactory) -> list[CameraRow]:
     return await asyncio.to_thread(_load_all, db_factory)
 
 
-async def resolve_lan(row: CameraRow, *, allow_loopback: bool) -> str | None:
-    """判定并返回解析到的内网 IP;失败即关:取不到主机名、解析失败、任一结果不在内网都返回 None。
+async def resolve_lan(row: CameraRow, *, allow_loopback: bool, denied: Networks = ()) -> str | None:
+    """判定并返回解析到的内网 IP;失败即关:取不到主机名、解析失败、任一结果不在内网
+    或落在拒绝网段(可信代理 / compose 子网,L159)都返回 None。
 
     DNS 解析是阻塞调用,放线程里。拿到的 IP 要原样写进拉流地址(stream_url 的 pin_ip),
     这样 ffmpeg 连的就是判定过的那个地址(L155)。"""
     host = lan.url_host(row.url)
     if host is None or not lan.is_rtsp_url(row.url):  # 只拉 rtsp / rtsps,不让 ffmpeg 去取别的协议
         return None
-    ips = await asyncio.to_thread(resolve_lan_ips, host, allow_loopback=allow_loopback)
+    ips = await asyncio.to_thread(
+        resolve_lan_ips, host, allow_loopback=allow_loopback, denied=tuple(denied)
+    )
     return ips[0] if ips else None
 
 
-async def host_is_lan(row: CameraRow, *, allow_loopback: bool) -> bool:
-    return await resolve_lan(row, allow_loopback=allow_loopback) is not None
+async def host_is_lan(row: CameraRow, *, allow_loopback: bool, denied: Networks = ()) -> bool:
+    return await resolve_lan(row, allow_loopback=allow_loopback, denied=denied) is not None
 
 
 def pin_host(url: str, ip: str) -> str:

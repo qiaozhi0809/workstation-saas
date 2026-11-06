@@ -52,6 +52,7 @@ async def main() -> None:
         ffmpeg_bin=ffmpeg_bin,
         master_key=settings.master_key_bytes,
         allow_loopback=allow_loopback,
+        denied_networks=settings.trusted_networks,
     )
     stop = asyncio.Event()
 
@@ -71,6 +72,7 @@ async def main() -> None:
             allow_loopback=allow_loopback,
             stop=stop,
             ffprobe_bin=ffprobe_bin,
+            denied_networks=settings.trusted_networks,
         )
     )
     try:

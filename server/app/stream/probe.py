@@ -200,6 +200,7 @@ async def handle_probe(
     master_key: bytes,
     allow_loopback: bool,
     ffprobe_bin: str | None = None,
+    denied_networks: source.Networks = (),
 ) -> None:
     try:
         task = json.loads(payload)
@@ -209,7 +210,9 @@ async def handle_probe(
     if not reply_key.startswith(REPLY_PREFIX):  # 队列内容不可信:只写约定前缀下的键
         return
     row = await source.load_camera(db_factory, camera_id)
-    ip = None if row is None else await source.resolve_lan(row, allow_loopback=allow_loopback)
+    ip = None
+    if row is not None:
+        ip = await source.resolve_lan(row, allow_loopback=allow_loopback, denied=denied_networks)
     if row is None:
         result = _result(False, "摄像头不存在")
     elif ip is None:
@@ -240,7 +243,9 @@ async def probe_loop(
     allow_loopback: bool,
     stop: asyncio.Event,
     ffprobe_bin: str | None = None,
+    denied_networks: source.Networks = (),
 ) -> None:
+    denied = tuple(denied_networks)
     while not stop.is_set():
         try:
             item = await redis.blpop([PROBE_KEY], timeout=1)
@@ -254,6 +259,7 @@ async def probe_loop(
                 master_key=master_key,
                 allow_loopback=allow_loopback,
                 ffprobe_bin=ffprobe_bin,
+                denied_networks=denied,
             )
         except asyncio.CancelledError:
             raise

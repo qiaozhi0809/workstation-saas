@@ -1,4 +1,6 @@
+import ipaddress
 import socket
+from types import SimpleNamespace
 
 import pytest
 
@@ -119,6 +121,41 @@ def test_rtsp_url_loopback_dev_only(monkeypatch):
         lan.validate_rtsp_url("rtsp://127.0.0.1:8554/cam1", allow_loopback=True)
         == "rtsp://127.0.0.1:8554/cam1"
     )
+
+
+DENY = SimpleNamespace(trusted_networks=[ipaddress.ip_network("172.30.0.0/24")])
+
+
+def test_is_denied_ip():
+    """L159:解析到可信代理 / compose 子网的地址是本系统自己的容器网络,摄像头不可能在那里。"""
+    assert lan.is_denied_ip("172.30.0.5", DENY) is True
+    assert lan.is_denied_ip("::ffff:172.30.0.5", DENY) is True
+    assert lan.is_denied_ip("192.168.1.10", DENY) is False
+    assert lan.is_denied_ip("172.31.0.5", DENY) is False
+    assert lan.is_denied_ip("not-an-ip", DENY) is False and lan.is_denied_ip(None, DENY) is False
+    assert lan.is_denied_ip("172.30.0.5", SimpleNamespace(trusted_networks=[])) is False
+
+
+def test_rtsp_url_in_denied_network_rejected(monkeypatch):
+    _fake_dns(monkeypatch, ["172.30.0.5"])
+    for url in ("rtsp://172.30.0.5/x", "rtsp://cam.example.test/x"):
+        with pytest.raises(ApiError) as e:
+            lan.validate_rtsp_url(url, settings=DENY)
+        assert (e.value.status, e.value.code) == (400, "RTSP_URL_NOT_LAN")
+        assert "容器" in e.value.message
+    _fake_dns(monkeypatch, ["192.168.1.10"])
+    assert lan.validate_rtsp_url("rtsp://cam.example.test/x", settings=DENY) == (
+        "rtsp://cam.example.test/x"
+    )
+    assert lan.validate_rtsp_url("rtsp://192.168.1.10/x", settings=DENY) == "rtsp://192.168.1.10/x"
+    # 不给 settings(可信网段为空)时 172.30.0.5 只是普通私网地址
+    assert lan.validate_rtsp_url("rtsp://172.30.0.5/x") == "rtsp://172.30.0.5/x"
+    # worker 同口径:resolve_lan_ips 带拒绝网段
+    _fake_dns(monkeypatch, ["172.30.0.5"])
+    assert lan.resolve_lan_ips("cam.example.test") == ["172.30.0.5"]
+    assert lan.resolve_lan_ips("cam.example.test", denied=DENY.trusted_networks) == []
+    _fake_dns(monkeypatch, ["192.168.1.10", "172.30.0.5"])  # 任一结果落在拒绝网段就整个拒绝
+    assert lan.resolve_lan_ips("cam.example.test", denied=DENY.trusted_networks) == []
 
 
 def test_mask_url():

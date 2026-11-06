@@ -1,11 +1,22 @@
 import ipaddress
 import re
 import socket
+from collections.abc import Iterable
+from typing import Protocol
 from urllib.parse import urlsplit, urlunsplit
 
 from app.errors import ApiError
 
 IPAddress = ipaddress.IPv4Address | ipaddress.IPv6Address
+IPNetwork = ipaddress.IPv4Network | ipaddress.IPv6Network
+
+
+class HasTrustedNetworks(Protocol):
+    """app.config.Settings 的子集:只要 trusted_networks(避免这里依赖整份配置)。"""
+
+    @property
+    def trusted_networks(self) -> list[IPNetwork]: ...
+
 
 # 视频不出校:只认这几段;不用 ipaddress 的 is_private(它把文档段 / 保留段也算私有)
 LAN_NETWORKS = (
@@ -50,26 +61,53 @@ def is_lan_ip(ip: str | None, *, allow_loopback: bool = False) -> bool:
     return any(addr in net for net in LAN_NETWORKS if net.version == addr.version)
 
 
-def resolve_lan_ips(host: str, *, allow_loopback: bool = False) -> list[str]:
-    """主机名解析出的全部地址都在内网时返回它们(去重、保持解析顺序),否则 [](失败即关)。
+def _in_networks(ip: str | None, networks: Iterable[IPNetwork]) -> bool:
+    addr = _parse(ip)
+    if addr is None:
+        return False
+    return any(addr in net for net in networks if net.version == addr.version)
 
-    worker 拿第一个写进 ffmpeg 的拉流地址(L155):判定用的和连接用的是同一个 IP,
-    摄像头名字在两次解析之间被改指向别处(DNS 重绑定)也没用。"""
+
+def is_denied_ip(ip: str | None, settings: HasTrustedNetworks) -> bool:
+    """落在可信代理 / compose 子网(WS_TRUSTED_PROXIES)里的地址:那是本系统自己的容器网络,
+    摄像头不可能在那里;放行等于让有 camera.manage 的人借"测试连接"探测内部服务端口(L159)。"""
+    return _in_networks(ip, settings.trusted_networks)
+
+
+def _resolve(host: str) -> list[str]:
     try:
         infos = socket.getaddrinfo(host, None)
     except (OSError, UnicodeError):
         return []
-    ips = list(dict.fromkeys(str(info[4][0]) for info in infos))
+    return list(dict.fromkeys(str(info[4][0]) for info in infos))
+
+
+def resolve_lan_ips(
+    host: str, *, allow_loopback: bool = False, denied: Iterable[IPNetwork] = ()
+) -> list[str]:
+    """主机名解析出的全部地址都在内网、且都不在拒绝网段时返回它们(去重、保持解析顺序),否则 []。
+
+    失败即关。worker 拿第一个写进 ffmpeg 的拉流地址(L155):判定用的和连接用的是同一个 IP,
+    摄像头名字在两次解析之间被改指向别处(DNS 重绑定)也没用。denied 与保存时的 is_denied_ip
+    同口径。"""
+    ips = _resolve(host)
     if not ips or not all(is_lan_ip(ip, allow_loopback=allow_loopback) for ip in ips):
+        return []
+    denied = tuple(denied)
+    if any(_in_networks(ip, denied) for ip in ips):
         return []
     return ips
 
 
-def resolve_is_lan(host: str, *, allow_loopback: bool = False) -> bool:
-    return bool(resolve_lan_ips(host, allow_loopback=allow_loopback))
+def resolve_is_lan(
+    host: str, *, allow_loopback: bool = False, denied: Iterable[IPNetwork] = ()
+) -> bool:
+    return bool(resolve_lan_ips(host, allow_loopback=allow_loopback, denied=denied))
 
 
-def validate_rtsp_url(url: str, *, allow_loopback: bool = False) -> str:
+def validate_rtsp_url(
+    url: str, *, allow_loopback: bool = False, settings: HasTrustedNetworks | None = None
+) -> str:
     raw = url.strip()
     # urlsplit 会悄悄去掉 \t\r\n,校验的主机就和存下的字符串不一致,所以直接拒绝
     if any(ch.isspace() or ord(ch) < 32 or ord(ch) == 127 for ch in raw):
@@ -86,8 +124,13 @@ def validate_rtsp_url(url: str, *, allow_loopback: bool = False) -> str:
         raise ApiError(400, "RTSP_URL_HAS_CREDENTIALS", "地址里不要带用户名密码,请单独填写")
     if not host:
         raise ApiError(400, "RTSP_URL_INVALID", "摄像头地址缺少主机")
-    if not resolve_is_lan(host, allow_loopback=allow_loopback):
+    ips = resolve_lan_ips(host, allow_loopback=allow_loopback)
+    if not ips:
         raise ApiError(400, "RTSP_URL_NOT_LAN", "摄像头地址必须在学校内网")
+    if settings is not None and any(is_denied_ip(ip, settings) for ip in ips):
+        raise ApiError(
+            400, "RTSP_URL_NOT_LAN", "摄像头地址落在本系统自己的容器 / 可信代理网段,不能登记"
+        )
     # 用解析结果重建,存下的就是校验过的
     return urlunsplit(("rtsp", parts.netloc, parts.path, parts.query, parts.fragment))
 
