@@ -7,10 +7,12 @@ import { EmptyState } from '@/shared/components/feedback/EmptyState'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { Badge } from '@/shared/components/ui/badge'
+import { useGrading } from '@/shared/hooks/useGrading'
 import { cellState, examTable, studentTrend } from '@/shared/lib/grades'
 import type { StudentProfile } from '@/shared/types/student'
 
 export default function ScoresTab({ profile }: { profile: StudentProfile }) {
+  const grading = useGrading()
   const { data, error, refetch, isFetching } = useQuery({
     queryKey: ['gradebook', profile.class_id],
     queryFn: () => examsApi.gradebook(profile.class_id),
@@ -62,7 +64,7 @@ export default function ScoresTab({ profile }: { profile: StudentProfile }) {
                 {subjectNames.map((n) => {
                   const full = exam.subjects.find((s) => s.name === n)?.full ?? 0
                   const v = row?.subs[n]
-                  const state = cellState(v, full)
+                  const state = cellState(v, full, grading)
                   return (
                     <td key={n} className="px-2 py-1">
                       {state === 'absent' ? (

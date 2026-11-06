@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createMemoryRouter, RouterProvider, useLocation } from 'react-router-dom'
 import { beforeEach, vi } from 'vitest'
@@ -129,6 +129,56 @@ it('creates an exam with chosen subjects and a custom one', async () => {
       { name: '书法', full: 20 },
     ],
   })
+})
+
+it('fill from catalog button', async () => {
+  const { client } = setup()
+  const spy = vi.spyOn(client, 'invalidateQueries')
+  vi.mocked(examsApi.fillFromCatalog).mockResolvedValue([
+    ...SUBJECTS,
+    { name: '美术', full: 50 },
+    { name: '音乐', full: 50 },
+  ])
+  fireEvent.click(await screen.findByRole('button', { name: '新建考试' }))
+  await screen.findByRole('button', { name: '道法' })
+  expect(screen.queryByRole('button', { name: '美术' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '从学校目录补齐' }))
+  await waitFor(() => expect(examsApi.fillFromCatalog).toHaveBeenCalledWith('c1'))
+  // 新科目进入可选列表(新建考试时默认选中),满分取目录值;已有的不重复
+  expect(await screen.findByRole('button', { name: '美术' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  expect(screen.getByLabelText('美术 满分')).toHaveValue(50)
+  expect(screen.getAllByRole('button', { name: '语文' })).toHaveLength(1)
+  expect(screen.getByRole('status')).toHaveTextContent('已从学校目录补齐 2 门科目')
+  expect(spy).toHaveBeenCalledWith({ queryKey: ['class-subjects', 'c1'] })
+  expect(spy).toHaveBeenCalledWith({ queryKey: ['classroom', 'c1'] })
+})
+
+it('says so when the class already has every catalog subject, and hides the button for subject teachers', async () => {
+  setup()
+  vi.mocked(examsApi.fillFromCatalog).mockResolvedValue(SUBJECTS)
+  fireEvent.click(await screen.findByRole('button', { name: '新建考试' }))
+  fireEvent.click(await screen.findByRole('button', { name: '从学校目录补齐' }))
+  expect(await screen.findByRole('status')).toHaveTextContent('班级科目已经和学校目录一致')
+  expect(screen.getAllByRole('button', { name: '语文' })).toHaveLength(1)
+  cleanup()
+
+  setup({ cls: { role: 'subject_teacher' }, subjects: ['数学'] })
+  fireEvent.click(await screen.findByRole('button', { name: '新建考试' }))
+  await screen.findByRole('button', { name: '数学' })
+  expect(screen.queryByRole('button', { name: '从学校目录补齐' })).toBeNull()
+})
+
+it('shows the error when filling from the catalog fails', async () => {
+  setup()
+  vi.mocked(examsApi.fillFromCatalog).mockRejectedValue(
+    new ApiError(403, 'FORBIDDEN', '没有这个班的考试权限'),
+  )
+  fireEvent.click(await screen.findByRole('button', { name: '新建考试' }))
+  fireEvent.click(await screen.findByRole('button', { name: '从学校目录补齐' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('没有这个班的考试权限')
 })
 
 it('ignores Enter while an IME composition is in progress', async () => {

@@ -7,6 +7,7 @@ import {
   type KeyboardEvent,
 } from 'react'
 import { toast } from '@/shared/components/Toast'
+import { useGrading } from '@/shared/hooks/useGrading'
 import { cellState, examTable, parseScore, type CellState } from '@/shared/lib/grades'
 import { parseTable } from '@/shared/lib/table'
 import { cn } from '@/shared/lib/utils'
@@ -65,6 +66,7 @@ export default function ScoreGrid({
   onCells,
   onDiscard,
 }: ScoreGridProps) {
+  const grading = useGrading()
   const students = useMemo(() => [...roster].sort(compareRoster), [roster])
   const subjects = exam.subjects
   // 未保存的改动(保存成功并合并进 sheet 后会被清掉);草稿文字只在输入过程中保留,无法保存的文字一直留着
@@ -251,7 +253,7 @@ export default function ScoreGrid({
                         className={cn(
                           'w-20 rounded border border-transparent bg-transparent px-2 py-1 text-right focus:border-ring focus:outline-none',
                           readOnly && 'cursor-not-allowed text-muted-foreground',
-                          problem ? STATE_CLASS.over : STATE_CLASS[cellState(v, sub.full)],
+                          problem ? STATE_CLASS.over : STATE_CLASS[cellState(v, sub.full, grading)],
                         )}
                         onFocus={(e) => e.currentTarget.select()}
                         onBlur={() => {

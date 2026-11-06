@@ -1,7 +1,8 @@
 import type { GradebookExam, ScoreValue } from '../types/grades'
+import type { Grading } from '../types/school'
 
-export const PASS_RATIO = 0.6
-export const GOOD_RATIO = 0.85
+/** 学校没配置时的及格 / 优秀比例;只给测试与加载中占位用,页面一律传 useGrading() 的值 */
+export const DEFAULT_GRADING: Grading = { pass_ratio: 0.6, good_ratio: 0.85 }
 
 export type Parsed = number | 'absent' | 'clear' | 'invalid'
 
@@ -19,11 +20,12 @@ export function parseScore(text: string): Parsed {
 
 export type CellState = 'empty' | 'absent' | 'over' | 'low' | 'ok'
 
-export function cellState(v: ScoreValue | undefined, full: number): CellState {
+/** ratios:学校的及格 / 优秀比例(useGrading());低于满分 × 及格比例为 low */
+export function cellState(v: ScoreValue | undefined, full: number, ratios: Grading): CellState {
   if (v === undefined) return 'empty'
   if (v === null) return 'absent'
   if (v < 0 || v > full) return 'over'
-  if (v < full * PASS_RATIO) return 'low'
+  if (v < full * ratios.pass_ratio) return 'low'
   return 'ok'
 }
 
@@ -84,15 +86,16 @@ export interface SubjectStats {
   passRate: number
   /** 优秀率,小数 0-1 */
   goodRate: number
-  /** 低分人数:低于满分 60% 的学生数(计数,不是比例) */
+  /** 低分人数:低于及格线(满分 × 及格比例)的学生数(计数,不是比例) */
   low: number
 }
 
-/** ids:enrollment_id 列表 */
+/** ids:enrollment_id 列表;ratios:学校的及格 / 优秀比例 */
 export function subjectStats(
   exam: GradebookExam,
   subject: string,
   ids: string[],
+  ratios: Grading,
 ): SubjectStats | null {
   const sub = exam.subjects.find((s) => s.name === subject)
   if (!sub) return null
@@ -104,8 +107,8 @@ export function subjectStats(
   const n = vals.length
   if (n === 0) return null
   const avg = vals.reduce((a, b) => a + b, 0) / n
-  const pass = sub.full * PASS_RATIO
-  const good = sub.full * GOOD_RATIO
+  const pass = sub.full * ratios.pass_ratio
+  const good = sub.full * ratios.good_ratio
   return {
     name: sub.name,
     full: sub.full,
@@ -140,8 +143,8 @@ export interface ExamStats {
   subjects: SubjectStats[]
 }
 
-/** ids:enrollment_id 列表 */
-export function examStats(exam: GradebookExam, ids: string[]): ExamStats | null {
+/** ids:enrollment_id 列表;ratios:学校的及格 / 优秀比例 */
+export function examStats(exam: GradebookExam, ids: string[], ratios: Grading): ExamStats | null {
   const table = examTable(exam, ids)
   const totals = table.flatMap((r) => (r.total === null ? [] : [r.total]))
   const n = totals.length
@@ -149,10 +152,10 @@ export function examStats(exam: GradebookExam, ids: string[]): ExamStats | null 
   const full = examFull(exam)
   const avg = totals.reduce((a, b) => a + b, 0) / n
   const max = Math.max(...totals)
-  const pass = full * PASS_RATIO
-  const good = full * GOOD_RATIO
+  const pass = full * ratios.pass_ratio
+  const good = full * ratios.good_ratio
   const subjects = exam.subjects.flatMap((s) => {
-    const st = subjectStats(exam, s.name, ids)
+    const st = subjectStats(exam, s.name, ids, ratios)
     return st ? [st] : []
   })
   return {
@@ -244,10 +247,12 @@ export interface Attention {
   failing: { id: string; count: number }[]
 }
 
+/** ratios:学校的及格 / 优秀比例;failing = 两科及以上低于及格线 */
 export function attention(
   exam: GradebookExam,
   cur: Row[],
   changes: Map<string, number>,
+  ratios: Grading,
 ): Attention {
   const entries = [...changes].map(([id, change]) => ({ id, change }))
   const risers = entries
@@ -263,7 +268,7 @@ export function attention(
       id: r.id,
       count: exam.subjects.filter((s) => {
         const v = r.subs[s.name]
-        return typeof v === 'number' && v < s.full * PASS_RATIO
+        return typeof v === 'number' && v < s.full * ratios.pass_ratio
       }).length,
     }))
     .filter((f) => f.count >= 2)

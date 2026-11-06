@@ -4,8 +4,11 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { adminApi } from '@/shared/api/admin'
 import { ApiError } from '@/shared/api/client'
+import { schoolApi } from '@/shared/api/school'
 import { toast } from '@/shared/components/Toast'
-import type { BoardView, GradeExam } from '@/shared/types/admin'
+import { useAuthStore } from '@/shared/stores/auth'
+import type { BoardView, GradeAdmin, GradeExam } from '@/shared/types/admin'
+import type { SubjectCatalog } from '@/shared/types/school'
 import GradeExamsPage from './GradeExamsPage'
 
 vi.mock('@/shared/api/admin', () => ({
@@ -19,7 +22,22 @@ vi.mock('@/shared/api/admin', () => ({
     syncGradeExam: vi.fn(),
   },
 }))
+vi.mock('@/shared/api/school', () => ({ schoolApi: { subjectCatalog: vi.fn() } }))
 vi.mock('@/shared/components/Toast', () => ({ toast: vi.fn() }))
+
+const CATALOG: SubjectCatalog = {
+  primary: [
+    { name: '语文', full: 100 },
+    { name: '数学', full: 100 },
+    { name: '英语', full: 100 },
+    { name: '科学', full: 100 },
+  ],
+  junior: [
+    { name: '语文', full: 120 },
+    { name: '物理', full: 100 },
+  ],
+  senior: [{ name: '语文', full: 150 }],
+}
 
 const boardOf = (...grades: { id: string; name: string }[]): BoardView => ({
   grades,
@@ -50,8 +68,10 @@ const exam = (over: Partial<GradeExam> = {}): GradeExam => ({
 
 beforeEach(() => {
   vi.resetAllMocks()
+  useAuthStore.setState({ user: null })
   vi.mocked(adminApi.board).mockResolvedValue(boardOf(G3, G4))
   vi.mocked(adminApi.gradeExams).mockImplementation(async (gid) => (gid === 'g4' ? [] : [exam()]))
+  vi.mocked(schoolApi.subjectCatalog).mockResolvedValue(CATALOG)
 })
 afterEach(cleanup)
 
@@ -151,24 +171,33 @@ const fillBasics = async (name: string) => {
   fireEvent.change(within(dlg).getByLabelText('日期'), { target: { value: '2026-11-05' } })
   return dlg
 }
+const subjectBoxes = (dlg: HTMLElement) =>
+  within(within(dlg).getByRole('group', { name: '科目' })).getAllByRole('checkbox')
+const subjectRow = (dlg: HTMLElement, name: string) =>
+  within(dlg).getByRole('checkbox', { name }).closest('li') as HTMLElement
 
-it('blocks duplicate subject names in the form before calling the api', async () => {
-  await renderPage()
-  fireEvent.click(screen.getByRole('button', { name: '新建联考' }))
-  const dlg = await fillBasics('期中联考')
-  fireEvent.change(within(dlg).getByLabelText('科目 2 名称'), { target: { value: ' 语文 ' } })
-  fireEvent.click(within(dlg).getByRole('button', { name: '保存' }))
-  expect(await within(dlg).findByRole('alert')).toHaveTextContent('科目名称不能重复')
-  expect(adminApi.createGradeExam).not.toHaveBeenCalled()
-})
-
-it('creates a grade exam for the selected grade', async () => {
+it('grade exam form picks from catalog', async () => {
   vi.mocked(adminApi.createGradeExam).mockResolvedValue(exam({ id: 'ge2', name: '期中联考' }))
   await renderPage()
   fireEvent.click(screen.getByRole('button', { name: '新建联考' }))
   const dlg = await fillBasics('期中联考')
+  // 三年级 → 小学目录,全部默认勾上,满分只读显示目录值,没有自由输入框
+  await within(dlg).findByRole('checkbox', { name: '语文' })
+  expect(schoolApi.subjectCatalog).toHaveBeenCalledTimes(1)
+  expect(subjectBoxes(dlg).map((b) => b.getAttribute('aria-label'))).toEqual([
+    '语文',
+    '数学',
+    '英语',
+    '科学',
+  ])
+  expect(subjectBoxes(dlg).every((b) => (b as HTMLInputElement).checked)).toBe(true)
+  expect(within(dlg).getByText('小学目录')).toBeInTheDocument()
+  expect(subjectRow(dlg, '科学')).toHaveTextContent('满分 100')
+  expect(within(dlg).queryByLabelText('科目 1 名称')).toBeNull()
+  expect(within(dlg).queryByRole('button', { name: '添加科目' })).toBeNull()
+
+  fireEvent.click(within(dlg).getByRole('checkbox', { name: '英语' }))
   fireEvent.click(within(dlg).getByRole('button', { name: '期中' }))
-  fireEvent.change(within(dlg).getByLabelText('科目 3 满分'), { target: { value: '120' } })
   fireEvent.click(within(dlg).getByRole('button', { name: '保存' }))
   await waitFor(() => expect(adminApi.createGradeExam).toHaveBeenCalledTimes(1))
   expect(adminApi.createGradeExam).toHaveBeenCalledWith({
@@ -179,34 +208,106 @@ it('creates a grade exam for the selected grade', async () => {
     subjects: [
       { name: '语文', full: 100 },
       { name: '数学', full: 100 },
-      { name: '英语', full: 120 },
+      { name: '科学', full: 100 },
     ],
   })
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 })
 
-it('rejects an invalid full mark and an empty name locally', async () => {
+it('uses the stage of the grade: junior catalog for 初一 by name, explicit stage when readable', async () => {
+  vi.mocked(adminApi.board).mockResolvedValue(boardOf({ id: 'g7', name: '初一' }))
+  vi.mocked(adminApi.gradeExams).mockResolvedValue([exam({ grade_id: 'g7', grade_name: '初一' })])
   await renderPage()
   fireEvent.click(screen.getByRole('button', { name: '新建联考' }))
   let dlg = await screen.findByRole('dialog')
+  await within(dlg).findByRole('checkbox', { name: '物理' })
+  expect(within(dlg).getByText('初中目录')).toBeInTheDocument()
+  expect(subjectRow(dlg, '语文')).toHaveTextContent('满分 120')
+  expect(adminApi.grades).not.toHaveBeenCalled() // 没有 org.manage 不去读年级表
+  fireEvent.click(within(dlg).getByRole('button', { name: '取消' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+  // 有 org.manage:年级表里显式设的学段优先于按名字推断
+  useAuthStore.setState({ user: { admin_perms: ['org.manage'] } as never })
+  const g7: GradeAdmin = {
+    id: 'g7',
+    name: '初一',
+    stage: '高中',
+    effective_stage: '高中',
+    display_order: 1,
+    class_count: 2,
+  }
+  vi.mocked(adminApi.grades).mockResolvedValue([g7])
+  fireEvent.click(screen.getByRole('button', { name: '新建联考' }))
+  dlg = await screen.findByRole('dialog')
+  expect(await within(dlg).findByText('高中目录')).toBeInTheDocument()
+  expect(subjectRow(dlg, '语文')).toHaveTextContent('满分 150')
+  expect(within(dlg).queryByRole('checkbox', { name: '物理' })).toBeNull()
+})
+
+it('requires a name and at least one subject locally', async () => {
+  await renderPage()
+  fireEvent.click(screen.getByRole('button', { name: '新建联考' }))
+  let dlg = await screen.findByRole('dialog')
+  // 目录没加载完之前不能保存
+  expect(within(dlg).getByRole('button', { name: '保存' })).toBeDisabled()
+  await within(dlg).findByRole('checkbox', { name: '语文' })
   fireEvent.click(within(dlg).getByRole('button', { name: '保存' }))
   expect(await within(dlg).findByRole('alert')).toHaveTextContent('请填写考试名称')
   dlg = await fillBasics('期中联考')
-  fireEvent.change(within(dlg).getByLabelText('科目 1 满分'), { target: { value: '0' } })
+  for (const b of subjectBoxes(dlg)) fireEvent.click(b)
   fireEvent.click(within(dlg).getByRole('button', { name: '保存' }))
-  expect(await within(dlg).findByRole('alert')).toHaveTextContent('满分须为 1–1000 的整数')
+  expect(await within(dlg).findByRole('alert')).toHaveTextContent('至少选择一个科目')
   expect(adminApi.createGradeExam).not.toHaveBeenCalled()
 })
 
-it('edits an exam keeping its grade and shows the backend message on 409', async () => {
+it('shows the SUBJECT_NOT_IN_CATALOG message from the backend in the form', async () => {
+  vi.mocked(adminApi.createGradeExam).mockRejectedValue(
+    new ApiError(400, 'SUBJECT_NOT_IN_CATALOG', '「科学」不在三年级的科目目录里', {
+      subject: '科学',
+    }),
+  )
+  await renderPage()
+  fireEvent.click(screen.getByRole('button', { name: '新建联考' }))
+  const dlg = await fillBasics('期中联考')
+  await within(dlg).findByRole('checkbox', { name: '语文' })
+  fireEvent.click(within(dlg).getByRole('button', { name: '保存' }))
+  expect(await within(dlg).findByRole('alert')).toHaveTextContent('「科学」不在三年级的科目目录里')
+  expect(screen.getByRole('dialog')).toBeInTheDocument()
+})
+
+it('edits an exam: keeps its grade and full marks, lists legacy subjects, shows the 409 message', async () => {
   vi.mocked(adminApi.updateGradeExam).mockRejectedValue(
     new ApiError(409, 'EXAM_HAS_SCORES', '「数学」已有成绩,不能去掉', { subject: '数学' }),
   )
+  vi.mocked(adminApi.gradeExams).mockResolvedValue([
+    exam({
+      subjects: [
+        { name: '语文', full: 90 },
+        { name: '数学', full: 100 },
+        { name: '道法', full: 50 },
+      ],
+    }),
+  ])
   await renderPage()
   fireEvent.click(within(row()).getByRole('button', { name: '编辑' }))
   const dlg = await screen.findByRole('dialog')
   expect(within(dlg).getByLabelText('考试名称')).toHaveValue('十月联考')
-  fireEvent.click(within(dlg).getByRole('button', { name: '删除科目 2' }))
+  await within(dlg).findByRole('checkbox', { name: '语文' })
+  // 考试里已有的科目按考试里的满分;目录里有但考试没有的默认不勾;不在目录里的旧科目保留并标注
+  expect(subjectBoxes(dlg).map((b) => b.getAttribute('aria-label'))).toEqual([
+    '语文',
+    '数学',
+    '英语',
+    '科学',
+    '道法',
+  ])
+  expect(within(dlg).getByRole('checkbox', { name: '语文' })).toBeChecked()
+  expect(within(dlg).getByRole('checkbox', { name: '英语' })).not.toBeChecked()
+  expect(within(dlg).getByRole('checkbox', { name: '道法' })).toBeChecked()
+  expect(subjectRow(dlg, '语文')).toHaveTextContent('满分 90')
+  expect(subjectRow(dlg, '道法')).toHaveTextContent('已不在目录')
+  fireEvent.click(within(dlg).getByRole('checkbox', { name: '数学' }))
   fireEvent.click(within(dlg).getByRole('button', { name: '保存' }))
   await waitFor(() =>
     expect(adminApi.updateGradeExam).toHaveBeenCalledWith('ge1', {
@@ -214,24 +315,21 @@ it('edits an exam keeping its grade and shows the backend message on 409', async
       name: '十月联考',
       exam_type: '月考',
       date: '2026-10-20',
-      subjects: [{ name: '语文', full: 100 }],
+      subjects: [
+        { name: '语文', full: 90 },
+        { name: '道法', full: 50 },
+      ],
     }),
   )
   expect(await within(dlg).findByRole('alert')).toHaveTextContent('「数学」已有成绩,不能去掉')
 })
 
-it('shows the subject-naming message when lowering full below recorded scores (409)', async () => {
-  vi.mocked(adminApi.updateGradeExam).mockRejectedValue(
-    new ApiError(409, 'SCORE_ABOVE_FULL', '「语文」的满分不能低于已录入的最高分', {
-      subject: '语文',
-    }),
-  )
+it('tells when the catalog cannot be loaded instead of offering free text', async () => {
+  vi.mocked(schoolApi.subjectCatalog).mockRejectedValue(new ApiError(500, 'X', '失败'))
   await renderPage()
-  fireEvent.click(within(row()).getByRole('button', { name: '编辑' }))
+  fireEvent.click(screen.getByRole('button', { name: '新建联考' }))
   const dlg = await screen.findByRole('dialog')
-  fireEvent.change(within(dlg).getByLabelText('科目 1 满分'), { target: { value: '90' } })
-  fireEvent.click(within(dlg).getByRole('button', { name: '保存' }))
-  expect(await within(dlg).findByRole('alert')).toHaveTextContent(
-    '「语文」的满分不能低于已录入的最高分',
-  )
+  expect(await within(dlg).findByRole('alert')).toHaveTextContent('科目目录加载失败')
+  expect(within(dlg).queryByRole('checkbox')).toBeNull()
+  expect(within(dlg).getByRole('button', { name: '保存' })).toBeDisabled()
 })

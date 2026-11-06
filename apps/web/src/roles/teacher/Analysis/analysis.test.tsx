@@ -5,7 +5,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { classesApi } from '@/shared/api/classes'
 import { classroomApi } from '@/shared/api/classroom'
 import { examsApi } from '@/shared/api/exams'
+import { schoolApi } from '@/shared/api/school'
 import { studentsApi } from '@/shared/api/students'
+import { DEFAULT_GRADING } from '@/shared/lib/grades'
 import { useTeacherStore } from '@/shared/stores/teacher'
 import type { GradebookExam } from '@/shared/types/grades'
 import { classFixture, rosterFixture, summaryFixture } from '../Classroom/pageTestUtils'
@@ -15,6 +17,7 @@ import { TrendGrid } from './TrendGrid'
 vi.mock('@/shared/api/classes')
 vi.mock('@/shared/api/classroom')
 vi.mock('@/shared/api/exams')
+vi.mock('@/shared/api/school')
 vi.mock('@/shared/api/students')
 
 const subjects = [
@@ -91,6 +94,7 @@ beforeEach(() => {
   vi.mocked(classesApi.mine).mockResolvedValue({ items: [classFixture] })
   vi.mocked(classroomApi.summary).mockResolvedValue(summaryFixture({ my_perms: ['exam.read'] }))
   vi.mocked(studentsApi.listInClass).mockResolvedValue({ items: rosterFixture })
+  vi.mocked(schoolApi.grading).mockResolvedValue(DEFAULT_GRADING)
 })
 
 // 各科明细表头也有「平均分」,所以只取 KPI 卡片里的那个
@@ -170,6 +174,25 @@ describe('AnalysisPage', () => {
       '/teacher/scores',
     )
   })
+
+  it('analysis uses school ratios', async () => {
+    // 第一次月考总分 140 / 120 / 100(满分 200):默认 60% 两人及格,学校改成 70% 后只剩一人
+    vi.mocked(schoolApi.grading).mockResolvedValue({ pass_ratio: 0.7, good_ratio: 0.9 })
+    setup([first])
+    // 各科明细表头也有「及格率」,只取 KPI 卡片里的那个
+    const card = (await screen.findAllByText('及格率'))
+      .map((el) => el.closest('div[data-kpi]'))
+      .find(Boolean) as HTMLElement
+    expect(await within(card).findByText('33.3%')).toBeInTheDocument()
+    expect(schoolApi.grading).toHaveBeenCalledTimes(1)
+    // 两科都不及格的名单也按 70% 算:60 分的李小二进入名单
+    const attn = screen.getByRole('region', { name: '需要关注' })
+    expect(within(attn).getByRole('button', { name: /李小二/ })).toBeInTheDocument()
+    // 排名表里 60 分按新及格线标红
+    const rank = screen.getByRole('region', { name: '成绩排名' })
+    const row = within(rank).getByRole('button', { name: '李小二' }).closest('tr') as HTMLElement
+    expect(within(row).getAllByText('60')[0]).toHaveClass('text-destructive')
+  })
 })
 
 describe('AnalysisPage AI shortcuts', () => {
@@ -238,7 +261,14 @@ describe('AnalysisPage AI shortcuts', () => {
 
 describe('TrendGrid', () => {
   it('renders a total chart and one per subject with a shared axis note', () => {
-    render(<TrendGrid book={[first, second]} ids={['e1', 'e2', 'e3']} width={300} />)
+    render(
+      <TrendGrid
+        book={[first, second]}
+        ids={['e1', 'e2', 'e3']}
+        width={300}
+        ratios={DEFAULT_GRADING}
+      />,
+    )
     expect(screen.getByText('纵轴 55–85%')).toBeInTheDocument()
     expect(screen.getAllByRole('img')).toHaveLength(3)
   })

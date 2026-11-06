@@ -8,6 +8,7 @@ import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { Button } from '@/shared/components/ui/button'
 import { NativeSelect } from '@/shared/components/ui/native-select'
+import { useGrading } from '@/shared/hooks/useGrading'
 import { aiLink } from '@/shared/lib/aiLink'
 import type { ClassPerm } from '@/shared/types/classroom'
 import {
@@ -52,6 +53,7 @@ function AnalysisBody({
   const examParam = params.get('exam')
   const cmpParam = params.get('cmp')
   const drawer = useStudentDrawer()
+  const grading = useGrading()
   const ids = useMemo(() => (roster.data?.items ?? []).map((s) => s.enrollment_id), [roster.data])
   const names = useMemo(
     () => new Map((roster.data?.items ?? []).map((s) => [s.enrollment_id, s.name])),
@@ -63,8 +65,8 @@ function AnalysisBody({
   )
   // 只保留名单内学生有分数的考试
   const scored = useMemo(
-    () => (book.data?.exams ?? []).filter((e) => examStats(e, ids) !== null),
-    [book.data, ids],
+    () => (book.data?.exams ?? []).filter((e) => examStats(e, ids, grading) !== null),
+    [book.data, ids, grading],
   )
 
   // 当前考试、对比考试及其派生数据只在输入变化时算一次
@@ -75,15 +77,17 @@ function AnalysisBody({
       cmpParam === 'none'
         ? null
         : (scored.find((e) => e.id === cmpParam) ?? previousExam(scored, current.id))
-    const cur = examStats(current, ids)
+    const cur = examStats(current, ids, grading)
     if (!cur) return null
-    const cmp = cmpExam ? examStats(cmpExam, ids) : null
+    const cmp = cmpExam ? examStats(cmpExam, ids, grading) : null
     const rows = examTable(current, ids)
     const prevRows = cmpExam ? examTable(cmpExam, ids) : null
     const changes = prevRows ? rankChanges(rows, prevRows) : null
-    const subjectNow = current.subjects.flatMap((s) => subjectStats(current, s.name, ids) ?? [])
+    const subjectNow = current.subjects.flatMap(
+      (s) => subjectStats(current, s.name, ids, grading) ?? [],
+    )
     const subjectPrev = cmpExam
-      ? cmpExam.subjects.flatMap((s) => subjectStats(cmpExam, s.name, ids) ?? [])
+      ? cmpExam.subjects.flatMap((s) => subjectStats(cmpExam, s.name, ids, grading) ?? [])
       : null
     return {
       current,
@@ -94,9 +98,9 @@ function AnalysisBody({
       changes,
       subjectNow,
       subjectPrev,
-      attn: attention(current, rows, changes ?? new Map()),
+      attn: attention(current, rows, changes ?? new Map(), grading),
     }
-  }, [scored, ids, examParam, cmpParam])
+  }, [scored, ids, examParam, cmpParam, grading])
 
   if (book.isLoading || roster.isLoading) return <LoadingState />
   if (!book.data || !roster.data) {
@@ -206,13 +210,14 @@ function AnalysisBody({
         <SubjectRateChart stats={cur} width={chartWidth} />
         <BandChart stats={cur} width={chartWidth} />
       </div>
-      <TrendGrid book={scored} ids={ids} width={chartWidth} />
+      <TrendGrid book={scored} ids={ids} width={chartWidth} ratios={grading} />
       <div className="grid items-start gap-4 lg:grid-cols-[2fr_1fr]">
         <RankTable
           subjects={current.subjects}
           rows={rows}
           changes={changes}
           names={names}
+          ratios={grading}
           onOpen={openStudent}
         />
         <AttentionPanel

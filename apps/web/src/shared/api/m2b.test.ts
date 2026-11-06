@@ -62,6 +62,13 @@ const importBody: StudentImport = { rows: [row], auto_seat: true }
 const C = '/api/v1/classes/c1'
 const calls: [string, () => Promise<unknown>, string, string, unknown][] = [
   ['subjects', () => examsApi.subjects('c1'), 'GET', `${C}/subjects`, undefined],
+  [
+    'fill subjects from catalog',
+    () => examsApi.fillFromCatalog('c1'),
+    'POST',
+    `${C}/subjects/fill-from-catalog`,
+    undefined,
+  ],
   ['exams', () => examsApi.list('c1'), 'GET', `${C}/exams`, undefined],
   ['create exam', () => examsApi.create('c1', examInput), 'POST', `${C}/exams`, examInput],
   ['update exam', () => examsApi.update('c1', 'e1', examInput), 'PUT', `${C}/exams/e1`, examInput],
