@@ -908,7 +908,9 @@ def test_real_ffmpeg_produces_hls(db, redis_url, real_ffmpeg, hls_root):
         await want(redis, cam)
         await sup.tick(1)
         out = hls_root / str(cam.id)
-        await settle(lambda: (out / "index.m3u8").exists() and any(out.glob("seg-*.ts")), 8)
+        # 首片段最多等 20 秒:CI runner 上 ffmpeg 冷启动 + 2 秒切片可能超过产品侧 8 秒的 503 契约,
+        # 这里只验证"真 ffmpeg 能出 HLS",不复验那个契约
+        await settle(lambda: (out / "index.m3u8").exists() and any(out.glob("seg-*.ts")), 20)
         await sup.tick(2)
         assert (await state(redis, cam))["status"] == "streaming"
         await sup.shutdown()

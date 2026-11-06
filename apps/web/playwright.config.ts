@@ -1,7 +1,7 @@
 import { defineConfig } from '@playwright/test'
 
-// classroom / grades / students / ai / profile / desks / admin / m3b / m4a / m4b / m5b 十一个 spec 会改共享种子数据(考勤、点评、座位、考试成绩、学生名单、AI 对话、评语、成长记录、桌椅排列、账号 / 任职 / 学校设置开关、家长绑定、学年升级、通知与家长账号、账号安全设置),
-// 其余 spec 在同一个班级上只读断言。改数据的 project 串成一条链(mutating → grades → students → ai → profile → desks → admin → m3b → m4a → m4b → m5b),
+// classroom / grades / students / ai / profile / desks / admin / m3b / m4a / m4b / m5b / m5c 十二个 spec 会改共享种子数据(考勤、点评、座位、考试成绩、学生名单、AI 对话、评语、成长记录、桌椅排列、账号 / 任职 / 学校设置开关、家长绑定、学年升级、通知与家长账号、账号安全设置、监控开关 / 摄像头 / 作息与课表),
+// 其余 spec 在同一个班级上只读断言。改数据的 project 串成一条链(mutating → grades → students → ai → profile → desks → admin → m3b → m4a → m4b → m5b → m5c),
 // 各自单独跑完、互不交叠(都改座位、名单,并行会互相踩);只读 project 最后再并行,避免读到改到一半的数据。
 // 上游 project 失败会让下游 project 全部跳过(不会显示为失败),排查时先看最早失败的 project。
 // 不用 retries:干扰要靠隔离消除,不是靠重跑掩盖。
@@ -16,6 +16,7 @@ const M3B = 'm3b.spec.ts'
 const M4A = 'm4a.spec.ts'
 const M4B = 'm4b.spec.ts'
 const M5B = 'm5b.spec.ts'
+const M5C = 'm5c.spec.ts'
 
 export default defineConfig({
   testDir: './e2e',
@@ -40,10 +41,15 @@ export default defineConfig({
     { name: 'm4b', testMatch: M4B, dependencies: ['m4a'] },
     // m5b 建虚构老师账号(结束时冻结留库),临时改学校安全设置(每个用例前后还原为默认),不改种子账号
     { name: 'm5b', testMatch: M5B, dependencies: ['m4b'] },
+    // m5c 开学校"监控"开关、登记假摄像头(rtsp://127.0.0.1:8554/cam1、cam2,CI 的 camera profile)、
+    // 建作息与三年二班课表;每个用例结束还原(关开关、删摄像头、清课表与作息),失败也由 afterEach 按快照兜底。
+    // 真流用例要浏览器能解 H.264:Playwright 自带的 Chromium 没有专有解码器,这个 project 用系统里的
+    // Google Chrome(GitHub ubuntu runner 预装);其余 project 不受影响
+    { name: 'm5c', testMatch: M5C, dependencies: ['m5b'], use: { channel: 'chrome' } },
     {
       name: 'readonly',
-      testIgnore: [MUTATING, GRADES, STUDENTS, AI, PROFILE, DESKS, ADMIN, M3B, M4A, M4B, M5B],
-      dependencies: ['m5b'],
+      testIgnore: [MUTATING, GRADES, STUDENTS, AI, PROFILE, DESKS, ADMIN, M3B, M4A, M4B, M5B, M5C],
+      dependencies: ['m5c'],
     },
   ],
 })
