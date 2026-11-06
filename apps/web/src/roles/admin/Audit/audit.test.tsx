@@ -48,6 +48,7 @@ const account = (o: Partial<Account>): Account => ({
   must_change_password: false,
   last_login_at: null,
   roles: [],
+  totp_enabled: false,
   ...o,
 })
 
