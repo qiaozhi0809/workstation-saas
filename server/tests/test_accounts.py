@@ -2,9 +2,10 @@ from datetime import timedelta
 
 from sqlalchemy import func, select
 
+from app import clock
 from app.models import User
 from app.models.audit import AuditLog
-from tests.helpers import audit_rows, auth
+from tests.helpers import audit_rows, auth, freeze
 
 ACCOUNTS = "/api/v1/admin/accounts"
 IT_ADMIN = "55555555-5555-5555-5555-555555555546"
@@ -392,3 +393,167 @@ def test_list_page_and_q_caps(client, settings):
     assert client.get(ACCOUNTS, headers=h, params={"page": 1001}).status_code == 400
     assert client.get(ACCOUNTS, headers=h, params={"q": "字" * 50}).status_code == 200
     assert client.get(ACCOUNTS, headers=h, params={"q": "字" * 51}).status_code == 400
+
+
+def test_update_parent_account_keeps_it_parent_only(client, settings, db):
+    from sqlalchemy import text
+
+    from tests.seed_ids import STUDENT_IDS
+
+    created = client.post(
+        f"/api/v1/students/{STUDENT_IDS[2]}/parents",
+        headers=auth(settings),
+        json={"phone": "13800000041", "name": "虚构家长", "relation": "母亲"},
+    )
+    assert created.status_code == 201, created.text
+    link_id = created.json()["parent"]["link_id"]
+    uid = _user_id(db, "13800000041")
+    res = client.put(
+        f"{ACCOUNTS}/{uid}",
+        headers=_admin(settings),
+        json={
+            "display_name": "虚构家长B",
+            "phone": "13800000041",
+            "employee_no": None,
+            "subjects": [],
+        },
+    )
+    assert res.status_code == 200, res.text
+    assert db.scalar(text("SELECT count(*) FROM teachers WHERE user_id = :u"), {"u": uid}) == 0
+    assert (
+        client.delete(f"/api/v1/parent-links/{link_id}", headers=auth(settings)).status_code == 204
+    )
+    db.expire_all()
+    assert db.get(User, uid).status == "archived"
+    # 填了工号则照常建教职工行
+    other = _create(client, settings).json()["account"]["id"]
+    assert db.scalar(text("SELECT count(*) FROM teachers WHERE user_id = :u"), {"u": other}) == 1
+
+
+def test_role_tags_ignore_yearless_teacher_binding(client, settings, db):
+    from app.rbac.roles import Role
+    from tests.factories import bind, make_teacher_account
+    from tests.seed_ids import CLASS_ID
+
+    t = make_teacher_account(db, login_name="yearless01")
+    bind(db, t.id, Role.homeroom_teacher, class_id=CLASS_ID, year_id=None)
+    bind(db, t.id, Role.subject_teacher, class_id=CLASS_ID, year_id=None, subject="数学")
+    db.commit()
+    items = client.get(ACCOUNTS, headers=_admin(settings), params={"q": "yearless01"}).json()[
+        "items"
+    ]
+    assert items[0]["roles"] == []
+    # 管理岗学年为空照旧显示
+    p = client.get(ACCOUNTS, headers=_admin(settings), params={"q": "principal01"}).json()["items"]
+    assert p[0]["roles"] == [{"role": "principal", "label": "校长"}]
+
+
+def test_admin_reset_kicks_socket(client, settings, db, redis_client):
+    import json
+
+    pubsub = redis_client.pubsub()
+    pubsub.subscribe("ws:events")
+    assert pubsub.get_message(timeout=2)["type"] == "subscribe"
+    uid = _user_id(db, "teacher02")
+    res = client.post(f"{ACCOUNTS}/{uid}/reset-password", headers=_admin(settings))
+    assert res.status_code == 200
+    seen = []
+    while (msg := pubsub.get_message(timeout=0.5)) is not None:
+        if msg["type"] == "message":
+            seen.append(json.loads(msg["data"]))
+    pubsub.close()
+    assert seen == [{"user_ids": [str(uid)], "event": {"type": "session.stale"}}]
+
+
+def _revoke_boom(monkeypatch):
+    from redis.exceptions import RedisError
+
+    from app.auth import sessions
+
+    def boom(*args, **kwargs):
+        raise RedisError("down")
+
+    monkeypatch.setattr(sessions, "revoke_all", boom)
+
+
+def test_reset_redis_error_leaves_password_unchanged(client, settings, db, monkeypatch):
+    uid = _user_id(db, "teacher02")
+    before = db.get(User, uid).password_hash
+    _revoke_boom(monkeypatch)
+    res = client.post(f"{ACCOUNTS}/{uid}/reset-password", headers=_admin(settings))
+    assert res.status_code == 503
+    assert res.json()["error"]["code"] == "SERVICE_UNAVAILABLE"
+    assert "temp_password" not in res.text
+    db.expire_all()
+    assert db.get(User, uid).password_hash == before
+    assert db.get(User, uid).must_change_password is False
+    assert audit_rows(db, uid) == []
+    monkeypatch.undo()
+    assert _login(client, "teacher02").status_code == 200
+
+
+def test_freeze_redis_error_leaves_account_active(client, settings, db, monkeypatch):
+    uid = _user_id(db, "teacher02")
+    _revoke_boom(monkeypatch)
+    res = client.post(f"{ACCOUNTS}/{uid}/freeze", headers=_admin(settings))
+    assert res.status_code == 503 and res.json()["error"]["code"] == "SERVICE_UNAVAILABLE"
+    db.expire_all()
+    assert db.get(User, uid).status == "active"
+
+
+def test_admin_reset_sets_password_changed_at(client, settings, db):
+    uid = _user_id(db, "teacher02")
+    before = clock.utc_now() - timedelta(days=1)
+    db.get(User, uid).password_changed_at = before
+    db.commit()
+    res = client.post(f"{ACCOUNTS}/{uid}/reset-password", headers=_admin(settings))
+    assert res.status_code == 200
+    db.expire_all()
+    after = db.scalar(select(User.password_changed_at).where(User.id == uid))
+    assert after is not None and after > before
+
+
+def test_admin_reset_rejects_old_access_token(client, settings, db, monkeypatch):
+    uid = _user_id(db, "teacher02")
+    old = auth(settings, uid)  # 重置前签发的 access 令牌
+    assert client.get("/api/v1/auth/me", headers=old).status_code == 200
+    # 把重置时刻拨到之后,令牌 iat 必然早于 password_changed_at(不依赖整秒抖动)
+    with monkeypatch.context() as m:
+        freeze(m, (clock.utc_now() + timedelta(seconds=5)).isoformat())
+        res = client.post(f"{ACCOUNTS}/{uid}/reset-password", headers=_admin(settings))
+        assert res.status_code == 200
+    res = client.get("/api/v1/auth/me", headers=old)
+    assert res.status_code == 401
+    assert res.json()["error"]["code"] == "TOKEN_EXPIRED"
+
+
+def test_account_list_includes_totp_enabled(client, settings, db):
+    uid = _user_id(db, "teacher02")
+    user = db.get(User, uid)
+    user.totp_secret = "FICTIONALSECRET"
+    user.totp_enabled_at = clock.utc_now()
+    db.commit()
+    res = client.get(ACCOUNTS, headers=_admin(settings), params={"q": "teacher"})
+    assert res.status_code == 200
+    flags = {i["login_name"]: i["totp_enabled"] for i in res.json()["items"]}
+    assert flags["teacher02"] is True
+    assert [k for k, v in flags.items() if v] == ["teacher02"]
+
+
+def test_reset_succeeds_when_fail_counter_cleanup_redis_fails(
+    client, settings, db, redis_client, monkeypatch
+):
+    from redis.exceptions import RedisError
+
+    def boom(*args, **kwargs):
+        raise RedisError("down")
+
+    monkeypatch.setattr(redis_client, "delete", boom)  # revoke_all 走 pipeline,不受影响
+    res = client.post(
+        f"{ACCOUNTS}/{_user_id(db, 'teacher02')}/reset-password", headers=_admin(settings)
+    )
+    assert res.status_code == 200
+    temp = res.json()["temp_password"]
+    assert len(temp) == 10
+    monkeypatch.undo()
+    assert _login(client, "teacher02", temp).status_code == 200

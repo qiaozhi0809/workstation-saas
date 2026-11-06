@@ -1,8 +1,8 @@
 from datetime import date
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Body, Depends, Request
 from sqlalchemy.orm import Session
 
 from app import clock
@@ -38,7 +38,11 @@ def get_profile(
 
 @router.put("/children/{student_id}/contacts", response_model_exclude_none=True)
 def put_contacts(
-    student_id: UUID, body: views.ContactsInput, request: Request, user: CurrentUser, db: Db
+    student_id: UUID,
+    body: Annotated[dict[str, Any], Body()],
+    request: Request,
+    user: CurrentUser,
+    db: Db,
 ) -> views.ParentProfile:
     return views.save_contacts(db, request, user, student_id, body, clock.utc_now())
 

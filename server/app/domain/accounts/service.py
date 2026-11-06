@@ -1,13 +1,16 @@
+import logging
 from collections import defaultdict
 from collections.abc import Sequence
 from uuid import UUID
 
 from fastapi import Request
 from redis import Redis
+from redis.exceptions import RedisError
 from sqlalchemy import and_, exists, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app import clock
 from app.audit.service import record
 from app.auth import sessions
 from app.auth.passwords import generate_temp_password, hash_password, hash_passwords
@@ -26,8 +29,10 @@ from app.domain.accounts.schemas import (
 from app.errors import ApiError
 from app.models import Grade, RoleBinding, SchoolClass, User
 from app.rbac.admin import account_admin_count
-from app.rbac.roles import PARENT_ROLES, Role
-from app.ws.hub import publish
+from app.rbac.roles import PARENT_ROLES, TEACHER_ROLES, Role
+from app.ws.hub import STALE, publish
+
+log = logging.getLogger(__name__)
 
 PAGE_SIZE = 50
 
@@ -78,6 +83,9 @@ def role_tags(
     )
     parents: set[UUID] = set()
     for b in bindings:
+        # 与 load_bindings 同口径:学年为空的教师岗位不算
+        if Role(b.role_type) in TEACHER_ROLES and b.academic_year_id is None:
+            continue
         if b.role_type in _PARENT_ROLE_VALUES:
             if b.user_id not in parents:
                 parents.add(b.user_id)
@@ -135,6 +143,7 @@ def _views(db: Session, users: Sequence[User], year_id: UUID | None) -> list[Acc
             status=u.status,
             must_change_password=u.must_change_password,
             last_login_at=u.last_login_at,
+            totp_enabled=u.totp_enabled_at is not None,
             roles=tags.get(u.id, []),
         )
         for u in users
@@ -265,13 +274,15 @@ def update_account(
 ) -> Account:
     user.display_name = data.display_name
     user.phone = data.phone
-    db.execute(
-        text(
-            "INSERT INTO teachers (user_id, employee_no, subjects) VALUES (:uid, :no, :subs) "
-            "ON CONFLICT (user_id) DO UPDATE SET employee_no = :no, subjects = :subs"
-        ),
-        {"uid": user.id, "no": data.employee_no, "subs": data.subjects},
-    )
+    has_row = db.scalar(text("SELECT 1 FROM teachers WHERE user_id = :uid"), {"uid": user.id})
+    if has_row or data.employee_no or data.subjects:  # 纯家长账号改姓名电话不建教职工行
+        db.execute(
+            text(
+                "INSERT INTO teachers (user_id, employee_no, subjects) VALUES (:uid, :no, :subs) "
+                "ON CONFLICT (user_id) DO UPDATE SET employee_no = :no, subjects = :subs"
+            ),
+            {"uid": user.id, "no": data.employee_no, "subs": data.subjects},
+        )
     record(
         db,
         user_id=actor.id,
@@ -283,6 +294,24 @@ def update_account(
     )
     db.commit()
     return account_view(db, user, year_id)
+
+
+def revoke_all_or_503(db: Session, redis: Redis, user_ids: Sequence[UUID]) -> None:
+    """提交之前先作废刷新令牌;Redis 不可用 → 回滚、503,不改库(L71)。"""
+    try:
+        for uid in user_ids:
+            sessions.revoke_all(redis, uid)
+    except RedisError:
+        db.rollback()
+        raise ApiError(503, "SERVICE_UNAVAILABLE", "暂时无法完成,请稍后重试") from None
+
+
+def clear_fail_counter(redis: Redis, settings: Settings, login_name: str) -> None:
+    """提交之后的收尾,尽力而为:Redis 出错只记日志,不能让已落库的重置变 500、丢临时密码(L71)。"""
+    try:
+        redis.delete(_fail_key(settings, login_name))
+    except RedisError as exc:
+        log.warning("clear login fail counter failed: %s", type(exc).__name__)
 
 
 def reset_password(
@@ -298,6 +327,7 @@ def reset_password(
     temp = generate_temp_password()
     user.password_hash = hash_password(temp)
     user.must_change_password = True
+    user.password_changed_at = clock.utc_now()
     record(
         db,
         user_id=actor.id,
@@ -307,9 +337,10 @@ def reset_password(
         object_id=str(user.id),
         request=request,
     )
+    revoke_all_or_503(db, redis, [user.id])
     db.commit()
-    sessions.revoke_all(redis, user.id)
-    redis.delete(_fail_key(settings, user.login_name))
+    clear_fail_counter(redis, settings, user.login_name)
+    publish(redis, [user.id], {"type": STALE})  # 已打开的页面立即用刷新令牌重连(L29)
     return temp
 
 
@@ -355,8 +386,8 @@ def freeze(
         object_id=str(user.id),
         request=request,
     )
+    revoke_all_or_503(db, redis, [user.id])
     db.commit()
-    sessions.revoke_all(redis, user.id)
     publish(redis, [user.id], {"type": "session.revoked"})
     return account_view(db, user, year_id)
 

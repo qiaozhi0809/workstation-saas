@@ -1,15 +1,16 @@
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import pytest
 from sqlalchemy import func, select
 
+from app import clock
 from app.models import RoleBinding, User
 from app.models.audit import AuditLog
 from app.models.parents import Parent, ParentLink
 from tests.factories import make_user
-from tests.helpers import auth, refreshed_headers
+from tests.helpers import auth, freeze, refreshed_headers
 from tests.seed_ids import STUDENT_IDS, SUBJECT_USER_ID
 
 S3, S4 = STUDENT_IDS[2], STUDENT_IDS[3]
@@ -519,3 +520,469 @@ def test_reset_rejected_when_parent_has_other_class_child(client, settings, db):
         f"/api/v1/parent-links/{solo['link_id']}/reset-password", headers=auth(settings)
     )
     assert res.status_code == 200
+
+
+def test_orm_declares_partial_index(db):
+    from sqlalchemy import text as sql
+    from sqlalchemy.dialects import postgresql
+
+    from app.models.base import Base
+
+    table = Base.metadata.tables["parent_links"]
+    idx = next((i for i in table.indexes if i.name == "parent_links_one_primary"), None)
+    assert idx is not None and idx.unique
+    assert [c.name for c in idx.columns] == ["student_id"]
+    where = idx.dialect_options["postgresql"]["where"]
+    declared = str(
+        where.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True})
+    )
+    assert declared == "is_primary AND status <> 'ended'"
+    live = db.scalar(
+        sql("SELECT indexdef FROM pg_indexes WHERE indexname = 'parent_links_one_primary'")
+    )
+    assert "UNIQUE" in live and "(student_id)" in live
+    assert "is_primary AND (status <> 'ended'" in live
+
+
+def test_unlink_binding_and_link_share_ended_at(client, settings, db, monkeypatch):
+    from tests.helpers import freeze
+
+    a = _add(client, settings, S3, "13800000051").json()["parent"]
+    _add(client, settings, S4, "13800000051")  # 账号不归档,绑定行保留可查
+    freeze(monkeypatch, "2026-11-05T08:00:00+00:00")
+    res = client.delete(f"/api/v1/parent-links/{a['link_id']}", headers=auth(settings))
+    assert res.status_code == 204
+    link_end = db.scalar(select(ParentLink.ended_at).where(ParentLink.id == UUID(a["link_id"])))
+    db.expire_all()
+    binding_end = db.scalar(
+        select(RoleBinding.ended_at).where(
+            RoleBinding.user_id == _user(db, "13800000051").id,
+            RoleBinding.scope["student_id"].astext == S3,
+        )
+    )
+    assert link_end == binding_end == datetime(2026, 11, 5, 8, tzinfo=UTC)
+
+
+def test_authorize_ignores_other_year_enrollment(client, settings, db):
+    from datetime import date
+
+    from app.models import AcademicYear, Enrollment
+    from tests.seed_ids import SCHOOL_ID
+
+    old = AcademicYear(
+        school_id=UUID(SCHOOL_ID),
+        name="2024-2025",
+        start_date=date(2024, 9, 1),
+        end_date=date(2025, 7, 15),
+        is_active=False,
+    )
+    db.add(old)
+    db.flush()
+    db.execute(
+        Enrollment.__table__.update()
+        .where(Enrollment.student_id == UUID(S3))
+        .values(academic_year_id=old.id)
+    )
+    res = _add(client, settings, S3, "13800000052")
+    assert res.status_code == 403
+    assert client.get(_url(S3), headers=auth(settings)).status_code == 403
+    assert _user(db, "13800000052") is None
+    assert len([a for a in _audits(db, "parent.manage") if not a.success]) == 2
+
+
+@pytest.fixture(scope="module")
+def cengine():
+    from tests.concurrent_db import make_concurrent_engine
+
+    with make_concurrent_engine() as eng:
+        yield eng
+
+
+def test_concurrent_link_same_staff_no_500(cengine):
+    import threading
+
+    from sqlalchemy import text as sql
+    from sqlalchemy.orm import Session
+
+    from app.domain.parents import manage
+    from app.domain.parents.schemas import ParentInput
+    from app.rbac.bindings import load_bindings
+    from tests.seed_ids import TEACHER_USER_ID, YEAR_ID
+
+    barrier = threading.Barrier(2)
+    results: dict[str, object] = {}
+
+    def run(sid: str) -> None:
+        try:
+            with Session(cengine) as db:
+                actor = db.get(User, UUID(TEACHER_USER_ID))
+                bindings = load_bindings(db, actor.id, UUID(YEAR_ID))
+                barrier.wait(30)
+                body = ParentInput(phone="13800000004", name="虚构教师", relation="母亲")
+                results[sid] = manage.add_parent(db, None, actor, bindings, UUID(sid), body)
+        except BaseException as exc:  # noqa: BLE001 - 带回主线程断言
+            results[sid] = exc
+
+    threads = [threading.Thread(target=run, args=(sid,), daemon=True) for sid in (S3, S4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(60)
+    assert all(not isinstance(v, BaseException) for v in results.values()), results
+    assert len(results) == 2
+    with cengine.connect() as conn:
+        n = conn.execute(
+            sql(
+                "SELECT count(*) FROM parents p JOIN users u ON u.id = p.user_id"
+                " WHERE u.login_name = 'teacher04'"
+            )
+        ).scalar_one()
+    assert n == 1
+
+
+def test_relink_archived_parent_reactivates(client, settings, db):
+    first = _add(client, settings, S3, "13800000053").json()
+    uid = _user(db, "13800000053").id
+    parent_row = db.scalar(select(Parent.id).where(Parent.user_id == uid))
+    assert (
+        client.delete(
+            f"/api/v1/parent-links/{first['parent']['link_id']}", headers=auth(settings)
+        ).status_code
+        == 204
+    )
+    assert _user(db, "13800000053").status == "archived"
+    res = _add(client, settings, S3, "13800000053")
+    assert res.status_code == 201, res.text
+    temp = res.json()["temp_password"]
+    assert temp and temp != first["temp_password"]
+    db.expire_all()
+    user = _user(db, "13800000053")
+    assert user.id == uid and user.status == "active" and user.must_change_password is True
+    assert db.scalar(select(Parent.id).where(Parent.user_id == uid)) == parent_row
+    assert _login(client, "13800000053", first["temp_password"]).status_code == 401
+    assert _login(client, "13800000053", temp).status_code == 200
+    assert len(_audits(db, "parent.reactivate")) == 1
+    assert temp not in str(_audits(db, "parent.reactivate")[0].extra)
+
+
+def test_relink_frozen_still_409(client, settings, db):
+    _add(client, settings, S3, "13800000054")
+    _user(db, "13800000054").status = "frozen"
+    db.flush()
+    res = _add(client, settings, S4, "13800000054")
+    assert res.status_code == 409 and res.json()["error"]["code"] == "PHONE_TAKEN_INACTIVE"
+    assert _user(db, "13800000054").status == "frozen"
+
+
+def test_relink_archived_staff_account_not_reactivated(client, settings, db):
+    from app.rbac.roles import Role
+    from tests.factories import bind
+
+    staff = make_user(db, "13800000055", "虚构职工")
+    bind(db, staff.id, Role.dean, school_id="11111111-1111-1111-1111-111111111111", year_id=None)
+    staff.status = "archived"
+    db.flush()
+    res = _add(client, settings, S3, "13800000055")
+    assert res.status_code == 409 and res.json()["error"]["code"] == "PHONE_TAKEN_INACTIVE"
+    assert _user(db, "13800000055").status == "archived"
+
+
+def test_parent_reset_kicks_socket(client, settings, db, redis_client):
+    p = _add(client, settings, S3, "13800000056").json()["parent"]
+    pubsub = redis_client.pubsub()
+    pubsub.subscribe("ws:events")
+    assert pubsub.get_message(timeout=2)["type"] == "subscribe"
+    res = client.post(f"/api/v1/parent-links/{p['link_id']}/reset-password", headers=auth(settings))
+    assert res.status_code == 200
+    assert _drain(pubsub) == [{"user_ids": [p["user_id"]], "event": {"type": "session.stale"}}]
+    pubsub.close()
+
+
+def test_parent_reset_and_unlink_redis_error_change_nothing(client, settings, db, monkeypatch):
+    from redis.exceptions import RedisError
+
+    from app.auth import sessions
+
+    created = _add(client, settings, S3, "13800000057").json()
+    link = created["parent"]["link_id"]
+    before = _user(db, "13800000057").password_hash
+
+    def boom(*args, **kwargs):
+        raise RedisError("down")
+
+    monkeypatch.setattr(sessions, "revoke_all", boom)
+    res = client.post(f"/api/v1/parent-links/{link}/reset-password", headers=auth(settings))
+    assert res.status_code == 503 and res.json()["error"]["code"] == "SERVICE_UNAVAILABLE"
+    assert "temp_password" not in res.text
+    assert _user(db, "13800000057").password_hash == before
+    # 解绑会归档孤立账号:吊销失败 → 整体回滚,绑定与账号都不变
+    res = client.delete(f"/api/v1/parent-links/{link}", headers=auth(settings))
+    assert res.status_code == 503 and res.json()["error"]["code"] == "SERVICE_UNAVAILABLE"
+    db.expire_all()
+    assert _user(db, "13800000057").status == "active"
+    assert db.get(ParentLink, UUID(link)).status == "active"
+    monkeypatch.undo()
+    assert _login(client, "13800000057", created["temp_password"]).status_code == 200
+
+
+def _other_class(db):
+    from app.rbac.roles import Role
+    from tests.factories import bind, make_class, make_student, make_teacher_account
+
+    cls2 = make_class(db, "虚构二班")
+    s_other = str(make_student(db, cls2, "虚构学生", "mk-c-l73"))
+    teacher2 = make_teacher_account(db)
+    bind(db, teacher2.id, Role.homeroom_teacher, class_id=cls2)
+    db.commit()
+    return s_other, str(teacher2.id)
+
+
+def _reset(client, settings, link, who=None):
+    headers = auth(settings) if who is None else auth(settings, who)
+    return client.post(f"/api/v1/parent-links/{link}/reset-password", headers=headers)
+
+
+def test_reset_parent_with_graduated_child(client, settings, db):
+    s_other, t2 = _other_class(db)
+    mine = _add(client, settings, S3, "13800000058").json()["parent"]
+    other = _add(client, settings, s_other, "13800000058", user=t2).json()["parent"]
+    assert mine["user_id"] == other["user_id"]
+    _make_readonly(db, other)  # 另一个孩子已毕业,只读绑定不参与判定
+    res = _reset(client, settings, mine["link_id"])
+    assert res.status_code == 200, res.text
+    assert _login(client, "13800000058", res.json()["temp_password"]).status_code == 200
+
+
+def test_reset_parent_with_active_child_elsewhere_rejected(client, settings, db):
+    s_other, t2 = _other_class(db)
+    mine = _add(client, settings, S3, "13800000059").json()["parent"]
+    other = _add(client, settings, s_other, "13800000059", user=t2).json()["parent"]
+    third = _add(client, settings, S4, "13800000059").json()["parent"]
+    _make_readonly(db, third)  # 多一条只读绑定也不能抵消别班的在读孩子
+    before = _user(db, "13800000059").password_hash
+    for link, who in ((mine["link_id"], None), (other["link_id"], t2)):
+        res = _reset(client, settings, link, who)
+        assert res.status_code == 409, res.text
+        assert res.json()["error"]["code"] == "PARENT_OTHER_CLASS"
+        assert "temp_password" not in res.text
+    assert _user(db, "13800000059").password_hash == before
+    assert len([a for a in _audits(db, "parent.reset") if a.success is False]) == 2
+
+
+@pytest.mark.parametrize(
+    "who",
+    [
+        "55555555-5555-5555-5555-555555555544",  # 教务
+        "55555555-5555-5555-5555-555555555545",  # 年级组长
+        SUBJECT_USER_ID,  # 非班主任教师
+        "other-class-homeroom",
+        "parent-self",
+        PRINCIPAL,  # 校长
+        "55555555-5555-5555-5555-555555555546",  # 信息中心(兜底走 /admin/accounts,不走这里)
+        "staff-parent",  # 别班班主任,同时是本班孩子的家长:家长绑定不进 bindings
+    ],
+)
+def test_reset_parent_forbidden_for_everyone_else(client, settings, db, who):
+    s_other, t2 = _other_class(db)
+    mine = _add(client, settings, S3, "13800000060").json()["parent"]
+    if who == "other-class-homeroom":
+        who = t2
+    elif who == "staff-parent":
+        assert _add(client, settings, S3, "13800000004").status_code == 201
+        who = TEACHER04
+    elif who == "parent-self":
+        who = mine["user_id"]
+        _user(db, "13800000060").must_change_password = False  # 否则先被改密码要求拦下
+        db.flush()
+    before = _user(db, "13800000060").password_hash
+    res = _reset(client, settings, mine["link_id"], who)
+    assert res.status_code == 403, res.text
+    assert res.json()["error"]["code"] == "FORBIDDEN"
+    assert _user(db, "13800000060").password_hash == before
+    assert any(a.success is False and str(a.user_id) == who for a in _audits(db, "parent.manage"))
+
+
+def test_parent_reset_sets_password_changed_at(client, settings, db):
+    created = _add(client, settings, S3, "13800000077").json()
+    link = created["parent"]["link_id"]
+    before = datetime.now(UTC) - timedelta(days=1)
+    _user(db, "13800000077").password_changed_at = before
+    db.commit()
+    res = client.post(f"/api/v1/parent-links/{link}/reset-password", headers=auth(settings))
+    assert res.status_code == 200
+    db.expire_all()
+    after = _user(db, "13800000077").password_changed_at
+    assert after is not None and after > before
+
+
+def test_parent_reset_rejects_old_access_token(client, settings, db, monkeypatch):
+    created = _add(client, settings, S3, "13800000078").json()
+    link = created["parent"]["link_id"]
+    old = auth(settings, _user(db, "13800000078").id)
+    assert client.get("/api/v1/auth/me", headers=old).status_code == 200
+    with monkeypatch.context() as m:
+        freeze(m, (clock.utc_now() + timedelta(seconds=5)).isoformat())
+        res = client.post(f"/api/v1/parent-links/{link}/reset-password", headers=auth(settings))
+        assert res.status_code == 200
+    res = client.get("/api/v1/auth/me", headers=old)
+    assert res.status_code == 401
+    assert res.json()["error"]["code"] == "TOKEN_EXPIRED"
+
+
+def test_reset_parent_without_active_link_in_my_class_rejected(client, settings, db):
+    # 本班这条绑定是只读(异常数据):零条在用绑定 → 拒绝;只剩别班在读绑定 → 也拒绝
+    s_other, t2 = _other_class(db)
+    lone = _add(client, settings, S3, "13800000061").json()["parent"]
+    _make_readonly(db, lone)
+    mixed = _add(client, settings, S4, "13800000062").json()["parent"]
+    assert _add(client, settings, s_other, "13800000062", user=t2).status_code == 201
+    _make_readonly(db, mixed)
+    for link, login in ((lone["link_id"], "13800000061"), (mixed["link_id"], "13800000062")):
+        before = _user(db, login).password_hash
+        res = _reset(client, settings, link)
+        assert res.status_code == 409, res.text
+        assert res.json()["error"]["code"] == "PARENT_OTHER_CLASS"
+        assert "temp_password" not in res.text
+        assert _user(db, login).password_hash == before
+
+
+class _NullRedis:
+    def smembers(self, _key):
+        return set()
+
+    def delete(self, *_keys):
+        return 0
+
+    def publish(self, *_args):
+        return 0
+
+
+def test_reset_waits_for_concurrent_link_to_other_class(cengine):
+    """别班老师正给同一账号绑别班孩子(已锁用户行、未提交)时,本班重置必须等它提交后再判定。"""
+    import threading
+
+    from sqlalchemy import text as sql
+    from sqlalchemy.orm import Session
+
+    from app.config import Settings
+    from app.domain.parents import manage
+    from app.domain.parents.schemas import ParentInput
+    from app.errors import ApiError
+    from app.rbac.bindings import load_bindings
+    from tests.factories import make_class, make_student
+    from tests.seed_ids import TEACHER_USER_ID, YEAR_ID
+
+    with Session(cengine) as db:
+        actor = db.get(User, UUID(TEACHER_USER_ID))
+        bindings = load_bindings(db, actor.id, UUID(YEAR_ID))
+        body = ParentInput(phone="13800000063", name="虚构家长", relation="母亲")
+        link_id = manage.add_parent(db, None, actor, bindings, UUID(S3), body).parent.link_id
+        cls2 = make_class(db, "虚构并发班")
+        s_other = make_student(db, cls2, "虚构学生", "mk-c-race")
+        db.commit()
+        uid = db.scalar(select(User.id).where(User.login_name == "13800000063"))
+        parent_id = db.scalar(select(Parent.id).where(Parent.user_id == uid))
+
+    holder = Session(cengine)
+    holder.execute(sql("SELECT 1 FROM users WHERE id = :u FOR UPDATE"), {"u": uid})
+    holder.execute(
+        sql(
+            "INSERT INTO parent_links (parent_id, student_id, relation, is_primary, status)"
+            " VALUES (:p, :s, '母亲', true, 'active')"
+        ),
+        {"p": parent_id, "s": s_other},
+    )
+    result: dict[str, object] = {}
+
+    def run() -> None:
+        try:
+            with Session(cengine) as db:
+                actor = db.get(User, UUID(TEACHER_USER_ID))
+                bindings = load_bindings(db, actor.id, UUID(YEAR_ID))
+                result["v"] = manage.reset_parent_password(
+                    db, _NullRedis(), Settings(_env_file=None), None, actor, bindings, link_id
+                )
+        except BaseException as exc:  # noqa: BLE001 - 带回主线程断言
+            result["v"] = exc
+
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    t.join(1.5)
+    assert t.is_alive(), result  # 被用户行锁挡住
+    holder.commit()
+    holder.close()
+    t.join(30)
+    err = result["v"]
+    assert isinstance(err, ApiError) and err.code == "PARENT_OTHER_CLASS", err
+
+
+def test_contacts_rechecks_authz_after_lock(cengine):
+    """班主任解绑(已锁学生行、未提交)时,家长的写入等锁后必须重新判权,不得落库(L78)。"""
+    import threading
+    from datetime import UTC, datetime
+
+    from sqlalchemy import text as sql
+    from sqlalchemy.orm import Session
+
+    from app.domain.parents.views import save_contacts
+    from app.errors import ApiError
+    from tests.factories import make_class, make_student, make_user
+
+    with Session(cengine) as db:
+        cls = make_class(db, "虚构联系人班")
+        s_id = make_student(db, cls, "虚构学生", "mk-c-contacts")
+        puser = make_user(db, "13800000064", "虚构家长")
+        parent = Parent(user_id=puser.id, name="虚构家长", phone="13800000064")
+        db.add(parent)
+        db.flush()
+        link = ParentLink(parent_id=parent.id, student_id=s_id, relation="母亲", is_primary=True)
+        db.add(link)
+        db.commit()
+        uid, link_id = puser.id, link.id
+
+    holder = Session(cengine)
+    holder.execute(sql("SELECT 1 FROM students WHERE id = :s FOR UPDATE"), {"s": s_id})
+    holder.execute(sql("DELETE FROM parent_links WHERE id = :i"), {"i": link_id})
+    result: dict[str, object] = {}
+
+    def run() -> None:
+        try:
+            with Session(cengine) as db:
+                parent = db.get(User, uid)
+                c = {"name": "不该落库", "relation": "母亲", "phone": "13800000064", "job": "医生"}
+                payload = {"contacts": [c]}
+                result["v"] = save_contacts(db, None, parent, s_id, payload, datetime.now(UTC))
+        except BaseException as exc:  # noqa: BLE001 - 带回主线程断言
+            result["v"] = exc
+
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    t.join(1.5)
+    assert t.is_alive(), result  # 被学生行锁挡住
+    holder.commit()
+    holder.close()
+    t.join(30)
+    err = result["v"]
+    assert isinstance(err, ApiError) and err.status == 403 and err.code == "FORBIDDEN", err
+    with Session(cengine) as db:
+        contacts = db.scalar(sql("SELECT contacts FROM students WHERE id = :s"), {"s": s_id})
+    assert not contacts or all(c.get("name") != "不该落库" for c in contacts)
+
+
+def test_parent_reset_succeeds_when_fail_counter_cleanup_redis_fails(
+    client, settings, db, redis_client, monkeypatch
+):
+    from redis.exceptions import RedisError
+
+    created = _add(client, settings, S3, "13800000065").json()
+    link = created["parent"]["link_id"]
+
+    def boom(*args, **kwargs):
+        raise RedisError("down")
+
+    monkeypatch.setattr(redis_client, "delete", boom)  # revoke_all 走 pipeline,不受影响
+    res = client.post(f"/api/v1/parent-links/{link}/reset-password", headers=auth(settings))
+    assert res.status_code == 200
+    temp = res.json()["temp_password"]
+    monkeypatch.undo()
+    assert _login(client, "13800000065", temp).status_code == 200

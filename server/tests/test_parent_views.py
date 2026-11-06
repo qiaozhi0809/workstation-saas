@@ -246,6 +246,21 @@ def test_contacts_write_rules(client, settings, db):
     assert res.status_code == 400 and res.json()["error"]["code"] == "BAD_REQUEST"
 
 
+def test_contacts_authz_before_validation(client, settings, db):
+    s1 = sid(db, "S0001")
+    path = f"/api/v1/parent/children/{s1}/contacts"
+    bad = {"contacts": [{"name": "x"}] * 3}
+    for body in (bad, {"contacts": "nope"}, {}):
+        # 非家长(教师)、次要家长:先判权,体不合法也是 403
+        for who in (auth(settings), auth(settings, ZHOU)):
+            res = client.put(path, json=body, headers=who)
+            assert res.status_code == 403 and res.json()["error"]["code"] == "FORBIDDEN"
+        # 主家长:体不合法才 400
+        res = client.put(path, json=body, headers=auth(settings, LI))
+        assert res.status_code == 400 and res.json()["error"]["code"] == "BAD_REQUEST"
+    assert db.get(Student, s1).contacts in (None, [])
+
+
 def test_exam_of_other_class_forbidden(client, settings, db):
     other = Exam(
         class_id=UUID(C41),

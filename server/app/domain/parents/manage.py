@@ -6,6 +6,7 @@
 
 import re
 from collections.abc import Sequence
+from datetime import datetime
 from uuid import UUID
 
 from fastapi import Request
@@ -16,19 +17,18 @@ from sqlalchemy.orm import Session
 
 from app import clock
 from app.audit.service import deny, record
-from app.auth import sessions
 from app.auth.passwords import generate_temp_password, hash_password
-from app.auth.service import _fail_key
 from app.config import Settings
+from app.domain.accounts.service import clear_fail_counter, revoke_all_or_503
 from app.domain.classes.service import class_scope_of
 from app.domain.parents.lifecycle import archive_orphan_accounts
 from app.domain.parents.schemas import ParentCreated, ParentInput, ParentOfStudent
 from app.errors import ApiError
-from app.models import Enrollment, RoleBinding, SchoolClass, Student, User
+from app.models import AcademicYear, Enrollment, RoleBinding, SchoolClass, Student, User
 from app.models.parents import Parent, ParentLink
 from app.rbac.bindings import Binding, can
 from app.rbac.roles import PARENT_ROLES, Perm, Role
-from app.ws.hub import publish
+from app.ws.hub import STALE, publish
 
 MAX_PARENTS = 4
 _PHONE_RE = re.compile(r"^1[3-9][0-9]{9}$")
@@ -52,6 +52,22 @@ def lock_student(db: Session, school_id: UUID, student_id: UUID) -> Student:
     return get_student(db, school_id, student_id, lock=True)
 
 
+def _current_class(db: Session, student_id: UUID) -> SchoolClass | None:
+    """学生在当前学年的在读注册所在班;其他学年的在读注册不算(L66)。"""
+    return db.scalar(
+        select(SchoolClass)
+        .join(Enrollment, Enrollment.class_id == SchoolClass.id)
+        .join(
+            AcademicYear,
+            (AcademicYear.id == Enrollment.academic_year_id)
+            & (AcademicYear.school_id == SchoolClass.school_id)
+            & AcademicYear.is_active.is_(True),
+        )
+        .where(Enrollment.student_id == student_id, Enrollment.status == "active")
+        .limit(1)
+    )
+
+
 def authorize(
     db: Session,
     request: Request | None,
@@ -60,12 +76,7 @@ def authorize(
     student: Student,
 ) -> None:
     """学生当前在读注册所在班的 parent.manage;没有在读注册 → 403 + 审计。"""
-    cls = db.scalar(
-        select(SchoolClass)
-        .join(Enrollment, Enrollment.class_id == SchoolClass.id)
-        .where(Enrollment.student_id == student.id, Enrollment.status == "active")
-        .limit(1)
-    )
+    cls = _current_class(db, student.id)
     if cls is None or not can(bindings, Perm.PARENT_MANAGE, class_scope_of(cls)):
         deny(
             db,
@@ -78,12 +89,7 @@ def authorize(
 
 
 def _can_manage_student(db: Session, bindings: Sequence[Binding], student_id: UUID) -> bool:
-    cls = db.scalar(
-        select(SchoolClass)
-        .join(Enrollment, Enrollment.class_id == SchoolClass.id)
-        .where(Enrollment.student_id == student_id, Enrollment.status == "active")
-        .limit(1)
-    )
+    cls = _current_class(db, student_id)
     return cls is not None and can(bindings, Perm.PARENT_MANAGE, class_scope_of(cls))
 
 
@@ -193,7 +199,10 @@ def _find_account(db: Session, school_id: UUID, phone: str) -> User | None:
         raise ApiError(409, "PHONE_AMBIGUOUS", "这个手机号对应多个账号,请联系信息中心")
     if active:
         return active[0]
-    if any(u.login_name.lower() == phone for u in users):
+    mine = [u for u in users if u.login_name.lower() == phone]
+    if mine:
+        if mine[0].status == "archived":  # 归档的家长账号可恢复(L64);冻结的仍要信息中心处理
+            return mine[0]
         raise ApiError(409, "PHONE_TAKEN_INACTIVE", "这个手机号的账号已停用,请联系信息中心")
     return None
 
@@ -225,13 +234,18 @@ def _set_binding_role(db: Session, user_id: UUID, student_id: UUID, is_primary: 
     )
 
 
-def _end_binding(db: Session, user_id: UUID, student_id: UUID) -> None:
+def _end_binding(db: Session, user_id: UUID, student_id: UUID, ended_at: datetime) -> None:
     db.execute(
         text(
-            "UPDATE role_bindings SET ended_at = now() WHERE user_id = :u AND ended_at IS NULL"
+            "UPDATE role_bindings SET ended_at = :now WHERE user_id = :u AND ended_at IS NULL"
             " AND role_type = ANY(:roles) AND scope->>'student_id' = :sid"
         ),
-        {"u": user_id, "roles": _PARENT_ROLE_VALUES, "sid": str(student_id)},
+        {
+            "u": user_id,
+            "roles": _PARENT_ROLE_VALUES,
+            "sid": str(student_id),
+            "now": ended_at,
+        },
     )
 
 
@@ -257,10 +271,15 @@ def add_parent(
     if not _PHONE_RE.fullmatch(phone):
         raise ApiError(400, "PHONE_INVALID", "手机号应为 11 位中国大陆手机号")
     user = _find_account(db, actor.school_id, phone)
-    if user is not None:  # 锁用户行后再确认仍是 active(防并发停用/归档)
+    reactivated = False
+    if user is not None:  # 锁用户行后再确认状态(防并发停用/归档)
         locked = _lock_user(db, user.id)
-        if locked is None or locked.status != "active":
+        if locked is None or locked.status not in ("active", "archived"):
             raise ApiError(409, "PHONE_TAKEN_INACTIVE", "这个手机号的账号已停用,请联系信息中心")
+        if locked.status == "archived":
+            if user.id in _shared_user_ids(db, [user.id]):
+                raise ApiError(409, "PHONE_TAKEN_INACTIVE", "这个手机号的账号已停用,请联系信息中心")
+            reactivated = True
     parent = (
         db.scalar(select(Parent).where(Parent.user_id == user.id)) if user is not None else None
     )
@@ -284,7 +303,13 @@ def add_parent(
     is_primary = not any(lk.is_primary for lk in live)
 
     temp: str | None = None
-    if user is None:
+    if reactivated:
+        assert user is not None
+        temp = generate_temp_password()
+        user.password_hash = hash_password(temp)
+        user.must_change_password = True
+        user.status = "active"
+    elif user is None:
         temp = generate_temp_password()
         try:
             with db.begin_nested():
@@ -301,9 +326,19 @@ def add_parent(
         except IntegrityError:
             raise ApiError(409, "PHONE_AMBIGUOUS", "这个手机号刚被占用,请重试") from None
     if parent is None:
-        parent = Parent(user_id=user.id, name=body.name, phone=phone)
-        db.add(parent)
-        db.flush()
+        parent_id = db.scalar(
+            text(
+                "INSERT INTO parents (user_id, name, phone) VALUES (:u, :n, :p)"
+                " ON CONFLICT (user_id) DO NOTHING RETURNING id"
+            ),
+            {"u": user.id, "n": body.name, "p": phone},
+        )
+        parent = (
+            db.get(Parent, parent_id)
+            if parent_id is not None
+            else db.scalar(select(Parent).where(Parent.user_id == user.id))
+        )
+        assert parent is not None
 
     if existing is not None:  # ended -> 恢复同一行
         db.execute(
@@ -335,7 +370,9 @@ def add_parent(
     record(
         db,
         user_id=actor.id,
-        action="parent.create" if temp is not None else "parent.link",
+        action="parent.reactivate"
+        if reactivated
+        else ("parent.create" if temp is not None else "parent.link"),
         success=True,
         object_type="user",
         object_id=str(user.id),
@@ -394,12 +431,13 @@ def unlink(
     link, student = open_link(db, request, actor, bindings, link_id)
     user_id = _user_of(db, link)
     was_primary = link.is_primary
+    now = clock.utc_now()
     db.execute(
         ParentLink.__table__.update()
         .where(ParentLink.id == link.id)
-        .values(status="ended", ended_at=clock.utc_now(), readonly_since=None, is_primary=False)
+        .values(status="ended", ended_at=now, readonly_since=None, is_primary=False)
     )
-    _end_binding(db, user_id, student.id)
+    _end_binding(db, user_id, student.id, now)
     if was_primary:
         # 继任者只从在用绑定里选(和 set_primary 同口径);只读的保持次要,没有就不设主家长
         rest = [lk for lk in _live_links(db, student.id) if lk.status == "active"]
@@ -430,9 +468,8 @@ def unlink(
             request=request,
             extra={"via": "unlink"},
         )
+    revoke_all_or_503(db, redis, archived)
     db.commit()
-    for uid in archived:
-        sessions.revoke_all(redis, uid)
     if archived:
         publish(redis, archived, {"type": "session.revoked"})
 
@@ -447,18 +484,23 @@ def reset_parent_password(
     link_id: UUID,
 ) -> str:
     link, student = open_link(db, request, actor, bindings, link_id)
-    user = db.get(User, _user_of(db, link))
+    # 先锁用户行再判定(锁序:学生行 → 用户行,同 add_parent / unlink):别班正给这个账号
+    # 绑孩子时 add_parent 持有用户行锁,这里等它提交后再读绑定,避免重置别班家长(C-2)
+    user = _lock_user(db, _user_of(db, link))
     assert user is not None
     if user.id in _shared_user_ids(db, [user.id]):
         raise ApiError(409, "PARENT_ACCOUNT_SHARED", "该账号也是教职工账号,请联系信息中心重置")
     if user.status != "active":
         raise ApiError(409, "ACCOUNT_NOT_ACTIVE", "该账号已停用,不能重置密码")
+    # 只看在用(active)的绑定;只读 / 已结束的不参与(L73)。在读孩子在别班 → 仍拒绝(C-2)
     sibling_students = db.scalars(
         select(ParentLink.student_id).where(
-            ParentLink.parent_id == link.parent_id, ParentLink.status != "ended"
+            ParentLink.parent_id == link.parent_id, ParentLink.status == "active"
         )
     ).all()
-    if not all(_can_manage_student(db, bindings, sid) for sid in sibling_students):
+    if not sibling_students or not all(
+        _can_manage_student(db, bindings, sid) for sid in sibling_students
+    ):
         record(
             db,
             user_id=actor.id,
@@ -478,6 +520,7 @@ def reset_parent_password(
     temp = generate_temp_password()
     user.password_hash = hash_password(temp)
     user.must_change_password = True
+    user.password_changed_at = clock.utc_now()
     record(
         db,
         user_id=actor.id,
@@ -488,7 +531,8 @@ def reset_parent_password(
         request=request,
         extra={"student_id": str(student.id), "link_id": str(link.id)},
     )
+    revoke_all_or_503(db, redis, [user.id])
     db.commit()
-    sessions.revoke_all(redis, user.id)
-    redis.delete(_fail_key(settings, user.login_name))
+    clear_fail_counter(redis, settings, user.login_name)
+    publish(redis, [user.id], {"type": STALE})  # 已打开的页面立即用刷新令牌重连(L29)
     return temp

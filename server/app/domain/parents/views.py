@@ -11,7 +11,8 @@ from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from fastapi import Request
-from pydantic import BaseModel, Field
+from fastapi.exceptions import RequestValidationError
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import func, select, tuple_
 from sqlalchemy.orm import Session
 
@@ -451,11 +452,25 @@ def save_contacts(
     request: Request | None,
     user: User,
     student_id: UUID,
-    body: ContactsInput,
+    raw: dict[str, Any],
     now: datetime,
 ) -> ParentProfile:
+    # 先判权再校验请求体:非家长带非法体也是 403,不泄露字段规则(L78)
     link = child_link_or_deny(db, request, user, student_id, now=now, write=True)
-    student = _student(db, student_id)
+    try:
+        body = ContactsInput.model_validate(raw)
+    except ValidationError as exc:
+        raise RequestValidationError(exc.errors()) from None
+    student = db.scalar(
+        select(Student)
+        .where(Student.id == student_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    assert student is not None  # child_link_or_deny 已保证绑定存在
+    # 等锁期间班主任可能已解绑/降级并提交:丢弃会话缓存的旧绑定,加锁后重新读库再判权(L78)
+    db.expire_all()
+    link = child_link_or_deny(db, request, user, student_id, now=now, write=True)
     student.contacts = [c.model_dump() for c in body.contacts]
     record(
         db,
