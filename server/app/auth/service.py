@@ -1,3 +1,5 @@
+import base64
+import binascii
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Literal
@@ -353,12 +355,16 @@ def _aad(user_id: UUID) -> str:
 
 
 def _load_secret(settings: Settings, user: User) -> str:
-    if user.totp_secret is None:
-        raise ApiError(500, "TOTP_UNREADABLE", "两步验证密钥无法读取,请联系信息中心重置")
+    """只认 v2: 前缀的密文;解不开、或解出来不是合法 base32,都按"无法读取"处理。"""
+    unreadable = ApiError(500, "TOTP_UNREADABLE", "两步验证密钥无法读取,请联系信息中心重置")
+    if user.totp_secret is None or not user.totp_secret.startswith("v2:"):
+        raise unreadable
     try:
-        return decrypt(user.totp_secret, settings.master_key_bytes, aad=_aad(user.id))
-    except CryptoError:
-        raise ApiError(500, "TOTP_UNREADABLE", "两步验证密钥无法读取,请联系信息中心重置") from None
+        secret = decrypt(user.totp_secret, settings.master_key_bytes, aad=_aad(user.id))
+        base64.b32decode(secret, casefold=True)
+    except (CryptoError, binascii.Error, ValueError):
+        raise unreadable from None
+    return secret
 
 
 @dataclass

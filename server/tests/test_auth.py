@@ -672,3 +672,20 @@ def test_init_school_admin_can_login_and_not_expired(db, settings, redis_client,
     assert again["user"]["password_change_reason"] is None
     assert again["user"]["must_change_password"] is False
     assert c.get(f"{API}/auth/me", headers=bearer(again["access_token"])).status_code == 200
+
+
+def test_corrupt_security_row_falls_back_to_defaults(client, db, settings):
+    from app.models import SchoolSetting
+
+    db.add(
+        SchoolSetting(school_id=UUID(SCHOOL_ID), key="security", value={"password_min_length": 3})
+    )
+    db.flush()
+    h = auth(settings)
+    assert client.get(f"{API}/auth/me", headers=h).status_code == 200
+    assert client.get(f"{API}/auth/password-policy", headers=h).json() == {
+        "min_length": 8,
+        "max_age_days": 0,
+    }
+    res = client.post(f"{API}/auth/login", json={"login_name": "teacher01", "password": "dev123"})
+    assert res.status_code == 200

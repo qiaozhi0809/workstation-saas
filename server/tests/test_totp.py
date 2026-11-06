@@ -495,12 +495,12 @@ def _reset(client, settings, actor, target):
 def test_totp_reset_requires_account_manage(client, db, settings):
     secret = _turn_on(db, settings)
     assert secret
-    # 无权限的人:403(不是 404 也不是 200)
-    assert _reset(client, settings, TEACHER_USER_ID, TEACHER_USER_ID).status_code == 403
-    assert _reset(client, settings, HOMEROOM, TEACHER_USER_ID).status_code == 403
-    assert _reset(client, settings, DEAN, TEACHER_USER_ID).status_code == 403
+    # 无权限的人:403 FORBIDDEN(不是 404 也不是 200,也不是被改密码拦成别的码)
     grade_head = make_admin(db, None, Role.grade_head.value)
-    assert _reset(client, settings, grade_head.id, TEACHER_USER_ID).status_code == 403
+    for actor in (TEACHER_USER_ID, HOMEROOM, DEAN, grade_head.id):
+        assert db.get(User, UUID(str(actor))).must_change_password is False
+        res = _reset(client, settings, actor, TEACHER_USER_ID)
+        assert (res.status_code, res.json()["error"]["code"]) == (403, "FORBIDDEN")
     db.expire_all()
     assert db.get(User, UUID(TEACHER_USER_ID)).totp_enabled_at is not None
     # 信息中心 200
@@ -693,3 +693,33 @@ def test_enable_then_disable_lock_shared(client, db, settings, redis_client):
         _enable(client, h, s["refresh_token"], pyotp.TOTP(secret).now(), password="wrong")
     res = client.post(f"{API}/auth/totp/disable", headers=h, json={"password": "dev123"})
     assert _err(res) == (429, "ACCOUNT_LOCKED") and "Retry-After" in res.headers
+
+
+def _plant_secret(db, cipher):
+    user = db.get(User, UUID(TEACHER_USER_ID))
+    user.totp_secret = cipher
+    user.totp_enabled_at = clock.utc_now()
+    db.flush()
+
+
+def test_legacy_unprefixed_secret_unreadable(client, db, settings):
+    import base64
+    import os
+
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    nonce = os.urandom(12)
+    ct = AESGCM(settings.master_key_bytes).encrypt(nonce, pyotp.random_base32().encode(), None)
+    _plant_secret(db, base64.b64encode(nonce + ct).decode())
+    token = _login(client).json()["mfa_token"]
+    res = _second_step(client, token, "123456")
+    assert (res.status_code, res.json()["error"]["code"]) == (500, "TOTP_UNREADABLE")
+
+
+def test_non_base32_secret_unreadable(client, db, settings):
+    _plant_secret(
+        db, encrypt("not base32 !!", settings.master_key_bytes, aad=f"totp:{TEACHER_USER_ID}")
+    )
+    token = _login(client).json()["mfa_token"]
+    res = _second_step(client, token, "123456")
+    assert (res.status_code, res.json()["error"]["code"]) == (500, "TOTP_UNREADABLE")
