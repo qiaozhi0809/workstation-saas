@@ -382,14 +382,17 @@ def test_grade_exam_create_queued_behind_apply_is_rejected(clean):
 
     tu = threading.Thread(target=upgrader)
     tu.start()
-    _wait_until_blocked(clean, 1)  # apply 排在第一个,等 holder 的班级锁
     tc = threading.Thread(target=creator)
-    tc.start()
-    _wait_until_blocked(clean, 2)  # 建联考排在第二个(卡在 apply 已持有的班级锁上)
-    holder.rollback()
-    holder.close()
+    try:
+        _wait_until_blocked(clean, 1)  # apply 排在第一个,等 holder 的班级锁
+        tc.start()
+        _wait_until_blocked(clean, 2)  # 建联考排在第二个(卡在 apply 已持有的班级锁上)
+    finally:  # 等待超时也要放锁,否则两个线程会一直卡着
+        holder.rollback()
+        holder.close()
     tu.join(WAIT)
-    tc.join(WAIT)
+    if tc.ident is not None:  # 第一次等待就超时的话 creator 还没启动
+        tc.join(WAIT)
     assert not tu.is_alive() and not tc.is_alive(), "线程没有在限时内结束(疑似死锁)"
     assert not isinstance(result["apply"], Exception), result["apply"]
     created = result["create"]
