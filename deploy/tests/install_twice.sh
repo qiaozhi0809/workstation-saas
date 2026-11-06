@@ -122,6 +122,37 @@ cp -p "$TMP/env.good" "$DEPLOY/.env"
 [ "$(sha256_of "$DEPLOY/.env")" = "$env_sha" ] || fail "测试自身问题:恢复 .env 失败"
 pass "WS_MASTER_KEY 为空 → 拒绝并提示从备份恢复,.env 未被重新生成"
 
+echo "== 4b check_env_complete 的其他拒绝(L206 / L207):缺非密钥键、可信网段不含子网、改子网未 down"
+# reject_env_edit <说明> <awk 程序(改写 .env)> <期望提示>:install 必须以非 0 退出、.env 不被改动、不起任何新容器(app 容器 ID 不变)
+app_cid="$(dc ps -q app)"
+reject_env_edit() {
+  local what="$1" prog="$2" want="$3" rc=0 sha
+  awk -F= "$prog" "$TMP/env.good" >"$DEPLOY/.env"
+  sha="$(sha256_of "$DEPLOY/.env")"
+  run_install "$TMP/install4b.log" || rc=$?
+  [ "$rc" -ne 0 ] || fail "$what:install.sh 应拒绝,实际退出码 0"
+  grep -q -- "$want" "$TMP/install4b.log" || { tail -n 5 "$TMP/install4b.log" >&2; fail "$what:提示里没有「$want」"; }
+  [ "$(sha256_of "$DEPLOY/.env")" = "$sha" ] || fail "$what:拒绝时不应改动 .env"
+  [ "$(dc ps -q app)" = "$app_cid" ] || fail "$what:拒绝时不应重建 app 容器"
+  assert_no_secrets "$what 的输出" "$TMP/install4b.log"
+  cp -p "$TMP/env.good" "$DEPLOY/.env"
+  pass "$what:被拒绝(提示含「$want」),.env 与容器未动"
+}
+reject_env_edit "WS_TRUSTED_PROXIES 为空" '$1=="WS_TRUSTED_PROXIES" {print "WS_TRUSTED_PROXIES="; next} {print}' 'WS_TRUSTED_PROXIES 为空'
+reject_env_edit "WS_ENV 为空" '$1=="WS_ENV" {print "WS_ENV="; next} {print}' 'WS_ENV 为空'
+reject_env_edit "WS_TRUSTED_PROXIES 不包含子网" '$1=="WS_TRUSTED_PROXIES" {print "WS_TRUSTED_PROXIES=10.9.9.0/24"; next} {print}' '不包含 compose 子网'
+reject_env_edit "WS_SUBNET 改了但网络没重建" '$1=="WS_SUBNET" {print "WS_SUBNET=172.31.0.0/24"; next} $1=="WS_TRUSTED_PROXIES" {print "WS_TRUSTED_PROXIES=172.31.0.0/24"; next} {print}' '现在的子网是'
+[ "$(sha256_of "$DEPLOY/.env")" = "$env_sha" ] || fail "测试自身问题:4b 之后 .env 没有恢复"
+# 可信网段比子网宽(/16 包含 /24)或多项里含子网都应放行:只跑到 check_env_complete 之后即可,所以直接再装一次看退出码
+awk -F= '$1=="WS_TRUSTED_PROXIES" {print "WS_TRUSTED_PROXIES=10.0.0.5,172.30.0.0/16"; next} {print}' "$TMP/env.good" >"$DEPLOY/.env"
+rc=0; run_install "$TMP/install4c.log" || rc=$?
+[ "$rc" -eq 0 ] || { tail -n 10 "$TMP/install4c.log" >&2; fail "WS_TRUSTED_PROXIES=10.0.0.5,172.30.0.0/16 包含子网,install 不应拒绝(退出码 $rc)"; }
+cp -p "$TMP/env.good" "$DEPLOY/.env"
+rc=0; run_install "$TMP/install4d.log" || rc=$?
+[ "$rc" -eq 0 ] || { tail -n 10 "$TMP/install4d.log" >&2; fail "恢复 .env 后再装一次退出码 $rc"; }
+assert_healthz
+pass "可信网段含更宽的 /16 时放行;.env 恢复后服务健康"
+
 echo "== 5/6 故意配错 WS_MASTER_KEY:安装输出不得泄露密钥"
 bad_key="not-a-valid-key-$(openssl rand -hex 16)"
 awk -F= -v k="$bad_key" '$1=="WS_MASTER_KEY" {print "WS_MASTER_KEY=" k; next} {print}' "$TMP/env.good" >"$DEPLOY/.env"

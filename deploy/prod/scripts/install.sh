@@ -14,6 +14,7 @@
 #   WS_INSTALL_TLS(1/internal 内部证书,2/custom 自备证书,3/acme 自动申请;默认 1)
 #   WS_INSTALL_CERT、WS_INSTALL_KEY(自备证书的文件路径) WS_INSTALL_ACME_EMAIL(acme 用)
 #   WS_HTTP_PORT、WS_HTTPS_PORT(默认 80 / 443)
+#   WS_SUBNET(可选)compose 内网子网;不指定时依次试 172.30.0.0/24、172.31.0.0/24、10.250.0.0/24,跳过与本机路由重叠的(L186)
 # 其他开关:
 #   WS_INSTALL_MIN_DISK_GB 磁盘可用空间门槛(默认 20,只在测试里下调)
 #   WS_INSTALL_HEALTH_TIMEOUT 等应用就绪的秒数(默认 180,只在测试里下调)
@@ -51,6 +52,9 @@ TLS_MODE=""
 ACME_EMAIL=""
 CERT_SRC=""
 KEY_SRC=""
+SUBNET=""
+# compose 内网子网的候选(L186):学校常用 172.16–31 做校园网 / 摄像头 VLAN,172.30 冲突时依次换下一个
+SUBNET_CANDIDATES="172.30.0.0/24 172.31.0.0/24 10.250.0.0/24"
 
 usage() {
   cat <<'USAGE'
@@ -234,6 +238,42 @@ collect_site_inputs() {
   esac
 }
 
+# 选 compose 内网子网(L186),结果放 SUBNET:
+#   1) 环境变量 WS_SUBNET 指定 → 用它(与本机网段重叠只告警,指定即明确);
+#   2) 本项目的 compose 网络已存在(上次安装没清干净)→ 沿用它的子网,避免 compose 复用旧网络而 .env 写了另一个;
+#   3) 否则按候选顺序取第一个不与本机路由、其他 docker 网络重叠的;都重叠就停下让管理员指定。
+choose_subnet() {
+  local known existing cand hit
+  known="$( { host_routes; docker_subnets; } | sort -u )"
+  if [ -n "${WS_SUBNET:-}" ]; then
+    cidr_valid "$WS_SUBNET" || die "WS_SUBNET 不是合法的 IPv4 网段(应形如 172.30.0.0/24,主机位为 0):$WS_SUBNET"
+    SUBNET="$WS_SUBNET"
+    hit="$(first_overlap "$SUBNET" "$known")"
+    if [ -n "$hit" ]; then
+      log_warn "指定的 WS_SUBNET=$SUBNET 与本机网段 $hit 重叠,容器可能到不了该网段里的摄像头;按指定值继续"
+    else
+      log_info "compose 内网子网(WS_SUBNET 指定):$SUBNET"
+    fi
+    return 0
+  fi
+  existing="$(compose_network_subnet)"
+  if [ -n "$existing" ]; then
+    SUBNET="$existing"
+    log_info "沿用已存在的 compose 网络子网:$SUBNET"
+    return 0
+  fi
+  for cand in $SUBNET_CANDIDATES; do
+    hit="$(first_overlap "$cand" "$known")"
+    if [ -z "$hit" ]; then
+      SUBNET="$cand"
+      log_info "compose 内网子网:$SUBNET(未与本机网段重叠)"
+      return 0
+    fi
+    log_warn "候选子网 $cand 与本机网段 $hit 重叠,换下一个"
+  done
+  die "候选子网($SUBNET_CANDIDATES)都与本机网段重叠。请用环境变量 WS_SUBNET 指定一个不与校园网、摄像头网段重叠的 /24 网段(如 WS_SUBNET=10.251.0.0/24)后重试"
+}
+
 load_images() {
   local version tar
   version="$(tr -d '[:space:]' <"$DEPLOY_DIR/VERSION")"
@@ -277,6 +317,9 @@ generate_env() {
   set_env WS_DATABASE_URL "postgresql+psycopg://workstation:${pg}@postgres:5432/workstation" "$tmp"
   set_env WS_JWT_SECRET "$(rand_secret 48)" "$tmp"
   set_env WS_MASTER_KEY "$(rand_secret 32)" "$tmp"
+  # 子网与可信代理网段写成同一个值(L186):应用只采信来自 compose 内网(即 Caddy)的 X-Forwarded-For
+  set_env WS_SUBNET "$SUBNET" "$tmp"
+  set_env WS_TRUSTED_PROXIES "$SUBNET" "$tmp"
   set_env WS_SITE_ADDRESS "$SITE" "$tmp"
   set_env WS_TLS_MODE "$TLS_MODE" "$tmp"
   set_env WS_ACME_EMAIL "$ACME_EMAIL" "$tmp"
@@ -297,11 +340,25 @@ check_env_complete() {
   # 失败即关(L167 / L177):WS_ENV 必须显式写 prod,WS_TRUSTED_PROXIES 为空时应用拒绝启动;它们不是密钥,照 .env.example 补上即可
   for k in WS_ENV WS_TRUSTED_PROXIES; do
     [ -n "$(read_env "$k")" ] \
-      || die ".env 里的 $k 为空;请参照 .env.example 补上(WS_ENV=prod;WS_TRUSTED_PROXIES 必须等于 docker-compose.yml 里 ws-net 的子网,例如 172.30.0.0/24)"
+      || die ".env 里的 $k 为空;请参照 .env.example 补上(WS_ENV=prod;WS_TRUSTED_PROXIES 必须包含 compose 子网 WS_SUBNET,例如 172.30.0.0/24)"
   done
   case "$(read_env WS_DATABASE_URL)" in
     *workstation:@*|"") die ".env 里的 WS_DATABASE_URL 缺少数据库密码,.env 可能被损坏;请从最近一次备份恢复 .env" ;;
   esac
+  # L207:可信代理网段必须包含 compose 子网,否则 Caddy 转来的来源地址一律不采信、所有人都看不了摄像头。
+  # 老 .env(1.0.0 之前安装)没有 WS_SUBNET,此时 compose 用默认的 172.30.0.0/24
+  local subnet tp existing
+  subnet="$(read_env WS_SUBNET)"
+  [ -n "$subnet" ] || subnet="172.30.0.0/24"
+  cidr_valid "$subnet" || die ".env 里的 WS_SUBNET 不是合法的 IPv4 网段(应形如 172.30.0.0/24):$subnet"
+  tp="$(read_env WS_TRUSTED_PROXIES)"
+  trusted_proxies_cover "$tp" "$subnet" \
+    || die ".env 里的 WS_TRUSTED_PROXIES($tp)不包含 compose 子网 $subnet(WS_SUBNET):Caddy 转来的来源地址不会被采信,所有人都看不了摄像头。请把 $subnet 加进 WS_TRUSTED_PROXIES(逗号分隔)后重试"
+  # 改了 WS_SUBNET 却没有 docker compose down:已存在的网络仍是旧子网,compose up 不会重建它
+  existing="$(compose_network_subnet)"
+  if [ -n "$existing" ] && [ "$existing" != "$subnet" ]; then
+    die "compose 网络 ws-net 现在的子网是 $existing,而 .env 的 WS_SUBNET 是 $subnet。改子网需要先执行 docker compose -p ${WS_COMPOSE_PROJECT:-workstation} --project-directory '$DEPLOY_DIR' down(数据不受影响),再重新运行本脚本"
+  fi
 }
 
 prepare_dirs() {
@@ -468,6 +525,7 @@ main() {
     check_port_number WS_HTTPS_PORT "$HTTPS_PORT"
     check_disk
     check_ports "$HTTP_PORT" "$HTTPS_PORT"
+    choose_subnet
     collect_school_inputs
     collect_site_inputs
     load_images

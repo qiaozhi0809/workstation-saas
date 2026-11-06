@@ -124,9 +124,10 @@ WS_INSTALL_TLS=1 \
 
 系统只在请求来自 `WS_TRUSTED_PROXIES`(`.env` 里,逗号分隔的 IP 或网段)时才采信 `X-Forwarded-For` 里的来源地址,用于登录日志与限流等。
 
-- 默认值 `172.30.0.0/24` 是本部署 compose 内网的固定子网(`docker-compose.yml` 里 `ws-net`)。
-- 学校网络里**在本系统前面还有自己的代理**(如统一的 Nginx、负载均衡)时,把它的地址加进去,例如 `WS_TRUSTED_PROXIES=172.30.0.0/24,10.0.0.5`,然后 `docker compose up -d` 使配置生效。
-- 注意:**Docker 默认桥接网段 172.16.0.0/12 不在默认值内**。如果你自己改了 compose 的网络(换子网、用默认网络等),必须同步修改 `WS_TRUSTED_PROXIES`,否则 Caddy 到应用之间的来源地址不会被采信(L59)。
+- 它的值**必须包含 compose 内网的子网 `WS_SUBNET`**(`.env` 里相邻的一行)。`install.sh` 把两者写成同一个值:安装时依次检查 `172.30.0.0/24`、`172.31.0.0/24`、`10.250.0.0/24` 是否与本机路由(校园网、摄像头 VLAN、其他 Docker 网络)重叠,选第一个不重叠的;三个都重叠时停下,让你用环境变量 `WS_SUBNET=<网段>/24` 指定后重装。学校常把 172.16–31 用作校园网,所以**安装前先看一眼 `ip route`**,或直接指定一个不会用到的网段。
+- 学校网络里**在本系统前面还有自己的代理**(如统一的 Nginx、负载均衡)时,把它的地址追加进去,例如 `WS_TRUSTED_PROXIES=172.30.0.0/24,10.0.0.5`,然后 `docker compose up -d` 使配置生效。不要删掉 `WS_SUBNET` 那一项。
+- 装好之后要换子网:先 `docker compose down`(数据不受影响),再把 `.env` 里的 `WS_SUBNET` 与 `WS_TRUSTED_PROXIES` 改成新网段,然后重新运行 `./scripts/install.sh`。`install.sh` 会核对 `WS_TRUSTED_PROXIES` 包含 `WS_SUBNET`、以及已存在的网络子网与 `WS_SUBNET` 一致,不一致就拒绝启动并说明原因(L186 / L207)。
+- 注意:**Docker 默认桥接网段 172.16.0.0/12 不在默认值内**。如果你自己改了 compose 的网络(用默认网络等),必须同步修改 `WS_TRUSTED_PROXIES`,否则 Caddy 到应用之间的来源地址不会被采信(L59)。
 - 不要把不可信的网段填进来,否则任何人都能伪造来源地址。
 
 ## 6. 生产密钥

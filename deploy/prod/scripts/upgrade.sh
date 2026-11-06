@@ -94,7 +94,15 @@ verify_checksum() {
 
 # 把新 .env.example 里有、当前 .env 里没有的键(用默认值)追加进 .env
 append_new_env_keys() {
-  local example="$1" key line added=""
+  local example="$1" key line added="" cur
+  # L186:1.0.0 之前安装的 .env 没有 WS_SUBNET。补的是"现在在用的"子网(已存在的 compose 网络;没有网络时是旧 compose
+  # 写死的 172.30.0.0/24),不是照搬 .env.example 的默认值——否则 WS_TRUSTED_PROXIES 与真实子网可能对不上
+  if grep -q '^WS_SUBNET=' "$example" && ! grep -q '^WS_SUBNET=' "$ENV_FILE"; then
+    cur="$(compose_network_subnet)"
+    [ -n "$cur" ] || cur="172.30.0.0/24"
+    set_env WS_SUBNET "$cur"
+    added="$added WS_SUBNET(=$cur,取自当前 compose 网络)"
+  fi
   while IFS= read -r line; do
     case "$line" in
       [A-Z]*=*)

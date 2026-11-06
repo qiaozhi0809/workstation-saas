@@ -5,10 +5,13 @@ set -euo pipefail
 # shellcheck source=_common.sh
 . "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
-echo "== 1/5 准备部署目录并安装(管理员密码经 WS_INSTALL_ADMIN_PASSWORD_FILE 传入)"
+echo "== 1/5 准备部署目录并安装(管理员密码经 WS_INSTALL_ADMIN_PASSWORD_FILE 传入;指定非默认子网 WS_SUBNET)"
 prepare_deploy_dir
 start_ps_sampler
 INSTALL_PW_MODE="file"
+# L186:用环境变量指定 compose 子网,安装后网络、.env 的 WS_SUBNET 与 WS_TRUSTED_PROXIES 都应是它(其他测试用默认的 172.30.0.0/24)
+TEST_SUBNET="10.250.0.0/24"
+export WS_SUBNET="$TEST_SUBNET"
 LOG="$TMP/install.log"
 rc=0
 run_install "$LOG" || rc=$?
@@ -50,6 +53,13 @@ cmp -s "$DEPLOY/Caddyfile" "$DEPLOY/Caddyfile.internal" || fail "Caddyfile 应�
 logs_mode="$(ls -ld "$DEPLOY/data/logs" | cut -c1-10)"
 [ "$logs_mode" = "drwxrwxrwt" ] || fail "data/logs 应为 1777(粘滞位),实际:$logs_mode"
 pass "目录齐全,Caddyfile 正确,data/logs 为 1777"
+# L186:子网落到 .env 两个键与真实网络上,且安装输出说明了用的是指定值
+[ "$(env_value WS_SUBNET)" = "$TEST_SUBNET" ] || fail ".env 的 WS_SUBNET 应为 $TEST_SUBNET,实际 $(env_value WS_SUBNET)"
+[ "$(env_value WS_TRUSTED_PROXIES)" = "$TEST_SUBNET" ] || fail ".env 的 WS_TRUSTED_PROXIES 应等于子网 $TEST_SUBNET,实际 $(env_value WS_TRUSTED_PROXIES)"
+subnets="$(docker network inspect "${PROJECT}_ws-net" -f '{{range .IPAM.Config}}{{.Subnet}} {{end}}')"
+case "$subnets" in *"$TEST_SUBNET"*) ;; *) fail "compose 网络子网应为 $TEST_SUBNET,实际:$subnets" ;; esac
+grep -q 'WS_SUBNET 指定' "$LOG" || fail "安装输出里没有说明子网来自 WS_SUBNET"
+pass "WS_SUBNET=$TEST_SUBNET 生效:.env 两键一致、docker 网络子网一致"
 
 echo "== 3/5 服务与登录"
 assert_healthz

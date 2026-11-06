@@ -140,6 +140,8 @@ volumes:
 networks:
   ws-net:
     driver: bridge
+    # 子网来自 .env 的 WS_SUBNET(install.sh 检测与本机路由是否重叠后写入;WS_TRUSTED_PROXIES 必须包含它)。
+    # 不要只改这里:改子网要同时改 .env 的 WS_SUBNET 与 WS_TRUSTED_PROXIES,并 docker compose down 后再 up
     ipam:
       config:
-        - subnet: 172.30.0.0/24
+        - subnet: ${WS_SUBNET:-172.30.0.0/24}

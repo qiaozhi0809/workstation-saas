@@ -30,8 +30,13 @@ PKG="$TMP/workstation-deploy-$NEWV.tar.gz"
 make_package "$PKG"
 # 校验和文件用"去掉 .tar.gz 的主干名"命名(upgrade.sh 两种命名都接受;全名那种在 upgrade_precheck_fail 里覆盖)
 printf '%s  %s\n' "$(sha256_of "$PKG")" "$(basename "$PKG")" >"$TMP/workstation-deploy-$NEWV.sha256"
+# L186:模拟 1.0.0 之前安装的 .env(没有 WS_SUBNET),升级后应按当前网络的子网补上
+grep -v '^WS_SUBNET=' "$DEPLOY/.env" >"$TMP/env.nosubnet"
+cat "$TMP/env.nosubnet" >"$DEPLOY/.env"
+rm -f "$TMP/env.nosubnet"
+! grep -q '^WS_SUBNET=' "$DEPLOY/.env" || fail "测试自身问题:WS_SUBNET 没有从 .env 里去掉"
 env_sha="$(sha256_of "$DEPLOY/.env")"
-env_rest_sha="$(grep -v '^WS_VERSION=' "$DEPLOY/.env" | { if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi; })"
+env_rest_sha="$(grep -v -e '^WS_VERSION=' -e '^WS_SUBNET=' "$DEPLOY/.env" | { if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi; })"
 caddy_sha="$(sha256_of "$DEPLOY/Caddyfile")"
 users_before="$(user_count)"
 backups_before="$(find "$DEPLOY/backups" -name 'ws-backup-*.tar.gz' | wc -l | tr -d ' ')"
@@ -51,11 +56,15 @@ pass "升级前已生成备份"
 grep -q 'upgraded-marker' "$DEPLOY/docker-compose.yml" || fail "docker-compose.yml 没有被新包覆盖"
 [ "$(env_value WS_VERSION)" = "$NEWV" ] || fail "升级后 .env 的 WS_VERSION 应为 $NEWV,实际 $(env_value WS_VERSION)"
 [ "$(sha256_of "$DEPLOY/.env")" != "$env_sha" ] || fail "WS_VERSION 变了,.env 的哈希却没变,不合理"
-[ "$(grep -v '^WS_VERSION=' "$DEPLOY/.env" | { if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi; })" = "$env_rest_sha" ] \
-  || fail "升级改动了 .env 里 WS_VERSION 以外的内容"
+[ "$(grep -v -e '^WS_VERSION=' -e '^WS_SUBNET=' "$DEPLOY/.env" | { if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi; })" = "$env_rest_sha" ] \
+  || fail "升级改动了 .env 里 WS_VERSION / WS_SUBNET 以外的内容"
+# L186:老 .env 升级后多出 WS_SUBNET,值等于现网络的子网(不是随便抄 .env.example),且输出里提示了
+net_subnet="$(docker network inspect "${PROJECT}_ws-net" -f '{{range .IPAM.Config}}{{.Subnet}}{{end}}')"
+[ "$(env_value WS_SUBNET)" = "$net_subnet" ] || fail "升级后 .env 应补上 WS_SUBNET=$net_subnet(当前网络子网),实际「$(env_value WS_SUBNET)」"
+grep -q 'WS_SUBNET' "$TMP/upgrade.log" || fail "升级输出里没有提示补上了 WS_SUBNET"
 [ "$(tr -d '[:space:]' <"$DEPLOY/VERSION")" = "$NEWV" ] || fail "部署目录的 VERSION 没有更新"
 [ "$(sha256_of "$DEPLOY/Caddyfile")" = "$caddy_sha" ] || fail "升级改动了 Caddyfile"
-pass "compose 文件已覆盖;.env 只有 WS_VERSION 变为新版本;Caddyfile 未动"
+pass "compose 文件已覆盖;.env 只有 WS_VERSION 变为新版本、补上 WS_SUBNET=$net_subnet;Caddyfile 未动"
 
 echo "== 3/3 升级后可用性与密钥出口"
 assert_healthz

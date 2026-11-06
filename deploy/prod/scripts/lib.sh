@@ -5,6 +5,9 @@
 # 即使调用者的环境里带了 xtrace 开关,也在这里关掉:xtrace 会把 .env 里的密钥打到终端或日志。
 set +x
 unset BASH_XTRACEFD
+# 镜像版本只认 .env 里的 WS_VERSION(L117):调用者 shell 里若碰巧导出了 WS_VERSION,compose 会优先用它,
+# 升级 / 恢复就可能起错版本的镜像。这里一进来就清掉;需要临时指定版本的地方(升级预检)按命令单独传。
+unset WS_VERSION
 
 # 部署目录 = 本文件所在目录(scripts/)的上一级
 DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -35,9 +38,15 @@ str_grep() {
   ( set +o pipefail; printf '%s\n' "$s" | grep "$@" )
 }
 
-# compose 项目名:默认 workstation;测试用 WS_COMPOSE_PROJECT 覆盖
+# compose 项目名:默认 workstation;测试用 WS_COMPOSE_PROJECT 覆盖。
+# 变量文件显式指定为部署目录的 .env(L117):不依赖 compose 按当前目录找 .env 的默认行为;.env 还没生成时(首次安装
+# 的前半段)不带该参数。调用者环境里按命令单独传的变量(如升级预检的 WS_VERSION)仍优先于 .env。
 compose() {
-  docker compose -p "${WS_COMPOSE_PROJECT:-workstation}" --project-directory "$DEPLOY_DIR" "$@"
+  if [ -f "$ENV_FILE" ]; then
+    docker compose -p "${WS_COMPOSE_PROJECT:-workstation}" --project-directory "$DEPLOY_DIR" --env-file "$ENV_FILE" "$@"
+  else
+    docker compose -p "${WS_COMPOSE_PROJECT:-workstation}" --project-directory "$DEPLOY_DIR" "$@"
+  fi
 }
 
 # sha256_of <文件>:优先 sha256sum,缺失时回退 shasum -a 256(macOS 本机测试用)
@@ -212,6 +221,104 @@ check_disk() {
   if [ "$avail_kb" -lt $((min_gb * 1024 * 1024)) ]; then
     die "部署目录所在磁盘可用空间不足 ${min_gb} GB(当前约 $((avail_kb / 1024 / 1024)) GB)"
   fi
+}
+
+# ---- IPv4 网段(L186 / L207):compose 子网的选择与 WS_TRUSTED_PROXIES 的比对。只处理 IPv4,非法输入返回 1 ----
+
+# ip4_to_int <a.b.c.d>:点分十进制 → 整数;不是合法 IPv4 返回 1
+ip4_to_int() {
+  local a b c d rest o
+  IFS=. read -r a b c d rest <<<"$1"
+  [ -z "$rest" ] || return 1
+  for o in "$a" "$b" "$c" "$d"; do
+    case "$o" in ''|*[!0-9]*) return 1 ;; esac
+    [ "${#o}" -le 3 ] && [ "$((10#$o))" -le 255 ] || return 1
+  done
+  printf '%s\n' $(( (10#$a << 24) + (10#$b << 16) + (10#$c << 8) + 10#$d ))
+}
+
+# cidr_range <网段或 IP>:输出 "起始 结束"(整数)。a.b.c.d/n(n 为 0-32);不带 /n 的单个地址按 /32;非法返回 1
+cidr_range() {
+  local ip bits n mask start
+  ip="${1%%/*}"
+  if [ "$ip" = "$1" ]; then bits=32; else bits="${1#*/}"; fi
+  case "$bits" in ''|*[!0-9]*) return 1 ;; esac
+  [ "${#bits}" -le 2 ] && [ "$((10#$bits))" -le 32 ] || return 1
+  bits=$((10#$bits))
+  n="$(ip4_to_int "$ip")" || return 1
+  if [ "$bits" -eq 0 ]; then mask=0; else mask=$(( (0xFFFFFFFF << (32 - bits)) & 0xFFFFFFFF )); fi
+  start=$(( n & mask ))
+  printf '%s %s\n' "$start" $(( start | (~mask & 0xFFFFFFFF) ))
+}
+
+# cidr_valid <网段>:形如 a.b.c.d/n,且是网络地址(主机位全 0),如 172.30.0.0/24
+cidr_valid() {
+  local r ip
+  case "$1" in */*) ;; *) return 1 ;; esac
+  r="$(cidr_range "$1")" || return 1
+  ip="$(ip4_to_int "${1%%/*}")" || return 1
+  [ "$ip" -eq "${r%% *}" ]
+}
+
+# cidr_overlap <A> <B>:两个网段(或地址)有交集返回 0;任一非法返回 1
+cidr_overlap() {
+  local ra rb
+  ra="$(cidr_range "$1")" || return 1
+  rb="$(cidr_range "$2")" || return 1
+  [ "${ra%% *}" -le "${rb##* }" ] && [ "${rb%% *}" -le "${ra##* }" ]
+}
+
+# cidr_contains <外> <内>:外网段完全包含内网段返回 0;任一非法返回 1
+cidr_contains() {
+  local ra rb
+  ra="$(cidr_range "$1")" || return 1
+  rb="$(cidr_range "$2")" || return 1
+  [ "${ra%% *}" -le "${rb%% *}" ] && [ "${rb##* }" -le "${ra##* }" ]
+}
+
+# host_routes:本机 IPv4 路由表里的目标网段(每行一个;default 等关键字跳过)。没有 ip 命令(非 Linux)时无输出
+host_routes() {
+  command -v ip >/dev/null 2>&1 || return 0
+  ip -4 route show 2>/dev/null | awk '$1 ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(\/[0-9]+)?$/ { print $1 }' | sort -u
+  return 0
+}
+
+# docker_subnets:本机全部 docker 网络的 IPv4 子网(每行一个);docker 不可用时无输出
+docker_subnets() {
+  local ids
+  ids="$(docker network ls -q 2>/dev/null | tr '\n' ' ')" || return 0
+  [ -n "${ids// /}" ] || return 0
+  # shellcheck disable=SC2086  # ids 是空格分隔的网络 id 列表,需要拆开
+  docker network inspect -f '{{range .IPAM.Config}}{{.Subnet}}{{"\n"}}{{end}}' $ids 2>/dev/null | grep -E '^[0-9]+\.' | sort -u
+  return 0
+}
+
+# compose_network_subnet:本项目 compose 网络(<项目名>_ws-net)当前的子网;网络不存在时输出空
+compose_network_subnet() {
+  docker network inspect -f '{{range .IPAM.Config}}{{.Subnet}}{{end}}' "${WS_COMPOSE_PROJECT:-workstation}_ws-net" 2>/dev/null || true
+}
+
+# first_overlap <子网> <网段列表(每行一个)>:输出列表里第一个与子网重叠的网段,没有则无输出
+first_overlap() {
+  local r
+  while IFS= read -r r; do
+    [ -n "$r" ] || continue
+    if cidr_overlap "$1" "$r"; then printf '%s\n' "$r"; return 0; fi
+  done <<<"$2"
+  return 0
+}
+
+# trusted_proxies_cover <逗号分隔的网段列表> <子网>:列表里有某一项完全包含该子网返回 0
+trusted_proxies_cover() {
+  local list="$1" subnet="$2" e
+  local -a entries=()
+  IFS=, read -ra entries <<<"$list"
+  for e in ${entries[@]+"${entries[@]}"}; do
+    e="${e//[[:space:]]/}"
+    [ -n "$e" ] || continue
+    if cidr_contains "$e" "$subnet"; then return 0; fi
+  done
+  return 1
 }
 
 # set_env <键> <值> [文件]:原地改 .env(键不存在则追加;默认改 $ENV_FILE),不打印值。
