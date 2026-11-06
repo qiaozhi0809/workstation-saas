@@ -767,6 +767,25 @@ def test_notice_people_tags_and_year_rules(client, db, settings):
     assert by_id[IT_ADMIN]["tags"] == ["信息中心"]
 
 
+def test_grade_head_people_boundaries(client, db, settings):
+    yearless = make_teacher_account(db, login_name="b_yearless")
+    bind(db, yearless.id, Role.subject_teacher, class_id=C32, year_id=None)
+    inactive_cls = make_teacher_account(db, login_name="b_inactive_cls")
+    off = make_class(db, "三年七班")
+    bind(db, inactive_cls.id, Role.homeroom_teacher, class_id=off)
+    db.execute(text("UPDATE classes SET active = false WHERE id = :c"), {"c": off})
+    frozen = make_teacher_account(db, login_name="b_frozen")
+    bind(db, frozen.id, Role.subject_teacher, class_id=C32)
+    frozen.status = "frozen"
+    db.flush()
+
+    res = client.get(PEOPLE, headers=auth(settings, GRADE_HEAD3))
+    assert res.status_code == 200, res.text
+    ids = {p["user_id"] for p in res.json()}
+    assert ids == GRADE3_TEACHERS
+    assert not ids & {str(yearless.id), str(inactive_cls.id), str(frozen.id)}
+
+
 def test_notice_people_q_default_and_limit(client, db, settings):
     for n in range(25):
         u = make_teacher_account(db, login_name=f"many{n:02d}")
