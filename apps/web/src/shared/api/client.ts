@@ -16,12 +16,12 @@ export class ApiError extends Error {
   }
 }
 
-/** 刷新结果:network = 请求没到服务端(可稍后重试);rejected = 服务端不认(401/403 等明确拒绝、令牌已被换掉);5xx 与网络异常同算 network */
+/** 刷新结果:network = 请求没到服务端(可稍后重试);rejected = 服务端不认(401/403 等明确拒绝、本标签已登出);5xx 与网络异常同算 network */
 export type RefreshResult = 'ok' | 'rejected' | 'network'
 
 let refreshing: Promise<RefreshResult> | null = null
 
-async function doRefresh(refreshToken: string): Promise<RefreshResult> {
+async function doRefresh(refreshToken: string, retried = false): Promise<RefreshResult> {
   try {
     const res = await fetch(`${BASE}/auth/refresh`, {
       method: 'POST',
@@ -29,10 +29,16 @@ async function doRefresh(refreshToken: string): Promise<RefreshResult> {
       body: JSON.stringify({ refresh_token: refreshToken }),
     })
     if (res.status >= 500) return 'network' // 服务端暂不可用(重启、网关 502/503/504):不是令牌的问题
+    const current = useAuthStore.getState().refreshToken
+    if (current !== refreshToken) {
+      // 请求期间 store 里的刷新令牌变了:登出 → 不复活会话;另一标签重新登录(authSync 写进来的新会话)→
+      // 旧令牌换来的 access 不能用,改用新令牌再试一次,而不是当成被拒把两个标签都登出(L150)
+      if (!current || retried) return 'rejected'
+      return doRefresh(current, true)
+    }
     if (!res.ok) return 'rejected'
     const data = (await res.json()) as { access_token?: string }
     if (!data.access_token) return 'rejected'
-    if (useAuthStore.getState().refreshToken !== refreshToken) return 'rejected'
     useAuthStore.getState().updateAccess(data.access_token)
     return 'ok'
   } catch {

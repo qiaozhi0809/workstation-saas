@@ -241,16 +241,71 @@ it('tryRefreshAccessToken: ok / rejected / network', async () => {
   expect(await tryRefreshAccessToken()).toBe('network')
 })
 
-it('tryRefreshAccessToken: 刷新令牌在请求期间已换掉 → rejected', async () => {
-  vi.stubGlobal(
-    'fetch',
-    vi.fn().mockImplementationOnce(async () => {
-      useAuthStore.setState({ refreshToken: 'other' })
+it('tryRefreshAccessToken: 刷新期间另一标签重新登录换了令牌 → 用新令牌再试一次,不算 rejected', async () => {
+  // L150:authSync 把另一标签的新会话写进了本标签的 store;旧令牌换来的 access 不能用,但也不该登出
+  const fetchMock = vi
+    .fn()
+    .mockImplementationOnce(async () => {
+      useAuthStore.setState({ accessToken: 'acc2', refreshToken: 'ref2' })
       return json({ access_token: 'n4', expires_at: 'x' })
-    }),
-  )
+    })
+    .mockResolvedValueOnce(json({ access_token: 'n5', expires_at: 'x' }))
+  vi.stubGlobal('fetch', fetchMock)
+  expect(await tryRefreshAccessToken()).toBe('ok')
+  expect(fetchMock).toHaveBeenCalledTimes(2)
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ refresh_token: 'ref' })
+  expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ refresh_token: 'ref2' })
+  expect(useAuthStore.getState().accessToken).toBe('n5')
+  expect(useAuthStore.getState().refreshToken).toBe('ref2')
+})
+
+it('tryRefreshAccessToken: 换了新令牌再试还是被换 / 被拒 → rejected,只重试一次', async () => {
+  const fetchMock = vi
+    .fn()
+    .mockImplementationOnce(async () => {
+      useAuthStore.setState({ refreshToken: 'ref2' })
+      return json({ error: { code: 'INVALID_REFRESH', message: 'x' } }, 401)
+    })
+    .mockImplementationOnce(async () => {
+      useAuthStore.setState({ refreshToken: 'ref3' })
+      return json({ access_token: 'n6', expires_at: 'x' })
+    })
+  vi.stubGlobal('fetch', fetchMock)
   expect(await tryRefreshAccessToken()).toBe('rejected')
+  expect(fetchMock).toHaveBeenCalledTimes(2)
   expect(useAuthStore.getState().accessToken).toBe('old')
+})
+
+it('tryRefreshAccessToken: 刷新期间登出(令牌变 null)→ rejected,不复活会话', async () => {
+  const fetchMock = vi.fn().mockImplementationOnce(async () => {
+    useAuthStore.getState().logout()
+    return json({ access_token: 'n7', expires_at: 'x' })
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  expect(await tryRefreshAccessToken()).toBe('rejected')
+  expect(fetchMock).toHaveBeenCalledTimes(1)
+  expect(useAuthStore.getState().accessToken).toBeNull()
+})
+
+it('api(): 刷新期间另一标签换了令牌 → 请求用新 access 重发成功,不登出', async () => {
+  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.endsWith('/auth/refresh')) {
+      const { refresh_token } = JSON.parse(String(init?.body)) as { refresh_token: string }
+      if (refresh_token === 'ref') {
+        useAuthStore.setState({ accessToken: 'acc2', refreshToken: 'ref2' })
+        return json({ access_token: 'stale', expires_at: 'x' })
+      }
+      return json({ access_token: 'fresh', expires_at: 'x' })
+    }
+    const auth = (init?.headers as Record<string, string>).Authorization
+    return auth === 'Bearer fresh'
+      ? json({ ok: 1 })
+      : json({ error: { code: 'TOKEN_EXPIRED', message: 'x' } }, 401)
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  await expect(api('GET', '/a')).resolves.toEqual({ ok: 1 })
+  expect(useAuthStore.getState().user).not.toBeNull()
+  expect(useAuthStore.getState().refreshToken).toBe('ref2')
 })
 
 it('refreshAccessToken: 网络错误返回 false', async () => {
