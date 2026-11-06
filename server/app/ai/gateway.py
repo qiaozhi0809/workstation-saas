@@ -45,6 +45,7 @@ log = structlog.get_logger()
 
 LOCK_TTL = 300
 GENERIC_ERROR = "生成出错了,请稍后再试"
+SAVE_ERROR = "生成结果没能保存,请重新生成"
 
 _RELEASE = (
     "if redis.call('get', KEYS[1]) == ARGV[1] then "
@@ -169,6 +170,15 @@ def _finalize(
             except Exception:
                 log.exception("ai_save_failed", chat_id=str(ctx.chat_id))
                 s.rollback()
+                # 结果没存下来就不能对前端说 done:事件、审计都按出错;再试一次把行标为失败,
+                # 别把它留在 streaming / run("生成中")
+                state.status, state.error_code, state.error = "error", "AI_SAVE_FAILED", SAVE_ERROR
+                try:
+                    save(s, prep, state)
+                    s.flush()
+                except Exception:
+                    log.exception("ai_save_failed_again", chat_id=str(ctx.chat_id))
+                    s.rollback()
         s.execute(
             update(AiChat).where(AiChat.id == ctx.chat_id).values(updated_at=func.clock_timestamp())
         )

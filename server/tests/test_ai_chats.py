@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import json
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
@@ -587,6 +588,55 @@ def test_chat_mask_reflects_forced_mask_now(client, settings, db):
     assert get_chat(client, settings, chat["id"]).json()["mask"] is True
     # 新建的对话同样按当前生效值返回
     assert create(client, settings, parent_body(mask=False))["mask"] is True
+
+
+def _drain(agen) -> list[tuple[str, dict]]:
+    """把生成器跑到头,按 (事件名, 数据) 返回。"""
+
+    async def run():
+        chunks = []
+        async with contextlib.aclosing(agen) as it:
+            async for chunk in it:
+                chunks.append(chunk.decode())
+        return chunks
+
+    events = []
+    for chunk in asyncio.run(run()):
+        head, _, data = chunk.strip().partition("\n")
+        events.append((head.removeprefix("event: "), json.loads(data.removeprefix("data: "))))
+    return events
+
+
+def test_ai_generate_save_failure_sends_error_not_done(
+    client, settings, db, redis_client, monkeypatch
+):
+    """落库失败不能再告诉前端 done:发 error、审计 outcome=error、锁照样释放;
+    并再试一次把行标为失败,不留在 streaming(L94)。"""
+    import app.ai.gateway as gw
+
+    configure_ai(db, settings)
+    chat = create(client, settings, lesson_body())
+    ctx = _ctx(client, settings, db, redis_client, chat["id"], ["第一段", "第二段"])
+    real = gw.save_reply
+    attempts: list[str] = []
+
+    def flaky_save(s, prep, state):
+        attempts.append(state.status)
+        if state.status == "done":
+            raise RuntimeError("disk full")
+        real(s, prep, state)
+
+    monkeypatch.setattr(gw, "save_reply", flaky_save)
+    events = _drain(reply_events(ctx, AiReplyIn()))
+    assert [e for e, _ in events] == ["meta", "delta", "delta", "error"]
+    assert events[-1][1] == {"code": "AI_SAVE_FAILED", "message": gw.SAVE_ERROR}
+    assert attempts == ["done", "error"]
+    db.expire_all()
+    msg = get_chat(client, settings, chat["id"]).json()["messages"][1]
+    assert (msg["status"], msg["error"], msg["content"]) == ("error", gw.SAVE_ERROR, "第一段第二段")
+    assert redis_client.exists(f"ai:chat:{chat['id']}") == 0
+    audit = generate_audits(db, chat["id"])
+    assert len(audit) == 1 and (audit[0].success, audit[0].extra["outcome"]) == (False, "error")
 
 
 def _state_at_final_event(client, settings, db, redis_client, chat_id, events_fn, ctx, final):
