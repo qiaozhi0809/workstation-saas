@@ -36,6 +36,9 @@ from app.domain.reports.router import router as reports_router  # M3b 段 C
 from app.domain.reviews.router import router as reviews_router
 from app.domain.roster.router import router as roster_router
 from app.domain.school_settings.router import router as school_settings_router  # M3a 段 E
+from app.domain.school_settings.security_router import (
+    router as security_settings_router,
+)  # M5b 段 A
 from app.domain.seating.router import router as seating_router
 from app.domain.students.router import router as students_router
 from app.domain.todos.router import router as todos_router
@@ -113,5 +116,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     router.include_router(acks_router)  # M4b 段 A
     router.include_router(class_notices_router)  # M4b 段 A
     router.include_router(system_router)  # M5a 段 A
+    router.include_router(security_settings_router)  # M5b 段 A
     app.include_router(router)
     return app

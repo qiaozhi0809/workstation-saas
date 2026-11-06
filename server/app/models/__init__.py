@@ -11,6 +11,7 @@ from app.models.classroom import (
     UserPreference,
 )
 from app.models.grades import Exam, GradeExam, Score
+from app.models.login_logs import LoginLog
 from app.models.notices import Notice, NoticeRecipient, NoticeStudent
 from app.models.parents import Parent, ParentLink
 from app.models.rbac import RoleBinding
@@ -36,6 +37,7 @@ __all__ = [
     "Grade",
     "GradeExam",
     "GrowthRecord",
+    "LoginLog",
     "Notice",
     "NoticeRecipient",
     "NoticeStudent",

@@ -137,7 +137,7 @@ def test_bundle_contents(engine, settings, db):
     assert set(z.namelist()) == FILES
     ver = json.loads(z.read("version.json"))
     assert set(ver) == {"version", "migration", "python", "postgres", "redis", "generated_at"}
-    assert ver["migration"] == "0010"
+    assert ver["migration"] == "0011"
     assert ver["generated_at"].startswith("2026-11-05T08:30:15")
     schema = json.loads(z.read("schema.json"))
     assert "users" in schema["tables"]
@@ -190,7 +190,7 @@ def test_system_info(client, settings, tmp_path):
     client.app.state.settings = s
     h = auth(s, IT_ADMIN)
     body = client.get(INFO, headers=h).json()
-    assert body["migration"] == "0010"
+    assert body["migration"] == "0011"
     assert body["version"]
     assert body["started_at"]
     assert body["db_size_bytes"] > 0

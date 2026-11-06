@@ -24,5 +24,8 @@ class User(Base):
     status: Mapped[str] = mapped_column(Text, server_default=text("'active'"))
     must_change_password: Mapped[bool] = mapped_column(server_default=text("false"))
     last_login_at: Mapped[datetime | None]
+    password_changed_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+    totp_secret: Mapped[str | None] = mapped_column(Text)
+    totp_enabled_at: Mapped[datetime | None]
     created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
     updated_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
