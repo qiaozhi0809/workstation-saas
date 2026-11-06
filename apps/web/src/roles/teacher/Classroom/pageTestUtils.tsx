@@ -93,6 +93,7 @@ export function summaryFixture(over: Partial<ClassroomSummary> = {}): ClassroomS
     timezone: 'Asia/Shanghai',
     week_no: 10,
     school_name: '示例小学',
+    cameras: 0,
     week_start: '2026-11-02',
     year: { id: 'y1', name: '2026-2027', start_date: '2026-09-01', end_date: '2027-07-15' },
     seat_version: 4,

@@ -12,6 +12,8 @@ export type AdminPerm =
   | 'notice.send'
   | 'exam.grade_write'
   | 'year.upgrade'
+  | 'camera.manage'
+  | 'camera.view'
 
 export interface UserBrief {
   id: string
@@ -209,6 +211,7 @@ export interface TodayView {
 }
 export interface BoardClass {
   id: string
+  cameras: number
   name: string
   room: string
   homeroom_name: string | null

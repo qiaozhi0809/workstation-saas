@@ -21,6 +21,7 @@ export const boardClass = (over: Partial<BoardClass> = {}): BoardClass => ({
   id: 'c1',
   name: '三年一班',
   room: '301',
+  cameras: 0,
   homeroom_name: '赵老师',
   seat_rows: 3,
   seat_cols: 4,
