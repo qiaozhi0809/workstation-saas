@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { aiApi } from '@/shared/api/ai'
@@ -11,7 +11,7 @@ import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { Button } from '@/shared/components/ui/button'
 import { exportWord } from '@/shared/lib/exportWord'
 import { useTeacherStore } from '@/shared/stores/teacher'
-import type { AiChat, AiPrompt, AiReplyInput } from '@/shared/types/ai'
+import type { AiChat, AiMessage, AiPrompt, AiReplyInput } from '@/shared/types/ai'
 import ClassGate, { type ClassContext } from '../ClassGate'
 import BatchView from './BatchView'
 import CopyPromptDialog from './CopyPromptDialog'
@@ -23,6 +23,35 @@ import { classesApi } from '@/shared/api/classes'
 
 const NEAR_BOTTOM_PX = 180
 const NOT_CONFIGURED = '学校还没有配置 AI 服务,请联系管理员;可以先复制提示词'
+
+/**
+ * 生成中 / 等待重取期间,服务端消息里属于"本次请求"的那几条要藏起来(本地已用追问气泡和流式气泡显示):
+ * 追问 → 末尾那条内容等于所发文字、且请求开始时还不存在的用户消息,连同它后面的回复;
+ * 重新生成 → 末尾那条助手消息(被替换的旧回复,或替换后的占位);
+ * 其余(如补答一条没回复的用户消息)→ 末尾新出现的助手消息。
+ * 只认"请求开始时不存在的 id",所以上一组问答即使在请求开始后才取到也照常显示(L17)。
+ */
+function hideInFlight(all: AiMessage[], body: AiReplyInput | null, known: Set<string>) {
+  let end = all.length
+  const last = all[end - 1]
+  if (last?.role === 'assistant') {
+    const before = all[end - 2]
+    const ours =
+      body?.text !== undefined
+        ? before?.role === 'user' && before.content === body.text && !known.has(before.id)
+        : body?.regenerate || !known.has(last.id)
+    if (ours) end--
+  }
+  const tail = all[end - 1]
+  if (
+    body?.text !== undefined &&
+    tail?.role === 'user' &&
+    tail.content === body.text &&
+    !known.has(tail.id)
+  )
+    end--
+  return all.slice(0, end)
+}
 
 /** AI 助手对话页 /teacher/ai/:chatId:需要本班 ai.use 权限。 */
 export default function AiThreadPage() {
@@ -99,18 +128,26 @@ function Thread({ ctx, chat, chatId }: { ctx: ClassContext; chat: AiChat; chatId
   const [prompt, setPrompt] = useState<AiPrompt | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const goHandled = useRef(false)
-  // 本次生成开始时对话已有的消息数:之后重新取到的服务端消息(含刚落库的追问和流式占位)不再重复渲染
-  const baseRef = useRef(chat.messages.length)
-  const lenRef = useRef(chat.messages.length)
-  lenRef.current = chat.messages.length
+  // 本次(被接受的)生成开始时对话里已有的消息 id:之后重新取到的"本次请求落库的消息"不再重复渲染
+  const knownRef = useRef(new Set(chat.messages.map((m) => m.id)))
+  const messagesRef = useRef(chat.messages)
+  messagesRef.current = chat.messages
 
   const live = streaming || text !== ''
   const all = chat.messages
   const last = all[all.length - 1]
-  // 只有"重新生成"时,最后一条助手回复才由流式气泡代替;追问时旧回复保留
-  const shown = live
-    ? all.slice(0, Math.max(0, lastBody?.regenerate ? baseRef.current - 1 : baseRef.current))
-    : all
+  const shown = live ? hideInFlight(all, lastBody, knownRef.current) : all
+
+  /** 发请求;只有被接受时才记下"开始前已有的消息",被拒的请求不能改变显示哪些消息 */
+  const begin = useCallback(
+    (body: AiReplyInput): boolean => {
+      const known = new Set(messagesRef.current.map((m) => m.id))
+      const ok = start(body)
+      if (ok) knownRef.current = known
+      return ok
+    },
+    [start],
+  )
 
   // ?go=1:最后一条是还没回复的用户消息时自动开始,只一次
   useEffect(() => {
@@ -118,12 +155,9 @@ function Thread({ ctx, chat, chatId }: { ctx: ClassContext; chat: AiChat; chatId
     if (goHandled.current) return
     if (new URLSearchParams(location.search).get('go') !== '1') return
     goHandled.current = true
-    if (last?.role === 'user') {
-      baseRef.current = lenRef.current
-      start({})
-    }
+    if (last?.role === 'user') begin({})
     navigate({ pathname: location.pathname }, { replace: true })
-  }, [chat.batch_only, last?.role, location.pathname, location.search, navigate, start])
+  }, [chat.batch_only, last?.role, location.pathname, location.search, navigate, begin])
 
   useEffect(() => {
     if (!live) setPendingUser(null)
@@ -150,8 +184,7 @@ function Thread({ ctx, chat, chatId }: { ctx: ClassContext; chat: AiChat; chatId
     aiApi.chatPrompt(chatId).then(setPrompt, () => toast('获取提示词失败,请重试'))
   }
   const run = (body: AiReplyInput): boolean => {
-    baseRef.current = lenRef.current
-    const ok = start(body)
+    const ok = begin(body)
     if (ok) setPendingUser(body.text ?? null)
     return ok
   }

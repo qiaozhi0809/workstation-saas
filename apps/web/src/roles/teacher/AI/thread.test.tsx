@@ -381,7 +381,7 @@ describe('AiThreadPage toolbar and composer', () => {
       '期中家长会发言稿',
       '**老师:**帮我写发言稿\n\n---\n\n## 开场\n\n**各位家长**好',
     )
-    fireEvent.click(screen.getByRole('button', { name: '导出该条 Word' }))
+    fireEvent.click(screen.getByRole('button', { name: '导出 Word(这一条)' }))
     expect(exportWord).toHaveBeenLastCalledWith('期中家长会发言稿', replyMsg.content)
   })
 
@@ -566,6 +566,124 @@ describe('AiThreadPage final-review fixes', () => {
     expect(grown).toBeDisabled()
     expect(commentsApi.create).toHaveBeenCalledTimes(1)
     expect(growthApi.create).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('AiThreadPage L17', () => {
+  it('a 重试 rejected while another reply is streaming does not duplicate the question', async () => {
+    const calls = controlledReply()
+    const failed = msg({ id: 'e1', role: 'assistant', status: 'error', error: '上次失败' })
+    vi.mocked(aiApi.getChat).mockResolvedValue(chatFixture({ messages: [userMsg, failed] }))
+    const { client } = thread()
+    const box = await screen.findByLabelText('继续追问…')
+    type(box, '追问内容')
+    fireEvent.keyDown(box, { key: 'Enter' })
+    await waitFor(() => expect(calls).toHaveLength(1))
+    act(() => calls[0].h.onDelta('正在写'))
+    await screen.findByText(/正在写/)
+    // 服务端已把追问和流式占位落库,重新拉取到了
+    vi.mocked(aiApi.getChat).mockResolvedValue(
+      chatFixture({
+        messages: [
+          userMsg,
+          failed,
+          msg({ id: 'm3', role: 'user', content: '追问内容' }),
+          msg({ id: 'm4', role: 'assistant', content: '', status: 'streaming' }),
+        ],
+      }),
+    )
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: ['ai-chat', 't1'] })
+      await new Promise((r) => setTimeout(r, 30))
+    })
+    // 旧错误上的"重试"此时会被拒(上一次生成还没结束):被拒的请求不能改变页面上显示哪些消息,
+    // 流继续刷新(重新渲染)后也不能
+    fireEvent.click(screen.getByRole('button', { name: '重试' }))
+    expect(calls).toHaveLength(1)
+    act(() => calls[0].h.onDelta('继续写'))
+    await screen.findByText(/正在写继续写/)
+    expect(screen.getAllByText('追问内容')).toHaveLength(1)
+    expect(screen.getAllByTestId('stream-text')).toHaveLength(1)
+    expect(screen.getByTestId('thread-scroll').children).toHaveLength(4)
+  })
+
+  it('a follow-up sent before the previous refetch lands keeps the previous exchange visible', async () => {
+    const calls = controlledReply()
+    thread()
+    const box = await screen.findByLabelText('继续追问…')
+    type(box, '第一问')
+    fireEvent.keyDown(box, { key: 'Enter' })
+    await waitFor(() => expect(calls).toHaveLength(1))
+    act(() => calls[0].h.onDelta('第一答'))
+    await screen.findByText(/第一答/)
+    // 第一次生成结束,但服务端重取还没回来
+    let release!: (c: AiChat) => void
+    vi.mocked(aiApi.getChat).mockImplementation(
+      () =>
+        new Promise<AiChat>((r) => {
+          release = r
+        }),
+    )
+    act(() => {
+      calls[0].h.onDone?.({ status: 'done' })
+      calls[0].resolve()
+    })
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: '停止' })).not.toBeInTheDocument(),
+    )
+    // 趁重取没落地再追问一次
+    type(box, '第二问')
+    fireEvent.keyDown(box, { key: 'Enter' })
+    await waitFor(() => expect(calls).toHaveLength(2))
+    // 第一次重取这时才落地,带着第一组问答:它们应当立刻可见,而不是等第二次生成结束
+    await act(async () => {
+      release(
+        chatFixture({
+          messages: [
+            userMsg,
+            replyMsg,
+            msg({ id: 'm3', role: 'user', content: '第一问' }),
+            msg({ id: 'm4', role: 'assistant', content: '第一答' }),
+          ],
+        }),
+      )
+      await new Promise((r) => setTimeout(r, 30))
+    })
+    expect(screen.getByText('第一问')).toBeInTheDocument()
+    expect(screen.getByText('第一答')).toBeInTheDocument()
+    expect(screen.getAllByText('第二问')).toHaveLength(1)
+  })
+
+  it('names the per-message export button with its visible text', async () => {
+    thread()
+    const header = await screen.findByRole('button', { name: '导出 Word' })
+    expect(header).toHaveTextContent('导出 Word')
+    const single = screen.getByRole('button', { name: '导出 Word(这一条)' })
+    expect(single).toHaveTextContent('导出 Word')
+    fireEvent.click(single)
+    expect(exportWord).toHaveBeenLastCalledWith('期中家长会发言稿', replyMsg.content)
+  })
+
+  it('a chat of another class never flashes 找不到 while the class list is still loading', async () => {
+    // 班级列表比对话数据晚到:ClassGate 先等列表,页面不应在中间闪出"找不到这个对话"
+    vi.mocked(aiApi.getChat).mockResolvedValue(chatFixture({ class_id: 'c2' }))
+    let release!: (v: { items: (typeof classFixture)[] }) => void
+    vi.mocked(classesApi.mine).mockImplementation(
+      () =>
+        new Promise((r) => {
+          release = r
+        }),
+    )
+    thread()
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 30))
+    })
+    expect(screen.queryByText('找不到这个对话')).not.toBeInTheDocument()
+    await act(async () => {
+      release({ items: [classFixture, { ...classFixture, id: 'c2', name: '四年一班' }] })
+    })
+    expect(await screen.findByText('这个对话属于其他班级')).toBeInTheDocument()
+    expect(screen.queryByText('找不到这个对话')).not.toBeInTheDocument()
   })
 })
 
