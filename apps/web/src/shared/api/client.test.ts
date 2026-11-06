@@ -15,6 +15,7 @@ beforeEach(() => {
       contexts: ['teacher'],
       admin_perms: [],
       must_change_password: false,
+      password_change_reason: null,
     },
   })
 })
@@ -37,6 +38,7 @@ it('refreshes once on 401 and retries', async () => {
         contexts: ['teacher'],
         admin_perms: [],
         must_change_password: false,
+        password_change_reason: null,
       }),
     )
   vi.stubGlobal('fetch', fetchMock)
@@ -100,6 +102,18 @@ it('401 on /auth/login does not refresh or log out', async () => {
   await expect(
     api('POST', '/auth/login', { login_name: 'a', password: 'b' }),
   ).rejects.toMatchObject({ status: 401, code: 'INVALID_CREDENTIALS' })
+  expect(fetchMock).toHaveBeenCalledTimes(1)
+  expect(useAuthStore.getState().refreshToken).toBe('ref')
+})
+
+it('401 on /auth/login/totp does not refresh or log out', async () => {
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(json({ error: { code: 'TOTP_INVALID', message: 'bad' } }, 401))
+  vi.stubGlobal('fetch', fetchMock)
+  await expect(
+    api('POST', '/auth/login/totp', { mfa_token: 't', code: '000000' }),
+  ).rejects.toMatchObject({ status: 401, code: 'TOTP_INVALID' })
   expect(fetchMock).toHaveBeenCalledTimes(1)
   expect(useAuthStore.getState().refreshToken).toBe('ref')
 })

@@ -19,6 +19,8 @@ export interface UserBrief {
   contexts: Context[]
   admin_perms: AdminPerm[]
   must_change_password: boolean
+  /** 为真当且仅当 must_change_password 为真;first_login 优先 */
+  password_change_reason: 'first_login' | 'expired' | null
 }
 export interface ChangePassword {
   old_password: string
@@ -589,4 +591,11 @@ export interface SystemInfo {
   started_at: string
   db_size_bytes: number
   last_backup: { at: string; file: string; size_bytes: number } | null
+}
+
+export interface SecuritySettings {
+  totp_allowed: boolean
+  /** 8..32 */
+  password_min_length: number
+  password_max_age_days: 0 | 90 | 180 | 365
 }

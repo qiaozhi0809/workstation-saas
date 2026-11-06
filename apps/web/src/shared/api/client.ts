@@ -2,7 +2,7 @@ import { useAuthStore } from '@/shared/stores/auth'
 
 export const API_BASE: string = import.meta.env.VITE_API_BASE ?? '/api/v1'
 const BASE = API_BASE
-const NO_REFRESH_PATHS = ['/auth/login', '/auth/refresh', '/auth/logout']
+const NO_REFRESH_PATHS = ['/auth/login', '/auth/login/totp', '/auth/refresh', '/auth/logout']
 
 export class ApiError extends Error {
   constructor(

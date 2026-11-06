@@ -70,6 +70,7 @@ beforeEach(() => {
       contexts: ['admin'],
       admin_perms: ['account.manage'],
       must_change_password: false,
+      password_change_reason: null,
     },
   })
   vi.mocked(adminApi.accounts).mockResolvedValue({ items: [me, acc(), other, frozen], total: 4 })

@@ -20,6 +20,7 @@ beforeEach(() => {
       contexts: ['teacher'],
       admin_perms: [],
       must_change_password: false,
+      password_change_reason: null,
     },
   })
 })
@@ -313,6 +314,7 @@ it('auth store: setUser 与 lastContext 持久字段', () => {
     contexts: ['teacher', 'admin'],
     admin_perms: ['school.view'],
     must_change_password: false,
+    password_change_reason: null,
   } as const
   useAuthStore
     .getState()

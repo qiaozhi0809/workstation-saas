@@ -34,6 +34,7 @@ const user = {
   contexts: ['teacher' as const],
   admin_perms: [],
   must_change_password: false,
+  password_change_reason: null,
 }
 
 function Probe({ onNew }: { onNew: (e: Extract<RealtimeEvent, { type: 'notice.new' }>) => void }) {

@@ -57,7 +57,14 @@ const setUser = (
     accessToken: 'a',
     refreshToken: 'r',
     lastContext,
-    user: { id: 'u', display_name: '张主任', contexts, admin_perms, must_change_password: false },
+    user: {
+      id: 'u',
+      display_name: '张主任',
+      contexts,
+      admin_perms,
+      must_change_password: false,
+      password_change_reason: null,
+    },
   })
 
 const renderAt = (entry: string) =>
@@ -224,6 +231,7 @@ it('opens no realtime connection on /change-password', async () => {
       contexts: ['admin'],
       admin_perms: ['org.manage'],
       must_change_password: true,
+      password_change_reason: null,
     },
   })
   renderRouted('/admin/org')

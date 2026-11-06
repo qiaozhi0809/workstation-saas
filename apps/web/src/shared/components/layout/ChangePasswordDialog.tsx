@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { AlertCircle, Loader2 } from 'lucide-react'
 import { authApi } from '@/shared/api/auth'
 import { ApiError } from '@/shared/api/client'
@@ -21,6 +22,13 @@ export function ChangePasswordForm({
   const [confirm, setConfirm] = useState('')
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // 最短长度取学校策略;策略没取到时沿用默认 8 位(服务端仍会校验)
+  const policy = useQuery({
+    queryKey: ['auth', 'password-policy'],
+    queryFn: authApi.passwordPolicy,
+    staleTime: 60_000,
+  })
+  const minLength = policy.data?.min_length ?? 8
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -69,7 +77,7 @@ export function ChangePasswordForm({
           required
         />
         <p id="pw-new-hint" className="text-xs text-muted-foreground">
-          至少 8 位,字母、数字、符号中至少两种
+          至少 {minLength} 位,字母、数字、符号中至少两种
         </p>
       </div>
       <div className="space-y-2">

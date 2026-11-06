@@ -40,6 +40,7 @@ it('renders children with a token', () => {
     contexts: ['teacher'],
     admin_perms: [],
     must_change_password: false,
+    password_change_reason: null,
   })
   renderApp()
   expect(screen.getByText('secret')).toBeInTheDocument()
@@ -52,6 +53,7 @@ it('navigates to /login when the token is cleared while mounted', () => {
     contexts: ['teacher'],
     admin_perms: [],
     must_change_password: false,
+    password_change_reason: null,
   })
   renderApp()
   expect(screen.getByText('secret')).toBeInTheDocument()
@@ -66,6 +68,7 @@ it('redirects to /change-password when the password must be changed', () => {
     contexts: ['teacher'],
     admin_perms: [],
     must_change_password: true,
+    password_change_reason: null,
   })
   render(
     <MemoryRouter initialEntries={['/private']}>
@@ -92,6 +95,7 @@ it('redirects an account with no contexts to /login', () => {
     contexts: [],
     admin_perms: [],
     must_change_password: false,
+    password_change_reason: null,
   })
   render(
     <MemoryRouter initialEntries={['/private']}>
@@ -144,6 +148,7 @@ it('lets a parent account into a parent-context route and sends others to their 
       contexts,
       admin_perms: [],
       must_change_password: false,
+      password_change_reason: null,
     })
     return render(
       <MemoryRouter initialEntries={['/parent']}>

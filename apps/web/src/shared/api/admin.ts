@@ -35,6 +35,7 @@ import type {
   ScoreStudentRow,
   ScoreSummary,
   StaffInput,
+  SecuritySettings,
   Switches,
   TagPool,
   TagPoolSave,
@@ -139,6 +140,11 @@ export const adminApi = {
   saveTagPool: (b: TagPoolSave) => api<TagPool>('PUT', '/admin/settings/tag-pool', b),
   switches: () => api<Switches>('GET', '/admin/settings/switches'),
   saveSwitches: (b: Switches) => api<Switches>('PUT', '/admin/settings/switches', b),
+  securitySettings: () => api<SecuritySettings>('GET', '/admin/settings/security'),
+  saveSecuritySettings: (b: SecuritySettings) =>
+    api<SecuritySettings>('PUT', '/admin/settings/security', b),
+  resetTotp: (userId: string) =>
+    api<{ ok: true }>('POST', `/admin/accounts/${seg(userId)}/totp-reset`),
   today: () => api<TodayView>('GET', '/admin/today'),
   board: (gradeId?: string | null) =>
     api<BoardView>('GET', `/admin/board${qs({ grade_id: gradeId })}`),

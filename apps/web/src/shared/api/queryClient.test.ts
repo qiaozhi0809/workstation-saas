@@ -31,6 +31,7 @@ it('clears the query cache when the access token goes from set to null', () => {
     contexts: ['teacher'],
     admin_perms: [],
     must_change_password: false,
+    password_change_reason: null,
   })
   queryClient.setQueryData(['k'], 1)
   useAuthStore.getState().updateAccess('b')
@@ -46,6 +47,7 @@ it('resets the selected class on logout', () => {
     contexts: ['teacher'],
     admin_perms: [],
     must_change_password: false,
+    password_change_reason: null,
   })
   useTeacherStore.setState({ classId: 'c1' })
   useAuthStore.getState().logout()
@@ -59,6 +61,7 @@ it('clears the cache and class when the user changes without logout', () => {
     contexts: ['teacher'],
     admin_perms: [],
     must_change_password: false,
+    password_change_reason: null,
   })
   queryClient.setQueryData(['k'], 1)
   useTeacherStore.setState({ classId: 'c1' })
@@ -68,6 +71,7 @@ it('clears the cache and class when the user changes without logout', () => {
     contexts: ['teacher'],
     admin_perms: [],
     must_change_password: false,
+    password_change_reason: null,
   })
   expect(queryClient.getQueryData(['k'])).toBeUndefined()
   expect(useTeacherStore.getState().classId).toBeNull()

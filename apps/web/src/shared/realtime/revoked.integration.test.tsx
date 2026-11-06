@@ -26,6 +26,7 @@ it('真实路由下 session.revoked 后登录页显示停用提示', async () =>
       contexts: ['teacher'],
       admin_perms: [],
       must_change_password: false,
+      password_change_reason: null,
     },
   })
   const router = createMemoryRouter(
