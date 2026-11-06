@@ -7,7 +7,9 @@
 # backups/pre-upgrade-<旧版>-<时间>/(L179),并在 backups/.ws-upgrade-state 记下"升级进行中"(L190);
 # 覆盖文件之后任何一步失败,统一打印回退办法:./scripts/rollback.sh <快照>(还原程序文件与 WS_VERSION,数据库未被新版改动
 # 时直接起旧版),数据库已被迁移时再 ./scripts/restore.sh <升级前备份>。本脚本不依赖 compose 的重启策略做回滚。
-# 断电 / kill -9 中断后状态文件会留下:下次运行本脚本会提示先 rollback.sh 或重跑同一个离线包。
+# 断电 / kill -9 中断后状态文件会留下:下次运行本脚本(或 install.sh / rollback.sh)会提示先 rollback.sh、重跑同一个离线包,
+# 或在确认新版已正常运行时删除状态文件;重跑沿用上次的快照与升级前备份(重跑时再做的备份只作记录)。
+# 升级成功后,root + systemd + 本部署的定时备份单元已存在时按新模板与 .env 的 TZ 重写该单元(I-1)。
 # 注意:执行升级的永远是"已装版本"的脚本,这些改进只对 1.0.0 之后的升级生效;更早版本升上来的处置见 README 第 9 节。
 #
 # 安全约定:不开 xtrace;不打印密钥;回显容器输出前先过 redact;解包前拒绝绝对路径、..、链接与特殊文件。
@@ -48,7 +50,7 @@ cleanup() {
       printf '\n升级在覆盖程序文件之后失败了。回到旧版本 %s 的办法(按顺序):\n' "$OLD_VERSION"
       printf '  1) ./scripts/rollback.sh %s\n' "$SNAPSHOT"
       printf '     (把升级前的程序文件复制回部署目录、.env 的 WS_VERSION 改回 %s;数据库没被新版本改动时会直接启动旧版本)\n' "$OLD_VERSION"
-      printf '  2) rollback.sh 若提示数据库已被新版本迁移,再执行 ./scripts/restore.sh %s\n' "$BACKUP_FILE"
+      printf '  2) rollback.sh 若提示数据库已被新版本迁移:想保留升级后的数据就按它的提示重新执行本次升级;要回到旧版本则 ./scripts/restore.sh %s\n' "$BACKUP_FILE"
       printf '升级前的快照目录与备份文件都不会被删除;状态文件 backups/.ws-upgrade-state 由 rollback.sh 或下一次成功升级清除。\n'
     } >&2
   fi
@@ -163,7 +165,9 @@ write_state() {
     printf 'OLD_VERSION=%s\n' "$OLD_VERSION"
     printf 'NEW_VERSION=%s\n' "$1"
     printf 'SNAPSHOT=%s\n' "$SNAPSHOT"
+    # BACKUP 永远是第一次(覆盖文件之前)做的那份,rollback.sh 的恢复提示用它;重跑时做的备份只记在 RESUME_BACKUP(I-3)
     printf 'BACKUP=%s\n' "$BACKUP_FILE"
+    if [ -n "$RESUME_BACKUP" ]; then printf 'RESUME_BACKUP=%s\n' "$RESUME_BACKUP"; fi
     printf 'STARTED_AT=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   } >"$tmp") || die "写升级状态文件失败,未改动任何文件"
   mv "$tmp" "$STATE_FILE" || die "写升级状态文件失败,未改动任何文件"
@@ -188,26 +192,35 @@ update_caddyfile() {
 }
 
 # 上次升级中断的处置(L190):状态文件在 → 上次在覆盖文件之后没有确认成功。
-#   * 这次的离线包与上次版本相同 → 视为重跑:沿用上次的快照与旧版本号(此时 VERSION 文件已是新版,不能再当旧版),继续;
-#   * 否则停下,提示先 rollback.sh 回到旧版,或重跑上次那个离线包。
-# 设置全局 RESUME_OLD / RESUME_SNAPSHOT 供 main 使用。
+#   * 这次的离线包与上次版本相同、且上次的快照完整(与 rollback.sh 同一口径)→ 视为重跑:沿用上次的快照、旧版本号与
+#     升级前备份(此时 VERSION 文件已是新版、库可能已迁移,再照一遍就不是"升级前"了),继续;
+#   * 否则停下,提示先 rollback.sh 回到旧版、重跑上次那个离线包,或(新版其实已正常运行时)删除状态文件。
+# 设置全局 RESUME_OLD / RESUME_SNAPSHOT / RESUME_BACKUP_ORIG 供 main 使用。
 RESUME_OLD=""
 RESUME_SNAPSHOT=""
+RESUME_BACKUP_ORIG=""
+RESUME_BACKUP=""
+snapshot_complete() { [ -f "$1/VERSION" ] && [ -f "$1/docker-compose.yml" ] && [ -d "$1/scripts" ]; }
 check_interrupted() {
-  local new_version="$1" s_old s_new s_snap s_at
+  local new_version="$1" s_old s_new s_snap s_at s_backup
   [ -f "$STATE_FILE" ] || return 0
   s_old="$(read_env OLD_VERSION "$STATE_FILE")"
   s_new="$(read_env NEW_VERSION "$STATE_FILE")"
   s_snap="$(read_env SNAPSHOT "$STATE_FILE")"
+  s_backup="$(read_env BACKUP "$STATE_FILE")"
   s_at="$(read_env STARTED_AT "$STATE_FILE")"
   log_warn "上次升级(${s_old:-?} → ${s_new:-?},开始于 ${s_at:-?})在覆盖程序文件之后中断,没有确认成功"
-  if [ "$new_version" = "$s_new" ] && [ -n "$s_snap" ] && [ -d "$s_snap" ]; then
+  if [ "$new_version" = "$s_new" ] && [ -n "$s_snap" ] && [ -d "$s_snap" ] && snapshot_complete "$s_snap"; then
     log_warn "本次离线包版本与上次相同,按重跑处理;回退时仍以上次的快照为准:$s_snap"
     RESUME_OLD="$s_old"
     RESUME_SNAPSHOT="$s_snap"
+    RESUME_BACKUP_ORIG="$s_backup"
     return 0
   fi
-  die "请先回到旧版本 ${s_old:-?}:./scripts/rollback.sh ${s_snap:-<快照目录>};或者重跑上次那个离线包(版本 ${s_new:-?})。处理之后再升级到 $new_version"
+  if [ "$new_version" = "$s_new" ]; then
+    log_warn "上次的快照目录 ${s_snap:-<未记录>} 不存在或不完整,不能按重跑处理"
+  fi
+  die "请先三选一:(1) 回到旧版本 ${s_old:-?}:./scripts/rollback.sh ${s_snap:-<快照目录>};(2) 重跑上次那个离线包(版本 ${s_new:-?});(3) 已确认新版本 ${s_new:-?} 在正常运行(docker compose ps 全部 Up、能登录)时,删除 backups/.ws-upgrade-state。处理之后再升级到 $new_version"
 }
 
 main() {
@@ -274,6 +287,15 @@ main() {
   BACKUP_FILE="$(comm -13 <(printf '%s\n' "$before") <(printf '%s\n' "$after") | tail -n 1)"
   [ -n "$BACKUP_FILE" ] && [ -s "$BACKUP_FILE" ] || die "备份脚本没有产出新的备份文件,已停止升级"
   log_info "备份完成:$BACKUP_FILE"
+  # I-3:重跑时程序文件已是新版、数据库可能已被新版迁移,刚做的这份备份不能当"升级前备份"(rollback.sh 据此提示的
+  # restore.sh 会因迁移版本比旧镜像新而被拒)。回退提示与状态文件里的 BACKUP 仍用第一次那份;本次的只记作 RESUME_BACKUP
+  if [ -n "$RESUME_BACKUP_ORIG" ] && [ -s "$RESUME_BACKUP_ORIG" ]; then
+    RESUME_BACKUP="$BACKUP_FILE"
+    BACKUP_FILE="$RESUME_BACKUP_ORIG"
+    log_warn "重跑:升级前备份仍以上次中断前做的为准($BACKUP_FILE);刚才这份($RESUME_BACKUP)是覆盖文件之后的状态,只作记录"
+  elif [ -n "$RESUME_OLD" ]; then
+    log_warn "重跑:状态文件里记录的升级前备份不存在,回退提示将使用刚才这份备份;它是覆盖文件之后的状态,若数据库已被新版迁移,恢复它会被 restore.sh 拒绝"
+  fi
 
   # 3. 载入新镜像(旧版本镜像标签不删,便于回退)
   if [ "${WS_INSTALL_SKIP_LOAD:-0}" = "1" ]; then
