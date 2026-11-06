@@ -2,13 +2,18 @@ import { useMemo, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { examsApi } from '@/shared/api/exams'
 import type { ClassroomMapProps, SeatView } from '@/shared/components/ClassroomMap/types'
-import { examTable, latestExam, previousExam, rankChanges, rankTint } from '@/shared/lib/grades'
+import {
+  BIG_MOVE,
+  examTable,
+  latestExam,
+  previousExam,
+  rankChanges,
+  rankTint,
+} from '@/shared/lib/grades'
 import type { StudentSeat } from '@/shared/types/student'
 import GradesBar from './GradesBar'
 import { rankBandDescription } from './rankBands'
 
-// 大幅进退步门槛;段 C2a 在 shared/lib/grades 导出 BIG_MOVE 合入后,这里改成从那边 import(见段报告缺口)
-const BIG_MOVE = 5
 const NO_VIEWS: Record<string, SeatView> = {}
 
 export interface GradesMode {
