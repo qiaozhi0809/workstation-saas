@@ -1,5 +1,6 @@
 import io
 import json
+import logging
 import re
 import zipfile
 from datetime import UTC, datetime
@@ -509,6 +510,79 @@ def test_mask_line_generic_keeps_json_valid_and_other_fields():
 def test_mask_line_generic_no_false_positive():
     for line in ("monkey=banana", "keyboard: qwerty", '{"event": "ok", "n": 1}'):
         assert mask_line(line) == line
+
+
+# ---- stdlib / uvicorn 日志进 app.jsonl 并打码(L111 / L158) ----
+
+
+def _jsonl_lines(path: Path) -> list[dict]:
+    return [json.loads(ln) for ln in path.read_text(encoding="utf-8").splitlines() if ln]
+
+
+def test_uvicorn_access_log_goes_to_app_jsonl_masked(tmp_path, capsys):
+    configure_logging("INFO", log_dir=tmp_path)
+    logging.getLogger("uvicorn.access").info(
+        '%s - "%s %s HTTP/%s" %d',
+        "172.30.0.3:51234",
+        "GET",
+        "/api/v1/stream/seg-0001.ts?u=42&sig=SIGVALUE-xyz&token=TOK-abc&n=1",
+        "1.1",
+        200,
+    )
+    text = (tmp_path / "app.jsonl").read_text(encoding="utf-8")
+    assert "SIGVALUE-xyz" not in text and "TOK-abc" not in text and "u=42" not in text
+    rows = _jsonl_lines(tmp_path / "app.jsonl")
+    row = next(r for r in rows if r.get("logger") == "uvicorn.access")
+    assert row["level"] == "info"
+    assert row["event"].startswith(
+        '172.30.0.3:51234 - "GET /api/v1/stream/seg-0001.ts?u=***&sig=***&token=***&n=1'
+    )
+    assert row["timestamp"].endswith("Z")
+    # stdout 也是同一条 JSON(docker logs 看到的),不会再有 uvicorn 自己的那行
+    out = capsys.readouterr().out
+    assert out.count("uvicorn.access") == 1
+    assert "SIGVALUE-xyz" not in out
+
+
+def test_stdlib_root_logger_goes_to_app_jsonl(tmp_path):
+    configure_logging("INFO", log_dir=tmp_path)
+    logging.getLogger("some.library").warning("upstream http://u:pw-secret@h/x?api_key=K1 failed")
+    logging.getLogger("some.library").debug("not at info level")
+    try:
+        raise ValueError("boom-detail")
+    except ValueError:
+        logging.getLogger("uvicorn.error").exception("handler crashed")
+    rows = _jsonl_lines(tmp_path / "app.jsonl")
+    warn = next(r for r in rows if r.get("logger") == "some.library")
+    assert warn["level"] == "warning"
+    assert "pw-secret" not in warn["event"] and "K1" not in warn["event"]
+    assert "http://u:***@h/x?api_key=***" in warn["event"]
+    assert not any(r.get("event") == "not at info level" for r in rows)
+    err = next(r for r in rows if r.get("logger") == "uvicorn.error")
+    assert err["level"] == "error" and "ValueError" in err["exception"]
+
+
+def test_structlog_and_stdlib_share_file_without_duplicates(tmp_path):
+    configure_logging("INFO", log_dir=tmp_path)
+    structlog.get_logger().info("structlog.event", k=1)
+    logging.getLogger("uvicorn.access").info("plain access line")
+    rows = _jsonl_lines(tmp_path / "app.jsonl")
+    assert [r["event"] for r in rows] == ["structlog.event", "plain access line"]
+    assert rows[0]["k"] == 1 and "logger" not in rows[0]
+    # 重复 configure 不叠加 handler:再记一条只出现一次
+    configure_logging("INFO", log_dir=tmp_path)
+    logging.getLogger("uvicorn.access").info("second line")
+    rows = _jsonl_lines(tmp_path / "app.jsonl")
+    assert [r["event"] for r in rows].count("second line") == 1
+
+
+def test_mask_url_masks_stream_signature_params():
+    from app.deploy.diagnostics import mask_url
+
+    out = mask_url("/api/v1/stream/x.ts?u=42&sig=S1&exp=5&token=T1")
+    assert out == "/api/v1/stream/x.ts?u=***&sig=***&exp=5&token=***"
+    # 不误伤:u / sig 只按整个键名匹配
+    assert mask_url("/x?user=42&signal=1&unit=3") == "/x?user=42&signal=1&unit=3"
 
 
 def test_bundle_includes_all_jsonl_files_masked(engine, settings, tmp_path):

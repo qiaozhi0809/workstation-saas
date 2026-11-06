@@ -16,12 +16,12 @@ export class ApiError extends Error {
   }
 }
 
-/** 刷新结果:network = 请求没到服务端(可稍后重试);rejected = 服务端不认(401/403 等明确拒绝、令牌已被换掉);5xx 与网络异常同算 network */
+/** 刷新结果:network = 请求没到服务端(可稍后重试);rejected = 服务端不认(401/403 等明确拒绝、本标签已登出);5xx 与网络异常同算 network */
 export type RefreshResult = 'ok' | 'rejected' | 'network'
 
 let refreshing: Promise<RefreshResult> | null = null
 
-async function doRefresh(refreshToken: string): Promise<RefreshResult> {
+async function doRefresh(refreshToken: string, retried = false): Promise<RefreshResult> {
   try {
     const res = await fetch(`${BASE}/auth/refresh`, {
       method: 'POST',
@@ -29,10 +29,16 @@ async function doRefresh(refreshToken: string): Promise<RefreshResult> {
       body: JSON.stringify({ refresh_token: refreshToken }),
     })
     if (res.status >= 500) return 'network' // 服务端暂不可用(重启、网关 502/503/504):不是令牌的问题
+    const current = useAuthStore.getState().refreshToken
+    if (current !== refreshToken) {
+      // 请求期间 store 里的刷新令牌变了:登出 → 不复活会话;另一标签重新登录(authSync 写进来的新会话)→
+      // 旧令牌换来的 access 不能用,改用新令牌再试一次,而不是当成被拒把两个标签都登出(L150)
+      if (!current || retried) return 'rejected'
+      return doRefresh(current, true)
+    }
     if (!res.ok) return 'rejected'
     const data = (await res.json()) as { access_token?: string }
     if (!data.access_token) return 'rejected'
-    if (useAuthStore.getState().refreshToken !== refreshToken) return 'rejected'
     useAuthStore.getState().updateAccess(data.access_token)
     return 'ok'
   } catch {
@@ -118,7 +124,9 @@ function sessionExpired(): ApiError {
   return new ApiError(401, 'UNAUTHORIZED', '登录已失效，请重新登录')
 }
 
-/** 带 Bearer 的请求；401 时刷新一次令牌再重发，仍 401 则会话失效。返回原始 Response（不判 2xx）。 */
+/** 带 Bearer 的请求；401 时刷新一次令牌再重发，仍 401 则会话失效。返回原始 Response（不判 2xx）。
+ * 403 PASSWORD_CHANGE_REQUIRED 在这里统一处理(标记 user 让 ProtectedRoute 跳 /change-password),
+ * 直接用本函数的调用方(下载等)也能触发。 */
 export async function authedFetch(
   method: string,
   path: string,
@@ -138,6 +146,8 @@ export async function authedFetch(
     res = await send(method, path, body, signal, opts)
     if (res.status === 401) throw sessionExpired()
   }
+  if (res.status === 403 && (await errorCodeOf(res)) === 'PASSWORD_CHANGE_REQUIRED')
+    await markPasswordChangeRequired()
   return res
 }
 
@@ -148,20 +158,25 @@ export async function api<T>(
   rawOpts?: RawOpts,
 ): Promise<T> {
   const res = await authedFetch(method, path, { body, ...rawOpts })
-  if (!res.ok) {
-    const apiErr = await toApiError(res)
-    if (res.status === 403 && apiErr.code === 'PASSWORD_CHANGE_REQUIRED')
-      await markPasswordChangeRequired()
-    throw apiErr
-  }
+  if (!res.ok) throw await toApiError(res)
   if (res.status === 204) return undefined as T
   const text = await res.text()
   return (text ? JSON.parse(text) : undefined) as T
 }
 
+let marking: Promise<void> | null = null
+
+/** 并发多个 403 只发一次 /auth/me(单飞):后到的等同一个请求 */
+function markPasswordChangeRequired(): Promise<void> {
+  marking ??= doMarkPasswordChangeRequired().finally(() => {
+    marking = null
+  })
+  return marking
+}
+
 /** 会话中密码到期:服务端对业务接口返回 403 PASSWORD_CHANGE_REQUIRED。刷新 store 里的 user,让 ProtectedRoute 跳 /change-password。
  * 直接用 send 而非 authApi.me(auth.ts 依赖本文件,避免循环引用);已标记时不再请求,避免重复/循环。 */
-async function markPasswordChangeRequired(): Promise<void> {
+async function doMarkPasswordChangeRequired(): Promise<void> {
   const current = useAuthStore.getState().user
   if (!current || current.must_change_password) return
   try {
@@ -174,7 +189,7 @@ async function markPasswordChangeRequired(): Promise<void> {
           .setUser(
             me.must_change_password
               ? me
-              : { ...me, must_change_password: true, password_change_reason: 'expired' },
+              : { ...me, must_change_password: true, password_change_reason: 'required' },
           )
         return
       }
@@ -186,5 +201,5 @@ async function markPasswordChangeRequired(): Promise<void> {
   if (latest)
     useAuthStore
       .getState()
-      .setUser({ ...latest, must_change_password: true, password_change_reason: 'expired' })
+      .setUser({ ...latest, must_change_password: true, password_change_reason: 'required' })
 }

@@ -1,9 +1,11 @@
 from typing import Annotated
 from uuid import UUID
 
+import structlog
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import StreamingResponse
 from redis import Redis
+from redis.exceptions import RedisError
 from sqlalchemy.orm import Session
 
 from app import clock
@@ -20,6 +22,7 @@ from app.ai.chats import (
 from app.ai.context import system_prompt
 from app.ai.gateway import (
     GenContext,
+    GenerationResponse,
     acquire_lock,
     build_item_job,
     lock_key,
@@ -32,15 +35,15 @@ from app.ai.providers import provider_label
 from app.ai.requests import (
     Job,
     Resolved,
-    _check_perms,
+    check_perms,
     combined_prompt,
     effective_default,
     field_defaults,
     resolve,
 )
-from app.ai.settings import is_ready, load_ai_config
+from app.ai.settings import AIConfig, is_ready, load_ai_config
 from app.ai.templates import CATEGORIES, PERM_ORDER, TEMPLATES
-from app.audit.service import _client_ip, record
+from app.audit.service import client_ip, record
 from app.auth.deps import get_current_user
 from app.config import Settings, settings_dep
 from app.db import SessionScope, get_db, session_scope
@@ -67,6 +70,7 @@ from app.rbac.guard import ensure
 from app.rbac.roles import Perm
 from app.redis import get_redis
 
+log = structlog.get_logger()
 router = APIRouter(prefix="/ai", tags=["ai"])
 
 DbDep = Annotated[Session, Depends(get_db)]
@@ -84,7 +88,7 @@ def ai_status(db: DbDep, _user: UserDep, settings: SettingsDep) -> AiStatus:
     return AiStatus(
         configured=configured,
         provider_label=provider_label(cfg.provider, cfg.model) if configured and cfg else None,
-        mask_forced=cfg.mask_forced if cfg else False,
+        mask_forced=_mask_forced(cfg),
     )
 
 
@@ -93,6 +97,10 @@ _REASONS = {
     Perm.COMMENT_WRITE: "仅班主任可用",
     Perm.EXAM_READ: "需要查看成绩的权限",
 }
+
+
+def _mask_forced(cfg: AIConfig | None) -> bool:
+    return cfg.mask_forced if cfg else False
 
 
 @router.get("/templates", response_model=AiTemplates, response_model_exclude_unset=True)
@@ -195,7 +203,7 @@ def create_ai_chat(
     today = school_today(db, cls.school_id)
     r = resolve(db, user, bindings, cls, body, cfg, today, request=request)
     chat = create_chat(db, user, cls, r)
-    return chat_out(db, chat, clock.utc_now())
+    return chat_out(db, chat, clock.utc_now(), mask_forced=_mask_forced(cfg))
 
 
 @router.get("/chats", response_model=AiChatList)
@@ -212,9 +220,18 @@ def list_ai_chats(
 
 
 @router.get("/chats/{chat_id}", response_model=AiChatOut)
-def get_ai_chat(chat_id: UUID, db: DbDep, user: UserDep) -> AiChatOut:
+def get_ai_chat(
+    chat_id: UUID, db: DbDep, user: UserDep, settings: SettingsDep, redis: RedisDep
+) -> AiChatOut:
     chat = get_own_chat(db, user.id, chat_id)
-    return chat_out(db, chat, clock.utc_now())
+    cfg = load_ai_config(db, settings.school_id, settings.master_key_bytes)
+    try:
+        generating = redis.exists(lock_key(chat.id)) == 1
+    except RedisError:
+        # Redis 不可用不能让本来能读的详情变 500:当作没在生成,退化为旧的 2 分钟陈旧规则
+        log.warning("ai_chat_lock_unreadable", chat_id=str(chat.id))
+        generating = False
+    return chat_out(db, chat, clock.utc_now(), mask_forced=_mask_forced(cfg), generating=generating)
 
 
 @router.delete("/chats/{chat_id}", status_code=204)
@@ -239,9 +256,9 @@ def ai_chat_prompt(
 ) -> AiPrompt:
     chat = get_own_chat(db, user.id, chat_id)
     cls = get_class_or_404(db, chat.class_id)
-    _check_perms(db, request, user, bindings, cls, _chat_needs(chat))
+    check_perms(db, request, user, bindings, cls, _chat_needs(chat))
     cfg = load_ai_config(db, settings.school_id, settings.master_key_bytes)  # 可为 None
-    effective = chat.mask or (cfg.mask_forced if cfg else False)
+    effective = chat.mask or _mask_forced(cfg)
     masker = masker_for_school(db, cls.school_id, cls.id)
     system = scrub(system_prompt(db, user, bindings, cls))
     template = TEMPLATES.get(chat.template_id) if chat.template_id else None
@@ -322,7 +339,7 @@ def ai_chat_reply(
 ) -> StreamingResponse:
     chat = get_own_chat(db, user.id, chat_id)
     cls = get_class_or_404(db, chat.class_id)
-    _check_perms(db, request, user, bindings, cls, _chat_needs(chat))
+    check_perms(db, request, user, bindings, cls, _chat_needs(chat))
     cfg = load_ai_config(db, settings.school_id, settings.master_key_bytes)
     if cfg is None or not is_ready(cfg):
         raise ApiError(409, "AI_NOT_CONFIGURED", "学校还没有配置 AI 服务")
@@ -344,14 +361,10 @@ def ai_chat_reply(
             redis=redis,
             lock_key=lock_key(chat.id),
             lock_token=token,
-            ip=_client_ip(request),
+            ip=client_ip(request),
             user_agent=request.headers.get("user-agent"),
         )
-        return StreamingResponse(
-            reply_events(ctx, body),
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-        )
+        return GenerationResponse(ctx, reply_events(ctx, body))
     except BaseException:
         release_lock(redis, lock_key(chat.id), token)
         raise
@@ -369,7 +382,7 @@ def _gen_context(request: Request, user: User, cls, chat, cfg, scope, redis, tok
         redis=redis,
         lock_key=lock_key(chat.id),
         lock_token=token,
-        ip=_client_ip(request),
+        ip=client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
 
@@ -393,7 +406,7 @@ def ai_chat_run_item(
     if item is None or item.chat_id != chat.id:
         raise ApiError(404, "NOT_FOUND", "条目不存在")
     cls = get_class_or_404(db, chat.class_id)
-    _check_perms(db, request, user, bindings, cls, _chat_needs(chat))
+    check_perms(db, request, user, bindings, cls, _chat_needs(chat))
     cfg = load_ai_config(db, settings.school_id, settings.master_key_bytes)
     if cfg is None or not is_ready(cfg):
         raise ApiError(409, "AI_NOT_CONFIGURED", "学校还没有配置 AI 服务")
@@ -405,11 +418,7 @@ def ai_chat_run_item(
         db.refresh(item)  # 拿到锁后重查:并发的另一次点击可能已经生成完了
         _check_item_runnable(item)
         ctx = _gen_context(request, user, cls, chat, cfg, scope, redis, token)
-        return StreamingResponse(
-            run_item_events(ctx, item.id),
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-        )
+        return GenerationResponse(ctx, run_item_events(ctx, item.id))
     except BaseException:
         release_lock(redis, lock_key(chat.id), token)
         raise

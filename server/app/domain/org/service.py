@@ -6,6 +6,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from app.audit.service import record
+from app.domain.classes.sort import class_sort_key
 from app.domain.exams.subjects import STAGE_KEY, stage_of
 from app.domain.org.schemas import (
     ClassAdmin,
@@ -264,7 +265,7 @@ def _brief_rows(db: Session, class_ids: list[UUID]):
     return db.execute(
         text(
             "SELECT ta.id AS assignment_id, ta.class_id, ta.identity, ta.subject,"
-            " u.id AS user_id, u.display_name"
+            " ta.teacher_id, u.id AS user_id, u.display_name"
             " FROM teacher_assignments ta"
             " JOIN teachers t ON t.id = ta.teacher_id JOIN users u ON u.id = t.user_id"
             " WHERE ta.class_id = ANY(:ids) AND ta.ended_at IS NULL"
@@ -296,7 +297,10 @@ def _class_outs(db: Session, classes: list[SchoolClass]) -> list[ClassAdmin]:
     subjects: dict[UUID, dict[str, list[StaffBrief]]] = {}
     for r in _brief_rows(db, ids):
         brief = StaffBrief(
-            assignment_id=r.assignment_id, user_id=r.user_id, display_name=r.display_name
+            assignment_id=r.assignment_id,
+            user_id=r.user_id,
+            teacher_id=r.teacher_id,
+            display_name=r.display_name,
         )
         if r.identity == "homeroom":
             homeroom[r.class_id] = brief
@@ -337,18 +341,21 @@ def list_classes(
     db: Session, school_id: UUID, year_id: UUID, grade_id: UUID | None
 ) -> list[ClassAdmin]:
     stmt = (
-        select(SchoolClass)
+        select(SchoolClass, Grade.display_order)
         .join(Grade, Grade.id == SchoolClass.grade_id)
         .where(
             SchoolClass.school_id == school_id,
             SchoolClass.academic_year_id == year_id,
             SchoolClass.active.is_(True),
         )
-        .order_by(Grade.display_order, SchoolClass.name)
     )
     if grade_id is not None:
         stmt = stmt.where(SchoolClass.grade_id == grade_id)
-    return _class_outs(db, list(db.scalars(stmt)))
+    # 年级按 display_order,同年级班名按数值排(三年二班 < 三年三班 < 三年十班,L40)
+    rows = sorted(
+        db.execute(stmt).all(), key=lambda r: (r[1], class_sort_key(r[0].name), str(r[0].id))
+    )
+    return _class_outs(db, [cls for cls, _ in rows])
 
 
 def get_class(db: Session, school_id: UUID, year_id: UUID, class_id: UUID) -> SchoolClass:
@@ -413,6 +420,7 @@ def update_class(
     user_id: UUID,
     request: Request | None,
 ) -> ClassAdmin:
+    lock_class(db, cls)  # 与删班 / 任命 / 学年升级串行;已被并发删除或停用的班 404(L52)
     grade = get_grade(db, school_id, body.grade_id)
     if grade.academic_year_id != cls.academic_year_id:
         raise ApiError(400, "BAD_REQUEST", "只能换到当前学年的年级")
@@ -486,7 +494,7 @@ PEOPLE_LIMIT = 20
 def list_people(db: Session, school_id: UUID, q: str | None) -> list[PersonBrief]:
     """本校在职教师(有 teachers 行且 active),供任命选人;q 按姓名/登录名包含匹配。"""
     sql = (
-        "SELECT u.id, u.display_name, u.login_name, t.subjects FROM users u "
+        "SELECT u.id, u.display_name, u.login_name, t.subjects, t.id FROM users u "
         "JOIN teachers t ON t.user_id = u.id "
         "WHERE u.school_id = :sid AND u.status = 'active'"
     )
@@ -499,6 +507,8 @@ def list_people(db: Session, school_id: UUID, q: str | None) -> list[PersonBrief
     sql += " ORDER BY u.display_name, u.login_name LIMIT :lim"
     rows = db.execute(text(sql), params).all()
     return [
-        PersonBrief(user_id=r[0], name=r[1], login_name=r[2], subjects=list(r[3] or []))
+        PersonBrief(
+            user_id=r[0], teacher_id=r[4], name=r[1], login_name=r[2], subjects=list(r[3] or [])
+        )
         for r in rows
     ]

@@ -5,6 +5,10 @@ services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    # 容器 stdout 日志上限(L187):Ubuntu 的 Docker 默认不轮转,不设会把磁盘写满
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "5"}
     environment:
       POSTGRES_USER: workstation
       POSTGRES_DB: workstation
@@ -21,6 +25,10 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    # 容器 stdout 日志上限(L187):Ubuntu 的 Docker 默认不轮转,不设会把磁盘写满
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "5"}
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - ./data/redis:/data
@@ -34,6 +42,10 @@ services:
   app:
     image: workstation-app:${WS_VERSION:?请在 .env 中设置 WS_VERSION}
     restart: unless-stopped
+    # 容器 stdout 日志上限(L187):Ubuntu 的 Docker 默认不轮转,不设会把磁盘写满
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "5"}
     command: ["app"]
     env_file: .env
     environment:
@@ -58,6 +70,10 @@ services:
   scheduler:
     image: workstation-app:${WS_VERSION}
     restart: unless-stopped
+    # 容器 stdout 日志上限(L187):Ubuntu 的 Docker 默认不轮转,不设会把磁盘写满
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "5"}
     command: ["scheduler"]
     env_file: .env
     environment:
@@ -81,7 +97,7 @@ services:
     environment:
       WS_HLS_ROOT: /run/ws-hls
       TZ: ${TZ:-Asia/Shanghai}
-    # 日志只写 stdout(docker logs / diagnose.sh 收集),不挂 data/logs;限制大小防止写满磁盘
+    # 日志只写 stdout(docker logs / diagnose.sh 收集),不挂 data/logs;限制大小防止写满磁盘(L187,各服务一致)
     logging:
       driver: json-file
       options: {max-size: "10m", max-file: "5"}
@@ -105,6 +121,10 @@ services:
   web:
     image: workstation-web:${WS_VERSION}
     restart: unless-stopped
+    # 容器 stdout 日志上限(L187):Ubuntu 的 Docker 默认不轮转,不设会把磁盘写满
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "5"}
     # 只传 Caddyfile 用到的变量,不把 .env 里的密钥交给 web 容器
     environment:
       WS_SITE_ADDRESS: ${WS_SITE_ADDRESS:-localhost}
@@ -140,6 +160,8 @@ volumes:
 networks:
   ws-net:
     driver: bridge
+    # 子网来自 .env 的 WS_SUBNET(install.sh 检测与本机路由是否重叠后写入;WS_TRUSTED_PROXIES 必须包含它)。
+    # 不要只改这里:改子网要同时改 .env 的 WS_SUBNET 与 WS_TRUSTED_PROXIES,并 docker compose down 后再 up
     ipam:
       config:
-        - subnet: 172.30.0.0/24
+        - subnet: ${WS_SUBNET:-172.30.0.0/24}

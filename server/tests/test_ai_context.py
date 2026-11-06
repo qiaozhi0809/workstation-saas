@@ -175,6 +175,45 @@ def test_exam_context_with_compare(db):
     assert "两科及以上不及格：无" in c  # 期中陈小五只有数学一科不及格(英语缺考)
 
 
+def test_exam_context_loads_compare_exam_once(db, monkeypatch):
+    """带对比考试时对比场只加载一次:进步 / 退步名单复用已算好的两张名次表,
+    不再各自重新取数(L18)。"""
+    import app.ai.context as ctx_mod
+
+    cls, _, access = _who(db, TEACHER_USER_ID)
+    mid, monthly = db.get(Exam, UUID(EXAM_IDS[1])), db.get(Exam, UUID(EXAM_IDS[0]))
+    real = ctx_mod.load_exam_data
+    loads: list[UUID] = []
+
+    def counting(db_, cls_, exam, access_):
+        loads.append(exam.id)
+        return real(db_, cls_, exam, access_)
+
+    monkeypatch.setattr(ctx_mod, "load_exam_data", counting)
+    c = exam_context(db, cls, mid, monthly, access)
+    assert "对比「第一次月考」" in c and "进步 5 名及以上：无" in c
+    assert loads.count(monthly.id) == 1
+    # 本场:exam_context 开头一次 + failing_students 一次;对比块不再重载
+    assert loads.count(mid.id) == 2
+
+
+def test_exam_context_reads_grading_once(db, monkeypatch):
+    """A1 遗留:一次 exam_context 只读一次及格线设置(failing_students 复用传入的比例)。"""
+    from app.ai import context
+
+    calls: list[int] = []
+    real = context.get_grading
+    monkeypatch.setattr(context, "get_grading", lambda d, s: calls.append(1) or real(d, s))
+    cls, _, access = _who(db, TEACHER_USER_ID)
+    mid, monthly = db.get(Exam, UUID(EXAM_IDS[1])), db.get(Exam, UUID(EXAM_IDS[0]))
+    out = exam_context(db, cls, mid, monthly, access)
+    assert "两科及以上不及格：无" in out and len(calls) == 1
+    # 单独调用 failing_students 仍自己读设置
+    calls.clear()
+    failing_students(db, cls, monthly, access)
+    assert len(calls) == 1
+
+
 def test_exam_context_without_compare_has_no_compare_lines(db):
     cls, _, access = _who(db, TEACHER_USER_ID)
     c = exam_context(db, cls, db.get(Exam, UUID(EXAM_IDS[1])), None, access)

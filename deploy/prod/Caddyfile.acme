@@ -8,6 +8,10 @@
 	}
 	encode gzip
 	handle /api/* {
+		# 请求体上限(L157):课表 CSV 等上传都远小于 4 MB,过大的请求在这里就被 413 拒绝,不占应用的内存
+		request_body {
+			max_size 4MB
+		}
 		reverse_proxy app:8080
 	}
 	handle {

@@ -225,6 +225,8 @@ def create_exam(
 ) -> ExamOut:
     _check_subjects_allowed(cls, data, bindings)
     year = require_active_year(db, cls.school_id)
+    # 先锁班级行并合并科目:班级在路由检查之后被并发删掉时这里 404,而不是插入 exams 时撞外键 500
+    merge_subjects(db, cls, data.subjects)
     exam = Exam(
         class_id=cls.id,
         academic_year_id=year.id,
@@ -236,7 +238,6 @@ def create_exam(
     )
     db.add(exam)
     db.flush()
-    merge_subjects(db, cls, data.subjects)
     record(
         db,
         user_id=user_id,

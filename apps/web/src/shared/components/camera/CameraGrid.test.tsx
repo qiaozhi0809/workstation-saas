@@ -13,9 +13,11 @@ const h = vi.hoisted(() => {
       MANIFEST_PARSED: 'hlsManifestParsed',
       FRAG_LOADED: 'hlsFragLoaded',
     }
+    static ErrorTypes = { NETWORK_ERROR: 'networkError', MEDIA_ERROR: 'mediaError' }
     static ErrorDetails = {
       MANIFEST_LOAD_ERROR: 'manifestLoadError',
       LEVEL_LOAD_ERROR: 'levelLoadError',
+      FRAG_LOAD_ERROR: 'fragLoadError',
     }
     handlers = new Map<string, Handler[]>()
     src = ''
@@ -23,6 +25,7 @@ const h = vi.hoisted(() => {
     attachMedia = vi.fn()
     stopLoad = vi.fn()
     startLoad = vi.fn()
+    recoverMediaError = vi.fn()
     destroy = vi.fn()
     constructor() {
       FakeHls.instances.push(this)
@@ -54,13 +57,15 @@ afterEach(() => {
 })
 
 describe('CameraGrid', () => {
+  // 九宫格在 640 以下两列(375 宽每格约 180 px 而不是 100 px),sm 起三列
   it.each([
-    [1, 'grid-cols-1'],
-    [4, 'grid-cols-2'],
-    [9, 'grid-cols-3'],
+    [1, ['grid-cols-1']],
+    [4, ['grid-cols-2']],
+    [9, ['grid-cols-2', 'sm:grid-cols-3']],
   ] as const)('size %i uses %s and caps tiles', (size, cls) => {
     const { container } = render(<CameraGrid cameras={cams(12)} size={size} />)
-    expect(container.firstElementChild).toHaveClass('grid', cls)
+    expect(container.firstElementChild).toHaveClass('grid', ...cls)
+    if (size === 9) expect(container.firstElementChild).not.toHaveClass('grid-cols-3')
     expect(h.FakeHls.instances).toHaveLength(size)
     expect(screen.getByLabelText('机位0')).toBeInTheDocument()
   })

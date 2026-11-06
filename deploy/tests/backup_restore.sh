@@ -40,25 +40,37 @@ grep -q "$(basename "$B1")" "$TMP/backup1.log" || fail "输出里没有备份文
 grep -q '主密钥' "$TMP/backup1.log" || fail "输出里没有保管主密钥的提示"
 grep -q '不要上传到外网' "$TMP/backup1.log" || fail "输出里没有\"不要上传到外网\"提示"
 pass "备份包 600、backups 700、文件名与输出正确"
-# 包内容:四个文件、manifest 字段、sha256、env 与 .env 一致(env 按设计含密钥,不扫描,只比对)
+# 包内容:五个文件、manifest 字段、sha256、env 与 .env 一致(env 按设计含密钥,不扫描,只比对)
 X="$TMP/x1"; mkdir -p "$X"
 tar -xzf "$B1" -C "$X"
-for f in db.dump env caddy.tar manifest.json; do [ -s "$X/$f" ] || fail "备份包里缺少 $f"; done
-[ "$(find "$X" -type f | wc -l | tr -d ' ')" = "4" ] || fail "备份包里应只有 4 个文件"
+for f in db.dump env caddy.tar config.tar manifest.json; do [ -s "$X/$f" ] || fail "备份包里缺少 $f"; done
+[ "$(find "$X" -type f | wc -l | tr -d ' ')" = "5" ] || fail "备份包里应只有 5 个文件"
 cmp -s "$X/env" "$DEPLOY/.env" || fail "备份包里的 env 与 .env 不一致"
 grep -q "\"version\": \"$VERSION\"" "$X/manifest.json" || fail "manifest 的 version 不对"
 grep -q "\"migration\": \"$(psql_scalar 'SELECT version_num FROM alembic_version')\"" "$X/manifest.json" || fail "manifest 的 migration 不对"
 grep -Eq '"created_at": "[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z"' "$X/manifest.json" || fail "manifest 的 created_at 格式不对"
-for f in db.dump env caddy.tar; do
+grep -q '"caddy": "included"' "$X/manifest.json" || fail "manifest 应记 caddy: included"
+for f in db.dump env caddy.tar config.tar; do
   grep -q "\"$f\": \"$(sha256_of "$X/$f")\"" "$X/manifest.json" || fail "manifest 里 $f 的 sha256 不对"
 done
 caddy_list="$(tar -tf "$X/caddy.tar")" || fail "caddy.tar 读不出来"
 grep -q 'pki/authorities/local/root.crt' <<<"$caddy_list" || fail "caddy.tar 里没有根证书"
+# L188:config.tar 含生效的 Caddyfile、compose、VERSION 与 certs/ 下全部文件(自备证书私钥在这里),内容与部署目录一致
+config_list="$(tar -tf "$X/config.tar")" || fail "config.tar 读不出来"
+for f in Caddyfile docker-compose.yml VERSION certs/ws-root-ca.crt; do
+  grep -qx "$f" <<<"$config_list" || fail "config.tar 里没有 $f"
+done
+mkdir -p "$X/cfg" && tar -xf "$X/config.tar" -C "$X/cfg"
+cmp -s "$X/cfg/Caddyfile" "$DEPLOY/Caddyfile" || fail "config.tar 里的 Caddyfile 与部署目录不一致"
+cmp -s "$X/cfg/docker-compose.yml" "$DEPLOY/docker-compose.yml" || fail "config.tar 里的 docker-compose.yml 与部署目录不一致"
+[ "$(find "$X/cfg" -type f | wc -l | tr -d ' ')" = "$(printf '%s\n' "$config_list" | grep -c .)" ] || fail "config.tar 里不应有目录或链接条目"
+# db.dump 能被 pg_restore 读出目录(备份脚本已核对;这里独立再核一次)
+dc exec -T postgres pg_restore -l <"$X/db.dump" >/dev/null 2>&1 || fail "备份里的 db.dump 不能被 pg_restore -l 读出"
 # 防漂移:backup.sh 写出的 manifest 必须被 restore.sh 用的校验函数接受(两处格式各写各的会悄悄失配)
 # shellcheck source=/dev/null
 ( . "$DEPLOY/scripts/lib.sh"; manifest_valid "$X/manifest.json" ) || fail "backup.sh 生成的 manifest 没通过 restore 的 manifest_valid 校验(格式漂移)"
 rm -rf "$X"
-pass "包内 4 个文件齐全,manifest 字段与 sha256 正确,env 与 .env 一致,caddy 数据含根证书"
+pass "包内 5 个文件齐全,manifest 字段(含 caddy: included)与 sha256 正确,env 与 .env 一致,caddy 数据含根证书,config.tar 含 Caddyfile / compose / VERSION / certs"
 # backup-last.json
 LAST="$DEPLOY/data/logs/backup-last.json"
 [ -s "$LAST" ] || fail "data/logs/backup-last.json 没有写成功"
@@ -197,6 +209,57 @@ assert_services_up
 pass "数据绑定的值(主密钥、JWT 密钥)取备份的;数据库密码与连接串、站点类键保持当前;缺失键追加;旧 .env 另存 600;应用健康"
 assert_no_residue
 
+echo "== 5b L118 / L184:web 停了也能备份(caddy skipped)并可恢复;数据库未就绪时等待;磁盘门槛不够时拒绝"
+dc stop web >/dev/null 2>&1 || fail "停 web 失败"
+rc=0; ( cd "$DEPLOY" && ./scripts/backup.sh --keep 5 ) >"$TMP/backup-noweb.log" 2>&1 || rc=$?
+[ "$rc" -eq 0 ] || { tail -n 20 "$TMP/backup-noweb.log" >&2; fail "web 停止时 backup.sh 应仍成功(退出码 $rc)"; }
+grep -q 'caddy: skipped' "$TMP/backup-noweb.log" || fail "web 停止时的输出里没有 caddy: skipped 的说明"
+BNW="$(ls -1 "$DEPLOY"/backups/ws-backup-*.tar.gz | tail -n 1)"
+X="$TMP/xnw"; mkdir -p "$X"; tar -xzf "$BNW" -C "$X"
+[ ! -e "$X/caddy.tar" ] || fail "web 停止时的备份不应含 caddy.tar"
+[ -s "$X/config.tar" ] && [ -s "$X/db.dump" ] || fail "web 停止时的备份仍应含 db.dump 与 config.tar"
+grep -q '"caddy": "skipped"' "$X/manifest.json" || fail "manifest 应记 caddy: skipped"
+# shellcheck source=/dev/null
+( . "$DEPLOY/scripts/lib.sh"; manifest_valid "$X/manifest.json" ) || fail "caddy skipped 格式的 manifest 没通过 manifest_valid"
+rm -rf "$X"
+dc start web >/dev/null 2>&1 || fail "启动 web 失败"
+w=0
+until [ "$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$(dc ps -q web)" 2>/dev/null)" = "healthy" ]; do
+  w=$((w + 2)); [ "$w" -lt 120 ] || fail "web 重新启动后没有变 healthy"; sleep 2
+done
+fp_now="$(root_ca_fp)"
+[ -n "$fp_now" ] || fail "取不到当前根证书指纹"
+rc=0; ( cd "$DEPLOY" && ./scripts/restore.sh "$BNW" --yes ) >"$TMP/restore-noweb.log" 2>&1 || rc=$?
+[ "$rc" -eq 0 ] || { tail -n 30 "$TMP/restore-noweb.log" >&2; fail "恢复不含 Caddy 数据的备份退出码 $rc(期望 0)"; }
+grep -q '不含 Caddy 数据' "$TMP/restore-noweb.log" || fail "恢复输出里没有说明备份不含 Caddy 数据"
+[ "$(root_ca_fp)" = "$fp_now" ] || fail "恢复不含 Caddy 数据的备份后,当前根证书不应改变"
+assert_healthz
+assert_login_ok
+pass "web 停止时备份成功(无 caddy.tar、manifest caddy: skipped),该备份可恢复且保留当前 Caddy 数据"
+# 数据库未就绪:停掉 postgres 后起备份,它应等待;几秒后启动 postgres,备份应成功
+dc stop postgres >/dev/null 2>&1 || fail "停 postgres 失败"
+( cd "$DEPLOY" && ./scripts/backup.sh --keep 5 ) >"$TMP/backup-wait.log" 2>&1 &
+bpid=$!
+sleep 6
+kill -0 "$bpid" 2>/dev/null || { cat "$TMP/backup-wait.log" >&2; fail "数据库未就绪时 backup.sh 应等待,而不是 6 秒内就退出"; }
+dc start postgres >/dev/null 2>&1 || fail "启动 postgres 失败"
+rc=0; wait "$bpid" || rc=$?
+[ "$rc" -eq 0 ] || { tail -n 20 "$TMP/backup-wait.log" >&2; fail "数据库就绪后备份应成功(退出码 $rc)"; }
+grep -q '还没就绪' "$TMP/backup-wait.log" || fail "输出里没有等待数据库就绪的提示"
+grep -q '备份完成' "$TMP/backup-wait.log" || fail "等待后的备份没有报「备份完成」"
+# app 在数据库停止期间可能短暂不健康,等它恢复
+w=0
+until curl -ksS --max-time 5 "https://localhost:$HTTPS_PORT/api/v1/healthz" 2>/dev/null | tr -d ' ' | grep -q '{"ok":true}'; do
+  w=$((w + 3)); [ "$w" -lt 180 ] || fail "数据库重启后应用没有恢复在线"; sleep 3
+done
+pass "数据库未就绪时备份等待而不是失败,就绪后完成"
+# 磁盘门槛:把门槛抬到 100000 GB → 在导出之前拒绝,不留临时物
+rc=0; ( cd "$DEPLOY" && WS_INSTALL_MIN_DISK_GB=100000 ./scripts/backup.sh ) >"$TMP/backup-disk.log" 2>&1 || rc=$?
+[ "$rc" -ne 0 ] || fail "磁盘门槛 100000 GB 时备份应被拒绝"
+grep -q '可用空间不足' "$TMP/backup-disk.log" || fail "磁盘不足的提示不对"
+assert_no_residue
+pass "磁盘空间不足门槛时备份被拒绝,无残留"
+
 echo "== 6/6 diagnose.sh 与密钥出口"
 selftest_scanner
 # 在 app 容器的标准输出里造一行含密钥、手机号、Bearer、JWT 形状串的日志,再验证诊断包把它们全部打码
@@ -307,7 +370,8 @@ for n in xt-backup.err xt-diag.err xt-fd.err; do
 done
 rm -f "$TMP/xt-"* ; rm -rf "$TMP/diag-out3"
 pass "SHELLOPTS=xtrace / BASH_XTRACEFD 下运行 backup.sh、diagnose.sh:stdout、stderr、trace 文件里都没有密钥,xtrace 只回显开头几行"
-for n in backup1 backup-keep1 backup-keep2 backup-keep3 backup5 restore1 restore2 lock-busy lock-busy2 lock-stale lock-eperm last-fail install; do
+for n in backup1 backup-keep1 backup-keep2 backup-keep3 backup5 restore1 restore2 lock-busy lock-busy2 lock-stale lock-eperm last-fail install \
+  backup-noweb restore-noweb backup-wait backup-disk; do
   assert_no_secrets "输出 $n.log" "$TMP/$n.log"
 done
 assert_logs_dir_clean

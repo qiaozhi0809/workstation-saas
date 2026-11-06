@@ -343,6 +343,30 @@ def test_stream_starting(make_client, pb_settings, db, on, redis_client):
     assert not db.scalars(select(AuditLog).where(AuditLog.action == "camera.view")).all()
 
 
+def test_playlist_redis_down_is_503(client, pb_settings, db, cam, redis_client, monkeypatch):
+    """L163:Redis 故障时播放列表接口 503 SERVICE_UNAVAILABLE(no-store),不 500;
+    片段接口不碰 Redis。"""
+    from redis import exceptions as rex
+
+    seg = seg_url(client, pb_settings, cam.id)
+
+    def boom(*a, **k):
+        raise rex.TimeoutError("Timeout reading from socket")
+
+    for method in ("hmget", "set"):
+        monkeypatch.setattr(redis_client, method, boom)
+    res = get_playlist(client, pb_settings, cam.id)
+    assert res.status_code == 503, res.text
+    assert res.json()["error"] == {
+        "code": "SERVICE_UNAVAILABLE",
+        "message": "转流服务暂时不可用,请稍后再试",
+    }
+    assert res.headers["cache-control"] == "no-store"
+    # 无权者的 60 秒去重键写不进去:同样 503,不是 500
+    assert get_playlist(client, pb_settings, cam.id, PARENT).status_code in (403, 503)
+    assert client.get(seg).status_code == 200
+
+
 def test_playlist_touches_want(client, pb_settings, cam, redis_client):
     get_playlist(client, pb_settings, cam.id)
     assert 0 < redis_client.ttl(f"ws:cam:want:{cam.id}") <= 30

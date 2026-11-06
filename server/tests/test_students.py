@@ -41,6 +41,30 @@ def test_roster_own_class(client, settings):
     }
 
 
+def test_roster_unseated_students_sort_last(client, db, settings):
+    """L19:座位为空的学生排在有座位的之后(彼此按 mk);有座位的仍按行、列。"""
+    db.execute(
+        text(
+            "UPDATE enrollments SET seat_row = NULL, seat_col = NULL"
+            " WHERE student_id IN (:a, :b) AND class_id = :c"
+        ),
+        {"a": LI, "b": WANG, "c": CLASS_ID},
+    )
+    db.flush()
+    items = client.get(f"/api/v1/classes/{CLASS_ID}/students", headers=auth(settings)).json()[
+        "items"
+    ]
+    assert len(items) == 10
+    seated, unseated = items[:8], items[8:]
+    seats = [(s["seat_row"], s["seat_col"]) for s in seated]
+    assert all(r is not None and c is not None for r, c in seats)
+    assert seats == sorted(seats)
+    assert [(s["name"], s["seat_row"], s["seat_col"]) for s in unseated] == [
+        ("王小一", None, None),
+        ("李小二", None, None),
+    ]
+
+
 def test_roster_other_class_forbidden_and_audited(client, db, settings):
     other = make_class(db, "三年三班")
     res = client.get(f"/api/v1/classes/{other}/students", headers=auth(settings))
