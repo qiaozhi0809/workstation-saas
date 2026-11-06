@@ -47,6 +47,7 @@ from app.domain.school_settings.security_router import (
     router as security_settings_router,
 )  # M5b 段 A
 from app.domain.seating.router import router as seating_router
+from app.domain.setup.router import router as setup_router  # M5d 段 H1
 from app.domain.students.router import router as students_router
 from app.domain.timetable.router import router as timetable_router  # M5c 段 A
 from app.domain.todos.router import router as todos_router
@@ -133,5 +134,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     router.include_router(camera_playback_router)  # M5c 段 A
     router.include_router(grading_router)  # M5d 段 A1
     router.include_router(meta_router)  # M5d 段 A2
+    router.include_router(setup_router)  # M5d 段 H1
     app.include_router(router)
     return app
