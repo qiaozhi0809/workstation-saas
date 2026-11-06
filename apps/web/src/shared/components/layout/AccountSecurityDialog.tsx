@@ -109,7 +109,9 @@ function EnableFlow({ onDone, onCancel }: { onDone(): void; onCancel(): void }) 
       <p className="text-sm">用验证器应用扫描二维码,或手动输入下面的密钥。</p>
       <img
         alt="两步验证二维码"
-        className="mx-auto h-44 w-44 rounded border bg-white p-1"
+        className="mx-auto h-44 w-44 rounded border p-1"
+        // 二维码必须白底黑码才扫得出来,深色主题下也不能跟随主题色
+        style={{ backgroundColor: 'Canvas', color: 'CanvasText', colorScheme: 'light' }}
         src={'data:image/svg+xml;utf8,' + encodeURIComponent(setup.qr_svg)}
       />
       <div className="flex items-center justify-between gap-2 rounded-md bg-muted px-3 py-2">
