@@ -324,6 +324,57 @@ def test_current_year_class_forbidden(client, settings, db, past):
     assert failed_audits(db, PRINCIPAL, ghost_exam) == 1
 
 
+def test_no_active_year_past_views_still_readable(client, settings, db, past):
+    """L36:本校没有进行中的学年时(异常数据),往年班级各接口照常 200,不再 403 / 409。"""
+    db.execute(
+        text("UPDATE academic_years SET is_active = false WHERE school_id = :s"), {"s": SCHOOL}
+    )
+    db.flush()
+    years = get(client, settings, "/years")
+    assert years.status_code == 200
+    assert sorted(y["name"] for y in years.json()) == ["2026-2027", "2027-2028"]
+    classes = get(client, settings, "/classes", year_id=YEAR_ID)
+    assert classes.status_code == 200
+    assert [c["class_name"] for c in classes.json()] == ["三年一班", "三年二班", "四年一班"]
+    assert get(client, settings, f"/classes/{CLASS_ID}/students").status_code == 200
+    assert get(client, settings, f"/classes/{CLASS_ID}/exams").status_code == 200
+    assert get(client, settings, f"/exams/{EXAM_IDS[0]}/scores").status_code == 200
+    assert failed_audits(db, PRINCIPAL, CLASS_ID) == 0
+    # 没有任何班的学年:200 + 空列表
+    empty = AcademicYear(
+        school_id=SCHOOL,
+        name="2025-2026",
+        start_date=date(2025, 9, 1),
+        end_date=date(2026, 7, 15),
+        is_active=False,
+    )
+    db.add(empty)
+    db.flush()
+    r = get(client, settings, "/classes", year_id=str(empty.id))
+    assert r.status_code == 200 and r.json() == []
+
+
+def test_exam_scores_ignore_subjects_not_in_exam(client, settings, db, past):
+    """L36:scores 里有考试科目表之外的科目(考试后来去掉了该科)时,不进 scores 也不计入总分。"""
+    transferred = db.scalars(
+        select(Enrollment.id).where(Enrollment.student_id == past["extra"]["transferred"])
+    ).one()
+    db.execute(
+        text(
+            "INSERT INTO scores (exam_id, enrollment_id, subject, value)"
+            " VALUES (:x, :e, '体育', 100)"
+        ),
+        {"x": EXAM_IDS[0], "e": transferred},
+    )
+    db.flush()
+    body = get(client, settings, f"/exams/{EXAM_IDS[0]}/scores").json()
+    assert [s["name"] for s in body["exam"]["subjects"]] == ["语文", "数学", "英语"]
+    top = body["students"][0]
+    assert top["name"] == "转出生" and top["total"] == 300 and top["class_rank"] == 1
+    assert set(top["scores"]) == {"语文", "数学", "英语"}
+    assert all(set(s["scores"]) == {"语文", "数学", "英语"} for s in body["students"])
+
+
 def test_other_school_isolated(client, settings, db, past):
     other_id = db.execute(
         text("INSERT INTO schools (name) VALUES ('别校') RETURNING id")
