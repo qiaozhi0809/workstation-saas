@@ -382,10 +382,11 @@ def test_expired_password_blocks_business_api(client, db):
 
 
 def test_change_password_publishes_stale(client, db, redis_client):
+    # 先登录再订阅:登录本身在学校时区凌晨 0–5 点会发"账号安全提醒"(M5b),不能混进断言(L7)
+    t = login(client).json()
     pubsub = redis_client.pubsub()
     pubsub.subscribe("ws:events")
     assert pubsub.get_message(timeout=2)["type"] == "subscribe"
-    t = login(client).json()
     res = client.post(
         f"{API}/auth/password",
         headers=bearer(t["access_token"]),
@@ -401,14 +402,15 @@ def test_change_password_publishes_stale(client, db, redis_client):
         if msg["type"] == "message":
             got.append(json.loads(msg["data"]))
     pubsub.close()
-    assert got == [{"user_ids": [TEACHER_USER_ID], "event": {"type": "session.stale"}}]
+    session_events = [e for e in got if e["event"]["type"].startswith("session.")]
+    assert session_events == [{"user_ids": [TEACHER_USER_ID], "event": {"type": "session.stale"}}]
 
 
 def test_wrong_old_password_publishes_nothing(client, redis_client):
+    t = login(client).json()  # 同上:登录放在订阅之前
     pubsub = redis_client.pubsub()
     pubsub.subscribe("ws:events")
     assert pubsub.get_message(timeout=2)["type"] == "subscribe"
-    t = login(client).json()
     res = client.post(
         f"{API}/auth/password",
         headers=bearer(t["access_token"]),
