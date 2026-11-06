@@ -1,6 +1,7 @@
 import pytest
 from sqlalchemy import select
 
+from app.auth import service
 from app.auth.passwords import check_policy, generate_temp_password
 from app.errors import ApiError
 from app.models import User
@@ -145,7 +146,7 @@ def test_temp_password_shape():
 
 
 def _fail_key(settings, name="teacher01"):
-    return f"ws:login_fail:{settings.school_id}:{name}"
+    return service._fail_key(settings, name)
 
 
 def test_wrong_old_password_locks_after_max_failures(client, settings, redis_client):

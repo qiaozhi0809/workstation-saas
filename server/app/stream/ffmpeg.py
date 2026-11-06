@@ -10,7 +10,9 @@ RTSP_IO_TIMEOUT_US = "8000000"
 # 输入只允许 RTSP 及其传输层用到的协议,拒绝 http / file / concat 等(库里地址被改写也读不了本地文件)
 PROTOCOL_WHITELIST = "rtsp,rtsps,rtp,srtp,udp,tcp,tls,crypto"
 
-_USERINFO_RE = re.compile(r"(?i)([a-z][a-z0-9+.\-]*://)[^/@\s]*@")
+# userinfo 整段打码到同一串非空白文本里的最后一个 @(L164):口令里带 / ? # @ 时不能停在第一个分隔符;
+# 代价是路径 / 查询串里碰巧有 @ 的地址会多打码一截(宁可多打,不能漏)。先打 userinfo,再处理查询串
+_USERINFO_RE = re.compile(r"(?i)([a-z][a-z0-9+.\-]*://)\S*@")
 _QUERY_SECRET_RE = re.compile(r"(?i)\b(password|passwd|pwd|token|sig)=[^&\s]*")
 
 
