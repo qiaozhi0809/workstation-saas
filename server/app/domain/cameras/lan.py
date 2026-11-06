@@ -50,15 +50,23 @@ def is_lan_ip(ip: str | None, *, allow_loopback: bool = False) -> bool:
     return any(addr in net for net in LAN_NETWORKS if net.version == addr.version)
 
 
-def resolve_is_lan(host: str, *, allow_loopback: bool = False) -> bool:
+def resolve_lan_ips(host: str, *, allow_loopback: bool = False) -> list[str]:
+    """主机名解析出的全部地址都在内网时返回它们(去重、保持解析顺序),否则 [](失败即关)。
+
+    worker 拿第一个写进 ffmpeg 的拉流地址(L155):判定用的和连接用的是同一个 IP,
+    摄像头名字在两次解析之间被改指向别处(DNS 重绑定)也没用。"""
     try:
         infos = socket.getaddrinfo(host, None)
     except (OSError, UnicodeError):
-        return False
-    ips = [info[4][0] for info in infos]
-    if not ips:
-        return False
-    return all(is_lan_ip(str(ip), allow_loopback=allow_loopback) for ip in ips)
+        return []
+    ips = list(dict.fromkeys(str(info[4][0]) for info in infos))
+    if not ips or not all(is_lan_ip(ip, allow_loopback=allow_loopback) for ip in ips):
+        return []
+    return ips
+
+
+def resolve_is_lan(host: str, *, allow_loopback: bool = False) -> bool:
+    return bool(resolve_lan_ips(host, allow_loopback=allow_loopback))
 
 
 def validate_rtsp_url(url: str, *, allow_loopback: bool = False) -> str:

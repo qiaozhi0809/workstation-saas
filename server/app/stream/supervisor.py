@@ -169,13 +169,14 @@ class Supervisor:
             st.next_retry_at = now + 5
             await self._set_error(cid, st, "摄像头不存在或已停用")
             return
-        if not await source.host_is_lan(row, allow_loopback=self._allow_loopback):
+        ip = await source.resolve_lan(row, allow_loopback=self._allow_loopback)
+        if ip is None:
             st.next_retry_at = now + 60
             log.warning("refuse non-LAN camera %s", cid)
             await self._set_error(cid, st, "摄像头地址不在内网,已拒绝拉流")
             return
         try:
-            url, st.secrets = source.stream_url(row, self._key)
+            url, st.secrets = source.stream_url(row, self._key, pin_ip=ip)
         except crypto.CryptoError:
             st.next_retry_at = now + 60
             await self._set_error(cid, st, "摄像头凭据无法解密(主密钥是否改过?)")

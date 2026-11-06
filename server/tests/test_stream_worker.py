@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 from app import crypto
 from app.domain.cameras import lan as backend_lan
 from app.models.cameras import Camera
-from app.stream import ffmpeg, lan, probe
+from app.stream import ffmpeg, lan, probe, source
 from app.stream.supervisor import PUBLIC_HOSTS_KEY, STATE_PREFIX, WANT_PREFIX, Supervisor
 from tests.conftest import TEST_JWT_SECRET  # noqa: F401  (确保 conftest 已加载)
 from tests.seed_ids import SCHOOL_ID
@@ -666,6 +666,76 @@ def test_worker_refuses_public_host(db, redis_url, fake_ffmpeg, hls_root, tmp_pa
         await dev.tick(1)
         await settle(lambda: len(calls(tmp_path)) == 1)
         await dev.shutdown()
+
+    run_async(redis_url, body)
+
+
+def _fake_dns(monkeypatch, table: dict[str, str]) -> None:
+    """只伪造表里的名字;IP 字面量走真实实现(不联网)。"""
+    real_gai = socket.getaddrinfo
+
+    def fake_gai(host, *a, **k):
+        if host in table:
+            return [(2, 1, 6, "", (table[host], 0))]
+        return real_gai(host, *a, **k)
+
+    monkeypatch.setattr(backend_lan, "socket", SimpleNamespace(getaddrinfo=fake_gai))
+
+
+def test_stream_url_pins_resolved_ip(db, monkeypatch):
+    """L155:拉流地址里的主机换成判定过的 IP(仅 rtsp://),ffmpeg 不再自己解析一次(DNS 重绑定)。"""
+    _fake_dns(monkeypatch, {"cam.example.test": "10.0.0.9"})
+    row = source._row(make_camera(db, "rtsp://cam.example.test:554/live?x=1"))
+    ip = asyncio.run(source.resolve_lan(row, allow_loopback=False))
+    assert ip == "10.0.0.9"
+    url, secrets = source.stream_url(row, KEY, pin_ip=ip)
+    assert url == f"rtsp://{USER}:{PASSWORD}@10.0.0.9:554/live?x=1"
+    assert url in secrets
+    # IPv6 结果加方括号;不钉(None)就是原样
+    assert source.stream_url(row, KEY, pin_ip="fd00::9")[0] == (
+        f"rtsp://{USER}:{PASSWORD}@[fd00::9]:554/live?x=1"
+    )
+    assert (
+        source.stream_url(row, KEY)[0] == f"rtsp://{USER}:{PASSWORD}@cam.example.test:554/live?x=1"
+    )
+    # rtsps:// 保留主机名(TLS 证书按主机名校验),判定照样做
+    srow = source._row(make_camera(db, "rtsps://cam.example.test/live"))
+    assert asyncio.run(source.resolve_lan(srow, allow_loopback=False)) == "10.0.0.9"
+    assert source.stream_url(srow, KEY, pin_ip="10.0.0.9")[0] == (
+        f"rtsps://{USER}:{PASSWORD}@cam.example.test/live"
+    )
+    # 不是内网 / 解析失败 → None
+    _fake_dns(monkeypatch, {"cam.example.test": "203.0.113.7"})
+    assert asyncio.run(source.resolve_lan(row, allow_loopback=False)) is None
+    nx = source._row(make_camera(db, "rtsp://nx.example.test/live"))
+    monkeypatch.setattr(
+        backend_lan,
+        "socket",
+        SimpleNamespace(getaddrinfo=lambda *a, **k: (_ for _ in ()).throw(socket.gaierror())),
+    )
+    assert asyncio.run(source.resolve_lan(nx, allow_loopback=False)) is None
+
+
+def test_worker_and_probe_use_pinned_ip(
+    db, redis_url, fake_ffmpeg, fake_ffprobe, hls_root, tmp_path, monkeypatch
+):
+    _fake_dns(monkeypatch, {"cam.example.test": "10.0.0.9"})
+    cam = make_camera(db, "rtsp://cam.example.test/live")
+
+    async def body(redis):
+        sup = make_supervisor(db, redis, fake_ffmpeg, hls_root)
+        await want(redis, cam)
+        await sup.tick(1)
+        await settle(lambda: len(calls(tmp_path)) == 1)
+        argv = calls(tmp_path)[0]
+        assert f"-i rtsp://{USER}:{PASSWORD}@10.0.0.9/live" in argv
+        assert "cam.example.test" not in argv
+        await sup.shutdown()
+        r, raw = await _ask(redis, db, cam, fake_ffmpeg)
+        assert r["ok"] is True
+        (probe_argv,) = probe_calls(tmp_path)
+        assert "@10.0.0.9/live" in probe_argv and "cam.example.test" not in probe_argv
+        assert PASSWORD not in raw and "10.0.0.9" not in raw  # 回写里没有地址,更没有凭据
 
     run_async(redis_url, body)
 

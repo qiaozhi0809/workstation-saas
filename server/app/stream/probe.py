@@ -209,13 +209,14 @@ async def handle_probe(
     if not reply_key.startswith(REPLY_PREFIX):  # 队列内容不可信:只写约定前缀下的键
         return
     row = await source.load_camera(db_factory, camera_id)
+    ip = None if row is None else await source.resolve_lan(row, allow_loopback=allow_loopback)
     if row is None:
         result = _result(False, "摄像头不存在")
-    elif not await source.host_is_lan(row, allow_loopback=allow_loopback):
+    elif ip is None:
         result = _result(False, "摄像头地址不在内网,已拒绝拉流")
     else:
         try:
-            url, secrets = source.stream_url(row, master_key)
+            url, secrets = source.stream_url(row, master_key, pin_ip=ip)
         except crypto.CryptoError:
             result = _result(False, "摄像头凭据无法解密(主密钥是否改过?)")
         else:
