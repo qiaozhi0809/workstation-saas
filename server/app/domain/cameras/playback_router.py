@@ -93,11 +93,14 @@ def get_playlist(
                 request=request,
             )
         raise ApiError(403, "FORBIDDEN", "没有权限访问该资源")
-    state = redis.hmget(access.STATE_KEY.format(camera.id), "status", "last_error")
+    # 等待期间不占着数据库连接:先提交释放,之后只用提前取好的值
+    camera_id_, camera_name, user_id_ = camera.id, camera.name, user.id
+    db.commit()
+    state = redis.hmget(access.STATE_KEY.format(camera_id_), "status", "last_error")
     if state[0] == "error" and state[1] == "busy":
         raise ApiError(503, "STREAM_BUSY", "同时观看的摄像头太多,请稍后再试", headers=NO_STORE)
-    playback.touch_want(redis, camera.id)
-    index = settings.hls_root / str(camera.id) / "index.m3u8"
+    playback.touch_want(redis, camera_id_)
+    index = settings.hls_root / str(camera_id_) / "index.m3u8"
     ready = playback.await_playlist(
         index, timing.timeout, timing.interval, sleep=timing.sleep, monotonic=timing.monotonic
     )
@@ -108,20 +111,20 @@ def get_playlist(
     if body is None:
         raise ApiError(503, "STREAM_STARTING", "摄像头正在启动,请稍后重试", headers=NO_STORE)
     exp = int(_epoch(now)) + playback.MAX_TTL
-    sig = playback.sign(settings, camera.id, user.id, exp)
-    if playback.audit_due(redis, user.id, camera.id):
+    sig = playback.sign(settings, camera_id_, user_id_, exp)
+    if playback.audit_due(redis, user_id_, camera_id_):
         record(
             db,
-            user_id=user.id,
+            user_id=user_id_,
             action="camera.view",
             success=True,
             object_type="camera",
-            object_id=str(camera.id),
+            object_id=str(camera_id_),
             request=request,
-            extra={"camera_id": str(camera.id), "camera_name": camera.name},
+            extra={"camera_id": str(camera_id_), "camera_name": camera_name},
         )
         db.commit()
-    text = playback.rewrite_playlist(body, camera.id, user.id, exp, sig)
+    text = playback.rewrite_playlist(body, camera_id_, user_id_, exp, sig)
     return Response(text, media_type=PLAYLIST_TYPE, headers=NO_STORE)
 
 

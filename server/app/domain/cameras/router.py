@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.auth.deps import get_current_user
 from app.config import Settings, settings_dep
 from app.db import get_db
-from app.domain.cameras import service
+from app.domain.cameras import playback, service
 from app.domain.cameras.schemas import CameraHealth, CameraInput, CameraOut, CameraTestResult
 from app.models import User
 from app.rbac.admin import ensure_admin
@@ -87,7 +87,21 @@ def delete_camera(
 
 @router.post("/admin/cameras/{camera_id}/test")
 def test_camera(
-    camera_id: UUID, request: Request, user: Auth, bindings: Bind, db: Db, redis: Rds
+    camera_id: UUID,
+    request: Request,
+    user: Auth,
+    bindings: Bind,
+    db: Db,
+    redis: Rds,
+    settings: Cfg,
 ) -> CameraTestResult:
     _guard(db, request, user, bindings)
-    return service.run_test(db, redis, user.school_id, user.id, camera_id, request)
+    return service.run_test(
+        db,
+        redis,
+        user.school_id,
+        user.id,
+        camera_id,
+        request,
+        show_preview=playback.is_lan_client(request, settings),
+    )

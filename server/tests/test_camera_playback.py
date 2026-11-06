@@ -32,6 +32,7 @@ from tests.test_camera_access import (
 
 PLAYLIST = "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:2\n#EXTINF:2.0,\nseg-0.ts\n"
 LAN = ("10.0.0.5", 50000)
+PROXY = ("172.30.0.2", 50000)  # 可信代理(Caddy)
 
 
 @pytest.fixture
@@ -52,7 +53,7 @@ def pb_settings(pg_url, redis_url, hls_root) -> Settings:
         redis_url=redis_url,
         jwt_secret=TEST_JWT_SECRET,
         hls_root=hls_root,
-        trusted_proxies=["10.0.0.0/8"],
+        trusted_proxies=["172.30.0.0/24"],
     )
 
 
@@ -259,7 +260,7 @@ def test_disabled_camera_404_for_everyone(client, pb_settings, db, cam):
 
 def test_playlist_rejects_public_ip(make_client, pb_settings, cam):
     # 直连来自可信代理,X-Forwarded-For 是公网
-    c = make_client()
+    c = make_client(PROXY)
     res = c.get(m3u8(cam.id), headers={**auth(pb_settings), "X-Forwarded-For": "8.8.8.8"})
     assert (res.status_code, res.json()["error"]["code"]) == (403, "CAMERA_LAN_ONLY")
     # 直连公网
@@ -382,7 +383,7 @@ def test_segment_needs_no_jwt_but_needs_lan(make_client, pb_settings, cam):
     for peer in (("8.8.8.8", 1), ("testclient", 1)):
         res = make_client(peer).get(url)
         assert (res.status_code, res.json()["error"]["code"]) == (403, "CAMERA_LAN_ONLY")
-    res = make_client().get(url, headers={"X-Forwarded-For": "8.8.8.8"})
+    res = make_client(PROXY).get(url, headers={"X-Forwarded-For": "8.8.8.8"})
     assert res.json()["error"]["code"] == "CAMERA_LAN_ONLY"
 
 
@@ -600,3 +601,64 @@ def test_segment_rejects_mapped_public_ip(make_client, pb_settings, cam):
     url = seg_url(make_client(), pb_settings, cam.id)
     res = make_client(("::ffff:8.8.8.8", 1)).get(url)
     assert (res.status_code, res.json()["error"]["code"]) == (403, "CAMERA_LAN_ONLY")
+
+
+# ---------- 可信代理 / 数据库会话 ----------
+
+
+def _prod(pb_settings):
+    return pb_settings.model_copy(update={"env": "prod"})
+
+
+def test_prod_real_client_via_trusted_proxy_allowed(make_client, pb_settings, cam):
+    c = make_client(PROXY, settings=_prod(pb_settings))
+    res = c.get(m3u8(cam.id), headers={**auth(pb_settings), "X-Forwarded-For": "192.168.1.20"})
+    assert res.status_code == 200
+    url = f"/api/v1/cameras/{cam.id}/{res.text.splitlines()[4]}"
+    assert c.get(url, headers={"X-Forwarded-For": "192.168.1.20"}).status_code == 200
+
+
+@pytest.mark.parametrize(
+    "xff",
+    [None, "not-an-ip", "172.30.0.1", "172.30.0.1, 172.30.0.3", "8.8.8.8", "192.168.1.20, 8.8.8.8"],
+)
+def test_prod_proxy_peer_is_not_a_client(make_client, pb_settings, cam, xff):
+    # 头缺失 / 非法 / 全是可信地址:解析出的是代理自己(Docker 代理改写源地址的情形),拒绝
+    c = make_client(PROXY, settings=_prod(pb_settings))
+    headers = auth(pb_settings)
+    if xff is not None:
+        headers["X-Forwarded-For"] = xff
+    res = c.get(m3u8(cam.id), headers=headers)
+    assert (res.status_code, res.json()["error"]["code"]) == (403, "CAMERA_LAN_ONLY"), xff
+    seg = f"/api/v1/cameras/{cam.id}/hls/seg-0.ts"
+    sh = {} if xff is None else {"X-Forwarded-For": xff}
+    assert c.get(seg, headers=sh).json()["error"]["code"] == "CAMERA_LAN_ONLY"
+
+
+def test_prod_direct_lan_client_outside_trusted_range_allowed(make_client, pb_settings, cam):
+    # 10.0.0.5 不在可信代理段(172.30.0.0/24):直连的内网客户端照常放行
+    c = make_client(LAN, settings=_prod(pb_settings))
+    assert c.get(m3u8(cam.id), headers=auth(pb_settings)).status_code == 200
+
+
+def test_dev_keeps_proxy_peer_behaviour(make_client, pb_settings, cam):
+    c = make_client(PROXY)  # dev:代理自己的内网地址不拒
+    assert c.get(m3u8(cam.id), headers=auth(pb_settings)).status_code == 200
+
+
+def test_db_released_before_waiting(make_client, pb_settings, db, on, monkeypatch):
+    c0 = _camera(db, "三年二班前", CLASS_ID)  # 没有 worker 输出:会进入等待
+    events = []
+    real_commit = db.commit
+    monkeypatch.setattr(db, "commit", lambda: (events.append("commit"), real_commit())[1])
+    now = [0.0]
+
+    def fake_sleep(s):
+        events.append("sleep")
+        now[0] += s
+
+    timing = Timing(timeout=1, interval=0.2, sleep=fake_sleep, monotonic=lambda: now[0])
+    res = get_playlist(make_client(timing=timing), pb_settings, c0.id)
+    assert res.json()["error"]["code"] == "STREAM_STARTING"
+    assert "sleep" in events
+    assert events.index("commit") < events.index("sleep")

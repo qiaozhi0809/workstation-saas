@@ -18,7 +18,7 @@ from app.domain.ai_admin.router import router as ai_admin_router  # M3b 段 D
 from app.domain.attendance.router import router as attendance_router
 from app.domain.audit_query.router import router as audit_query_router  # M3b 段 D
 from app.domain.cameras.playback_router import router as camera_playback_router  # M5c 段 A
-from app.domain.cameras.router import router as cameras_router
+from app.domain.cameras.router import router as cameras_router  # M5c 段 A
 from app.domain.cameras.view_router import router as camera_view_router  # M5c 段 A
 from app.domain.classes.router import router as classes_router
 from app.domain.classroom.router import router as classroom_router
@@ -46,7 +46,7 @@ from app.domain.school_settings.security_router import (
 )  # M5b 段 A
 from app.domain.seating.router import router as seating_router
 from app.domain.students.router import router as students_router
-from app.domain.timetable.router import router as timetable_router
+from app.domain.timetable.router import router as timetable_router  # M5c 段 A
 from app.domain.todos.router import router as todos_router
 from app.domain.years.http import router as years_router  # M3b 段 F
 from app.errors import install_error_handlers

@@ -5,6 +5,7 @@
 import base64
 import hashlib
 import hmac
+import ipaddress
 import re
 import time
 from collections.abc import Callable
@@ -86,10 +87,24 @@ def rewrite_playlist(text: str, camera_id: UUID, user_id: UUID, exp: int, sig: s
     return "\n".join(out) + "\n"
 
 
-def ensure_lan(request: Request, settings: Settings) -> None:
-    """只接受内网来源;来源不明一律拒绝(失败即关)。开发环境放行回环。"""
+def is_lan_client(request: Request, settings: Settings) -> bool:
+    """来源是内网客户端:来源不明 → False(失败即关);开发环境放行回环。
+
+    非开发环境下,解析出的 IP 若落在可信代理网段,说明它是代理自己(头缺失 / 非法 / 全是可信地址
+    时 `_client_ip` 回退到直连地址),不是真实客户端 → False。"""
     ip = _client_ip(request)
-    if ip is None or not is_lan_ip(ip, allow_loopback=settings.env == "dev"):
+    if ip is None:
+        return False
+    dev = settings.env == "dev"
+    if not dev:
+        addr = ipaddress.ip_address(ip)
+        if any(addr in net for net in getattr(settings, "trusted_networks", [])):
+            return False
+    return is_lan_ip(ip, allow_loopback=dev)
+
+
+def ensure_lan(request: Request, settings: Settings) -> None:
+    if not is_lan_client(request, settings):
         raise ApiError(403, "CAMERA_LAN_ONLY", "只能在学校内网观看")
 
 

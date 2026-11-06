@@ -25,6 +25,7 @@ PROBE_TIMEOUT = 10.0  # R9:同步等待,占一个线程池线程;可注入
 PROBE_INTERVAL = 0.2
 NO_REPLY = "转流服务没有响应"
 BAD_PREVIEW = "预览数据异常"
+PREVIEW_LAN_ONLY = "预览图只在校园网内显示"
 MAX_PREVIEW_BYTES = 1_000_000
 JPEG_MAGIC = b"\xff\xd8\xff"
 
@@ -208,7 +209,11 @@ def update_camera(
     camera = get_camera(db, school_id, camera_id)
     _check_class(db, school_id, data.class_id)
     key = settings.master_key_bytes
-    changed = url != camera.rtsp_url
+    changed = (
+        url != camera.rtsp_url
+        or data.enabled != camera.enabled
+        or data.transcode != camera.transcode
+    )
     for field, attr in (("username", "rtsp_username"), ("password", "rtsp_password")):
         if field not in data.model_fields_set:
             continue
@@ -297,8 +302,12 @@ def run_test(
     user_id: UUID,
     camera_id: UUID,
     request: Request | None,
+    *,
+    show_preview: bool = True,
 ) -> CameraTestResult:
     camera = get_camera(db, school_id, camera_id)
+    cam_id, cam_name = camera.id, camera.name
+    db.commit()  # 等待期间不占着数据库连接
     result = test_camera(db, redis, camera, PROBE_TIMEOUT)
     record(
         db,
@@ -306,16 +315,18 @@ def run_test(
         action="camera.test",
         success=result.ok,
         object_type="camera",
-        object_id=str(camera.id),
+        object_id=str(cam_id),
         request=request,
-        extra={"name": camera.name},
+        extra={"name": cam_name},
     )
     db.commit()
-    return CameraTestResult(
-        ok=result.ok,
-        message=mask_url(result.message),
-        preview_jpeg_base64=result.preview_jpeg_base64,
-    )
+    message = mask_url(result.message)
+    preview = result.preview_jpeg_base64
+    if preview is not None and not show_preview:
+        # 视频不出校:预览图只给内网来源(不是错误,正常返回结果)
+        preview = None
+        message = f"{message};{PREVIEW_LAN_ONLY}"
+    return CameraTestResult(ok=result.ok, message=message, preview_jpeg_base64=preview)
 
 
 def public_hosts(redis: Redis) -> list[str]:

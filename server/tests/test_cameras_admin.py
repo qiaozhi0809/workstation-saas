@@ -274,6 +274,11 @@ def test_update_publishes_reload_only_when_changed(client, settings, db, on, red
 
     client.put(f"{URL}/{cid}", headers=h, json=body(name="只改名", username=USER, password=PW))
     assert drain() == []
+    # 启用 / 转码变化也要通知 worker
+    for kw in ({"enabled": False}, {"enabled": True}, {"transcode": True}, {"transcode": False}):
+        r = client.put(f"{URL}/{cid}", headers=h, json=body(username=USER, password=PW, **kw))
+        assert r.status_code == 200, r.text
+        assert drain() == [cid], kw
     client.put(f"{URL}/{cid}", headers=h, json=body(rtsp_url="rtsp://10.0.0.22/live/2"))
     assert drain() == [cid]
     client.put(f"{URL}/{cid}", headers=h, json=body(rtsp_url="rtsp://10.0.0.22/live/2"))
@@ -346,6 +351,64 @@ def _fake_worker(redis_client, result: dict | None, seen: list):
     return t
 
 
+@pytest.fixture
+def peer_client(settings, db, redis_client):
+    from fastapi.testclient import TestClient
+
+    from app.db import get_db
+    from app.main import create_app
+    from app.redis import get_redis
+
+    def make(peer):
+        app = create_app(settings)
+        app.dependency_overrides[get_db] = lambda: db
+        app.dependency_overrides[get_redis] = lambda: redis_client
+        app.state.ai_transport = None
+        return TestClient(app, client=peer)
+
+    return make
+
+
+PREVIEW_REPLY = {"ok": True, "message": "连接成功", "preview_jpeg_base64": JPEG_B64}
+
+
+@pytest.mark.parametrize(
+    "peer, shown",
+    [(("10.0.0.5", 5000), True), (("8.8.8.8", 5000), False), (("testclient", 5000), False)],
+)
+def test_camera_test_preview_only_on_lan(peer_client, settings, db, on, redis_client, peer, shown):
+    cid = _create(peer_client(("10.0.0.5", 1)), settings, username=USER, password=PW)["id"]
+    t = _fake_worker(redis_client, PREVIEW_REPLY, [])
+    res = peer_client(peer).post(f"{URL}/{cid}/test", headers=auth(settings, IT_ADMIN))
+    t.join(5)
+    assert res.status_code == 200, res.text
+    out = res.json()
+    assert out["ok"] is True
+    if shown:
+        assert out == PREVIEW_REPLY
+    else:
+        assert out["preview_jpeg_base64"] is None
+        assert out["message"] == "连接成功;预览图只在校园网内显示"
+
+
+def test_camera_test_session_released_before_probe_wait(
+    peer_client, settings, db, on, redis_client, monkeypatch
+):
+    cid = _create(peer_client(("10.0.0.5", 1)), settings)["id"]
+    events = []
+    real_commit = db.commit
+    monkeypatch.setattr(db, "commit", lambda: (events.append("commit"), real_commit())[1])
+
+    def probe(*a, **kw):
+        events.append("probe")
+        return CameraTestResult(ok=False, message="x")
+
+    monkeypatch.setattr(service, "test_camera", probe)
+    res = peer_client(("10.0.0.5", 1)).post(f"{URL}/{cid}/test", headers=auth(settings, IT_ADMIN))
+    assert res.status_code == 200
+    assert events.index("commit") < events.index("probe")
+
+
 def test_camera_test_with_fake_worker(client, settings, db, on, redis_client):
     h = auth(settings, IT_ADMIN)
     cid = _create(client, settings, username=USER, password=PW)["id"]
@@ -356,7 +419,7 @@ def test_camera_test_with_fake_worker(client, settings, db, on, redis_client):
     res = client.post(f"{URL}/{cid}/test", headers=h)
     t.join(5)
     assert res.status_code == 200, res.text
-    assert res.json() == {"ok": True, "message": "连接成功", "preview_jpeg_base64": JPEG_B64}
+    assert res.json()["ok"] is True and res.json()["preview_jpeg_base64"] is None  # 非内网来源
     assert seen[0]["id"] == cid
     assert seen[0]["reply_key"].startswith("ws:cam:probe:reply:")
     assert PW not in json.dumps(seen[0]) and USER not in json.dumps(seen[0])
