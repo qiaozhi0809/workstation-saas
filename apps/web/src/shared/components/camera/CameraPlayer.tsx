@@ -61,14 +61,19 @@ export function CameraPlayer({
   cameraId,
   title,
   onEnded,
+  onPlaying,
 }: {
   cameraId: string
   title: string
   onEnded?: () => void
+  /** 首次出画面时回调一次(轮播用它决定何时销毁旧播放器) */
+  onPlaying?: () => void
 }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const onEndedRef = useRef(onEnded)
   onEndedRef.current = onEnded
+  const onPlayingRef = useRef(onPlaying)
+  onPlayingRef.current = onPlaying
   const [state, setState] = useState<PlayState>(() =>
     Hls.isSupported() ? 'loading' : 'unsupported',
   )
@@ -129,9 +134,11 @@ export function CameraPlayer({
       if (terminal) return
       refreshed = false // 真的出过画面:之后再 401 允许再刷新一次
       startingRetries = 0
+      const first = !gotPicture
       gotPicture = true
       clearTimeout(noPictureTimer)
       setState('playing')
+      if (first) onPlayingRef.current?.()
     }
     let pendingLoad = false // 页面隐藏时挂起的加载,等可见再发
     const reload = () => {

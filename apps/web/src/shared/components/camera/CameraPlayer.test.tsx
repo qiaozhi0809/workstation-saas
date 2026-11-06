@@ -220,6 +220,18 @@ describe('CameraPlayer', () => {
     expect(hls().destroy).toHaveBeenCalled()
   })
 
+  it('calls onPlaying once, at the first picture', () => {
+    const onPlaying = vi.fn()
+    render(<CameraPlayer cameraId="c1" title="t" onPlaying={onPlaying} />)
+    act(() => hls().emit('hlsManifestParsed'))
+    expect(onPlaying).not.toHaveBeenCalled()
+    act(() => hls().emit('hlsFragLoaded'))
+    expect(onPlaying).toHaveBeenCalledTimes(1)
+    act(() => hls().emit('hlsFragLoaded'))
+    act(() => void screen.getByLabelText('t').dispatchEvent(new Event('playing')))
+    expect(onPlaying).toHaveBeenCalledTimes(1)
+  })
+
   it('does not time out once a picture arrived', () => {
     vi.useFakeTimers()
     render(<CameraPlayer cameraId="c1" title="t" />)
