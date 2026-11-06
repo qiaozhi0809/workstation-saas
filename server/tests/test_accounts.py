@@ -414,3 +414,21 @@ def test_update_parent_account_keeps_it_parent_only(client, settings, db):
     # 填了工号则照常建教职工行
     other = _create(client, settings).json()["account"]["id"]
     assert db.scalar(text("SELECT count(*) FROM teachers WHERE user_id = :u"), {"u": other}) == 1
+
+
+def test_role_tags_ignore_yearless_teacher_binding(client, settings, db):
+    from app.rbac.roles import Role
+    from tests.factories import bind, make_teacher_account
+    from tests.seed_ids import CLASS_ID
+
+    t = make_teacher_account(db, login_name="yearless01")
+    bind(db, t.id, Role.homeroom_teacher, class_id=CLASS_ID, year_id=None)
+    bind(db, t.id, Role.subject_teacher, class_id=CLASS_ID, year_id=None, subject="数学")
+    db.commit()
+    items = client.get(ACCOUNTS, headers=_admin(settings), params={"q": "yearless01"}).json()[
+        "items"
+    ]
+    assert items[0]["roles"] == []
+    # 管理岗学年为空照旧显示
+    p = client.get(ACCOUNTS, headers=_admin(settings), params={"q": "principal01"}).json()["items"]
+    assert p[0]["roles"] == [{"role": "principal", "label": "校长"}]

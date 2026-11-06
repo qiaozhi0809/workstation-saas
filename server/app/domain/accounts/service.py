@@ -26,7 +26,7 @@ from app.domain.accounts.schemas import (
 from app.errors import ApiError
 from app.models import Grade, RoleBinding, SchoolClass, User
 from app.rbac.admin import account_admin_count
-from app.rbac.roles import PARENT_ROLES, Role
+from app.rbac.roles import PARENT_ROLES, TEACHER_ROLES, Role
 from app.ws.hub import publish
 
 PAGE_SIZE = 50
@@ -78,6 +78,9 @@ def role_tags(
     )
     parents: set[UUID] = set()
     for b in bindings:
+        # 与 load_bindings 同口径:学年为空的教师岗位不算
+        if Role(b.role_type) in TEACHER_ROLES and b.academic_year_id is None:
+            continue
         if b.role_type in _PARENT_ROLE_VALUES:
             if b.user_id not in parents:
                 parents.add(b.user_id)
