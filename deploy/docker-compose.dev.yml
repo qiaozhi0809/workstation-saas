@@ -43,3 +43,16 @@ services:
       -hide_banner -loglevel warning -re -f lavfi -i testsrc=size=1280x720:rate=25
       -c:v libx264 -preset ultrafast -tune zerolatency -g 50 -pix_fmt yuv420p
       -f rtsp -rtsp_transport tcp rtsp://mediamtx:8554/cam1
+  # H.265 假摄像头:rtsp://127.0.0.1:${WS_RTSP_PORT:-8554}/cam2。CI 用来验证 H.265 探测与提示
+  # (测试连接应报 video_codec=hevc、browser_playable=false 并给出换 H.264 子码流 / 转码的提示);
+  # 若该镜像没有 libx265,换 linuxserver/ffmpeg
+  fake-camera-hevc:
+    image: jrottenberg/ffmpeg:8.1.2-alpine320
+    profiles: ["camera"]
+    restart: unless-stopped
+    depends_on: [mediamtx]
+    command: >
+      -hide_banner -loglevel warning -re -f lavfi -i testsrc=size=1280x720:rate=25
+      -c:v libx265 -preset ultrafast -tune zerolatency -g 50 -pix_fmt yuv420p
+      -x265-params log-level=error
+      -f rtsp -rtsp_transport tcp rtsp://mediamtx:8554/cam2
