@@ -166,13 +166,38 @@ it('4401:刷新成功后立即再连', async () => {
   expect(FakeWS.instances).toHaveLength(2)
 })
 
-it('4401:刷新失败则停止', async () => {
+it('4401:刷新被拒绝则停止并发 session.expired(G-1)', async () => {
   vi.mocked(tryRefreshAccessToken).mockResolvedValue('rejected')
-  const { c } = mkClient()
+  const { c, events } = mkClient()
   c.start()
   last().drop(4401)
   await vi.advanceTimersByTimeAsync(60_000)
   expect(FakeWS.instances).toHaveLength(1)
+  expect(events).toEqual([{ type: 'session.expired' }])
+})
+
+it('4401:刷新遇网络问题不下线,退避后重连', async () => {
+  vi.mocked(tryRefreshAccessToken).mockResolvedValue('network')
+  const { c, events } = mkClient()
+  c.start()
+  last().open()
+  last().drop(4401)
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(events).toEqual([])
+  expect(FakeWS.instances).toHaveLength(2)
+})
+
+it('4401:刷新成功则重连并 ready,不发下线事件', async () => {
+  vi.mocked(tryRefreshAccessToken).mockResolvedValue('ok')
+  const { c, events } = mkClient()
+  c.start()
+  last().open()
+  last().drop(4401)
+  await vi.advanceTimersByTimeAsync(0)
+  expect(FakeWS.instances).toHaveLength(2)
+  last().open()
+  last().msg({ type: 'ready' })
+  expect(events).toEqual([{ type: 'reconnected' }])
 })
 
 it('4403:停止并发 session.revoked', () => {

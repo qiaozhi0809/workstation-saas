@@ -6,6 +6,7 @@ import { createRealtimeClient, realtimeUrl, type RealtimeEvent } from './client'
 import { RealtimeContext, type RealtimeSubscribe } from './context'
 
 export const REVOKED_MESSAGE = '你的账号已被停用'
+export const EXPIRED_MESSAGE = '登录已失效,请重新登录'
 
 /** 登录后建立实时连接并把事件分发给订阅者;必须在 router 内使用 */
 export function RealtimeProvider({ children }: { children: ReactNode }) {
@@ -30,8 +31,8 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
       url: realtimeUrl(),
       getToken: () => useAuthStore.getState().accessToken,
       onEvent: (e) => {
-        if (e.type === 'session.revoked') {
-          setLoginFlash(REVOKED_MESSAGE)
+        if (e.type === 'session.revoked' || e.type === 'session.expired') {
+          setLoginFlash(e.type === 'session.revoked' ? REVOKED_MESSAGE : EXPIRED_MESSAGE)
           useAuthStore.getState().logout()
           navRef.current('/login', { replace: true })
         }

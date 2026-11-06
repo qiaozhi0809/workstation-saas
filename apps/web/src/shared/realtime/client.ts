@@ -4,6 +4,7 @@ export type RealtimeEvent =
   | { type: 'notice.new'; id: string; title: string; from_name: string | null; created_at: string }
   | { type: 'notice.recalled'; id: string }
   | { type: 'session.revoked' }
+  | { type: 'session.expired' }
   | { type: 'reconnected' }
 
 export interface RealtimeOptions {
@@ -114,7 +115,9 @@ export function createRealtimeClient(opts: RealtimeOptions): { start(): void; st
             refreshedSinceReady = true
             connect()
           } else if (result === 'rejected') {
+            // 服务端明确不认刷新令牌(改密 / 重置已撤销):与 4403 同样下线,不等下一次请求
             finish()
+            emit({ type: 'session.expired' })
           } else {
             scheduleReconnect()
           }
