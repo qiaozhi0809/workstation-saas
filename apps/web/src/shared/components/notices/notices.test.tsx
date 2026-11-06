@@ -155,7 +155,9 @@ const item = (over: Partial<InboxItem> = {}): InboxItem => ({
   ack_deadline: null,
   my_ack: null,
   students: [],
+  students_detail: [],
   can_ack: true,
+  ack_block_reason: null,
   ...over,
 })
 const choiceAck: AckSpec = { kind: 'choice', options: ['参加', '不参加'], allow_note: true }
