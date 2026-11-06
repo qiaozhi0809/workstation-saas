@@ -105,6 +105,13 @@ it('tints seats by rank fifths and badges big moves', async () => {
     await screen.findByRole('button', { name: '李小二，第1排第2列，#2 ↑6' }),
   ).toBeInTheDocument()
   expect(screen.getByRole('button', { name: '王小一，第1排第1列，#6 ↓5' })).toBeInTheDocument()
+  // L14:名次档不进可访问名称(上面两条已锁定),改走可访问描述给读屏;#2 → 前 20%,#6/10 → 40–60%
+  expect(
+    screen.getByRole('button', { name: '李小二，第1排第2列，#2 ↑6' }),
+  ).toHaveAccessibleDescription('名次档：前 20%')
+  expect(
+    screen.getByRole('button', { name: '王小一，第1排第1列，#6 ↓5' }),
+  ).toHaveAccessibleDescription('名次档：40–60%')
   // 进退 4 名、1 名都没有角标
   expect(screen.getByRole('button', { name: '孙小六，第2排第2列' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: '张小三，第1排第3列' })).toBeInTheDocument()

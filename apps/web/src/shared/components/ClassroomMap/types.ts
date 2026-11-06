@@ -24,6 +24,8 @@ export interface SeatView {
   selected?: boolean
   /** 成绩名次档(1 = 前 20%):只换桌面顶面色,不进可访问名称 */
   tint?: 1 | 2 | 3 | 4 | 5
+  /** 读屏补充说明(如名次档):只进座位的可访问描述,不进可访问名称、不画到图上 */
+  description?: string
   locked?: boolean
 }
 export interface FloatFx {

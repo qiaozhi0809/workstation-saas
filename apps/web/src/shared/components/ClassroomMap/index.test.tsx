@@ -135,6 +135,38 @@ it('keeps the mini map bare and the overview map read-only', () => {
   expect(screen.queryByRole('button', { name: /^王小一，/ })).toBeNull()
 })
 
+// L14:SeatView.description 只进可访问描述,名称仍是"姓名,位置(,标签/角标/锁定)"
+it('exposes a seat description to screen readers without touching the accessible name', () => {
+  const { rerender } = render(
+    <ClassroomMap
+      rows={1}
+      cols={2}
+      seats={[seat({})]}
+      onSeatClick={vi.fn()}
+      views={{ e1: { tint: 1, description: '名次档：前 20%' } }}
+    />,
+  )
+  const btn = screen.getByRole('button', { name: '王小一，第1排第1列' })
+  expect(btn).toHaveAccessibleDescription('名次档：前 20%')
+  // 外观按值比较:只换描述文字也要重画
+  rerender(
+    <ClassroomMap
+      rows={1}
+      cols={2}
+      seats={[seat({})]}
+      onSeatClick={vi.fn()}
+      views={{ e1: { tint: 1, description: '名次档：后 20%' } }}
+    />,
+  )
+  expect(screen.getByRole('button', { name: '王小一，第1排第1列' })).toHaveAccessibleDescription(
+    '名次档：后 20%',
+  )
+  rerender(<ClassroomMap rows={1} cols={2} seats={[seat({})]} onSeatClick={vi.fn()} />)
+  expect(
+    screen.getByRole('button', { name: '王小一，第1排第1列' }),
+  ).not.toHaveAccessibleDescription()
+})
+
 // L22:本周之星关掉时,前墙连牌子(标题)一起不画;寿星牌不受影响
 it('drops the whole stars board when hideStars is set, keeping the birthdays board', () => {
   const board = {

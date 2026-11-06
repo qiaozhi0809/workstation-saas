@@ -1,4 +1,4 @@
-import { memo, type KeyboardEvent, type SyntheticEvent } from 'react'
+import { memo, useId, type KeyboardEvent, type SyntheticEvent } from 'react'
 import type { StudentSeat as Seat } from '@/shared/types/student'
 import { ChairBack } from './art/Desk'
 import { groupColor } from './art/palette'
@@ -98,6 +98,7 @@ const sameView = (a: SeatView, b: SeatView) =>
   a === b ||
   (a.ghost === b.ghost &&
     a.tint === b.tint &&
+    a.description === b.description &&
     a.selected === b.selected &&
     a.locked === b.locked &&
     a.chip?.text === b.chip?.text &&
@@ -127,6 +128,8 @@ const OccupiedSeat = memo(function OccupiedSeat({
     h = layout.head(row, col),
     id = seat.enrollment_id,
     key = `${row}-${col}`
+  // 读屏补充说明走 SVG <desc> + aria-describedby:不画到图上,也不进可访问名称
+  const descId = useId()
   const hover = {
     onMouseEnter: () => onHover('mouse', id, key, true),
     onMouseLeave: () => onHover('mouse', id, key, false),
@@ -151,9 +154,11 @@ const OccupiedSeat = memo(function OccupiedSeat({
       data-seat={key}
       data-enrollment={id}
       data-ghost={view.ghost ? 'true' : undefined}
+      aria-describedby={view.description ? descId : undefined}
       {...hover}
       {...act}
     >
+      {view.description && <desc id={descId}>{view.description}</desc>}
       <g transform={`translate(${s.x} ${s.y})`}>
         <HitArea />
       </g>

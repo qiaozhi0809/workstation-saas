@@ -5,7 +5,9 @@ import type { ClassroomMapProps, SeatView } from '@/shared/components/ClassroomM
 import { examTable, latestExam, previousExam, rankChanges, rankTint } from '@/shared/lib/grades'
 import type { StudentSeat } from '@/shared/types/student'
 import GradesBar from './GradesBar'
+import { rankBandDescription } from './rankBands'
 
+// 大幅进退步门槛;段 C2a 在 shared/lib/grades 导出 BIG_MOVE 合入后,这里改成从那边 import(见段报告缺口)
 const BIG_MOVE = 5
 const NO_VIEWS: Record<string, SeatView> = {}
 
@@ -54,7 +56,9 @@ export function useGradesMode({
         out[r.id] = { ghost: true, badge: { text: '无成绩', tone: 'gray' } }
         continue
       }
-      const view: SeatView = { tint: rankTint(r.rank, n) }
+      // 名次档:桌面着色 + 读屏描述(不进可访问名称,见 SeatView.tint 注释)
+      const tint = rankTint(r.rank, n)
+      const view: SeatView = { tint, description: rankBandDescription(tint) }
       const c = changes.get(r.id) ?? 0
       if (c >= BIG_MOVE) view.badge = { text: `#${r.rank} ↑${c}`, tone: 'green', strong: true }
       else if (c <= -BIG_MOVE) view.badge = { text: `#${r.rank} ↓${-c}`, tone: 'red', strong: true }
