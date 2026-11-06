@@ -10,6 +10,16 @@ const NO_PICTURE_MS = 8000
 const STARTING_RETRY_MS = 2000
 const STARTING_MAX_RETRIES = 4
 
+/** 播放列表请求不让 hls.js 自己重试(重试由本组件负责);服务端会把请求挂住最多约 8 秒再回 503 */
+const PLAYLIST_POLICY = {
+  default: {
+    maxTimeToFirstByteMs: 10000,
+    maxLoadTimeMs: 10000,
+    timeoutRetry: { maxNumRetry: 0, retryDelayMs: 0, maxRetryDelayMs: 0 },
+    errorRetry: { maxNumRetry: 0, retryDelayMs: 0, maxRetryDelayMs: 0 },
+  },
+}
+
 interface HlsErrorData {
   details?: string
   fatal?: boolean
@@ -76,6 +86,8 @@ export function CameraPlayer({
     let refreshed = false
     let startingRetries = 0
     let hls: Hls | null = new Hls({
+      manifestLoadPolicy: PLAYLIST_POLICY,
+      playlistLoadPolicy: PLAYLIST_POLICY,
       xhrSetup: (xhr, url) => {
         const token = useAuthStore.getState().accessToken
         if (token && isPlaylistUrl(url)) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
@@ -98,6 +110,8 @@ export function CameraPlayer({
       if (alive) setState(next)
       if (next === 'ended') onEndedRef.current?.()
     }
+    // 8 秒"无画面"计时只在播放列表已拿到之后才算;页面隐藏时暂停,可见后重新计
+    let manifestReady = false
     const armNoPictureTimer = () => {
       clearTimeout(noPictureTimer)
       noPictureTimer = setTimeout(() => {
@@ -105,12 +119,15 @@ export function CameraPlayer({
       }, NO_PICTURE_MS)
     }
     const markFirstSign = () => {
-      refreshed = false // 成功拿到过内容:之后再 401 允许再刷新一次
-      clearTimeout(noPictureTimer)
+      if (terminal) return
+      startingRetries = 0
+      manifestReady = true
+      if (!gotPicture && !document.hidden) armNoPictureTimer()
     }
     const markPlaying = () => {
       if (terminal) return
-      refreshed = false
+      refreshed = false // 真的出过画面:之后再 401 允许再刷新一次
+      startingRetries = 0
       gotPicture = true
       clearTimeout(noPictureTimer)
       setState('playing')
@@ -122,8 +139,9 @@ export function CameraPlayer({
         pendingLoad = true
         return
       }
+      manifestReady = false
+      clearTimeout(noPictureTimer)
       hls.loadSource(src)
-      armNoPictureTimer()
     }
 
     const handleError = (data: HlsErrorData) => {
@@ -155,7 +173,7 @@ export function CameraPlayer({
           retryTimer = setTimeout(reload, STARTING_RETRY_MS)
           return
         }
-        return finish('offline')
+        if (code === 'STREAM_STARTING') return finish('offline')
       }
       if (data.fatal) finish('offline')
     }
@@ -171,11 +189,16 @@ export function CameraPlayer({
 
     const onVisibility = () => {
       if (terminal || !hls) return
-      if (document.hidden) hls.stopLoad()
-      else if (pendingLoad) {
+      if (document.hidden) {
+        clearTimeout(noPictureTimer)
+        hls.stopLoad()
+      } else if (pendingLoad) {
         pendingLoad = false
         reload()
-      } else hls.startLoad()
+      } else {
+        hls.startLoad()
+        if (manifestReady && !gotPicture) armNoPictureTimer()
+      }
     }
     document.addEventListener('visibilitychange', onVisibility)
 
@@ -198,6 +221,10 @@ export function CameraPlayer({
         muted
         playsInline
         autoPlay
+        disablePictureInPicture
+        disableRemotePlayback
+        controlsList="nodownload noremoteplayback"
+        onContextMenu={(e) => e.preventDefault()}
         aria-label={title}
         className="h-full w-full object-contain"
       />

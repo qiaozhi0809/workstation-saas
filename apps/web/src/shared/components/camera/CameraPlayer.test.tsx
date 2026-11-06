@@ -133,15 +133,86 @@ describe('CameraPlayer', () => {
     expect(hls().loadSource).toHaveBeenCalledTimes(1)
   })
 
-  it('treats an unparsable 503 body as offline without crashing', () => {
+  it('treats an unparsable 503 body like any fatal error without crashing', () => {
     render(<CameraPlayer cameraId="c1" title="t" />)
     act(() => hls().emit('hlsError', manifestError(503, '<html>bad gateway')))
     expect(screen.getByRole('alert')).toHaveTextContent('摄像头连不上')
   })
 
-  it('shows offline after timeout', () => {
+  it('an unknown non-fatal 503 falls through to the fatal check', () => {
+    render(<CameraPlayer cameraId="c1" title="t" />)
+    act(() => hls().emit('hlsError', { ...manifestError(503, '<html>gw'), fatal: false }))
+    expect(screen.queryByText('摄像头连不上')).toBeNull()
+    expect(hls().destroy).not.toHaveBeenCalled()
+  })
+
+  it('resets the STREAM_STARTING budget after a successful manifest', () => {
     vi.useFakeTimers()
     render(<CameraPlayer cameraId="c1" title="t" />)
+    const h0 = hls()
+    for (let i = 0; i < 4; i++) {
+      act(() => h0.emit('hlsError', manifestError(503, errBody('STREAM_STARTING'))))
+      act(() => void vi.advanceTimersByTime(2000))
+    }
+    act(() => h0.emit('hlsManifestParsed'))
+    act(() => h0.emit('hlsFragLoaded'))
+    act(() => h0.emit('hlsError', manifestError(503, errBody('STREAM_STARTING'))))
+    expect(screen.queryByText('摄像头连不上')).toBeNull()
+  })
+
+  it('blocks picture-in-picture, download, casting and the context menu', () => {
+    render(<CameraPlayer cameraId="c1" title="一号机位" />)
+    const video = screen.getByLabelText('一号机位') as HTMLVideoElement
+    expect(video).toHaveAttribute('disablepictureinpicture')
+    expect(video).toHaveAttribute('controlslist', 'nodownload noremoteplayback')
+    expect(video).toHaveAttribute('disableremoteplayback')
+    const ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true })
+    video.dispatchEvent(ev)
+    expect(ev.defaultPrevented).toBe(true)
+  })
+
+  it('does not count the 8 s while the playlist request is still pending', () => {
+    vi.useFakeTimers()
+    render(<CameraPlayer cameraId="c1" title="t" />)
+    act(() => void vi.advanceTimersByTime(30000))
+    expect(screen.queryByText('摄像头连不上')).toBeNull()
+    expect(screen.getByRole('status')).toHaveTextContent('加载中')
+  })
+
+  it('creates hls without 503/network retries on playlists', () => {
+    render(<CameraPlayer cameraId="c1" title="t" />)
+    const cfg = hls().config as Record<string, any> // eslint-disable-line @typescript-eslint/no-explicit-any
+    for (const key of ['manifestLoadPolicy', 'playlistLoadPolicy']) {
+      const p = cfg[key].default
+      expect(p.errorRetry.maxNumRetry).toBe(0)
+      expect(p.timeoutRetry.maxNumRetry).toBe(0)
+      expect(p.maxTimeToFirstByteMs).toBeGreaterThanOrEqual(9000)
+    }
+  })
+
+  it('hiding the page during the first 8 s does not kill the tile', () => {
+    let hidden = false
+    vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden)
+    vi.useFakeTimers()
+    render(<CameraPlayer cameraId="c1" title="t" />)
+    act(() => hls().emit('hlsManifestParsed'))
+    act(() => void vi.advanceTimersByTime(5000))
+    hidden = true
+    act(() => void document.dispatchEvent(new Event('visibilitychange')))
+    act(() => void vi.advanceTimersByTime(60000))
+    expect(screen.queryByText('摄像头连不上')).toBeNull()
+    hidden = false
+    act(() => void document.dispatchEvent(new Event('visibilitychange')))
+    act(() => void vi.advanceTimersByTime(7999))
+    expect(screen.queryByText('摄像头连不上')).toBeNull()
+    act(() => void vi.advanceTimersByTime(1))
+    expect(screen.getByRole('alert')).toHaveTextContent('摄像头连不上')
+  })
+
+  it('shows offline 8 s after MANIFEST_PARSED without any fragment', () => {
+    vi.useFakeTimers()
+    render(<CameraPlayer cameraId="c1" title="t" />)
+    act(() => hls().emit('hlsManifestParsed'))
     act(() => void vi.advanceTimersByTime(7999))
     expect(screen.queryByText('摄像头连不上')).toBeNull()
     act(() => void vi.advanceTimersByTime(1))
@@ -153,6 +224,7 @@ describe('CameraPlayer', () => {
     vi.useFakeTimers()
     render(<CameraPlayer cameraId="c1" title="t" />)
     act(() => hls().emit('hlsManifestParsed'))
+    act(() => hls().emit('hlsFragLoaded'))
     act(() => void vi.advanceTimersByTime(20000))
     expect(screen.queryByText('摄像头连不上')).toBeNull()
   })
@@ -184,6 +256,16 @@ describe('CameraPlayer', () => {
     render(<CameraPlayer cameraId="c1" title="t" />)
     await act(async () => hls().emit('hlsError', manifestError(401)))
     act(() => hls().emit('hlsManifestParsed'))
+    await act(async () => hls().emit('hlsError', manifestError(401)))
+    expect(refresh).toHaveBeenCalledTimes(1) // manifest alone does not reset the flag
+    expect(screen.getByRole('alert')).toHaveTextContent('摄像头连不上')
+  })
+
+  it('refreshes again after a real picture', async () => {
+    const refresh = vi.spyOn(client, 'tryRefreshAccessToken').mockResolvedValue('ok')
+    render(<CameraPlayer cameraId="c1" title="t" />)
+    await act(async () => hls().emit('hlsError', manifestError(401)))
+    act(() => hls().emit('hlsFragLoaded'))
     await act(async () => hls().emit('hlsError', manifestError(401)))
     expect(refresh).toHaveBeenCalledTimes(2)
     expect(hls().loadSource).toHaveBeenCalledTimes(3)
