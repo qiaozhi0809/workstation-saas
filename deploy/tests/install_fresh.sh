@@ -58,7 +58,7 @@ pass "目录齐全,Caddyfile 正确,data/logs 为 1777"
 [ "$(env_value WS_TRUSTED_PROXIES)" = "$TEST_SUBNET" ] || fail ".env 的 WS_TRUSTED_PROXIES 应等于子网 $TEST_SUBNET,实际 $(env_value WS_TRUSTED_PROXIES)"
 subnets="$(docker network inspect "${PROJECT}_ws-net" -f '{{range .IPAM.Config}}{{.Subnet}} {{end}}')"
 case "$subnets" in *"$TEST_SUBNET"*) ;; *) fail "compose 网络子网应为 $TEST_SUBNET,实际:$subnets" ;; esac
-grep -q 'WS_SUBNET 指定' "$LOG" || fail "安装输出里没有说明子网来自 WS_SUBNET"
+grep -q "WS_SUBNET.*$TEST_SUBNET" "$LOG" || fail "安装输出里没有说明子网来自 WS_SUBNET=$TEST_SUBNET"
 pass "WS_SUBNET=$TEST_SUBNET 生效:.env 两键一致、docker 网络子网一致"
 
 echo "== 3/5 服务与登录"
