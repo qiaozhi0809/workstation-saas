@@ -70,5 +70,6 @@ export function buildBoard({
     countdown,
     stars,
     birthdays,
+    hideStars: !showStars,
   }
 }

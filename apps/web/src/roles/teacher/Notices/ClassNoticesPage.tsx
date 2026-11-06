@@ -1,5 +1,6 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { ApiError } from '@/shared/api/client'
 import { classesApi } from '@/shared/api/classes'
 import { classroomApi } from '@/shared/api/classroom'
@@ -133,19 +134,39 @@ function SentList({ classId }: { classId: string }) {
 export default function ClassNoticesPage() {
   const classId = useTeacherStore((s) => s.classId)
   const classes = useQuery({ queryKey: ['my-classes'], queryFn: classesApi.mine })
-  // 与导航、教室页同一个 key,共用缓存;页面自己也判权,直接打开 URL 不会发班级公告请求
+  const cls = classes.data?.items.find((c) => c.id === classId)
+  // 班级列表到了、当前 classId 却不在里面(被移出该班 / 旧地址):不再一直转圈(L91);
+  // TeacherLayout 随后会把当前班重置为第一个,这里先把话说清楚
+  const unknownClass = !!classId && !!classes.data && !cls
+  // 与导航、教室页同一个 key,共用缓存;页面自己也判权,直接打开 URL 不会发班级公告请求;
+  // 班级列表确认有这个班才去取概况,不给不存在的班发请求
   const summary = useQuery({
     queryKey: ['classroom', classId],
     queryFn: () => classroomApi.summary(classId!),
-    enabled: !!classId,
+    enabled: !!cls,
   })
   const [composerKey, setComposerKey] = useState(0)
-  const cls = classes.data?.items.find((c) => c.id === classId)
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-4 p-4 md:p-6">
       <h1 className="text-xl font-semibold">班级公告</h1>
-      {!classId || summary.isPending ? (
+      {classes.isError && !classes.data ? (
+        <ErrorState
+          title="班级加载失败"
+          onRetry={() => void classes.refetch()}
+          retrying={classes.isFetching}
+        />
+      ) : unknownClass ? (
+        <EmptyState
+          title="这个班不在你的班级列表里"
+          className="justify-center p-6"
+          action={
+            <Link to="/teacher/classroom" className="text-sm text-primary underline">
+              ← 返回教室
+            </Link>
+          }
+        />
+      ) : !cls || summary.isPending ? (
         <LoadingState />
       ) : summary.isError && !summary.data ? (
         <ErrorState
@@ -157,23 +178,13 @@ export default function ClassNoticesPage() {
         <EmptyState title="只有本班班主任可以发班级公告" className="justify-center p-6" />
       ) : (
         <div className="grid items-start gap-4 md:grid-cols-2">
-          {classes.isError && !classes.data ? (
-            <ErrorState
-              title="班级加载失败"
-              onRetry={() => void classes.refetch()}
-              retrying={classes.isFetching}
-            />
-          ) : !cls ? (
-            <LoadingState />
-          ) : (
-            <ClassNoticeComposer
-              key={`${classId}-${composerKey}`}
-              classId={classId}
-              className={cls.name}
-              onSent={() => setComposerKey((k) => k + 1)}
-            />
-          )}
-          <SentList key={classId} classId={classId} />
+          <ClassNoticeComposer
+            key={`${cls.id}-${composerKey}`}
+            classId={cls.id}
+            className={cls.name}
+            onSent={() => setComposerKey((k) => k + 1)}
+          />
+          <SentList key={cls.id} classId={cls.id} />
         </div>
       )}
     </div>

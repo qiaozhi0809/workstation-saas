@@ -216,3 +216,53 @@ it('popover focuses a [data-autofocus] element before the first focusable one', 
   fireEvent.click(screen.getByRole('button', { name: '6 排 × 4 列' }))
   expect(screen.getByLabelText('排数')).toHaveFocus()
 })
+
+// L13:浏览器后退(popstate)时开着的菜单 / 弹层要跟着关,焦点不动(页面正在切换)
+it('closes an open menu and popover on popstate without moving focus', () => {
+  renderMenu()
+  const trigger = menuTrigger()
+  fireEvent.click(trigger)
+  expect(screen.getByRole('menu')).toBeInTheDocument()
+  fireEvent.popState(window)
+  expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  expect(trigger).toHaveAttribute('aria-expanded', 'false')
+  expect(trigger).not.toHaveFocus()
+
+  renderPopover()
+  fireEvent.click(screen.getByRole('button', { name: '6 排 × 4 列' }))
+  expect(screen.getByRole('dialog', { name: '座位行列' })).toBeInTheDocument()
+  fireEvent.popState(window)
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+})
+
+// L13:触发按钮在弹层开着时变成 disabled(如开始保存),弹层自动关闭,不留下一个没有宿主的浮层
+it('closes the layer when its trigger becomes disabled', () => {
+  // 不能靠点别处来触发(点外面本来就会关):用 rerender 直接改 disabled
+  const Harness = ({ kind, busy }: { kind: 'menu' | 'popover'; busy: boolean }) => (
+    <MemoryRouter>
+      {kind === 'menu' ? (
+        <Menu label="更多操作" trigger="⋯" triggerProps={{ disabled: busy }}>
+          <MenuItem onSelect={vi.fn()}>放弃修改</MenuItem>
+        </Menu>
+      ) : (
+        <Popover label="座位行列" trigger="行列" triggerProps={{ disabled: busy }}>
+          <input aria-label="排数" />
+        </Popover>
+      )}
+    </MemoryRouter>
+  )
+  const menu = render(<Harness kind="menu" busy={false} />)
+  fireEvent.click(screen.getByRole('button', { name: '⋯' }))
+  expect(screen.getByRole('menu')).toBeInTheDocument()
+  menu.rerender(<Harness kind="menu" busy />)
+  expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '⋯' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: '⋯' })).toHaveAttribute('aria-expanded', 'false')
+  menu.unmount()
+
+  const popover = render(<Harness kind="popover" busy={false} />)
+  fireEvent.click(screen.getByRole('button', { name: '行列' }))
+  expect(screen.getByRole('dialog')).toBeInTheDocument()
+  popover.rerender(<Harness kind="popover" busy />)
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+})

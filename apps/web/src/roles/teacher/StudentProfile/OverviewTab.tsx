@@ -187,7 +187,8 @@ function ScoreBlocks({ student, enabled }: { student: StudentProfile; enabled: b
 
   const cur = examTable(latest, ids)
   const row = cur.find((r) => r.id === me)
-  const prev = previousExam(withMe, latest.id)
+  // 进退步与班级视图同口径:和全班"上一场有分数的考试"比;该生缺考了那一场就没有箭头
+  const prev = previousExam(data.exams, latest.id)
   const change = rankChanges(cur, prev ? examTable(prev, ids) : null).get(me)
 
   const trend = studentTrend(withMe, me, ids)

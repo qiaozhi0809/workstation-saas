@@ -137,6 +137,13 @@ it('switches to the archive tab', async () => {
   expect(screen.getByText('双亲家庭')).toBeInTheDocument()
 })
 
+// L82:页签条挂 .touch-tabs,触屏下由 theme/index.css 放大页签点击区并禁止文字折行
+it('marks the tab strip as a touch target strip', async () => {
+  renderDrawer()
+  await screen.findByRole('heading', { name: '王小一' })
+  expect(screen.getByRole('tablist', { name: '档案分区' })).toHaveClass('touch-tabs')
+})
+
 it('opens on the tab named in the url and writes tab changes back', async () => {
   renderDrawer('/teacher/classroom?student=s1&tab=成绩')
   await screen.findByRole('heading', { name: '王小一' })

@@ -30,4 +30,16 @@ describe('exportWord', () => {
     expect(vi.mocked(downloadText).mock.calls[0][0]).toBe('AI 草稿.doc')
     expect(vi.mocked(downloadText).mock.calls[1][0]).toBe('长'.repeat(60) + '.doc')
   })
+
+  // L96:文件名不能以空格收尾——截到 60 字时正好切在空格上,或标题本身首尾带空格 / 非法字符换成 _ 后留下空格
+  it('never leaves leading or trailing spaces in the file name', () => {
+    exportWord('长'.repeat(59) + ' 尾巴', 'x')
+    exportWord('  期中 家长会 发言稿  ', 'x')
+    exportWord(' 评语 : ', 'x')
+    const names = vi.mocked(downloadText).mock.calls.map((c) => c[0])
+    expect(names[0]).toBe('长'.repeat(59) + '.doc')
+    expect(names[1]).toBe('期中 家长会 发言稿.doc')
+    expect(names[2]).toBe('评语 _.doc')
+    for (const n of names) expect(n.replace(/\.doc$/, '')).toBe(n.replace(/\.doc$/, '').trim())
+  })
 })

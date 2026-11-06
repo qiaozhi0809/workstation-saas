@@ -71,6 +71,35 @@ it('shows the empty message when nobody can be picked', async () => {
   ).toEqual(['关闭'])
 })
 
+// L19:点名池只剩 1 人时,"再抽一个"只会抽到同一位,卡片上要说明
+it('tells the teacher when only one student can be picked', async () => {
+  reduceMotion()
+  vi.mocked(attendanceApi.day).mockResolvedValue({
+    date: '2026-11-02',
+    confirmed_at: null,
+    items: ['e1', 'e2'].map((id) => ({
+      enrollment_id: id,
+      status: 'leave' as const,
+      reason: null,
+      marked_at: '',
+    })),
+  })
+  setup()
+  fireEvent.click(await screen.findByRole('button', { name: '随机点名' }))
+  const card = await screen.findByRole('dialog', { name: '随机点名' })
+  expect(within(card).getByText('张小三')).toBeInTheDocument()
+  expect(within(card).getByText('今天只有这一位同学可点名')).toBeInTheDocument()
+  expect(within(card).getByRole('button', { name: '再抽一个' })).toBeInTheDocument()
+})
+
+it('does not show the single-student note when more than one can be picked', async () => {
+  reduceMotion()
+  setup()
+  fireEvent.click(await screen.findByRole('button', { name: '随机点名' }))
+  const card = await screen.findByRole('dialog', { name: '随机点名' })
+  expect(within(card).queryByText('今天只有这一位同学可点名')).toBeNull()
+})
+
 it('picks immediately with reduced motion and rewards the answer', async () => {
   reduceMotion()
   setup()

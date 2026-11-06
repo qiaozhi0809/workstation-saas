@@ -139,17 +139,38 @@ jobs:
 
       # stream worker 与 pytest 真 ffmpeg 组要 ffmpeg / ffprobe;假摄像头只起 camera profile 的三个服务——
       # dev compose 里的 postgres / redis 与上面的 GitHub services 用同样的端口,不能一起起。先起容器,后面的步骤给它时间推流
-      # runner 的 apt 镜像(azure.archive.ubuntu.com)偶尔整段时间不响应,默认会把这一步挂到 job 超时;
-      # 每次尝试限时 4 分钟,失败就换到 archive.ubuntu.com 再试,三次都不行再红,不白等 30 分钟
+      # runner 的 apt 镜像偶尔整段时间不响应(2026-11-06 一下午三次,换 archive.ubuntu.com 也没用),
+      # 所以把 ffmpeg 及其依赖的 .deb 按 runner 镜像版本缓存:命中就本地安装、完全不碰镜像;
+      # 没命中才走 apt,每次尝试限时 4 分钟、失败换镜像,三次都不行再红,装成功后把 .deb 存进缓存
+      - name: Restore cached ffmpeg packages
+        id: ffmpeg-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/ffmpeg-debs
+          key: ffmpeg-debs-${{ runner.os }}-${{ env.ImageOS }}-${{ env.ImageVersion }}
+
       - name: Install ffmpeg
         run: |
           set -u
+          mkdir -p ~/ffmpeg-debs
+          if ls ~/ffmpeg-debs/*.deb >/dev/null 2>&1; then
+            if sudo timeout 240 apt-get install -y -qq --no-install-recommends ~/ffmpeg-debs/*.deb; then
+              echo "ffmpeg 来自缓存($(ls ~/ffmpeg-debs/*.deb | wc -l) 个 .deb)"; ffmpeg -version | head -n 1; exit 0
+            fi
+            echo "::warning::缓存的 .deb 装不上(runner 镜像变了?),改走 apt"
+            rm -f ~/ffmpeg-debs/*.deb
+          fi
           apt_try() {
             sudo timeout 240 apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=20 update -qq \
               && sudo timeout 240 apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=20 install -y -qq --no-install-recommends ffmpeg
           }
           for attempt in 1 2 3; do
-            if apt_try; then ffmpeg -version | head -n 1; exit 0; fi
+            if apt_try; then
+              # apt-get 默认保留下载的 .deb;存进缓存目录,下次同一镜像版本直接本地装
+              cp /var/cache/apt/archives/*.deb ~/ffmpeg-debs/ 2>/dev/null || true
+              echo "已缓存 $(ls ~/ffmpeg-debs/*.deb 2>/dev/null | wc -l) 个 .deb 供下次使用"
+              ffmpeg -version | head -n 1; exit 0
+            fi
             echo "::warning::apt 第 $attempt 次失败(镜像慢或不可达),切换镜像后重试"
             sudo sed -i 's#https\?://azure.archive.ubuntu.com/ubuntu#http://archive.ubuntu.com/ubuntu#g' \
               /etc/apt/sources.list /etc/apt/sources.list.d/*.sources /etc/apt/sources.list.d/*.list 2>/dev/null || true

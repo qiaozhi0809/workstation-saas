@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useIsMutating, useMutation, useQueryClient } from '@tanstack/react-query'
 import { aiApi } from '@/shared/api/ai'
 import { ApiError } from '@/shared/api/client'
 import { commentsApi } from '@/shared/api/comments'
@@ -13,6 +13,8 @@ import CopyPromptDialog from './CopyPromptDialog'
 import { useBatchRunner } from './useBatchRunner'
 
 const NOT_CONFIGURED = '学校还没有配置 AI 服务,请联系管理员;可以先复制提示词'
+// 单条保存与全部保存共用一个 mutationKey:任一在进行中,所有保存按钮都禁用,免得同一条被存两次(L17)
+const saveKey = (chatId: string) => ['ai-batch-save', chatId]
 
 const STATUS: Record<
   AiItemStatus,
@@ -43,8 +45,10 @@ export default function BatchView({ chat, classId, perms }: Props) {
   const [saved, setSaved] = useState<Set<string>>(() => new Set())
   const markSaved = (ids: string[]) => setSaved((s) => new Set([...s, ...ids]))
   const unsaved = done.filter((i) => !saved.has(i.id))
+  const saving = useIsMutating({ mutationKey: saveKey(chat.id) }) > 0
 
   const saveAll = useMutation({
+    mutationKey: saveKey(chat.id),
     mutationFn: (batch: AiBatchItem[]) =>
       commentsApi.bulk(classId, {
         items: batch.map((i) => ({ student_id: i.student_id, content: i.content })),
@@ -101,7 +105,7 @@ export default function BatchView({ chat, classId, perms }: Props) {
           <Button
             size="sm"
             variant="outline"
-            disabled={saveAll.isPending}
+            disabled={saving}
             onClick={() => saveAll.mutate(unsaved)}
           >
             {saved.size === 0 ? '全部保存到档案' : `保存其余 ${unsaved.length} 条`}
@@ -122,11 +126,13 @@ export default function BatchView({ chat, classId, perms }: Props) {
         {items.map((item) => (
           <ItemCard
             key={item.id}
+            chatId={chat.id}
             item={item}
             live={item.id === currentId}
             liveText={liveText}
             canSave={canSave}
             saved={saved.has(item.id)}
+            saving={saving}
             onSaved={() => markSaved([item.id])}
           />
         ))}
@@ -137,24 +143,30 @@ export default function BatchView({ chat, classId, perms }: Props) {
 }
 
 function ItemCard({
+  chatId,
   item,
   live,
   liveText,
   canSave,
   saved,
+  saving,
   onSaved,
 }: {
+  chatId: string
   item: AiBatchItem
   live: boolean
   liveText: string
   canSave: boolean
   saved: boolean
+  /** 本页任一保存(单条或全部)进行中 */
+  saving: boolean
   onSaved(): void
 }) {
   const qc = useQueryClient()
   const status: AiItemStatus = live ? 'run' : item.status
   const text = live ? liveText : item.content
   const save = useMutation({
+    mutationKey: saveKey(chatId),
     mutationFn: () =>
       commentsApi.create(item.student_id, { content: item.content, generated_by_ai: true }),
     onSuccess: () => {
@@ -192,7 +204,7 @@ function ItemCard({
             <Button
               size="sm"
               variant="ghost"
-              disabled={save.isPending || saved}
+              disabled={saving || saved}
               onClick={() => save.mutate()}
             >
               {saved ? '已保存' : '保存到档案'}

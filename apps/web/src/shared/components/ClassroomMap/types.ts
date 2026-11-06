@@ -24,6 +24,8 @@ export interface SeatView {
   selected?: boolean
   /** 成绩名次档(1 = 前 20%):只换桌面顶面色,不进可访问名称 */
   tint?: 1 | 2 | 3 | 4 | 5
+  /** 读屏补充说明(如名次档):只进座位的可访问描述,不进可访问名称、不画到图上 */
+  description?: string
   locked?: boolean
 }
 export interface FloatFx {
@@ -48,6 +50,8 @@ export interface BoardData {
   countdown: { label: string; days: number } | null
   stars: { name: string; points: number }[] // 最多显示 3 个
   birthdays: { name: string; date: string }[] // 'MM-DD',最多显示 3 个
+  /** 本周之星开关关掉时为 true:连"本周之星"的牌子(标题)一起不画,不只是清空名单 */
+  hideStars?: boolean
 }
 // 左翼前墙上"出勤"小牌的数据(只有汇总数,没有人名);present = 名单人数 - 请假 - 缺勤
 export interface AttendanceBoardData {

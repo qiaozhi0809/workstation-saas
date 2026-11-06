@@ -53,6 +53,13 @@ it('empties the stars when star_of_week is off, leaving birthdays', () => {
   expect(b.birthdays).toHaveLength(2)
 })
 
+// L22:开关关掉时连"本周之星"的牌子(标题)也不画,而不是只清空名单
+it('asks the wall to hide the whole stars board only when star_of_week is off', () => {
+  expect(build({ star_of_week: false, birthdays: true }).hideStars).toBe(true)
+  expect(build({ star_of_week: true, birthdays: true }).hideStars).toBe(false)
+  expect(build().hideStars).toBe(false)
+})
+
 it('empties the birthdays when birthdays is off, leaving stars', () => {
   const b = build({ star_of_week: true, birthdays: false })
   expect(b.birthdays).toEqual([])
