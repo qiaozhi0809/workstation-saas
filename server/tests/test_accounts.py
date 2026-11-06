@@ -513,3 +513,22 @@ def test_account_list_includes_totp_enabled(client, settings, db):
     flags = {i["login_name"]: i["totp_enabled"] for i in res.json()["items"]}
     assert flags["teacher02"] is True
     assert [k for k, v in flags.items() if v] == ["teacher02"]
+
+
+def test_reset_succeeds_when_fail_counter_cleanup_redis_fails(
+    client, settings, db, redis_client, monkeypatch
+):
+    from redis.exceptions import RedisError
+
+    def boom(*args, **kwargs):
+        raise RedisError("down")
+
+    monkeypatch.setattr(redis_client, "delete", boom)  # revoke_all 走 pipeline,不受影响
+    res = client.post(
+        f"{ACCOUNTS}/{_user_id(db, 'teacher02')}/reset-password", headers=_admin(settings)
+    )
+    assert res.status_code == 200
+    temp = res.json()["temp_password"]
+    assert len(temp) == 10
+    monkeypatch.undo()
+    assert _login(client, "teacher02", temp).status_code == 200

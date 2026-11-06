@@ -18,9 +18,8 @@ from sqlalchemy.orm import Session
 from app import clock
 from app.audit.service import deny, record
 from app.auth.passwords import generate_temp_password, hash_password
-from app.auth.service import _fail_key
 from app.config import Settings
-from app.domain.accounts.service import revoke_all_or_503
+from app.domain.accounts.service import clear_fail_counter, revoke_all_or_503
 from app.domain.classes.service import class_scope_of
 from app.domain.parents.lifecycle import archive_orphan_accounts
 from app.domain.parents.schemas import ParentCreated, ParentInput, ParentOfStudent
@@ -534,6 +533,6 @@ def reset_parent_password(
     )
     revoke_all_or_503(db, redis, [user.id])
     db.commit()
-    redis.delete(_fail_key(settings, user.login_name))
+    clear_fail_counter(redis, settings, user.login_name)
     publish(redis, [user.id], {"type": "session.stale"})  # 已打开的页面立即用刷新令牌重连(L29)
     return temp

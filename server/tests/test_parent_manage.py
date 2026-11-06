@@ -953,3 +953,22 @@ def test_contacts_rechecks_authz_after_lock(cengine):
     with Session(cengine) as db:
         contacts = db.scalar(sql("SELECT contacts FROM students WHERE id = :s"), {"s": s_id})
     assert not contacts or all(c.get("name") != "不该落库" for c in contacts)
+
+
+def test_parent_reset_succeeds_when_fail_counter_cleanup_redis_fails(
+    client, settings, db, redis_client, monkeypatch
+):
+    from redis.exceptions import RedisError
+
+    created = _add(client, settings, S3, "13800000065").json()
+    link = created["parent"]["link_id"]
+
+    def boom(*args, **kwargs):
+        raise RedisError("down")
+
+    monkeypatch.setattr(redis_client, "delete", boom)  # revoke_all 走 pipeline,不受影响
+    res = client.post(f"/api/v1/parent-links/{link}/reset-password", headers=auth(settings))
+    assert res.status_code == 200
+    temp = res.json()["temp_password"]
+    monkeypatch.undo()
+    assert _login(client, "13800000065", temp).status_code == 200

@@ -1,3 +1,4 @@
+import logging
 from collections import defaultdict
 from collections.abc import Sequence
 from uuid import UUID
@@ -30,6 +31,8 @@ from app.models import Grade, RoleBinding, SchoolClass, User
 from app.rbac.admin import account_admin_count
 from app.rbac.roles import PARENT_ROLES, TEACHER_ROLES, Role
 from app.ws.hub import publish
+
+log = logging.getLogger(__name__)
 
 PAGE_SIZE = 50
 
@@ -303,6 +306,14 @@ def revoke_all_or_503(db: Session, redis: Redis, user_ids: Sequence[UUID]) -> No
         raise ApiError(503, "SERVICE_UNAVAILABLE", "暂时无法完成,请稍后重试") from None
 
 
+def clear_fail_counter(redis: Redis, settings: Settings, login_name: str) -> None:
+    """提交之后的收尾,尽力而为:Redis 出错只记日志,不能让已落库的重置变 500、丢临时密码(L71)。"""
+    try:
+        redis.delete(_fail_key(settings, login_name))
+    except RedisError as exc:
+        log.warning("clear login fail counter failed: %s", type(exc).__name__)
+
+
 def reset_password(
     db: Session,
     redis: Redis,
@@ -328,7 +339,7 @@ def reset_password(
     )
     revoke_all_or_503(db, redis, [user.id])
     db.commit()
-    redis.delete(_fail_key(settings, user.login_name))
+    clear_fail_counter(redis, settings, user.login_name)
     publish(redis, [user.id], {"type": "session.stale"})  # 已打开的页面立即用刷新令牌重连(L29)
     return temp
 
