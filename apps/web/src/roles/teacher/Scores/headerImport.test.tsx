@@ -203,9 +203,12 @@ it('points at the row and subject the server rejected (L15)', async () => {
     new ApiError(400, 'SCORE_INVALID', '分数不合法', { enrollment_id: 'e2', subject: '数学' }),
   )
   renderImport()
-  paste('姓名,语文,数学\n王小一,90,80\n李小二,88,77')
+  // 中间的空行不计数,所以文案说明行号不含表头与空行
+  paste('姓名,语文,数学\n王小一,90,80\n\n李小二,88,77')
   fireEvent.click(importBtn())
-  expect(await screen.findByRole('alert')).toHaveTextContent('第 2 行 · 数学(李小二):分数不合法')
+  expect(await screen.findByRole('alert')).toHaveTextContent(
+    '第 2 行(不含表头与空行)· 数学(李小二):分数不合法',
+  )
 })
 
 it('keeps the modal open and shows the error when saving fails', async () => {

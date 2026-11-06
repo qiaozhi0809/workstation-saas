@@ -28,7 +28,7 @@ const GENERIC_ERROR = '导入失败,请重试'
 const GBK_UNSUPPORTED =
   '文件不是 UTF-8 编码,这个浏览器不能按 GBK 读取,请在 Excel 里另存为 UTF-8 的 CSV 后再试'
 
-/** 一格在表里的位置:第几行(不含表头,与"识别到 N 行"同一数法)与学生姓名 */
+/** 一格在表里的位置:第几行(不含表头与空行,与"识别到 N 行"同一数法)与学生姓名 */
 interface CellOrigin {
   row: number
   name: string
@@ -109,7 +109,8 @@ function describeError(e: unknown, p: Plan): string {
   const d = e.details as { enrollment_id?: unknown; subject?: unknown } | undefined
   if (typeof d?.enrollment_id !== 'string' || typeof d.subject !== 'string') return message
   const at = p.origin.get(`${d.enrollment_id}|${d.subject}`)
-  return at ? `第 ${at.row} 行 · ${d.subject}(${at.name}):${message}` : message
+  // 行号与"识别到 N 行"同一数法:不含表头,空行也不算
+  return at ? `第 ${at.row} 行(不含表头与空行)· ${d.subject}(${at.name}):${message}` : message
 }
 
 /**
@@ -142,9 +143,9 @@ export default function HeaderImport({
 
   // 以点"导入"那一刻的方案为准:请求期间文本框还能改,报错定位不能跟着变
   const run = useMutation({
-    mutationFn: async (plan: Plan) => {
-      for (let i = 0; i < plan.cells.length; i += CHUNK) {
-        await examsApi.saveScores(classId, exam.id, plan.cells.slice(i, i + CHUNK))
+    mutationFn: async (snapshot: Plan) => {
+      for (let i = 0; i < snapshot.cells.length; i += CHUNK) {
+        await examsApi.saveScores(classId, exam.id, snapshot.cells.slice(i, i + CHUNK))
       }
     },
     // 中途某一批失败时前面的批次可能已写入,所以成功失败都刷新
@@ -154,11 +155,11 @@ export default function HeaderImport({
         qc.invalidateQueries({ queryKey: ['exams', classId] }),
         qc.invalidateQueries({ queryKey: ['gradebook', classId] }),
       ]),
-    onSuccess: (_, plan) => {
-      toast(summary(plan.cells.length, plan))
+    onSuccess: (_, snapshot) => {
+      toast(summary(snapshot.cells.length, snapshot))
       onImported()
     },
-    onError: (e, plan) => setError(describeError(e, plan)),
+    onError: (e, snapshot) => setError(describeError(e, snapshot)),
   })
 
   const readFile = (file: File | undefined) => {
