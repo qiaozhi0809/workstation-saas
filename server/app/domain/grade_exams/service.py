@@ -7,6 +7,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.audit.service import record
+from app.domain.classes.sort import class_sort_key
 from app.domain.exams.schemas import SubjectFull
 from app.domain.exams.service import subject_full_below_scores
 from app.domain.exams.subjects import catalog_subjects, grade_stage, merge_subjects
@@ -61,20 +62,22 @@ def get_grade_exam(
     return ge
 
 
+def _class_order(name: str, class_id: UUID) -> tuple:
+    """班名按数值排(三年二班 < 三年三班 < 三年十班,L40),同名再按 id。"""
+    return (class_sort_key(name), str(class_id))
+
+
 def _grade_classes(db: Session, ge: GradeExam) -> list[SchoolClass]:
     """Active classes of the grade in the grade exam's year, by name."""
-    return list(
-        db.scalars(
-            select(SchoolClass)
-            .where(
-                SchoolClass.school_id == ge.school_id,
-                SchoolClass.academic_year_id == ge.academic_year_id,
-                SchoolClass.grade_id == ge.grade_id,
-                SchoolClass.active.is_(True),
-            )
-            .order_by(SchoolClass.name, SchoolClass.id)
-        ).all()
-    )
+    classes = db.scalars(
+        select(SchoolClass).where(
+            SchoolClass.school_id == ge.school_id,
+            SchoolClass.academic_year_id == ge.academic_year_id,
+            SchoolClass.grade_id == ge.grade_id,
+            SchoolClass.active.is_(True),
+        )
+    ).all()
+    return sorted(classes, key=lambda c: _class_order(c.name, c.id))
 
 
 def _new_exam(ge: GradeExam, cls: SchoolClass, user_id: UUID, now: datetime) -> Exam:
@@ -98,10 +101,10 @@ def progress(db: Session, ge: GradeExam) -> list[GradeExamClass]:
         select(Exam.id, SchoolClass.id, SchoolClass.name)
         .join(SchoolClass, SchoolClass.id == Exam.class_id)
         .where(Exam.grade_exam_id == ge.id)
-        .order_by(SchoolClass.name, SchoolClass.id)
     ).all()
     if not rows:
         return []
+    rows.sort(key=lambda r: _class_order(r[2], r[1]))
     names = [s["name"] for s in ge.subjects]
     entered = dict(
         db.execute(

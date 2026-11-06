@@ -6,6 +6,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from app.audit.service import record
+from app.domain.classes.sort import class_sort_key
 from app.domain.exams.subjects import STAGE_KEY, stage_of
 from app.domain.org.schemas import (
     ClassAdmin,
@@ -337,18 +338,21 @@ def list_classes(
     db: Session, school_id: UUID, year_id: UUID, grade_id: UUID | None
 ) -> list[ClassAdmin]:
     stmt = (
-        select(SchoolClass)
+        select(SchoolClass, Grade.display_order)
         .join(Grade, Grade.id == SchoolClass.grade_id)
         .where(
             SchoolClass.school_id == school_id,
             SchoolClass.academic_year_id == year_id,
             SchoolClass.active.is_(True),
         )
-        .order_by(Grade.display_order, SchoolClass.name)
     )
     if grade_id is not None:
         stmt = stmt.where(SchoolClass.grade_id == grade_id)
-    return _class_outs(db, list(db.scalars(stmt)))
+    # 年级按 display_order,同年级班名按数值排(三年二班 < 三年三班 < 三年十班,L40)
+    rows = sorted(
+        db.execute(stmt).all(), key=lambda r: (r[1], class_sort_key(r[0].name), str(r[0].id))
+    )
+    return _class_outs(db, [cls for cls, _ in rows])
 
 
 def get_class(db: Session, school_id: UUID, year_id: UUID, class_id: UUID) -> SchoolClass:

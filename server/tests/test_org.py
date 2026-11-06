@@ -162,6 +162,16 @@ def test_list_and_get_classes(client, settings):
     assert one["subjects"][0]["teachers"][0]["display_name"] == "赵老师"
 
 
+def test_classes_sorted_by_class_sort_key(client, settings):
+    """L40:同年级班名按数值排(三年二班 < 三年三班 < 三年十班),不按码位;年级仍按 display_order。"""
+    for name in ("三年十班", "三年三班"):
+        _create_class(client, settings, GRADE_ID, name=name, room="")
+    allc = client.get(f"{API}/classes", headers=auth(settings, PRINCIPAL)).json()
+    assert [c["name"] for c in allc] == ["三年一班", "三年二班", "三年三班", "三年十班", "四年一班"]
+    g3 = client.get(f"{API}/classes?grade_id={GRADE_ID}", headers=auth(settings, PRINCIPAL)).json()
+    assert [c["name"] for c in g3] == ["三年一班", "三年二班", "三年三班", "三年十班"]
+
+
 def test_rename_class_shows_in_my_classes(client, db, settings):
     h = auth(settings, PRINCIPAL)
     body = {"grade_id": GRADE_ID, "name": "三年九班", "room": "求知楼 299"}

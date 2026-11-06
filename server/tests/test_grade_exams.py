@@ -258,7 +258,8 @@ def test_sync_adds_missing_classes(client, db, settings):
     r = client.post(f"{API}/{out['id']}/sync", headers=auth(settings, GRADE_HEAD))
     assert r.status_code == 200, r.text
     assert r.json()["missing_classes"] == []
-    assert [c["class_name"] for c in r.json()["classes"]] == ["三年一班", "三年三班", "三年二班"]
+    # L40:班名按数值排,三年三班在三年二班之后(不再是码位序的 三 < 二)
+    assert [c["class_name"] for c in r.json()["classes"]] == ["三年一班", "三年二班", "三年三班"]
     added = _exam_of(db, out["id"], new_class)
     assert added.name == "期中联考" and str(added.created_by_user_id) == GRADE_HEAD
     assert [a.action for a in audit_rows(db, out["id"])] == ["exam.grade_create", "exam.grade_sync"]

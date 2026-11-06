@@ -10,7 +10,7 @@ from app.domain.years.service import apply
 from app.domain.years.suggest import suggest
 from app.models import AcademicYear, Enrollment, Exam, Grade, SchoolClass, Score
 from app.models.audit import AuditLog
-from tests.factories import make_student
+from tests.factories import make_class, make_student
 from tests.helpers import auth
 from tests.seed_ids import CLASS_ID, EXAM_IDS, SCHOOL_ID, YEAR_ID
 
@@ -146,6 +146,21 @@ def test_principal_sees_past_classes(client, settings, db, past):
     assert get(client, settings, "/classes", user=DEAN, year_id=YEAR_ID).json() == classes
     # 没有任何班的往年:空列表
     assert get(client, settings, "/classes", year_id=str(older.id)).json() == []
+
+
+def test_past_classes_sorted_by_class_sort_key(client, settings, db):
+    """L40:往年班级同年级内按班名数值排,年级按 display_order。"""
+    for name in ("三年十班", "三年三班"):
+        make_class(db, name)
+    upgrade(db)
+    classes = get(client, settings, "/classes", year_id=YEAR_ID).json()
+    assert [(c["grade_name"], c["class_name"]) for c in classes] == [
+        ("三年级", "三年一班"),
+        ("三年级", "三年二班"),
+        ("三年级", "三年三班"),
+        ("三年级", "三年十班"),
+        ("四年级", "四年一班"),
+    ]
 
 
 def test_roster_and_scores_readonly(client, settings, db, past):

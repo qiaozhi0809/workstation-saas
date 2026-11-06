@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.ai.stats import ExamStats, exam_stats, exam_table, round1
 from app.audit.service import deny, record
 from app.domain.classes.service import class_scope_of
+from app.domain.classes.sort import class_sort_key
 from app.domain.exams.schemas import SubjectFull
 from app.domain.grade_exams.service import get_grade_exam
 from app.domain.reports.schemas import (
@@ -62,13 +63,13 @@ def _load(
     """Batch-load the report; 403 + audit when no linked class is visible to the caller
     (a grade exam with no linked class at all is an empty report for whoever can see the grade)."""
     ge = get_grade_exam(db, user.school_id, grade_exam_id)
-    classes = list(
+    classes = sorted(
         db.scalars(
             select(SchoolClass)
             .join(Exam, Exam.class_id == SchoolClass.id)
             .where(Exam.grade_exam_id == ge.id)
-            .order_by(SchoolClass.name, SchoolClass.id)
-        ).all()
+        ).all(),
+        key=lambda c: (class_sort_key(c.name), str(c.id)),  # 班名按数值排(L40)
     )
     leaders = [b for b in bindings if b.role in LEADER_ROLES]  # 兼任班主任等不扩大可见范围
     visible = [c for c in classes if can(leaders, Perm.EXAM_READ, class_scope_of(c))]
@@ -226,9 +227,15 @@ def _rows(report: _Report, classes: Sequence[SchoolClass]) -> list[ScoreStudentR
                     grade_rank=grade_rank[enrollment.id],
                 )
             )
-    # 年级名次升序,没有名次的在后;同名次按班名、姓名保持稳定
+    # 年级名次升序,没有名次的在后;同名次按班名(数值序,L40)、姓名保持稳定
     rows.sort(
-        key=lambda x: (x.grade_rank is None, x.grade_rank or 0, x.class_name, x.name, x.student_id)
+        key=lambda x: (
+            x.grade_rank is None,
+            x.grade_rank or 0,
+            class_sort_key(x.class_name),
+            x.name,
+            x.student_id,
+        )
     )
     return rows
 

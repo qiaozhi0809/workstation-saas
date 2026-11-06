@@ -237,6 +237,19 @@ def test_board_default_grade_and_attendance_map(client, db, settings, monkeypatc
     assert one["metrics"]["students"] == 6
 
 
+def test_board_classes_sorted_by_class_sort_key(client, db, settings, monkeypatch):
+    """L40:看板班级按班名数值排(三年三班在三年二班之后、三年十班最后),不按码位。"""
+    freeze(monkeypatch, NOW)
+    for name in ("三年十班", "三年三班"):
+        make_class(db, name)
+    body = get_board(client, settings).json()
+    assert [c["name"] for c in body["classes"]] == ["三年一班", "三年二班", "三年三班", "三年十班"]
+    today = get_today(client, settings).json()
+    unconfirmed = [c["class_name"] for c in today["unconfirmed"]]
+    expected = ["三年一班", "三年二班", "三年三班", "三年十班", "四年一班"]
+    assert unconfirmed == [n for n in expected if n in unconfirmed]
+
+
 def test_board_podium_and_desk_fields_follow_class(client, db, settings, monkeypatch):
     freeze(monkeypatch, NOW)
     cid = make_class(

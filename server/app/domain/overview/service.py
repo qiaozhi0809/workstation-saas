@@ -10,6 +10,7 @@ from app import clock
 from app.audit.service import deny
 from app.domain.cameras.access import admin_sees_class, enabled_camera_counts
 from app.domain.classes.service import class_scope_of
+from app.domain.classes.sort import class_sort_key
 from app.domain.grade_exams.service import progress
 from app.domain.notices.service import recent_sent
 from app.domain.overview.schemas import (
@@ -99,8 +100,9 @@ def _visible(
             SchoolClass.academic_year_id == year_id,
             SchoolClass.active.is_(True),
         )
-        .order_by(Grade.display_order, SchoolClass.name)
     ).all()
+    # 年级按 display_order,同年级班名按数值排(L40)
+    rows.sort(key=lambda r: (r[1].display_order, class_sort_key(r[0].name), str(r[0].id)))
     return [
         VisibleClass(cls, grade, name)
         for cls, grade, name in rows
