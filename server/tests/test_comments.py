@@ -13,6 +13,7 @@ from tests.seed_ids import (
     ASSISTANT_USER_ID,
     CLASS_ID,
     COMMENT_IDS,
+    S0001_COMMENT_IDS,
     SCHOOL_ID,
     STUDENT_IDS,
     SUBJECT_USER_ID,
@@ -24,14 +25,16 @@ S1 = STUDENT_IDS[1]  # 李小二
 URL = f"/api/v1/students/{S1}/comments"
 BULK = f"/api/v1/classes/{CLASS_ID}/comments/bulk"
 BODY = {"content": "  本学期进步明显  ", "generated_by_ai": True}
+SEED_COMMENT_IDS = [UUID(i) for i in (*COMMENT_IDS, *S0001_COMMENT_IDS)]  # 种子里的两条手写评语
 
 
 def _audits(db, action):
     return list(db.scalars(select(AuditLog).where(AuditLog.action == action)).all())
 
 
-def _count(db):
-    return db.scalar(select(func.count()).select_from(Comment))
+def _added(db):
+    """测试里新增的评语条数(扣掉种子)。"""
+    return db.scalar(select(func.count()).select_from(Comment)) - len(SEED_COMMENT_IDS)
 
 
 @pytest.mark.parametrize(
@@ -73,6 +76,7 @@ def test_list_create_delete(client, settings, db):
         "can_delete",
         "created_at",
         "parent_visible",
+        "can_share",
     }
     assert items[0]["semester"] == "2026-2027 第一学期"
     assert items[0]["generated_by_ai"] is False
@@ -120,7 +124,7 @@ def test_only_homeroom_writes(client, settings, db):
         item = {"items": [{"student_id": S1, "content": "好"}], "generated_by_ai": False}
         assert client.post(BULK, json=item, headers=h).status_code == 403
         assert client.delete(f"/api/v1/comments/{COMMENT_IDS[0]}", headers=h).status_code == 403
-    assert _count(db) == 1
+    assert _added(db) == 0
     assert [a.success for a in _audits(db, "comment.read")] == [False] * 2
     assert [a.success for a in _audits(db, "comment.write")] == [False] * 6
 
@@ -139,15 +143,15 @@ def test_bulk_all_or_nothing(client, settings, db):
     err = res.json()["error"]
     assert err["code"] == "AI_FIELD_INVALID"
     assert err["details"] == {"field": "items"}
-    assert _count(db) == 1
+    assert _added(db) == 0
     assert _audits(db, "comment.create") == []
 
     del items[1]
     res = client.post(BULK, json={"items": items, "generated_by_ai": True}, headers=h)
     assert res.status_code == 201
     assert res.json() == {"created": 2}
-    assert _count(db) == 3
-    rows = db.scalars(select(Comment).where(Comment.id != UUID(COMMENT_IDS[0]))).all()
+    assert _added(db) == 2
+    rows = db.scalars(select(Comment).where(Comment.id.notin_(SEED_COMMENT_IDS))).all()
     assert {r.content for r in rows} == {"认真好学", "乐于助人"}
     assert all(r.generated_by_ai and r.semester == "2026-2027 第一学期" for r in rows)
     assert all(r.class_id == UUID(CLASS_ID) for r in rows)
@@ -176,12 +180,13 @@ def test_bulk_rejects_bad_shape_and_unenrolled(client, settings, db):
     res = client.post(BULK, json={"items": [ok], "generated_by_ai": False}, headers=h)
     assert res.status_code == 400
     assert res.json()["error"]["code"] == "AI_FIELD_INVALID"
-    assert _count(db) == 1
+    assert _added(db) == 0
 
 
-def _past_year_comment(db, *, in_current_class: bool = False) -> Comment:
-    """往年的一条评语:默认挂在往年的班(当前学年没人在那个班有权限);
-    ``in_current_class`` 时挂在当前班、学年仍是往年,用来单测 409 这一步。"""
+def _past_year_comment(db, *, visible: bool = True, in_current_class: bool = False) -> Comment:
+    """李小二往年的一条评语:默认挂在往年的班"二年一班"(当前学年没人对那个班有 comment.write);
+    ``in_current_class`` 时挂在当前班、学年仍是往年,用来单测 409 这一步;
+    ``visible`` 控制初始的 parent_visible(L69 切换用例从 False 起)。"""
     old = AcademicYear(
         school_id=UUID(SCHOOL_ID),
         name="2025-2026",
@@ -205,6 +210,7 @@ def _past_year_comment(db, *, in_current_class: bool = False) -> Comment:
         semester="2025-2026 第二学期",
         content="学期表现稳定",
         generated_by_ai=False,
+        parent_visible=visible,
         created_by_user_id=UUID(TEACHER_USER_ID),
     )
     db.add(c)
@@ -250,6 +256,76 @@ def test_delete_past_year_comment_with_permission_is_409(client, settings, db):
     assert (res.status_code, res.json()["error"]["code"]) == (409, "RECORD_READONLY")
     assert db.get(Comment, c.id) is not None
     assert [a for a in _audits(db, "comment.write") if a.object_id == str(c.id)] == []
+
+
+def test_current_homeroom_can_share_past_comment(client, settings, db):
+    """往年的班已没人有 comment.write:"给家长看"改由学生现在的班主任切(L69),
+    列表里 can_share 为真而 can_delete 仍为假(L70)。"""
+    c = _past_year_comment(db, visible=False)
+    put = f"/api/v1/comments/{c.id}/parent-visible"
+    h = auth(settings)
+    items = {i["id"]: i for i in client.get(URL, headers=h).json()["items"]}
+    assert items[str(c.id)]["can_share"] is True and items[str(c.id)]["can_delete"] is False
+    assert items[COMMENT_IDS[0]]["can_share"] is True
+    res = client.put(put, json={"visible": True}, headers=h)
+    assert res.status_code == 200
+    assert res.json()["parent_visible"] is True and res.json()["can_share"] is True
+    assert db.get(Comment, c.id).parent_visible is True
+    assert [a.object_id for a in _audits(db, "comment.share")] == [str(c.id)]
+    # 往年评语仍然只读:能切"给家长看",不能删
+    # L97:对评语所在班无 comment.write → 403 先于 409;仍是"不能删"
+    assert client.delete(f"/api/v1/comments/{c.id}", headers=h).status_code == 403
+
+
+def test_others_cannot_share(client, settings, db):
+    """不是学生现在班的班主任都不能切:年级组长能看(can_share 为假)但 PUT 403;任课老师 403;
+    学生年内转班后,评语所在班(老班)的班主任也不能切,新班班主任能切;学生没有在读班时谁也不能切。"""
+    from app.rbac.roles import Role
+    from tests.factories import bind, make_user
+    from tests.seed_ids import GRADE_ID
+
+    c = _past_year_comment(db, visible=False)
+    put = f"/api/v1/comments/{c.id}/parent-visible"
+    head = make_user(db, "gradehead_x", "组长")
+    bind(db, head.id, Role.grade_head, grade_id=GRADE_ID)
+    hh = auth(settings, head.id)
+    items = client.get(URL, headers=hh).json()["items"]
+    assert len(items) == 2 and all(i["can_share"] is False for i in items)
+    assert client.put(put, json={"visible": True}, headers=hh).status_code == 403
+    assert (
+        client.put(put, json={"visible": True}, headers=auth(settings, SUBJECT_USER_ID)).status_code
+        == 403
+    )
+
+    class_b = make_class(db, "三年四班")
+    new_homeroom = make_user(db, "teacher_b", "乙老师")
+    bind(db, new_homeroom.id, Role.homeroom_teacher, class_id=class_b)
+    old_enr = db.scalars(
+        select(Enrollment).where(Enrollment.student_id == UUID(S1), Enrollment.status == "active")
+    ).one()
+    old_enr.status = "transferred"
+    new_enr = Enrollment(
+        student_id=UUID(S1), class_id=class_b, academic_year_id=old_enr.academic_year_id
+    )
+    db.add(new_enr)
+    db.flush()
+    # 老班班主任对评语所在班有 comment.write,但学生已不在他班:不能切
+    assert client.put(put, json={"visible": True}, headers=auth(settings)).status_code == 403
+    hb = auth(settings, new_homeroom.id)
+    listed = {i["id"]: i for i in client.get(URL, headers=hb).json()["items"]}
+    assert listed[COMMENT_IDS[0]]["can_share"] is True
+    assert listed[COMMENT_IDS[0]]["can_delete"] is False
+    res = client.put(
+        f"/api/v1/comments/{COMMENT_IDS[0]}/parent-visible", json={"visible": False}, headers=hb
+    )
+    assert res.status_code == 200 and res.json()["parent_visible"] is False
+
+    new_enr.status = "removed"
+    db.flush()
+    assert client.put(put, json={"visible": True}, headers=hb).status_code == 403
+    assert db.get(Comment, c.id).parent_visible is False
+    denied = [a for a in _audits(db, "comment.write") if not a.success]
+    assert [(a.object_type, a.object_id) for a in denied] == [("comment", str(c.id))] * 4
 
 
 def test_any_writer_deletes_and_unknown_404(client, settings):
@@ -319,7 +395,7 @@ def test_bulk_resend_skips_existing_comments(client, settings, db):
     res = _bulk(client, settings, items)
     assert res.status_code == 201
     assert res.json() == {"created": 0}
-    assert _count(db) == 3
+    assert _added(db) == 2
     counts = [a.extra["count"] for a in _audits(db, "comment.create")]
     assert counts == [2, 0]
 
@@ -331,7 +407,7 @@ def test_bulk_duplicates_inside_one_batch_save_once(client, settings, db):
         (STUDENT_IDS[1], "认真好学"),
     ]
     assert _bulk(client, settings, items).json() == {"created": 2}
-    assert _count(db) == 3
+    assert _added(db) == 2
 
 
 def test_bulk_changed_content_is_new_and_other_semester_is_not_a_duplicate(client, settings, db):
@@ -342,7 +418,7 @@ def test_bulk_changed_content_is_new_and_other_semester_is_not_a_duplicate(clien
     row.semester = "2025-2026 第二学期"
     db.flush()
     assert _bulk(client, settings, [(STUDENT_IDS[0], "认真好学")]).json() == {"created": 1}
-    assert _count(db) == 4
+    assert _added(db) == 3
 
 
 def test_single_create_duplicate_returns_existing(client, settings, db):
@@ -352,7 +428,7 @@ def test_single_create_duplicate_returns_existing(client, settings, db):
     again = client.post(URL, json=BODY, headers=h)
     assert again.status_code == 200
     assert again.json()["id"] == first.json()["id"]
-    assert _count(db) == 2
+    assert _added(db) == 1
 
 
 def test_bulk_concurrent_duplicates_store_once(engine):

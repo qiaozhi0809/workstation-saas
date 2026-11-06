@@ -13,6 +13,10 @@ export interface Picked {
   name: string
 }
 
+// 方案里的 id 可能是 user_id(选择器写入的)也可能是 teachers.id(建议方案预填的),两种都算选中(L55)
+const isChosen = (chosen: Set<string>, a: OrgPerson) =>
+  chosen.has(a.user_id) || chosen.has(a.teacher_id)
+
 function Candidates({ chosen, onToggle }: { chosen: Set<string>; onToggle(p: OrgPerson): void }) {
   const [text, setText] = useState('')
   const [q, setQ] = useState('')
@@ -35,10 +39,10 @@ function Candidates({ chosen, onToggle }: { chosen: Set<string>; onToggle(p: Org
           <li key={a.user_id}>
             <button
               type="button"
-              aria-pressed={chosen.has(a.user_id)}
+              aria-pressed={isChosen(chosen, a)}
               className={cn(
                 'flex w-full flex-wrap items-center gap-x-3 rounded-md border px-3 py-2 text-left text-sm hover:bg-accent',
-                chosen.has(a.user_id) && 'border-primary bg-accent',
+                isChosen(chosen, a) && 'border-primary bg-accent',
               )}
               onClick={() => onToggle(a)}
             >

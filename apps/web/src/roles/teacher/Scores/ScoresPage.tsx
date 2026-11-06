@@ -6,6 +6,7 @@ import { studentsApi } from '@/shared/api/students'
 import { EmptyState } from '@/shared/components/feedback/EmptyState'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
+import { toast } from '@/shared/components/Toast'
 import { Badge } from '@/shared/components/ui/badge'
 import { Button } from '@/shared/components/ui/button'
 import type { Exam } from '@/shared/types/grades'
@@ -141,6 +142,7 @@ function ExamSection({
     queryFn: () => studentsApi.listInClass(cls.id),
   })
   const [importing, setImporting] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const save = useScoreAutosave({ classId: cls.id, examId: exam.id })
 
   const writable = perms.includes('score.write')
@@ -151,6 +153,21 @@ function ExamSection({
 
   const canImport = writable === null || writable.length > 0
   const canExport = perms.includes('score.export')
+
+  // 先把防抖中的改动发出去,导出的表才含刚改的格子;没保存成功就不导,免得导出一份少格子的表。
+  // 等待期间按钮禁用,连点不会下载两份
+  const exportNow = async () => {
+    setExporting(true)
+    try {
+      if (!(await save.flush())) {
+        toast('还有成绩没保存成功,请先重试保存再导出')
+        return
+      }
+      await exportScores(cls.id, cls.name, exam, roster.data?.items ?? [])
+    } finally {
+      setExporting(false)
+    }
+  }
 
   let body
   if (sheet.isLoading || roster.isLoading) body = <LoadingState />
@@ -206,8 +223,8 @@ function ExamSection({
             <Button
               variant="outline"
               size="sm"
-              disabled={!roster.data}
-              onClick={() => void exportScores(cls.id, cls.name, exam, roster.data?.items ?? [])}
+              disabled={!roster.data || exporting}
+              onClick={() => void exportNow()}
             >
               导出
             </Button>

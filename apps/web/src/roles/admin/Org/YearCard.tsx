@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { adminApi } from '@/shared/api/admin'
+import { EmptyState } from '@/shared/components/feedback/EmptyState'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { toast } from '@/shared/components/Toast'
@@ -91,6 +92,12 @@ export default function YearCard() {
           title="学年加载失败"
           description={errMsg(q.error)}
           onRetry={() => void q.refetch()}
+        />
+      ) : q.data ? (
+        // 列表为空只会出现在异常数据下(安装时 init-school 会建首个学年),不能一直显示加载中(L126)
+        <EmptyState
+          title="还没有学年记录"
+          description="安装时会自动创建首个学年,请联系技术支持检查数据"
         />
       ) : (
         <LoadingState />

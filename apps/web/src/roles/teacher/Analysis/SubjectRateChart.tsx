@@ -1,12 +1,24 @@
 import { ScoreBars, type BarDatum } from '@/shared/components/charts/ScoreBars'
 import type { ExamStats } from '@/shared/lib/grades'
+import type { Grading } from '@/shared/types/school'
 import { round1 } from './round1'
 
-export function SubjectRateChart({ stats, width }: { stats: ExamStats; width?: number }) {
+/** ratios:学校的及格 / 优秀比例(useGrading()),与算出 stats 的是同一份;及格参考线与低分着色按它定 */
+export function SubjectRateChart({
+  stats,
+  width,
+  ratios,
+}: {
+  stats: ExamStats
+  width?: number
+  ratios: Grading
+}) {
+  // 得分率是百分数,及格线同样换成百分数(比例两位小数 → 整数百分比)
+  const passPct = Math.round(ratios.pass_ratio * 100)
   const data: BarDatum[] = stats.subjects.map((s) => ({
     label: s.name,
     value: round1(s.rate),
-    tone: s.rate < 60 ? 'low' : 'main',
+    tone: s.rate < passPct ? 'low' : 'main',
     tip: [
       `满分 ${s.full}`,
       `平均 ${round1(s.avg)}`,
@@ -25,7 +37,7 @@ export function SubjectRateChart({ stats, width }: { stats: ExamStats; width?: n
         data={data}
         max={100}
         format={(v) => `${v}%`}
-        refLine={{ value: 60, label: '及格' }}
+        refLine={{ value: passPct, label: '及格' }}
       />
     </section>
   )

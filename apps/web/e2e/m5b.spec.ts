@@ -267,8 +267,15 @@ test('two-step verification: enable needs the password, login needs the code, it
   const it = await newSession(browser)
   await signIn(it.page, 'itadmin01', 'dev123')
   await it.page.goto('/admin/accounts')
+  // 搜索有 300 ms 防抖:等过滤后的列表真的回来再点,否则防抖触发的那次查询可能与重置并行、
+  // 读到重置前的状态,而重置后的失效又不会再发一次请求,按钮就留在页面上(CI 偶发)
+  const searched = it.page.waitForResponse(
+    (r) => r.url().includes('/admin/accounts?q=') && r.request().method() === 'GET' && r.ok(),
+  )
   await it.page.getByLabel('搜索姓名或登录名').fill(teacher.loginName)
+  await searched
   const row = it.page.getByRole('row').filter({ hasText: teacher.loginName })
+  await expect(row).toHaveCount(1)
   await row.getByRole('button', { name: '重置两步验证', exact: true }).click()
   const resetDone = it.page.waitForResponse(
     (r) => r.url().includes('/totp-reset') && r.request().method() === 'POST',

@@ -7,11 +7,11 @@ import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { Button } from '@/shared/components/ui/button'
 import { formatInTz } from '@/shared/lib/date'
 import { cn } from '@/shared/lib/utils'
+import { useSchoolTz } from '../useMeta'
 
-// 家长端数据没有学校时区字段,按学校所在时区取日期,不用 UTC 前 10 位
-const SCHOOL_TZ = 'Asia/Shanghai'
-
+/** 点评历史:游标分页;日期按学校时区(/meta,L79)取,不用 UTC 前 10 位 */
 export default function ReviewHistory({ sid }: { sid: string }) {
+  const tz = useSchoolTz()
   const q = useInfiniteQuery({
     queryKey: ['parent', sid, 'reviews'],
     queryFn: ({ pageParam }) => parentApi.reviews(sid, pageParam),
@@ -58,7 +58,7 @@ export default function ReviewHistory({ sid }: { sid: string }) {
             <div className="min-w-0 text-sm">
               <p className="break-words">{r.reason_text}</p>
               <p className="text-xs text-muted-foreground">
-                {[formatInTz(r.given_at, SCHOOL_TZ).slice(0, 10), r.subject, r.given_by_name]
+                {[formatInTz(r.given_at, tz).slice(0, 10), r.subject, r.given_by_name]
                   .filter(Boolean)
                   .join(' · ')}
               </p>

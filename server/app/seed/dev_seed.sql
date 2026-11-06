@@ -300,7 +300,19 @@ FROM (VALUES
 JOIN students s ON s.mk = v.mk;
 
 -- S0001 已有 M2c 种子里的"表扬"成长记录(f0000001);S0002 已有手写评语(parent_visible 默认 true)。
--- 不再新增,避免改变 test_comments / test_growth 对种子条数的断言。
+
+-- M5d(L80):给 S0001 也补一条教师手写评语(家长可见),李家长登录后评语页就有数据。
+-- 评语总数变为 2:test_comments 的计数断言、test_schema_m2c 的种子断言随之同步。
+INSERT INTO comments (id, student_id, enrollment_id, class_id, academic_year_id,
+                      semester, content, generated_by_ai, created_by_user_id)
+SELECT 'c0000002-0000-0000-0000-000000000002', s.id, e.id,
+       '44444444-4444-4444-4444-444444444444', '22222222-2222-2222-2222-222222222222',
+       '2026-2027 第一学期',
+       '担任班长以来责任心强,作业按时完成,乐于帮助同学。希望下学期在数学计算上更细心。',
+       false, '55555555-5555-5555-5555-555555555555'
+FROM students s
+JOIN enrollments e ON e.student_id = s.id AND e.status = 'active'
+WHERE s.mk = 'S0001';
 
 -- M5d:种子账号都是"已经在用"的老账号,不是新老师 / 新家长——三种语境的首次引导一律记为已看过,
 -- 否则 E2E 第一次登录会被欢迎页 / 首次说明卡挡住(欢迎页本身的 E2E 用新建账号验证)。

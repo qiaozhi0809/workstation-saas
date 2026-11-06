@@ -6,11 +6,11 @@ export const DEFAULT_GRADING: Grading = { pass_ratio: 0.6, good_ratio: 0.85 }
 
 export type Parsed = number | 'absent' | 'clear' | 'invalid'
 
+/** 全角 ASCII(！-～,含数字、Ｘ、／、－、．)一律与半角同义;句号也当小数点 */
 export function parseScore(text: string): Parsed {
   const s = text
-    .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
-    .replace(/[．。]/g, '.')
-    .replace(/－/g, '-')
+    .replace(/[！-～]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+    .replace(/。/g, '.')
     .replace(/\s+/g, '')
   if (s === '') return 'clear'
   if (/^(缺|缺考|-|—|\/|x|X)$/.test(s)) return 'absent'
@@ -190,7 +190,11 @@ export interface Band {
   tone: 'low' | 'mid' | 'good'
 }
 
-export function scoreBands(totals: number[], full: number): Band[] {
+/**
+ * 总分按满分十等分分档;ratios 是学校的及格 / 优秀比例(useGrading()):
+ * 一档整体低于及格线(上界 ≤ 及格比例)为 low,整体不低于优秀线(下界 ≥ 优秀比例)为 good,跨线的档为 mid。
+ */
+export function scoreBands(totals: number[], full: number, ratios: Grading): Band[] {
   if (!(full > 0)) return []
   const r1 = (x: number) => Math.round(x * 10) / 10
   const fullTenths = Math.round(full * 10)
@@ -200,23 +204,38 @@ export function scoreBands(totals: number[], full: number): Band[] {
     counts[Math.min(9, Math.max(0, Math.floor((Math.round(t * 10) * 10) / fullTenths)))] += 1
   const first = counts.findIndex((c) => c > 0)
   if (first < 0) return []
+  // 比例按整数百分比比较(比例本身只有两位小数),与档的 10% 边界同一尺度
+  const passPct = Math.round(ratios.pass_ratio * 100)
+  const goodPct = Math.round(ratios.good_ratio * 100)
   const bands: Band[] = []
   for (let i = first; i < 10; i++) {
-    // 十等分:lo = i/10 满分;< 60% 为 low,>= 85%(即最后一档)为 good
+    const loPct = i * 10
+    const hiPct = (i + 1) * 10
     bands.push({
       lo: r1((i * full) / 10),
       hi: r1(((i + 1) * full) / 10),
       count: counts[i],
-      tone: i < 6 ? 'low' : i >= 9 ? 'good' : 'mid',
+      tone: hiPct <= passPct ? 'low' : loPct >= goodPct ? 'good' : 'mid',
     })
   }
   return bands
 }
 
+/**
+ * 得分率趋势图的纵轴范围:上下各留 4 个百分点、取到 5 的倍数、限在 0–100 内;
+ * 再把跨度补到 20 的倍数——recharts 固定范围时画 5 个刻度(4 段),跨度是 20 的倍数每段才是 5 的倍数,
+ * 不会出现 64%、81% 这类刻度(L16)。优先往上补,顶到 100 再往下补。
+ */
 export function trendDomain(values: number[]): [number, number] {
-  const lo = Math.min(...values)
-  const hi = Math.max(...values)
-  return [Math.max(0, Math.floor((lo - 4) / 5) * 5), Math.min(100, Math.ceil((hi + 4) / 5) * 5)]
+  // 空数组、NaN、±Infinity 都退回 0–100,否则下面补跨度的循环永远停不下来
+  if (values.length === 0 || !values.every(Number.isFinite)) return [0, 100]
+  let lo = Math.max(0, Math.floor((Math.min(...values) - 4) / 5) * 5)
+  let hi = Math.min(100, Math.ceil((Math.max(...values) + 4) / 5) * 5)
+  while ((hi - lo) % 20 !== 0) {
+    if (hi < 100) hi += 5
+    else lo -= 5
+  }
+  return [lo, hi]
 }
 
 function hasScore(exam: GradebookExam): boolean {
@@ -230,6 +249,16 @@ export function latestExam(book: GradebookExam[]): GradebookExam | null {
   for (let i = book.length - 1; i >= 0; i--) if (hasScore(book[i])) return book[i]
   return null
 }
+
+/**
+ * 进退步口径(L16),文案与计算只在这里定义:
+ * - 文案 RANK_CHANGE_BASIS 给界面说明用;
+ * - 计算是下面的 previousExam:按成绩册顺序往前找最近一场有分数的考试,不看考试类型;
+ * - BIG_MOVE 是"大幅进退步"的门槛,attention() 的退步名单与界面标题共用。
+ * 改口径时三者一起改。
+ */
+export const RANK_CHANGE_BASIS = '与上一场有分数的考试比'
+export const BIG_MOVE = 5
 
 /** Any numeric score in the exam's scores map counts (the gradebook only contains active enrollments). */
 export function previousExam(book: GradebookExam[], examId: string): GradebookExam | null {
@@ -256,7 +285,7 @@ export interface Attention {
   failing: { id: string; count: number }[]
 }
 
-/** ratios:学校的及格 / 优秀比例;failing = 两科及以上低于及格线 */
+/** ratios:学校的及格 / 优秀比例;fallers = 退步 BIG_MOVE 名及以上;failing = 两科及以上低于及格线 */
 export function attention(
   exam: GradebookExam,
   cur: Row[],
@@ -269,7 +298,7 @@ export function attention(
     .sort((a, b) => b.change - a.change)
     .slice(0, 5)
   const fallers = entries
-    .filter((e) => e.change <= -5)
+    .filter((e) => e.change <= -BIG_MOVE)
     .sort((a, b) => a.change - b.change)
     .slice(0, 6)
   const failing = cur

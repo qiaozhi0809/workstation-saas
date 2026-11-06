@@ -3,6 +3,7 @@ import { beforeEach, expect, it, vi } from 'vitest'
 import { noticesApi } from '@/shared/api/notices'
 import { parentApi } from '@/shared/api/parent'
 import { preferencesApi } from '@/shared/api/preferences'
+import { schoolApi } from '@/shared/api/school'
 import { child, mockWidth, renderParent, setParentUser, today } from './testkit'
 
 vi.mock('@/shared/api/parent', () => ({
@@ -55,6 +56,32 @@ it('shows the first-visit card at the top of the page only until the parent has 
   const attendance = await screen.findByRole('region', { name: '今日出勤' })
   expect(screen.getByRole('main')).toContainElement(card)
   expect(card.compareDocumentPosition(attendance) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+})
+
+it('shows the school name from /meta in the top bar, before the child', async () => {
+  renderParent('/parent/today?child=s1')
+  const banner = screen.getByRole('banner')
+  const school = await within(banner).findByText('示例小学')
+  expect(schoolApi.meta).toHaveBeenCalledTimes(1)
+  const switcher = within(banner).getByRole('combobox', { name: '切换孩子' })
+  expect(school.compareDocumentPosition(switcher) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  // 多个孩子时窄屏放不下校名 + 下拉 + 档案:校名只在 ≥ sm 显示,孩子切换器优先
+  expect(school).toHaveClass('hidden', 'sm:inline')
+})
+
+it('keeps the school name visible on phones when there is a single child', async () => {
+  vi.mocked(parentApi.children).mockResolvedValue([child()])
+  renderParent('/parent/today?child=s1')
+  const school = await within(screen.getByRole('banner')).findByText('示例小学')
+  expect(school).not.toHaveClass('hidden')
+  expect(school).toHaveClass('truncate')
+})
+
+it('still renders the shell when /meta fails', async () => {
+  vi.mocked(schoolApi.meta).mockRejectedValue(new Error('x'))
+  renderParent('/parent/today?child=s1')
+  await screen.findByRole('region', { name: '今日出勤' })
+  expect(screen.queryByText('示例小学')).toBeNull()
 })
 
 it('puts the tabs at the bottom below 768 with safe-area padding, not in the top bar', async () => {
@@ -170,22 +197,33 @@ it('still works when localStorage throws', async () => {
   vi.restoreAllMocks()
 })
 
-it('marks a read-only child in the switcher', async () => {
+it('marks a read-only child in the switcher as 已毕业 or 已离校 by left_reason', async () => {
   vi.mocked(parentApi.children).mockResolvedValue([
     child(),
-    child({ student_id: 's2', name: '王小二', status: 'readonly' }),
+    child({ student_id: 's2', name: '王小二', status: 'readonly', left_reason: 'graduated' }),
+    child({ student_id: 's3', name: '王小三', status: 'readonly', left_reason: 'left' }),
+    // 后端给不出原因时沿用合并说法
+    child({ student_id: 's4', name: '王小四', status: 'readonly', left_reason: null }),
   ])
   renderParent('/parent/today?child=s1')
-  expect(await screen.findByRole('option', { name: '王小二(已毕业/离校)' })).toBeInTheDocument()
+  expect(await screen.findByRole('option', { name: '王小二(已毕业)' })).toBeInTheDocument()
+  expect(screen.getByRole('option', { name: '王小三(已离校)' })).toBeInTheDocument()
+  expect(screen.getByRole('option', { name: '王小四(已毕业 / 离校)' })).toBeInTheDocument()
   expect(screen.getByRole('option', { name: '王小一' })).toBeInTheDocument()
 })
 
 it('adds a small tag after the name of a single read-only child', async () => {
   vi.mocked(parentApi.children).mockResolvedValue([
-    child({ status: 'readonly', left_on: '2026-07-10', archive_on: '2027-07-10' }),
+    child({
+      status: 'readonly',
+      left_on: '2026-07-10',
+      archive_on: '2027-07-10',
+      left_reason: 'left',
+    }),
   ])
   renderParent('/parent/today?child=s1')
-  expect(await screen.findByText('已毕业/离校')).toBeInTheDocument()
+  expect(await screen.findByText('已离校')).toBeInTheDocument()
+  expect(screen.queryByText(/毕业/)).toBeNull()
 })
 
 it('asks for the child list only once across layout and page', async () => {

@@ -172,18 +172,43 @@ it('notice.recalled and reconnected refetch the inbox', async () => {
 it('lists notices of all children, bold when unread, with the children named', async () => {
   vi.mocked(noticesApi.inbox).mockResolvedValue(
     inbox([
-      item({ students: ['王小一'] }),
-      item({ id: 'n2', title: '班会', read_at: '2026-11-04T03:00:00Z', students: ['王小二'] }),
+      item(),
+      item({
+        id: 'n2',
+        title: '班会',
+        read_at: '2026-11-04T03:00:00Z',
+        students: ['王小二'],
+        students_detail: [{ name: '王小二', class_name: '五年一班' }],
+      }),
     ]),
   )
   renderAt('/parent/notices?child=s1')
   const unread = (await screen.findByText('周五春游')).closest('button')!
   expect(unread.className).toMatch(/font-semibold/)
-  expect(within(unread).getByText(/王小一/)).toBeInTheDocument()
+  expect(within(unread).getByText(/王小一\(三年二班\)/)).toBeInTheDocument()
   const read = screen.getByText('班会').closest('button')!
   expect(read.className).not.toMatch(/font-semibold/)
-  expect(within(read).getByText(/王小二/)).toBeInTheDocument()
+  expect(within(read).getByText(/王小二\(五年一班\)/)).toBeInTheDocument()
   expect(read.className).toMatch(/min-h-\[44px\]/)
+})
+
+it('names the children with the class snapshot taken when the notice was sent (L87)', async () => {
+  vi.mocked(noticesApi.inbox).mockResolvedValue(
+    inbox([
+      // 发送时孩子在二年二班(升学后现在是三年二班):显示快照,不显示现在的班
+      item({
+        students: ['王小一', '王小二'],
+        students_detail: [
+          { name: '王小一', class_name: '二年二班' },
+          { name: '王小二', class_name: null },
+        ],
+      }),
+    ]),
+  )
+  renderAt('/parent/notices?child=s1')
+  const row = (await screen.findByText('周五春游')).closest('button')!
+  expect(within(row).getByText(/涉及:王小一\(二年二班\)、王小二$/)).toBeInTheDocument()
+  expect(within(row).queryByText(/三年二班/)).toBeNull()
 })
 
 it('shows 系统 for system notices', async () => {
@@ -255,6 +280,70 @@ it('does not tag notices that need no ack, were acked, or cannot be acked', asyn
   renderAt()
   await screen.findByText('甲')
   expect(screen.queryByText('待回执')).toBeNull()
+})
+
+/** 25 条通知分两页(每页 20):第 1 页 n1–n20,第 2 页 n21–n25;unread 由后端按全量给 */
+function twoPages() {
+  const all = Array.from({ length: 25 }, (_, i) => item({ id: `n${i + 1}`, title: `通知${i + 1}` }))
+  return (page: number) => ({ items: all.slice((page - 1) * 20, page * 20), total: 25, unread: 23 })
+}
+
+it('loads the next inbox page from a 加载更多 button and keeps the badge on the full unread count (L90)', async () => {
+  const pages = twoPages()
+  vi.mocked(noticesApi.inbox).mockImplementation(async (page) => pages(page))
+  renderAt('/parent/notices?child=s1')
+  await screen.findByText('通知1')
+  expect(screen.getByText('通知20')).toBeInTheDocument()
+  expect(screen.queryByText('通知21')).toBeNull()
+  // 徽标按全量:23 条未读,不是第 1 页里数出来的 20
+  expect(tab()).toHaveAccessibleName('通知 23 条未读')
+  const more = screen.getByRole('button', { name: '加载更多' })
+  expect(
+    more.compareDocumentPosition(screen.getByText('通知20')) & Node.DOCUMENT_POSITION_PRECEDING,
+  ).toBeTruthy()
+  fireEvent.click(more)
+  expect(await screen.findByText('通知25')).toBeInTheDocument()
+  expect(noticesApi.inbox).toHaveBeenCalledWith(2)
+  expect(screen.getByText('通知1')).toBeInTheDocument()
+  await waitFor(() => expect(screen.queryByRole('button', { name: '加载更多' })).toBeNull())
+  expect(tab()).toHaveAccessibleName('通知 23 条未读')
+})
+
+it('a notice arriving between pages is not shown twice and does not trigger an extra empty page', async () => {
+  const all = Array.from({ length: 25 }, (_, i) => item({ id: `n${i + 1}`, title: `通知${i + 1}` }))
+  // 第 1 页取完后来了 n0:第 2 页按位置 21–26 给,开头是第 1 页末尾的 n20
+  vi.mocked(noticesApi.inbox).mockImplementation(async (page) =>
+    page === 1
+      ? { items: all.slice(0, 20), total: 25, unread: 23 }
+      : { items: [all[19]!, ...all.slice(20)], total: 26, unread: 24 },
+  )
+  renderAt()
+  fireEvent.click(await screen.findByRole('button', { name: '加载更多' }))
+  expect(await screen.findByText('通知25')).toBeInTheDocument()
+  expect(screen.getAllByText('通知20')).toHaveLength(1)
+  await waitFor(() => expect(screen.queryByRole('button', { name: '加载更多' })).toBeNull())
+  expect(noticesApi.inbox).toHaveBeenCalledTimes(2)
+})
+
+it('has no 加载更多 when the inbox fits in one page', async () => {
+  vi.mocked(noticesApi.inbox).mockResolvedValue(inbox([item(), item({ id: 'n2', title: '班会' })]))
+  renderAt()
+  await screen.findByText('班会')
+  expect(screen.queryByRole('button', { name: '加载更多' })).toBeNull()
+})
+
+it('reports a failed next page and lets the parent try again', async () => {
+  const pages = twoPages()
+  vi.mocked(noticesApi.inbox)
+    .mockImplementationOnce(async (page) => pages(page))
+    .mockRejectedValueOnce(new Error('x'))
+    .mockImplementation(async (page) => pages(page))
+  renderAt()
+  fireEvent.click(await screen.findByRole('button', { name: '加载更多' }))
+  expect(await screen.findByText('加载更多失败')).toBeInTheDocument()
+  expect(screen.getByText('通知1')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '加载更多' }))
+  expect(await screen.findByText('通知25')).toBeInTheDocument()
 })
 
 it('shows 此通知已撤回 and no ack form for a recalled notice', async () => {

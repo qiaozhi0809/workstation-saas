@@ -13,8 +13,10 @@ import type { Context } from '@/shared/types/admin'
 import AdminHome from './AdminHome'
 import AdminLayout from './AdminLayout'
 import type { AdminPage } from './pages'
+import { DRAFT_KEY } from './Upgrade/useUpgradeDraft'
 
 vi.mock('@/shared/api/admin', () => ({ adminApi: { school: vi.fn() } }))
+vi.mock('@/shared/api/auth', () => ({ authApi: { logout: vi.fn(async () => undefined) } }))
 vi.mock('@/shared/api/notices', () => ({
   noticesApi: { inbox: vi.fn(), read: vi.fn(), readAll: vi.fn() },
 }))
@@ -88,6 +90,7 @@ const renderAt = (entry: string) =>
             ))}
           </Route>
           <Route path="/teacher" element={<div>teacher home</div>} />
+          <Route path="/login" element={<div>login page</div>} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -158,6 +161,22 @@ it('switches to the teacher side and remembers it', async () => {
   fireEvent.click(screen.getByRole('menuitem', { name: '切换到教师端' }))
   expect(await screen.findByText('teacher home')).toBeInTheDocument()
   expect(useAuthStore.getState().lastContext).toBe('teacher')
+})
+
+// L54(审查裁定):只有这里的"退出登录"主动清升级向导草稿;会话过期等被动登出不清
+it('explicit logout drops the upgrade wizard draft and goes to the login page', async () => {
+  setUser(['admin'], ['org.manage'])
+  window.localStorage.setItem(
+    DRAFT_KEY,
+    JSON.stringify({ v: 2, owner: 'u', step: 'year', year: {}, plan: null, ui: {} }),
+  )
+  renderAt('/admin')
+  await screen.findByText('org page')
+  fireEvent.click(screen.getByRole('button', { name: '账号菜单' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: '退出登录' }))
+  expect(await screen.findByText('login page')).toBeInTheDocument()
+  expect(window.localStorage.getItem(DRAFT_KEY)).toBeNull()
+  expect(useAuthStore.getState().user).toBeNull()
 })
 
 // 缺口 B-1:RealtimeProvider 必须真的挂在管理壳里,布局内的订阅者才收得到事件

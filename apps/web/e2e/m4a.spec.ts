@@ -262,9 +262,10 @@ test.describe('graduation', () => {
     await signIn(page, LI_PARENT)
     await expect(page).toHaveURL(/\/parent\/today/)
     const switcher = page.getByLabel('切换孩子')
-    await expect(switcher.locator('option', { hasText: '魏小七(已毕业/离校)' })).toHaveCount(1)
-    await switcher.selectOption({ label: '魏小七(已毕业/离校)' })
-    await expect(page.getByText(/毕业 \/ 离校,可以继续查看在校期间的成长与成绩/)).toBeVisible()
+    // 毕业的孩子写"已毕业"(移出 / 转出的才是"已离校",L77)
+    await expect(switcher.locator('option', { hasText: '魏小七(已毕业)' })).toHaveCount(1)
+    await switcher.selectOption({ label: '魏小七(已毕业)' })
+    await expect(page.getByText(/毕业,可以继续查看在校期间的成长与成绩/)).toBeVisible()
     await expect(page.getByRole('region', { name: '今日出勤' })).toHaveCount(0)
     await expect(page.getByRole('region', { name: '班级座位' })).toHaveCount(0)
     await page
@@ -283,7 +284,7 @@ test.describe('graduation', () => {
     await page.reload()
     await expect(page.getByLabel('切换孩子').locator('option')).toHaveCount(2)
     await expect(
-      page.getByLabel('切换孩子').locator('option', { hasText: '已毕业/离校' }),
+      page.getByLabel('切换孩子').locator('option', { hasText: /已毕业|已离校/ }),
     ).toHaveCount(0)
     await expect(page.getByLabel('切换孩子').locator('option:checked')).toHaveText('魏小七')
     await page

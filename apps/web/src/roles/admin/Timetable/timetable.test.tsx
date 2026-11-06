@@ -33,15 +33,18 @@ const cls = (over: Partial<ClassAdmin> = {}): ClassAdmin => ({
   grade_name: '三年级',
   room: '301',
   student_count: 40,
-  homeroom: { assignment_id: 'a1', user_id: 'u1', display_name: '李老师' },
+  homeroom: { assignment_id: 'a1', user_id: 'u1', teacher_id: 't1', display_name: '李老师' },
   assistants: [],
   subjects: [
-    { subject: '语文', teachers: [{ assignment_id: 'a2', user_id: 'u2', display_name: '王老师' }] },
+    {
+      subject: '语文',
+      teachers: [{ assignment_id: 'a2', user_id: 'u2', teacher_id: 't2', display_name: '王老师' }],
+    },
     {
       subject: '数学',
       teachers: [
-        { assignment_id: 'a3', user_id: 'u3', display_name: '赵老师' },
-        { assignment_id: 'a4', user_id: 'u4', display_name: '钱老师' },
+        { assignment_id: 'a3', user_id: 'u3', teacher_id: 't3', display_name: '赵老师' },
+        { assignment_id: 'a4', user_id: 'u4', teacher_id: 't4', display_name: '钱老师' },
       ],
     },
   ],
