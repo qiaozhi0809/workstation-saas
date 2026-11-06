@@ -3,10 +3,15 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { adminApi } from '@/shared/api/admin'
+import { api } from '@/shared/api/client'
+import { useAuthStore } from '@/shared/stores/auth'
 import type { TodayView } from '@/shared/types/admin'
+import type { SetupItem } from './SetupChecklist'
 import TodayPage from './TodayPage'
 
 vi.mock('@/shared/api/admin', () => ({ adminApi: { today: vi.fn() } }))
+// 开学准备清单直接走 api():这里只关心它挂在哪、谁看得到,逐项行为见 setupChecklist.test.tsx
+vi.mock('@/shared/api/client', () => ({ api: vi.fn() }))
 vi.mock('@/roles/teacher/StudentProfile/StudentProfileDrawer', () => ({
   default: ({ studentId }: { studentId: string }) => (
     <div role="dialog" aria-label="学生档案">
@@ -77,7 +82,10 @@ function setup(data: TodayView) {
 }
 
 beforeEach(() => vi.resetAllMocks())
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  useAuthStore.getState().logout()
+})
 
 describe('今日关注页', () => {
   it('标题、日期星期与 KPI 计算', async () => {
@@ -166,6 +174,50 @@ describe('今日关注页', () => {
     expect(
       await screen.findByRole('heading', { level: 1, name: '今日关注 · 全校' }),
     ).toBeInTheDocument()
+  })
+
+  describe('开学准备清单', () => {
+    const checklist: SetupItem[] = [
+      { key: 'school', done: false, detail: '2 个年级未设学段', to: '/admin/org' },
+      { key: 'year', done: true, detail: '当前学年 2026-2027', to: '/admin/upgrade' },
+    ]
+    const login = (admin_perms: ('school.view' | 'settings.manage')[]) =>
+      useAuthStore.setState({
+        accessToken: 'a',
+        refreshToken: 'r',
+        user: {
+          id: 'u1',
+          display_name: '蒋老师',
+          contexts: ['admin'],
+          admin_perms,
+          must_change_password: false,
+          password_change_reason: null,
+        },
+      })
+
+    it('信息中心看到清单,挂在页头之后、KPI 之前', async () => {
+      login(['settings.manage'])
+      vi.mocked(api).mockResolvedValue(checklist)
+      setup(view())
+      const region = await screen.findByRole('region', { name: '开学准备' })
+      expect(api).toHaveBeenCalledWith('GET', '/admin/setup-checklist')
+      const header = screen.getByRole('heading', { level: 1 }).closest('header') as HTMLElement
+      const kpi = screen.getByText('在读').closest('[data-kpi]') as HTMLElement
+      expect(header.compareDocumentPosition(region) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(region.compareDocumentPosition(kpi) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(await within(region).findByRole('link', { name: '年级与学段' })).toHaveAttribute(
+        'href',
+        '/admin/org',
+      )
+    })
+
+    it('年级组长(只有 school.view)看不到清单,也不发请求', async () => {
+      login(['school.view'])
+      setup(view())
+      await screen.findByRole('heading', { level: 1, name: '今日关注 · 全校' })
+      expect(screen.queryByRole('region', { name: '开学准备' })).toBeNull()
+      expect(api).not.toHaveBeenCalled()
+    })
   })
 
   describe('联考与通知两张卡', () => {

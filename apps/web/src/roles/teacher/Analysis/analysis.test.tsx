@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { classesApi } from '@/shared/api/classes'
@@ -160,6 +160,42 @@ describe('AnalysisPage', () => {
     expect(url).not.toContain('cmp=')
   })
 
+  it('lists exams newest first in both selects, like the scores page (L16)', async () => {
+    const earliest = exam('x0', '开学测验', '2026-09-01', {
+      e1: { 语文: 60, 数学: 60 },
+      e2: { 语文: 60, 数学: 60 },
+      e3: { 语文: 60, 数学: 60 },
+    })
+    setup([earliest, first, second, unscored])
+    await avgCard()
+    const names = (el: HTMLElement) =>
+      within(el)
+        .getAllByRole('option')
+        .map((o) => o.textContent)
+    expect(names(screen.getByLabelText('考试'))).toEqual(['期中考试', '第一次月考', '开学测验'])
+    // 当前考试不在对比列表里
+    expect(names(screen.getByLabelText('对比'))).toEqual(['不对比', '第一次月考', '开学测验'])
+  })
+
+  it('says so when the exam in the address has no scores yet and shows the latest instead (L16)', async () => {
+    setup([first, second, unscored], '/teacher/analysis?exam=x3')
+    const note = await screen.findByText(/这场考试还没有分数/)
+    expect(note).toHaveTextContent('「期末考试」这场考试还没有分数,先显示最近一场有分数的考试')
+    expect(note).toHaveAttribute('role', 'status')
+    expect(screen.getByLabelText('考试')).toHaveValue('x2')
+    // 选了有分数的考试,提示就没了
+    fireEvent.change(screen.getByLabelText('考试'), { target: { value: 'x1' } })
+    expect(screen.queryByText(/这场考试还没有分数/)).toBeNull()
+  })
+
+  it('explains the default comparison basis and drops the note once a comparison is chosen (L16)', async () => {
+    setup([first, second])
+    await avgCard()
+    expect(screen.getByText('默认与上一场有分数的考试比')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('对比'), { target: { value: 'none' } })
+    expect(screen.queryByText('默认与上一场有分数的考试比')).toBeNull()
+  })
+
   it('hides trends with fewer than two scored exams', async () => {
     setup([first, unscored])
     await avgCard()
@@ -192,6 +228,62 @@ describe('AnalysisPage', () => {
     const rank = screen.getByRole('region', { name: '成绩排名' })
     const row = within(rank).getByRole('button', { name: '李小二' }).closest('tr') as HTMLElement
     expect(within(row).getAllByText('60')[0]).toHaveClass('text-destructive')
+  })
+
+  it('colours the total-score bands by the school ratios, not a fixed 60% / 90%', async () => {
+    // 总分 100 / 130 / 170(满分 200):落在 50–60%、60–70%、80–90% 三档(空档不画柱子)
+    const banded = exam('b1', '分段测验', '2026-10-01', {
+      e1: { 语文: 50, 数学: 50 },
+      e2: { 语文: 65, 数学: 65 },
+      e3: { 语文: 85, 数学: 85 },
+    })
+    const bandFills = () => {
+      const section = screen.getByText('总分分数段').closest('section') as HTMLElement
+      return Array.from(section.querySelectorAll('path.recharts-rectangle')).map((p) =>
+        p.getAttribute('fill'),
+      )
+    }
+    const LOW = 'hsl(var(--chart-4))'
+    const MID = 'hsl(var(--chart-1))'
+    const GOOD = 'hsl(var(--chart-3))'
+    const a = setup([banded])
+    await avgCard()
+    // 默认 60% / 85%:50–60% 不及格段;60–70% 及格段;80–90% 跨 85% 的优秀线,仍是及格段
+    expect(bandFills()).toEqual([LOW, MID, MID])
+    a.unmount()
+
+    vi.mocked(schoolApi.grading).mockResolvedValue({ pass_ratio: 0.7, good_ratio: 0.8 })
+    setup([banded])
+    await avgCard()
+    // 70% / 80%:60–70% 整档在及格线下 → 不及格段;80–90% 整档在优秀线上 → 优秀段
+    await waitFor(() => expect(bandFills()).toEqual([LOW, LOW, GOOD]))
+  })
+
+  it('draws the subject rate chart against the school pass line, not a fixed 60%', async () => {
+    // 第一次月考两科平均得分率都是 60%
+    const chart = () => screen.getByText('各科平均得分率').closest('section') as HTMLElement
+    const fills = () =>
+      Array.from(chart().querySelectorAll('path.recharts-rectangle')).map((p) =>
+        p.getAttribute('fill'),
+      )
+    const passLineY = () =>
+      Number(chart().querySelector('.recharts-reference-line line')?.getAttribute('y1'))
+    const LOW = 'hsl(var(--chart-4))'
+    const MAIN = 'hsl(var(--chart-1))'
+    const a = setup([first])
+    await avgCard()
+    expect(fills()).toEqual([MAIN, MAIN])
+    const y60 = passLineY()
+    expect(y60).toBeGreaterThan(0)
+    a.unmount()
+
+    vi.mocked(schoolApi.grading).mockResolvedValue({ pass_ratio: 0.7, good_ratio: 0.9 })
+    setup([first])
+    await avgCard()
+    // 60% 低于 70% 的及格线 → 两科都标低分;及格参考线往上移
+    await waitFor(() => expect(fills()).toEqual([LOW, LOW]))
+    expect(passLineY()).toBeLessThan(y60)
+    expect(chart().textContent).toContain('及格')
   })
 })
 
@@ -269,7 +361,31 @@ describe('TrendGrid', () => {
         ratios={DEFAULT_GRADING}
       />,
     )
-    expect(screen.getByText('纵轴 55–85%')).toBeInTheDocument()
+    // 60–90 补白后是 55–85,跨度再补到 20 的倍数 → 55–95
+    expect(screen.getByText('纵轴 55–95%')).toBeInTheDocument()
     expect(screen.getAllByRole('img')).toHaveLength(3)
+  })
+
+  it('keeps the y-axis ticks on whole fives instead of values like 81% (L16)', () => {
+    // 得分率 62 / 70 / 66 与 84 / 80 / 82:补白到 5 的倍数是 55–90,跨 35 时 recharts 会给出 64%、73%、82% 这类刻度
+    const a = exam('a', '九月月考', '2026-09-20', {
+      e1: { 语文: 62, 数学: 70 },
+      e2: { 语文: 62, 数学: 70 },
+      e3: { 语文: 62, 数学: 70 },
+    })
+    const b = exam('b', '十月月考', '2026-10-20', {
+      e1: { 语文: 84, 数学: 80 },
+      e2: { 语文: 84, 数学: 80 },
+      e3: { 语文: 84, 数学: 80 },
+    })
+    const { container } = render(
+      <TrendGrid book={[a, b]} ids={['e1', 'e2', 'e3']} width={300} ratios={DEFAULT_GRADING} />,
+    )
+    const ticks = Array.from(
+      container.querySelectorAll('.recharts-yAxis .recharts-cartesian-axis-tick-value'),
+    ).map((el) => el.textContent ?? '')
+    // 三张图(总分 + 两科)共用同一纵轴
+    expect([...new Set(ticks)]).toEqual(['55%', '65%', '75%', '85%', '95%'])
+    expect(screen.getByText('纵轴 55–95%')).toBeInTheDocument()
   })
 })

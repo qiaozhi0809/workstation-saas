@@ -8,7 +8,10 @@ import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { Badge } from '@/shared/components/ui/badge'
 import { Button } from '@/shared/components/ui/button'
+import { addDays } from '@/shared/lib/date'
 import { cn } from '@/shared/lib/utils'
+import type { AuditRow } from '@/shared/types/admin'
+import { todayIn, useSchoolTz } from '../Reports/useSchoolTz'
 import AuditFilters, { type AuditFilterValue } from './AuditFilters'
 import AuditRowDetail from './AuditRowDetail'
 
@@ -19,20 +22,30 @@ const fmtTime = (iso: string) => {
   const d = new Date(iso)
   return `${localDate(d)} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
-/** 最近 7 天:今天往前 6 天到今天,本地日期 */
-const defaultRange = () => {
-  const to = new Date()
-  const from = new Date(to.getFullYear(), to.getMonth(), to.getDate() - 6)
-  return { from: localDate(from), to: localDate(to) }
+/** 最近 7 天:学校时区里的今天往前 6 天到今天(后端按学校时区算日界,L43) */
+const defaultRange = (tz: string) => {
+  const to = todayIn(tz)
+  return { from: addDays(to, -6), to }
 }
 
 const HEADS = ['时间', '操作人', '操作', '对象', 'IP', '结果']
+/** 对象列:有名字显示名字;只有 id(如发送通知的通知 id)时显示动作中文名而不是 UUID(L58) */
+const objectText = (r: AuditRow) => r.object_label ?? (r.object_id ? r.action_label : '—')
 
+/** 默认区间要按学校时区算,所以等拿到时区再初始化筛选状态 */
 export default function AuditPage() {
+  const school = useSchoolTz()
+  if (!school.ready) return <LoadingState />
+  return <AuditLog tz={school.tz} />
+}
+
+function AuditLog({ tz }: { tz: string }) {
   const [filter, setFilter] = useState<AuditFilterValue>(() => ({
-    ...defaultRange(),
+    ...defaultRange(tz),
     user: null,
     group: '',
+    action: '',
+    objectType: '',
     deniedOnly: false,
   }))
   const [page, setPage] = useState(1)
@@ -43,6 +56,8 @@ export default function AuditPage() {
     ...(filter.to && { to: filter.to }),
     ...(filter.user && { user_id: filter.user.id }),
     ...(filter.group && { group: filter.group }),
+    ...(filter.action && { action: filter.action }),
+    ...(filter.objectType && { object_type: filter.objectType }),
     ...(filter.deniedOnly && { success: false }),
     page,
   }
@@ -141,7 +156,7 @@ export default function AuditPage() {
                           {r.action_label}
                         </span>
                       </td>
-                      <td className="px-3 py-2">{r.object_label ?? r.object_id ?? '—'}</td>
+                      <td className="px-3 py-2">{objectText(r)}</td>
                       <td className="whitespace-nowrap px-3 py-2">{r.ip ?? '—'}</td>
                       <td className="whitespace-nowrap px-3 py-2">
                         <Badge variant={r.success ? 'success' : 'danger'}>

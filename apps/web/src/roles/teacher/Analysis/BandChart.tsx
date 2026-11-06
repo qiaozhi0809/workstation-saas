@@ -1,5 +1,6 @@
 import { ScoreBars, type BarDatum } from '@/shared/components/charts/ScoreBars'
 import { scoreBands, type ExamStats } from '@/shared/lib/grades'
+import type { Grading } from '@/shared/types/school'
 
 const TONE: Record<'low' | 'mid' | 'good', BarDatum['tone']> = {
   low: 'low',
@@ -12,9 +13,18 @@ const LEGEND = [
   { text: '优秀段', cls: 'bg-chart-3' },
 ]
 
-export function BandChart({ stats, width }: { stats: ExamStats; width?: number }) {
+/** ratios:学校的及格 / 优秀比例(useGrading()),与算出 stats 的是同一份;分档颜色按它定 */
+export function BandChart({
+  stats,
+  width,
+  ratios,
+}: {
+  stats: ExamStats
+  width?: number
+  ratios: Grading
+}) {
   const totals = stats.table.flatMap((r) => (r.total === null ? [] : [r.total]))
-  const data: BarDatum[] = scoreBands(totals, stats.full).map((b) => ({
+  const data: BarDatum[] = scoreBands(totals, stats.full, ratios).map((b) => ({
     label: `${b.lo}–${b.hi}`,
     value: b.count,
     tone: TONE[b.tone],

@@ -2,8 +2,10 @@ import { useQuery } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { Fragment, useState } from 'react'
 import { adminApi } from '@/shared/api/admin'
+import { EmptyState } from '@/shared/components/feedback/EmptyState'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import type { AttendanceCounts, AttendanceReport } from '@/shared/types/admin'
+import { NO_PERM_ATTENDANCE, isForbidden } from './forbidden'
 
 const fmtRate = (r: number | null): string => (r === null ? '—' : `${(r * 100).toFixed(1)}%`)
 
@@ -30,6 +32,7 @@ function ClassDetail({ month, classId }: { month: string; classId: string }) {
     queryKey: ['report', 'attendance', month, classId],
     queryFn: () => adminApi.attendanceClass(month, classId),
   })
+  if (isForbidden(q.error)) return <EmptyState title={NO_PERM_ATTENDANCE} className="py-2" />
   if (q.isError)
     return (
       <ErrorState
@@ -102,7 +105,8 @@ export default function AttendanceClassTable({
             return (
               <Fragment key={c.class_id}>
                 <tr className="border-t">
-                  <td className="px-3 py-2 text-left">
+                  {/* 班名不折行:375 宽下由外层容器横向滚动,而不是把班名挤成竖排(L58) */}
+                  <td className="whitespace-nowrap px-3 py-2 text-left">
                     <button
                       type="button"
                       aria-expanded={expanded}
