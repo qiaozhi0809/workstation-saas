@@ -84,11 +84,23 @@ describe('CameraPlayer', () => {
     xhrSetup!(xhr, '/api/v1/cameras/c1/stream.m3u8')
     expect(setRequestHeader).toHaveBeenLastCalledWith('Authorization', 'Bearer tok-1')
     useAuthStore.setState({ accessToken: 'tok-2' })
-    xhrSetup!(xhr, 'https://host.invalid/api/v1/cameras/c1/stream.m3u8?x=1')
+    xhrSetup!(xhr, `${window.location.origin}/api/v1/cameras/c1/stream.m3u8?x=1`)
     expect(setRequestHeader).toHaveBeenLastCalledWith('Authorization', 'Bearer tok-2')
     setRequestHeader.mockClear()
+    xhrSetup!(xhr, 'https://host.invalid/api/v1/cameras/c1/stream.m3u8?x=1')
     xhrSetup!(xhr, '/api/v1/cameras/c1/seg/1.ts?sig=abc')
     xhrSetup!(xhr, '/api/v1/cameras/c1/seg/2.m4s?sig=abc')
+    expect(setRequestHeader).not.toHaveBeenCalled()
+  })
+
+  it('sends no header without a token', () => {
+    useAuthStore.setState({ accessToken: null })
+    render(<CameraPlayer cameraId="c1" title="t" />)
+    const setRequestHeader = vi.fn()
+    hls().config.xhrSetup!(
+      { setRequestHeader } as unknown as XMLHttpRequest,
+      '/api/v1/cameras/c1/stream.m3u8',
+    )
     expect(setRequestHeader).not.toHaveBeenCalled()
   })
 
@@ -165,6 +177,48 @@ describe('CameraPlayer', () => {
     expect(refresh).toHaveBeenCalledTimes(1)
     expect(hls().loadSource).toHaveBeenCalledTimes(2)
     expect(screen.getByRole('alert')).toHaveTextContent('摄像头连不上')
+  })
+
+  it('refreshes again for a later 401 after a successful load, but not two in a row', async () => {
+    const refresh = vi.spyOn(client, 'tryRefreshAccessToken').mockResolvedValue('ok')
+    render(<CameraPlayer cameraId="c1" title="t" />)
+    await act(async () => hls().emit('hlsError', manifestError(401)))
+    act(() => hls().emit('hlsManifestParsed'))
+    await act(async () => hls().emit('hlsError', manifestError(401)))
+    expect(refresh).toHaveBeenCalledTimes(2)
+    expect(hls().loadSource).toHaveBeenCalledTimes(3)
+    await act(async () => hls().emit('hlsError', manifestError(401)))
+    expect(refresh).toHaveBeenCalledTimes(2)
+    expect(screen.getByRole('alert')).toHaveTextContent('摄像头连不上')
+  })
+
+  it('does not load while hidden at mount and loads once visible', () => {
+    let hidden = true
+    vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden)
+    vi.useFakeTimers()
+    render(<CameraPlayer cameraId="c1" title="t" />)
+    expect(hls().loadSource).not.toHaveBeenCalled()
+    act(() => void vi.advanceTimersByTime(20000))
+    expect(screen.queryByText('摄像头连不上')).toBeNull()
+    hidden = false
+    act(() => void document.dispatchEvent(new Event('visibilitychange')))
+    expect(hls().loadSource).toHaveBeenCalledTimes(1)
+    expect(hls().startLoad).not.toHaveBeenCalled()
+  })
+
+  it('defers a STREAM_STARTING retry while hidden', () => {
+    let hidden = false
+    vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden)
+    vi.useFakeTimers()
+    render(<CameraPlayer cameraId="c1" title="t" />)
+    act(() => hls().emit('hlsError', manifestError(503, errBody('STREAM_STARTING'))))
+    hidden = true
+    act(() => void document.dispatchEvent(new Event('visibilitychange')))
+    act(() => void vi.advanceTimersByTime(2000))
+    expect(hls().loadSource).toHaveBeenCalledTimes(1)
+    hidden = false
+    act(() => void document.dispatchEvent(new Event('visibilitychange')))
+    expect(hls().loadSource).toHaveBeenCalledTimes(2)
   })
 
   it('logs out when refresh rejected', async () => {

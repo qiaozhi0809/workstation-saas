@@ -5,7 +5,12 @@ import type {
   TimetableCellInput,
   TimetableImportResult,
 } from '@/shared/types/timetable'
-import { API_BASE, api, toApiError, tryRefreshAccessToken } from './client'
+import { API_BASE, ApiError, api, toApiError, tryRefreshAccessToken } from './client'
+
+function sessionExpired(): ApiError {
+  useAuthStore.getState().logout()
+  return new ApiError(401, 'UNAUTHORIZED', '登录已失效，请重新登录')
+}
 
 /** CSV 要以 text/csv 原样上传:共用的 authedFetch 会把 body 当 JSON 序列化,所以这里单独发请求,
  * 并照搬它的 401 处理(刷新一次再重发;被拒则登出)。 */
@@ -19,8 +24,10 @@ async function postCsv(path: string, body: Blob): Promise<Response> {
   let res = await send()
   if (res.status === 401) {
     const refreshed = await tryRefreshAccessToken()
-    if (refreshed === 'ok') res = await send()
-    else if (refreshed === 'rejected') useAuthStore.getState().logout()
+    if (refreshed === 'network') return res // 保留登录态,按原 401 失败
+    if (refreshed !== 'ok') throw sessionExpired()
+    res = await send()
+    if (res.status === 401) throw sessionExpired()
   }
   return res
 }

@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, within } from '@testing-library/react'
+import { act, cleanup, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CameraBrief } from '@/shared/types/camera'
 import { CameraGrid } from './CameraGrid'
@@ -100,6 +100,5 @@ describe('CameraGrid', () => {
     expect(screen.getAllByText(/正在直播/)).toHaveLength(2)
     rerender(<CameraGrid cameras={cams(2)} size={4} schoolName="示例小学" />)
     expect(screen.queryByText(/正在直播/)).toBeNull()
-    void within
   })
 })

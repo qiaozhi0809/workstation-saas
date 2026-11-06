@@ -28,9 +28,11 @@ function errorCodeOf(data: HlsErrorData): string | null {
   }
 }
 
+/** 只给同源的 .m3u8 播放列表带令牌;分片自带签名,跨源地址一律不带 */
 function isPlaylistUrl(url: string): boolean {
   try {
-    return new URL(url, window.location.href).pathname.endsWith('.m3u8')
+    const u = new URL(url, window.location.href)
+    return u.origin === window.location.origin && u.pathname.endsWith('.m3u8')
   } catch {
     return false
   }
@@ -75,9 +77,8 @@ export function CameraPlayer({
     let startingRetries = 0
     let hls: Hls | null = new Hls({
       xhrSetup: (xhr, url) => {
-        if (isPlaylistUrl(url)) {
-          xhr.setRequestHeader('Authorization', `Bearer ${useAuthStore.getState().accessToken}`)
-        }
+        const token = useAuthStore.getState().accessToken
+        if (token && isPlaylistUrl(url)) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
       },
     })
     let noPictureTimer: ReturnType<typeof setTimeout> | undefined
@@ -103,16 +104,26 @@ export function CameraPlayer({
         if (!gotPicture) finish('offline')
       }, NO_PICTURE_MS)
     }
-    const markFirstSign = () => clearTimeout(noPictureTimer)
+    const markFirstSign = () => {
+      refreshed = false // 成功拿到过内容:之后再 401 允许再刷新一次
+      clearTimeout(noPictureTimer)
+    }
     const markPlaying = () => {
       if (terminal) return
+      refreshed = false
       gotPicture = true
       clearTimeout(noPictureTimer)
       setState('playing')
     }
+    let pendingLoad = false // 页面隐藏时挂起的加载,等可见再发
     const reload = () => {
       if (terminal || !hls) return
+      if (document.hidden) {
+        pendingLoad = true
+        return
+      }
       hls.loadSource(src)
+      armNoPictureTimer()
     }
 
     const handleError = (data: HlsErrorData) => {
@@ -142,7 +153,6 @@ export function CameraPlayer({
           startingRetries += 1
           clearTimeout(retryTimer)
           retryTimer = setTimeout(reload, STARTING_RETRY_MS)
-          armNoPictureTimer()
           return
         }
         return finish('offline')
@@ -157,13 +167,15 @@ export function CameraPlayer({
       video.addEventListener('playing', markPlaying)
       hls.attachMedia(video)
     }
-    hls.loadSource(src)
-    armNoPictureTimer()
+    reload()
 
     const onVisibility = () => {
       if (terminal || !hls) return
       if (document.hidden) hls.stopLoad()
-      else hls.startLoad()
+      else if (pendingLoad) {
+        pendingLoad = false
+        reload()
+      } else hls.startLoad()
     }
     document.addEventListener('visibilitychange', onVisibility)
 
