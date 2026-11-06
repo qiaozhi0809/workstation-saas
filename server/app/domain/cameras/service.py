@@ -335,10 +335,12 @@ def run_test(
     message = mask_url(result.message)
     preview = result.preview_jpeg_base64
     if preview is not None and not show_preview:
-        # 视频不出校:预览图只给内网来源(不是错误,正常返回结果)
+        # 视频不出校:预览图只给内网来源(不是错误,正常返回结果);编解码信息不涉及画面,照常返回
         preview = None
         message = f"{message};{PREVIEW_LAN_ONLY}"
-    return CameraTestResult(ok=result.ok, message=message, preview_jpeg_base64=preview)
+    return CameraTestResult(
+        ok=result.ok, message=message, preview_jpeg_base64=preview, probe=result.probe
+    )
 
 
 def public_hosts(redis: Redis) -> list[str]:

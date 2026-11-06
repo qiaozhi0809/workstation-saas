@@ -87,6 +87,13 @@ services:
       options: {max-size: "10m", max-file: "5"}
     # 退出时要依次停掉最多 10 路 ffmpeg
     stop_grace_period: 20s
+    # 资源围栏:copy 模式每路约 0.1 核,转码每路约 1 核(-threads 2 封顶)。超限时只是这个容器变慢、
+    # 画面卡顿,不会把 app / 数据库 / 定时任务一起拖垮;转码路数多时在 .env 里调大
+    deploy:
+      resources:
+        limits:
+          cpus: "${WS_STREAM_CPUS:-2}"
+          memory: "${WS_STREAM_MEMORY:-2g}"
     volumes:
       - ws-hls:/run/ws-hls
     # 等 app 健康(迁移已完成,cameras 表已存在)再起
@@ -119,13 +126,16 @@ services:
     networks: [ws-net]
 
 volumes:
-  # 内存盘:片段写盘不磨损硬盘,容器重启即清空;uid 与应用镜像的 ws 用户一致
+  # 内存盘:片段写盘不磨损硬盘,容器重启即清空;uid 与应用镜像的 ws 用户一致。
+  # size 只是上限,tmpfs 按实际用量占内存。估算:每路最多 6 个 2 秒片段外加 ffmpeg 延迟删除的几个,
+  # 主码流(1080p / 4K,copy)每路约 60–100 MB,子码流或 720p 转码每路不到 20 MB;
+  # 10 路主码流约 1 GB,路数多或码率高时在 .env 里调大 WS_HLS_SIZE
   ws-hls:
     driver: local
     driver_opts:
       type: tmpfs
       device: tmpfs
-      o: "size=512m,uid=10001,gid=10001,mode=0755"
+      o: "size=${WS_HLS_SIZE:-1g},uid=10001,gid=10001,mode=0755"
 
 networks:
   ws-net:

@@ -1,5 +1,6 @@
-"""ffmpeg 命令行拼装与日志打码。带凭据的地址只存在于 worker 进程内存里,不进日志、不进 Redis。"""
+"""ffmpeg / ffprobe 命令行拼装与日志打码。带凭据的地址只在 worker 内存里,不进日志、不进 Redis。"""
 
+import os
 import re
 from pathlib import Path
 from urllib.parse import quote, urlsplit, urlunsplit
@@ -13,21 +14,28 @@ _USERINFO_RE = re.compile(r"(?i)([a-z][a-z0-9+.\-]*://)[^/@\s]*@")
 _QUERY_SECRET_RE = re.compile(r"(?i)\b(password|passwd|pwd|token|sig)=[^&\s]*")
 
 
-def build_args(url: str, out_dir: Path, *, transcode: bool) -> list[str]:
-    """不含可执行文件名。默认直接复制视频流;勾了"转码"改成 720p H.264。"""
+def build_args(url: str, out_dir: Path, *, transcode: bool, start_number: int = 0) -> list[str]:
+    """不含可执行文件名。默认直接复制视频流;勾了"转码"改成 720p H.264。
+
+    start_number 是首个片段的序列号(也是 seg-%d.ts 的编号):重启时由 supervisor 给一个比上一轮
+    都大的值,配合 discont_start 让正在看的 hls.js 把它当作新的不连续段接着放,而不是序列回退。"""
     args = ["-hide_banner", "-loglevel", "warning", "-nostdin"]
     args += ["-protocol_whitelist", PROTOCOL_WHITELIST]
     args += ["-rtsp_transport", "tcp", "-timeout", RTSP_IO_TIMEOUT_US, "-i", url, "-an"]
     if transcode:
+        # -threads 2:编码线程封顶,多路转码时不互相抢满整机;-pix_fmt yuv420p:摄像头常见的
+        # 4:2:2 / 10bit 源转成浏览器都能解的 8bit 4:2:0
         args += [
             *("-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency"),
             *("-vf", "scale=-2:720", "-g", "50"),
+            *("-threads", "2", "-pix_fmt", "yuv420p"),
         ]
     else:
         args += ["-c:v", "copy"]
     args += [
         *("-f", "hls", "-hls_time", "2", "-hls_list_size", "6"),
-        *("-hls_flags", "delete_segments+independent_segments"),
+        *("-hls_flags", "delete_segments+independent_segments+discont_start"),
+        *("-start_number", str(start_number)),
         *("-hls_segment_filename", str(out_dir / "seg-%d.ts")),
         str(out_dir / "index.m3u8"),
     ]
@@ -44,6 +52,21 @@ def probe_args(url: str) -> list[str]:
         *("-vf", "scale='min(640,iw)':-2"),
         *("-f", "image2", "-c:v", "mjpeg", "pipe:1"),
     ]
+
+
+def ffprobe_args(url: str) -> list[str]:
+    """ffprobe 读流信息(编码、分辨率、帧率、码率),JSON 写到 stdout;网络约束与 ffmpeg 同一套。"""
+    return [
+        *("-v", "error", "-print_format", "json", "-show_streams", "-show_format"),
+        *("-protocol_whitelist", PROTOCOL_WHITELIST),
+        *("-rtsp_transport", "tcp", "-timeout", RTSP_IO_TIMEOUT_US, "-i", url),
+    ]
+
+
+def ffprobe_bin_for(ffmpeg_bin: str) -> str:
+    """ffprobe 与 ffmpeg 装在一起:给了目录就取同目录下的 ffprobe,只给名字就按 PATH 找。"""
+    directory = os.path.dirname(ffmpeg_bin)
+    return os.path.join(directory, "ffprobe") if directory else "ffprobe"
 
 
 def credentials_url(url: str, username: str | None, password: str | None) -> str:

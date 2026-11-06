@@ -77,6 +77,55 @@ def calls(tmp_path: Path) -> list[str]:
     return log.read_text().splitlines() if log.exists() else []
 
 
+# 假 ffprobe:按地址里的关键字打印固定 JSON。音频流排在前面,实现必须取第一个 *视频* 流
+FAKE_FFPROBE = f"""#!{sys.executable}
+import json, os, sys, time
+args = sys.argv[1:]
+log = os.environ.get("FAKE_FFPROBE_LOG")
+if log:
+    with open(log, "a") as f:
+        f.write(" ".join(args) + "\\n")
+url = args[args.index("-i") + 1]
+if "brokenprobe" in url:  # 关键字不能含 fail:那是假 ffmpeg 截图失败的开关
+    sys.stderr.write(url + ": Connection refused\\n")
+    sys.exit(1)
+if "badjson" in url:
+    sys.stdout.write("{{not json")
+    sys.exit(0)
+if "slowprobe" in url:
+    time.sleep(30)
+if "hevc" in url:
+    video = {{"codec_type": "video", "codec_name": "hevc", "width": 2560, "height": 1440,
+             "r_frame_rate": "20/1"}}
+    fmt = {{"filename": url, "bit_rate": "6000000"}}
+elif "mpeg4" in url:
+    video = {{"codec_type": "video", "codec_name": "mpeg4", "width": 704, "height": 576,
+             "r_frame_rate": "0/0"}}
+    fmt = {{"filename": url}}
+else:
+    video = {{"codec_type": "video", "codec_name": "h264", "width": 1920, "height": 1080,
+             "r_frame_rate": "25/1", "bit_rate": "4096000"}}
+    fmt = {{"filename": url, "bit_rate": "4200000"}}
+streams = [{{"codec_type": "audio", "codec_name": "aac"}}, video]
+print(json.dumps({{"streams": streams, "format": fmt}}))
+"""
+
+
+@pytest.fixture
+def fake_ffprobe(tmp_path: Path, monkeypatch) -> Path:
+    """放在假 ffmpeg 同目录、名字就叫 ffprobe:默认推导(同目录下的 ffprobe)能找到它。"""
+    script = tmp_path / "ffprobe"
+    script.write_text(FAKE_FFPROBE)
+    script.chmod(script.stat().st_mode | stat.S_IEXEC)
+    monkeypatch.setenv("FAKE_FFPROBE_LOG", str(tmp_path / "probe-calls.log"))
+    return script
+
+
+def probe_calls(tmp_path: Path) -> list[str]:
+    log = tmp_path / "probe-calls.log"
+    return log.read_text().splitlines() if log.exists() else []
+
+
 @pytest.fixture
 def hls_root(tmp_path: Path) -> Path:
     root = tmp_path / "hls"
@@ -173,13 +222,20 @@ def test_build_args_copy_and_transcode(tmp_path):
     assert "-an" in args
     assert args[args.index("-hls_time") + 1] == "2"
     assert args[args.index("-hls_list_size") + 1] == "6"
-    assert args[args.index("-hls_flags") + 1] == "delete_segments+independent_segments"
+    flags = args[args.index("-hls_flags") + 1]
+    assert flags == "delete_segments+independent_segments+discont_start"
+    assert args[args.index("-start_number") + 1] == "0"
     assert args[args.index("-hls_segment_filename") + 1] == str(tmp_path / "seg-%d.ts")
     assert args[-1] == str(tmp_path / "index.m3u8")
     tc = ffmpeg.build_args("rtsp://10.0.0.5/live", tmp_path, transcode=True)
     assert tc[tc.index("-c:v") + 1] == "libx264"
     assert "scale=-2:720" in tc
     assert tc[tc.index("-g") + 1] == "50"
+    # 资源围栏与兼容性:编码线程封顶、强制 yuv420p(浏览器不解 4:2:2 / 10bit);copy 模式不带
+    assert tc[tc.index("-threads") + 1] == "2"
+    assert tc[tc.index("-pix_fmt") + 1] == "yuv420p"
+    assert tc.index("-i") < tc.index("-threads") < tc.index("-f")  # 作为输出选项,作用于编码器
+    assert "-threads" not in args and "-pix_fmt" not in args
 
 
 def test_credentials_url_encodes_and_mask_hides():
@@ -188,6 +244,57 @@ def test_credentials_url_encodes_and_mask_hides():
     masked = ffmpeg.mask_text(f"open {url} failed; password=hunter2&a=1", ("p@ss:/word",))
     assert "p%40ss" not in masked and "cam%20user" not in masked and "hunter2" not in masked
     assert "***" in masked
+
+
+def test_hls_flags_include_discont_start(tmp_path):
+    """重启后的新播放列表首段带 #EXT-X-DISCONTINUITY,序列号从给定值接着编(不回退到 0)。"""
+    for transcode in (False, True):
+        args = ffmpeg.build_args(
+            "rtsp://10.0.0.5/live", tmp_path, transcode=transcode, start_number=17623456
+        )
+        flags = args[args.index("-hls_flags") + 1].split("+")
+        assert {"delete_segments", "independent_segments", "discont_start"} <= set(flags)
+        assert args[args.index("-start_number") + 1] == "17623456"
+        assert args.index("-f") < args.index("-start_number")  # 输出选项,放在 -f hls 之后
+
+
+def test_ffprobe_args_and_bin():
+    args = ffmpeg.ffprobe_args("rtsp://10.0.0.5/live")
+    assert args[-2:] == ["-i", "rtsp://10.0.0.5/live"]
+    assert args[args.index("-print_format") + 1] == "json"
+    assert "-show_streams" in args and "-show_format" in args
+    assert args[args.index("-rtsp_transport") + 1] == "tcp"
+    assert args[args.index("-timeout") + 1] == ffmpeg.RTSP_IO_TIMEOUT_US
+    assert args[args.index("-protocol_whitelist") + 1] == ffmpeg.PROTOCOL_WHITELIST
+    assert args[args.index("-v") + 1] == "error"
+    # ffprobe 与 ffmpeg 同目录;只给了名字时按 PATH 找
+    assert ffmpeg.ffprobe_bin_for("/usr/bin/ffmpeg") == "/usr/bin/ffprobe"
+    assert ffmpeg.ffprobe_bin_for("./bin/ffmpeg") == "./bin/ffprobe"
+    assert ffmpeg.ffprobe_bin_for("ffmpeg") == "ffprobe"
+
+
+@pytest.mark.parametrize(
+    "codec, transcode, expected",
+    [
+        ("hevc", False, "H.265"),
+        ("hevc", True, "已勾选转码"),
+        ("mpeg4", False, "视频编码 mpeg4 浏览器不支持"),
+        ("mjpeg", False, "视频编码 mjpeg 浏览器不支持"),
+        ("mpeg4", True, None),
+        ("h264", False, None),
+        ("h264", True, None),
+        (None, False, None),
+    ],
+)
+def test_probe_hint(codec, transcode, expected):
+    hint = probe.probe_hint(codec, transcode)
+    if expected is None:
+        assert hint is None
+    else:
+        assert hint is not None and expected in hint
+    if codec == "hevc" and not transcode:
+        assert "/Streaming/Channels/102" in hint and "subtype=1" in hint and "转码" in hint
+    assert probe.browser_playable(codec, transcode) is (codec == "h264" or transcode)
 
 
 def test_lan_rules(monkeypatch):
@@ -329,6 +436,164 @@ def test_backoff_on_failure(db, redis_url, fake_ffmpeg, hls_root, tmp_path):
     run_async(redis_url, body)
 
 
+def _start_numbers(tmp_path: Path) -> list[int]:
+    out = []
+    for line in calls(tmp_path):
+        argv = line.split(" ")
+        out.append(int(argv[argv.index("-start_number") + 1]))
+    return out
+
+
+def test_start_number_increases_across_restarts(db, redis_url, fake_ffmpeg, hls_root, tmp_path):
+    """每次重启按墙上秒数起编:序列号只增不减、不与上一轮重叠;7 位起编,离白名单的 8 位还有余量。"""
+    cam = make_camera(db, "rtsp://10.0.0.5/fail")
+
+    async def body(redis):
+        sup = make_supervisor(db, redis, fake_ffmpeg, hls_root)
+        await want(redis, cam)
+        await sup.tick(100)
+        st = sup._streams[cam.id]
+        await settle(lambda: st.proc is not None and st.proc.returncode is not None)
+        await sup.tick(100.1)
+        await sup.tick(105.2)  # 退避 5 秒后第二次启动
+        await settle(lambda: len(calls(tmp_path)) == 2)
+        first, second = _start_numbers(tmp_path)
+        assert second >= first
+        assert 0 <= first <= 9_999_999 and 0 <= second <= 9_999_999  # 7 位起编,给 8 位白名单留余量
+        assert abs(first - int(time.time()) % 10**7) < 60  # 来源是墙上秒数(mod 1e7)
+        assert st.start_number == second
+        await sup.shutdown()
+
+    run_async(redis_url, body)
+
+
+def test_stall_restarts_stream(db, redis_url, fake_ffmpeg, hls_root, tmp_path):
+    """播放列表超过 STALL_SECONDS 没更新:收掉进程、清目录、按正常退避重连;稳定运行后退避仍重置。"""
+    from app.stream import supervisor as supervisor_mod
+
+    cam = make_camera(db)
+
+    async def body(redis):
+        sup = make_supervisor(db, redis, fake_ffmpeg, hls_root)
+        await want(redis, cam)
+        await sup.tick(1)
+        index = hls_root / str(cam.id) / "index.m3u8"
+        await settle(index.exists)
+        await sup.tick(2)
+        st = sup._streams[cam.id]
+        assert st.status == "streaming"
+        proc = st.proc
+        st.fail_count = 3  # 假装之前失败过多次:跑满 STABLE_AFTER 后停更,退避仍从 5 秒重来
+        stale = time.time() - (supervisor_mod.STALL_SECONDS + 5)
+        os.utime(index, (stale, stale))
+        now = 1 + supervisor_mod.STABLE_AFTER + 1
+        await sup.tick(now)
+        assert proc.returncode is not None  # 进程被收掉
+        assert st.proc is None and not (hls_root / str(cam.id)).exists()
+        s = await state(redis, cam)
+        assert s["status"] == "error" and "停止更新" in s["last_error"]
+        assert round(st.next_retry_at - now) == 5
+        assert len(calls(tmp_path)) == 1  # 退避期内不重启
+        await sup.tick(now + 5.1)
+        await settle(lambda: len(calls(tmp_path)) == 2)
+        await settle(index.exists)
+        await sup.tick(now + 6)
+        assert (await state(redis, cam))["status"] == "streaming"
+        await sup.shutdown()
+
+    run_async(redis_url, body)
+
+
+def test_no_stall_while_fresh(db, redis_url, fake_ffmpeg, hls_root, tmp_path):
+    from app.stream import supervisor as supervisor_mod
+
+    cam = make_camera(db)
+
+    async def body(redis):
+        sup = make_supervisor(db, redis, fake_ffmpeg, hls_root)
+        await want(redis, cam)
+        await sup.tick(1)
+        index = hls_root / str(cam.id) / "index.m3u8"
+        await settle(index.exists)
+        await sup.tick(2)
+        st = sup._streams[cam.id]
+        proc = st.proc
+        for t in (3, 60, 600):  # tick 的单调时钟走多久都无所谓,看的是播放列表的 mtime
+            await sup.tick(t)
+        assert st.proc is proc and proc.returncode is None and st.status == "streaming"
+        # 刚好不到阈值也不算停更
+        edge = time.time() - (supervisor_mod.STALL_SECONDS - 3)
+        os.utime(index, (edge, edge))
+        await sup.tick(601)
+        assert st.proc is proc and proc.returncode is None and st.status == "streaming"
+        assert len(calls(tmp_path)) == 1
+        await sup.shutdown()
+
+    run_async(redis_url, body)
+
+
+def test_stall_threshold_follows_target_duration(
+    db, redis_url, fake_ffmpeg, hls_root, tmp_path, caplog
+):
+    """copy 模式下播放列表更新周期 = GOP:阈值 = 3 × TARGETDURATION 夹在 [30, 120],不误杀长 GOP。"""
+    from app.stream import supervisor as supervisor_mod
+
+    caplog.set_level(logging.WARNING, logger="app.stream")
+    cam = make_camera(db)
+
+    def age(index: Path, seconds: float) -> None:
+        old = time.time() - seconds
+        os.utime(index, (old, old))
+
+    async def body(redis):
+        sup = make_supervisor(db, redis, fake_ffmpeg, hls_root)
+        await want(redis, cam)
+        await sup.tick(1)
+        index = hls_root / str(cam.id) / "index.m3u8"
+        await settle(index.exists)
+        await sup.tick(2)
+        st = sup._streams[cam.id]
+        proc = st.proc
+        # 关键帧间隔 20 秒的摄像头:ffmpeg 写出 TARGETDURATION:20,阈值 60 秒
+        index.write_text(
+            "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:20\n#EXTINF:20.0,\nseg-0.ts\n"
+        )
+        age(index, 45)
+        await sup.tick(3)
+        assert st.proc is proc and proc.returncode is None and st.status == "streaming"
+        assert "stream stalled" not in caplog.text
+        age(index, 61)
+        await sup.tick(4)
+        assert proc.returncode is not None and st.proc is None and st.status == "error"
+        assert "停止更新" in st.last_error
+        # 首次判定时 warning 里写出观测到的停更秒数与阈值
+        assert "stream stalled" in caplog.text
+        assert "playlist_age=61s" in caplog.text and "threshold=60s" in caplog.text
+        # 短 GOP 不会把阈值压到 30 秒以下;播放列表不见了也算停更
+        index.parent.mkdir(exist_ok=True)
+        index.write_text("#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXTINF:2.0,\nseg-0.ts\n")
+        age(index, 25)
+        assert sup._stalled(cam.id) is None
+        age(index, 31)
+        assert sup._stalled(cam.id) == (pytest.approx(31, abs=2), 30)
+        # 时间戳跳变会让 ffmpeg 写出巨大的 TARGETDURATION:阈值封顶 120 秒,看门狗不能被关掉
+        index.write_text("#EXTM3U\n#EXT-X-TARGETDURATION:999\n#EXTINF:2.0,\nseg-0.ts\n")
+        age(index, 110)
+        assert sup._stalled(cam.id) is None
+        age(index, 121)
+        assert sup._stalled(cam.id) == (pytest.approx(121, abs=2), 120)
+        # 非正整数 / 解析不了都回退下限 30
+        for bad in ("0", "-5", "9" * 5000):
+            assert supervisor_mod._stall_threshold(f"#EXTM3U\n#EXT-X-TARGETDURATION:{bad}\n") == 30
+        assert supervisor_mod._stall_threshold("#EXTM3U\n#EXT-X-TARGETDURATION:abc\n") == 30
+        assert supervisor_mod._stall_threshold("#EXTM3U\n#EXT-X-VERSION:3\n") == 30
+        index.unlink()
+        assert sup._stalled(cam.id) == (None, 30)
+        await sup.shutdown()
+
+    run_async(redis_url, body)
+
+
 def test_reload_restarts(db, redis_url, fake_ffmpeg, hls_root, tmp_path):
     cam = make_camera(db)
 
@@ -451,6 +716,7 @@ def test_probe_reply(db, redis_url, fake_ffmpeg):
     async def body(redis):
         r = await ask(redis, ok.id, f"{probe.REPLY_PREFIX}a")
         assert r["ok"] and base64.b64decode(r["preview_jpeg_base64"]).startswith(b"\xff\xd8")
+        assert r["probe"] is None  # 同目录下没有 ffprobe:只少编解码信息,截图照常
         r = await ask(redis, bad.id, f"{probe.REPLY_PREFIX}b")
         assert not r["ok"] and r["preview_jpeg_base64"] is None
         assert PASSWORD not in r["message"] and USER not in r["message"]
@@ -468,6 +734,146 @@ def test_probe_reply(db, redis_url, fake_ffmpeg):
         assert await redis.get("ws:cam:want:evil") is None
 
     run_async(redis_url, body)
+
+
+async def _ask(redis, db, cam: Camera, fake_ffmpeg: Path, **kw) -> tuple[dict, str]:
+    """跑一次测试连接,返回(结果字典, Redis 里的原始 JSON 文本)。"""
+
+    @contextmanager
+    def scope():
+        yield db
+
+    key = f"{probe.REPLY_PREFIX}{cam.id}"
+    await probe.handle_probe(
+        json.dumps({"id": str(cam.id), "reply_key": key}),
+        redis,
+        scope,
+        ffmpeg_bin=str(fake_ffmpeg),
+        master_key=KEY,
+        allow_loopback=False,
+        **kw,
+    )
+    raw = await redis.get(key)
+    return json.loads(raw), raw
+
+
+def test_probe_reports_hevc_not_playable(db, redis_url, fake_ffmpeg, fake_ffprobe, tmp_path):
+    """红队场景:H.265 主码流截图成功,但未转码时浏览器放不了——结果里要说清楚。"""
+    cam = make_camera(db, "rtsp://10.0.0.5/hevc/main")
+
+    async def body(redis):
+        r, raw = await _ask(redis, db, cam, fake_ffmpeg)  # 不传 ffprobe_bin:按 ffmpeg 同目录推导
+        assert r["ok"] is True and r["message"] == "连接成功"
+        assert base64.b64decode(r["preview_jpeg_base64"]).startswith(b"\xff\xd8")
+        assert r["probe"] == {
+            "video_codec": "hevc",
+            "width": 2560,
+            "height": 1440,
+            "fps": 20.0,
+            "bitrate_kbps": 6000,  # 流级没有码率:取 format.bit_rate
+            "audio_codec": "aac",
+            "browser_playable": False,
+            "hint": r["probe"]["hint"],
+        }
+        hint = r["probe"]["hint"]
+        assert "H.265" in hint and "/Streaming/Channels/102" in hint and "转码" in hint
+        # ffprobe 的参数与 ffmpeg 同一套网络约束;凭据只进子进程,不进 Redis
+        (argv,) = probe_calls(tmp_path)
+        assert "-rtsp_transport tcp" in argv and f"-timeout {ffmpeg.RTSP_IO_TIMEOUT_US}" in argv
+        assert f"-protocol_whitelist {ffmpeg.PROTOCOL_WHITELIST}" in argv
+        assert "-print_format json" in argv and "-show_streams" in argv
+        assert f"rtsp://{USER}:{PASSWORD}@10.0.0.5/hevc/main" in argv
+        assert PASSWORD not in raw and USER not in raw
+
+    run_async(redis_url, body)
+
+
+def test_probe_hevc_with_transcode_playable(db, redis_url, fake_ffmpeg, fake_ffprobe):
+    cam = make_camera(db, "rtsp://10.0.0.5/hevc", transcode=True)
+
+    async def body(redis):
+        r, _ = await _ask(redis, db, cam, fake_ffmpeg, ffprobe_bin=str(fake_ffprobe))
+        assert r["ok"] is True
+        assert r["probe"]["video_codec"] == "hevc"
+        assert r["probe"]["browser_playable"] is True
+        assert r["probe"]["hint"] == probe.probe_hint("hevc", True)
+        assert "已勾选转码" in r["probe"]["hint"]
+
+    run_async(redis_url, body)
+
+
+def test_probe_h264_no_hint(db, redis_url, fake_ffmpeg, fake_ffprobe):
+    h264 = make_camera(db)
+    mpeg4 = make_camera(db, "rtsp://10.0.0.5/mpeg4")
+
+    async def body(redis):
+        r, _ = await _ask(redis, db, h264, fake_ffmpeg)
+        assert r["ok"] is True
+        assert r["probe"] == {
+            "video_codec": "h264",
+            "width": 1920,
+            "height": 1080,
+            "fps": 25.0,
+            "bitrate_kbps": 4096,  # 流级码率优先于 format.bit_rate
+            "audio_codec": "aac",
+            "browser_playable": True,
+            "hint": None,
+        }
+        # 分母为 0 的帧率、没有码率 → null;非 h264 又没转码 → 不可播 + 提示
+        r, _ = await _ask(redis, db, mpeg4, fake_ffmpeg)
+        assert r["probe"]["video_codec"] == "mpeg4"
+        assert r["probe"]["fps"] is None and r["probe"]["bitrate_kbps"] is None
+        assert r["probe"]["browser_playable"] is False
+        assert "mpeg4" in r["probe"]["hint"]
+
+    run_async(redis_url, body)
+
+
+@pytest.mark.parametrize("path", ["brokenprobe", "badjson", "slowprobe", "noprobe"])
+def test_probe_failure_keeps_grab_result(
+    db, redis_url, fake_ffmpeg, fake_ffprobe, tmp_path, monkeypatch, caplog, path
+):
+    """ffprobe 退出非 0 / 输出不是 JSON / 超时 / 没有可执行文件:probe 为 null,截图结果不受影响。"""
+    monkeypatch.setattr(probe, "FFPROBE_TIMEOUT", 0.5)
+    caplog.set_level(logging.DEBUG)
+    good = make_camera(db, f"rtsp://10.0.0.5/{path}")
+    bad = make_camera(db, f"rtsp://10.0.0.5/fail/{path}")
+    kw = {"ffprobe_bin": str(tmp_path / "missing-ffprobe")} if path == "noprobe" else {}
+
+    async def body(redis):
+        started = time.monotonic()
+        r, raw = await _ask(redis, db, good, fake_ffmpeg, **kw)
+        assert time.monotonic() - started < 5  # 超时的 ffprobe 不拖慢整体
+        assert r["ok"] is True and r["probe"] is None
+        assert base64.b64decode(r["preview_jpeg_base64"]).startswith(b"\xff\xd8")
+        assert PASSWORD not in raw and USER not in raw
+        r, raw = await _ask(redis, db, bad, fake_ffmpeg, **kw)
+        assert r["ok"] is False and r["probe"] is None and r["preview_jpeg_base64"] is None
+        assert PASSWORD not in raw and USER not in raw
+
+    run_async(redis_url, body)
+    assert PASSWORD not in caplog.text and USER not in caplog.text
+
+
+def test_probe_unexpected_exception_keeps_grab_result(
+    db, redis_url, fake_ffmpeg, fake_ffprobe, monkeypatch, caplog
+):
+    """ffprobe 分支里冒出没预料到的异常:probe 为 null、截图结果照常,不能变成"测试失败"。"""
+    caplog.set_level(logging.WARNING, logger="app.stream")
+
+    def boom(_data):
+        raise RuntimeError("unexpected")
+
+    monkeypatch.setattr(probe, "parse_ffprobe", boom)
+    cam = make_camera(db, "rtsp://10.0.0.5/hevc")
+
+    async def body(redis):
+        r, _ = await _ask(redis, db, cam, fake_ffmpeg)
+        assert r["ok"] is True and r["message"] == "连接成功" and r["probe"] is None
+        assert base64.b64decode(r["preview_jpeg_base64"]).startswith(b"\xff\xd8")
+
+    run_async(redis_url, body)
+    assert "ffprobe crashed: RuntimeError" in caplog.text
 
 
 # ---------------- 真 ffmpeg 组 ----------------
