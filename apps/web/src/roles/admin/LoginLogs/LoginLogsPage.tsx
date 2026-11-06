@@ -86,8 +86,11 @@ export default function LoginLogsPage() {
     fn()
     setPage(1)
   }
-  const editRange = (patch: Partial<Range>) =>
-    change(() => setPicked({ from: range?.from ?? '', to: range?.to ?? '', ...patch }))
+  // 默认区间还没算出来(时区未知)时不接受修改,免得只剩一头
+  const editRange = (patch: Partial<Range>) => {
+    if (range === null) return
+    change(() => setPicked({ ...range, ...patch }))
+  }
   const toggleResult = (r: LoginResult) =>
     change(() =>
       setResults((cur) =>
@@ -125,12 +128,14 @@ export default function LoginLogsPage() {
       </div>
 
       <div className="flex flex-wrap items-center gap-3 text-sm">
+        {/* 时区未知时默认区间还没算出来,日期框先禁用:否则改一头就丢掉另一头,发出单边区间 */}
         <label className="flex items-center gap-1.5">
           从
           <Input
             type="date"
             aria-label="开始日期"
             className="w-40"
+            disabled={range === null}
             value={range?.from ?? ''}
             onChange={(e) => editRange({ from: e.target.value })}
           />
@@ -141,6 +146,7 @@ export default function LoginLogsPage() {
             type="date"
             aria-label="结束日期"
             className="w-40"
+            disabled={range === null}
             value={range?.to ?? ''}
             onChange={(e) => editRange({ to: e.target.value })}
           />
