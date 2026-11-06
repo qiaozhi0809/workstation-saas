@@ -7,7 +7,7 @@ from sqlalchemy import delete, select, text
 from sqlalchemy.orm import Session
 
 from app.audit.service import record
-from app.domain.exams.subjects import class_subjects
+from app.domain.exams.subjects import class_subjects, merge_subjects
 from app.domain.schools.service import active_academic_year, school_tz
 from app.domain.timetable.schemas import (
     CellInput,
@@ -221,6 +221,8 @@ def save_class_timetable(
     if cls.academic_year_id != year.id:
         raise ApiError(400, "BAD_REQUEST", "只能修改当前学年班级的课表")
     cls = lock_class(db, cls.id)
+    # 班级行已锁:顺手把还是 NULL 的 classes.subjects 按目录物化(写入口物化、读接口不写库)
+    merge_subjects(db, cls, [])
     periods = defined_period_nos(db, cls.school_id)
     subjects = {s.name for s in class_subjects(db, cls)}
     seen: set[tuple[int, int]] = set()

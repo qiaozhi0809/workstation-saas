@@ -167,6 +167,35 @@ def test_save_class_timetable_auto_teacher(client, settings, db):
     )
 
 
+def test_save_class_timetable_materializes_class_subjects(client, settings, db):
+    """首次写入口物化 classes.subjects(A1 的 NULL subjects 产品决定):种子班的科目列表是 NULL,
+    保存课表后写成该学段的目录科目;读接口不写库。"""
+    from app.domain.exams.subjects import class_subjects
+
+    _seed_periods(db)
+    cls = db.get(SchoolClass, UUID(CLASS_ID))
+    assert cls.subjects is None
+    preset = [s.model_dump() for s in class_subjects(db, cls)]
+    assert [s["name"] for s in preset][:3] == ["语文", "数学", "英语"]
+    # 读课表不物化
+    assert (
+        client.get(f"/api/v1/classes/{CLASS_ID}/timetable", headers=auth(settings)).status_code
+        == 200
+    )
+    db.expire_all()
+    assert db.get(SchoolClass, UUID(CLASS_ID)).subjects is None
+
+    res = _put_tt(client, settings, [{"weekday": 1, "period_no": 1, "subject": "语文"}])
+    assert res.status_code == 200, res.text
+    db.expire_all()
+    assert db.get(SchoolClass, UUID(CLASS_ID)).subjects == preset
+    # 再保存一次不改已物化的列表
+    res = _put_tt(client, settings, [{"weekday": 1, "period_no": 2, "subject": "数学"}])
+    assert res.status_code == 200, res.text
+    db.expire_all()
+    assert db.get(SchoolClass, UUID(CLASS_ID)).subjects == preset
+
+
 def test_teacher_must_be_assigned(client, settings, db):
     _seed_periods(db)
     stranger = make_teacher_account(db, SCHOOL_ID, "stranger_t")
