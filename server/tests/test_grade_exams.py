@@ -1,7 +1,7 @@
 from datetime import date
 from uuid import UUID
 
-from sqlalchemy import event, select
+from sqlalchemy import event, select, text
 
 from app.models import AcademicYear, Enrollment, Exam, GradeExam, Score
 from tests.helpers import audit_rows, auth
@@ -283,6 +283,7 @@ def test_list_query_count_independent_of_exam_count(client, db, settings):
 
     def listed() -> tuple[int, list]:
         db.expire_all()
+        db.refresh(year)  # 过期后的学年行是测试自己造成的重载,不算在列表路径里
         statements, stop = _statements(db)
         try:
             out = list_grade_exams(db, bindings, year, None)
@@ -299,7 +300,8 @@ def test_list_query_count_independent_of_exam_count(client, db, settings):
     _score(db, _exam_of(db, ge["id"], CLASS_41).id, CLASS_41, "语文", 90)
     many_count, many = listed()
     assert len(many) == 4
-    assert many_count == one_count <= 8, (one_count, many_count)
+    # 固定 6 条:联考、场次、已录格数、在读人数、年级、年级班级(L38)
+    assert many_count == one_count == 6, (one_count, many_count)
     # 合并查询的结果与逐场 grade_exam_out 完全一致
     db.expire_all()
     assert [m.model_dump() for m in many] == [
@@ -422,3 +424,32 @@ def test_class_exam_out_has_grade_exam_id(client, db, settings):
     linked = next(e for e in items if e["id"] == exam_id)
     assert linked["grade_exam_id"] == out["id"]
     assert all(e["grade_exam_id"] is None for e in items if e["id"] != exam_id)
+
+
+def test_update_and_delete_recheck_year_after_locking(client, db, settings):
+    """L56:编辑/删除拿到场次锁之后学年若已被升级停用(排在 apply 后面才拿到锁),必须 409,
+    与新建/补齐一致,不能把改动写进已成往年的学年。"""
+    from datetime import UTC, datetime
+
+    import pytest
+
+    from app.domain.grade_exams import service
+    from app.domain.grade_exams.schemas import GradeExamInput
+    from app.errors import ApiError
+    from app.models import User
+
+    out = _create(client, settings)
+    user = db.scalars(select(User).where(User.login_name == "dean01")).one()
+    ge = service.get_grade_exam(db, UUID(SCHOOL_ID), UUID(out["id"]), lock=True)
+    # 锁已到手,此时 apply 提交:学年停用(路由层 get_grade_exam 的学年检查已经过了)
+    db.execute(
+        text("UPDATE academic_years SET is_active = false WHERE id = :y"),
+        {"y": ge.academic_year_id},
+    )
+    with pytest.raises(ApiError) as e1:
+        service.update(db, user, ge, GradeExamInput(**_body()), now=datetime.now(UTC))
+    assert (e1.value.status, e1.value.code) == (409, "NO_ACTIVE_YEAR")
+    with pytest.raises(ApiError) as e2:
+        service.delete_grade_exam(db, user, ge)
+    assert (e2.value.status, e2.value.code) == (409, "NO_ACTIVE_YEAR")
+    assert db.get(GradeExam, ge.id) is not None and len(_class_exams(db, out["id"])) == 2

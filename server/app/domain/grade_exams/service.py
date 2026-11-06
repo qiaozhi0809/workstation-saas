@@ -193,7 +193,7 @@ def grade_exam_outs(db: Session, ges: Sequence[GradeExam]) -> list[GradeExamOut]
         select(SchoolClass).where(
             SchoolClass.school_id.in_({ge.school_id for ge in ges}),
             SchoolClass.academic_year_id.in_({ge.academic_year_id for ge in ges}),
-            SchoolClass.grade_id.in_(grades),
+            SchoolClass.grade_id.in_(list(grades)),
             SchoolClass.active.is_(True),
         )
     ):
@@ -364,6 +364,7 @@ def update(
     assert grade is not None
     _ensure_in_catalog(db, grade, body.subjects, {s["name"] for s in ge.subjects})
     exams = _lock_class_exams(db, ge)
+    _ensure_year_live(db, ge.academic_year_id)  # 与新建/补齐一致:拿到锁后学年可能已停用(L56)
     exam_ids = [e.id for e in exams]
     kept = {s.name for s in body.subjects}
     removed = [s["name"] for s in ge.subjects if s["name"] not in kept]
@@ -414,6 +415,7 @@ def delete_grade_exam(
     db: Session, user: User, ge: GradeExam, *, request: Request | None = None
 ) -> None:
     exams = _lock_class_exams(db, ge)
+    _ensure_year_live(db, ge.academic_year_id)  # 同 update:锁后复核学年仍进行中(L56)
     if exams:
         _ensure_unscored(db, exams)
     grade_exam_id = str(ge.id)
