@@ -181,6 +181,21 @@ describe('审计日志', () => {
     expect(screen.queryByRole('button', { name: '选择 李老师(li)' })).toBeNull()
   })
 
+  it('操作人下拉在 relatedTarget 为空的失焦时不关闭,否则 Safari/Firefox 点不中选项(L59)', async () => {
+    setup()
+    await screen.findByRole('table')
+    const input = screen.getByLabelText('搜索操作人')
+    fireEvent.focus(input)
+    fireEvent.change(input, { target: { value: '李' } })
+    const option = await screen.findByRole('button', { name: '选择 李老师(li)' }, { timeout: 2000 })
+    // Safari/Firefox 点按钮不会把焦点给按钮,blur 的 relatedTarget 为 null;此时不能收起,
+    // 否则 click 永远落不到选项上。点到组件外由 pointerdown 监听负责收起。
+    fireEvent.blur(input, { relatedTarget: null })
+    expect(option).toBeInTheDocument()
+    fireEvent.click(option)
+    await waitFor(() => expect(lastFilters()?.user_id).toBe('u1'))
+  })
+
   it('操作人搜索结果超过一页时能加载更多,不只首页(L59)', async () => {
     const firstPage = Array.from({ length: 50 }, (_, i) =>
       account({ id: `u${i}`, login_name: `li${i}`, display_name: `李老师${i}` }),

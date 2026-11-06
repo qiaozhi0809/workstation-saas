@@ -86,9 +86,11 @@ function OperatorSearch({
       ref={wrapRef}
       className="relative"
       onBlur={(e) => {
-        // 焦点移到组件外才收起;移到"加载更多"等组件内的按钮上不算
+        // 只有焦点明确移到组件外的元素上才收起;移到"加载更多"等组件内的按钮上不算。
+        // relatedTarget 为 null 时(Safari/Firefox 点按钮不给焦点、点到不可聚焦区域)不在这里收起,
+        // 交给上面的 pointerdown 外点监听处理,否则选项按钮永远点不中。
         const next = e.relatedTarget
-        if (!(next instanceof Node && e.currentTarget.contains(next))) setOpen(false)
+        if (next instanceof Node && !e.currentTarget.contains(next)) setOpen(false)
       }}
     >
       <Input
