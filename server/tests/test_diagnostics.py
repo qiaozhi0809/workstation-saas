@@ -13,6 +13,7 @@ from sqlalchemy import func, select, update
 from app.config import Settings
 from app.db import get_db
 from app.deploy.diagnostics import build_bundle, mask_line, mask_settings
+from app.deploy.precheck import head_revision
 from app.logging import configure_logging
 from app.main import create_app
 from app.models import Student, User
@@ -137,7 +138,7 @@ def test_bundle_contents(engine, settings, db):
     assert set(z.namelist()) == FILES
     ver = json.loads(z.read("version.json"))
     assert set(ver) == {"version", "migration", "python", "postgres", "redis", "generated_at"}
-    assert ver["migration"] == "0011"
+    assert ver["migration"] == head_revision(engine)
     assert ver["generated_at"].startswith("2026-11-05T08:30:15")
     schema = json.loads(z.read("schema.json"))
     assert "users" in schema["tables"]
@@ -185,12 +186,12 @@ def test_bundle_logs_only_recent_and_capped(engine, settings, tmp_path, monkeypa
     assert capped.startswith(b"{")  # 不留半行
 
 
-def test_system_info(client, settings, tmp_path):
+def test_system_info(client, settings, tmp_path, engine):
     s = settings.model_copy(update={"log_dir": tmp_path})
     client.app.state.settings = s
     h = auth(s, IT_ADMIN)
     body = client.get(INFO, headers=h).json()
-    assert body["migration"] == "0011"
+    assert body["migration"] == head_revision(engine)
     assert body["version"]
     assert body["started_at"]
     assert body["db_size_bytes"] > 0
