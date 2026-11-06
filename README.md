@@ -305,6 +305,8 @@ AI 的所有调用都经后端:脱敏、过滤、审计(每次生成一条 `ai.g
 
 ## 文档
 
+- 📖 使用手册(给学校老师、管理员、家长看):[教师](docs/使用手册/教师.md) · [管理端](docs/使用手册/管理端.md) · [家长](docs/使用手册/家长.md)
+- 📝 [更新日志(CHANGELOG.md)](CHANGELOG.md) — 每个版本改了什么
 - 🤖 [AI 代理工作指南(AGENTS.md)](AGENTS.md) — **AI 代理 / 开发者先读这个**
 - [三角色协作平台设计文档](docs/superpowers/specs/2026-11-01-三角色协作平台-design.md)
 - [总体路线图与计划审查](docs/superpowers/plans/2026-11-01-总体路线图与计划审查.md)
