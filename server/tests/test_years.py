@@ -16,6 +16,7 @@ from tests.factories import make_class, make_student, make_teacher_account
 from tests.helpers import auth
 from tests.seed_ids import (
     CLASS_ID,
+    GRADE_ID,
     SCHOOL_ID,
     STUDENT_IDS,
     SUBJECT_USER_ID,
@@ -131,6 +132,14 @@ def test_suggest_for_seed(db):
     assert c.from_name == "三年二班" and c.teacher_name == "张老师"
     assert plan.students == [] and plan.new_classes == []
     assert plan.grade_heads == []  # 无组长:空数组(显式),不是 None
+
+
+def test_suggest_classes_sorted_by_class_sort_key(db):
+    """升级向导的班级表按班名数值排(三年二班 < 三年三班 < 三年十班),不是码点序(L40)。"""
+    make_class(db, "三年十班", grade_id=UUID(GRADE_ID), year_id=UUID(YEAR_ID))
+    make_class(db, "三年三班", grade_id=UUID(GRADE_ID), year_id=UUID(YEAR_ID))
+    plan = _plan(db)
+    assert [c.from_name for c in plan.classes] == ["三年二班", "三年三班", "三年十班"]
 
 
 def test_plan_model_rules():
