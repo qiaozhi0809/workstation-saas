@@ -30,7 +30,10 @@ async function rawLogin(request: APIRequestContext, loginName: string, password:
 }
 
 /** 信息中心建一个虚构老师:临时密码登录 → 改密码 → 分到三年一班(语文)。返回账号。 */
-async function createTeacher(request: APIRequestContext): Promise<TestTeacher> {
+async function createTeacher(
+  request: APIRequestContext,
+  opts: { onboarded?: boolean } = {},
+): Promise<TestTeacher> {
   const it = await login(request, 'itadmin01')
   const loginName = `e2e_sec_${uniq()}`
   const res = await request.post(`${API}/admin/accounts`, {
@@ -66,6 +69,22 @@ async function createTeacher(request: APIRequestContext): Promise<TestTeacher> {
     data: { user_id: account.id, identity: 'subject', subject: '语文' },
   })
   expect(assign.ok(), await assign.text()).toBeTruthy()
+  if (opts.onboarded === false) return teacher
+  // M5d:新老师第一次进教师端会弹欢迎页;本文件测的是账号安全,先把首次引导记为已看过
+  // (任职之后才写:onboarded 的键必须属于本人已有的语境)。欢迎页本身由 admin.spec 覆盖。
+  // 这里多一次成功登录;只数登录条数、不进教师端的用例传 onboarded: false。
+  const again = await rawLogin(request, loginName, PASSWORD)
+  expect(again.status).toBe(200)
+  const onboarded = await request.put(`${API}/me/preferences`, {
+    headers: auth(again.body.access_token as string),
+    data: {
+      teacher_figure: 'female',
+      idle_animation: true,
+      review_reasons: [{ text: '积极发言', delta: 1 }],
+      onboarded: { teacher: new Date().toISOString() },
+    },
+  })
+  expect(onboarded.ok(), await onboarded.text()).toBeTruthy()
   return teacher
 }
 
@@ -270,7 +289,7 @@ test('login logs list wrong-password and successful logins, filtered by result',
   page,
   request,
 }) => {
-  const teacher = await createTeacher(request)
+  const teacher = await createTeacher(request, { onboarded: false }) // 不进教师端,登录条数要可数
   const bad = await rawLogin(request, teacher.loginName, 'Wrong-pass-0')
   expect(bad.status).toBe(401)
   const ok = await rawLogin(request, teacher.loginName, PASSWORD)
