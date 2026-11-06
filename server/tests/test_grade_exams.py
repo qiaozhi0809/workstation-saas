@@ -1,7 +1,7 @@
 from datetime import date
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import event, select, text
 
 from app.models import AcademicYear, Enrollment, Exam, GradeExam, Score
 from tests.helpers import audit_rows, auth
@@ -206,12 +206,108 @@ def test_lower_full_below_scores_rejected(client, db, settings):
     r = client.put(f"{API}/{out['id']}", json=low, headers=auth(settings, DEAN))
     assert r.status_code == 409
     err = r.json()["error"]
-    assert err["code"] == "SCORE_ABOVE_FULL" and err["details"] == {"subject": "语文"}
-    assert "语文" in err["message"]
+    # L38:与去科目被拒同一个码(契约 409 EXAM_HAS_SCORES),details 指出科目
+    assert err["code"] == "EXAM_HAS_SCORES" and err["details"] == {"subject": "语文"}
+    assert "语文" in err["message"] and "满分" in err["message"]
     ok = _body(subjects=[{"name": "语文", "full": 95}, {"name": "数学", "full": 100}])
     assert (
         client.put(f"{API}/{out['id']}", json=ok, headers=auth(settings, DEAN)).status_code == 200
     )
+
+
+def _statements(db):
+    """收集本测试会话里执行的 SQL(与 test_overview 的查询计数同一做法)。"""
+    statements: list[str] = []
+
+    def count(conn, cursor, statement, params, context, executemany):
+        statements.append(statement)
+
+    conn = db.connection()
+    event.listen(conn, "before_cursor_execute", count)
+    return statements, lambda: event.remove(conn, "before_cursor_execute", count)
+
+
+def test_lower_full_check_is_one_query(client, db, settings):
+    """L38:降满分检查对整场联考一次聚合查出,不再逐考试 × 科目查询。"""
+    out = _create(client, settings)
+    _score(db, _exam_of(db, out["id"], CLASS_ID).id, CLASS_ID, "语文", 95)
+    _score(db, _exam_of(db, out["id"], CLASS_31).id, CLASS_31, "数学", 88)
+    low = _body(subjects=[{"name": "语文", "full": 100}, {"name": "数学", "full": 80}])
+    statements, stop = _statements(db)
+    try:
+        r = client.put(f"{API}/{out['id']}", json=low, headers=auth(settings, DEAN))
+    finally:
+        stop()
+    assert r.status_code == 409 and r.json()["error"]["details"] == {"subject": "数学"}
+    max_queries = [s for s in statements if "max(scores.value)" in s]
+    assert len(max_queries) == 1, max_queries
+
+
+def test_forbidden_write_checks_permission_before_lock(client, db, settings):
+    """L38:写端点先判权再加锁:无发联考权的人对任何 id 都是 403(不泄露联考是否存在),
+    年级组长对别的年级 403;被拒的请求不执行 FOR UPDATE。"""
+    missing = "99999999-9999-9999-9999-999999999999"
+    other = _create(client, settings, _body(GRADE4_ID))
+    for uid in (TEACHER_USER_ID, IT_ADMIN):
+        h = auth(settings, uid)
+        for target in (missing, other["id"]):
+            assert client.put(f"{API}/{target}", json=_body(), headers=h).status_code == 403
+            assert client.delete(f"{API}/{target}", headers=h).status_code == 403
+            assert client.post(f"{API}/{target}/sync", headers=h).status_code == 403
+    statements, stop = _statements(db)
+    try:
+        r = client.put(
+            f"{API}/{other['id']}", json=_body(GRADE4_ID), headers=auth(settings, GRADE_HEAD)
+        )
+    finally:
+        stop()
+    assert r.status_code == 403
+    assert not [s for s in statements if "FOR UPDATE" in s.upper()], statements
+    denied = [a for a in audit_rows(db, SCHOOL_ID) if a.action == "exam.grade_write"]
+    assert denied and not any(a.success for a in denied)
+    # 有权限的人:不存在的 id 仍是 404
+    h = auth(settings, DEAN)
+    assert client.put(f"{API}/{missing}", json=_body(), headers=h).status_code == 404
+
+
+def test_list_query_count_independent_of_exam_count(client, db, settings):
+    """L38:列表对所有联考合并查询(进度、缺班、年级名各一次),查询数不随联考数增长。"""
+    from app.domain.grade_exams.service import grade_exam_out, list_grade_exams
+    from app.domain.schools.service import require_active_year
+    from app.models import User
+    from app.rbac.bindings import load_bindings
+
+    user = db.scalars(select(User).where(User.login_name == "dean01")).one()
+    year = require_active_year(db, UUID(SCHOOL_ID))
+    bindings = load_bindings(db, user.id, year.id)
+
+    def listed() -> tuple[int, list]:
+        db.expire_all()
+        db.refresh(year)  # 过期后的学年行是测试自己造成的重载,不算在列表路径里
+        statements, stop = _statements(db)
+        try:
+            out = list_grade_exams(db, bindings, year, None)
+        finally:
+            stop()
+        return len(statements), out
+
+    _create(client, settings, _body(GRADE_ID, "联考一", date="2026-11-10"))
+    one_count, one = listed()
+    assert len(one) == 1
+    _create(client, settings, _body(GRADE_ID, "联考二", date="2026-11-12"))
+    _create(client, settings, _body(GRADE4_ID, "联考三", date="2026-11-14"))
+    ge = _create(client, settings, _body(GRADE4_ID, "联考四", date="2026-11-16"))
+    _score(db, _exam_of(db, ge["id"], CLASS_41).id, CLASS_41, "语文", 90)
+    many_count, many = listed()
+    assert len(many) == 4
+    # 固定 6 条:联考、场次、已录格数、在读人数、年级、年级班级(L38)
+    assert many_count == one_count == 6, (one_count, many_count)
+    # 合并查询的结果与逐场 grade_exam_out 完全一致
+    db.expire_all()
+    assert [m.model_dump() for m in many] == [
+        grade_exam_out(db, db.get(GradeExam, m.id)).model_dump() for m in many
+    ]
+    assert next(m for m in many if m.id == UUID(ge["id"])).classes[0].entered == 1
 
 
 def test_delete_with_scores_rejected(client, db, settings):
@@ -258,7 +354,8 @@ def test_sync_adds_missing_classes(client, db, settings):
     r = client.post(f"{API}/{out['id']}/sync", headers=auth(settings, GRADE_HEAD))
     assert r.status_code == 200, r.text
     assert r.json()["missing_classes"] == []
-    assert [c["class_name"] for c in r.json()["classes"]] == ["三年一班", "三年三班", "三年二班"]
+    # L40:班名按数值排,三年三班在三年二班之后(不再是码位序的 三 < 二)
+    assert [c["class_name"] for c in r.json()["classes"]] == ["三年一班", "三年二班", "三年三班"]
     added = _exam_of(db, out["id"], new_class)
     assert added.name == "期中联考" and str(added.created_by_user_id) == GRADE_HEAD
     assert [a.action for a in audit_rows(db, out["id"])] == ["exam.grade_create", "exam.grade_sync"]
@@ -327,3 +424,32 @@ def test_class_exam_out_has_grade_exam_id(client, db, settings):
     linked = next(e for e in items if e["id"] == exam_id)
     assert linked["grade_exam_id"] == out["id"]
     assert all(e["grade_exam_id"] is None for e in items if e["id"] != exam_id)
+
+
+def test_update_and_delete_recheck_year_after_locking(client, db, settings):
+    """L56:编辑/删除拿到场次锁之后学年若已被升级停用(排在 apply 后面才拿到锁),必须 409,
+    与新建/补齐一致,不能把改动写进已成往年的学年。"""
+    from datetime import UTC, datetime
+
+    import pytest
+
+    from app.domain.grade_exams import service
+    from app.domain.grade_exams.schemas import GradeExamInput
+    from app.errors import ApiError
+    from app.models import User
+
+    out = _create(client, settings)
+    user = db.scalars(select(User).where(User.login_name == "dean01")).one()
+    ge = service.get_grade_exam(db, UUID(SCHOOL_ID), UUID(out["id"]), lock=True)
+    # 锁已到手,此时 apply 提交:学年停用(路由层 get_grade_exam 的学年检查已经过了)
+    db.execute(
+        text("UPDATE academic_years SET is_active = false WHERE id = :y"),
+        {"y": ge.academic_year_id},
+    )
+    with pytest.raises(ApiError) as e1:
+        service.update(db, user, ge, GradeExamInput(**_body()), now=datetime.now(UTC))
+    assert (e1.value.status, e1.value.code) == (409, "NO_ACTIVE_YEAR")
+    with pytest.raises(ApiError) as e2:
+        service.delete_grade_exam(db, user, ge)
+    assert (e2.value.status, e2.value.code) == (409, "NO_ACTIVE_YEAR")
+    assert db.get(GradeExam, ge.id) is not None and len(_class_exams(db, out["id"])) == 2

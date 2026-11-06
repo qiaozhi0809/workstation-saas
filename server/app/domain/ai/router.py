@@ -43,7 +43,7 @@ from app.ai.requests import (
 )
 from app.ai.settings import AIConfig, is_ready, load_ai_config
 from app.ai.templates import CATEGORIES, PERM_ORDER, TEMPLATES
-from app.audit.service import _client_ip, record
+from app.audit.service import client_ip, record
 from app.auth.deps import get_current_user
 from app.config import Settings, settings_dep
 from app.db import SessionScope, get_db, session_scope
@@ -361,7 +361,7 @@ def ai_chat_reply(
             redis=redis,
             lock_key=lock_key(chat.id),
             lock_token=token,
-            ip=_client_ip(request),
+            ip=client_ip(request),
             user_agent=request.headers.get("user-agent"),
         )
         return GenerationResponse(ctx, reply_events(ctx, body))
@@ -382,7 +382,7 @@ def _gen_context(request: Request, user: User, cls, chat, cfg, scope, redis, tok
         redis=redis,
         lock_key=lock_key(chat.id),
         lock_token=token,
-        ip=_client_ip(request),
+        ip=client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
 

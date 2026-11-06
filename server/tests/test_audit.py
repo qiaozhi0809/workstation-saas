@@ -5,7 +5,7 @@ import pytest
 from sqlalchemy import select
 from starlette.requests import Request
 
-from app.audit.service import _client_ip, deny, record
+from app.audit.service import _client_ip, client_ip, deny, record
 from app.config import Settings
 from app.errors import ApiError
 from app.models.audit import AuditLog
@@ -73,6 +73,12 @@ def _proxied_request(peer: str, xff: str | list[str] | None, proxies: list[str])
         state=SimpleNamespace(settings=Settings(_env_file=None, trusted_proxies=proxies))
     )
     return Request({"type": "http", "client": (peer, 50000), "headers": headers, "app": app})
+
+
+def test_client_ip_is_public_and_alias_kept():
+    # L59:跨模块(ai/router)用公开名 client_ip;_client_ip 只作别名留给尚未切换的调用方
+    assert client_ip is _client_ip
+    assert client_ip(_proxied_request("203.0.113.9", None, [])) == "203.0.113.9"
 
 
 def test_ip_from_trusted_proxy():

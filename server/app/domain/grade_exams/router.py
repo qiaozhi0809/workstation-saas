@@ -11,8 +11,8 @@ from app.domain.grade_exams import service
 from app.domain.grade_exams.schemas import GradeExamInput, GradeExamOut
 from app.domain.overview.service import ensure_school_view
 from app.domain.schools.service import require_active_year
-from app.models import User
-from app.rbac.admin import ensure_admin
+from app.models import GradeExam, User
+from app.rbac.admin import admin_perms, ensure_admin
 from app.rbac.bindings import Binding
 from app.rbac.deps import get_bindings
 from app.rbac.roles import Perm
@@ -25,11 +25,23 @@ Db = Annotated[Session, Depends(get_db)]
 
 
 def _write(
-    db: Session, request: Request, user: User, bindings: list[Binding], grade_id: UUID
+    db: Session, request: Request, user: User, bindings: list[Binding], grade_id: UUID | None
 ) -> None:
     ensure_admin(
         db, request, user.id, bindings, Perm.GRADE_EXAM_WRITE, user.school_id, grade_id=grade_id
     )
+
+
+def _locked_for_write(
+    db: Session, request: Request, user: User, bindings: list[Binding], grade_exam_id: UUID
+) -> GradeExam:
+    """先判权再加锁(L38):没有任何 grade_exam.write 的人对任何 id 一律 403(不借 404 探联考是否存在),
+    再按联考所属年级判权,通过后才取行锁。"""
+    if Perm.GRADE_EXAM_WRITE.value not in admin_perms(bindings):
+        _write(db, request, user, bindings, None)
+    ge = service.get_grade_exam(db, user.school_id, grade_exam_id)
+    _write(db, request, user, bindings, ge.grade_id)
+    return service.get_grade_exam(db, user.school_id, grade_exam_id, lock=True)
 
 
 @router.get("")
@@ -58,8 +70,7 @@ def update_grade_exam(
     bindings: Bind,
     db: Db,
 ) -> GradeExamOut:
-    ge = service.get_grade_exam(db, user.school_id, grade_exam_id, lock=True)
-    _write(db, request, user, bindings, ge.grade_id)
+    ge = _locked_for_write(db, request, user, bindings, grade_exam_id)
     return service.update(db, user, ge, body, now=clock.utc_now(), request=request)
 
 
@@ -67,8 +78,7 @@ def update_grade_exam(
 def delete_grade_exam(
     grade_exam_id: UUID, request: Request, user: Auth, bindings: Bind, db: Db
 ) -> Response:
-    ge = service.get_grade_exam(db, user.school_id, grade_exam_id, lock=True)
-    _write(db, request, user, bindings, ge.grade_id)
+    ge = _locked_for_write(db, request, user, bindings, grade_exam_id)
     service.delete_grade_exam(db, user, ge, request=request)
     return Response(status_code=204)
 
@@ -77,6 +87,5 @@ def delete_grade_exam(
 def sync_grade_exam(
     grade_exam_id: UUID, request: Request, user: Auth, bindings: Bind, db: Db
 ) -> GradeExamOut:
-    ge = service.get_grade_exam(db, user.school_id, grade_exam_id, lock=True)
-    _write(db, request, user, bindings, ge.grade_id)
+    ge = _locked_for_write(db, request, user, bindings, grade_exam_id)
     return service.sync(db, user, ge, now=clock.utc_now(), request=request)
