@@ -117,7 +117,11 @@ def test_change_password_keeps_current_session_only(client, db, redis_client):
     )
     user = db.scalars(select(User).where(User.login_name == "forced01")).one()
     assert user.must_change_password is False
-    assert client.get("/api/v1/me/classes", headers=bearer(a["access_token"])).status_code == 200
+    # R6:改密之前签发的 access 令牌可能因跨整秒被拒;本会话用保留的刷新令牌换新令牌后继续可用
+    refreshed = client.post("/api/v1/auth/refresh", json={"refresh_token": a["refresh_token"]})
+    assert refreshed.status_code == 200
+    h = bearer(refreshed.json()["access_token"])
+    assert client.get("/api/v1/me/classes", headers=h).status_code == 200
     assert login(client, "forced01", new_pw).status_code == 200
     rows = audit_rows(db, user.id)
     assert [r.action for r in rows] == ["account.password_change"]
