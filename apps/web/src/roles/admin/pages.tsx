@@ -35,6 +35,8 @@ import AiConfigPage from './Ai/AiConfigPage'
 import AiUsagePage from './Ai/AiUsagePage'
 import AuditPage from './Audit/AuditPage'
 import LoginLogsPage from './LoginLogs/LoginLogsPage'
+import { Cctv } from 'lucide-react'
+import CamerasPage from './Cameras/CamerasPage'
 // ── 段 D(审计 / AI):import 追加在此行之上 ──
 
 import { Megaphone } from 'lucide-react'
@@ -192,6 +194,14 @@ export const ADMIN_PAGES: AdminPage[] = [
     icon: LogIn,
     perm: 'audit.read',
     element: <LoginLogsPage />,
+    group: 'system',
+  },
+  {
+    path: 'cameras',
+    label: '摄像头',
+    icon: Cctv,
+    perm: 'camera.manage',
+    element: <CamerasPage />,
     group: 'system',
   },
   // ── audit-ai:追加在此行之上 ──

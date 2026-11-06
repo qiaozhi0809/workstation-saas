@@ -24,10 +24,25 @@ export interface CameraInput {
   enabled: boolean
   transcode: boolean
 }
+/** worker 用 ffprobe 探到的流信息;探测失败或旧 worker 时整个为 null */
+export interface StreamProbe {
+  /** ffprobe 的 codec_name:'h264' | 'hevc' | 'mpeg4' | … */
+  video_codec: string | null
+  width: number | null
+  height: number | null
+  fps: number | null
+  bitrate_kbps: number | null
+  audio_codec: string | null
+  /** h264(或已勾选转码)为 true;false 表示测试通了但浏览器放不出来 */
+  browser_playable: boolean
+  /** 后端给的中文提示,直接显示 */
+  hint: string | null
+}
 export interface CameraTestResult {
   ok: boolean
   message: string
   preview_jpeg_base64: string | null
+  probe: StreamProbe | null
 }
 export interface CameraBrief {
   id: string
