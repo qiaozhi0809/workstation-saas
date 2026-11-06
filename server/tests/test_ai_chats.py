@@ -6,6 +6,7 @@ from uuid import UUID
 
 import anyio
 import httpx
+from redis import exceptions as redis_exceptions
 from sqlalchemy import select, text
 
 from app.ai.gateway import GenContext, acquire_lock, lock_key, reply_events
@@ -637,6 +638,60 @@ def test_ai_generate_save_failure_sends_error_not_done(
     assert redis_client.exists(f"ai:chat:{chat['id']}") == 0
     audit = generate_audits(db, chat["id"])
     assert len(audit) == 1 and (audit[0].success, audit[0].extra["outcome"]) == (False, "error")
+
+
+def test_ai_generate_unlock_failure_keeps_outcome_consistent(
+    client, settings, db, redis_client, monkeypatch
+):
+    """落库成功后 Redis 释放锁失败:结局以库里为准——前端照样收到 done、审计 outcome=done,
+    不能因为放锁失败改口说 error;锁留给 TTL 兜底(L94)。"""
+    import app.ai.gateway as gw
+
+    configure_ai(db, settings)
+    chat = create(client, settings, lesson_body())
+    ctx = _ctx(client, settings, db, redis_client, chat["id"], ["第一段", "第二段"])
+    calls = {"n": 0}
+
+    def redis_down(redis, key, token):
+        calls["n"] += 1
+        raise redis_exceptions.ConnectionError("Error 111 connecting to redis")
+
+    monkeypatch.setattr(gw, "release_lock", redis_down)
+    monkeypatch.setattr(gw, "UNLOCK_RETRY_SECONDS", 0)
+    events = _drain(reply_events(ctx, AiReplyIn()))
+    assert [e for e, _ in events] == ["meta", "delta", "delta", "done"]
+    assert calls["n"] == gw.UNLOCK_ATTEMPTS
+    db.expire_all()
+    msg = get_chat(client, settings, chat["id"]).json()["messages"][1]
+    assert (msg["status"], msg["content"]) == ("done", "第一段第二段")
+    audit = generate_audits(db, chat["id"])
+    assert len(audit) == 1 and (audit[0].success, audit[0].extra["outcome"]) == (True, "done")
+    # 锁确实没放掉,但最晚随 TTL 过期
+    assert 0 < redis_client.ttl(f"ai:chat:{chat['id']}") <= gw.LOCK_TTL
+
+
+def test_ai_generate_unlock_retries_transient_redis_error(
+    client, settings, db, redis_client, monkeypatch
+):
+    import app.ai.gateway as gw
+
+    configure_ai(db, settings)
+    chat = create(client, settings, lesson_body())
+    ctx = _ctx(client, settings, db, redis_client, chat["id"], ["好"])
+    real = gw.release_lock
+    calls = {"n": 0}
+
+    def flaky(redis, key, token):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise redis_exceptions.TimeoutError("Timeout reading from socket")
+        real(redis, key, token)
+
+    monkeypatch.setattr(gw, "release_lock", flaky)
+    monkeypatch.setattr(gw, "UNLOCK_RETRY_SECONDS", 0)
+    events = _drain(reply_events(ctx, AiReplyIn()))
+    assert events[-1][0] == "done" and calls["n"] == 2
+    assert redis_client.exists(f"ai:chat:{chat['id']}") == 0
 
 
 def _state_at_final_event(client, settings, db, redis_client, chat_id, events_fn, ctx, final):

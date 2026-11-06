@@ -23,6 +23,7 @@ import anyio.to_thread
 import httpx
 import structlog
 from redis import Redis
+from redis.exceptions import RedisError
 from sqlalchemy import func, update
 from sqlalchemy.orm import Session
 
@@ -44,6 +45,8 @@ from app.rbac.bindings import load_bindings
 log = structlog.get_logger()
 
 LOCK_TTL = 300
+UNLOCK_ATTEMPTS = 3
+UNLOCK_RETRY_SECONDS = 0.5
 GENERIC_ERROR = "生成出错了,请稍后再试"
 SAVE_ERROR = "生成结果没能保存,请重新生成"
 
@@ -208,6 +211,22 @@ def _finalize(
         s.commit()
 
 
+async def _unlock(ctx: GenContext) -> None:
+    """释放对话锁;Redis 暂时不可用就重试几次,仍失败只记日志——结局已经落库,
+    不能因为放锁失败对前端改口,锁最晚随 LOCK_TTL 过期。"""
+    for attempt in range(1, UNLOCK_ATTEMPTS + 1):
+        try:
+            await anyio.to_thread.run_sync(
+                partial(release_lock, ctx.redis, ctx.lock_key, ctx.lock_token)
+            )
+            return
+        except RedisError:
+            if attempt == UNLOCK_ATTEMPTS:
+                log.exception("ai_unlock_failed", chat_id=str(ctx.chat_id), attempts=attempt)
+            else:
+                await anyio.sleep(UNLOCK_RETRY_SECONDS)
+
+
 async def _finalize_and_unlock(
     ctx: GenContext,
     prep: Prepared | None,
@@ -218,9 +237,7 @@ async def _finalize_and_unlock(
         try:
             await anyio.to_thread.run_sync(partial(_finalize, ctx, prep, state, save))
         finally:
-            await anyio.to_thread.run_sync(
-                partial(release_lock, ctx.redis, ctx.lock_key, ctx.lock_token)
-            )
+            await _unlock(ctx)
 
 
 async def generation_events(
