@@ -6,11 +6,11 @@ export const DEFAULT_GRADING: Grading = { pass_ratio: 0.6, good_ratio: 0.85 }
 
 export type Parsed = number | 'absent' | 'clear' | 'invalid'
 
+/** 全角 ASCII(！-～,含数字、Ｘ、／、－、．)一律与半角同义;句号也当小数点 */
 export function parseScore(text: string): Parsed {
   const s = text
-    .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
-    .replace(/[．。]/g, '.')
-    .replace(/－/g, '-')
+    .replace(/[！-～]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+    .replace(/。/g, '.')
     .replace(/\s+/g, '')
   if (s === '') return 'clear'
   if (/^(缺|缺考|-|—|\/|x|X)$/.test(s)) return 'absent'

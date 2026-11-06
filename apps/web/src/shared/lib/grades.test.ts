@@ -98,6 +98,11 @@ describe('parseScore / cellState', () => {
     expect(parseScore('-5')).toBe(-5)
     expect(parseScore('1.2.3')).toBe('invalid')
   })
+  it('treats full-width Ｘ ｘ ／ as absent like their half-width forms (L15)', () => {
+    for (const t of ['Ｘ', 'ｘ', '／', ' ／ ']) expect(parseScore(t)).toBe('absent')
+    // 其他全角标点照旧不是分数
+    expect(parseScore('＋５')).toBe('invalid')
+  })
   it('classifies cells against the full mark', () => {
     const D = DEFAULT_GRADING
     expect(cellState(undefined, 100, D)).toBe('empty')

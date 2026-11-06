@@ -11,6 +11,7 @@ import { toast } from '@/shared/components/Toast'
 import { DEFAULT_GRADING } from '@/shared/lib/grades'
 import { confirmLeave, useTeacherStore } from '@/shared/stores/teacher'
 import type { ClassView } from '@/shared/types/class'
+import type { ClassPerm } from '@/shared/types/classroom'
 import type { Exam, ScoreSheet } from '@/shared/types/grades'
 import type { StudentSeat } from '@/shared/types/student'
 import { classFixture, rosterFixture, summaryFixture } from '../Classroom/pageTestUtils'
@@ -22,6 +23,11 @@ vi.mock('@/shared/api/exams')
 vi.mock('@/shared/api/school', () => ({ schoolApi: { grading: vi.fn() } }))
 vi.mock('@/shared/api/students', () => ({ studentsApi: { listInClass: vi.fn() } }))
 vi.mock('@/shared/components/Toast', () => ({ toast: vi.fn() }))
+// jsdom 没有 URL.createObjectURL,导出只断言到 exportSheet 调用与否
+vi.mock('@/shared/lib/csv', async (orig) => ({
+  ...(await orig<typeof import('@/shared/lib/csv')>()),
+  downloadText: vi.fn(),
+}))
 
 const EXAM: Exam = {
   id: 'e1',
@@ -51,12 +57,14 @@ function setup(
     subjects?: string[]
     sheet?: ScoreSheet
     roster?: StudentSeat[]
+    /** 默认 exam.read / exam.write / score.write 之外再加的权限 */
+    extraPerms?: ClassPerm[]
   } = {},
 ) {
   vi.mocked(classesApi.mine).mockResolvedValue({ items: [{ ...classFixture, ...opts.cls }] })
   vi.mocked(classroomApi.summary).mockResolvedValue(
     summaryFixture({
-      my_perms: ['exam.read', 'exam.write', 'score.write'],
+      my_perms: ['exam.read', 'exam.write', 'score.write', ...(opts.extraPerms ?? [])],
       my_subjects: opts.subjects ?? [],
     }),
   )
@@ -353,4 +361,29 @@ it('does not stay stuck on failed when the only in-flight cell was discarded', a
   })
   await ms(10)
   expect(screen.queryByText('保存失败')).toBeNull()
+})
+
+it('saves the edits still waiting in the debounce before exporting (L15)', async () => {
+  setup({ extraPerms: ['score.export'] })
+  vi.mocked(examsApi.exportSheet).mockResolvedValue(SHEET)
+  type(await cell('王小一', '语文'), '91')
+  // 600 ms 防抖还没到就点导出
+  fireEvent.click(screen.getByRole('button', { name: '导出' }))
+  await waitFor(() => expect(examsApi.exportSheet).toHaveBeenCalledWith('c1', 'e1'))
+  expect(sent()).toHaveLength(1)
+  expect(sent()[0][2]).toEqual([{ enrollment_id: 'e1', subject: '语文', value: 91 }])
+  const saveOrder = vi.mocked(examsApi.saveScores).mock.invocationCallOrder[0]
+  const exportOrder = vi.mocked(examsApi.exportSheet).mock.invocationCallOrder[0]
+  expect(saveOrder).toBeLessThan(exportOrder)
+  expect(await screen.findByText('已保存')).toBeInTheDocument()
+})
+
+it('does not export while a save has failed and asks to retry first (L15)', async () => {
+  setup({ extraPerms: ['score.export'] })
+  vi.mocked(examsApi.saveScores).mockRejectedValueOnce(new Error('boom'))
+  type(await cell('王小一', '语文'), '91')
+  fireEvent.click(screen.getByRole('button', { name: '导出' }))
+  await waitFor(() => expect(toast).toHaveBeenCalledWith('还有成绩没保存成功,请先重试保存再导出'))
+  expect(examsApi.exportSheet).not.toHaveBeenCalled()
+  expect(await screen.findByText('保存失败')).toBeInTheDocument()
 })

@@ -32,54 +32,59 @@ function mergeCells(sheet: ScoreSheet, cells: ScoreCell[]): ScoreSheet {
 /**
  * 成绩自动保存:600 ms 防抖合并(同格后者覆盖前者),每次请求最多 2000 格;
  * 失败保留队列并置 error,retry() 立即重发。有未保存内容时拦截站内跳转与刷新。
+ * flush() 立即发送并等到队列发完(导出前用它,导出的表才含刚改的格子),返回是否全部保存成功。
  */
 export function useScoreAutosave({ classId, examId }: { classId: string; examId: string }) {
   const qc = useQueryClient()
   const pending = useRef(new Map<string, ScoreCell>())
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  const sending = useRef(false)
+  /** 正在进行的一轮发送;再次 flush 只是等它结束 */
+  const inflight = useRef<Promise<boolean> | null>(null)
   const [status, setStatus] = useState<SaveStatus>('idle')
   const [dirty, setDirty] = useState(false)
 
-  const flush = useCallback(async () => {
+  const flush = useCallback((): Promise<boolean> => {
     clearTimeout(timer.current)
     timer.current = undefined
-    if (sending.current) return
+    if (inflight.current) return inflight.current
     if (pending.current.size === 0) {
       setStatus('idle')
       setDirty(false)
-      return
+      return Promise.resolve(true)
     }
-    sending.current = true
-    setStatus('saving')
     const sheetKey = ['score-sheet', classId, examId]
-    try {
-      const all = [...pending.current.values()]
-      for (let i = 0; i < all.length; i += BATCH) {
-        const chunk = all.slice(i, i + BATCH)
-        await examsApi.saveScores(classId, examId, chunk)
-        qc.setQueryData<ScoreSheet>(sheetKey, (old) => (old ? mergeCells(old, chunk) : old))
-        for (const c of chunk)
-          if (pending.current.get(keyOf(c)) === c) pending.current.delete(keyOf(c))
+    const run = (async () => {
+      setStatus('saving')
+      try {
+        // 发送期间又有新改动:同一轮里接着发
+        while (pending.current.size > 0) {
+          const all = [...pending.current.values()]
+          for (let i = 0; i < all.length; i += BATCH) {
+            const chunk = all.slice(i, i + BATCH)
+            await examsApi.saveScores(classId, examId, chunk)
+            qc.setQueryData<ScoreSheet>(sheetKey, (old) => (old ? mergeCells(old, chunk) : old))
+            for (const c of chunk)
+              if (pending.current.get(keyOf(c)) === c) pending.current.delete(keyOf(c))
+          }
+        }
+      } catch {
+        if (pending.current.size === 0) {
+          setStatus('idle')
+          setDirty(false)
+        } else setStatus('error')
+        return false
       }
-    } catch {
-      sending.current = false
-      if (pending.current.size === 0) {
-        setStatus('idle')
-        setDirty(false)
-      } else setStatus('error')
-      return
-    }
-    sending.current = false
-    if (pending.current.size > 0) {
-      // 发送期间又有新改动:接着发
-      void flush()
-      return
-    }
-    setStatus('saved')
-    setDirty(false)
-    void qc.invalidateQueries({ queryKey: ['exams', classId] })
-    void qc.invalidateQueries({ queryKey: ['gradebook', classId] })
+      setStatus('saved')
+      setDirty(false)
+      void qc.invalidateQueries({ queryKey: ['exams', classId] })
+      void qc.invalidateQueries({ queryKey: ['gradebook', classId] })
+      return true
+    })()
+    inflight.current = run
+    void run.finally(() => {
+      if (inflight.current === run) inflight.current = null
+    })
+    return run
   }, [qc, classId, examId])
 
   const queue = useCallback(
@@ -96,7 +101,7 @@ export function useScoreAutosave({ classId, examId }: { classId: string; examId:
   /** 撤回还没发出去的格子(文字被拒绝后不能留着前一次按键的值) */
   const discard = useCallback((keys: string[]) => {
     for (const k of keys) pending.current.delete(k)
-    if (pending.current.size === 0 && !sending.current) {
+    if (pending.current.size === 0 && !inflight.current) {
       clearTimeout(timer.current)
       timer.current = undefined
       setDirty(false)
@@ -147,5 +152,5 @@ export function useScoreAutosave({ classId, examId }: { classId: string; examId:
     else blocker.reset()
   }, [blocker])
 
-  return { status, dirty, queue, discard, retry }
+  return { status, dirty, queue, discard, retry, flush }
 }

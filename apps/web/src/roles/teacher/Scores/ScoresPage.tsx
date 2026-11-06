@@ -6,6 +6,7 @@ import { studentsApi } from '@/shared/api/students'
 import { EmptyState } from '@/shared/components/feedback/EmptyState'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
+import { toast } from '@/shared/components/Toast'
 import { Badge } from '@/shared/components/ui/badge'
 import { Button } from '@/shared/components/ui/button'
 import type { Exam } from '@/shared/types/grades'
@@ -152,6 +153,15 @@ function ExamSection({
   const canImport = writable === null || writable.length > 0
   const canExport = perms.includes('score.export')
 
+  // 先把防抖中的改动发出去,导出的表才含刚改的格子;没保存成功就不导,免得导出一份少格子的表
+  const exportNow = async () => {
+    if (!(await save.flush())) {
+      toast('还有成绩没保存成功,请先重试保存再导出')
+      return
+    }
+    await exportScores(cls.id, cls.name, exam, roster.data?.items ?? [])
+  }
+
   let body
   if (sheet.isLoading || roster.isLoading) body = <LoadingState />
   else if (!sheet.data || !roster.data) {
@@ -207,7 +217,7 @@ function ExamSection({
               variant="outline"
               size="sm"
               disabled={!roster.data}
-              onClick={() => void exportScores(cls.id, cls.name, exam, roster.data?.items ?? [])}
+              onClick={() => void exportNow()}
             >
               导出
             </Button>
