@@ -638,3 +638,50 @@ def test_concurrent_link_same_staff_no_500(cengine):
             )
         ).scalar_one()
     assert n == 1
+
+
+def test_relink_archived_parent_reactivates(client, settings, db):
+    first = _add(client, settings, S3, "13800000053").json()
+    uid = _user(db, "13800000053").id
+    parent_row = db.scalar(select(Parent.id).where(Parent.user_id == uid))
+    assert (
+        client.delete(
+            f"/api/v1/parent-links/{first['parent']['link_id']}", headers=auth(settings)
+        ).status_code
+        == 204
+    )
+    assert _user(db, "13800000053").status == "archived"
+    res = _add(client, settings, S3, "13800000053")
+    assert res.status_code == 201, res.text
+    temp = res.json()["temp_password"]
+    assert temp and temp != first["temp_password"]
+    db.expire_all()
+    user = _user(db, "13800000053")
+    assert user.id == uid and user.status == "active" and user.must_change_password is True
+    assert db.scalar(select(Parent.id).where(Parent.user_id == uid)) == parent_row
+    assert _login(client, "13800000053", first["temp_password"]).status_code == 401
+    assert _login(client, "13800000053", temp).status_code == 200
+    assert len(_audits(db, "parent.reactivate")) == 1
+    assert temp not in str(_audits(db, "parent.reactivate")[0].extra)
+
+
+def test_relink_frozen_still_409(client, settings, db):
+    _add(client, settings, S3, "13800000054")
+    _user(db, "13800000054").status = "frozen"
+    db.flush()
+    res = _add(client, settings, S4, "13800000054")
+    assert res.status_code == 409 and res.json()["error"]["code"] == "PHONE_TAKEN_INACTIVE"
+    assert _user(db, "13800000054").status == "frozen"
+
+
+def test_relink_archived_staff_account_not_reactivated(client, settings, db):
+    from app.rbac.roles import Role
+    from tests.factories import bind
+
+    staff = make_user(db, "13800000055", "虚构职工")
+    bind(db, staff.id, Role.dean, school_id="11111111-1111-1111-1111-111111111111", year_id=None)
+    staff.status = "archived"
+    db.flush()
+    res = _add(client, settings, S3, "13800000055")
+    assert res.status_code == 409 and res.json()["error"]["code"] == "PHONE_TAKEN_INACTIVE"
+    assert _user(db, "13800000055").status == "archived"

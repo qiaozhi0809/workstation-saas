@@ -200,7 +200,10 @@ def _find_account(db: Session, school_id: UUID, phone: str) -> User | None:
         raise ApiError(409, "PHONE_AMBIGUOUS", "这个手机号对应多个账号,请联系信息中心")
     if active:
         return active[0]
-    if any(u.login_name.lower() == phone for u in users):
+    mine = [u for u in users if u.login_name.lower() == phone]
+    if mine:
+        if mine[0].status == "archived":  # 归档的家长账号可恢复(L64);冻结的仍要信息中心处理
+            return mine[0]
         raise ApiError(409, "PHONE_TAKEN_INACTIVE", "这个手机号的账号已停用,请联系信息中心")
     return None
 
@@ -269,10 +272,15 @@ def add_parent(
     if not _PHONE_RE.fullmatch(phone):
         raise ApiError(400, "PHONE_INVALID", "手机号应为 11 位中国大陆手机号")
     user = _find_account(db, actor.school_id, phone)
-    if user is not None:  # 锁用户行后再确认仍是 active(防并发停用/归档)
+    reactivated = False
+    if user is not None:  # 锁用户行后再确认状态(防并发停用/归档)
         locked = _lock_user(db, user.id)
-        if locked is None or locked.status != "active":
+        if locked is None or locked.status not in ("active", "archived"):
             raise ApiError(409, "PHONE_TAKEN_INACTIVE", "这个手机号的账号已停用,请联系信息中心")
+        if locked.status == "archived":
+            if user.id in _shared_user_ids(db, [user.id]):
+                raise ApiError(409, "PHONE_TAKEN_INACTIVE", "这个手机号的账号已停用,请联系信息中心")
+            reactivated = True
     parent = (
         db.scalar(select(Parent).where(Parent.user_id == user.id)) if user is not None else None
     )
@@ -296,7 +304,13 @@ def add_parent(
     is_primary = not any(lk.is_primary for lk in live)
 
     temp: str | None = None
-    if user is None:
+    if reactivated:
+        assert user is not None
+        temp = generate_temp_password()
+        user.password_hash = hash_password(temp)
+        user.must_change_password = True
+        user.status = "active"
+    elif user is None:
         temp = generate_temp_password()
         try:
             with db.begin_nested():
@@ -357,7 +371,9 @@ def add_parent(
     record(
         db,
         user_id=actor.id,
-        action="parent.create" if temp is not None else "parent.link",
+        action="parent.reactivate"
+        if reactivated
+        else ("parent.create" if temp is not None else "parent.link"),
         success=True,
         object_type="user",
         object_id=str(user.id),
