@@ -118,7 +118,9 @@ function sessionExpired(): ApiError {
   return new ApiError(401, 'UNAUTHORIZED', '登录已失效，请重新登录')
 }
 
-/** 带 Bearer 的请求；401 时刷新一次令牌再重发，仍 401 则会话失效。返回原始 Response（不判 2xx）。 */
+/** 带 Bearer 的请求；401 时刷新一次令牌再重发，仍 401 则会话失效。返回原始 Response（不判 2xx）。
+ * 403 PASSWORD_CHANGE_REQUIRED 在这里统一处理(标记 user 让 ProtectedRoute 跳 /change-password),
+ * 直接用本函数的调用方(下载等)也能触发。 */
 export async function authedFetch(
   method: string,
   path: string,
@@ -138,6 +140,8 @@ export async function authedFetch(
     res = await send(method, path, body, signal, opts)
     if (res.status === 401) throw sessionExpired()
   }
+  if (res.status === 403 && (await errorCodeOf(res)) === 'PASSWORD_CHANGE_REQUIRED')
+    await markPasswordChangeRequired()
   return res
 }
 
@@ -148,20 +152,25 @@ export async function api<T>(
   rawOpts?: RawOpts,
 ): Promise<T> {
   const res = await authedFetch(method, path, { body, ...rawOpts })
-  if (!res.ok) {
-    const apiErr = await toApiError(res)
-    if (res.status === 403 && apiErr.code === 'PASSWORD_CHANGE_REQUIRED')
-      await markPasswordChangeRequired()
-    throw apiErr
-  }
+  if (!res.ok) throw await toApiError(res)
   if (res.status === 204) return undefined as T
   const text = await res.text()
   return (text ? JSON.parse(text) : undefined) as T
 }
 
+let marking: Promise<void> | null = null
+
+/** 并发多个 403 只发一次 /auth/me(单飞):后到的等同一个请求 */
+function markPasswordChangeRequired(): Promise<void> {
+  marking ??= doMarkPasswordChangeRequired().finally(() => {
+    marking = null
+  })
+  return marking
+}
+
 /** 会话中密码到期:服务端对业务接口返回 403 PASSWORD_CHANGE_REQUIRED。刷新 store 里的 user,让 ProtectedRoute 跳 /change-password。
  * 直接用 send 而非 authApi.me(auth.ts 依赖本文件,避免循环引用);已标记时不再请求,避免重复/循环。 */
-async function markPasswordChangeRequired(): Promise<void> {
+async function doMarkPasswordChangeRequired(): Promise<void> {
   const current = useAuthStore.getState().user
   if (!current || current.must_change_password) return
   try {

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { useAuthStore } from '@/shared/stores/auth'
-import { api, ApiError, refreshAccessToken, tryRefreshAccessToken } from './client'
+import { api, ApiError, authedFetch, refreshAccessToken, tryRefreshAccessToken } from './client'
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -349,6 +349,63 @@ it('403 PASSWORD_CHANGE_REQUIRED falls back to local flag when /auth/me fails', 
     .mockRejectedValueOnce(new TypeError('net'))
   vi.stubGlobal('fetch', fetchMock)
   await expect(api('GET', '/classes')).rejects.toMatchObject({ code: 'PASSWORD_CHANGE_REQUIRED' })
+  expect(useAuthStore.getState().user).toMatchObject({
+    must_change_password: true,
+    password_change_reason: 'expired',
+  })
+})
+
+it('403 PASSWORD_CHANGE_REQUIRED through authedFetch (downloads) marks the user too', async () => {
+  const fresh = {
+    id: 'u',
+    display_name: 't',
+    contexts: ['teacher'],
+    admin_perms: [],
+    must_change_password: true,
+    password_change_reason: 'first_login',
+  }
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(err('PASSWORD_CHANGE_REQUIRED', 403))
+    .mockResolvedValueOnce(json(fresh))
+  vi.stubGlobal('fetch', fetchMock)
+  const res = await authedFetch('GET', '/reports/x.csv')
+  expect(res.status).toBe(403)
+  expect(fetchMock.mock.calls[1][0]).toBe('/api/v1/auth/me')
+  expect(useAuthStore.getState().user).toMatchObject({
+    must_change_password: true,
+    password_change_reason: 'first_login',
+  })
+  // 调用方仍能读到原始响应体
+  await expect(res.json()).resolves.toMatchObject({ error: { code: 'PASSWORD_CHANGE_REQUIRED' } })
+})
+
+it('concurrent 403 PASSWORD_CHANGE_REQUIRED responses fetch /auth/me once', async () => {
+  let meCalls = 0
+  const fetchMock = vi.fn(async (url: string) => {
+    if (url.endsWith('/auth/me')) {
+      meCalls++
+      await new Promise((r) => setTimeout(r, 5))
+      return json({
+        id: 'u',
+        display_name: 't',
+        contexts: ['teacher'],
+        admin_perms: [],
+        must_change_password: true,
+        password_change_reason: 'expired',
+      })
+    }
+    return err('PASSWORD_CHANGE_REQUIRED', 403)
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  const results = await Promise.allSettled([
+    api('GET', '/a'),
+    api('GET', '/b'),
+    authedFetch('GET', '/c.csv'),
+  ])
+  expect(results.map((r) => r.status)).toEqual(['rejected', 'rejected', 'fulfilled'])
+  expect(meCalls).toBe(1)
+  expect(fetchMock).toHaveBeenCalledTimes(4)
   expect(useAuthStore.getState().user).toMatchObject({
     must_change_password: true,
     password_change_reason: 'expired',
