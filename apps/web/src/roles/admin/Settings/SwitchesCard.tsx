@@ -11,7 +11,8 @@ import type { Switches } from '@/shared/types/admin'
 
 const PARENT_NOTE = '家长端下次刷新即生效'
 const AI_NOTE = '对之后 AI 生成的评语生效'
-const MONITOR_NOTE = '监控上线后生效'
+// 后端每次请求读开关:关掉即摄像头接口 404、课上与看板的摄像头数归 0(cameras/access.py、classroom/service.py)
+const MONITOR_NOTE = '关掉后摄像头管理与课上画面都不可用,下一次请求即生效'
 
 const GROUPS: { title: string; items: { key: keyof Switches; label: string; note?: string }[] }[] =
   [
