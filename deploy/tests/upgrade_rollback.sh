@@ -122,8 +122,19 @@ assert_no_secrets "restore 输出" "$TMP/restore1.log"
 pass "升级前备份可用 restore.sh 恢复,服务健康、数据在"
 
 echo "== 5/6 升级进行到覆盖阶段时 kill -9(断电):状态文件留下,换包升级被拒并提示,不带参数的 rollback.sh 回退"
-"$DEPLOY/scripts/upgrade.sh" "$PKG_BAD" >"$TMP/upgrade-k9.log" 2>&1 &
-upid=$!
+# 用 setsid 起成独立进程组,kill -9 整组:连同它正在跑的 docker compose 子进程一起杀,像断电一样;
+# 否则残留的 compose up 会和后面的 rollback.sh 抢同一批容器(没有 setsid 的系统只杀脚本本身)
+if command -v setsid >/dev/null 2>&1; then
+  setsid "$DEPLOY/scripts/upgrade.sh" "$PKG_BAD" >"$TMP/upgrade-k9.log" 2>&1 &
+  upid=$!
+  sleep 1
+  pgid="$(ps -o pgid= -p "$upid" 2>/dev/null | tr -d ' ')"
+  kill_target="-${pgid:-$upid}"
+else
+  "$DEPLOY/scripts/upgrade.sh" "$PKG_BAD" >"$TMP/upgrade-k9.log" 2>&1 &
+  upid=$!
+  kill_target="$upid"
+fi
 w=0
 until [ -f "$STATE" ]; do
   kill -0 "$upid" 2>/dev/null || break
@@ -132,7 +143,7 @@ until [ -f "$STATE" ]; do
 done
 [ -f "$STATE" ] || { tail -n 15 "$TMP/upgrade-k9.log" >&2; fail "测试自身问题:状态文件一直没出现(升级没进入覆盖阶段?)"; }
 sleep 2
-kill -9 "$upid" 2>/dev/null || true
+kill -9 -- "$kill_target" 2>/dev/null || true
 wait "$upid" 2>/dev/null || true
 [ -f "$STATE" ] || fail "kill -9 之后状态文件应还在(EXIT trap 不会执行)"
 [ -d "$DEPLOY/backups/.lock" ] || fail "kill -9 之后锁目录应还在(由下一个脚本接管)"

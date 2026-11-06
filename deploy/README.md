@@ -344,7 +344,7 @@ tar -xzf <新包>/workstation-deploy-1.0.0.tar.gz -C . --strip-components=1 work
 ./scripts/upgrade.sh <新包>/workstation-deploy-1.0.0.tar.gz
 ```
 
-之后就是 1.0.0 的脚本在执行:会保存快照、写状态文件,失败与中断的处置按上面几小节来(回退用 `./scripts/rollback.sh`,它会把 0.7.2 的 compose 与脚本复制回来并起 0.7.2 的镜像)。`.env` 会多出 `WS_SUBNET`(取自当前网络的子网 `172.30.0.0/24`)。
+之后就是 1.0.0 的脚本在执行:会保存快照、写状态文件,失败与中断的处置按上面几小节来(回退用 `./scripts/rollback.sh`,它会把 0.7.2 的 `docker-compose.yml` 与 `VERSION` 复制回来并起 0.7.2 的镜像;`scripts/` 保持 1.0.0 的,它们同样能管理 0.7.2 的部署,也能恢复 0.7.2 的备份)。`.env` 会多出 `WS_SUBNET`(取自当前网络的子网 `172.30.0.0/24`)。
 
 如果没有做这一步、直接用 0.7.2 的脚本升级,它会报"大版本升级需要专门的迁移说明"而停下,系统仍在 0.7.2,没有任何改动。
 

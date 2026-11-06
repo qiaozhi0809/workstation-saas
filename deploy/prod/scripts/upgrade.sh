@@ -251,6 +251,9 @@ main() {
   OLD_VERSION="$(tr -d '[:space:]' <"$DEPLOY_DIR/VERSION")"
   version_ok "$new_version" || die "离线包里的版本号格式不对:$new_version"
   version_ok "$OLD_VERSION" || die "当前版本号格式不对:$OLD_VERSION"
+  # 上次升级中断的处置优先于版本比较:此时 VERSION 文件已是中断那次的新版本,拿它比较会给出误导的"降级"提示
+  check_interrupted "$new_version"
+  if [ -n "$RESUME_OLD" ]; then OLD_VERSION="$RESUME_OLD"; fi
   # 大版本不同一律拒绝,唯一例外是 0.x → 1.x:1.0.0 是本系统的首个正式版,0.7.x 试用版升上来是计划内路径(README 第 9 节)
   if [ "$(major_of "$new_version")" != "$(major_of "$OLD_VERSION")" ] \
     && ! { [ "$(major_of "$OLD_VERSION")" = "0" ] && [ "$(major_of "$new_version")" = "1" ]; }; then
@@ -259,8 +262,6 @@ main() {
   if version_lt "$new_version" "$OLD_VERSION"; then
     die "离线包版本 $new_version 低于当前版本 $OLD_VERSION:不支持降级(数据库可能已迁移到更新的结构)。回退请用备份与 restore.sh"
   fi
-  check_interrupted "$new_version"
-  if [ -n "$RESUME_OLD" ]; then OLD_VERSION="$RESUME_OLD"; fi
   log_info "升级 $OLD_VERSION → $new_version"
 
   # 2. 强制备份,失败就停;备份前后各列一次清单,必须出现新文件
