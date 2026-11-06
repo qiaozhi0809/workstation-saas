@@ -1,6 +1,7 @@
+import asyncio
 import time
 from contextlib import contextmanager
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import jwt
@@ -11,7 +12,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from app import clock
 from app.models import User
-from app.ws.hub import publish
+from app.ws.hub import STALE, Hub, publish
 from app.ws.router import ws_session_scope
 from tests.helpers import auth
 
@@ -123,7 +124,12 @@ def test_subscriber_reconnects_after_redis_error(ws_client, settings, db, redis_
     with ws_client.websocket_connect(PATH) as ws:
         ws.send_json({"type": "auth", "token": _token(settings, uid)})
         assert ws.receive_json() == {"type": "ready"}
-        redis_client.execute_command("CLIENT", "KILL", "TYPE", "pubsub")  # 订阅连接被服务端踢掉
+        # 只踢本测试 hub 的订阅连接(按 CLIENT SETNAME 过滤),不碰共享 Redis 上别的订阅
+        name = ws_client.app.state.hub.client_name
+        victims = [c for c in redis_client.client_list(_type="pubsub") if c.get("name") == name]
+        assert victims
+        for c in victims:
+            redis_client.client_kill_filter(_id=c["id"])
         assert _wait(lambda: redis_client.pubsub_numsub("ws:events")[0][1] == 1)
         publish(redis_client, [uid], {"type": "notice.recalled", "id": "after"})
         assert ws.receive_json() == {"type": "notice.recalled", "id": "after"}
@@ -206,3 +212,139 @@ def test_publish_swallows_unserializable_event(redis_client):
     from datetime import datetime
 
     assert publish(redis_client, [UUID(ADMIN)], {"type": "x", "at": datetime(2026, 1, 1)}) is None
+
+
+def _open(stack, ws_client, token):
+    ws = stack.enter_context(ws_client.websocket_connect(PATH))
+    ws.send_json({"type": "auth", "token": token})
+    assert ws.receive_json() == {"type": "ready"}
+    return ws
+
+
+def _expect_close(ws, code):
+    with pytest.raises(WebSocketDisconnect) as exc:
+        while True:
+            ws.receive_json()  # 跳过 ping 等帧,直到被关闭
+    assert exc.value.code == code
+
+
+def test_stale_closes_with_4401(ws_client, settings, db, redis_client):
+    from contextlib import ExitStack
+
+    uid = _uid(db, "teacher01")
+    with ExitStack() as stack:
+        ws = _open(stack, ws_client, _token(settings, uid))
+        publish(redis_client, [uid], {"type": STALE})
+        _expect_close(ws, 4401)
+    assert STALE == "session.stale"
+
+
+def test_reset_publishes_stale_for_target_only(ws_client, settings, db, redis_client):
+    from contextlib import ExitStack
+
+    a, b = _uid(db, "teacher01"), _uid(db, "teacher02")
+    with ExitStack() as stack:
+        wa = _open(stack, ws_client, _token(settings, a))
+        wb = _open(stack, ws_client, _token(settings, b))
+        publish(redis_client, [a], {"type": STALE})
+        _expect_close(wa, 4401)
+        # B 没被关:之后仍能收到发给自己的事件(而不是 stale 的残影)
+        publish(redis_client, [b], {"type": "notice.recalled", "id": "still-here"})
+        assert wb.receive_json() == {"type": "notice.recalled", "id": "still-here"}
+
+
+def _login(client, name="teacher01", pw="dev123"):
+    res = client.post("/api/v1/auth/login", json={"login_name": name, "password": pw})
+    assert res.status_code == 200
+    return res.json()
+
+
+def test_change_password_keeps_own_session(ws_client, settings, db, redis_client):
+    """真实 HTTP 改密码撤销 S2 的刷新令牌;`session.stale` 由段 A 的 Task 3 在改密码里发布,
+    此处由测试自己 publish(A 合并后由 test_change_password_publishes_stale 补端到端)。"""
+    from contextlib import ExitStack
+
+    uid = _uid(db, "teacher01")
+    s1, s2 = _login(ws_client), _login(ws_client)
+    new_pw = "Newpass-9x"
+    res = ws_client.post(
+        "/api/v1/auth/password",
+        headers={"Authorization": f"Bearer {s1['access_token']}"},
+        json={
+            "old_password": "dev123",
+            "new_password": new_pw,
+            "refresh_token": s1["refresh_token"],
+        },
+    )
+    assert res.status_code == 200
+    with ExitStack() as stack:
+        w1 = _open(stack, ws_client, s1["access_token"])
+        w2 = _open(stack, ws_client, s2["access_token"])
+        publish(redis_client, [uid], {"type": STALE})
+        _expect_close(w1, 4401)
+        _expect_close(w2, 4401)
+    r1 = ws_client.post("/api/v1/auth/refresh", json={"refresh_token": s1["refresh_token"]})
+    assert r1.status_code == 200
+    r2 = ws_client.post("/api/v1/auth/refresh", json={"refresh_token": s2["refresh_token"]})
+    assert r2.status_code == 401
+    with ExitStack() as stack:  # S1 用刷新出的新令牌重连成功
+        _open(stack, ws_client, r1.json()["access_token"])
+
+
+def test_expired_token_socket_closed(ws_client, settings, db):
+    from contextlib import ExitStack
+
+    settings.access_ttl_seconds = 2
+    ws_client.app.state.ws_ping_interval = 0.5
+    uid = _uid(db, "teacher01")
+    started = time.monotonic()
+    with ExitStack() as stack:
+        ws = _open(stack, ws_client, _token(settings, uid))
+        _expect_close(ws, 4401)
+    assert time.monotonic() - started < 4  # 令牌过期后一个 ping 周期内断开
+
+
+def test_status_recheck_after_register(ws_client, settings, db, monkeypatch):
+    uid = _uid(db, "teacher01")
+    original = Hub.register
+
+    def register_then_freeze(self, user_id, websocket, **kwargs):
+        original(self, user_id, websocket, **kwargs)
+        db.get(User, user_id).status = "frozen"  # 握手窗口内账号被冻结
+        db.flush()
+
+    monkeypatch.setattr(Hub, "register", register_then_freeze)
+    with ws_client.websocket_connect(PATH) as ws:
+        ws.send_json({"type": "auth", "token": _token(settings, uid)})
+        _expect_close(ws, 4403)
+    assert uid not in ws_client.app.state.hub._sockets
+
+
+class _FakeSocket:
+    def __init__(self, hang: bool = False) -> None:
+        self.hang = hang
+        self.sent: list[dict] = []
+        self.closed: int | None = None
+
+    async def send_json(self, event: dict) -> None:
+        if self.hang:
+            await asyncio.sleep(3600)
+        self.sent.append(event)
+
+    async def close(self, code: int = 1000) -> None:
+        self.closed = code
+
+
+def test_deliver_timeout(monkeypatch):
+    monkeypatch.setattr("app.ws.hub.SEND_TIMEOUT", 0.1)
+    uid = UUID(ADMIN)
+    far = datetime.now(UTC) + timedelta(hours=1)
+    slow, fast = _FakeSocket(hang=True), _FakeSocket()
+    hub = Hub()
+    hub.register(uid, slow, expires_at=far)
+    hub.register(uid, fast, expires_at=far)
+    event = {"type": "notice.recalled", "id": "n"}
+    asyncio.run(asyncio.wait_for(hub.deliver({"user_ids": [str(uid)], "event": event}), 2))
+    assert fast.sent == [event]
+    assert slow.closed is not None
+    assert slow not in hub._sockets.get(uid, set())
