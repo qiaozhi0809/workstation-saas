@@ -63,17 +63,22 @@ export default function CameraStrip({
     toast('本节课已结束')
     void qc.invalidateQueries({ queryKey: ['classroom', classId] })
     onClose()
+    // 把这个班的列表缓存丢掉,下次展开从头加载,不会被缓存里的空列表/403 立刻再收起
+    qc.removeQueries({ queryKey: ['cameras', 'class', classId] })
   }
-  // 30 秒刷新拿到 403(下课了)也按"本节课已结束"处理:播放器此时可能已停在最后一片,等不到自己的 403
   const endedFnRef = useRef(ended)
   endedFnRef.current = ended
-  const forbidden = q.error instanceof ApiError && q.error.status === 403
-  useEffect(() => {
-    if (forbidden) endedFnRef.current()
-  }, [forbidden])
-
   const period = periodText(q.data)
   const cameras = q.data?.cameras ?? []
+  // 下课后后端返回 200 + 空列表(403 只在失去班级读权限时才有)。
+  // 曾经看到过机位、刷新后变空 → 按"本节课已结束"处理;首次加载就是空的照常显示提示
+  const hadCamerasRef = useRef(false)
+  if (cameras.length > 0) hadCamerasRef.current = true
+  const emptied = !!q.data && cameras.length === 0 && hadCamerasRef.current
+  const forbidden = q.error instanceof ApiError && q.error.status === 403
+  useEffect(() => {
+    if (forbidden || emptied) endedFnRef.current()
+  }, [forbidden, emptied])
 
   let body: ReactNode
   if (q.isPending) body = <p className="px-1 text-sm text-muted-foreground">加载中…</p>

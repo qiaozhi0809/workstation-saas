@@ -234,6 +234,37 @@ it('refresh 403 counts as period ended even without a player error', async () =>
   expect(live()).toEqual([])
 })
 
+it('ends the class when the 30 s refresh comes back with no cameras', async () => {
+  // 只假 setInterval:让查询的 30 秒刷新可推进;setTimeout 保持真实,查询结果照常送到组件
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+  await openStrip()
+  expect(camerasApi.classCameras).toHaveBeenCalledTimes(1)
+  vi.mocked(camerasApi.classCameras).mockResolvedValue(classCameras({ cameras: [] }))
+  act(() => void vi.advanceTimersByTime(30_000))
+  expect(camerasApi.classCameras).toHaveBeenCalledTimes(2)
+  await waitFor(() => expect(screen.queryByTestId('camera-strip')).toBeNull())
+  expect(screen.getAllByText('本节课已结束')).toHaveLength(1)
+  expect(screen.getByTestId('camera-toggle')).toHaveAttribute('aria-pressed', 'false')
+  await waitFor(() => expect(classroomApi.summary).toHaveBeenCalledTimes(2))
+  expect(live()).toEqual([])
+})
+
+it('reopening after the class ended loads fresh instead of reusing the cached end', async () => {
+  const { client } = await openStrip()
+  vi.mocked(camerasApi.classCameras).mockRejectedValue(new ApiError(403, 'FORBIDDEN', '不能看'))
+  await act(() => client.refetchQueries({ queryKey: ['cameras', 'class', 'c1'] }))
+  await waitFor(() => expect(screen.queryByTestId('camera-strip')).toBeNull())
+  expect(client.getQueryState(['cameras', 'class', 'c1'])).toBeUndefined()
+  // 下一节又能看了:再点开要重新请求,条正常展开,不会被旧 403 立刻收起
+  vi.mocked(camerasApi.classCameras).mockResolvedValue(classCameras())
+  fireEvent.click(screen.getByTestId('camera-toggle'))
+  const strip = await screen.findByTestId('camera-strip')
+  expect(await within(strip).findByLabelText('讲台机位')).toBeInTheDocument()
+  expect(camerasApi.classCameras).toHaveBeenCalledTimes(3)
+  expect(screen.getAllByText('本节课已结束')).toHaveLength(1)
+  expect(live()).toEqual(['cam1', 'cam2'])
+})
+
 it('keeps the last camera list when a refresh fails for another reason', async () => {
   const { client } = await openStrip()
   vi.mocked(camerasApi.classCameras).mockRejectedValue(new Error('网络断了'))
