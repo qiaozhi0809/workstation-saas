@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Dices, PencilLine, School } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -443,6 +443,10 @@ function ClassroomView({ cls }: { cls: ClassView }) {
     paused: picking || cameraFullscreen,
   })
   const cameraCount = summary.data?.cameras ?? 0
+  // 概况刷新后本班没有可看的摄像头了:收起,之后再有也要老师重新点开
+  useEffect(() => {
+    if (cameraCount === 0) setCamerasOpen(false)
+  }, [cameraCount])
   const pickEffects: ClassroomEffects = {
     ...slot.effects,
     idle,

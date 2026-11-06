@@ -3,6 +3,7 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { camerasApi } from '@/shared/api/cameras'
 import { classesApi } from '@/shared/api/classes'
+import { ApiError } from '@/shared/api/client'
 import { classroomApi } from '@/shared/api/classroom'
 import { useTeacherStore } from '@/shared/stores/teacher'
 import type { ClassCameras } from '@/shared/types/camera'
@@ -25,7 +26,8 @@ const h = vi.hoisted(() => {
     }
     handlers = new Map<string, Handler[]>()
     config: { xhrSetup?: (xhr: XMLHttpRequest, url: string) => void }
-    loadSource = vi.fn()
+    src = ''
+    loadSource = vi.fn((s: string) => void (this.src = s))
     attachMedia = vi.fn()
     stopLoad = vi.fn()
     startLoad = vi.fn()
@@ -69,6 +71,11 @@ vi.mock('@/shared/api/preferences')
 vi.mock('@/shared/api/exams')
 
 const { FakeHls } = h
+/** 还活着(没被销毁)的播放器正在拉的摄像头 id */
+const live = () =>
+  FakeHls.instances
+    .filter((i) => i.destroy.mock.calls.length === 0)
+    .map((i) => /cameras\/(.+)\/stream/.exec(i.src)?.[1])
 
 const classCameras = (over: Partial<ClassCameras> = {}): ClassCameras => ({
   class_id: 'c1',
@@ -89,13 +96,13 @@ const manifestError = (code: number) => ({
   networkDetails: { responseText: '' },
 })
 
-/** 打开页面并展开缩略条,等第一路播放器出现 */
+/** 打开页面并展开缩略条,等第一路播放器出现;返回 QueryClient 以便触发刷新 */
 async function openStrip() {
-  setup()
+  const { client } = setup()
   fireEvent.click(await screen.findByTestId('camera-toggle'))
   const strip = await screen.findByTestId('camera-strip')
   await within(strip).findByLabelText('讲台机位')
-  return strip
+  return { strip, client }
 }
 
 beforeEach(() => {
@@ -197,15 +204,64 @@ it('opens fullscreen with watermark and pauses the idle animation', async () => 
   const full = within(dialog).getByTestId('camera-fullscreen')
   expect(within(full).getByLabelText('讲台机位')).toBeInTheDocument()
   expect(within(full).getByText(/^正在直播 · 示例小学 · .+ · 王老师$/)).toBeInTheDocument()
+  // 全屏期间只有全屏这 1 个播放器活着:两个缩略播放器已销毁,缩略位置换成静态占位
   expect(FakeHls.instances).toHaveLength(3)
+  expect(live()).toEqual(['cam1'])
+  const strip = screen.getByTestId('camera-strip')
+  expect(within(strip).queryByLabelText('后排机位')).toBeNull()
+  expect(within(strip).getByText('正在全屏')).toBeInTheDocument()
+  expect(within(strip).getByText('全屏中暂停')).toBeInTheDocument()
   expect(h.idle.at(-1)?.paused).toBe(true)
 
   fireEvent.keyDown(document, { key: 'Escape' })
   await waitFor(() => expect(screen.queryByRole('dialog', { name: '讲台机位' })).toBeNull())
   expect(FakeHls.instances[2].destroy).toHaveBeenCalledTimes(1)
   expect(h.idle.at(-1)?.paused).toBe(false)
-  // 缩略条还在
+  // 关闭全屏后缩略播放器重建
   expect(screen.getByTestId('camera-strip')).toBeInTheDocument()
+  expect(live()).toEqual(['cam1', 'cam2'])
+  expect(FakeHls.instances).toHaveLength(5)
+})
+
+it('refresh 403 counts as period ended even without a player error', async () => {
+  const { client } = await openStrip()
+  vi.mocked(camerasApi.classCameras).mockRejectedValue(new ApiError(403, 'FORBIDDEN', '不能看'))
+  await act(() => client.refetchQueries({ queryKey: ['cameras', 'class', 'c1'] }))
+  await waitFor(() => expect(screen.queryByTestId('camera-strip')).toBeNull())
+  expect(screen.getAllByText('本节课已结束')).toHaveLength(1)
+  expect(screen.getByTestId('camera-toggle')).toHaveAttribute('aria-pressed', 'false')
+  await waitFor(() => expect(classroomApi.summary).toHaveBeenCalledTimes(2))
+  expect(live()).toEqual([])
+})
+
+it('keeps the last camera list when a refresh fails for another reason', async () => {
+  const { client } = await openStrip()
+  vi.mocked(camerasApi.classCameras).mockRejectedValue(new Error('网络断了'))
+  await act(() => client.refetchQueries({ queryKey: ['cameras', 'class', 'c1'] }))
+  expect(camerasApi.classCameras).toHaveBeenCalledTimes(2)
+  // 等查询真的进入 error 状态并渲染出来
+  await waitFor(() =>
+    expect(client.getQueryState(['cameras', 'class', 'c1'])?.status).toBe('error'),
+  )
+  await act(async () => {})
+  const strip = screen.getByTestId('camera-strip')
+  expect(within(strip).queryByRole('alert')).toBeNull()
+  expect(within(strip).getByLabelText('讲台机位')).toBeInTheDocument()
+  expect(live()).toEqual(['cam1', 'cam2'])
+  expect(screen.queryByText('本节课已结束')).toBeNull()
+})
+
+it('collapses when the summary says no cameras and does not reopen by itself', async () => {
+  const { client } = await openStrip()
+  vi.mocked(classroomApi.summary).mockResolvedValue(summaryFixture({ cameras: 0 }))
+  await act(() => client.refetchQueries({ queryKey: ['classroom', 'c1'] }))
+  await waitFor(() => expect(screen.queryByTestId('camera-strip')).toBeNull())
+  expect(screen.queryByTestId('camera-toggle')).toBeNull()
+  expect(live()).toEqual([])
+  vi.mocked(classroomApi.summary).mockResolvedValue(summaryFixture({ cameras: 2 }))
+  await act(() => client.refetchQueries({ queryKey: ['classroom', 'c1'] }))
+  expect(await screen.findByTestId('camera-toggle')).toHaveAttribute('aria-pressed', 'false')
+  expect(screen.queryByTestId('camera-strip')).toBeNull()
 })
 
 it('period ended while fullscreen collapses everything', async () => {

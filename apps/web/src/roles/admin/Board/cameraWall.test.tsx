@@ -224,6 +224,37 @@ describe('CameraWallMini', () => {
     expect(live()).toEqual(['d1'])
   })
 
+  it('switching back before the new player shows a picture keeps only the old one', async () => {
+    const wall = await openWall()
+    fireEvent.click(within(wall).getByTestId('camera-wall-class-c1'))
+    act(() => FakeHls.instances[0].emit('hlsFragLoaded'))
+    vi.useFakeTimers()
+    fireEvent.click(within(wall).getByRole('button', { name: '后排机位' }))
+    expect(live()).toEqual(['a1', 'a2'])
+    // a1 出过画面,切回去不用等 a2 交接:a2 立即销毁,a1 不重建
+    fireEvent.click(within(wall).getByRole('button', { name: '讲台机位' }))
+    expect(live()).toEqual(['a1'])
+    expect(FakeHls.instances).toHaveLength(2)
+    act(() => void vi.advanceTimersByTime(20000))
+    expect(live()).toEqual(['a1'])
+  })
+
+  it('a manual pick restarts the rotation timer', async () => {
+    const wall = await openWall()
+    vi.useFakeTimers()
+    fireEvent.click(within(wall).getByTestId('camera-wall-rotate'))
+    expect(live()).toEqual(['a1'])
+    act(() => void vi.advanceTimersByTime(9000))
+    // 9 秒时手动点公共区域:计时从头算,1 秒后不应切走
+    fireEvent.click(within(wall).getByTestId('camera-wall-class-public'))
+    act(() => FakeHls.instances.at(-1)!.emit('hlsFragLoaded'))
+    expect(live()).toEqual(['p1'])
+    act(() => void vi.advanceTimersByTime(9999))
+    expect(live()).toEqual(['p1'])
+    act(() => void vi.advanceTimersByTime(1))
+    expect(live()).toEqual(['p1', 'a1'])
+  })
+
   it('auto rotate every 10s skips error cameras', async () => {
     const wall = await openWall()
     vi.useFakeTimers()

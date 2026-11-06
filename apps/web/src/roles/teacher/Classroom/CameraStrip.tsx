@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { camerasApi } from '@/shared/api/cameras'
+import { ApiError } from '@/shared/api/client'
 import { CameraPlayer } from '@/shared/components/camera/CameraPlayer'
 import { LiveWatermark } from '@/shared/components/camera/LiveWatermark'
 import Modal from '@/shared/components/overlay/Modal'
@@ -63,13 +64,20 @@ export default function CameraStrip({
     void qc.invalidateQueries({ queryKey: ['classroom', classId] })
     onClose()
   }
+  // 30 秒刷新拿到 403(下课了)也按"本节课已结束"处理:播放器此时可能已停在最后一片,等不到自己的 403
+  const endedFnRef = useRef(ended)
+  endedFnRef.current = ended
+  const forbidden = q.error instanceof ApiError && q.error.status === 403
+  useEffect(() => {
+    if (forbidden) endedFnRef.current()
+  }, [forbidden])
 
   const period = periodText(q.data)
   const cameras = q.data?.cameras ?? []
 
   let body: ReactNode
   if (q.isPending) body = <p className="px-1 text-sm text-muted-foreground">加载中…</p>
-  else if (q.isError)
+  else if (q.isError && !q.data)
     body = (
       <p role="alert" className="px-1 text-sm text-destructive">
         {q.error instanceof Error && q.error.message ? q.error.message : '教室画面加载失败'}
@@ -77,6 +85,7 @@ export default function CameraStrip({
     )
   else if (cameras.length === 0)
     body = <p className="px-1 text-sm text-muted-foreground">现在看不到本班的摄像头</p>
+  // 刷新失败(非 403)时继续显示上一次的列表;全屏期间缩略不挂播放器,同一路只拉一份
   else
     body = (
       <div className="flex gap-2 overflow-x-auto pb-1">
@@ -85,7 +94,13 @@ export default function CameraStrip({
             key={c.id}
             className="relative h-[120px] w-[213px] shrink-0 overflow-hidden rounded-lg border bg-muted"
           >
-            <CameraPlayer cameraId={c.id} title={c.name} onEnded={ended} />
+            {full ? (
+              <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+                {full.id === c.id ? '正在全屏' : '全屏中暂停'}
+              </div>
+            ) : (
+              <CameraPlayer cameraId={c.id} title={c.name} onEnded={ended} />
+            )}
             <button
               type="button"
               aria-label={`全屏查看 ${c.name}`}

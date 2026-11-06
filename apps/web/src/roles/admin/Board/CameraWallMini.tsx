@@ -101,8 +101,14 @@ function HandoffPlayer({
     cur: camera,
     prev: null,
   })
-  // 渲染期间按 props 调整状态:当前路变了,原来的当前路成为"旧的"
-  const view = shown.cur.id !== camera.id ? { cur: camera, prev: shown.cur } : shown
+  // 渲染期间按 props 调整状态:当前路变了,原来的当前路成为"旧的";
+  // 切回还没来得及卸载的"旧的"(A→B→A)时它已经出过画面,直接只留它,不等交接
+  const view =
+    shown.cur.id === camera.id
+      ? shown
+      : shown.prev?.id === camera.id
+        ? { cur: shown.prev, prev: null }
+        : { cur: camera, prev: shown.cur }
   if (view !== shown) setShown(view)
   const prevId = view.prev?.id
   useEffect(() => {
@@ -205,9 +211,12 @@ export default function CameraWallMini({ gradeId }: { gradeId: string | null }) 
   const idx = group ? Math.min(camIndex, group.cameras.length - 1) : -1
   const current = group && idx >= 0 ? { group, camera: group.cameras[idx] } : null
 
+  // 手动点班后轮播计时从头算(否则下一拍可能 1 秒后就切走);每次 +1 让计时器重建
+  const [timerEpoch, setTimerEpoch] = useState(0)
   const select = (g: Group) => {
     setSelectedKey(g.key)
     setCamIndex(Math.max(firstWatchable(g), 0))
+    setTimerEpoch((n) => n + 1)
   }
   const latest = useRef({ groups, selectedKey })
   latest.current = { groups, selectedKey }
@@ -219,14 +228,14 @@ export default function CameraWallMini({ gradeId }: { gradeId: string | null }) 
     setSelectedKey(next.key)
     setCamIndex(firstWatchable(next))
   }, [])
-  // 九宫格开着、折叠区收着时不轮播;标签页隐藏时不换(回来接着换)
+  // 九宫格开着、折叠区收着时不轮播;标签页隐藏时不换(回来接着换);timerEpoch 变了就重新计时
   useEffect(() => {
     if (!rotate || gridOpen || !shown) return
     const id = setInterval(() => {
       if (!document.hidden) advance()
     }, intervalMs)
     return () => clearInterval(id)
-  }, [rotate, gridOpen, shown, intervalMs, advance])
+  }, [rotate, gridOpen, shown, intervalMs, advance, timerEpoch])
   const toggleRotate = (on: boolean) => {
     setRotate(on)
     if (on && !current) advance()
