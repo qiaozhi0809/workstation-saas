@@ -5,7 +5,14 @@ from sqlalchemy import text
 from app.models import RoleBinding, SchoolClass
 from tests.factories import make_teacher_account, make_user
 from tests.helpers import audit_rows, auth
-from tests.seed_ids import CLASS_ID, GRADE_ID, SCHOOL_ID, SUBJECT_USER_ID, TEACHER_USER_ID
+from tests.seed_ids import (
+    CLASS_ID,
+    GRADE_ID,
+    SCHOOL_ID,
+    SUBJECT_USER_ID,
+    TEACHER_IDS,
+    TEACHER_USER_ID,
+)
 from tests.test_seating import payload
 
 PRINCIPAL = "55555555-5555-5555-5555-555555555543"
@@ -327,10 +334,14 @@ def test_people_lists_active_teachers_only(client, db, settings):
     ids = {r["user_id"] for r in rows}
     assert TEACHER_USER_ID in ids and str(frozen.id) not in ids and str(no_row.id) not in ids
     for r in rows:
-        assert set(r) == {"user_id", "name", "login_name", "subjects"}
+        assert set(r) == {"user_id", "teacher_id", "name", "login_name", "subjects"}
         assert isinstance(r["subjects"], list)
     names = [r["name"] for r in rows]
     assert names == sorted(names)
+    # L55 / L209:带 teachers.id,升级向导的方案与课表格子的候选用它比对
+    by_user = {r["user_id"]: r for r in rows}
+    assert by_user[TEACHER_USER_ID]["teacher_id"] == TEACHER_IDS["teacher01"]
+    assert by_user[TEACHER04]["teacher_id"] == TEACHER04_TID
 
 
 def test_people_other_school_excluded(client, db, settings):

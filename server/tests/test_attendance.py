@@ -1,3 +1,4 @@
+from datetime import date
 from uuid import UUID
 
 from sqlalchemy import select
@@ -94,6 +95,26 @@ def test_confirm_with_and_without_clearing(client, db, settings, monkeypatch):
     cleared = client.post(url, json={"clear_exceptions": True}, headers=auth(settings)).json()
     assert cleared["items"] == []
     assert day_view(client, settings).json()["confirmed_at"] == cleared["confirmed_at"]
+
+
+def test_clear_day_keeps_removed_students_history(client, db, settings, monkeypatch):
+    """清空当天考勤只删当前名单(active 注册)学生的记录,已移出学生的历史记录保留(L10)。"""
+    freeze(monkeypatch, NOW)
+    keep, gone = enrollment_of(db, STUDENT_IDS[0]), enrollment_of(db, STUDENT_IDS[1])
+    put(client, settings, "2026-11-02", keep, "leave")
+    put(client, settings, "2026-11-02", gone, "absent")
+    res = client.delete(f"/api/v1/classes/{CLASS_ID}/students/{gone}", headers=auth(settings))
+    assert res.status_code == 204
+
+    url = f"{BASE}/2026-11-02/confirm"
+    cleared = client.post(url, json={"clear_exceptions": True}, headers=auth(settings)).json()
+    assert cleared["items"] == [] and cleared["confirmed_at"] is not None
+    rows = db.execute(
+        select(Attendance.enrollment_id, Attendance.status).where(
+            Attendance.class_id == UUID(CLASS_ID), Attendance.date == date(2026, 11, 2)
+        )
+    ).all()
+    assert rows == [(gone, "absent")]
 
 
 def test_month_lists_exceptions_by_date(client, db, settings, monkeypatch):

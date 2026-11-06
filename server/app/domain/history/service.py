@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.ai.stats import exam_table
 from app.audit.service import deny
 from app.domain.classes.service import class_scope_of
+from app.domain.classes.sort import class_sort_key
 from app.domain.exams.schemas import SubjectFull
 from app.domain.history.schemas import (
     HistoryClass,
@@ -78,14 +79,15 @@ def past_classes(
     if year is None:
         raise ApiError(404, "YEAR_NOT_FOUND", "没有找到该学年")
     rows = db.execute(
-        select(SchoolClass, Grade.name, User.display_name)
+        select(SchoolClass, Grade.name, User.display_name, Grade.display_order)
         .join(Grade, Grade.id == SchoolClass.grade_id)
         .outerjoin(_teachers, _teachers.c.id == SchoolClass.homeroom_teacher_id)
         .outerjoin(User, User.id == _teachers.c.user_id)
         .where(SchoolClass.school_id == user.school_id, SchoolClass.academic_year_id == year.id)
-        .order_by(Grade.display_order, Grade.name, SchoolClass.name, SchoolClass.id)
     ).all()
-    visible = [(cls, grade, name) for cls, grade, name in rows if _visible_to(bindings, cls)]
+    # 年级按 display_order 再按名字的数值,同年级班名按数值排(L40)
+    rows.sort(key=lambda r: (r[3], class_sort_key(r[1]), class_sort_key(r[0].name), str(r[0].id)))
+    visible = [(cls, grade, name) for cls, grade, name, _ in rows if _visible_to(bindings, cls)]
     counts: dict[UUID, int] = {}
     if visible:
         counts = dict(
