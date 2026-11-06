@@ -28,7 +28,8 @@ _FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
 
 
 def _my_link_in_use(db: Session, user: User, notice_id: UUID) -> bool:
-    """家长对象:这条通知涉及的自己孩子里,至少一个绑定仍在用。
+    """家长对象:这条通知涉及的自己孩子里,至少一个绑定仍在用且自己仍是主家长
+    (与收件箱 can_ack / ack_block_reason 的 not_primary 同一口径)。
     显式查 notice_students ⋈ parent_links ⋈ parents(user_id = 我);不复用 child_link_or_deny
     (它写的是 parent.view 审计,只管单个学生)。"""
     return bool(
@@ -39,6 +40,7 @@ def _my_link_in_use(db: Session, user: User, notice_id: UUID) -> bool:
                     NoticeStudent.parent_user_id == user.id,
                     ParentLink.student_id == NoticeStudent.student_id,
                     ParentLink.status == "active",
+                    ParentLink.is_primary.is_(True),
                     ParentLink.parent_id == Parent.id,
                     Parent.user_id == user.id,
                 )
@@ -103,7 +105,7 @@ def submit_ack(
             request=request,
         )
         db.commit()
-        raise ApiError(403, "ACK_NOT_ALLOWED", "与孩子的关联已不是在用状态,不能回执")
+        raise ApiError(403, "ACK_NOT_ALLOWED", "只有孩子在用的主家长能回执")
     choice, note = _validate(notice, body)
     db.execute(
         update(NoticeRecipient)

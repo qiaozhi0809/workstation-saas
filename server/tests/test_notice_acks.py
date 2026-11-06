@@ -136,6 +136,22 @@ def test_ack_rules(client, db, settings):
     assert item["can_ack"] is False
 
 
+def test_ack_requires_primary_link(client, db, settings):
+    """提交回执与收件箱 can_ack 同一口径:绑定在用但不是主家长 → 403 ACK_NOT_ALLOWED + 失败审计;
+    改回主家长后能回执。"""
+    p = parent_notice(client, settings, CONFIRM)
+    set_link(db, "13800000061", "S0001", is_primary=False)
+    assert _item(client, settings, LI, p)["ack_block_reason"] == "not_primary"
+    res = post_ack(client, settings, LI, p)
+    assert res.status_code == 403 and code(res) == "ACK_NOT_ALLOWED"
+    assert row_of(db, p, LI).acked_at is None
+    failed = [r for r in ack_audits(db, p) if not r.success]
+    assert len(failed) == 1 and failed[0].user_id == UUID(LI)
+    set_link(db, "13800000061", "S0001", is_primary=True)
+    assert post_ack(client, settings, LI, p).status_code == 204
+    assert row_of(db, p, LI).acked_at is not None
+
+
 def test_ack_success_audit_has_no_note_text(client, db, settings):
     n = parent_notice(client, settings, CHOICE)
     assert post_ack(client, settings, LI, n, choice=0, note="私密留言内容").status_code == 204
