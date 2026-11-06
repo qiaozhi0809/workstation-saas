@@ -58,8 +58,8 @@ def pb_settings(pg_url, redis_url, hls_root) -> Settings:
 
 @pytest.fixture
 def make_client(pb_settings, db, redis_client):
-    def make(peer=LAN, timing=None) -> TestClient:
-        app = create_app(pb_settings)
+    def make(peer=LAN, timing=None, settings=None) -> TestClient:
+        app = create_app(settings or pb_settings)
         app.dependency_overrides[get_db] = lambda: db
         app.dependency_overrides[get_redis] = lambda: redis_client
         app.dependency_overrides[get_timing] = lambda: timing or Timing(timeout=0.05, interval=0.01)
@@ -420,6 +420,9 @@ def test_segment_other_file_name_not_signed_for(client, pb_settings, cam, monkey
     freeze(monkeypatch, IN_PERIOD.isoformat())
     url = seg_url(client, pb_settings, cam.id)
     assert client.get(url.replace("seg-0.ts", "seg-9.ts")).status_code == 404
+    # 约定行为:同一签名可取该摄像头目录里任何已有的片段
+    (pb_settings.hls_root / str(cam.id) / "seg-1.ts").write_bytes(b"\x47")
+    assert client.get(url.replace("seg-0.ts", "seg-1.ts")).status_code == 200
 
 
 def test_segment_expired(client, pb_settings, cam, monkeypatch):
@@ -479,7 +482,121 @@ def test_segment_path_traversal_even_when_unsigned(client, cam):
 def test_segment_disabled_or_missing_camera_404(client, pb_settings, db, cam, monkeypatch):
     freeze(monkeypatch, IN_PERIOD.isoformat())
     url = seg_url(client, pb_settings, cam.id)
-    assert client.get(url.replace(str(cam.id), str(uuid4()))).status_code == 404
+    ghost = uuid4()  # 签名有效但摄像头不存在
+    q = parse_qs(urlsplit(url).query)
+    sig = playback.sign(pb_settings, ghost, UUID(TEACHER_USER_ID), int(q["exp"][0]))
+    ghost_url = (
+        f"/api/v1/cameras/{ghost}/hls/seg-0.ts?exp={q['exp'][0]}&u={TEACHER_USER_ID}&sig={sig}"
+    )
+    assert client.get(ghost_url).status_code == 404
     cam.enabled = False
     db.flush()
     assert client.get(url).status_code == 404
+
+
+def test_segment_bad_sig_values_are_403_not_500(client, pb_settings, cam, monkeypatch):
+    freeze(monkeypatch, IN_PERIOD.isoformat())
+    exp = int(IN_PERIOD.timestamp()) + 30
+    path = f"/api/v1/cameras/{cam.id}/hls/seg-0.ts"
+    good = playback.sign(pb_settings, cam.id, UUID(TEACHER_USER_ID), exp)
+    for sig in ("é" * 22, "é", "A" * 21, "A" * 23, good + "x", "%00" * 22, "A" * 21 + "é"):
+        res = client.get(path, params={"exp": exp, "u": TEACHER_USER_ID, "sig": sig})
+        assert (res.status_code, res.json()["error"]["code"]) == (403, "FORBIDDEN"), sig
+    for u in ("not-a-uuid", "é", "1" * 40, ""):
+        res = client.get(path, params={"exp": exp, "u": u, "sig": good})
+        assert res.status_code == 403, u
+    for e in ("9" * 5000, "-1", "١٢٣", "1e3", " 5"):
+        res = client.get(path, params={"exp": e, "u": TEACHER_USER_ID, "sig": good})
+        assert res.status_code == 403, e
+    assert playback.verify(pb_settings, cam.id, UUID(TEACHER_USER_ID), exp, "é" * 22, 0) is False
+
+
+def test_segment_unsigned_makes_no_db_access(make_client, pb_settings, db, cam, monkeypatch):
+    c = make_client()
+    calls = []
+    monkeypatch.setattr(db, "get", lambda *a, **k: calls.append(a) or None)
+    monkeypatch.setattr(db, "execute", lambda *a, **k: calls.append(a) or None)
+    monkeypatch.setattr(db, "scalar", lambda *a, **k: calls.append(a) or None)
+    unknown = uuid4()
+    for cid in (cam.id, unknown):  # 存在与否都是 403:没有存在性探测
+        assert c.get(f"/api/v1/cameras/{cid}/hls/seg-0.ts").status_code == 403
+    assert calls == []
+
+
+def test_unsigned_segment_unknown_camera_is_403_after_lan_only(make_client, pb_settings):
+    assert make_client().get(f"/api/v1/cameras/{uuid4()}/hls/seg-0.ts").status_code == 403
+    res = make_client(("8.8.8.8", 1)).get(f"/api/v1/cameras/{uuid4()}/hls/seg-0.ts")
+    assert res.json()["error"]["code"] == "CAMERA_LAN_ONLY"
+
+
+def test_denied_audit_throttled(client, pb_settings, db, cam):
+    for _ in range(5):
+        assert get_playlist(client, pb_settings, cam.id, PARENT).status_code == 403
+    rows = db.scalars(
+        select(AuditLog).where(AuditLog.action == "camera.view", AuditLog.success.is_(False))
+    ).all()
+    assert len(rows) == 1
+
+
+def test_rewrite_allowlists_tags():
+    src = (
+        "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:4\n"
+        "#EXT-X-PLAYLIST-TYPE:EVENT\n#EXT-X-INDEPENDENT-SEGMENTS\n"
+        "#EXT-X-DISCONTINUITY-SEQUENCE:1\n"
+        '#EXT-X-MAP:URI="http://203.0.113.1/init.mp4"\n'
+        '#EXT-X-KEY:METHOD=AES-128,URI="http://203.0.113.1/k"\n'
+        '#EXT-X-SESSION-KEY:METHOD=AES-128,URI="x"\n#EXT-X-UNKNOWN:1\n#random comment\n'
+        "#EXT-X-DISCONTINUITY\n#EXTINF:2.0,\nseg-0.ts\n#EXT-X-ENDLIST\n"
+    )
+    out = playback.rewrite_playlist(src, uuid4(), uuid4(), 5, "S")
+    tags = [ln.split(":")[0] for ln in out.splitlines() if ln.startswith("#")]
+    assert tags == [
+        "#EXTM3U",
+        "#EXT-X-VERSION",
+        "#EXT-X-TARGETDURATION",
+        "#EXT-X-MEDIA-SEQUENCE",
+        "#EXT-X-PLAYLIST-TYPE",
+        "#EXT-X-INDEPENDENT-SEGMENTS",
+        "#EXT-X-DISCONTINUITY-SEQUENCE",
+        "#EXT-X-DISCONTINUITY",
+        "#EXTINF",
+        "#EXT-X-ENDLIST",
+    ]
+    assert "203.0.113" not in out
+
+
+def test_playlist_non_utf8_does_not_500(client, pb_settings, cam, hls_root):
+    (hls_root / str(cam.id) / "index.m3u8").write_bytes(PLAYLIST.encode() + b"\xff\xfe\n")
+    res = get_playlist(client, pb_settings, cam.id)
+    assert res.status_code == 200
+    assert "seg-0.ts?" in res.text
+
+
+def test_password_change_revokes_playlist(client, pb_settings, db, cam):
+    headers = auth(pb_settings)
+    assert client.get(m3u8(cam.id), headers=headers).status_code == 200
+    db.execute(
+        text("UPDATE users SET password_changed_at = now() + interval '1 hour' WHERE id = :u"),
+        {"u": TEACHER_USER_ID},
+    )
+    db.flush()
+    res = client.get(m3u8(cam.id), headers=headers)
+    assert (res.status_code, res.json()["error"]["code"]) == (401, "TOKEN_EXPIRED")
+
+
+def test_prod_rejects_loopback_on_both_endpoints(make_client, pb_settings, cam):
+    prod = pb_settings.model_copy(update={"env": "prod"})
+    dev_c = make_client(("127.0.0.1", 1))
+    url = seg_url(dev_c, pb_settings, cam.id)
+    assert dev_c.get(url).status_code == 200
+    c = make_client(("127.0.0.1", 1), settings=prod)
+    res = c.get(m3u8(cam.id), headers=auth(pb_settings))
+    assert (res.status_code, res.json()["error"]["code"]) == (403, "CAMERA_LAN_ONLY")
+    res = c.get(url)
+    assert (res.status_code, res.json()["error"]["code"]) == (403, "CAMERA_LAN_ONLY")
+
+
+def test_segment_rejects_mapped_public_ip(make_client, pb_settings, cam):
+    url = seg_url(make_client(), pb_settings, cam.id)
+    res = make_client(("::ffff:8.8.8.8", 1)).get(url)
+    assert (res.status_code, res.json()["error"]["code"]) == (403, "CAMERA_LAN_ONLY")

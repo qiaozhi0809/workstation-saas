@@ -24,6 +24,21 @@ from app.errors import ApiError
 SEGMENT_RE = re.compile(r"seg-[0-9]{1,8}\.ts")
 MAX_TTL = 60  # 片段地址有效期上限(秒)
 SIG_LEN = 22
+SIG_RE = re.compile(r"[A-Za-z0-9_-]{22}")
+ALLOWED_TAGS = frozenset(
+    {
+        "#EXTM3U",
+        "#EXT-X-VERSION",
+        "#EXT-X-TARGETDURATION",
+        "#EXT-X-MEDIA-SEQUENCE",
+        "#EXTINF",
+        "#EXT-X-ENDLIST",
+        "#EXT-X-DISCONTINUITY",
+        "#EXT-X-PLAYLIST-TYPE",
+        "#EXT-X-INDEPENDENT-SEGMENTS",
+        "#EXT-X-DISCONTINUITY-SEQUENCE",
+    }
+)
 WANT_KEY = "ws:cam:want:{}"
 WANT_TTL = 30
 AUDIT_KEY = "ws:cam:audit:{}:{}"
@@ -52,16 +67,19 @@ def verify(
 ) -> bool:
     if exp < now or exp - now > MAX_TTL:
         return False
-    if not isinstance(sig, str):
+    if not isinstance(sig, str) or not SIG_RE.fullmatch(sig):
         return False
-    return hmac.compare_digest(_mac(settings, camera_id, user_id, exp), sig)
+    return hmac.compare_digest(_mac(settings, camera_id, user_id, exp).encode(), sig.encode())
 
 
 def rewrite_playlist(text: str, camera_id: UUID, user_id: UUID, exp: int, sig: str) -> str:
-    """片段行改成带签名的相对地址;`#` 行原样;其余不符合白名单的行丢弃(绝不放行)。"""
+    """片段行改成带签名的相对地址;白名单内的 `#` 行原样,其余一律丢弃(绝不放行)。"""
     out: list[str] = []
     for line in text.splitlines():
-        if line.startswith("#") or not line.strip():
+        if line.startswith("#"):
+            if re.split(r"[:\s]", line, maxsplit=1)[0] in ALLOWED_TAGS:
+                out.append(line)
+        elif not line.strip():
             out.append(line)
         elif SEGMENT_RE.fullmatch(line):
             out.append(f"hls/{line}?exp={exp}&u={user_id}&sig={sig}")

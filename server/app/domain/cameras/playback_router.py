@@ -83,14 +83,16 @@ def get_playlist(
     now = clock.utc_now()
     if access.can_view(db, user, bindings, camera, now) is None:
         # 对无权者不透露这路摄像头有没有流
-        deny(
-            db,
-            user_id=user.id,
-            action="camera.view",
-            object_type="camera",
-            object_id=str(camera.id),
-            request=request,
-        )
+        if redis.set(f"ws:cam:deny:{user.id}:{camera.id}", "1", nx=True, ex=60):
+            deny(  # 同一用户同一摄像头 60 秒内只记一次失败审计
+                db,
+                user_id=user.id,
+                action="camera.view",
+                object_type="camera",
+                object_id=str(camera.id),
+                request=request,
+            )
+        raise ApiError(403, "FORBIDDEN", "没有权限访问该资源")
     state = redis.hmget(access.STATE_KEY.format(camera.id), "status", "last_error")
     if state[0] == "error" and state[1] == "busy":
         raise ApiError(503, "STREAM_BUSY", "同时观看的摄像头太多,请稍后再试", headers=NO_STORE)
@@ -100,7 +102,7 @@ def get_playlist(
         index, timing.timeout, timing.interval, sleep=timing.sleep, monotonic=timing.monotonic
     )
     try:
-        body = index.read_text() if ready else None
+        body = index.read_text(encoding="utf-8", errors="replace") if ready else None
     except OSError:
         body = None
     if body is None:
@@ -146,21 +148,21 @@ def get_segment(
     sig: str | None = None,
 ) -> Response:
     """只认签名 + 内网来源,不要 JWT(R9:已签发的地址最多再用 60 秒)。"""
-    camera = _enabled_camera(db, camera_id, None)
-    access.ensure_monitor_on(db, camera.school_id)
     playback.ensure_lan(request, settings)
     if not playback.SEGMENT_RE.fullmatch(name):
         raise _not_found()
     user_id = _parse_uuid(u)
-    try:
-        exp_i = int(exp) if exp is not None and exp.isascii() and exp.isdigit() else None
-    except ValueError:
-        exp_i = None
+    exp_i = (
+        int(exp) if exp is not None and len(exp) <= 12 and exp.isascii() and exp.isdigit() else None
+    )
     forbidden = ApiError(403, "FORBIDDEN", "没有权限访问该资源")
     if user_id is None or exp_i is None or not sig:
         raise forbidden
-    if not playback.verify(settings, camera.id, user_id, exp_i, sig, _epoch(clock.utc_now())):
+    if not playback.verify(settings, camera_id, user_id, exp_i, sig, _epoch(clock.utc_now())):
         raise forbidden
+    # 签名通过后才查库:未签名的调用者碰不到数据库
+    camera = _enabled_camera(db, camera_id, None)
+    access.ensure_monitor_on(db, camera.school_id)
     base = (settings.hls_root / str(camera.id)).resolve()
     path = (base / name).resolve()
     if not path.is_relative_to(base):
