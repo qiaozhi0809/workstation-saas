@@ -167,7 +167,7 @@ Step N+(1-k): Commit          → git add && git commit
 |---|---|---|
 | 后端单元/集成 | pytest + testcontainers(真 Postgres / 真 Redis) | `cd server && uv run pytest` |
 | 前端单元 | Vitest + Testing Library | `cd apps/web && npm run test`;只跑一部分并限制并发时写 `npx vitest run <目录> --maxWorkers=2 --minWorkers=1`(本机 vitest 2.1.9 只给 `--maxWorkers` 会报 minThreads 冲突) |
-| 前端 E2E | Playwright(project 链 mutating → … → admin → m3b → m4a → m4b → m5b → m5c → readonly;`m5c` 用系统 Chrome(`channel: 'chrome'`,Playwright 自带的 Chromium 不解 H.264),需先起下一行的假摄像头与 `python -m app.stream`) | `cd apps/web && npm run e2e` |
+| 前端 E2E | Playwright(project 链 mutating → … → admin → m3b → m4a → m4b → m5b → m5c → readonly → walkthrough(只读走查截图,产物 `walkthrough-<sha>`);`m5c` 用系统 Chrome(`channel: 'chrome'`,Playwright 自带的 Chromium 不解 H.264),需先起下一行的假摄像头与 `python -m app.stream`) | `cd apps/web && npm run e2e` |
 | 假摄像头 / 真流测试 | mediamtx + ffmpeg 推流(`cam1` H.264、`cam2` H.265)+ pytest `ffmpeg` / `perf` 标记 | `docker compose -f deploy/docker-compose.dev.yml --profile camera up -d` → `cd server && uv run pytest -m "ffmpeg and not perf" -q`(本机需装 ffmpeg / ffprobe,缺了或假摄像头连不上时自动 skip);性能冒烟 `uv run pytest -m perf -q -s`(3 路 copy + 1 路转码 30 秒,只在 CI e2e job 单独一步跑,结果上传 `stream-perf` 产物) |
 | 后端 Lint | ruff | `uv run ruff check . && uv run ruff format --check .` |
 | 前端 Lint | ESLint + Prettier | `npm run lint` |

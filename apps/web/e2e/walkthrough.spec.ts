@@ -147,10 +147,12 @@ async function signIn(page: Page, name: string, landing: RegExp) {
   await expect(page).toHaveURL(landing)
 }
 
-/** 等主要内容出现、没有"加载中"、网络空闲(空闲最多等 10 秒,超时就按当前状态截) */
+/** 等主要内容出现、没有 LoadingState、网络空闲(空闲最多等 10 秒,超时就按当前状态截) */
 async function settle(page: Page, ready: Locator[]) {
   for (const l of ready) await expect(l).toBeVisible()
-  await expect(page.getByText('加载中')).toHaveCount(0)
+  // 只认 LoadingState(role="status" + "加载中"),不按正文子串匹配,免得将来帮助文案里出现"加载中"卡住每一页;
+  // Toast 区、教室 dock 等别的 role="status" 元素不含这几个字,不会误等
+  await expect(page.getByRole('status').filter({ hasText: /加载中/ })).toHaveCount(0)
   await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => {})
 }
 
