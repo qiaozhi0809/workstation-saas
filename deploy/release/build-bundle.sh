@@ -2,7 +2,7 @@
 # 构建离线部署包:
 #   deploy/release/build-bundle.sh <版本>      例:0.7.0 / 0.7.0-rc.1 / 0.0.0-ci
 # 产物:dist/workstation-deploy-<版本>.tar.gz 与同名 .sha256
-# 步骤:构建 app / web 镜像 → 拉取 postgres / redis → docker save 四个镜像 → 按契约组装部署目录 → 打包。
+# 步骤:构建 app / web / stream 镜像 → 拉取 postgres / redis → docker save 五个镜像 → 按契约组装部署目录 → 打包。
 # 需要联网(拉基础镜像、npm ci、uv sync);产物本身安装时不需要联网。
 # 可用环境变量:
 #   WS_BUNDLE_SKIP_PULL=1  不 docker pull postgres / redis(要求它们已在本机;只用于本机重复构建)
@@ -13,7 +13,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-# 新增镜像(例如 M5c 的 stream worker)时:在这里追加一行,并同步 compose 与 bundle_smoke.sh
+# 新增第三方镜像时:在这里追加一行,并同步 compose 与 bundle_smoke.sh
 THIRD_PARTY_IMAGES="postgres:16-alpine redis:7-alpine"
 
 die() { echo "错误:$1" >&2; exit 1; }
@@ -35,14 +35,17 @@ D="$STAGE/$NAME"
 PLATFORM="${WS_BUNDLE_PLATFORM:-linux/amd64}"
 APP_IMG="workstation-app:$VERSION"
 WEB_IMG="workstation-web:$VERSION"
+STREAM_IMG="workstation-stream:$VERSION"
 
 sha256_of() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'; else shasum -a 256 "$1" | awk '{print $1}'; fi
 }
 
-info "1/5 构建镜像 $APP_IMG、$WEB_IMG"
+info "1/5 构建镜像 $APP_IMG、$WEB_IMG、$STREAM_IMG"
 docker build --platform "$PLATFORM" -f "$ROOT/deploy/docker/app.Dockerfile" --build-arg "WS_APP_VERSION=$VERSION" -t "$APP_IMG" "$ROOT"
 docker build --platform "$PLATFORM" -f "$ROOT/deploy/docker/web.Dockerfile" -t "$WEB_IMG" "$ROOT"
+# 转流镜像 = 刚构建的应用镜像 + ffmpeg(同一平台)
+docker build --platform "$PLATFORM" -f "$ROOT/deploy/docker/stream.Dockerfile" --build-arg "APP_IMAGE=$APP_IMG" -t "$STREAM_IMG" "$ROOT"
 
 info "2/5 准备第三方镜像:$THIRD_PARTY_IMAGES"
 for img in $THIRD_PARTY_IMAGES; do
@@ -67,7 +70,7 @@ chmod 644 "$D/VERSION" "$D/docker-compose.yml" "$D/.env.example" "$D"/Caddyfile.
 
 info "4/5 docker save(可能需要几分钟)"
 # shellcheck disable=SC2086  # THIRD_PARTY_IMAGES 是空格分隔的镜像名,需要拆开
-docker save --platform "$PLATFORM" -o "$D/images/workstation-images-$VERSION.tar" "$APP_IMG" "$WEB_IMG" $THIRD_PARTY_IMAGES
+docker save --platform "$PLATFORM" -o "$D/images/workstation-images-$VERSION.tar" "$APP_IMG" "$WEB_IMG" "$STREAM_IMG" $THIRD_PARTY_IMAGES
 chmod 644 "$D/images/workstation-images-$VERSION.tar"
 
 info "5/5 打包并生成 sha256"

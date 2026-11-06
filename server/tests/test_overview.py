@@ -302,7 +302,8 @@ def test_board_query_count(db, monkeypatch):
     finally:
         event.remove(conn, "before_cursor_execute", count)
     assert len(view.classes) == 12
-    assert len(statements) <= 8, statements
+    # 8 条 + M5c 每班摄像头数的 2 条(开关、计数),与班数无关
+    assert len(statements) <= 10, statements
 
 
 def test_grade_head_also_homeroom_elsewhere_stays_scoped(client, db, settings, monkeypatch):
@@ -590,3 +591,48 @@ def test_today_my_notices_without_visible_classes(client, db, settings, monkeypa
     assert body["totals"]["classes"] == 0
     assert body["grade_exam"] is None
     assert [n["title"] for n in body["my_notices"]] == ["空校"]
+
+
+def _cams_by_class(body):
+    return {c["name"]: c["cameras"] for c in body["classes"]}
+
+
+def test_board_camera_counts(client, db, settings, monkeypatch):
+    from app.domain.school_settings.service import get_switches, save_switches
+    from app.models.cameras import Camera
+
+    freeze(monkeypatch, NOW)
+    school = UUID(SCHOOL_ID)
+
+    def cam(class_id, enabled=True):
+        db.add(
+            Camera(
+                school_id=school,
+                name="cam",
+                class_id=UUID(class_id) if class_id else None,
+                location="教室",
+                rtsp_url="rtsp://10.0.0.21/live/1",
+                enabled=enabled,
+            )
+        )
+
+    cam(CLASS_ID)
+    cam(CLASS_ID)
+    cam(CLASS_ID, enabled=False)
+    cam(C31)
+    cam(C41)
+    db.flush()
+    # 开关关:全部 0
+    assert set(_cams_by_class(get_board(client, settings).json()).values()) == {0}
+    sw = get_switches(db, school)
+    save_switches(db, school, UUID(IT_ADMIN), sw.model_copy(update={"monitor": True}))
+    body = get_board(client, settings).json()
+    assert _cams_by_class(body) == {"三年一班": 1, "三年二班": 2}
+    assert _cams_by_class(get_board(client, settings, grade_id=G4).json()) == {"四年一班": 1}
+    # 年级组长看本年级;班详情同口径
+    assert _cams_by_class(get_board(client, settings, GRADE_HEAD3).json()) == {
+        "三年一班": 1,
+        "三年二班": 2,
+    }
+    detail = client.get(f"/api/v1/admin/board/classes/{CLASS_ID}", headers=auth(settings, DEAN))
+    assert detail.status_code == 200 and detail.json()["cameras"] == 2

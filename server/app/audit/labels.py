@@ -86,6 +86,16 @@ ACTION_LABELS: dict[str, str] = {
     "org.staff_end": "结束教职工任职",
     "org.role_add": "添加角色",
     "org.role_end": "结束角色",
+    # 监控与课表
+    "camera.manage": "管理摄像头",
+    "camera.create": "新增摄像头",
+    "camera.update": "修改摄像头",
+    "camera.delete": "删除摄像头",
+    "camera.test": "测试摄像头连接",
+    "camera.view": "查看监控画面",
+    "timetable.update": "修改课表",
+    "timetable.import": "导入课表",
+    "periods.update": "修改节次时间",
     # 学校设置
     "settings.manage": "管理学校设置",
     "settings.tag_pool": "修改标签池",
@@ -129,11 +139,12 @@ _PREFIX_GROUPS: dict[str, tuple[str, ...]] = {
     "record": ("comment.", "growth."),
     "ai": ("ai.",),
     "account": ("account.",),
-    "org": ("org.",),
+    "org": ("org.", "timetable.", "periods."),
     "settings": ("settings.",),
     "year": ("year.",),
     "notice": ("notice.",),
     "parent": ("parent.",),
+    "camera": ("camera.",),
     "system": ("system.",),
 }
 
@@ -149,6 +160,7 @@ _GROUP_NAMES: dict[str, str] = {
     "year": "学年",
     "notice": "通知",
     "parent": "家长",
+    "camera": "监控",
     "system": "系统",
 }
 

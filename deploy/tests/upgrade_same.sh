@@ -65,6 +65,8 @@ assert_services_up
   || fail "升级后 app 容器没有用新版本标签的镜像"
 [ "$(docker inspect -f '{{.Config.Image}}' "$(dc ps -q scheduler)")" = "workstation-app:$NEWV" ] \
   || fail "升级后 scheduler 容器没有用新版本标签的镜像"
+[ "$(docker inspect -f '{{.Config.Image}}' "$(dc ps -q stream-worker)")" = "workstation-stream:$NEWV" ] \
+  || fail "升级后 stream-worker 容器没有用新版本标签的镜像"
 [ "$(user_count)" = "$users_before" ] || fail "升级后 users 行数变了"
 dump_logs "$TMP/compose.log"
 assert_no_secrets "升级输出" "$TMP/upgrade.log"

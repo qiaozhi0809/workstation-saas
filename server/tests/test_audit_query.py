@@ -32,6 +32,7 @@ GROUP_KEYS = [
     "year",
     "notice",
     "parent",
+    "camera",
     "system",
     "denied",
 ]
@@ -354,10 +355,33 @@ def test_groups_cover_known_actions():
         ("settings.switches", "settings"),
         ("year.rollback", "year"),
         ("notice.recall", "notice"),
+        ("timetable.update", "org"),
+        ("timetable.import", "org"),
+        ("periods.update", "org"),
+        ("camera.create", "camera"),
+        ("camera.update", "camera"),
+        ("camera.delete", "camera"),
+        ("camera.test", "camera"),
+        ("camera.view", "camera"),
     ],
 )
 def test_group_of(action, group):
     assert [k for k, _, p in GROUPS if k != "denied" and p(action, True)] == [group]
+
+
+def test_camera_labels_and_group_name():
+    for action in (
+        "camera.create",
+        "camera.update",
+        "camera.delete",
+        "camera.test",
+        "camera.view",
+        "timetable.update",
+        "timetable.import",
+        "periods.update",
+    ):
+        assert action in ACTION_LABELS, action
+    assert {k: lbl for k, lbl, _ in GROUPS}["camera"] == "监控"
 
 
 def test_object_label_school_and_grade_exam(client, settings, db):

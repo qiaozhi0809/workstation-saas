@@ -357,7 +357,7 @@ require_compose_version() {
 # start_and_verify <等 app 健康的秒数>:启动全部服务并逐项确认,任何一项不满足就 die(打印明确的中文原因)。
 # 为什么要两次 up:第一次 up 时 scheduler 依赖 app 健康,app 启动期迁移较久时 compose 可能先报错返回,
 # 此时只告警;等 app 健康后再 up 一次(这次失败直接 die),才能保证 scheduler 真的被创建并运行。
-# 之后断言:scheduler 在运行、web 健康,否则不能报"完成"。
+# 之后断言:scheduler、stream-worker 在运行、web 健康,否则不能报"完成"。
 start_and_verify() {
   local limit="$1" out
   if ! out="$(compose up -d --pull never 2>&1)"; then
@@ -369,12 +369,15 @@ start_and_verify() {
   fi
   if ! out="$(compose up -d --pull never 2>&1)"; then
     printf '%s\n' "$out" | tail -n 8 | redact >&2
-    die "应用已就绪,但启动其余服务(scheduler、web)失败。请运行 docker compose -p ${WS_COMPOSE_PROJECT:-workstation} --project-directory '$DEPLOY_DIR' ps -a 与 logs 查看原因"
+    die "应用已就绪,但启动其余服务(scheduler、stream-worker、web)失败。请运行 docker compose -p ${WS_COMPOSE_PROJECT:-workstation} --project-directory '$DEPLOY_DIR' ps -a 与 logs 查看原因"
   fi
   if ! wait_healthy web 120; then
     die "web 服务(反向代理)在 120 秒内没有就绪,系统暂时无法通过浏览器访问。请运行 docker compose -p ${WS_COMPOSE_PROJECT:-workstation} --project-directory '$DEPLOY_DIR' logs web 查看原因"
   fi
   if ! service_running scheduler; then
     die "定时任务服务(scheduler)没有在运行,定时任务不会执行。请运行 docker compose -p ${WS_COMPOSE_PROJECT:-workstation} --project-directory '$DEPLOY_DIR' logs scheduler 查看原因"
+  fi
+  if ! service_running stream-worker; then
+    die "摄像头转流服务(stream-worker)没有在运行,监控画面无法播放。请运行 docker compose -p ${WS_COMPOSE_PROJECT:-workstation} --project-directory '$DEPLOY_DIR' logs stream-worker 查看原因"
   fi
 }

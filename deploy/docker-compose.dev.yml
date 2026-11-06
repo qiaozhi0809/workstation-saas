@@ -23,3 +23,23 @@ services:
       interval: 2s
       timeout: 3s
       retries: 30
+
+  # ---- 假摄像头(profile camera):只给开发 / CI 用,不进离线包 ----
+  # docker compose -f deploy/docker-compose.dev.yml --profile camera up -d
+  # 地址:rtsp://127.0.0.1:${WS_RTSP_PORT:-8554}/cam1(testsrc 彩条,25fps 1280x720)
+  mediamtx:
+    # v1.21.2,2026-10-08 发布
+    image: bluenviron/mediamtx:1.21.2
+    profiles: ["camera"]
+    restart: unless-stopped
+    ports: ["${WS_RTSP_PORT:-8554}:8554"]
+  fake-camera:
+    # ffmpeg 8.1.2(alpine 3.20),2026-08-30 发布
+    image: jrottenberg/ffmpeg:8.1.2-alpine320
+    profiles: ["camera"]
+    restart: unless-stopped
+    depends_on: [mediamtx]
+    command: >
+      -hide_banner -loglevel warning -re -f lavfi -i testsrc=size=1280x720:rate=25
+      -c:v libx264 -preset ultrafast -tune zerolatency -g 50 -pix_fmt yuv420p
+      -f rtsp -rtsp_transport tcp rtsp://mediamtx:8554/cam1

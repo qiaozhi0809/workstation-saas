@@ -1,6 +1,7 @@
 from app.models.ai import AiBatchItem, AiChat, AiMessage
 from app.models.audit import AuditLog
 from app.models.base import Base
+from app.models.cameras import Camera
 from app.models.classroom import (
     Attendance,
     AttendanceDay,
@@ -18,6 +19,7 @@ from app.models.rbac import RoleBinding
 from app.models.records import Comment, GrowthRecord
 from app.models.school import AcademicYear, Grade, School, SchoolClass, SchoolSetting
 from app.models.student import Enrollment, Student
+from app.models.timetable import Period, TimetableEntry
 from app.models.user import User
 from app.models.years import YearUpgrade
 
@@ -30,6 +32,7 @@ __all__ = [
     "AttendanceDay",
     "AuditLog",
     "Base",
+    "Camera",
     "ClassBoard",
     "Comment",
     "Enrollment",
@@ -43,6 +46,7 @@ __all__ = [
     "NoticeStudent",
     "Parent",
     "ParentLink",
+    "Period",
     "Review",
     "RoleBinding",
     "School",
@@ -51,6 +55,7 @@ __all__ = [
     "Score",
     "SeatArrangement",
     "Student",
+    "TimetableEntry",
     "Todo",
     "User",
     "UserPreference",

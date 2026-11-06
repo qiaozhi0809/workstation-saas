@@ -1,4 +1,5 @@
 import base64
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -80,3 +81,14 @@ def test_login_log_days_out_of_range_rejected(days):
 @pytest.mark.parametrize("days", [30, 730])
 def test_login_log_days_bounds_accepted(days):
     assert Settings(_env_file=None, login_log_days=days).login_log_days == days
+
+
+def test_hls_root_and_stream_max(monkeypatch):
+    s = Settings(_env_file=None)
+    assert s.hls_root == Path("/run/ws-hls")
+    assert s.stream_max == 10
+    monkeypatch.setenv("WS_HLS_ROOT", "/tmp/hls-test")
+    monkeypatch.setenv("WS_STREAM_MAX", "4")
+    s = Settings(_env_file=None)
+    assert s.hls_root == Path("/tmp/hls-test")
+    assert s.stream_max == 4

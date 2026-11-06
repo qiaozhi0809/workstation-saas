@@ -246,7 +246,7 @@ load_images() {
     docker load -i "$tar" >/dev/null || die "docker load 失败"
   fi
   local img
-  for img in "workstation-app:$version" "workstation-web:$version" postgres:16-alpine redis:7-alpine; do
+  for img in "workstation-app:$version" "workstation-web:$version" "workstation-stream:$version" postgres:16-alpine redis:7-alpine; do
     docker image inspect "$img" >/dev/null 2>&1 || die "缺少镜像 $img"
   done
 }
