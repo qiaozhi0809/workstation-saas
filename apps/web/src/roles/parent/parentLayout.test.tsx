@@ -3,6 +3,7 @@ import { beforeEach, expect, it, vi } from 'vitest'
 import { noticesApi } from '@/shared/api/notices'
 import { parentApi } from '@/shared/api/parent'
 import { preferencesApi } from '@/shared/api/preferences'
+import { schoolApi } from '@/shared/api/school'
 import { child, mockWidth, renderParent, setParentUser, today } from './testkit'
 
 vi.mock('@/shared/api/parent', () => ({
@@ -55,6 +56,22 @@ it('shows the first-visit card at the top of the page only until the parent has 
   const attendance = await screen.findByRole('region', { name: '今日出勤' })
   expect(screen.getByRole('main')).toContainElement(card)
   expect(card.compareDocumentPosition(attendance) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+})
+
+it('shows the school name from /meta in the top bar, before the child', async () => {
+  renderParent('/parent/today?child=s1')
+  const banner = screen.getByRole('banner')
+  const school = await within(banner).findByText('示例小学')
+  expect(schoolApi.meta).toHaveBeenCalledTimes(1)
+  const switcher = within(banner).getByRole('combobox', { name: '切换孩子' })
+  expect(school.compareDocumentPosition(switcher) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+})
+
+it('still renders the shell when /meta fails', async () => {
+  vi.mocked(schoolApi.meta).mockRejectedValue(new Error('x'))
+  renderParent('/parent/today?child=s1')
+  await screen.findByRole('region', { name: '今日出勤' })
+  expect(screen.queryByText('示例小学')).toBeNull()
 })
 
 it('puts the tabs at the bottom below 768 with safe-area padding, not in the top bar', async () => {

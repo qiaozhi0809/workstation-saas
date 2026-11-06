@@ -18,6 +18,7 @@ import ChildSwitcher from './ChildSwitcher'
 import FirstVisit from './FirstVisit'
 import ParentNav from './ParentNav'
 import { ChildContext, useChild, useChildState } from './useChild'
+import { useMeta } from './useMeta'
 
 const QUERY = '(min-width: 768px)'
 
@@ -55,6 +56,7 @@ function ParentShell() {
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
   const wide = useWide()
+  const meta = useMeta()
   const state = useChildState()
   const { list, children, child, select } = state
 
@@ -93,6 +95,12 @@ function ParentShell() {
       context={
         child && (
           <>
+            {/* 校名来自 /meta(L74);窄屏限宽截断,孩子切换器优先占位 */}
+            {meta.data && (
+              <span className="max-w-[32vw] shrink truncate text-sm text-muted-foreground sm:max-w-none">
+                {meta.data.school_name}
+              </span>
+            )}
             <ChildSwitcher items={children} current={child} onSelect={select} />
             <Link
               to={{

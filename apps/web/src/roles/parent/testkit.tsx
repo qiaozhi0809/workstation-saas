@@ -4,9 +4,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, vi } from 'vitest'
 import { preferencesApi, type PreferencesWithOnboarded } from '@/shared/api/preferences'
+import { schoolApi } from '@/shared/api/school'
 import ProtectedRoute from '@/shared/components/ProtectedRoute'
 import { useAuthStore } from '@/shared/stores/auth'
 import type { ParentChild, ParentProfile, ParentToday } from '@/shared/types/parent'
+import type { Meta } from '@/shared/types/school'
 import ParentLayout, { ParentIndex } from './ParentLayout'
 import ProfilePage from './Profile/ProfilePage'
 import TodayPage from './Today/TodayPage'
@@ -25,6 +27,18 @@ export const onboardedPrefs = (): PreferencesWithOnboarded => ({
 beforeEach(() => {
   vi.spyOn(preferencesApi, 'get').mockResolvedValue(onboardedPrefs())
   vi.spyOn(preferencesApi, 'save').mockImplementation(async (p) => ({ ...onboardedPrefs(), ...p }))
+})
+
+/** /meta 的默认回答:校名与学校时区(L74 / L79);要测别的时区的用例自己再 mockResolvedValue */
+export const meta = (over: Partial<Meta> = {}): Meta => ({
+  version: '0.0.0-test',
+  school_name: '示例小学',
+  school_tz: 'Asia/Shanghai',
+  ...over,
+})
+
+beforeEach(() => {
+  vi.spyOn(schoolApi, 'meta').mockResolvedValue(meta())
 })
 
 export const child = (over: Partial<ParentChild> = {}): ParentChild => ({
