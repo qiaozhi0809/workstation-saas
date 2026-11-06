@@ -36,10 +36,24 @@ class CameraOut(BaseModel):
     last_error: str | None
 
 
+class StreamProbe(BaseModel):
+    """worker 用 ffprobe 读到的流信息(与前端 `StreamProbe` 契约一致)。"""
+
+    video_codec: str | None = None
+    width: int | None = None
+    height: int | None = None
+    fps: float | None = None
+    bitrate_kbps: int | None = None
+    audio_codec: str | None = None
+    browser_playable: bool
+    hint: str | None = None
+
+
 class CameraTestResult(BaseModel):
     ok: bool
     message: str
     preview_jpeg_base64: str | None = None
+    probe: StreamProbe | None = None  # ffprobe 失败或旧 worker 回写时为空
 
 
 class CameraHealth(BaseModel):

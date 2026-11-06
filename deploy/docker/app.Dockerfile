@@ -2,8 +2,11 @@
 #   docker build -f deploy/docker/app.Dockerfile --build-arg WS_APP_VERSION=0.7.0 -t workstation-app:0.7.0 .
 # 只有构建阶段联网(uv sync);运行阶段不需要外网。
 
+# 基础镜像钉在 Debian 12(bookworm):stream.Dockerfile 在它上面装 Debian 源的 ffmpeg(5.1),
+# 转流用到的 -timeout 语义(RTSP 套接字 I/O 超时,微秒)按这个版本校过;不随 python:3.12-slim 的
+# 默认发行版漂移(trixie 的 ffmpeg 是 7.x)
 # ---- 构建阶段:安装锁定的运行依赖 ----
-FROM python:3.12-slim AS builder
+FROM python:3.12-slim-bookworm AS builder
 # 为 1 时走 Nuitka 编译(由 M5a Task 8 实现),默认不走
 ARG WS_BUILD_NUITKA=0
 ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
@@ -17,7 +20,7 @@ COPY server/pyproject.toml server/uv.lock ./
 RUN uv sync --locked --no-dev
 
 # ---- 运行阶段 ----
-FROM python:3.12-slim
+FROM python:3.12-slim-bookworm
 ARG WS_APP_VERSION=0.0.0-dev
 ENV WS_APP_VERSION=${WS_APP_VERSION} \
     PATH="/opt/venv/bin:${PATH}" \

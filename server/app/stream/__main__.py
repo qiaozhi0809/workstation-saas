@@ -13,6 +13,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.config import get_settings
+from app.stream import ffmpeg
 from app.stream.probe import probe_loop
 from app.stream.supervisor import Supervisor
 
@@ -42,6 +43,7 @@ async def main() -> None:
     redis = Redis.from_url(settings.redis_url, decode_responses=True)
     allow_loopback = settings.env == "dev"
     ffmpeg_bin = os.environ.get("WS_FFMPEG_BIN", "ffmpeg")
+    ffprobe_bin = ffmpeg.ffprobe_bin_for(ffmpeg_bin)  # 测试连接读编解码信息用,与 ffmpeg 同目录
     supervisor = Supervisor(
         factory,
         redis,
@@ -68,6 +70,7 @@ async def main() -> None:
             master_key=settings.master_key_bytes,
             allow_loopback=allow_loopback,
             stop=stop,
+            ffprobe_bin=ffprobe_bin,
         )
     )
     try:

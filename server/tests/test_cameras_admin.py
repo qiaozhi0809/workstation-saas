@@ -369,7 +369,17 @@ def peer_client(settings, db, redis_client):
     return make
 
 
-PREVIEW_REPLY = {"ok": True, "message": "连接成功", "preview_jpeg_base64": JPEG_B64}
+PREVIEW_REPLY = {"ok": True, "message": "连接成功", "preview_jpeg_base64": JPEG_B64, "probe": None}
+HEVC_PROBE = {
+    "video_codec": "hevc",
+    "width": 2560,
+    "height": 1440,
+    "fps": 25.0,
+    "bitrate_kbps": 6144,
+    "audio_codec": None,
+    "browser_playable": False,
+    "hint": "该摄像头是 H.265(HEVC)编码(测试文案)",
+}
 
 
 @pytest.mark.parametrize(
@@ -422,6 +432,7 @@ def test_camera_test_with_fake_worker(client, settings, db, on, redis_client):
     t.join(5)
     assert res.status_code == 200, res.text
     assert res.json()["ok"] is True and res.json()["preview_jpeg_base64"] is None  # 非内网来源
+    assert res.json()["probe"] is None  # 旧 worker 回写没有 probe 键也能解析
     assert seen[0]["id"] == cid
     assert seen[0]["reply_key"].startswith("ws:cam:probe:reply:")
     assert PW not in json.dumps(seen[0]) and USER not in json.dumps(seen[0])
@@ -435,10 +446,38 @@ def test_camera_test_no_reply(client, settings, db, on, redis_client, monkeypatc
     cid = _create(client, settings)["id"]
     res = client.post(f"{URL}/{cid}/test", headers=auth(settings, IT_ADMIN))
     assert res.status_code == 200
-    assert res.json() == {"ok": False, "message": "转流服务没有响应", "preview_jpeg_base64": None}
+    assert res.json() == {
+        "ok": False,
+        "message": "转流服务没有响应",
+        "preview_jpeg_base64": None,
+        "probe": None,
+    }
     rows = [r for r in audit_rows(db, cid) if r.action == "camera.test"]
     assert len(rows) == 1 and rows[0].success is False
     redis_client.delete("ws:cam:probe")
+
+
+def test_camera_test_reply_with_probe(peer_client, settings, db, on, redis_client):
+    """worker 回写带 probe(编解码探测):原样返回;预览图按来源过滤,probe 不受影响。"""
+    cid = _create(peer_client(("10.0.0.5", 1)), settings)["id"]
+    reply = {**PREVIEW_REPLY, "probe": HEVC_PROBE}
+    for peer, shown in ((("10.0.0.5", 5000), True), (("8.8.8.8", 5000), False)):
+        t = _fake_worker(redis_client, reply, [])
+        res = peer_client(peer).post(f"{URL}/{cid}/test", headers=auth(settings, IT_ADMIN))
+        t.join(5)
+        assert res.status_code == 200, res.text
+        out = res.json()
+        assert out["ok"] is True and out["probe"] == HEVC_PROBE
+        assert (out["preview_jpeg_base64"] is not None) is shown
+    # 直接解析 worker 的 JSON:有 probe、无 probe、probe 为 null 都行
+    parsed = CameraTestResult.model_validate_json(json.dumps(reply))
+    assert parsed.probe is not None and parsed.probe.video_codec == "hevc"
+    assert parsed.probe.browser_playable is False and parsed.probe.audio_codec is None
+    legacy = CameraTestResult.model_validate_json(
+        json.dumps({"ok": True, "message": "连接成功", "preview_jpeg_base64": None})
+    )
+    assert legacy.probe is None
+    assert CameraTestResult.model_validate_json(json.dumps(PREVIEW_REPLY)).probe is None
 
 
 def test_service_test_camera_timeout_injectable(db, redis_client):
@@ -489,7 +528,12 @@ def test_probe_preview_rejected(client, settings, on, redis_client, preview):
     reply = json.dumps({"ok": True, "message": "连接成功", "preview_jpeg_base64": preview})
     res = _reply_via_worker(client, settings, redis_client, cid, reply)
     assert res.status_code == 200
-    assert res.json() == {"ok": False, "message": "预览数据异常", "preview_jpeg_base64": None}
+    assert res.json() == {
+        "ok": False,
+        "message": "预览数据异常",
+        "preview_jpeg_base64": None,
+        "probe": None,
+    }
 
 
 def test_probe_garbage_reply(client, settings, on, redis_client):
