@@ -181,6 +181,8 @@ export default function StudentForm({
     useQuery({ queryKey: ['tag-pool'], queryFn: schoolApi.tagPool }).data?.tags ?? DEFAULT_TAG_POOL
   const [custom, setCustom] = useState(() => record?.tags ?? [])
   const [customDraft, setCustomDraft] = useState('')
+  // 想选第 13 个标签时提示,取消一个后清掉(L15)
+  const [tagsFull, setTagsFull] = useState(false)
   const [keepAdding, setKeepAdding] = useState(false)
   const [busy, setBusy] = useState(false)
   const [errors, setErrors] = useState<{
@@ -197,13 +199,18 @@ export default function StudentForm({
   const setContact = (i: number, patch: Partial<Contact>) =>
     setF((s) => ({ ...s, contacts: s.contacts.map((c, j) => (j === i ? { ...c, ...patch } : c)) }))
 
-  const toggleTag = (tag: string) =>
+  const toggleTag = (tag: string) => {
+    const on = !f.tags.includes(tag)
+    if (on && f.tags.length >= MAX_TAGS) {
+      setTagsFull(true)
+      return
+    }
+    setTagsFull(false)
     setF((s) => {
-      const on = !s.tags.includes(tag)
-      if (on && s.tags.length >= MAX_TAGS) return s
       const tags = on ? [...s.tags, tag] : s.tags.filter((t) => t !== tag)
       return { ...s, tags, boarding: tag === BOARDING_TAG ? on : s.boarding }
     })
+  }
   const toggleBoarding = (on: boolean) =>
     setF((s) => ({
       ...s,
@@ -217,6 +224,11 @@ export default function StudentForm({
   const addCustomTag = () => {
     const tag = customDraft.trim()
     if (!tag) return
+    // 已满:只提示,输入保留,不悄悄丢掉
+    if (!f.tags.includes(tag) && f.tags.length >= MAX_TAGS) {
+      setTagsFull(true)
+      return
+    }
     if (!pool.includes(tag) && !custom.includes(tag)) setCustom((c) => [...c, tag])
     if (!f.tags.includes(tag)) toggleTag(tag)
     setCustomDraft('')
@@ -473,6 +485,11 @@ export default function StudentForm({
               addCustomTag()
             }}
           />
+          {tagsFull && (
+            <p role="status" className="text-sm text-muted-foreground">
+              {`最多选 ${MAX_TAGS} 个标签,先取消一个再选`}
+            </p>
+          )}
         </div>
 
         <div className="space-y-2">

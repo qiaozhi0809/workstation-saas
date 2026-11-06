@@ -274,6 +274,29 @@ it('ignores the post-composition Enter that Safari reports with keyCode 229', ()
   expect(screen.queryByRole('button', { name: '爱读书' })).toBeNull()
 })
 
+// L15:标签满 12 个时要说出来,而不是点了没反应
+it('tells the teacher when the 12-tag limit is hit instead of silently ignoring the click', async () => {
+  vi.mocked(schoolApi.tagPool).mockResolvedValue({ tags: [...DEFAULT_TAG_POOL, '爱画画'] })
+  renderForm()
+  await screen.findByRole('button', { name: '爱画画' })
+  for (const t of DEFAULT_TAG_POOL) fireEvent.click(screen.getByRole('button', { name: t }))
+  expect(screen.queryByRole('status')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '爱画画' }))
+  expect(screen.getByRole('button', { name: '爱画画' })).toHaveAttribute('aria-pressed', 'false')
+  expect(screen.getByRole('status')).toHaveTextContent('最多选 12 个标签')
+  // 自定义标签也一样:提示并保留输入,不悄悄丢掉
+  const input = screen.getByLabelText('自定义标签')
+  fireEvent.change(input, { target: { value: '爱读书' } })
+  fireEvent.keyDown(input, { key: 'Enter' })
+  expect(screen.queryByRole('button', { name: '爱读书' })).toBeNull()
+  expect(input).toHaveValue('爱读书')
+  // 取消一个后提示消失,又能选了
+  fireEvent.click(screen.getByRole('button', { name: '近视' }))
+  expect(screen.queryByRole('status')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '爱画画' }))
+  expect(screen.getByRole('button', { name: '爱画画' })).toHaveAttribute('aria-pressed', 'true')
+})
+
 it('keeps boarding and the 住校 tag in sync', () => {
   renderForm()
   const boarding = screen.getByLabelText('住校')
