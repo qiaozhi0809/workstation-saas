@@ -37,6 +37,9 @@ export default function AckSettings({
   onDeadlineChange?(iso: string | null): void
 }) {
   const [local, setLocal] = useState(() => toLocalInput(deadline))
+  // 从这个下标起,末尾的选项都是刚"添加选项"加出来、还没动过的空行:先不报"选项不能为空",
+  // 等用户填了(或提交时 ackSpecError)再说;动过其中一个,它前面没动过的空行就夹在中间了,照报
+  const [freshFrom, setFreshFrom] = useState<number | null>(null)
   const dlError =
     local !== '' && new Date(local).getTime() <= Date.now() ? '截止时间要晚于现在' : null
 
@@ -44,13 +47,30 @@ export default function AckSettings({
     if (kind === value.kind) return
     if (kind === 'choice') onChange({ kind, options: ['', ''], allow_note: false })
     else onChange({ kind })
+    setFreshFrom(null)
     if (kind === 'none') {
       setLocal('')
       onDeadlineChange?.(null)
     }
   }
-  const setOptions = (options: string[]) => {
-    if (value.kind === 'choice') onChange({ ...value, options })
+  const options = value.kind === 'choice' ? value.options : []
+  const setOptions = (next: string[]) => {
+    if (value.kind === 'choice') onChange({ ...value, options: next })
+  }
+  const addOption = () => {
+    setFreshFrom((f) => f ?? options.length)
+    setOptions([...options, ''])
+  }
+  const editOption = (i: number, text: string) => {
+    if (freshFrom !== null && i >= freshFrom) setFreshFrom(i + 1 < options.length ? i + 1 : null)
+    setOptions(options.map((o, j) => (j === i ? text : o)))
+  }
+  const removeOption = (i: number) => {
+    if (freshFrom !== null)
+      setFreshFrom(
+        i < freshFrom ? freshFrom - 1 : freshFrom < options.length - 1 ? freshFrom : null,
+      )
+    setOptions(options.filter((_, j) => j !== i))
   }
   const onDeadline = (v: string) => {
     setLocal(v)
@@ -59,7 +79,8 @@ export default function AckSettings({
     )
   }
 
-  const choiceError = value.kind === 'choice' ? optionsError(value.options) : null
+  const choiceError =
+    value.kind === 'choice' ? optionsError(options.slice(0, freshFrom ?? undefined)) : null
 
   return (
     <div className="flex flex-col gap-3">
@@ -85,9 +106,7 @@ export default function AckSettings({
                 aria-label={`选项 ${i + 1}`}
                 maxLength={MAX_OPTION_LEN}
                 value={opt}
-                onChange={(e) =>
-                  setOptions(value.options.map((o, j) => (j === i ? e.target.value : o)))
-                }
+                onChange={(e) => editOption(i, e.target.value)}
               />
               {value.options.length > MIN_OPTIONS && (
                 <Button
@@ -95,7 +114,7 @@ export default function AckSettings({
                   variant="ghost"
                   size="sm"
                   aria-label={`删除选项 ${i + 1}`}
-                  onClick={() => setOptions(value.options.filter((_, j) => j !== i))}
+                  onClick={() => removeOption(i)}
                 >
                   删除
                 </Button>
@@ -108,7 +127,7 @@ export default function AckSettings({
               variant="outline"
               size="sm"
               disabled={value.options.length >= MAX_OPTIONS}
-              onClick={() => setOptions([...value.options, ''])}
+              onClick={addOption}
             >
               添加选项
             </Button>

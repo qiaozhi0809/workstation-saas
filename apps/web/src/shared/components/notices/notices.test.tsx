@@ -106,13 +106,24 @@ describe('AckSettings', () => {
     expect(screen.queryByText('至少要 2 个选项')).toBeNull()
   })
 
-  it('已有 2 个有效选项后再添一个空选项:提示"选项不能为空",与提交前的 ackSpecError 一致(L89)', () => {
+  it('刚添加、还没动过的空选项不立刻报"选项不能为空";动过后清空或夹在中间才报,文案与 ackSpecError 一致(L89)', () => {
     render(<Harness initial={{ kind: 'choice', options: ['去', '不去'], allow_note: false }} />)
     expect(screen.queryByRole('alert')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '添加选项' }))
-    expect(screen.getByText('选项不能为空')).toBeInTheDocument()
-    expect(screen.queryByText('至少要 2 个选项')).toBeNull()
+    expect(screen.getByLabelText('选项 3')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).toBeNull()
     typeOpt(3, '待定')
+    expect(screen.queryByRole('alert')).toBeNull()
+    typeOpt(3, '')
+    expect(screen.getByText('选项不能为空')).toBeInTheDocument()
+    typeOpt(3, '待定')
+    // 再添两个空的,只填后一个:前一个空的夹在中间,要报
+    fireEvent.click(screen.getByRole('button', { name: '添加选项' }))
+    fireEvent.click(screen.getByRole('button', { name: '添加选项' }))
+    expect(screen.queryByRole('alert')).toBeNull()
+    typeOpt(5, '再议')
+    expect(screen.getByText('选项不能为空')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '删除选项 4' }))
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
