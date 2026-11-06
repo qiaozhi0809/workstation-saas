@@ -14,6 +14,8 @@ import ConfirmBox from '../Org/ConfirmBox'
 
 const DEFAULT_TEMPERATURE = 0.7
 const KEY_RENEW_NOTICE = '更换服务商或服务地址后需重新填写 API Key'
+/** 因上面那条常驻提示拦下保存 / 测试时,按钮旁给出的原因(L59:不再静默) */
+const KEY_RENEW_BLOCKED = '已更换服务商或服务地址,请先填写新的 API Key'
 
 /** 只比 scheme + host + port(大小写不敏感,默认端口等同显式端口,忽略路径);解析不了就比原字符串 */
 function sameOrigin(a: string, b: string): boolean {
@@ -58,6 +60,8 @@ function ConfigForm({ view }: { view: AiConfigView }) {
       setBaseUrl(p.base_url)
       setModel(p.models[0] ?? '')
     }
+    // 上一次的校验错误 / 测试结果是针对旧服务商的,换了就清掉(L59)
+    setError('')
     setTest(null)
   }
 
@@ -67,14 +71,12 @@ function ConfigForm({ view }: { view: AiConfigView }) {
     const key = apiKey.trim()
     if (!provider) return fail('请选择服务商')
     if (!baseUrl.trim()) return fail('请填写接口地址')
-    if (!/^https?:\/\//.test(baseUrl.trim())) return fail('接口地址要以 http:// 或 https:// 开头')
+    // scheme 不分大小写:URL 规范里 HTTPS:// 与 https:// 等价,后端也接受
+    if (!/^https?:\/\//i.test(baseUrl.trim())) return fail('接口地址要以 http:// 或 https:// 开头')
     if (!model.trim()) return fail('请填写模型')
     if (temperature.trim() === '' || !Number.isFinite(t) || t < 0 || t > 2)
       return fail('温度需要在 0 到 2 之间')
-    if (needKeyRenew) {
-      setError('')
-      return null
-    } // 页面上已经有常驻提示
+    if (needKeyRenew) return fail(KEY_RENEW_BLOCKED)
     if (!key && (!view.key_set || view.key_undecryptable)) return fail('请填写 API Key')
     setError('')
     return {
