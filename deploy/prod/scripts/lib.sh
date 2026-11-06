@@ -7,7 +7,9 @@ set +x
 unset BASH_XTRACEFD
 # 镜像版本只认 .env 里的 WS_VERSION(L117):调用者 shell 里若碰巧导出了 WS_VERSION,compose 会优先用它,
 # 升级 / 恢复就可能起错版本的镜像。这里一进来就清掉;需要临时指定版本的地方(升级预检)按命令单独传。
-unset WS_VERSION
+# WS_SUBNET 同理(compose 文件里 ${WS_SUBNET:-…} 也会先看环境变量):只认 .env;install.sh 首装时允许用它指定子网,
+# 它在 source 本文件之前已把值收进自己的变量。
+unset WS_VERSION WS_SUBNET
 
 # 部署目录 = 本文件所在目录(scripts/)的上一级
 DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

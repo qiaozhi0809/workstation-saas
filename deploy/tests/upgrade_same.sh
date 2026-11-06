@@ -81,7 +81,9 @@ assert_services_up
 # L198:新 Caddyfile 真的生效(web 重读了配置):响应里有新包加的标记头
 hdrs="$(curl -ksS --max-time 10 -o /dev/null -D - "https://localhost:$HTTPS_PORT/")" || fail "取响应头失败"
 grep -qi '^x-ws-upgrade-marker: 1' <<<"$hdrs" || fail "升级后响应里没有新 Caddyfile 加的 X-Ws-Upgrade-Marker 头(web 没有重读配置?)"
-pass "新 Caddyfile 已生效(响应含 X-Ws-Upgrade-Marker)"
+# 版本变了 → compose up 已重建 web 容器,新 Caddyfile 随之生效,不应再多重启一次(多一次中断)
+! grep -q '重启 web 使其生效' "$TMP/upgrade.log" || fail "版本变化时 web 已被重建,不应再额外 restart web"
+pass "新 Caddyfile 已生效(响应含 X-Ws-Upgrade-Marker),且没有多余的 web 重启"
 [ "$(docker inspect -f '{{.Config.Image}}' "$(dc ps -q app)")" = "workstation-app:$NEWV" ] \
   || fail "升级后 app 容器没有用新版本标签的镜像"
 [ "$(docker inspect -f '{{.Config.Image}}' "$(dc ps -q scheduler)")" = "workstation-app:$NEWV" ] \
@@ -148,6 +150,38 @@ if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ] && sudo -n
 else
   echo "  跳过:本机没有 systemd / 免密 sudo,或已有真实的 workstation-backup 单元;只验证了 upgrade.sh 的调用位置"
 fi
+
+echo "== 3c I-5 / L198:管理员手工改过的 Caddyfile 在升级时不被替换,新模板另存为 Caddyfile.internal 并提示合并"
+# 上面那次升级替换 Caddyfile 的前提是"生效文件 == 升级前的模板"(没手改)。现在手改生效文件,再用模板又变了的新包升级一次
+awk '{ print } /^\theader [{]$/ { print "\t\tX-Ws-Admin-Marker \"1\"" }' "$DEPLOY/Caddyfile" >"$TMP/Caddyfile.admin"
+grep -q 'X-Ws-Admin-Marker' "$TMP/Caddyfile.admin" || fail "测试自身问题:没能把管理员标记头加进 Caddyfile"
+cat "$TMP/Caddyfile.admin" >"$DEPLOY/Caddyfile"
+admin_sha="$(sha256_of "$DEPLOY/Caddyfile")"
+NEWV2="$VERSION-up2"
+make_alias_tags "$NEWV2"
+pkg2="$TMP/pkgsrc2/workstation-deploy-$NEWV2"
+mkdir -p "$pkg2"
+cp -R "$DEPLOY_SRC/." "$pkg2/"
+printf '%s\n' "$NEWV2" >"$pkg2/VERSION"
+awk '{ print } /^\theader [{]$/ { print "\t\tX-Ws-Upgrade-Marker \"2\"" }' "$DEPLOY_SRC/Caddyfile.internal" >"$pkg2/Caddyfile.internal"
+PKG2="$TMP/workstation-deploy-$NEWV2.tar.gz"
+tar -C "$TMP/pkgsrc2" -czf "$PKG2" "workstation-deploy-$NEWV2"
+tpl2_sha="$(sha256_of "$pkg2/Caddyfile.internal")"
+rc=0
+( cd "$DEPLOY" && ./scripts/upgrade.sh "$PKG2" ) >"$TMP/upgrade2.log" 2>&1 || rc=$?
+if [ "$rc" -ne 0 ]; then tail -n 30 "$TMP/upgrade2.log" >&2; fail "第二次升级退出码 $rc(期望 0)"; fi
+[ "$(sha256_of "$DEPLOY/Caddyfile")" = "$admin_sha" ] || fail "手工改过的 Caddyfile 不应被升级替换"
+[ "$(sha256_of "$DEPLOY/Caddyfile.internal")" = "$tpl2_sha" ] || fail "新模板应保存为部署目录的 Caddyfile.internal"
+grep -q '手工改过' "$TMP/upgrade2.log" && grep -q '不替换' "$TMP/upgrade2.log" || fail "升级输出应说明 Caddyfile 手工改过、本次不替换"
+grep -q 'Caddyfile.internal' "$TMP/upgrade2.log" || fail "升级输出应指出新模板保存在 Caddyfile.internal"
+! grep -q 'Caddyfile 已更新' "$TMP/upgrade2.log" || fail "手工改过时不应出现「Caddyfile 已更新」"
+[ "$(env_value WS_VERSION)" = "$NEWV2" ] || fail "第二次升级后 WS_VERSION 应为 $NEWV2"
+assert_healthz
+hdrs="$(curl -ksS --max-time 10 -o /dev/null -D - "https://localhost:$HTTPS_PORT/")" || fail "取响应头失败"
+grep -qi '^x-ws-admin-marker: 1' <<<"$hdrs" || fail "升级后响应里应仍有管理员手改的 X-Ws-Admin-Marker 头(手改配置应继续生效)"
+! grep -qi '^x-ws-upgrade-marker: 2' <<<"$hdrs" || fail "新模板未被采用,响应里不应出现 X-Ws-Upgrade-Marker: 2"
+assert_no_secrets "第二次升级输出" "$TMP/upgrade2.log"
+pass "手工改过的 Caddyfile 保持原样并继续生效;新模板另存为 Caddyfile.internal,输出提示手动合并"
 dump_logs "$TMP/compose.log"
 assert_no_secrets "升级输出" "$TMP/upgrade.log"
 assert_no_secrets "容器日志" "$TMP/compose.log"

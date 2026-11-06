@@ -28,6 +28,9 @@ set +x
 unset BASH_XTRACEFD
 set -euo pipefail
 
+# 首装时允许用环境变量 WS_SUBNET 指定 compose 子网;lib.sh 一 source 就会把它从环境清掉(只认 .env),所以先收进变量
+INSTALL_SUBNET_ENV="${WS_SUBNET:-}"
+
 # shellcheck source-path=SCRIPTDIR
 # shellcheck source=lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -248,15 +251,20 @@ collect_site_inputs() {
 }
 
 # 选 compose 内网子网(L186),结果放 SUBNET:
-#   1) 环境变量 WS_SUBNET 指定 → 用它(与本机网段重叠只告警,指定即明确);
+#   1) 环境变量 WS_SUBNET 指定 → 用它(与本机网段重叠只告警,指定即明确);但本项目的 compose 网络已存在且子网不同时停下:
+#      compose up 会复用旧网络,.env 里却写了另一个,两者对不上(先 docker compose down 删掉旧网络再装);
 #   2) 本项目的 compose 网络已存在(上次安装没清干净)→ 沿用它的子网,避免 compose 复用旧网络而 .env 写了另一个;
 #   3) 否则按候选顺序取第一个不与本机路由、其他 docker 网络重叠的;都重叠就停下让管理员指定。
 choose_subnet() {
   local known existing cand hit
   known="$( { host_routes; docker_subnets; } | sort -u )"
-  if [ -n "${WS_SUBNET:-}" ]; then
-    cidr_valid "$WS_SUBNET" || die "WS_SUBNET 不是合法的 IPv4 网段(应形如 172.30.0.0/24,主机位为 0):$WS_SUBNET"
-    SUBNET="$WS_SUBNET"
+  existing="$(compose_network_subnet)"
+  if [ -n "$INSTALL_SUBNET_ENV" ]; then
+    cidr_valid "$INSTALL_SUBNET_ENV" || die "WS_SUBNET 不是合法的 IPv4 网段(应形如 172.30.0.0/24,主机位为 0):$INSTALL_SUBNET_ENV"
+    SUBNET="$INSTALL_SUBNET_ENV"
+    if [ -n "$existing" ] && [ "$existing" != "$SUBNET" ]; then
+      die "本项目的 compose 网络 ws-net 已存在,现在的子网是 $existing,与指定的 WS_SUBNET=$SUBNET 不同;继续装会让 .env 与实际网络对不上。请先执行 docker compose -p ${WS_COMPOSE_PROJECT:-workstation} --project-directory '$DEPLOY_DIR' down 删掉旧网络(数据不受影响),或不指定 WS_SUBNET 沿用 $existing"
+    fi
     hit="$(first_overlap "$SUBNET" "$known")"
     if [ -n "$hit" ]; then
       log_warn "指定的 WS_SUBNET=$SUBNET 与本机网段 $hit 重叠,容器可能到不了该网段里的摄像头;按指定值继续"
@@ -265,7 +273,6 @@ choose_subnet() {
     fi
     return 0
   fi
-  existing="$(compose_network_subnet)"
   if [ -n "$existing" ]; then
     SUBNET="$existing"
     log_info "沿用已存在的 compose 网络子网:$SUBNET"

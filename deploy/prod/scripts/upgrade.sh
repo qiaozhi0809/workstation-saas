@@ -173,22 +173,33 @@ write_state() {
   mv "$tmp" "$STATE_FILE" || die "写升级状态文件失败,未改动任何文件"
 }
 
-# 生效的 Caddyfile 随升级更新(L198):与新包里对应证书方式(.env 的 WS_TLS_MODE)的模板比对,不同就替换并提示;
-# 升级前的那份已在快照里。方式不认识时不动。替换后由 main 重启 web 使其生效(bind 挂载的配置改了容器不会自动重读)。
+# 生效的 Caddyfile 随升级更新(L198 / I-5):取新包里对应证书方式(.env 的 WS_TLS_MODE)的模板,
+#   * 生效文件与升级前的模板(快照里的 Caddyfile.<mode>)一致 → 管理员没手改过,替换成新模板并提示;
+#   * 不一致(手改过,或快照里没有旧模板可比)→ 不替换,只提示新模板已保存为 Caddyfile.<mode>、请手动合并。
+# 方式不认识时不动。替换后 main 会在 web 容器没被重建时重启它(bind 挂载的配置改了容器不会自动重读)。
 CADDYFILE_CHANGED=0
 update_caddyfile() {
-  local newdir="$1" mode tpl
+  local newdir="$1" mode tpl old_tpl active="$DEPLOY_DIR/Caddyfile"
   mode="$(read_env WS_TLS_MODE)"
   case "$mode" in
     internal|custom|acme) ;;
     *) log_warn ".env 里的 WS_TLS_MODE 不是 internal / custom / acme(当前「$mode」),不更新 Caddyfile"; return 0 ;;
   esac
   tpl="$newdir/Caddyfile.$mode"
-  [ -f "$tpl" ] || return 0
-  if [ -f "$DEPLOY_DIR/Caddyfile" ] && cmp -s "$tpl" "$DEPLOY_DIR/Caddyfile"; then return 0; fi
-  replace_file "$tpl" "$DEPLOY_DIR/Caddyfile"
-  CADDYFILE_CHANGED=1
-  log_warn "Caddyfile 已更新为新版本的 Caddyfile.$mode(升级前的那份在快照 $SNAPSHOT/Caddyfile)。如果你手工改过 Caddyfile,请把改动重新合并后执行 docker compose restart web"
+  [ -f "$tpl" ] && [ -f "$active" ] || return 0
+  if cmp -s "$tpl" "$active"; then return 0; fi
+  old_tpl="$SNAPSHOT/Caddyfile.$mode"
+  if [ -f "$old_tpl" ] && cmp -s "$old_tpl" "$active"; then
+    replace_file "$tpl" "$active"
+    CADDYFILE_CHANGED=1
+    log_warn "Caddyfile 已更新为新版本的 Caddyfile.$mode(升级前的那份未经手改,保存在快照 $SNAPSHOT/Caddyfile)"
+    return 0
+  fi
+  if [ -f "$old_tpl" ]; then
+    log_warn "生效的 Caddyfile 与升级前的模板不同(手工改过),本次不替换它;新版本的模板已保存为 Caddyfile.$mode,请把你的改动合并进去(或确认不需要改动时 cp Caddyfile.$mode Caddyfile),然后执行 docker compose restart web"
+  else
+    log_warn "快照里没有升级前的 Caddyfile.$mode 可比对,无法判断生效的 Caddyfile 是否手工改过,本次不替换它;新版本的模板已保存为 Caddyfile.$mode,请自行比对合并后执行 docker compose restart web"
+  fi
 }
 
 # 上次升级中断的处置(L190):状态文件在 → 上次在覆盖文件之后没有确认成功。
@@ -363,9 +374,11 @@ main() {
   # 6. 重启并等健康
   # 失败时 start_and_verify 会 die(退出码 1),EXIT trap 随后打印回退办法(OVERWRITE_STARTED 仍为 1)
   log_info "重启服务……"
+  local web_before
+  web_before="$(compose ps -q web 2>/dev/null | head -n 1 || true)"
   start_and_verify "$HEALTH_TIMEOUT"
-  if [ "$CADDYFILE_CHANGED" -eq 1 ]; then
-    # 同版本重装时 web 容器不会被重建,bind 挂载的新 Caddyfile 要重启才生效
+  if [ "$CADDYFILE_CHANGED" -eq 1 ] && [ -n "$web_before" ] && [ "$(compose ps -q web 2>/dev/null | head -n 1 || true)" = "$web_before" ]; then
+    # web 容器没被重建(镜像标签没变,或重跑时已是新镜像)才需要重启读新 Caddyfile;版本变了 compose up 已重建它,不再多停一次
     log_info "Caddyfile 有更新,重启 web 使其生效……"
     compose restart web 2>&1 | redact >/dev/null || die "重启 web 失败。请运行 docker compose -p ${WS_COMPOSE_PROJECT:-workstation} --project-directory '$DEPLOY_DIR' logs web 查看原因"
     wait_healthy web 120 || die "web 服务(反向代理)重启后 120 秒内没有就绪。请运行 docker compose -p ${WS_COMPOSE_PROJECT:-workstation} --project-directory '$DEPLOY_DIR' logs web 查看原因"

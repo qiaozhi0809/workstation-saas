@@ -196,7 +196,7 @@ WS_INSTALL_TLS=1 \
 
 | 文件 | 内容 |
 |---|---|
-| `db.dump` | 数据库完整导出(`pg_dump -Fc`;导出后用 `pg_restore -l` 核对能读,读不出就不算备份成功) |
+| `db.dump` | 数据库完整导出(`pg_dump -Fc`;导出后用 `pg_restore -l` 核对文件结构完整、目录能读,读不出就不算备份成功——这一步挡住的是写坏、截断的文件,不等于演练过恢复,请按第 8 节定期演练) |
 | `env` | `.env` 原样(**含主密钥**) |
 | `caddy.tar` | Caddy 数据(证书、内部 CA 私钥),经 web 容器打出。web 没在运行时备份照做,只是没有这个文件,`manifest.json` 里记 `"caddy": "skipped"`,屏幕上会提示 |
 | `config.tar` | 1.0.0 起:生效的 `Caddyfile`、`docker-compose.yml`、`VERSION` 与 `certs/` 下全部文件(**自备证书的私钥 `site.key` 在这里**) |
@@ -225,7 +225,7 @@ WS_INSTALL_TLS=1 \
   30 2 * * * cd /opt/workstation && ./scripts/backup.sh 2>&1 | logger -t workstation-backup
   ```
 
-  查看日志:`journalctl -t workstation-backup`(或 `grep workstation-backup /var/log/syslog`)。如果你一定要写到文件,请配 logrotate,例如 `/etc/logrotate.d/workstation-backup`:
+  查看日志:`journalctl -t workstation-backup`(或 `grep workstation-backup /var/log/syslog`)。如果你一定要写到文件,请配 logrotate,例如 `/etc/logrotate.d/workstation-backup`(`/opt/workstation` 换成你的部署目录;crontab 那行也要相应改成 `>> data/logs/backup.log 2>&1`):
 
   ```
   /opt/workstation/data/logs/backup.log {
@@ -297,6 +297,8 @@ tar -xOzf backups/ws-backup-<时间>-v<版本>.tar.gz env > .env && chmod 600 .e
 ```
 
 脚本依次:校验离线包(有 `.sha256` 时核对,命名见第 2 节)→ **强制备份**(失败就停)→ 载入新镜像 → 用新镜像对现有数据库做**迁移预检** → **保存升级前快照**(见下)→ 覆盖程序文件(不动 `.env`、`certs/`、`data/`、`backups/`)→ 重启并确认 app 健康、scheduler 在运行、web 健康(缺一都按失败处理,并打印回退办法)。新版本 `.env.example` 里新增的配置项会按默认值追加进 `.env` 并提示,请核对。`./scripts/upgrade.sh --help` 可看用法。
+
+生效的 `Caddyfile`(反向代理配置)怎么处理:新版本模板有变化时,**没有手工改过**的 `Caddyfile`(与升级前的模板一致)会被替换成新模板,屏幕上提示"Caddyfile 已更新",升级前那份在快照里;**手工改过**的不替换,新模板只保存为 `Caddyfile.internal / .custom / .acme`,屏幕上提示请你把改动合并进去再 `docker compose restart web`(不合并,系统仍按你改过的配置运行,只是用不上新模板里的调整)。
 
 - 迁移预检不通过时(退出码 2):在覆盖任何文件、动任何服务之前就停下,系统仍运行在旧版本,屏幕上有报告与定位 SQL,按报告处理数据后重试。
 - 大版本不同(如 1.x → 2.x)与低于当前版本的离线包都会被拒绝;唯一放行的大版本跳跃是 0.7.x → 1.x(见下文"从 0.7.2 升级到 1.0.0")。

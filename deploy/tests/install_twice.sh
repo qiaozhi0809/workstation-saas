@@ -230,6 +230,27 @@ assert_no_secrets "状态文件在时的安装输出" "$TMP/install-interrupted.
 rm -f "$DEPLOY/backups/.ws-upgrade-state"
 pass "状态文件在时 install.sh 拒绝(提示 rollback.sh / 重跑 upgrade.sh / 确认后删状态文件),容器与 .env 未动,锁已释放"
 
+echo "== 4f L186:首装时用 WS_SUBNET 指定了与本项目已存在网络不同的子网 → 停下提示先 down,不写 .env"
+# 另一个部署目录、同一个 compose 项目名(上面的网络还在),端口错开以通过端口检查;应在 choose_subnet 处停下
+D2="$TMP/deploy2"; EXTRA_DIRS="$EXTRA_DIRS $D2"
+prepare_deploy_dir "$D2"
+cur_subnet="$(docker network inspect "${PROJECT}_ws-net" -f '{{range .IPAM.Config}}{{.Subnet}}{{end}}')"
+[ -n "$cur_subnet" ] || fail "测试自身问题:本项目的 compose 网络不存在"
+other_subnet="172.31.0.0/24"; [ "$cur_subnet" != "$other_subnet" ] || other_subnet="10.250.0.0/24"
+rc=0
+( cd "$D2" && WS_HTTP_PORT=$((HTTP_PORT + 1)) WS_HTTPS_PORT=$((HTTPS_PORT + 1)) WS_SUBNET="$other_subnet" \
+    WS_INSTALL_SCHOOL_NAME="$SCHOOL_NAME" WS_INSTALL_ADMIN_LOGIN="$ADMIN_LOGIN" WS_INSTALL_SITE="localhost" WS_INSTALL_TLS="1" \
+    WS_INSTALL_ADMIN_PASSWORD="$ADMIN_PW" ./scripts/install.sh --non-interactive --force ) >"$TMP/install-subnet-mismatch.log" 2>&1 || rc=$?
+[ "$rc" -ne 0 ] || fail "指定子网与已存在网络不同时 install.sh 应停下"
+grep -q '现在的子网是' "$TMP/install-subnet-mismatch.log" || { tail -n 5 "$TMP/install-subnet-mismatch.log" >&2; fail "提示里应说明已存在网络现在的子网"; }
+grep -q 'down' "$TMP/install-subnet-mismatch.log" || fail "提示里应给出先 docker compose down 的办法"
+grep -q "$other_subnet" "$TMP/install-subnet-mismatch.log" || fail "提示里应点明指定的 WS_SUBNET=$other_subnet"
+[ ! -e "$D2/.env" ] || fail "停下时不应写出 .env"
+[ ! -e "$D2/.env.tmp" ] || fail "停下时不应留下 .env.tmp"
+[ "$(dc ps -q app)" = "$app_cid_before" ] || fail "另一个目录的安装被拒,不应影响正在运行的部署"
+assert_no_secrets "子网不一致时的安装输出" "$TMP/install-subnet-mismatch.log"
+pass "指定 WS_SUBNET=$other_subnet 与已存在网络($cur_subnet)不同:install.sh 停下并提示先 down,未写 .env"
+
 echo "== 5/6 故意配错 WS_MASTER_KEY:安装输出不得泄露密钥"
 bad_key="not-a-valid-key-$(openssl rand -hex 16)"
 awk -F= -v k="$bad_key" '$1=="WS_MASTER_KEY" {print "WS_MASTER_KEY=" k; next} {print}' "$TMP/env.good" >"$DEPLOY/.env"
