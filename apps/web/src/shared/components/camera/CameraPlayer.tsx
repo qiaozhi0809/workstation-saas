@@ -4,7 +4,8 @@ import { camerasApi } from '@/shared/api/cameras'
 import { tryRefreshAccessToken } from '@/shared/api/client'
 import { useAuthStore } from '@/shared/stores/auth'
 
-type PlayState = 'loading' | 'playing' | 'ended' | 'lan' | 'busy' | 'offline' | 'unsupported'
+type PlayState =
+  'loading' | 'playing' | 'ended' | 'lan' | 'busy' | 'offline' | 'unsupported' | 'codec'
 
 const NO_PICTURE_MS = 8000
 const STARTING_RETRY_MS = 2000
@@ -55,6 +56,11 @@ const MESSAGES: Partial<Record<PlayState, { role: 'status' | 'alert'; text: stri
   busy: { role: 'alert', text: '同时观看的摄像头太多,请稍后再试' },
   offline: { role: 'alert', text: '摄像头连不上' },
   unsupported: { role: 'alert', text: '请在电脑或安卓浏览器上观看' },
+  // 片段下载得到、解码器却建不起来:多半是 H.265 主码流,和"连不上"分开说,信息中心才知道该改什么
+  codec: {
+    role: 'alert',
+    text: '这路摄像头的视频编码浏览器不支持（多为 H.265）：请让信息中心改用 H.264 子码流或开启转码',
+  },
 }
 
 export function CameraPlayer({
@@ -177,7 +183,12 @@ export function CameraPlayer({
         }
         if (code === 'STREAM_STARTING') return finish('offline')
       }
-      if (data.fatal) finish('offline')
+      // hls.js 只有一个码率层可切时会把 BUFFER_ADD_CODEC_ERROR 升级为致命;非致命的先不管
+      const codecUnsupported =
+        data.details === Hls.ErrorDetails.BUFFER_INCOMPATIBLE_CODECS_ERROR ||
+        data.details === Hls.ErrorDetails.BUFFER_ADD_CODEC_ERROR ||
+        data.details === Hls.ErrorDetails.MANIFEST_INCOMPATIBLE_CODECS_ERROR
+      if (data.fatal) finish(codecUnsupported ? 'codec' : 'offline')
     }
 
     hls.on(Hls.Events.MANIFEST_PARSED, markFirstSign)

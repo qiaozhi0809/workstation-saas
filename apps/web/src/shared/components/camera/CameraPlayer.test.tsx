@@ -18,6 +18,9 @@ const h = vi.hoisted(() => {
     static ErrorDetails = {
       MANIFEST_LOAD_ERROR: 'manifestLoadError',
       LEVEL_LOAD_ERROR: 'levelLoadError',
+      BUFFER_INCOMPATIBLE_CODECS_ERROR: 'bufferIncompatibleCodecsError',
+      BUFFER_ADD_CODEC_ERROR: 'bufferAddCodecError',
+      MANIFEST_INCOMPATIBLE_CODECS_ERROR: 'manifestIncompatibleCodecsError',
     }
     handlers = new Map<string, Handler[]>()
     config: { xhrSetup?: (xhr: XMLHttpRequest, url: string) => void }
@@ -136,6 +139,37 @@ describe('CameraPlayer', () => {
   it('treats an unparsable 503 body like any fatal error without crashing', () => {
     render(<CameraPlayer cameraId="c1" title="t" />)
     act(() => hls().emit('hlsError', manifestError(503, '<html>bad gateway')))
+    expect(screen.getByRole('alert')).toHaveTextContent('摄像头连不上')
+  })
+
+  it('shows codec error for incompatible codecs', () => {
+    // H.265 主码流:片段能下载(状态已是 playing),解码器建不起来才报错——要换成编码提示,不是"连不上"
+    for (const details of [
+      'bufferIncompatibleCodecsError',
+      'bufferAddCodecError',
+      'manifestIncompatibleCodecsError',
+    ]) {
+      render(<CameraPlayer cameraId="c1" title="t" />)
+      act(() => hls().emit('hlsFragLoaded'))
+      act(() => hls().emit('hlsError', { type: 'mediaError', details, fatal: true }))
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        '这路摄像头的视频编码浏览器不支持（多为 H.265）：请让信息中心改用 H.264 子码流或开启转码',
+      )
+      expect(screen.queryByText('摄像头连不上')).toBeNull()
+      expect(hls().destroy).toHaveBeenCalled()
+      cleanup()
+    }
+    // 非致命的编码错误(hls.js 可能先报一次再升级为致命)不结束播放
+    render(<CameraPlayer cameraId="c1" title="t" />)
+    act(() =>
+      hls().emit('hlsError', { type: 'mediaError', details: 'bufferAddCodecError', fatal: false }),
+    )
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(hls().destroy).not.toHaveBeenCalled()
+    // 其他致命媒体错误仍是"连不上"
+    act(() =>
+      hls().emit('hlsError', { type: 'mediaError', details: 'fragParsingError', fatal: true }),
+    )
     expect(screen.getByRole('alert')).toHaveTextContent('摄像头连不上')
   })
 
