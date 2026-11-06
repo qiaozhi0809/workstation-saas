@@ -94,8 +94,16 @@ def confirm_day(
     db: Session, class_id: UUID, day: date, clear: bool, user_id: UUID
 ) -> AttendanceDay:
     if clear:
+        # 只清当前名单(本班 active 注册)学生当天的记录;已移出 / 转走学生的历史记录保留(L10)
+        current = select(Enrollment.id).where(
+            Enrollment.class_id == class_id, Enrollment.status == "active"
+        )
         db.execute(
-            delete(Attendance).where(Attendance.class_id == class_id, Attendance.date == day)
+            delete(Attendance).where(
+                Attendance.class_id == class_id,
+                Attendance.date == day,
+                Attendance.enrollment_id.in_(current),
+            )
         )
     stmt = insert(AttendanceDayRow).values(
         class_id=class_id, date=day, confirmed_by_user_id=user_id, confirmed_at=clock.utc_now()
