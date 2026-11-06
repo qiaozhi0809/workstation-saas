@@ -2,10 +2,12 @@
 
 import asyncio
 import base64
+import contextlib
 import json
 import logging
 import os
 import shutil
+import signal
 import socket
 import stat
 import sys
@@ -112,6 +114,21 @@ def run_async(redis_url: str, fn: Callable[[AsyncRedis], Awaitable[None]]) -> No
     asyncio.run(main())
 
 
+_SUPERVISORS: list[Supervisor] = []
+
+
+@pytest.fixture(autouse=True)
+def _reap_children():
+    """断言失败时 shutdown 可能没跑到:测试结束一律杀掉残留的假 ffmpeg 子进程。"""
+    yield
+    for sup in _SUPERVISORS:
+        for st in sup._streams.values():
+            if st.proc is not None and st.proc.returncode is None:
+                with contextlib.suppress(ProcessLookupError):
+                    os.kill(st.proc.pid, signal.SIGKILL)
+    _SUPERVISORS.clear()
+
+
 def make_supervisor(db, redis, fake, hls_root, **kw) -> Supervisor:
     @contextmanager
     def scope():
@@ -119,7 +136,9 @@ def make_supervisor(db, redis, fake, hls_root, **kw) -> Supervisor:
 
     kw.setdefault("max_streams", 10)
     kw.setdefault("allow_loopback", False)
-    return Supervisor(scope, redis, hls_root=hls_root, ffmpeg_bin=str(fake), master_key=KEY, **kw)
+    sup = Supervisor(scope, redis, hls_root=hls_root, ffmpeg_bin=str(fake), master_key=KEY, **kw)
+    _SUPERVISORS.append(sup)
+    return sup
 
 
 async def settle(predicate, timeout: float = 5.0) -> None:
