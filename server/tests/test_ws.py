@@ -221,10 +221,12 @@ def _open(stack, ws_client, token):
     return ws
 
 
-def _expect_close(ws, code):
+def _expect_close(ws, code, limit=10.0):
+    end = time.monotonic() + limit
     with pytest.raises(WebSocketDisconnect) as exc:
-        while True:
+        while time.monotonic() < end:
             ws.receive_json()  # 跳过 ping 等帧,直到被关闭
+        pytest.fail("socket was not closed in time")  # 回归时失败,而不是卡死
     assert exc.value.code == code
 
 
@@ -236,7 +238,6 @@ def test_stale_closes_with_4401(ws_client, settings, db, redis_client):
         ws = _open(stack, ws_client, _token(settings, uid))
         publish(redis_client, [uid], {"type": STALE})
         _expect_close(ws, 4401)
-    assert STALE == "session.stale"
 
 
 def test_reset_publishes_stale_for_target_only(ws_client, settings, db, redis_client):
@@ -267,19 +268,20 @@ def test_change_password_keeps_own_session(ws_client, settings, db, redis_client
     uid = _uid(db, "teacher01")
     s1, s2 = _login(ws_client), _login(ws_client)
     new_pw = "Newpass-9x"
-    res = ws_client.post(
-        "/api/v1/auth/password",
-        headers={"Authorization": f"Bearer {s1['access_token']}"},
-        json={
-            "old_password": "dev123",
-            "new_password": new_pw,
-            "refresh_token": s1["refresh_token"],
-        },
-    )
-    assert res.status_code == 200
     with ExitStack() as stack:
+        # 先连上再改密码:改密码之后签发时间早于改密的令牌可能被 HTTP 侧拒绝(段 A 的 R6)
         w1 = _open(stack, ws_client, s1["access_token"])
         w2 = _open(stack, ws_client, s2["access_token"])
+        res = ws_client.post(
+            "/api/v1/auth/password",
+            headers={"Authorization": f"Bearer {s1['access_token']}"},
+            json={
+                "old_password": "dev123",
+                "new_password": new_pw,
+                "refresh_token": s1["refresh_token"],
+            },
+        )
+        assert res.status_code == 200
         publish(redis_client, [uid], {"type": STALE})
         _expect_close(w1, 4401)
         _expect_close(w2, 4401)
@@ -301,7 +303,8 @@ def test_expired_token_socket_closed(ws_client, settings, db):
     with ExitStack() as stack:
         ws = _open(stack, ws_client, _token(settings, uid))
         _expect_close(ws, 4401)
-    assert time.monotonic() - started < 4  # 令牌过期后一个 ping 周期内断开
+    elapsed = time.monotonic() - started
+    assert 1.0 < elapsed < 4  # 靠 exp 到期才断开:不是一连上就关,也在一个 ping 周期内
 
 
 def test_status_recheck_after_register(ws_client, settings, db, monkeypatch):
@@ -346,5 +349,5 @@ def test_deliver_timeout(monkeypatch):
     event = {"type": "notice.recalled", "id": "n"}
     asyncio.run(asyncio.wait_for(hub.deliver({"user_ids": [str(uid)], "event": event}), 2))
     assert fast.sent == [event]
-    assert slow.closed is not None
+    assert slow.closed == 4401
     assert slow not in hub._sockets.get(uid, set())

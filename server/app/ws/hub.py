@@ -74,7 +74,10 @@ class Hub:
                     await asyncio.wait_for(ws.send_json(event), SEND_TIMEOUT)
                 except Exception as exc:
                     log.warning("ws send failed: %s", type(exc).__name__)
-                    await self._close(user_id, ws, CLOSE_STALE)  # 慢 / 死连接:断开让客户端重连
+                    # 慢 / 死连接:冻结事件仍用 4403,其余让客户端重连
+                    await self._close(
+                        user_id, ws, CLOSE_REVOKED if kind == REVOKED else CLOSE_STALE
+                    )
                     continue
                 if kind == REVOKED:
                     await self._close(user_id, ws, CLOSE_REVOKED)
