@@ -20,6 +20,7 @@ beforeEach(() => {
       contexts: ['teacher'],
       admin_perms: [],
       must_change_password: false,
+      password_change_reason: null,
     },
   })
 })
@@ -313,6 +314,7 @@ it('auth store: setUser 与 lastContext 持久字段', () => {
     contexts: ['teacher', 'admin'],
     admin_perms: ['school.view'],
     must_change_password: false,
+    password_change_reason: null,
   } as const
   useAuthStore
     .getState()
@@ -365,4 +367,33 @@ it('导出方法非 2xx 抛 ApiError', async () => {
 it('noticeOptions: GET /admin/notices/options', async () => {
   await adminApi.noticeOptions()
   expect(lastCall()).toMatchObject({ method: 'GET', url: '/api/v1/admin/notices/options' })
+})
+
+it('loginLogs builds the query with repeated result and suspicious=1', async () => {
+  fetchMock.mockImplementation(async () => new Response('{"items":[]}', { status: 200 }))
+  await adminApi.loginLogs({
+    from: '2026-10-29',
+    to: '2026-11-04',
+    q: '李',
+    result: ['bad_password', 'locked'],
+    suspicious: true,
+    page: 2,
+  })
+  const { url, method } = lastCall()
+  expect(method).toBe('GET')
+  const u = new URL(url, 'http://x')
+  expect(u.pathname.endsWith('/admin/login-logs')).toBe(true)
+  expect(u.searchParams.getAll('result')).toEqual(['bad_password', 'locked'])
+  expect(u.searchParams.get('suspicious')).toBe('1')
+  expect(u.searchParams.get('page')).toBe('2')
+})
+
+it('loginLogsCsv fetches the csv with the bearer header and no token in the url', async () => {
+  fetchMock.mockImplementation(async () => new Response('a,b', { status: 200 }))
+  const blob = await adminApi.loginLogsCsv({ from: '2026-10-29', to: '2026-11-04' })
+  expect(await blob.text()).toBe('a,b')
+  const [url, init] = fetchMock.mock.calls[0]
+  expect(String(url)).toContain('/admin/login-logs.csv?from=2026-10-29&to=2026-11-04')
+  expect(String(url)).not.toContain('token')
+  expect(JSON.stringify(init.headers)).toContain('Bearer a')
 })

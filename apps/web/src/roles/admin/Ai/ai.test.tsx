@@ -366,6 +366,7 @@ describe('导航', () => {
         contexts: ['admin'],
         admin_perms: ['settings.manage'],
         must_change_password: false,
+        password_change_reason: null,
       },
     })
     wrap(<AdminNav />)
@@ -389,6 +390,7 @@ describe('导航', () => {
         contexts: ['admin'],
         admin_perms: ['ai.usage', 'audit.read'],
         must_change_password: false,
+        password_change_reason: null,
       },
     })
     wrap(<AdminNav />)

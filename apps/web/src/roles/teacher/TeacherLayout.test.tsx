@@ -124,6 +124,7 @@ beforeEach(() => {
       contexts: ['teacher'],
       admin_perms: [],
       must_change_password: false,
+      password_change_reason: null,
     },
   })
 })
@@ -415,6 +416,7 @@ it('offers 切换到管理端 only to dual-identity users', async () => {
       contexts: ['teacher', 'admin'],
       admin_perms: [],
       must_change_password: false,
+      password_change_reason: null,
     },
   })
   renderLayout()
@@ -440,6 +442,7 @@ const renderRouted = (
     contexts: ['teacher'] as const,
     admin_perms: [],
     must_change_password: false,
+    password_change_reason: null,
   },
 ) => {
   useAuthStore.setState({ user: { ...user, contexts: [...user.contexts] } })
@@ -508,6 +511,7 @@ it('opens no realtime connection on /change-password', async () => {
     contexts: ['teacher'],
     admin_perms: [],
     must_change_password: true,
+    password_change_reason: null,
   })
   expect(await screen.findByText('改密码页')).toBeInTheDocument()
   await waitFor(() => expect(h.made).toHaveLength(0))

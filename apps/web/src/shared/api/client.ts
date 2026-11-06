@@ -2,7 +2,7 @@ import { useAuthStore } from '@/shared/stores/auth'
 
 export const API_BASE: string = import.meta.env.VITE_API_BASE ?? '/api/v1'
 const BASE = API_BASE
-const NO_REFRESH_PATHS = ['/auth/login', '/auth/refresh', '/auth/logout']
+const NO_REFRESH_PATHS = ['/auth/login', '/auth/login/totp', '/auth/refresh', '/auth/logout']
 
 export class ApiError extends Error {
   constructor(
@@ -90,6 +90,19 @@ export async function toApiError(res: Response): Promise<ApiError> {
   return new ApiError(res.status, 'HTTP_ERROR', res.statusText || `HTTP ${res.status}`)
 }
 
+/** 这些 401 是"业务性拒绝"(密码/验证码错、挑战过期):令牌本身有效,不刷新、不重发、不登出 */
+const BUSINESS_401_CODES = ['INVALID_CREDENTIALS', 'WRONG_PASSWORD', 'TOTP_INVALID', 'MFA_EXPIRED']
+
+async function errorCodeOf(res: Response): Promise<string | null> {
+  try {
+    const data = await res.clone().json()
+    const code = data?.error?.code
+    return typeof code === 'string' ? code : null
+  } catch {
+    return null
+  }
+}
+
 function sessionExpired(): ApiError {
   useAuthStore.getState().logout()
   return new ApiError(401, 'UNAUTHORIZED', '登录已失效，请重新登录')
@@ -105,6 +118,8 @@ export async function authedFetch(
   const signal = opts?.signal
   let res = await send(method, path, body, signal)
   if (res.status === 401 && !NO_REFRESH_PATHS.includes(path)) {
+    const code = await errorCodeOf(res)
+    if (code && BUSINESS_401_CODES.includes(code)) return res
     const { refreshToken } = useAuthStore.getState()
     if (!refreshToken) throw sessionExpired()
     const refreshed = await refreshOnce(refreshToken)
@@ -118,8 +133,43 @@ export async function authedFetch(
 
 export async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await authedFetch(method, path, { body })
-  if (!res.ok) throw await toApiError(res)
+  if (!res.ok) {
+    const apiErr = await toApiError(res)
+    if (res.status === 403 && apiErr.code === 'PASSWORD_CHANGE_REQUIRED')
+      await markPasswordChangeRequired()
+    throw apiErr
+  }
   if (res.status === 204) return undefined as T
   const text = await res.text()
   return (text ? JSON.parse(text) : undefined) as T
+}
+
+/** 会话中密码到期:服务端对业务接口返回 403 PASSWORD_CHANGE_REQUIRED。刷新 store 里的 user,让 ProtectedRoute 跳 /change-password。
+ * 直接用 send 而非 authApi.me(auth.ts 依赖本文件,避免循环引用);已标记时不再请求,避免重复/循环。 */
+async function markPasswordChangeRequired(): Promise<void> {
+  const current = useAuthStore.getState().user
+  if (!current || current.must_change_password) return
+  try {
+    const res = await send('GET', '/auth/me')
+    if (res.ok) {
+      const me = (await res.json()) as typeof current
+      if (me && typeof me === 'object') {
+        useAuthStore
+          .getState()
+          .setUser(
+            me.must_change_password
+              ? me
+              : { ...me, must_change_password: true, password_change_reason: 'expired' },
+          )
+        return
+      }
+    }
+  } catch {
+    // fall through to the local flag
+  }
+  const latest = useAuthStore.getState().user
+  if (latest)
+    useAuthStore
+      .getState()
+      .setUser({ ...latest, must_change_password: true, password_change_reason: 'expired' })
 }

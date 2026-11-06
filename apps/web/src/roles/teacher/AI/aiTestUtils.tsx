@@ -206,6 +206,7 @@ export function setupAi({
         contexts: ['teacher'],
         admin_perms: [],
         must_change_password: false,
+        password_change_reason: null,
       },
     })
   })

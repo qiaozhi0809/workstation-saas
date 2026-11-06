@@ -10,7 +10,9 @@ import type { User } from '@/shared/types/user'
 import { peekLoginFlash, setLoginFlash } from './flash'
 import LoginPage from './LoginPage'
 
-vi.mock('@/shared/api/auth', () => ({ authApi: { login: vi.fn(), logout: vi.fn() } }))
+vi.mock('@/shared/api/auth', () => ({
+  authApi: { login: vi.fn(), logout: vi.fn(), loginTotp: vi.fn() },
+}))
 
 const fill = (login: string, pw: string) => {
   fireEvent.change(screen.getByLabelText('登录名'), { target: { value: login } })
@@ -21,6 +23,8 @@ const fill = (login: string, pw: string) => {
 beforeEach(() => {
   vi.mocked(authApi.login).mockReset()
   vi.mocked(authApi.logout).mockReset().mockResolvedValue({ ok: true })
+  vi.mocked(authApi.loginTotp).mockReset()
+  localStorage.clear()
   useAuthStore.getState().logout()
 })
 
@@ -41,6 +45,7 @@ it('submits trimmed login name and unicode password', async () => {
       contexts: ['teacher'],
       admin_perms: [],
       must_change_password: false,
+      password_change_reason: null,
     },
   })
   render(
@@ -103,6 +108,7 @@ it('stores tokens and navigates to /teacher on success', async () => {
     contexts: ['teacher'],
     admin_perms: [],
     must_change_password: false,
+    password_change_reason: null,
   }
   vi.mocked(authApi.login).mockResolvedValue({
     access_token: 'a',
@@ -156,6 +162,7 @@ it('disables the button while pending and clears the error on resubmit', async (
       contexts: ['teacher'],
       admin_perms: [],
       must_change_password: false,
+      password_change_reason: null,
     },
   })
   await waitFor(() => expect(useAuthStore.getState().accessToken).toBe('a'))
@@ -186,6 +193,7 @@ const loginAs = async (user: Partial<User>, lastContext: 'teacher' | 'admin' | n
       contexts: ['teacher'],
       admin_perms: [],
       must_change_password: false,
+      password_change_reason: null,
       ...user,
     },
   })
@@ -218,7 +226,7 @@ it('sends a dual-identity user to the last used context', async () => {
 })
 
 it('keeps a must-change-password account without identity on the login page', async () => {
-  await loginAs({ contexts: [], must_change_password: true })
+  await loginAs({ contexts: [], must_change_password: true, password_change_reason: null })
   expect(await screen.findByRole('alert')).toHaveTextContent(
     '这个账号还没有分配身份,请联系学校信息中心',
   )
@@ -227,7 +235,7 @@ it('keeps a must-change-password account without identity on the login page', as
 })
 
 it('sends a user who must change password to /change-password', async () => {
-  await loginAs({ must_change_password: true })
+  await loginAs({ must_change_password: true, password_change_reason: null })
   expect(await screen.findByText('change pw')).toBeInTheDocument()
 })
 
@@ -277,6 +285,7 @@ it('redirects an already signed-in user to the home of the last context', () => 
     contexts: ['teacher', 'parent'],
     admin_perms: [],
     must_change_password: false,
+    password_change_reason: null,
   }
   useAuthStore.setState({ accessToken: 'a', refreshToken: 'r', user, lastContext: 'parent' })
   render(
@@ -299,6 +308,7 @@ it('redirects a signed-in user who must change the password to /change-password'
     contexts: ['parent'],
     admin_perms: [],
     must_change_password: true,
+    password_change_reason: null,
   }
   useAuthStore.setState({ accessToken: 'a', refreshToken: 'r', user, lastContext: null })
   render(
@@ -343,6 +353,7 @@ it('stays on the login form when the signed-in user has no identity', () => {
     contexts: [],
     admin_perms: [],
     must_change_password: false,
+    password_change_reason: null,
   }
   useAuthStore.setState({ accessToken: 'a', refreshToken: 'r', user, lastContext: null })
   render(
@@ -351,4 +362,73 @@ it('stays on the login form when the signed-in user has no identity', () => {
     </MemoryRouter>,
   )
   expect(screen.getByLabelText('登录名')).toBeInTheDocument()
+})
+
+const CHALLENGE = { mfa_required: true as const, mfa_token: 'mfa-secret-token', expires_in: 300 }
+const OK_REPLY: LoginResponse = {
+  access_token: 'a',
+  refresh_token: 'r',
+  expires_at: 'x',
+  user: {
+    id: 'u',
+    display_name: 't',
+    contexts: ['teacher'],
+    admin_perms: [],
+    must_change_password: false,
+    password_change_reason: null,
+  },
+}
+
+const renderTotp = async () => {
+  vi.mocked(authApi.login).mockResolvedValue(CHALLENGE)
+  render(
+    <MemoryRouter initialEntries={['/login']}>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/teacher" element={<div>teacher home</div>} />
+      </Routes>
+    </MemoryRouter>,
+  )
+  fill('teacher01', 'pw')
+  return screen.findByLabelText('验证码')
+}
+
+it('asks for totp after password', async () => {
+  vi.mocked(authApi.loginTotp).mockResolvedValue(OK_REPLY)
+  const input = await renderTotp()
+  expect(input).toHaveAttribute('inputmode', 'numeric')
+  expect(input).toHaveAttribute('autocomplete', 'one-time-code')
+  // 挑战令牌只留在组件状态里,不进任何持久存储
+  expect(JSON.stringify({ ...localStorage })).not.toContain('mfa-secret-token')
+  expect(useAuthStore.getState().accessToken).toBeNull()
+  fireEvent.change(input, { target: { value: '123456' } })
+  expect(await screen.findByText('teacher home')).toBeInTheDocument()
+  expect(authApi.loginTotp).toHaveBeenCalledWith('mfa-secret-token', '123456')
+  expect(useAuthStore.getState().accessToken).toBe('a')
+  expect(JSON.stringify({ ...localStorage })).not.toContain('mfa-secret-token')
+})
+
+it('shows expired challenge and restarts', async () => {
+  vi.mocked(authApi.loginTotp).mockRejectedValue(new ApiError(401, 'MFA_EXPIRED', 'expired'))
+  const input = await renderTotp()
+  fireEvent.change(input, { target: { value: '123456' } })
+  expect(await screen.findByRole('alert')).toHaveTextContent('验证已过期,请重新登录')
+  expect(screen.getByLabelText('登录名')).toBeInTheDocument()
+  expect(screen.queryByLabelText('验证码')).toBeNull()
+})
+
+it('clears code on TOTP_INVALID', async () => {
+  vi.mocked(authApi.loginTotp).mockRejectedValue(new ApiError(401, 'TOTP_INVALID', 'bad'))
+  const input = (await renderTotp()) as HTMLInputElement
+  fireEvent.change(input, { target: { value: '123456' } })
+  expect(await screen.findByRole('alert')).toHaveTextContent('验证码不正确或已过期,请检查手机时间')
+  await waitFor(() => expect(input.value).toBe(''))
+  expect(input).toHaveFocus()
+  expect(useAuthStore.getState().accessToken).toBeNull()
+})
+
+it('returns to an empty password field from the code step', async () => {
+  await renderTotp()
+  fireEvent.click(screen.getByRole('button', { name: '返回重新登录' }))
+  expect(await screen.findByLabelText('密码')).toHaveValue('')
 })
