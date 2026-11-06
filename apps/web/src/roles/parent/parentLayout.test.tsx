@@ -2,6 +2,7 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { noticesApi } from '@/shared/api/notices'
 import { parentApi } from '@/shared/api/parent'
+import { preferencesApi } from '@/shared/api/preferences'
 import { child, mockWidth, renderParent, setParentUser, today } from './testkit'
 
 vi.mock('@/shared/api/parent', () => ({
@@ -11,6 +12,14 @@ vi.mock('@/shared/api/parent', () => ({
 vi.mock('@/shared/api/notices', () => ({
   noticesApi: { inbox: vi.fn(), read: vi.fn(), readAll: vi.fn(), ack: vi.fn() },
 }))
+// 壳里挂了首次说明卡:默认当作已看过,不显示
+vi.mock('@/shared/api/preferences', () => ({ preferencesApi: { get: vi.fn(), save: vi.fn() } }))
+
+const prefs = {
+  teacher_figure: 'female' as const,
+  idle_animation: true,
+  review_reasons: [{ text: '积极发言', delta: 1 }],
+}
 // 家长壳挂了 RealtimeProvider:不能真连 WebSocket
 vi.mock('@/shared/realtime/client', async (orig) => ({
   ...(await orig<typeof import('@/shared/realtime/client')>()),
@@ -27,6 +36,25 @@ beforeEach(() => {
   vi.mocked(parentApi.children).mockResolvedValue(two)
   vi.mocked(parentApi.today).mockResolvedValue(today())
   vi.mocked(noticesApi.inbox).mockResolvedValue({ items: [], total: 0, unread: 0 })
+  vi.mocked(preferencesApi.get).mockResolvedValue({
+    ...prefs,
+    onboarded: { parent: '2026-11-01T01:00:00Z' },
+  })
+})
+
+it('shows the first-visit card at the top of the page only until the parent has seen it', async () => {
+  const seen = renderParent('/parent/today?child=s1')
+  await screen.findByRole('region', { name: '今日出勤' })
+  await waitFor(() => expect(preferencesApi.get).toHaveBeenCalled())
+  expect(screen.queryByRole('region', { name: '首次使用提示' })).toBeNull()
+  seen.unmount()
+
+  vi.mocked(preferencesApi.get).mockResolvedValue({ ...prefs, onboarded: {} })
+  renderParent('/parent/today?child=s1')
+  const card = await screen.findByRole('region', { name: '首次使用提示' })
+  const attendance = await screen.findByRole('region', { name: '今日出勤' })
+  expect(screen.getByRole('main')).toContainElement(card)
+  expect(card.compareDocumentPosition(attendance) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 })
 
 it('puts the tabs at the bottom below 768 with safe-area padding, not in the top bar', async () => {

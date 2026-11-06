@@ -15,6 +15,7 @@ import { useRealtimeEvent } from '@/shared/realtime/useRealtimeEvent'
 import { useAuthStore } from '@/shared/stores/auth'
 import ThemeToggle from '@/theme/ThemeToggle'
 import ChildSwitcher from './ChildSwitcher'
+import FirstVisit from './FirstVisit'
 import ParentNav from './ParentNav'
 import { ChildContext, useChild, useChildState } from './useChild'
 
@@ -126,6 +127,7 @@ function ParentShell() {
         </>
       }
     >
+      <FirstVisit />
       {body}
     </AppShell>
   )
