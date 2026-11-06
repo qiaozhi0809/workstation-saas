@@ -41,6 +41,7 @@ const cls: ClassAdmin = {
 }
 const acc: OrgPerson = {
   user_id: 'u5',
+  teacher_id: 't5',
   name: '赵老师',
   login_name: 'teacher05',
   subjects: ['数学'],

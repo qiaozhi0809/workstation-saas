@@ -133,7 +133,7 @@ beforeEach(() => {
   api.years.mockResolvedValue([activeYear('y1')])
   students.listInClass.mockResolvedValue({ items: [seat('e1', '周小乐'), seat('e2', '吴小米')] })
   org.people.mockResolvedValue([
-    { user_id: 'u7', name: '王老师', login_name: 'wang', subjects: ['数学'] },
+    { user_id: 'u7', teacher_id: 't7', name: '王老师', login_name: 'wang', subjects: ['数学'] },
   ])
 })
 afterEach(() => {
@@ -333,6 +333,33 @@ describe('homeroom teacher id contract', () => {
     step('预览')
     await waitFor(() => expect(api.upgradePreview).toHaveBeenCalled())
     expect(lastPreviewBody().classes[0].homeroom_teacher_id).toBe('t1')
+  })
+
+  it('highlights the prefilled teacher by teacher_id, and a picked one by user_id (L55)', async () => {
+    org.people.mockResolvedValue([
+      { user_id: 'u1', teacher_id: 't1', name: '李老师', login_name: 'li', subjects: [] },
+      { user_id: 'u7', teacher_id: 't7', name: '王老师', login_name: 'wang', subjects: ['数学'] },
+    ])
+    renderPage()
+    await generate()
+    // 方案里预填的是 teachers.id('t1'),候选按 teacher_id 对上
+    fireEvent.click(screen.getByRole('button', { name: '三年一班 班主任' }))
+    expect(await screen.findByRole('button', { name: /李老师/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(screen.getByRole('button', { name: /王老师/ })).toHaveAttribute('aria-pressed', 'false')
+    // 选人写进方案的是 user_id('u7'),再打开时按 user_id 对上
+    fireEvent.click(screen.getByRole('button', { name: /王老师/ }))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '三年一班 班主任' })).toHaveTextContent('王老师'),
+    )
+    fireEvent.click(screen.getByRole('button', { name: '三年一班 班主任' }))
+    expect(await screen.findByRole('button', { name: /王老师/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(screen.getByRole('button', { name: /李老师/ })).toHaveAttribute('aria-pressed', 'false')
   })
 })
 
