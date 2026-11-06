@@ -295,8 +295,5 @@ def test_former_homeroom_cannot_view_class_notice_acks(client, db, settings):
     h = auth(settings, T01)
     assert client.get(f"{INBOX}/{nid}/acks", headers=h).status_code == 404
     assert client.get(f"{INBOX}/{nid}/acks/export", headers=h).status_code == 404
-    assert client.post(f"/api/v1/classes/{C32}/notices/{nid}/recall", headers=h).status_code in (
-        403,
-        404,
-    )
+    assert client.post(f"/api/v1/classes/{C32}/notices/{nid}/recall", headers=h).status_code == 403
     assert db.get(Notice, UUID(nid)).recalled_at is None

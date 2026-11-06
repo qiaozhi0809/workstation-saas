@@ -252,8 +252,9 @@ def test_contacts_authz_before_validation(client, settings, db):
     bad = {"contacts": [{"name": "x"}] * 3}
     for body in (bad, {"contacts": "nope"}, {}):
         # 非家长(教师)、次要家长:先判权,体不合法也是 403
-        assert client.put(path, json=body, headers=auth(settings)).status_code == 403
-        assert client.put(path, json=body, headers=auth(settings, ZHOU)).status_code == 403
+        for who in (auth(settings), auth(settings, ZHOU)):
+            res = client.put(path, json=body, headers=who)
+            assert res.status_code == 403 and res.json()["error"]["code"] == "FORBIDDEN"
         # 主家长:体不合法才 400
         res = client.put(path, json=body, headers=auth(settings, LI))
         assert res.status_code == 400 and res.json()["error"]["code"] == "BAD_REQUEST"
