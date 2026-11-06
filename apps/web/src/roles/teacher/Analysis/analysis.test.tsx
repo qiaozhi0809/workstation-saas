@@ -258,6 +258,33 @@ describe('AnalysisPage', () => {
     // 70% / 80%:60–70% 整档在及格线下 → 不及格段;80–90% 整档在优秀线上 → 优秀段
     await waitFor(() => expect(bandFills()).toEqual([LOW, LOW, GOOD]))
   })
+
+  it('draws the subject rate chart against the school pass line, not a fixed 60%', async () => {
+    // 第一次月考两科平均得分率都是 60%
+    const chart = () => screen.getByText('各科平均得分率').closest('section') as HTMLElement
+    const fills = () =>
+      Array.from(chart().querySelectorAll('path.recharts-rectangle')).map((p) =>
+        p.getAttribute('fill'),
+      )
+    const passLineY = () =>
+      Number(chart().querySelector('.recharts-reference-line line')?.getAttribute('y1'))
+    const LOW = 'hsl(var(--chart-4))'
+    const MAIN = 'hsl(var(--chart-1))'
+    const a = setup([first])
+    await avgCard()
+    expect(fills()).toEqual([MAIN, MAIN])
+    const y60 = passLineY()
+    expect(y60).toBeGreaterThan(0)
+    a.unmount()
+
+    vi.mocked(schoolApi.grading).mockResolvedValue({ pass_ratio: 0.7, good_ratio: 0.9 })
+    setup([first])
+    await avgCard()
+    // 60% 低于 70% 的及格线 → 两科都标低分;及格参考线往上移
+    await waitFor(() => expect(fills()).toEqual([LOW, LOW]))
+    expect(passLineY()).toBeLessThan(y60)
+    expect(chart().textContent).toContain('及格')
+  })
 })
 
 describe('AnalysisPage AI shortcuts', () => {

@@ -224,7 +224,7 @@ function AnalysisBody({
       </div>
       <KpiRow cur={cur} cmp={cmp} cmpName={cmpExam?.name ?? ''} names={names} />
       <div className="grid gap-4 lg:grid-cols-2">
-        <SubjectRateChart stats={cur} width={chartWidth} />
+        <SubjectRateChart stats={cur} width={chartWidth} ratios={grading} />
         <BandChart stats={cur} width={chartWidth} ratios={grading} />
       </div>
       <TrendGrid book={scored} ids={ids} width={chartWidth} ratios={grading} />
