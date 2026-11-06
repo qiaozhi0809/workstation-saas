@@ -1,11 +1,15 @@
 import asyncio
+import contextlib
 import json
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import anyio
 import httpx
+import pytest
+from redis import exceptions as redis_exceptions
 from sqlalchemy import select, text
+from starlette.requests import ClientDisconnect
 
 from app.ai.gateway import GenContext, acquire_lock, lock_key, reply_events
 from app.ai.settings import AIConfig, load_ai_config, save_ai_config
@@ -401,6 +405,69 @@ def test_stale_running_item_shown_as_wait(client, settings, db, monkeypatch):
     assert got["items"][0]["status"] == "wait" and got["items"][1]["status"] == "wait"
 
 
+def test_ai_generate_over_two_minutes_still_shows_streaming(
+    client, settings, db, redis_client, monkeypatch
+):
+    """生成超过 2 分钟但对话锁还在(确实还在生成):并发读取显示"生成中"而不是"中断";
+    锁一释放(生成器已收尾或崩溃)才按 2 分钟陈旧规则显示中断(L94)。"""
+    chat = create(client, settings, lesson_body())
+    db.add(
+        AiMessage(
+            chat_id=UUID(chat["id"]), role="assistant", content="写到一半", status="streaming"
+        )
+    )
+    db.commit()
+    redis_client.set(f"ai:chat:{chat['id']}", "running-token", ex=60)
+    freeze(monkeypatch, (datetime.now(UTC) + timedelta(minutes=3)).isoformat())
+    msg = get_chat(client, settings, chat["id"]).json()["messages"][1]
+    assert (msg["status"], msg["error"], msg["content"]) == ("streaming", None, "写到一半")
+    redis_client.delete(f"ai:chat:{chat['id']}")
+    msg = get_chat(client, settings, chat["id"]).json()["messages"][1]
+    assert (msg["status"], msg["error"]) == ("error", INTERRUPTED)
+
+
+def test_chat_detail_tolerates_redis_outage(client, settings, db, redis_client, monkeypatch):
+    """读对话详情时 Redis 不可用:不 500,退化为旧的 2 分钟陈旧规则(当作没在生成)。"""
+    chat = create(client, settings, lesson_body())
+    db.add(
+        AiMessage(
+            chat_id=UUID(chat["id"]), role="assistant", content="写到一半", status="streaming"
+        )
+    )
+    db.commit()
+
+    def redis_down(*args, **kwargs):
+        raise redis_exceptions.ConnectionError("Error 111 connecting to redis")
+
+    monkeypatch.setattr(redis_client, "exists", redis_down)
+    res = get_chat(client, settings, chat["id"])
+    assert res.status_code == 200
+    assert res.json()["messages"][1]["status"] == "streaming"  # 2 分钟内照旧显示生成中
+    freeze(monkeypatch, (datetime.now(UTC) + timedelta(minutes=3)).isoformat())
+    msg = get_chat(client, settings, chat["id"]).json()["messages"][1]
+    assert (msg["status"], msg["error"]) == ("error", INTERRUPTED)
+
+
+def test_ai_generate_running_item_over_two_minutes_still_shows_run(
+    client, settings, db, redis_client, monkeypatch
+):
+    chat = create(client, settings, comments_body())
+    item = db.scalars(
+        select(AiBatchItem)
+        .where(AiBatchItem.chat_id == UUID(chat["id"]))
+        .order_by(AiBatchItem.position)
+    ).first()
+    item.status = "run"
+    db.commit()
+    redis_client.set(f"ai:chat:{chat['id']}", "running-token", ex=60)
+    freeze(monkeypatch, (datetime.now(UTC) + timedelta(minutes=3)).isoformat())
+    got = get_chat(client, settings, chat["id"]).json()
+    assert [i["status"] for i in got["items"]] == ["run", "wait"]
+    redis_client.delete(f"ai:chat:{chat['id']}")
+    got = get_chat(client, settings, chat["id"]).json()
+    assert [i["status"] for i in got["items"]] == ["wait", "wait"]
+
+
 def test_other_users_chat_is_404(client, settings, db):
     configure_ai(db, settings)
     chat = create(client, settings, lesson_body())
@@ -534,6 +601,193 @@ def test_forced_mask_applies_to_chat_created_unmasked(client, settings, db):
     assert generate_audits(db, chat["id"])[0].extra["masked"] is True
     got = get_chat(client, settings, chat["id"]).json()
     assert got["messages"][-1]["content"] == "王小一很棒"
+
+
+def test_chat_mask_reflects_forced_mask_now(client, settings, db):
+    """对话详情里的 mask 是当前生效的值(建对话后学校开了强制脱敏也要体现),
+    不是建对话时存下的值(L18)。"""
+    configure_ai(db, settings)
+    chat = create(client, settings, parent_body(mask=False))
+    assert chat["mask"] is False
+    _force_mask(db, settings)
+    assert get_chat(client, settings, chat["id"]).json()["mask"] is True
+    # 新建的对话同样按当前生效值返回
+    assert create(client, settings, parent_body(mask=False))["mask"] is True
+
+
+def _asgi_scope(path: str, headers: dict[str, str], body: bytes, spec_version: str) -> dict:
+    raw = [(k.lower().encode(), v.encode()) for k, v in headers.items()]
+    raw += [
+        (b"host", b"testserver"),
+        (b"content-type", b"application/json"),
+        (b"content-length", str(len(body)).encode()),
+    ]
+    return {
+        "type": "http",
+        "asgi": {"version": "3.0", "spec_version": spec_version},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": path,
+        "raw_path": path.encode(),
+        "query_string": b"",
+        "root_path": "",
+        "headers": raw,
+        "client": ("127.0.0.1", 40000),
+        "server": ("testserver", 80),
+        "state": {},
+    }
+
+
+def test_ai_generate_disconnect_before_start_releases_lock(client, settings, db, redis_client):
+    """整条路由走 ASGI 2.3(uvicorn):请求到了、锁也拿到了,客户端在取响应体第一口之前就
+    断开 → 一口响应体都没发,锁立刻释放,不等 300 秒 TTL(L94)。
+    (这条路径 anyio 会让生成器先起来再送达取消,收尾由 generation_events 自己做;
+    真正"一次都没开始迭代"的是下一条 2.4 路径。)"""
+    configure_ai(db, settings)
+    set_transport(client, ["第一段"])
+    chat = create(client, settings, lesson_body())
+    body = b"{}"
+    scope = _asgi_scope(f"{CHATS}/{chat['id']}/reply", auth(settings), body, "2.3")
+    pending = [{"type": "http.request", "body": body, "more_body": False}]
+    sent: list[str] = []
+
+    async def receive():
+        return pending.pop(0) if pending else {"type": "http.disconnect"}
+
+    async def send(message):
+        sent.append(message["type"])
+
+    anyio.run(client.app, scope, receive, send)
+    assert "http.response.body" not in sent
+    assert redis_client.exists(f"ai:chat:{chat['id']}") == 0
+
+
+def test_ai_generate_releases_lock_when_never_iterated(client, settings, db, redis_client):
+    """ASGI 2.4 路径:响应头都发不出去(send 抛 OSError → ClientDisconnect),生成器一次都
+    没开始迭代,finally 根本不会跑——响应对象自己兜底放锁;没有助手消息、没有审计(L94)。"""
+    import app.ai.gateway as gw
+
+    configure_ai(db, settings)
+    chat = create(client, settings, lesson_body())
+    ctx = _ctx(client, settings, db, redis_client, chat["id"], ["第一段"])
+    resp = gw.GenerationResponse(ctx, reply_events(ctx, AiReplyIn()))
+
+    async def receive():
+        return {"type": "http.disconnect"}
+
+    async def broken_send(message):
+        raise OSError("connection reset by peer")
+
+    scope = {"type": "http", "asgi": {"version": "3.0", "spec_version": "2.4"}}
+    with pytest.raises(ClientDisconnect):
+        anyio.run(resp, scope, receive, broken_send)
+    assert redis_client.exists(f"ai:chat:{chat['id']}") == 0
+    assert len(get_chat(client, settings, chat["id"]).json()["messages"]) == 1
+    assert generate_audits(db, chat["id"]) == []
+
+
+def _drain(agen) -> list[tuple[str, dict]]:
+    """把生成器跑到头,按 (事件名, 数据) 返回。"""
+
+    async def run():
+        chunks = []
+        async with contextlib.aclosing(agen) as it:
+            async for chunk in it:
+                chunks.append(chunk.decode())
+        return chunks
+
+    events = []
+    for chunk in asyncio.run(run()):
+        head, _, data = chunk.strip().partition("\n")
+        events.append((head.removeprefix("event: "), json.loads(data.removeprefix("data: "))))
+    return events
+
+
+def test_ai_generate_save_failure_sends_error_not_done(
+    client, settings, db, redis_client, monkeypatch
+):
+    """落库失败不能再告诉前端 done:发 error、审计 outcome=error、锁照样释放;
+    并再试一次把行标为失败,不留在 streaming(L94)。"""
+    import app.ai.gateway as gw
+
+    configure_ai(db, settings)
+    chat = create(client, settings, lesson_body())
+    ctx = _ctx(client, settings, db, redis_client, chat["id"], ["第一段", "第二段"])
+    real = gw.save_reply
+    attempts: list[str] = []
+
+    def flaky_save(s, prep, state):
+        attempts.append(state.status)
+        if state.status == "done":
+            raise RuntimeError("disk full")
+        real(s, prep, state)
+
+    monkeypatch.setattr(gw, "save_reply", flaky_save)
+    events = _drain(reply_events(ctx, AiReplyIn()))
+    assert [e for e, _ in events] == ["meta", "delta", "delta", "error"]
+    assert events[-1][1] == {"code": "AI_SAVE_FAILED", "message": gw.SAVE_ERROR}
+    assert attempts == ["done", "error"]
+    db.expire_all()
+    msg = get_chat(client, settings, chat["id"]).json()["messages"][1]
+    assert (msg["status"], msg["error"], msg["content"]) == ("error", gw.SAVE_ERROR, "第一段第二段")
+    assert redis_client.exists(f"ai:chat:{chat['id']}") == 0
+    audit = generate_audits(db, chat["id"])
+    assert len(audit) == 1 and (audit[0].success, audit[0].extra["outcome"]) == (False, "error")
+
+
+def test_ai_generate_unlock_failure_keeps_outcome_consistent(
+    client, settings, db, redis_client, monkeypatch
+):
+    """落库成功后 Redis 释放锁失败:结局以库里为准——前端照样收到 done、审计 outcome=done,
+    不能因为放锁失败改口说 error;锁留给 TTL 兜底(L94)。"""
+    import app.ai.gateway as gw
+
+    configure_ai(db, settings)
+    chat = create(client, settings, lesson_body())
+    ctx = _ctx(client, settings, db, redis_client, chat["id"], ["第一段", "第二段"])
+    calls = {"n": 0}
+
+    def redis_down(redis, key, token):
+        calls["n"] += 1
+        raise redis_exceptions.ConnectionError("Error 111 connecting to redis")
+
+    monkeypatch.setattr(gw, "release_lock", redis_down)
+    monkeypatch.setattr(gw, "UNLOCK_RETRY_SECONDS", 0)
+    events = _drain(reply_events(ctx, AiReplyIn()))
+    assert [e for e, _ in events] == ["meta", "delta", "delta", "done"]
+    assert calls["n"] == gw.UNLOCK_ATTEMPTS
+    db.expire_all()
+    msg = get_chat(client, settings, chat["id"]).json()["messages"][1]
+    assert (msg["status"], msg["content"]) == ("done", "第一段第二段")
+    audit = generate_audits(db, chat["id"])
+    assert len(audit) == 1 and (audit[0].success, audit[0].extra["outcome"]) == (True, "done")
+    # 锁确实没放掉,但最晚随 TTL 过期
+    assert 0 < redis_client.ttl(f"ai:chat:{chat['id']}") <= gw.LOCK_TTL
+
+
+def test_ai_generate_unlock_retries_transient_redis_error(
+    client, settings, db, redis_client, monkeypatch
+):
+    import app.ai.gateway as gw
+
+    configure_ai(db, settings)
+    chat = create(client, settings, lesson_body())
+    ctx = _ctx(client, settings, db, redis_client, chat["id"], ["好"])
+    real = gw.release_lock
+    calls = {"n": 0}
+
+    def flaky(redis, key, token):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise redis_exceptions.TimeoutError("Timeout reading from socket")
+        real(redis, key, token)
+
+    monkeypatch.setattr(gw, "release_lock", flaky)
+    monkeypatch.setattr(gw, "UNLOCK_RETRY_SECONDS", 0)
+    events = _drain(reply_events(ctx, AiReplyIn()))
+    assert events[-1][0] == "done" and calls["n"] == 2
+    assert redis_client.exists(f"ai:chat:{chat['id']}") == 0
 
 
 def _state_at_final_event(client, settings, db, redis_client, chat_id, events_fn, ctx, final):

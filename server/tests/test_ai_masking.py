@@ -119,6 +119,14 @@ def test_stream_restorer_flushes_dangling_tail():
     assert r.feed("结尾【学") == "结尾" and r.flush() == "【学"
 
 
+@pytest.mark.parametrize("tail", ["【\n", "【学\n", "[学生0\n"])
+def test_stream_restorer_does_not_hold_tail_ending_with_newline(tail):
+    """括号后已经换行就不可能是编号开头,整段立刻放出,不多扣一段(L18:`$` 会匹配到换行前)。"""
+    r = Masker(PEOPLE, class_nos={3, 12}).restorer()
+    assert r.feed(f"第一段{tail}") == f"第一段{tail}"
+    assert r.flush() == ""
+
+
 def test_stream_restorer_half_width_bracket_split():
     r = Masker(PEOPLE, class_nos={3, 12}).restorer()
     out = r.feed("好[学生1") + r.feed("2]!") + r.flush()

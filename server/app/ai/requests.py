@@ -11,14 +11,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.ai.context import (
-    _STAGE_LABEL,
+    STAGE_LABEL,
     Access,
-    _visible_exams,
     class_context,
     exam_context,
     regressed_students,
     student_context,
     system_prompt,
+    visible_exams,
 )
 from app.ai.masking import Masker, defuse_codes, masker_for_school, scrub
 from app.ai.prompts import task_text
@@ -89,7 +89,7 @@ def _grade_name(db: Session, cls: SchoolClass) -> str:
 
 
 def _stage_label(db: Session, cls: SchoolClass) -> str:
-    return _STAGE_LABEL[stage_of(_grade_name(db, cls))]
+    return STAGE_LABEL[stage_of(_grade_name(db, cls))]
 
 
 def field_defaults(db: Session, bindings: Sequence[Binding], cls: SchoolClass) -> dict[str, str]:
@@ -181,7 +181,7 @@ def _normalize(
 ) -> dict[str, Any]:
     access = Access.of(bindings, class_scope_of(cls))
     defaults = field_defaults(db, bindings, cls)
-    exams = _visible_exams(db, cls, access)
+    exams = visible_exams(db, cls, access)
     out: dict[str, Any] = {}
     exam: Exam | None = None
     for f in template.fields:
@@ -393,7 +393,7 @@ def build_job(
         sections.append(student_context(db, student, enrollment, access, today))
         student_ids.append(student.id)
 
-    exams = _visible_exams(db, cls, access)
+    exams = visible_exams(db, cls, access)
     if template is None:
         if exam_raw and access.exam:
             exam = get_visible_exam(db, cls, UUID(exam_raw), bindings)
@@ -444,7 +444,7 @@ def build_job(
     )
 
 
-def _check_perms(
+def check_perms(
     db: Session,
     request: Request | None,
     user: User,
@@ -452,6 +452,7 @@ def _check_perms(
     cls: SchoolClass,
     needs: frozenset[Perm],
 ) -> None:
+    """按 ``PERM_ORDER`` 逐个校验模板所需权限,缺哪个先对哪个 deny(写审计并抛 403)。"""
     scope = class_scope_of(cls)
     for perm in PERM_ORDER:
         if perm in needs and not can(bindings, perm, scope):
@@ -482,7 +483,7 @@ def resolve(
         if template is None:
             raise _bad("template_id", "模板不存在")
     needs = template.needs if template else frozenset({Perm.AI_USE})
-    _check_perms(db, request, user, bindings, cls, needs)
+    check_perms(db, request, user, bindings, cls, needs)
 
     masked = bool(cfg.mask_forced if cfg else False) or req.mask
     masker = masker_for_school(db, cls.school_id, cls.id)
