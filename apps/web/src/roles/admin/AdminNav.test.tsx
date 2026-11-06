@@ -253,6 +253,11 @@ describe('grouped nav (≥ 768)', () => {
     const items = within(screen.getByRole('menu', { name: '学校管理' })).getAllByRole('menuitem')
     const marked = items.filter((i) => i.querySelector('svg.lucide-check') !== null)
     expect(marked.map((i) => i.textContent?.trim())).toEqual(['组织架构'])
+    // 读屏靠 aria-current:只有当前页那一项带 page,其余没有
+    expect(
+      within(screen.getByRole('menu')).getByRole('menuitem', { name: '组织架构' }),
+    ).toHaveAttribute('aria-current', 'page')
+    expect(items.filter((i) => i.hasAttribute('aria-current'))).toHaveLength(1)
   })
 
   it('is data-driven: any page with a group lands in that group', () => {

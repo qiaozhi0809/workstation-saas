@@ -140,7 +140,7 @@ function GroupMenu({ group, pages }: { group: AdminGroup; pages: AdminPage[] }) 
         {pages.map(({ path, label: text, icon: PageIcon }) => {
           const current = underPath(pathname, path)
           return (
-            <MenuLinkItem key={path} to={`/admin/${path}`}>
+            <MenuLinkItem key={path} to={`/admin/${path}`} current={current}>
               <PageIcon className="mr-2 h-4 w-4 shrink-0" aria-hidden="true" />
               <span className={cn('mr-2', current && 'font-medium')}>{text}</span>
               {current && <Check className="ml-auto h-4 w-4 shrink-0" aria-hidden="true" />}
