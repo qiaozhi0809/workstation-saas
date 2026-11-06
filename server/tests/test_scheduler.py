@@ -56,8 +56,40 @@ def test_due_jobs():
     assert due_jobs([job], _local(6, 3, 10), {"t-job": date(2026, 11, 5)}) == [job]
 
 
-def test_jobs_registry_has_parent_archive():
-    assert [(j.name, j.at) for j in JOBS] == [("parent-archive", time(3, 10))]
+def test_jobs_registry():
+    assert [(j.name, j.at) for j in JOBS] == [
+        ("parent-archive", time(3, 10)),
+        ("login-log-purge", time(3, 30)),
+    ]
+
+
+def test_login_log_purge_runs_when_due(db, redis_client, settings, monkeypatch):
+    from datetime import timedelta
+
+    from sqlalchemy import select
+
+    from app.models import LoginLog
+
+    monkeypatch.setattr("app.deploy.scheduler.get_settings", lambda: settings)
+    purge = next(j for j in JOBS if j.name == "login-log-purge")
+    now = _local(5, 3, 35).astimezone(UTC)
+    old = LoginLog(
+        school_id=SCHOOL_ID,
+        login_name="a",
+        result="bad_password",
+        created_at=now - timedelta(days=181),
+    )
+    keep = LoginLog(
+        school_id=SCHOOL_ID, login_name="b", result="success", created_at=now - timedelta(days=179)
+    )
+    db.add_all([old, keep])
+    db.flush()
+    early = _local(5, 3, 25).astimezone(UTC)
+    assert run_due(_factory(db), redis_client, early, [purge], school_id=SCHOOL_ID) == []
+    assert run_due(_factory(db), redis_client, now, [purge], school_id=SCHOOL_ID) == [
+        "login-log-purge"
+    ]
+    assert set(db.scalars(select(LoginLog.login_name))) == {"b"}
 
 
 def test_job_runs_once_per_day_across_restart(db, redis_client):

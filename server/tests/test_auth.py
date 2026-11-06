@@ -536,9 +536,58 @@ def test_password_policy_endpoint(client, db, settings):
     assert pending.json() == {"min_length": 12, "max_age_days": 180}
 
 
+_PENDING_NAMES = {"get_current_user_pending", "CurrentUser"}
+
+
+def _pending_users(source: str) -> set[str]:
+    """源码里引用了 get_current_user_pending(含别名 CurrentUser 及其再别名)的位置:
+
+    函数名(参数注解、默认值、装饰器的 dependencies=[...]、函数体内任何位置都算),
+    或 "<module>"(模块级的非别名定义,例如 APIRouter(dependencies=[...]))。
+    """
+    import ast
+
+    tree = ast.parse(source)
+    aliases = set(_PENDING_NAMES)
+
+    def refs(node: ast.AST) -> bool:
+        return any(
+            (isinstance(n, ast.Name) and n.id in aliases)
+            or (isinstance(n, ast.Attribute) and n.attr in aliases)
+            for n in ast.walk(node)
+        )
+
+    for stmt in tree.body:  # 别名:from ... import x as y;Y = X / Annotated[..., Depends(X)]
+        if isinstance(stmt, ast.ImportFrom):
+            aliases |= {a.asname for a in stmt.names if a.name in aliases and a.asname}
+    grew = True
+    while grew:
+        grew = False
+        for stmt in tree.body:
+            if isinstance(stmt, ast.Assign | ast.AnnAssign) and stmt.value is not None:
+                targets = stmt.targets if isinstance(stmt, ast.Assign) else [stmt.target]
+                for t in targets:
+                    if isinstance(t, ast.Name) and t.id not in aliases and refs(stmt.value):
+                        aliases.add(t.id)
+                        grew = True
+    hits: set[str] = set()
+    for stmt in tree.body:
+        if isinstance(stmt, ast.FunctionDef | ast.AsyncFunctionDef):
+            if refs(stmt):
+                hits.add(stmt.name)
+        elif isinstance(stmt, ast.ClassDef):
+            if refs(stmt):
+                hits.add(stmt.name)
+        elif isinstance(stmt, ast.Assign | ast.AnnAssign) and stmt.value is not None:
+            if isinstance(stmt.value, ast.Call) and refs(stmt.value):
+                hits.add("<module>")  # 纯类型别名(Annotated[...])是允许的定义
+        elif not isinstance(stmt, ast.Import | ast.ImportFrom) and refs(stmt):
+            hits.add("<module>")
+    return hits
+
+
 def test_pending_dependency_only_on_allowed_routes():
     """只有 /auth/me、/auth/password、/auth/password-policy 允许需改密码的账号访问。"""
-    import ast
     from pathlib import Path
 
     root = Path(__file__).resolve().parent.parent / "app"
@@ -548,17 +597,34 @@ def test_pending_dependency_only_on_allowed_routes():
         if "get_current_user_pending" in path.read_text(encoding="utf-8")
     }
     assert users == {"auth/deps.py", "auth/router.py"}
-    tree = ast.parse((root / "auth" / "router.py").read_text(encoding="utf-8"))
-    pending_routes = {
-        node.name
-        for node in ast.walk(tree)
-        if isinstance(node, ast.FunctionDef)
-        and any(
-            isinstance(a.annotation, ast.Name) and a.annotation.id == "CurrentUser"
-            for a in node.args.args
-        )
-    }
-    assert pending_routes == {"me", "change_password", "password_policy"}
+    hits = _pending_users((root / "auth" / "router.py").read_text(encoding="utf-8"))
+    assert hits == {"me", "change_password", "password_policy"}
+
+
+def test_pending_scanner_catches_violations():
+    base = "from app.auth.deps import get_current_user_pending\nfrom fastapi import Depends\n"
+    direct = base + "def x(user=Depends(get_current_user_pending)): ...\n"
+    assert _pending_users(direct) == {"x"}
+    in_decorator = (
+        base + '@router.get("/y", dependencies=[Depends(get_current_user_pending)])\ndef y(): ...\n'
+    )
+    assert _pending_users(in_decorator) == {"y"}
+    in_body = base + "def z():\n    return Depends(get_current_user_pending)\n"
+    assert _pending_users(in_body) == {"z"}
+    alias = (
+        base + "P = Annotated[User, Depends(get_current_user_pending)]\nQ = P\ndef w(u: Q): ...\n"
+    )
+    assert _pending_users(alias) == {"w"}
+    renamed = (
+        "from app.auth.deps import get_current_user_pending as gp\ndef v(u=Depends(gp)): ...\n"
+    )
+    assert _pending_users(renamed) == {"v"}
+    attr = "import app.auth.deps as d\ndef u(x=Depends(d.get_current_user_pending)): ...\n"
+    assert _pending_users(attr) == {"u"}
+    module_level = base + "router = APIRouter(dependencies=[Depends(get_current_user_pending)])\n"
+    assert _pending_users(module_level) == {"<module>"}
+    clean = base + "def ok(user=Depends(get_current_user)): ...\n"
+    assert _pending_users(clean) == set()
 
 
 # ---- 空库起步(init-school)----

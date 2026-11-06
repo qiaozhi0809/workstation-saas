@@ -13,19 +13,19 @@ import uuid
 from collections.abc import Callable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from uuid import UUID
 
 import structlog
 from redis import Redis
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, delete
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.clock import utc_now
 from app.config import Settings, get_settings
 from app.domain.parents import lifecycle
 from app.domain.schools.service import school_tz
-from app.models import School
+from app.models import LoginLog, School
 
 log = structlog.get_logger()
 
@@ -52,7 +52,21 @@ def _parent_archive(db: Session, redis: Redis, now: datetime) -> str:
     return f"archived links={res.links} users={res.users}"
 
 
-JOBS: list[Job] = [Job("parent-archive", time(3, 10), _parent_archive)]
+def _purge_login_logs(db: Session, redis: Redis, now: datetime) -> str:  # M5b 段 A
+    days = get_settings().login_log_days
+    res = db.execute(
+        delete(LoginLog).where(
+            LoginLog.school_id == _school.get(), LoginLog.created_at < now - timedelta(days=days)
+        )
+    )
+    db.commit()
+    return f"删除 {res.rowcount} 条"
+
+
+JOBS: list[Job] = [
+    Job("parent-archive", time(3, 10), _parent_archive),
+    Job("login-log-purge", time(3, 30), _purge_login_logs),  # M5b 段 A
+]
 
 
 def due_jobs(jobs: list[Job], now_local: datetime, last_run: dict[str, date]) -> list[Job]:
