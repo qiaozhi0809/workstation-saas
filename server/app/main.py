@@ -17,6 +17,7 @@ from app.domain.ai.router import router as ai_router
 from app.domain.ai_admin.router import router as ai_admin_router  # M3b 段 D
 from app.domain.attendance.router import router as attendance_router
 from app.domain.audit_query.router import router as audit_query_router  # M3b 段 D
+from app.domain.cameras.router import router as cameras_router
 from app.domain.classes.router import router as classes_router
 from app.domain.classroom.router import router as classroom_router
 from app.domain.comments.router import router as comments_router
@@ -123,5 +124,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     router.include_router(account_security_router)  # M5b 段 A
     router.include_router(login_logs_router)  # M5b 段 A
     router.include_router(timetable_router)  # M5c 段 A
+    router.include_router(cameras_router)  # M5c 段 A
     app.include_router(router)
     return app
