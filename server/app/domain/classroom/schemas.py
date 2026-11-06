@@ -87,3 +87,4 @@ class ClassroomSummary(BaseModel):
     my_subjects: list[str]
     board: Board
     switches: ClassroomSwitches | None = None
+    cameras: int = 0

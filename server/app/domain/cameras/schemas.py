@@ -44,3 +44,45 @@ class CameraTestResult(BaseModel):
 
 class CameraHealth(BaseModel):
     public_hosts: list[str]
+
+
+ViewReason = Literal["admin", "homeroom", "period"]
+
+
+class CameraBrief(BaseModel):
+    id: UUID
+    name: str
+    location: CameraLocation
+    status: CameraStatus
+
+
+class PeriodInfo(BaseModel):
+    no: int
+    subject: str
+    ends_at: str  # 学校时区 HH:MM
+
+
+class ClassCameras(BaseModel):
+    class_id: UUID
+    cameras: list[CameraBrief]
+    reason: ViewReason
+    period: PeriodInfo | None
+
+
+class WallClass(BaseModel):
+    class_id: UUID
+    class_name: str
+    cameras: list[CameraBrief]
+
+
+class WallGrade(BaseModel):
+    grade_id: UUID
+    grade_name: str
+    classes: list[WallClass]
+
+
+class CameraWall(BaseModel):
+    school_name: str  # R11:水印用
+    timezone: str
+    grades: list[WallGrade]
+    public: list[CameraBrief]

@@ -117,6 +117,7 @@ class BoardClass(BaseModel):
     seats: list[StudentSeat]
     attendance: dict[str, AttendanceStatus]
     metrics: BoardMetrics
+    cameras: int = 0
 
 
 class BoardView(BaseModel):

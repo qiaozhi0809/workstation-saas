@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app import clock
 from app.audit.service import deny
+from app.domain.cameras.access import admin_sees_class, enabled_camera_counts
 from app.domain.classes.service import class_scope_of
 from app.domain.grade_exams.service import progress
 from app.domain.notices.service import recent_sent
@@ -29,6 +30,7 @@ from app.domain.overview.schemas import (
     Unconfirmed,
     WeekReviews,
 )
+from app.domain.school_settings.service import get_switches
 from app.domain.schools.service import (
     local_day_start_utc,
     require_active_year,
@@ -396,10 +398,21 @@ def _seats_by_class(db: Session, class_ids: list[UUID]) -> dict[UUID, list[Stude
     return out
 
 
+def _camera_counts(
+    db: Session, bindings: Sequence[Binding], picked: list[VisibleClass], school_id: UUID
+) -> dict[UUID, int]:
+    """每班启用的摄像头数:仅 camera.view / camera.manage 覆盖该班的人;监控开关关 = 0。"""
+    if not get_switches(db, school_id).monitor:
+        return {}
+    allowed = [v.cls.id for v in picked if admin_sees_class(bindings, v.cls)]
+    return enabled_camera_counts(db, allowed)
+
+
 def _build_board_classes(
-    db: Session, picked: list[VisibleClass], year: AcademicYear
+    db: Session, picked: list[VisibleClass], year: AcademicYear, bindings: Sequence[Binding]
 ) -> list[BoardClass]:
     ids = [v.cls.id for v in picked]
+    cameras = _camera_counts(db, bindings, picked, year.school_id)
     today, week_start = _today_and_start(db, year.school_id)
     seats = _seats_by_class(db, ids)
     status = _status_counts(db, ids, today)
@@ -446,6 +459,7 @@ def _build_board_classes(
                     confirmed=cid in confirmed,
                     week_net=plus - minus,
                 ),
+                cameras=cameras.get(cid, 0),
             )
         )
     return classes
@@ -478,7 +492,9 @@ def board_view(
         return BoardView(grades=grade_list, grade_id=grade_id, classes=[])
 
     return BoardView(
-        grades=grade_list, grade_id=grade_id, classes=_build_board_classes(db, picked, year)
+        grades=grade_list,
+        grade_id=grade_id,
+        classes=_build_board_classes(db, picked, year, bindings),
     )
 
 
@@ -500,7 +516,7 @@ def board_class_detail(
             object_id=str(class_id),
             request=request,
         )
-    [card] = _build_board_classes(db, picked, year)
+    [card] = _build_board_classes(db, picked, year, bindings)
     today, _ = _today_and_start(db, year.school_id)
     rows = db.execute(
         select(Student.id, Student.name, Attendance.status, Attendance.reason)
