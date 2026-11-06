@@ -16,6 +16,8 @@ apps/web/.env.local
 apps/web/coverage/
 apps/web/playwright-report/
 apps/web/test-results/
+# 走查截图(e2e walkthrough project 产出,CI 作为 artifact 上传)
+apps/web/walkthrough/
 
 # ---- Deploy ----
 deploy/data/

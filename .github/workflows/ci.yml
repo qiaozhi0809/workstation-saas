@@ -289,6 +289,17 @@ jobs:
         working-directory: apps/web
         run: npm run e2e -- --trace retain-on-failure
 
+      # R14 走查:walkthrough project 把三端主要页面按视口 × 主题截成整页 PNG(约 200 张),协调者下载看图。
+      # 上游 project 失败时 walkthrough 会被跳过、目录不存在,这里只提示不报错
+      - name: Upload walkthrough screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: walkthrough-${{ github.sha }}
+          path: apps/web/walkthrough/
+          retention-days: 14
+          if-no-files-found: warn
+
       # R7:真 ffmpeg 组需要 ffmpeg + 假摄像头,只有这里具备(backend job 里 skip)。放在 Playwright 之后:
       # 它和 Playwright 的真流用例都要起 ffmpeg 拉同一路 cam1,先跑完浏览器用例再跑它,互不抢 CPU;
       # 仍是必过步骤(没有 continue-on-error)。性能冒烟另起一步
