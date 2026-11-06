@@ -93,17 +93,48 @@ it('shows a retryable error when the list fails', async () => {
   expect(await screen.findByRole('button', { name: '重试' })).toBeInTheDocument()
 })
 
-it('shows the subject table, total, and a scrollable wrapper', async () => {
+it('shows the subject table and total without a horizontal scroller', async () => {
   open()
   await openExam()
   const wrap = await screen.findByRole('region', { name: '各科成绩' })
-  expect(wrap).toHaveClass('overflow-x-auto')
+  // 375 宽不再横向滚动(L83):没有可滚容器,表格也不再撑最小宽度
+  expect(wrap).not.toHaveClass('overflow-x-auto')
+  expect(wrap).not.toHaveAttribute('tabindex')
+  expect(within(wrap).getByRole('table').className).not.toMatch(/min-w-/)
   const row = within(wrap).getByRole('row', { name: /语文/ })
   expect(row).toHaveTextContent('92 / 100')
   expect(row).toHaveTextContent('85.5')
   expect(row).toHaveTextContent('99')
   expect(screen.getByText('总分 180 / 200')).toBeInTheDocument()
   expect(screen.queryByTestId('rank-line')).toBeNull()
+})
+
+it('lays each subject out as a two-line card below sm and as a table row from sm (L83)', async () => {
+  open()
+  await openExam()
+  const wrap = await screen.findByRole('region', { name: '各科成绩' })
+  // 表头只在 ≥ sm 显示;窄屏每行是两行网格:科目 + 分数 / 满分,班级平均 + 班级最高
+  const header = within(wrap).getByRole('columnheader', { name: '班级平均' })
+  expect(header.closest('thead')).toHaveClass('hidden', 'sm:table-header-group')
+  const rows = within(wrap)
+    .getAllByRole('row')
+    .filter((r) => r.closest('tbody'))
+  expect(rows).toHaveLength(2)
+  for (const row of rows) {
+    expect(row).toHaveClass('grid', 'grid-cols-2', 'sm:table-row')
+    const cells = within(row).getAllByRole('cell')
+    expect(cells).toHaveLength(3)
+    for (const c of cells) expect(c).toHaveClass('block', 'sm:table-cell')
+  }
+  const math = within(wrap).getByRole('row', { name: /数学/ })
+  expect(within(math).getByRole('rowheader')).toHaveTextContent('数学')
+  // 窄屏下表头看不见,班级平均 / 班级最高的标签跟着值一起写在卡片里(≥ sm 收起)
+  const avg = within(math).getByText('班级平均', { exact: false })
+  expect(avg).toHaveClass('sm:hidden')
+  expect(avg.closest('td')).toHaveTextContent('班级平均 80')
+  expect(within(math).getByText('班级最高', { exact: false }).closest('td')).toHaveTextContent(
+    '班级最高 100',
+  )
 })
 
 it('shows the class rank when given', async () => {
