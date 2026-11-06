@@ -105,7 +105,8 @@ export default function AttendanceClassTable({
             return (
               <Fragment key={c.class_id}>
                 <tr className="border-t">
-                  <td className="px-3 py-2 text-left">
+                  {/* 班名不折行:375 宽下由外层容器横向滚动,而不是把班名挤成竖排(L58) */}
+                  <td className="whitespace-nowrap px-3 py-2 text-left">
                     <button
                       type="button"
                       aria-expanded={expanded}

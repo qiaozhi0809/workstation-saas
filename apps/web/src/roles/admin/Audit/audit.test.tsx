@@ -213,6 +213,39 @@ describe('审计日志', () => {
     expect(await screen.findByText('没有符合条件的记录')).toBeInTheDocument()
   })
 
+  it('对象列:没有对象名时显示动作中文名而不是 UUID,连对象 id 都没有时显示破折号(L58)', async () => {
+    vi.mocked(adminApi.audit).mockResolvedValue({
+      items: [
+        row({ id: 'named' }),
+        row({
+          id: 'unnamed',
+          user_name: '王老师',
+          action: 'notice.send',
+          action_label: '发送通知',
+          object_type: 'notice',
+          object_id: '7c1e4b1a-2f3d-4e5f-8a9b-0c1d2e3f4a5b',
+          object_label: null,
+        }),
+        row({
+          id: 'none',
+          user_name: '赵老师',
+          object_type: null,
+          object_id: null,
+          object_label: null,
+        }),
+      ],
+      total: 3,
+    })
+    setup()
+    await screen.findByText('王小明')
+    const objectCell = (operator: string) =>
+      within(screen.getByText(operator).closest('tr') as HTMLElement).getAllByRole('cell')[3]
+    expect(objectCell('李老师')).toHaveTextContent('王小明')
+    expect(objectCell('王老师')).toHaveTextContent('发送通知')
+    expect(screen.queryByText('7c1e4b1a-2f3d-4e5f-8a9b-0c1d2e3f4a5b')).toBeNull()
+    expect(objectCell('赵老师')).toHaveTextContent('—')
+  })
+
   it('列出时间、操作人、操作、对象、IP、结果', async () => {
     setup()
     await screen.findByText('修改学生档案')

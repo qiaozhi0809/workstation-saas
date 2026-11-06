@@ -158,6 +158,13 @@ describe('月度考勤报告', () => {
     expect(document.querySelector('a[download]')).toBeNull()
   })
 
+  it('班名列不折行,窄屏时表格容器横向滚动(L58)', async () => {
+    setup()
+    const cell = (await screen.findByText('三年一班')).closest('td') as HTMLElement
+    expect(cell).toHaveClass('whitespace-nowrap')
+    expect(cell.closest('table')?.parentElement).toHaveClass('overflow-x-auto')
+  })
+
   it('403 时显示没有权限而不是可重试的通用错误(L41)', async () => {
     vi.mocked(adminApi.attendanceReport).mockRejectedValue(
       new ApiError(403, 'FORBIDDEN', 'forbidden'),

@@ -10,6 +10,7 @@ import { Badge } from '@/shared/components/ui/badge'
 import { Button } from '@/shared/components/ui/button'
 import { addDays } from '@/shared/lib/date'
 import { cn } from '@/shared/lib/utils'
+import type { AuditRow } from '@/shared/types/admin'
 import { todayIn, useSchoolTz } from '../Reports/useSchoolTz'
 import AuditFilters, { type AuditFilterValue } from './AuditFilters'
 import AuditRowDetail from './AuditRowDetail'
@@ -28,6 +29,8 @@ const defaultRange = (tz: string) => {
 }
 
 const HEADS = ['时间', '操作人', '操作', '对象', 'IP', '结果']
+/** 对象列:有名字显示名字;只有 id(如发送通知的通知 id)时显示动作中文名而不是 UUID(L58) */
+const objectText = (r: AuditRow) => r.object_label ?? (r.object_id ? r.action_label : '—')
 
 /** 默认区间要按学校时区算,所以等拿到时区再初始化筛选状态 */
 export default function AuditPage() {
@@ -149,7 +152,7 @@ function AuditLog({ tz }: { tz: string }) {
                           {r.action_label}
                         </span>
                       </td>
-                      <td className="px-3 py-2">{r.object_label ?? r.object_id ?? '—'}</td>
+                      <td className="px-3 py-2">{objectText(r)}</td>
                       <td className="whitespace-nowrap px-3 py-2">{r.ip ?? '—'}</td>
                       <td className="whitespace-nowrap px-3 py-2">
                         <Badge variant={r.success ? 'success' : 'danger'}>
