@@ -31,16 +31,19 @@ def test_my_classes_seed_teacher(client, settings):
     ]
 
 
-def test_my_classes_multi_binding(client, db, settings):
+def test_my_classes_multi_binding_sorted_by_class_number(client, db, settings):
+    """班名按数值排(L40):三年二班 < 三年三班 < 三年十班;码位序会给出 三 < 二 < 十。"""
     u = make_user(db, "t_multi")
-    other = make_class(db, "三年三班")
+    ten = make_class(db, "三年十班")
+    three = make_class(db, "三年三班")
+    bind(db, u.id, Role.subject_teacher, class_id=ten)
     bind(db, u.id, Role.homeroom_teacher, class_id=UUID(CLASS_ID))
-    bind(db, u.id, Role.subject_teacher, class_id=other)
+    bind(db, u.id, Role.subject_teacher, class_id=three)
     items = client.get("/api/v1/me/classes", headers=auth(settings, u.id)).json()["items"]
-    # 码位序:"三"(U+4E09) < "二"(U+4E8C),所以三年三班排在三年二班前
     assert [(i["name"], i["role"]) for i in items] == [
-        ("三年三班", "subject_teacher"),
         ("三年二班", "homeroom_teacher"),
+        ("三年三班", "subject_teacher"),
+        ("三年十班", "subject_teacher"),
     ]
 
 
