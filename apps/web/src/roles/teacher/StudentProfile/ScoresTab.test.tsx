@@ -3,6 +3,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { ApiError } from '@/shared/api/client'
 import { examsApi } from '@/shared/api/exams'
+import { schoolApi } from '@/shared/api/school'
+import { DEFAULT_GRADING } from '@/shared/lib/grades'
 import type { Gradebook } from '@/shared/types/grades'
 import type { StudentProfile } from '@/shared/types/student'
 import { MemoryRouter } from 'react-router-dom'
@@ -18,6 +20,7 @@ vi.mock('@/shared/api/classes', () => ({
   classesApi: { mine: vi.fn().mockResolvedValue({ items: [] }) },
 }))
 vi.mock('@/shared/api/exams', () => ({ examsApi: { gradebook: vi.fn() } }))
+vi.mock('@/shared/api/school', () => ({ schoolApi: { grading: vi.fn() } }))
 const trendLine = vi.hoisted(() => vi.fn())
 vi.mock('@/shared/components/charts/TrendLine', () => ({
   TrendLine: (props: { label: string; yAxisWidth?: number }) => {
@@ -83,6 +86,17 @@ function renderTab() {
 beforeEach(() => {
   vi.resetAllMocks()
   vi.mocked(examsApi.gradebook).mockResolvedValue(book)
+  vi.mocked(schoolApi.grading).mockResolvedValue(DEFAULT_GRADING)
+})
+
+it('footnote and red marks follow the school pass line', async () => {
+  vi.mocked(schoolApi.grading).mockResolvedValue({ pass_ratio: 0.7, good_ratio: 0.9 })
+  renderTab()
+  expect(await screen.findByText('红色为不及格(低于满分的 70%)')).toBeInTheDocument()
+  // 十月月考 语文 70 恰在线上不标红;九月月考 数学 70 同理
+  const rows = screen.getAllByRole('row')
+  expect(within(rows[1]).getAllByText('55')[0]).toHaveClass('text-destructive')
+  expect(within(rows[2]).getByText('70')).not.toHaveClass('text-destructive')
 })
 
 it('lists exams with failing scores in red and absent badges', async () => {

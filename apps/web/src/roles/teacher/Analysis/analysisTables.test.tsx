@@ -5,7 +5,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { classesApi } from '@/shared/api/classes'
 import { classroomApi } from '@/shared/api/classroom'
 import { examsApi } from '@/shared/api/exams'
+import { schoolApi } from '@/shared/api/school'
 import { studentsApi } from '@/shared/api/students'
+import { DEFAULT_GRADING } from '@/shared/lib/grades'
 import { useTeacherStore } from '@/shared/stores/teacher'
 import type { GradebookExam } from '@/shared/types/grades'
 import type { StudentSeat } from '@/shared/types/student'
@@ -15,6 +17,7 @@ import AnalysisPage from './AnalysisPage'
 vi.mock('@/shared/api/classes')
 vi.mock('@/shared/api/classroom')
 vi.mock('@/shared/api/exams')
+vi.mock('@/shared/api/school')
 vi.mock('@/shared/api/students')
 
 const twoSubjects = [
@@ -124,6 +127,7 @@ beforeEach(() => {
   vi.resetAllMocks()
   vi.mocked(classesApi.mine).mockResolvedValue({ items: [classFixture] })
   vi.mocked(classroomApi.summary).mockResolvedValue(summaryFixture({ my_perms: ['exam.read'] }))
+  vi.mocked(schoolApi.grading).mockResolvedValue(DEFAULT_GRADING)
 })
 
 const rankRegion = async () => within(await screen.findByRole('region', { name: '成绩排名' }))
@@ -231,6 +235,16 @@ describe('SubjectTable', () => {
     expect(region.getByText('及格 = 满分 60%,优秀 = 满分 85%')).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('对比'), { target: { value: 'none' } })
     expect(region.queryByRole('columnheader', { name: '得分率变化' })).not.toBeInTheDocument()
+  })
+
+  it('footnote follows the school ratios', async () => {
+    vi.mocked(schoolApi.grading).mockResolvedValue({ pass_ratio: 0.7, good_ratio: 0.9 })
+    setup([first, second], '/teacher/analysis?exam=x2')
+    const region = within(await screen.findByRole('region', { name: '各科明细' }))
+    expect(await region.findByText('及格 = 满分 70%,优秀 = 满分 90%')).toBeInTheDocument()
+    // 90 90 50:>= 70 的 2 人、>= 90 的 2 人,与脚注同一口径
+    const chinese = region.getByRole('row', { name: /语文/ })
+    expect(within(chinese).getAllByText('66.7%')).toHaveLength(2)
   })
 
   it('shows a dash for a subject missing from the comparison exam', async () => {

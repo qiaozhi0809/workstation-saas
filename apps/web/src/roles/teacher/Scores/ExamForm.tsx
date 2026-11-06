@@ -129,6 +129,7 @@ function FormBody(p: Props & { catalog: SubjectFull[] }) {
   const [error, setError] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
   const [dropAck, setDropAck] = useState(false)
+  const [filled, setFilled] = useState<string | null>(null)
 
   const invalidate = () =>
     Promise.all(
@@ -160,6 +161,28 @@ function FormBody(p: Props & { catalog: SubjectFull[] }) {
           : '删除失败,请重试',
       )
     },
+  })
+
+  // "从学校目录补齐":后端把目录里本班没有的科目追加到班级科目表,这里把新科目加进可选列表(新建考试时默认选中)
+  const fill = useMutation({
+    mutationFn: () => examsApi.fillFromCatalog(p.classId),
+    onSuccess: (items) => {
+      const known = new Set(chips.map((c) => c.name))
+      const added = items.filter((s) => !known.has(s.name))
+      setChips((cs) => [
+        ...cs,
+        ...added
+          .filter((s) => !cs.some((c) => c.name === s.name))
+          .map((s) => ({ name: s.name, full: String(s.full), selected: !p.exam })),
+      ])
+      setFilled(
+        added.length > 0 ? `已从学校目录补齐 ${added.length} 门科目` : '班级科目已经和学校目录一致',
+      )
+      setError(null)
+      void qc.invalidateQueries({ queryKey: ['class-subjects', p.classId] })
+      void qc.invalidateQueries({ queryKey: ['classroom', p.classId] })
+    },
+    onError: (e) => setError(errorText(e)),
   })
 
   const patch = (n: string, change: Partial<Chip>) =>
@@ -329,6 +352,27 @@ function FormBody(p: Props & { catalog: SubjectFull[] }) {
             添加
           </Button>
         </div>
+        {p.canAllSubjects && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={busy || fill.isPending}
+              onClick={() => fill.mutate()}
+            >
+              从学校目录补齐
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              把学校科目目录里本班还没有的科目加进来,已有的不变
+            </span>
+            {filled && (
+              <p role="status" className="text-xs text-muted-foreground">
+                {filled}
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
       {error && (

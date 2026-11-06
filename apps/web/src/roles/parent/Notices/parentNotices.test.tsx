@@ -43,7 +43,9 @@ const item = (over: Partial<InboxItem> = {}): InboxItem => ({
   ack_deadline: null,
   my_ack: null,
   students: ['王小一'],
+  students_detail: [{ name: '王小一', class_name: '三年二班' }],
   can_ack: false,
+  ack_block_reason: null,
   ...over,
 })
 const inbox = (

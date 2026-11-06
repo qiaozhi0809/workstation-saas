@@ -5,8 +5,10 @@ import { afterEach, beforeEach, vi } from 'vitest'
 import { classesApi } from '@/shared/api/classes'
 import { classroomApi } from '@/shared/api/classroom'
 import { examsApi } from '@/shared/api/exams'
+import { schoolApi } from '@/shared/api/school'
 import { studentsApi } from '@/shared/api/students'
 import { toast } from '@/shared/components/Toast'
+import { DEFAULT_GRADING } from '@/shared/lib/grades'
 import { confirmLeave, useTeacherStore } from '@/shared/stores/teacher'
 import type { ClassView } from '@/shared/types/class'
 import type { Exam, ScoreSheet } from '@/shared/types/grades'
@@ -17,6 +19,7 @@ import ScoresPage from './ScoresPage'
 vi.mock('@/shared/api/classes', () => ({ classesApi: { mine: vi.fn() } }))
 vi.mock('@/shared/api/classroom', () => ({ classroomApi: { summary: vi.fn() } }))
 vi.mock('@/shared/api/exams')
+vi.mock('@/shared/api/school', () => ({ schoolApi: { grading: vi.fn() } }))
 vi.mock('@/shared/api/students', () => ({ studentsApi: { listInClass: vi.fn() } }))
 vi.mock('@/shared/components/Toast', () => ({ toast: vi.fn() }))
 
@@ -96,6 +99,7 @@ const ms = (n: number) =>
 
 beforeEach(() => {
   vi.resetAllMocks()
+  vi.mocked(schoolApi.grading).mockResolvedValue(DEFAULT_GRADING)
   vi.useFakeTimers({ shouldAdvanceTime: true })
   useTeacherStore.setState({ classId: 'c1', unsaved: { seating: false, scores: false } })
 })

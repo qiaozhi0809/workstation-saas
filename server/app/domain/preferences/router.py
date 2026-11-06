@@ -22,4 +22,4 @@ def get_preferences(db: DbDep, user: UserDep) -> Preferences:
 
 @router.put("", response_model=Preferences)
 def put_preferences(body: Preferences, db: DbDep, user: UserDep) -> Preferences:
-    return service.save_preferences(db, user.id, body)
+    return service.save_preferences(db, user, body)

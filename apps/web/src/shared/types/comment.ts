@@ -13,6 +13,8 @@ export interface Comment {
   created_at: string
   /** 家长端是否可见 */
   parent_visible: boolean
+  /** 调用者能否切换"给家长看"(往年评语只有有权限的人能改,L70) */
+  can_share: boolean
 }
 
 export interface CommentInput {

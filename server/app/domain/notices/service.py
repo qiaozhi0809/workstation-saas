@@ -12,6 +12,7 @@ from app import clock
 from app.audit.service import deny, record
 from app.domain.classes.service import get_class_or_404
 from app.domain.notices.schemas import (
+    AckBlockReason,
     AckSpec,
     ChoiceAck,
     ClassNoticeInput,
@@ -32,6 +33,7 @@ from app.domain.notices.schemas import (
     OptionGrade,
     ReadRecipient,
     SchoolTarget,
+    StudentDetail,
     UnreadRecipient,
     UsersTarget,
 )
@@ -329,6 +331,11 @@ def resolve_recipients(
     return list(users), label
 
 
+# (student_id, parent_user_id, class_id, class_name):班是发送时刻的在读班,写进 notice_students
+# 做快照(L87)
+ParentPair = tuple[UUID, UUID, UUID, str]
+
+
 def resolve_parent_recipients(
     db: Session,
     sender: User,
@@ -336,8 +343,9 @@ def resolve_parent_recipients(
     target: SchoolTarget | GradeTarget | ClassTarget | UsersTarget,
     year: AcademicYear,
     request: Request | None = None,
-) -> tuple[list[UUID], list[tuple[UUID, UUID]], int, str]:
-    """家长对象:返回 (收件人, [(student_id, parent_user_id)], students_without_parent, label)。
+) -> tuple[list[UUID], list[ParentPair], int, str]:
+    """家长对象:返回 (收件人, [(student_id, parent_user_id, class_id, class_name)],
+    students_without_parent, label)。
 
     范围内的学生 = 当前学年在读班里 status='active' 的注册;每个学生取主家长
     (is_primary、status='active'、notify_enabled、账号 active 且同校)。
@@ -355,10 +363,10 @@ def _parent_recipients_in_scope(
     target: SchoolTarget | GradeTarget | ClassTarget,
     scope: Grade | SchoolClass | None,
     year: AcademicYear,
-) -> tuple[list[UUID], list[tuple[UUID, UUID]], int, str]:
+) -> tuple[list[UUID], list[ParentPair], int, str]:
     """范围已判过权;按范围取在读学生的主家长(resolve_parent_recipients 与班级公告共用)。"""
     in_scope = (
-        select(Enrollment.student_id)
+        select(Enrollment.student_id, SchoolClass.id, SchoolClass.name)
         .join(SchoolClass, SchoolClass.id == Enrollment.class_id)
         .join(Student, Student.id == Enrollment.student_id)
         .where(
@@ -378,7 +386,9 @@ def _parent_recipients_in_scope(
         label = f"{scope.name}家长"
     else:
         label = "全校家长"
-    student_ids = set(db.scalars(in_scope))
+    # 一个学生在当前学年只有一条在读注册(enrollments_one_active_per_year),所以每人一行
+    klass = {sid: (cid, cname) for sid, cid, cname in db.execute(in_scope)}
+    student_ids = set(klass)
     if not student_ids:
         return [], [], 0, label
     primary = db.execute(
@@ -407,10 +417,10 @@ def _parent_recipients_in_scope(
             )
         )
     )
-    pairs = [(sid, uid) for sid, uid in primary if uid != sender.id]
+    pairs: list[ParentPair] = [(sid, uid, *klass[sid]) for sid, uid in primary if uid != sender.id]
     covered = {sid for sid, _ in primary} | own_children
     without = len(student_ids - covered)
-    recipients = sorted({uid for _, uid in pairs}, key=str)
+    recipients = sorted({p[1] for p in pairs}, key=str)
     return recipients, pairs, without, label
 
 
@@ -507,6 +517,20 @@ def sent_views(db: Session, notices: Sequence[Notice]) -> list[NoticeSent]:
     return [_sent_view(n, *counts.get(n.id, (0, 0, 0))) for n in notices]
 
 
+def _notice_students(notice_id: UUID, pairs: Sequence[ParentPair]) -> list[NoticeStudent]:
+    """每个范围内学生一行,连同发送时刻所在的班一起记下(L87 快照,两处写入点共用)。"""
+    return [
+        NoticeStudent(
+            notice_id=notice_id,
+            student_id=sid,
+            parent_user_id=uid,
+            class_id=class_id,
+            class_name=class_name,
+        )
+        for sid, uid, class_id, class_name in pairs
+    ]
+
+
 def _ack_columns(body: NoticeInput, now: datetime) -> dict:
     """回执设置 → notices 列;截止时间须带时区且晚于现在。"""
     ack = body.ack
@@ -536,7 +560,7 @@ def send(
 ) -> NoticeSent:
     """收件人在此刻确定并落库;先提交,再发布 notice.new(发布失败不影响已发出的通知)。"""
     year = require_active_year(db, sender.school_id)
-    pairs: list[tuple[UUID, UUID]] = []
+    pairs: list[ParentPair] = []
     target = body.target.model_dump(mode="json")
     if body.audience == "parents":
         recipients, pairs, without, label = resolve_parent_recipients(
@@ -563,9 +587,7 @@ def send(
     db.add(notice)
     db.flush()
     db.add_all(NoticeRecipient(notice_id=notice.id, user_id=uid) for uid in recipients)
-    db.add_all(
-        NoticeStudent(notice_id=notice.id, student_id=sid, parent_user_id=uid) for sid, uid in pairs
-    )
+    db.add_all(_notice_students(notice.id, pairs))
     record(
         db,
         user_id=sender.id,
@@ -667,9 +689,7 @@ def send_class_notice(
     db.add(notice)
     db.flush()
     db.add_all(NoticeRecipient(notice_id=notice.id, user_id=uid) for uid in recipients)
-    db.add_all(
-        NoticeStudent(notice_id=notice.id, student_id=sid, parent_user_id=uid) for sid, uid in pairs
-    )
+    db.add_all(_notice_students(notice.id, pairs))
     record(
         db,
         user_id=sender.id,
@@ -978,33 +998,35 @@ def inbox(db: Session, user: User, page: int, *, now: datetime | None = None) ->
         .offset((page - 1) * PAGE_SIZE)
     ).all()
     parent_ids = [r[0].id for r in rows if r[0].audience == "parents"]
-    kids: dict[UUID, list[str]] = defaultdict(list)
-    live: set[UUID] = set()  # 至少一个涉及的孩子绑定仍在用的通知
+    kids: dict[UUID, list[StudentDetail]] = defaultdict(list)
+    primary_live: set[UUID] = set()  # 至少一个孩子:我的绑定在用且是主家长
+    secondary_live: set[UUID] = set()  # 至少一个孩子:我的绑定在用但不是主家长
     if parent_ids:
-        # 一次查询取当页所有通知涉及的孩子姓名(按学号)与绑定是否在用
-        active_link = exists().where(
-            ParentLink.student_id == NoticeStudent.student_id,
-            ParentLink.status == "active",
-            ParentLink.parent_id.in_(select(Parent.id).where(Parent.user_id == user.id)),
+        # 一次查询取当页所有通知涉及的孩子姓名(按学号)、发送时的班与我和孩子的绑定状态;
+        # parent_links (parent_id, student_id) 唯一,外连接不会把一个孩子变成多行
+        my_link = (ParentLink.student_id == NoticeStudent.student_id) & ParentLink.parent_id.in_(
+            select(Parent.id).where(Parent.user_id == user.id)
         )
-        for nid, name, in_use in db.execute(
-            select(NoticeStudent.notice_id, Student.name, active_link)
+        for nid, name, class_name, status, is_primary in db.execute(
+            select(
+                NoticeStudent.notice_id,
+                Student.name,
+                NoticeStudent.class_name,
+                ParentLink.status,
+                ParentLink.is_primary,
+            )
             .join(Student, Student.id == NoticeStudent.student_id)
+            .outerjoin(ParentLink, my_link)
             .where(NoticeStudent.notice_id.in_(parent_ids), NoticeStudent.parent_user_id == user.id)
             .order_by(Student.student_no.nulls_last(), Student.mk)
         ):
-            kids[nid].append(name)
-            if in_use:
-                live.add(nid)
+            kids[nid].append(StudentDetail(name=name, class_name=class_name))
+            if status == "active":
+                (primary_live if is_primary else secondary_live).add(nid)
     items = []
     for n, from_name, read_at, acked_at, choice, content in rows:
         recalled = n.recalled_at is not None
-        open_ = (
-            n.ack_kind != "none"
-            and not recalled
-            and (n.ack_deadline is None or now < n.ack_deadline)
-        )
-        can_ack = open_ and (n.audience != "parents" or n.id in live)
+        reason = _ack_block_reason(n, now, primary_live, secondary_live)
         items.append(
             InboxItem(
                 id=n.id,
@@ -1021,11 +1043,30 @@ def inbox(db: Session, user: User, page: int, *, now: datetime | None = None) ->
                     if acked_at is not None
                     else None
                 ),
-                students=kids.get(n.id, []),
-                can_ack=can_ack,
+                students=[k.name for k in kids.get(n.id, [])],
+                students_detail=kids.get(n.id, []),
+                can_ack=n.ack_kind != "none" and reason is None,
+                ack_block_reason=reason,
             )
         )
     return Inbox(items=items, total=total, unread=unread)
+
+
+def _ack_block_reason(
+    n: Notice, now: datetime, primary_live: set[UUID], secondary_live: set[UUID]
+) -> AckBlockReason | None:
+    """不能回执的原因(L88),按优先级:撤回 > 已过截止(服务器时间)> 家长绑定。
+    家长对象:有一个孩子仍是在用的主家长绑定就能回执;否则有在用绑定但都不是主家长 → not_primary,
+    一个在用的都没有(只读 / 已结束)→ readonly。不需要回执的通知没有"原因"。"""
+    if n.ack_kind == "none":
+        return None
+    if n.recalled_at is not None:
+        return "recalled"
+    if n.ack_deadline is not None and now >= n.ack_deadline:
+        return "closed"
+    if n.audience != "parents" or n.id in primary_live:
+        return None
+    return "not_primary" if n.id in secondary_live else "readonly"
 
 
 def mark_read(db: Session, user: User, notice_id: UUID, *, now: datetime) -> None:

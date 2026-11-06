@@ -48,7 +48,7 @@
 - **不写不必要的错误处理**。只在系统边界(用户输入、外部 API)validate。
 - **commits** 用 Conventional Commits 格式:`feat:` / `fix:` / `chore:` / `test:` / `docs:` / `refactor:`
 - **分支**:`main` 为主分支;功能开发在 feature 分支(可选)。首次实现可直接推 main。
-- **迁移预检**:新迁移里每个 `CHECK` / 唯一约束 / `NOT NULL`(对已有表加的)必须在 `server/app/deploy/precheck.py` 的 `CHECKS` 登记预检,否则升级旧库时会在迁移中途失败;`tests/test_precheck.py` 会扫描迁移 SQL 核对。
+- **迁移预检**:新迁移里每个 `CHECK` / 唯一约束 / `NOT NULL`(对已有表加的)必须在 `server/app/deploy/precheck.py` 的 `CHECKS` 登记预检,否则升级旧库时会在迁移中途失败;`tests/test_precheck.py` 会扫描迁移 SQL 核对。新迁移还必须加入 `server/app/deploy/precheck.py` 的 `REVIEWED_REVISIONS` 签收集合(M5d 起,段 A2 落地;台账 L113)——扫描器对 FK / `ADD COLUMN` / `DO` 块有盲区,签收表示人工核对过。
 
 ### 安全
 
@@ -74,7 +74,7 @@
 | M3b 联考报表、通知与学年 | ✅ 已完成(tag `v0.5.1-m3b-reports-notify`,合并后由协调会话打) | 18 task(1–18):年级联考与成绩汇总、月度考勤报告、审计查询、AI 使用与配置、通知与 WebSocket 实时推送、学年升级向导、往年班级只读查看;文件:[M3b 计划](docs/superpowers/plans/2026-11-03-M3b-联考报表通知与学年.md);M3 整体范围:[范围清单](docs/superpowers/plans/2026-11-03-M3-范围清单.md) |
 | M4a 家长账号与看孩子 | ✅ 已完成(tag `v0.6.0-m4a-parent-view`,合并后由协调会话打) | 11 task:班主任建家长账号(登录名 = 手机号)、家长手机端今日 / 成长 / 成绩 / 档案、迷你教室、评语给家长看、毕业后只读 365 天再归档、台账 L12 前半 / L32 / L50;文件:[M4a 计划](docs/superpowers/plans/2026-11-04-M4a-家长账号与看孩子.md) |
 | M4b 通知到家长与回执 | ✅ 已完成(tag `v0.6.1-m4b-parent-notify`,合并后由协调会话打) | 8 task:班级公告、管理端发家长、结构化回执与统计导出、家长端通知页签与实时推送、家长绑定口径(L62 / L67 / L75)、E2E 与走查;文件:[M4b 计划](docs/superpowers/plans/2026-11-04-M4b-通知到家长与回执.md);M4 整体范围:[范围清单](docs/superpowers/plans/2026-11-04-M4-范围清单.md) |
-| M5 监控 + 部署 = v1 发布 | ⏳ M5a ✅ 已完成(tag `v0.7.0-m5a-deploy`,合并后由协调会话打;离线包 + 四个脚本 + 诊断包 + 定时任务 + D13 评估,本机 Mac(arm64,`--force`)按 `deploy/README.md` 验收;x86_64 Ubuntu 与 systemd 定时器的真机验收见台账 L125),M5b ✅ 已完成(tag `v0.7.1-m5b-security`,合并后由协调会话打;可选两步验证 TOTP、登录日志与异常登录提醒、密码长度与有效期可配、改 / 重置密码即下线、多标签页同步、账号与家长绑定遗留、加密附加数据;本机 Mac 从 `init-school` 空库 `upgrade.sh` 升级与 `restore.sh` 降级验收通过),M5c 待开工 | 拆四段串行:[M5a 部署与运维](docs/superpowers/plans/2026-11-05-M5a-部署与运维.md)(`v0.7.0-m5a-deploy`,12 task)→ [M5b 账号安全](docs/superpowers/plans/2026-11-05-M5b-账号安全.md)(`v0.7.1-m5b-security`,10 task)→ [M5c 监控与课表](docs/superpowers/plans/2026-11-05-M5c-监控与课表.md)(`v0.7.2-m5c-cameras`,10 task)→ [M5d 学校设置、引导与打磨](docs/superpowers/plans/2026-11-05-M5d-学校设置引导与打磨.md)(`v1.0.0-rc.1`,12 task;用户验收后打 `v1.0.0`);M5 整体范围与台账对账:[范围清单](docs/superpowers/plans/2026-11-05-M5-范围清单.md) |
+| M5 监控 + 部署 = v1 发布 | ⏳ M5a ✅ 已完成(tag `v0.7.0-m5a-deploy`,合并后由协调会话打;离线包 + 四个脚本 + 诊断包 + 定时任务 + D13 评估,本机 Mac(arm64,`--force`)按 `deploy/README.md` 验收;x86_64 Ubuntu 与 systemd 定时器的真机验收见台账 L125),M5b ✅ 已完成(tag `v0.7.1-m5b-security`,合并后由协调会话打;可选两步验证 TOTP、登录日志与异常登录提醒、密码长度与有效期可配、改 / 重置密码即下线、多标签页同步、账号与家长绑定遗留、加密附加数据;本机 Mac 从 `init-school` 空库 `upgrade.sh` 升级与 `restore.sh` 降级验收通过),M5c ✅ 已完成(tag `v0.7.2-m5c-cameras`,合并后由协调会话打;PR #98–#107:作息与课表、摄像头管理(加密凭据、内网校验、测试连接带编码探测)、`stream-worker` RTSP→HLS(资源限额、停更看门狗、H.265 提示)、`CameraStrip` / `CameraWallMini`、假摄像头 E2E 与 CI 真流;升级验收与性能实测改为 CI 冒烟 + 用户真机,见台账 L176 / L202),M5d 进行中(第 1 波已开工) | 拆四段串行:[M5a 部署与运维](docs/superpowers/plans/2026-11-05-M5a-部署与运维.md)(`v0.7.0-m5a-deploy`,12 task)→ [M5b 账号安全](docs/superpowers/plans/2026-11-05-M5b-账号安全.md)(`v0.7.1-m5b-security`,10 task)→ [M5c 监控与课表](docs/superpowers/plans/2026-11-05-M5c-监控与课表.md)(`v0.7.2-m5c-cameras`,10 task)→ [M5d 学校设置、引导与打磨](docs/superpowers/plans/2026-11-05-M5d-学校设置引导与打磨.md)(`v1.0.0-rc.1`,12 task;用户验收后打 `v1.0.0`);M5 整体范围与台账对账:[范围清单](docs/superpowers/plans/2026-11-05-M5-范围清单.md) |
 
 ---
 
@@ -166,12 +166,13 @@ Step N+(1-k): Commit          → git add && git commit
 |---|---|---|
 | 后端单元/集成 | pytest + testcontainers(真 Postgres / 真 Redis) | `cd server && uv run pytest` |
 | 前端单元 | Vitest + Testing Library | `cd apps/web && npm run test`;只跑一部分并限制并发时写 `npx vitest run <目录> --maxWorkers=2 --minWorkers=1`(本机 vitest 2.1.9 只给 `--maxWorkers` 会报 minThreads 冲突) |
-| 前端 E2E | Playwright(project 链 mutating → … → admin → m3b → m4a → m4b → readonly) | `cd apps/web && npm run e2e` |
+| 前端 E2E | Playwright(project 链 mutating → … → admin → m3b → m4a → m4b → m5b → m5c → readonly;`m5c` 用系统 Chrome(`channel: 'chrome'`,Playwright 自带的 Chromium 不解 H.264),需先起下一行的假摄像头与 `python -m app.stream`) | `cd apps/web && npm run e2e` |
+| 假摄像头 / 真流测试 | mediamtx + ffmpeg 推流(`cam1` H.264、`cam2` H.265)+ pytest `ffmpeg` / `perf` 标记 | `docker compose -f deploy/docker-compose.dev.yml --profile camera up -d` → `cd server && uv run pytest -m "ffmpeg and not perf" -q`(本机需装 ffmpeg / ffprobe,缺了或假摄像头连不上时自动 skip);性能冒烟 `uv run pytest -m perf -q -s`(3 路 copy + 1 路转码 30 秒,只在 CI e2e job 单独一步跑,结果上传 `stream-perf` 产物) |
 | 后端 Lint | ruff | `uv run ruff check . && uv run ruff format --check .` |
 | 前端 Lint | ESLint + Prettier | `npm run lint` |
-| 部署镜像 | Docker | `make image VERSION=<标签>`(构建 `workstation-app` 与 `workstation-web` 两个镜像) |
+| 部署镜像 | Docker | `make image VERSION=<标签>`(构建 `workstation-app`、`workstation-web`、`workstation-stream` 三个镜像;`workstation-stream` 基于同标签的 `workstation-app` 加 ffmpeg) |
 | 部署脚本测试 | bash + Docker | `bash deploy/tests/compose_smoke.sh`、`install_fresh.sh`、`install_twice.sh`、`upgrade_same.sh`、`upgrade_precheck_fail.sh`、`backup_restore.sh`、`restore_rejects.sh`(都在 `deploy/tests/`) |
-| 部署脚本 Lint | shellcheck | `docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck-alpine:stable shellcheck -S warning -x deploy/prod/scripts/*.sh deploy/tests/*.sh` |
+| 部署脚本 Lint | shellcheck | `docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.9.0 -S warning -x deploy/prod/scripts/*.sh deploy/tests/*.sh deploy/release/*.sh`(该镜像的入口已是 shellcheck,不要再写一次 `shellcheck`;CI 用 runner 自带的 shellcheck,版本未钉,见台账 L123) |
 
 部署测试脚本须以**非 root** 用户运行,且该用户在 `docker` 组里;**逐个跑**,不要并行(它们共用 compose 项目名 `ws-m5a-b`、端口 18080 / 18443 与固定子网 `172.30.0.0/24`,可用 `WS_TEST_PROJECT`(`compose_smoke.sh` 另兼容旧名 `WS_SMOKE_PROJECT`)、`WS_HTTP_PORT`、`WS_HTTPS_PORT`、`WS_TEST_VERSION`(旧名 `WS_VERSION` 仍有效)、`WS_TEST_DEPLOY_SRC`(被测部署目录,默认 `deploy/prod`)覆盖);镜像须先用 `make image VERSION=0.0.0-seg-b`(或 `WS_VERSION` 指定的标签)构建好。
 
