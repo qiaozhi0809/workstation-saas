@@ -382,6 +382,19 @@ it('does not alert at 30 hours, alerts just past 48 hours', async () => {
   expect(await screen.findByRole('alert')).toHaveTextContent('上次备份是 2 天前,请检查定时任务')
 })
 
+// 审查 Minor 5:备份时间解析不了时不能显示"NaN 天前"
+it('shows a neutral notice when the last backup time cannot be parsed', async () => {
+  asAdmin(['settings.manage'])
+  vi.mocked(adminApi.systemInfo).mockResolvedValue({
+    ...INFO,
+    last_backup: { at: 'not-a-date', file: 'f', size_bytes: 1 },
+  })
+  await renderPage()
+  const alert = await screen.findByRole('alert')
+  expect(alert).toHaveTextContent('上次备份时间无法识别,请检查备份记录')
+  expect(alert).not.toHaveTextContent('NaN')
+})
+
 it('downloads diagnostics through downloadBlob, disabled while running', async () => {
   asAdmin(['settings.manage'])
   vi.mocked(adminApi.systemInfo).mockResolvedValue(INFO)

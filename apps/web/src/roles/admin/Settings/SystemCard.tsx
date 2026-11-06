@@ -43,6 +43,8 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 function backupAlert(last: SystemInfo['last_backup']): string | null {
   if (last === null) return '从未备份,请检查定时任务'
   const age = Date.now() - new Date(last.at).getTime()
+  // 时间解析不了(备份记录被改坏等)不能算天数,给个中性提示而不是"NaN 天前"
+  if (Number.isNaN(age)) return '上次备份时间无法识别,请检查备份记录'
   if (age <= BACKUP_STALE_MS) return null
   return `上次备份是 ${Math.floor(age / DAY_MS)} 天前,请检查定时任务`
 }
