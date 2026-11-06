@@ -11,12 +11,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import crypto
-from app.domain.cameras.lan import IPNetwork, resolve_lan_ips
 from app.models.cameras import Camera
 from app.stream import ffmpeg, lan
 
 DbFactory = Callable[[], AbstractContextManager[Session]]
-Networks = Iterable[IPNetwork]
+Networks = Iterable[lan.IPNetwork]
 
 
 @dataclass(frozen=True)
@@ -64,7 +63,7 @@ async def resolve_lan(row: CameraRow, *, allow_loopback: bool, denied: Networks 
     if host is None or not lan.is_rtsp_url(row.url):  # 只拉 rtsp / rtsps,不让 ffmpeg 去取别的协议
         return None
     ips = await asyncio.to_thread(
-        resolve_lan_ips, host, allow_loopback=allow_loopback, denied=tuple(denied)
+        lan.resolve_lan_ips, host, allow_loopback=allow_loopback, denied=tuple(denied)
     )
     return ips[0] if ips else None
 

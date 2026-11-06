@@ -687,6 +687,15 @@ def _fake_dns(monkeypatch, table: dict[str, str]) -> None:
     monkeypatch.setattr(backend_lan, "socket", SimpleNamespace(getaddrinfo=fake_gai))
 
 
+def test_source_resolves_through_stream_lan_facade(db, monkeypatch):
+    """复审 Minor 8:worker 侧只认 app.stream.lan 这一道门,source 不直接 import 后端的 lan 模块。"""
+    assert "resolve_lan_ips" in lan.__all__ and "IPNetwork" in lan.__all__
+    assert not hasattr(source, "resolve_lan_ips")  # 没有绕过门面的直接引用
+    monkeypatch.setattr(lan, "resolve_lan_ips", lambda host, **kw: ["10.0.0.77"])
+    row = source._row(make_camera(db, "rtsp://cam.example.test/x"))
+    assert asyncio.run(source.resolve_lan(row, allow_loopback=False)) == "10.0.0.77"
+
+
 def test_stream_url_pins_resolved_ip(db, monkeypatch):
     """L155:拉流地址里的主机换成判定过的 IP(仅 rtsp://),ffmpeg 不再自己解析一次(DNS 重绑定)。"""
     _fake_dns(monkeypatch, {"cam.example.test": "10.0.0.9"})
