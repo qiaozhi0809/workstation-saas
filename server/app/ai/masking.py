@@ -10,7 +10,8 @@ from sqlalchemy.orm import Session
 from app.models import Enrollment, Student
 
 CODE_RE = re.compile(r"[【\[]学生(\d{1,6})[】\]]")
-_TAIL_RE = re.compile(r"^[【\[](学(生\d{0,6})?)?$")
+# 流式尾巴"可能是编号开头":用 \Z 锚定真正的末尾(`$` 还会匹配到结尾换行之前,会把"【\n"多扣一段)
+_TAIL_RE = re.compile(r"^[【\[](学(生\d{0,6})?)?\Z")
 # 数字含全角;分组之间允许一个空格 / 连字符;号码前后不得紧挨数字
 _D = "[0-9０-９]"
 _SEP = "[ \u00a0\u3000\t-]?"

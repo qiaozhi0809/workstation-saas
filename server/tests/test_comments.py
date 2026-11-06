@@ -183,8 +183,10 @@ def test_bulk_rejects_bad_shape_and_unenrolled(client, settings, db):
     assert _added(db) == 0
 
 
-def _past_comment(db, *, visible: bool = True) -> Comment:
-    """李小二去年在二年一班的评语:那个班属于往年学年,当前学年没有任何人对它有 comment.write。"""
+def _past_year_comment(db, *, visible: bool = True, in_current_class: bool = False) -> Comment:
+    """李小二往年的一条评语:默认挂在往年的班"二年一班"(当前学年没人对那个班有 comment.write);
+    ``in_current_class`` 时挂在当前班、学年仍是往年,用来单测 409 这一步;
+    ``visible`` 控制初始的 parent_visible(L69 切换用例从 False 起)。"""
     old = AcademicYear(
         school_id=UUID(SCHOOL_ID),
         name="2025-2026",
@@ -194,16 +196,16 @@ def _past_comment(db, *, visible: bool = True) -> Comment:
     )
     db.add(old)
     db.flush()
-    old_class = make_class(db, "二年一班", year_id=old.id)
+    class_id = UUID(CLASS_ID) if in_current_class else make_class(db, "二年一班", year_id=old.id)
     old_enr = Enrollment(
-        student_id=UUID(S1), class_id=old_class, academic_year_id=old.id, status="promoted"
+        student_id=UUID(S1), class_id=class_id, academic_year_id=old.id, status="promoted"
     )
     db.add(old_enr)
     db.flush()
     c = Comment(
         student_id=UUID(S1),
         enrollment_id=old_enr.id,
-        class_id=old_class,
+        class_id=class_id,
         academic_year_id=old.id,
         semester="2025-2026 第二学期",
         content="学期表现稳定",
@@ -216,10 +218,9 @@ def _past_comment(db, *, visible: bool = True) -> Comment:
     return c
 
 
-def test_past_year_comment_read_only(client, settings, db):
-    c = _past_comment(db)
-    h = auth(settings)
-    items = client.get(URL, headers=h).json()["items"]
+def test_past_year_comment_listed_read_only(client, settings, db):
+    c = _past_year_comment(db)
+    items = client.get(URL, headers=auth(settings)).json()["items"]
     assert len(items) == 2
     past = next(i for i in items if i["id"] == str(c.id))
     assert past["current_year"] is False
@@ -227,16 +228,40 @@ def test_past_year_comment_read_only(client, settings, db):
     assert past["semester"] == "2025-2026 第二学期"
     assert next(i for i in items if i is not past)["current_year"] is True
 
-    res = client.delete(f"/api/v1/comments/{c.id}", headers=h)
-    assert res.status_code == 409
-    assert res.json()["error"]["code"] == "RECORD_READONLY"
+
+# 删除的判定顺序:404(不存在)→ 403(无权限)→ 409(往年只读),L97
+
+
+def test_delete_comment_unknown_is_404_before_permission(client, settings):
+    missing = "/api/v1/comments/00000000-0000-0000-0000-000000000000"
+    res = client.delete(missing, headers=auth(settings, SUBJECT_USER_ID))
+    assert (res.status_code, res.json()["error"]["code"]) == (404, "NOT_FOUND")
+
+
+def test_delete_past_year_comment_without_permission_is_403_before_409(client, settings, db):
+    """往年评语挂在往年的班:当前学年谁都没有那个班的 comment.write → 先 403(写审计),
+    不泄露\"它是往年的\"这一状态。"""
+    c = _past_year_comment(db)
+    for user in (TEACHER_USER_ID, SUBJECT_USER_ID):
+        res = client.delete(f"/api/v1/comments/{c.id}", headers=auth(settings, user))
+        assert (res.status_code, res.json()["error"]["code"]) == (403, "FORBIDDEN"), user
+    denied = [a for a in _audits(db, "comment.write") if a.object_id == str(c.id)]
+    assert [(a.success, a.object_type) for a in denied] == [(False, "comment")] * 2
     assert db.get(Comment, c.id) is not None
+
+
+def test_delete_past_year_comment_with_permission_is_409(client, settings, db):
+    c = _past_year_comment(db, in_current_class=True)
+    res = client.delete(f"/api/v1/comments/{c.id}", headers=auth(settings))
+    assert (res.status_code, res.json()["error"]["code"]) == (409, "RECORD_READONLY")
+    assert db.get(Comment, c.id) is not None
+    assert [a for a in _audits(db, "comment.write") if a.object_id == str(c.id)] == []
 
 
 def test_current_homeroom_can_share_past_comment(client, settings, db):
     """往年的班已没人有 comment.write:"给家长看"改由学生现在的班主任切(L69),
     列表里 can_share 为真而 can_delete 仍为假(L70)。"""
-    c = _past_comment(db, visible=False)
+    c = _past_year_comment(db, visible=False)
     put = f"/api/v1/comments/{c.id}/parent-visible"
     h = auth(settings)
     items = {i["id"]: i for i in client.get(URL, headers=h).json()["items"]}
@@ -248,7 +273,8 @@ def test_current_homeroom_can_share_past_comment(client, settings, db):
     assert db.get(Comment, c.id).parent_visible is True
     assert [a.object_id for a in _audits(db, "comment.share")] == [str(c.id)]
     # 往年评语仍然只读:能切"给家长看",不能删
-    assert client.delete(f"/api/v1/comments/{c.id}", headers=h).status_code == 409
+    # L97:对评语所在班无 comment.write → 403 先于 409;仍是"不能删"
+    assert client.delete(f"/api/v1/comments/{c.id}", headers=h).status_code == 403
 
 
 def test_others_cannot_share(client, settings, db):
@@ -258,7 +284,7 @@ def test_others_cannot_share(client, settings, db):
     from tests.factories import bind, make_user
     from tests.seed_ids import GRADE_ID
 
-    c = _past_comment(db, visible=False)
+    c = _past_year_comment(db, visible=False)
     put = f"/api/v1/comments/{c.id}/parent-visible"
     head = make_user(db, "gradehead_x", "组长")
     bind(db, head.id, Role.grade_head, grade_id=GRADE_ID)

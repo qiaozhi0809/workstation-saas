@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { useAuthStore } from '@/shared/stores/auth'
-import { api, ApiError, refreshAccessToken, tryRefreshAccessToken } from './client'
+import { api, ApiError, authedFetch, refreshAccessToken, tryRefreshAccessToken } from './client'
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -241,16 +241,71 @@ it('tryRefreshAccessToken: ok / rejected / network', async () => {
   expect(await tryRefreshAccessToken()).toBe('network')
 })
 
-it('tryRefreshAccessToken: 刷新令牌在请求期间已换掉 → rejected', async () => {
-  vi.stubGlobal(
-    'fetch',
-    vi.fn().mockImplementationOnce(async () => {
-      useAuthStore.setState({ refreshToken: 'other' })
+it('tryRefreshAccessToken: 刷新期间另一标签重新登录换了令牌 → 用新令牌再试一次,不算 rejected', async () => {
+  // L150:authSync 把另一标签的新会话写进了本标签的 store;旧令牌换来的 access 不能用,但也不该登出
+  const fetchMock = vi
+    .fn()
+    .mockImplementationOnce(async () => {
+      useAuthStore.setState({ accessToken: 'acc2', refreshToken: 'ref2' })
       return json({ access_token: 'n4', expires_at: 'x' })
-    }),
-  )
+    })
+    .mockResolvedValueOnce(json({ access_token: 'n5', expires_at: 'x' }))
+  vi.stubGlobal('fetch', fetchMock)
+  expect(await tryRefreshAccessToken()).toBe('ok')
+  expect(fetchMock).toHaveBeenCalledTimes(2)
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ refresh_token: 'ref' })
+  expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ refresh_token: 'ref2' })
+  expect(useAuthStore.getState().accessToken).toBe('n5')
+  expect(useAuthStore.getState().refreshToken).toBe('ref2')
+})
+
+it('tryRefreshAccessToken: 换了新令牌再试还是被换 / 被拒 → rejected,只重试一次', async () => {
+  const fetchMock = vi
+    .fn()
+    .mockImplementationOnce(async () => {
+      useAuthStore.setState({ refreshToken: 'ref2' })
+      return json({ error: { code: 'INVALID_REFRESH', message: 'x' } }, 401)
+    })
+    .mockImplementationOnce(async () => {
+      useAuthStore.setState({ refreshToken: 'ref3' })
+      return json({ access_token: 'n6', expires_at: 'x' })
+    })
+  vi.stubGlobal('fetch', fetchMock)
   expect(await tryRefreshAccessToken()).toBe('rejected')
+  expect(fetchMock).toHaveBeenCalledTimes(2)
   expect(useAuthStore.getState().accessToken).toBe('old')
+})
+
+it('tryRefreshAccessToken: 刷新期间登出(令牌变 null)→ rejected,不复活会话', async () => {
+  const fetchMock = vi.fn().mockImplementationOnce(async () => {
+    useAuthStore.getState().logout()
+    return json({ access_token: 'n7', expires_at: 'x' })
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  expect(await tryRefreshAccessToken()).toBe('rejected')
+  expect(fetchMock).toHaveBeenCalledTimes(1)
+  expect(useAuthStore.getState().accessToken).toBeNull()
+})
+
+it('api(): 刷新期间另一标签换了令牌 → 请求用新 access 重发成功,不登出', async () => {
+  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.endsWith('/auth/refresh')) {
+      const { refresh_token } = JSON.parse(String(init?.body)) as { refresh_token: string }
+      if (refresh_token === 'ref') {
+        useAuthStore.setState({ accessToken: 'acc2', refreshToken: 'ref2' })
+        return json({ access_token: 'stale', expires_at: 'x' })
+      }
+      return json({ access_token: 'fresh', expires_at: 'x' })
+    }
+    const auth = (init?.headers as Record<string, string>).Authorization
+    return auth === 'Bearer fresh'
+      ? json({ ok: 1 })
+      : json({ error: { code: 'TOKEN_EXPIRED', message: 'x' } }, 401)
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  await expect(api('GET', '/a')).resolves.toEqual({ ok: 1 })
+  expect(useAuthStore.getState().user).not.toBeNull()
+  expect(useAuthStore.getState().refreshToken).toBe('ref2')
 })
 
 it('refreshAccessToken: 网络错误返回 false', async () => {
@@ -342,13 +397,94 @@ it('403 PASSWORD_CHANGE_REQUIRED marks user and routes to /change-password', asy
   expect(fetchMock).toHaveBeenCalledTimes(3)
 })
 
-it('403 PASSWORD_CHANGE_REQUIRED falls back to local flag when /auth/me fails', async () => {
+it('403 PASSWORD_CHANGE_REQUIRED falls back to a local flag with reason "required" when /auth/me fails', async () => {
+  // 取不到服务端的原因就不冒充"已过期":改密页对 'required' 显示中性文案
   const fetchMock = vi
     .fn()
     .mockResolvedValueOnce(err('PASSWORD_CHANGE_REQUIRED', 403))
     .mockRejectedValueOnce(new TypeError('net'))
   vi.stubGlobal('fetch', fetchMock)
   await expect(api('GET', '/classes')).rejects.toMatchObject({ code: 'PASSWORD_CHANGE_REQUIRED' })
+  expect(useAuthStore.getState().user).toMatchObject({
+    must_change_password: true,
+    password_change_reason: 'required',
+  })
+})
+
+it('403 PASSWORD_CHANGE_REQUIRED when /auth/me still says no change needed: flag locally as "required"', async () => {
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(err('PASSWORD_CHANGE_REQUIRED', 403))
+    .mockResolvedValueOnce(
+      json({
+        id: 'u',
+        display_name: 't2',
+        contexts: ['teacher'],
+        admin_perms: [],
+        must_change_password: false,
+        password_change_reason: null,
+      }),
+    )
+  vi.stubGlobal('fetch', fetchMock)
+  await expect(api('GET', '/classes')).rejects.toMatchObject({ code: 'PASSWORD_CHANGE_REQUIRED' })
+  expect(useAuthStore.getState().user).toMatchObject({
+    display_name: 't2',
+    must_change_password: true,
+    password_change_reason: 'required',
+  })
+})
+
+it('403 PASSWORD_CHANGE_REQUIRED through authedFetch (downloads) marks the user too', async () => {
+  const fresh = {
+    id: 'u',
+    display_name: 't',
+    contexts: ['teacher'],
+    admin_perms: [],
+    must_change_password: true,
+    password_change_reason: 'first_login',
+  }
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(err('PASSWORD_CHANGE_REQUIRED', 403))
+    .mockResolvedValueOnce(json(fresh))
+  vi.stubGlobal('fetch', fetchMock)
+  const res = await authedFetch('GET', '/reports/x.csv')
+  expect(res.status).toBe(403)
+  expect(fetchMock.mock.calls[1][0]).toBe('/api/v1/auth/me')
+  expect(useAuthStore.getState().user).toMatchObject({
+    must_change_password: true,
+    password_change_reason: 'first_login',
+  })
+  // 调用方仍能读到原始响应体
+  await expect(res.json()).resolves.toMatchObject({ error: { code: 'PASSWORD_CHANGE_REQUIRED' } })
+})
+
+it('concurrent 403 PASSWORD_CHANGE_REQUIRED responses fetch /auth/me once', async () => {
+  let meCalls = 0
+  const fetchMock = vi.fn(async (url: string) => {
+    if (url.endsWith('/auth/me')) {
+      meCalls++
+      await new Promise((r) => setTimeout(r, 5))
+      return json({
+        id: 'u',
+        display_name: 't',
+        contexts: ['teacher'],
+        admin_perms: [],
+        must_change_password: true,
+        password_change_reason: 'expired',
+      })
+    }
+    return err('PASSWORD_CHANGE_REQUIRED', 403)
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  const results = await Promise.allSettled([
+    api('GET', '/a'),
+    api('GET', '/b'),
+    authedFetch('GET', '/c.csv'),
+  ])
+  expect(results.map((r) => r.status)).toEqual(['rejected', 'rejected', 'fulfilled'])
+  expect(meCalls).toBe(1)
+  expect(fetchMock).toHaveBeenCalledTimes(4)
   expect(useAuthStore.getState().user).toMatchObject({
     must_change_password: true,
     password_change_reason: 'expired',

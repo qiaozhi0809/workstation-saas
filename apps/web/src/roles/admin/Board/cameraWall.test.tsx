@@ -23,9 +23,11 @@ const h = vi.hoisted(() => {
       MANIFEST_PARSED: 'hlsManifestParsed',
       FRAG_LOADED: 'hlsFragLoaded',
     }
+    static ErrorTypes = { NETWORK_ERROR: 'networkError', MEDIA_ERROR: 'mediaError' }
     static ErrorDetails = {
       MANIFEST_LOAD_ERROR: 'manifestLoadError',
       LEVEL_LOAD_ERROR: 'levelLoadError',
+      FRAG_LOAD_ERROR: 'fragLoadError',
     }
     handlers = new Map<string, Handler[]>()
     config: { xhrSetup?: (xhr: XMLHttpRequest, url: string) => void }
@@ -34,6 +36,7 @@ const h = vi.hoisted(() => {
     attachMedia = vi.fn()
     stopLoad = vi.fn()
     startLoad = vi.fn()
+    recoverMediaError = vi.fn()
     destroy = vi.fn()
     constructor(config: FakeHls['config']) {
       this.config = config
@@ -111,11 +114,12 @@ function setPerms(admin_perms: AdminPerm[]) {
   })
 }
 
+/** 最近一次 setup 用的 QueryClient:测试里用 setQueryData 模拟 60 秒一次的刷新结果 */
+let qc: QueryClient
 function setup(entry = '/admin/board') {
+  qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
-    <QueryClientProvider
-      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
-    >
+    <QueryClientProvider client={qc}>
       <MemoryRouter initialEntries={[entry]}>
         <Routes>
           <Route path="/admin/board" element={<BoardPage />} />
@@ -237,6 +241,42 @@ describe('CameraWallMini', () => {
     expect(FakeHls.instances).toHaveLength(2)
     act(() => void vi.advanceTimersByTime(20000))
     expect(live()).toEqual(['a1'])
+  })
+
+  it('a wall refresh renames the playing camera in place without rebuilding the player', async () => {
+    const wall = await openWall()
+    fireEvent.click(within(wall).getByTestId('camera-wall-class-c1'))
+    expect(within(wall).getByLabelText('讲台机位')).toBeInTheDocument()
+    expect(FakeHls.instances).toHaveLength(1)
+    // 60 秒刷新:同一路 id 换了名字和状态
+    const renamed = wallFixture()
+    renamed.grades[0].classes[0].cameras[0] = cam('a1', '讲台机位(新)', 'idle')
+    act(() => qc.setQueryData(['camera-wall'], renamed))
+    // 班名下方的小字先变(直接读 query 数据),播放器 aria-label 也要跟着变
+    await within(wall).findByText('讲台机位(新)', { selector: 'span' })
+    expect(within(wall).getByLabelText('讲台机位(新)')).toBeInTheDocument()
+    expect(within(wall).queryByLabelText('讲台机位')).toBeNull()
+    expect(FakeHls.instances).toHaveLength(1)
+    expect(live()).toEqual(['a1'])
+  })
+
+  it('rotation uses the refreshed wall data', async () => {
+    const wall = await openWall()
+    vi.useFakeTimers()
+    fireEvent.click(within(wall).getByTestId('camera-wall-rotate'))
+    expect(live()).toEqual(['a1'])
+    // 刷新后四年一班的摄像头变故障:下一拍应跳过它落到公共区域,而不是按旧数据去四年一班
+    const refreshed = wallFixture()
+    refreshed.grades[1].classes[0].cameras = [cam('d1', '讲台机位', 'error')]
+    act(() => qc.setQueryData(['camera-wall'], refreshed))
+    act(() => void vi.advanceTimersByTime(0)) // query 的通知是 setTimeout(0),先让它渲染出来
+    expect(within(wall).getByTestId('camera-wall-class-c9')).toHaveTextContent('1 路故障')
+    act(() => void vi.advanceTimersByTime(10000))
+    expect(live()).toEqual(['a1', 'p1'])
+    expect(within(wall).getByTestId('camera-wall-class-public')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
   })
 
   it('a manual pick restarts the rotation timer', async () => {

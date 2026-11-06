@@ -88,13 +88,12 @@ def delete_growth(
     bindings: Annotated[list[Binding], Depends(get_bindings)],
     db: Annotated[Session, Depends(get_db)],
 ) -> Response:
+    # 判定顺序:404(不存在)→ 403(无权限,写审计)→ 409(往年只读),L97
     year = require_active_year(db, user.school_id)
     rec = db.get(GrowthRecord, record_id)
     if rec is None:
         raise ApiError(404, "NOT_FOUND", "记录不存在")
-    if rec.academic_year_id != year.id:
-        raise ApiError(409, "RECORD_READONLY", "往年的记录只读,不能删除")
-    if not service.can_delete_record(rec, year.id, user.id, bindings):
+    if not service.may_delete_record(rec, user.id, bindings):
         deny(
             db,
             user_id=user.id,
@@ -103,6 +102,8 @@ def delete_growth(
             object_id=str(record_id),
             request=request,
         )
+    if rec.academic_year_id != year.id:
+        raise ApiError(409, "RECORD_READONLY", "往年的记录只读,不能删除")
     db.delete(rec)
     record(
         db,
