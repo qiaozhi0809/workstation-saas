@@ -67,8 +67,12 @@ class Redis503(contextlib.ContextDecorator):
 
 
 def _notify_reload(redis: Redis, camera_id: UUID) -> None:
-    """改 / 删已经提交之后才通知 worker:Redis 这时出错只告警,不能把已保存的改动报成失败;
-    worker 的订阅断线重连时会停掉全部流重读配置,不会一直拿着旧配置。"""
+    """改 / 删已经提交之后才通知 worker:Redis 这时出错只告警,不能把已保存的改动报成失败。
+
+    吞掉这个错误的代价是一个窗口:通知没送到,worker 继续按旧地址 / 旧凭据拉流,或继续拉一个
+    已停用 / 已删除的摄像头。窗口结束于三者之一:没人看了、ws:cam:want 键过期(30 秒)worker
+    把流停掉;worker 的订阅断线重连(重连前停掉全部流重读配置);worker 重启。有人一直在看、
+    且 Redis 只是瞬断没触发订阅重连时,旧流会一直拉到有人停看为止——这是接受的代价,不在这里重试。"""
     try:
         redis.publish(RELOAD_CHANNEL, str(camera_id))
     except RedisError as exc:

@@ -106,8 +106,9 @@ def resolve_is_lan(
 
 
 def validate_rtsp_url(
-    url: str, *, allow_loopback: bool = False, settings: HasTrustedNetworks | None = None
+    url: str, *, settings: HasTrustedNetworks, allow_loopback: bool = False
 ) -> str:
+    """settings 必填:省掉就等于关掉可信网段拒绝,这种默认不能有。"""
     raw = url.strip()
     # urlsplit 会悄悄去掉 \t\r\n,校验的主机就和存下的字符串不一致,所以直接拒绝
     if any(ch.isspace() or ord(ch) < 32 or ord(ch) == 127 for ch in raw):
@@ -127,7 +128,7 @@ def validate_rtsp_url(
     ips = resolve_lan_ips(host, allow_loopback=allow_loopback)
     if not ips:
         raise ApiError(400, "RTSP_URL_NOT_LAN", "摄像头地址必须在学校内网")
-    if settings is not None and any(is_denied_ip(ip, settings) for ip in ips):
+    if any(is_denied_ip(ip, settings) for ip in ips):
         raise ApiError(
             400, "RTSP_URL_NOT_LAN", "摄像头地址落在本系统自己的容器 / 可信代理网段,不能登记"
         )
