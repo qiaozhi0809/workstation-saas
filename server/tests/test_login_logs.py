@@ -9,12 +9,16 @@ from fastapi.testclient import TestClient
 from sqlalchemy import delete, func, select
 
 from app import clock
-from app.auth import login_log
+from app.auth import login_log, service
+from app.config import Settings
 from app.crypto import encrypt
+from app.db import get_db
 from app.deploy import scheduler as sch
 from app.domain.login_logs import service as ll_service
+from app.main import create_app
 from app.models import LoginLog, School, User
 from app.models.audit import AuditLog
+from app.redis import get_redis
 from tests.factories import make_teacher_account
 from tests.helpers import auth
 from tests.seed_ids import SCHOOL_ID, TEACHER_USER_ID
@@ -79,6 +83,85 @@ def test_unknown_user_logged(client, db):
     assert _login(client, name="nobody", pw="x").status_code == 401
     (row,) = _rows(db)
     assert (row.result, row.login_name, row.user_id) == ("unknown_user", "nobody", None)
+
+
+def test_unknown_user_name_masked_when_not_login_shape(client, db):
+    """L145:把密码误填进登录名,日志里不能原样保存(长度也不泄露)。"""
+    assert _login(client, name="Sup3r-secret-pw!", pw="x", ip="10.0.0.8").status_code == 401
+    (row,) = _rows(db)
+    assert (row.result, row.login_name, row.user_id) == ("unknown_user", "***", None)
+    # 合法形状的登录名(工号 / 手机号)照常保存,方便排查
+    assert _login(client, name="13800009999", pw="x", ip="10.0.0.8").status_code == 401
+    assert [r.login_name for r in _rows(db)] == ["***", "13800009999"]
+    # 太短 / 带空格 / 含中文的也打码
+    for odd in ("ab", "my password", "张三"):
+        _login(client, name=odd, pw="x", ip="10.0.0.8")
+    assert [r.login_name for r in _rows(db)][2:] == ["***", "***", "***"]
+
+
+def test_unknown_user_rows_capped_per_public_ip(client, db, redis_client, monkeypatch):
+    """L145:不存在的用户、来源不在内网 / 可信网段 → 每个 IP 每小时最多 20 行;仍 401、仍跑假哈希。"""
+    checks: list[int] = []
+    real_verify = service.verify_password
+    monkeypatch.setattr(
+        service, "verify_password", lambda pw, h: checks.append(1) or real_verify(pw, h)
+    )
+    ip = "203.0.113.9"
+    for i in range(service.UNKNOWN_LOG_LIMIT + 1):
+        assert _login(client, name=f"ghost{i:02d}", pw="x", ip=ip).status_code == 401
+    rows = _rows(db)
+    assert len(rows) == service.UNKNOWN_LOG_LIMIT and rows[-1].login_name == "ghost19"
+    assert len(checks) == service.UNKNOWN_LOG_LIMIT + 1  # 第 21 次照样跑了假哈希
+    assert int(redis_client.get(f"ws:login_unknown:{ip}")) == service.UNKNOWN_LOG_LIMIT + 1
+    assert 0 < redis_client.ttl(f"ws:login_unknown:{ip}") <= 3600
+    # 另一个公网 IP 有自己的额度;已存在用户的失败日志不受限
+    assert _login(client, name="ghost99", pw="x", ip="198.51.100.3").status_code == 401
+    assert _login(client, pw="wrong", ip=ip).status_code == 401
+    assert [r.login_name for r in _rows(db)][-2:] == ["ghost99", "teacher01"]
+
+
+def test_unknown_user_rows_not_capped_on_lan(client, db, redis_client):
+    for i in range(service.UNKNOWN_LOG_LIMIT + 2):
+        assert _login(client, name=f"ghost{i:02d}", pw="x", ip="192.168.1.20").status_code == 401
+    assert len(_rows(db)) == service.UNKNOWN_LOG_LIMIT + 2
+    assert redis_client.keys("ws:login_unknown:*") == []
+
+
+def test_unknown_user_rows_not_capped_from_trusted_network(
+    pg_url, redis_url, db, redis_client, monkeypatch
+):
+    """可信代理网段内的直连地址(头缺失时的回退)不限流;经代理转来的公网来源照常限流。"""
+    from tests.conftest import TEST_JWT_SECRET
+
+    cfg = Settings(
+        _env_file=None,
+        env="dev",
+        database_url=pg_url,
+        redis_url=redis_url,
+        jwt_secret=TEST_JWT_SECRET,
+        trusted_proxies=["172.30.0.0/24"],
+    )
+    app = create_app(cfg)
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[get_redis] = lambda: redis_client
+    proxy = TestClient(app, client=("172.30.0.2", 50000))
+    redis_client.set("ws:login_unknown:203.0.113.9", service.UNKNOWN_LOG_LIMIT)  # 额度已用完
+    body = {"login_name": "ghost", "password": "x"}
+    res = proxy.post(f"{API}/auth/login", json=body, headers={"X-Forwarded-For": "203.0.113.9"})
+    assert res.status_code == 401 and _rows(db) == []
+    assert proxy.post(f"{API}/auth/login", json=body).status_code == 401
+    (row,) = _rows(db)
+    assert row.login_name == "ghost" and str(row.ip) == "172.30.0.2"
+
+
+def test_locked_unknown_name_rows_also_capped(client, db, settings, redis_client):
+    """锁定后的 locked 行同样来自未认证请求:不存在的用户名 + 公网来源一并计入额度。"""
+    ip = "203.0.113.9"
+    redis_client.set(f"ws:login_unknown:{ip}", service.UNKNOWN_LOG_LIMIT)
+    for _ in range(settings.login_max_failures):
+        assert _login(client, name="ghost", pw="x", ip=ip).status_code == 401
+    assert _login(client, name="ghost", pw="x", ip=ip).status_code == 429
+    assert _rows(db) == []
 
 
 def test_frozen_user_logged_inactive(client, db):

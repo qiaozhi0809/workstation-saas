@@ -1,5 +1,6 @@
 import base64
 import binascii
+import ipaddress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Literal
@@ -13,12 +14,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import clock
-from app.audit.service import record
+from app.audit.service import _client_ip, record
 from app.auth import login_log, mfa, sessions, totp
 from app.auth.passwords import check_policy, hash_password, verify_password
 from app.auth.tokens import issue_access_token
 from app.config import Settings
 from app.crypto import CryptoError, decrypt, encrypt
+from app.domain.accounts.schemas import LOGIN_RE
+from app.domain.cameras.lan import is_lan_ip
 from app.domain.school_settings.service import get_security
 from app.domain.schools.service import active_academic_year, school_tz
 from app.errors import ApiError
@@ -188,6 +191,44 @@ def _log(
         return None
 
 
+# 不存在的用户的日志行(unknown_user / 该名字被锁后的 locked)来自未认证请求,按来源 IP 限额(L145):
+# 内网 / 可信代理网段不限(校内误输不丢记录),其余每个 IP 每小时最多这么多行;超限仍 401、仍跑假哈希
+UNKNOWN_LOG_LIMIT = 20
+UNKNOWN_LOG_WINDOW = 3600
+
+
+def _unknown_name(login_name: str) -> str:
+    """不存在的用户:登录名很可能是误填进去的密码,不符合登录名格式的一律存 ***(长度也不泄露)。"""
+    return login_name if LOGIN_RE.fullmatch(login_name) else "***"
+
+
+def _unknown_log_allowed(redis: Redis, settings: Settings, request: Request | None) -> bool:
+    ip = _client_ip(request)
+    if ip is not None:
+        addr = ipaddress.ip_address(ip)
+        if is_lan_ip(ip, allow_loopback=settings.env == "dev") or any(
+            addr in net for net in settings.trusted_networks
+        ):
+            return True
+    key = f"ws:login_unknown:{ip or 'unknown'}"  # 来源不明(非法对端地址)也按失败即关计入
+    pipe = redis.pipeline(transaction=True)
+    pipe.incr(key)
+    pipe.expire(key, UNKNOWN_LOG_WINDOW, nx=True)
+    return int(pipe.execute()[0]) <= UNKNOWN_LOG_LIMIT
+
+
+def _log_unknown(
+    db: Session,
+    redis: Redis,
+    settings: Settings,
+    login_name: str,
+    result: login_log.LoginOutcome,
+    request: Request | None,
+) -> None:
+    if _unknown_log_allowed(redis, settings, request):
+        _log(db, settings, None, _unknown_name(login_name), result, request)
+
+
 _REASON_TEXT = {"night": "凌晨时段", "new_network": "新的网络环境"}
 _ALERT_TTL = 2 * 86400
 
@@ -288,21 +329,22 @@ def login(
         fail_key = _check_not_locked(redis, settings, login_name, "登录失败次数过多,请稍后再试")
     except ApiError:
         known = get_user_by_login(db, settings.school_id, login_name)
-        _log(db, settings, known, login_name, "locked", request)
+        if known is None:
+            _log_unknown(db, redis, settings, login_name, "locked", request)
+        else:
+            _log(db, settings, known, login_name, "locked", request)
         raise
 
     user = get_user_by_login(db, settings.school_id, login_name)
     hashed = user.password_hash if user is not None and user.status == "active" else _DUMMY_HASH
     password_ok = verify_password(password, hashed)
-    if user is None or user.status != "active" or not password_ok:
+    if user is None:
         _record_failure(redis, settings, fail_key)
-        outcome = (
-            "unknown_user"
-            if user is None
-            else "inactive"
-            if user.status != "active"
-            else "bad_password"
-        )
+        _log_unknown(db, redis, settings, login_name, "unknown_user", request)
+        raise ApiError(401, "INVALID_CREDENTIALS", "登录名或密码不正确")
+    if user.status != "active" or not password_ok:
+        _record_failure(redis, settings, fail_key)
+        outcome = "inactive" if user.status != "active" else "bad_password"
         _log(db, settings, user, login_name, outcome, request)
         raise ApiError(401, "INVALID_CREDENTIALS", "登录名或密码不正确")
 
