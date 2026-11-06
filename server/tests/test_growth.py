@@ -9,9 +9,11 @@ from tests.factories import make_class, make_student
 from tests.helpers import auth
 from tests.seed_ids import (
     ASSISTANT_USER_ID,
+    CLASS_ID,
     SCHOOL_ID,
     STUDENT_IDS,
     SUBJECT_USER_ID,
+    TEACHER_USER_ID,
 )
 
 S0 = STUDENT_IDS[0]
@@ -111,7 +113,9 @@ def test_validation(client, settings):
     assert client.post(URL, json=BODY | {"content": "字" * 500}, headers=h).status_code == 201
 
 
-def test_past_year_record_is_read_only(client, settings, db):
+def _past_year_record(db, *, in_current_class: bool = False) -> GrowthRecord:
+    """往年的一条成长记录:默认挂在往年的班(当前学年没人在那个班有权限);
+    ``in_current_class`` 时挂在当前班、学年仍是往年,用来单测 409 这一步。"""
     old = AcademicYear(
         school_id=UUID(SCHOOL_ID),
         name="2025-2026",
@@ -121,16 +125,16 @@ def test_past_year_record_is_read_only(client, settings, db):
     )
     db.add(old)
     db.flush()
-    old_class = make_class(db, "二年一班", year_id=old.id)
+    class_id = UUID(CLASS_ID) if in_current_class else make_class(db, "二年一班", year_id=old.id)
     old_enr = Enrollment(
-        student_id=UUID(S0), class_id=old_class, academic_year_id=old.id, status="promoted"
+        student_id=UUID(S0), class_id=class_id, academic_year_id=old.id, status="promoted"
     )
     db.add(old_enr)
     db.flush()
     rec = GrowthRecord(
         student_id=UUID(S0),
         enrollment_id=old_enr.id,
-        class_id=old_class,
+        class_id=class_id,
         academic_year_id=old.id,
         type="获奖",
         date=date(2026, 5, 20),
@@ -139,9 +143,12 @@ def test_past_year_record_is_read_only(client, settings, db):
     )
     db.add(rec)
     db.flush()
+    return rec
 
-    h = auth(settings)
-    items = client.get(URL, headers=h).json()["items"]
+
+def test_past_year_record_listed_read_only(client, settings, db):
+    rec = _past_year_record(db)
+    items = client.get(URL, headers=auth(settings)).json()["items"]
     assert len(items) == 3
     past = next(i for i in items if i["id"] == str(rec.id))
     assert past["current_year"] is False
@@ -150,10 +157,36 @@ def test_past_year_record_is_read_only(client, settings, db):
     assert past["class_name"] == "二年一班"
     assert all(i["current_year"] for i in items if i is not past)
 
-    res = client.delete(f"/api/v1/growth-records/{rec.id}", headers=h)
-    assert res.status_code == 409
-    assert res.json()["error"]["code"] == "RECORD_READONLY"
+
+# 删除的判定顺序:404(不存在)→ 403(无权限)→ 409(往年只读),L97
+
+
+def test_delete_record_unknown_is_404_before_permission(client, settings):
+    url = "/api/v1/growth-records/00000000-0000-0000-0000-000000000000"
+    res = client.delete(url, headers=auth(settings, SUBJECT_USER_ID))
+    assert (res.status_code, res.json()["error"]["code"]) == (404, "NOT_FOUND")
+
+
+def test_delete_past_year_record_without_permission_is_403_before_409(client, settings, db):
+    """往年记录挂在往年的班:当前学年谁都不是那个班的班主任、也不能以作者身份写 →
+    先 403(写审计),不泄露\"它是往年的\"这一状态。"""
+    rec = _past_year_record(db)
+    for user in (TEACHER_USER_ID, ASSISTANT_USER_ID, SUBJECT_USER_ID):
+        res = client.delete(f"/api/v1/growth-records/{rec.id}", headers=auth(settings, user))
+        assert (res.status_code, res.json()["error"]["code"]) == (403, "FORBIDDEN"), user
+    denied = [a for a in _audits(db, "growth.delete") if a.object_id == str(rec.id)]
+    assert [(a.success, a.object_type) for a in denied] == [(False, "growth_record")] * 3
     assert db.get(GrowthRecord, rec.id) is not None
+
+
+def test_delete_past_year_record_with_permission_is_409(client, settings, db):
+    rec = _past_year_record(db, in_current_class=True)
+    # 本班班主任、以及作者本人(副班主任有 growth.write)都过了权限这一关,卡在往年只读
+    for user in (TEACHER_USER_ID, ASSISTANT_USER_ID):
+        res = client.delete(f"/api/v1/growth-records/{rec.id}", headers=auth(settings, user))
+        assert (res.status_code, res.json()["error"]["code"]) == (409, "RECORD_READONLY"), user
+    assert db.get(GrowthRecord, rec.id) is not None
+    assert [a for a in _audits(db, "growth.delete") if a.object_id == str(rec.id)] == []
 
 
 def test_other_class_student_forbidden(client, settings, db):
