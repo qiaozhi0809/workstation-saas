@@ -1,5 +1,5 @@
 # ---- Backend (Python) ----
-server/.venv/
+server/.venv
 server/.env
 __pycache__/
 *.py[cod]
