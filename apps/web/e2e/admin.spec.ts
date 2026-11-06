@@ -123,6 +123,11 @@ test('it admin creates a teacher account, who changes the temp password and is l
   await teacherPage.getByLabel('确认新密码').fill('E2e-pass-2026')
   await teacherPage.getByRole('button', { name: '保存' }).click()
   await expect(teacherPage).toHaveURL(/\/teacher/)
+  // M5d:新老师第一次进教师端会看到欢迎页(选形象),点「开始」关掉才能看到教室
+  const welcome = teacherPage.getByRole('dialog', { name: /你好/ })
+  await expect(welcome).toBeVisible()
+  await welcome.getByRole('button', { name: '开始' }).click()
+  await expect(welcome).toBeHidden()
   await expect(teacherPage.getByRole('heading', { name: '三年一班' })).toBeVisible()
 
   // 信息中心冻结 → 老师的页面下一次请求回到登录页
