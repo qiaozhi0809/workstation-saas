@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Ellipsis, Maximize2, Minimize2, ListTodo } from 'lucide-react'
+import { Ellipsis, Maximize2, Minimize2, ListTodo, Video } from 'lucide-react'
 import Menu from '@/shared/components/overlay/Menu'
 import { Button } from '@/shared/components/ui/button'
 import { Separator } from '@/shared/components/ui/separator'
@@ -22,9 +22,11 @@ export interface ClassroomDockProps {
   onTogglePresent(): void
   /** 打开右侧"待办与点评"抽屉(抽屉自己在关闭后把焦点还给这个按钮) */
   onOpenPanel(): void
+  /** "看看教室":本班有可看的摄像头时才给;open 为缩略条是否展开 */
+  cameras?: { open: boolean; onToggle(): void }
 }
 
-/** 舞台下方的操作台:模式 → 模式操作 → 常用操作 → 更多操作 → 状态 → 全屏 / 待办与点评。 */
+/** 舞台下方的操作台:模式 → 模式操作 → 常用操作 → 更多操作 → 状态 → 看看教室 / 全屏 / 待办与点评。 */
 export default function ClassroomDock({
   mode,
   perms,
@@ -36,6 +38,7 @@ export default function ClassroomDock({
   presenting,
   onTogglePresent,
   onOpenPanel,
+  cameras,
 }: ClassroomDockProps) {
   return (
     <div
@@ -70,6 +73,19 @@ export default function ClassroomDock({
         </span>
       )}
       <div className="ml-auto flex items-center gap-2">
+        {cameras && (
+          <Button
+            variant={cameras.open ? 'secondary' : 'outline'}
+            size="icon"
+            aria-label="看看教室"
+            title="看看教室"
+            aria-pressed={cameras.open}
+            data-testid="camera-toggle"
+            onClick={cameras.onToggle}
+          >
+            <Video aria-hidden />
+          </Button>
+        )}
         <Button
           variant="outline"
           size="icon"

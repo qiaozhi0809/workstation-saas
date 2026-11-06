@@ -91,6 +91,30 @@ it('shows 全屏 and 待办与点评 as icon-only buttons that keep their names 
   expect(exit.textContent).toBe('')
 })
 
+it('shows the 看看教室 toggle before 全屏 only when cameras are given, with its open state', () => {
+  const onToggle = vi.fn()
+  const { unmount } = dock({ cameras: { open: false, onToggle } })
+  const bar = screen.getByRole('toolbar', { name: '教室工具' })
+  const toggle = within(bar).getByTestId('camera-toggle')
+  expect(toggle).toHaveAccessibleName('看看教室')
+  expect(toggle).toHaveAttribute('title', '看看教室')
+  expect(toggle).toHaveAttribute('aria-pressed', 'false')
+  expect(toggle.textContent).toBe('')
+  expect(
+    [...bar.querySelectorAll('[role="tab"], button, [role="status"]')].map(
+      (el) => el.getAttribute('aria-label') ?? el.textContent,
+    ),
+  ).toEqual(['日常', '甲', '乙', '保存中…', '看看教室', '全屏', '待办与点评'])
+  fireEvent.click(toggle)
+  expect(onToggle).toHaveBeenCalledTimes(1)
+  unmount()
+  const open = dock({ cameras: { open: true, onToggle }, presenting: true })
+  expect(screen.getByTestId('camera-toggle')).toHaveAttribute('aria-pressed', 'true')
+  open.unmount()
+  dock()
+  expect(screen.queryByTestId('camera-toggle')).toBeNull()
+})
+
 it('renders one 更多操作 menu from the menu items, after the common zone, and none without items', () => {
   const { unmount } = dock({
     menu: (
