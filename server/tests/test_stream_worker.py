@@ -535,7 +535,9 @@ def test_no_stall_while_fresh(db, redis_url, fake_ffmpeg, hls_root, tmp_path):
 def test_stall_threshold_follows_target_duration(
     db, redis_url, fake_ffmpeg, hls_root, tmp_path, caplog
 ):
-    """copy 模式下播放列表更新周期 = 摄像头 GOP:阈值 = max(30, 3 × TARGETDURATION),不误杀长 GOP。"""
+    """copy 模式下播放列表更新周期 = GOP:阈值 = 3 × TARGETDURATION 夹在 [30, 120],不误杀长 GOP。"""
+    from app.stream import supervisor as supervisor_mod
+
     caplog.set_level(logging.WARNING, logger="app.stream")
     cam = make_camera(db)
 
@@ -574,6 +576,17 @@ def test_stall_threshold_follows_target_duration(
         assert sup._stalled(cam.id) is None
         age(index, 31)
         assert sup._stalled(cam.id) == (pytest.approx(31, abs=2), 30)
+        # 时间戳跳变会让 ffmpeg 写出巨大的 TARGETDURATION:阈值封顶 120 秒,看门狗不能被关掉
+        index.write_text("#EXTM3U\n#EXT-X-TARGETDURATION:999\n#EXTINF:2.0,\nseg-0.ts\n")
+        age(index, 110)
+        assert sup._stalled(cam.id) is None
+        age(index, 121)
+        assert sup._stalled(cam.id) == (pytest.approx(121, abs=2), 120)
+        # 非正整数 / 解析不了都回退下限 30
+        for bad in ("0", "-5", "9" * 5000):
+            assert supervisor_mod._stall_threshold(f"#EXTM3U\n#EXT-X-TARGETDURATION:{bad}\n") == 30
+        assert supervisor_mod._stall_threshold("#EXTM3U\n#EXT-X-TARGETDURATION:abc\n") == 30
+        assert supervisor_mod._stall_threshold("#EXTM3U\n#EXT-X-VERSION:3\n") == 30
         index.unlink()
         assert sup._stalled(cam.id) == (None, 30)
         await sup.shutdown()

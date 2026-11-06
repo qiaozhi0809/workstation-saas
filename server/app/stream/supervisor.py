@@ -30,9 +30,11 @@ TERM_WAIT = 3.0  # SIGTERM 后等这么久,仍不退出则 SIGKILL
 STDERR_KEEP = 5
 # 看门狗:进程还在但播放列表很久没更新(摄像头掉线、RTSP 读挂住)就当失败处理并重连。
 # copy 模式只能在关键帧处切片,index.m3u8 的 mtime 步进周期 = 摄像头的 GOP(智能编码的静态画面下
-# 可达 10–15 秒,手动设置更长),所以阈值自适应:max(STALL_SECONDS, 3 × #EXT-X-TARGETDURATION)。
-# 比较的是文件 mtime 与墙上时间,不用 tick 的单调时钟
-STALL_SECONDS = 30  # 下限;播放列表里读不到 TARGETDURATION 时就用它
+# 可达 10–15 秒,手动设置更长),所以阈值自适应:max(STALL_SECONDS, 3 × #EXT-X-TARGETDURATION),
+# 再以 STALL_SECONDS_MAX 封顶——摄像头时间戳跳变会让 ffmpeg 写出巨大的 TARGETDURATION,
+# 不封顶等于把看门狗关掉。比较的是文件 mtime 与墙上时间,不用 tick 的单调时钟
+STALL_SECONDS = 30  # 下限;播放列表里读不到(或读到非正整数)TARGETDURATION 时就用它
+STALL_SECONDS_MAX = 120  # 上限
 STALL_TARGET_MULTIPLE = 3
 STALL_MESSAGE = "画面停止更新,正在重连"
 _TARGET_DURATION_RE = re.compile(r"^#EXT-X-TARGETDURATION:(\d+)", re.MULTILINE)
@@ -43,6 +45,20 @@ _TARGET_DURATION_RE = re.compile(r"^#EXT-X-TARGETDURATION:(\d+)", re.MULTILINE)
 # #EXT-X-DISCONTINUITY,而不是回退到 0。例外是 116 天一次的回绕(下一次 epoch 1 800 000 000,
 # 2027-01-15 08:00 UTC),那一刻之后的重启序列号会回退一次,由 discont_start 兜底
 START_NUMBER_MOD = 10**7
+
+
+def _stall_threshold(playlist: str) -> float:
+    """按 TARGETDURATION 算停更阈值,夹在 [STALL_SECONDS, STALL_SECONDS_MAX];读不到就用下限。"""
+    found = _TARGET_DURATION_RE.search(playlist)
+    if not found:
+        return STALL_SECONDS
+    try:
+        target = int(found.group(1))
+    except ValueError:  # 位数多到 int() 拒绝(Python 的整数字符串长度上限)
+        return STALL_SECONDS
+    if target <= 0:
+        return STALL_SECONDS
+    return min(STALL_SECONDS_MAX, max(STALL_SECONDS, STALL_TARGET_MULTIPLE * target))
 
 
 @dataclass
@@ -221,10 +237,7 @@ class Supervisor:
             text = index.read_text(encoding="utf-8", errors="replace")
         except OSError:
             return None, STALL_SECONDS
-        found = _TARGET_DURATION_RE.search(text)
-        threshold = STALL_SECONDS
-        if found:
-            threshold = max(STALL_SECONDS, STALL_TARGET_MULTIPLE * int(found.group(1)))
+        threshold = _stall_threshold(text)
         return (age, threshold) if age > threshold else None
 
     async def _restart_stalled(
