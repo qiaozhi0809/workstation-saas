@@ -170,22 +170,33 @@ it('still works when localStorage throws', async () => {
   vi.restoreAllMocks()
 })
 
-it('marks a read-only child in the switcher', async () => {
+it('marks a read-only child in the switcher as 已毕业 or 已离校 by left_reason', async () => {
   vi.mocked(parentApi.children).mockResolvedValue([
     child(),
-    child({ student_id: 's2', name: '王小二', status: 'readonly' }),
+    child({ student_id: 's2', name: '王小二', status: 'readonly', left_reason: 'graduated' }),
+    child({ student_id: 's3', name: '王小三', status: 'readonly', left_reason: 'left' }),
+    // 后端给不出原因时沿用合并说法
+    child({ student_id: 's4', name: '王小四', status: 'readonly', left_reason: null }),
   ])
   renderParent('/parent/today?child=s1')
-  expect(await screen.findByRole('option', { name: '王小二(已毕业/离校)' })).toBeInTheDocument()
+  expect(await screen.findByRole('option', { name: '王小二(已毕业)' })).toBeInTheDocument()
+  expect(screen.getByRole('option', { name: '王小三(已离校)' })).toBeInTheDocument()
+  expect(screen.getByRole('option', { name: '王小四(已毕业 / 离校)' })).toBeInTheDocument()
   expect(screen.getByRole('option', { name: '王小一' })).toBeInTheDocument()
 })
 
 it('adds a small tag after the name of a single read-only child', async () => {
   vi.mocked(parentApi.children).mockResolvedValue([
-    child({ status: 'readonly', left_on: '2026-07-10', archive_on: '2027-07-10' }),
+    child({
+      status: 'readonly',
+      left_on: '2026-07-10',
+      archive_on: '2027-07-10',
+      left_reason: 'left',
+    }),
   ])
   renderParent('/parent/today?child=s1')
-  expect(await screen.findByText('已毕业/离校')).toBeInTheDocument()
+  expect(await screen.findByText('已离校')).toBeInTheDocument()
+  expect(screen.queryByText(/毕业/)).toBeNull()
 })
 
 it('asks for the child list only once across layout and page', async () => {

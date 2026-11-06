@@ -183,6 +183,23 @@ it('shows the note when only the child list says read-only', async () => {
   expect(screen.queryByRole('region', { name: '今日出勤' })).toBeNull()
 })
 
+it.each([
+  [
+    'graduated',
+    '孩子已于 2026-07-10 毕业,可以继续查看在校期间的成长与成绩,账号将于 2027-07-10 归档',
+  ],
+  ['left', '孩子已于 2026-07-10 离校,可以继续查看在校期间的成长与成绩,账号将于 2027-07-10 归档'],
+] as const)('words the read-only note by left_reason %s', async (left_reason, text) => {
+  vi.mocked(parentApi.children).mockResolvedValue([
+    child({ status: 'readonly', left_on: '2026-07-10', archive_on: '2027-07-10', left_reason }),
+  ])
+  vi.mocked(parentApi.today).mockResolvedValue(
+    today({ status: 'readonly', seat_map: null, class_info: null, enrollment_id: null }),
+  )
+  open()
+  expect(await screen.findByText(text)).toBeInTheDocument()
+})
+
 it('says the teacher has not arranged seats when there is no seat map', async () => {
   vi.mocked(parentApi.today).mockResolvedValue(today({ seat_map: null }))
   open()
