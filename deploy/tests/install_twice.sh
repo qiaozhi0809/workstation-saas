@@ -9,8 +9,32 @@ set -euo pipefail
 
 start_ps_sampler
 
-echo "== 1/6 第一次安装(密码经环境变量)"
+echo "== 0/6 L119:安装进行到启动服务时被 TERM 打断:退出码 143,不留 .env.tmp / 锁 / *.new.*,之后重跑能装好"
 prepare_deploy_dir
+# 直接后台运行脚本($! 就是脚本进程,TERM 才会送到它的 trap);等 .env 已落地且 app 容器已创建(正在等健康)再发 TERM
+WS_INSTALL_SCHOOL_NAME="$SCHOOL_NAME" WS_INSTALL_ADMIN_LOGIN="$ADMIN_LOGIN" WS_INSTALL_ADMIN_PASSWORD="$ADMIN_PW" \
+WS_INSTALL_SITE=localhost WS_INSTALL_TLS=1 \
+  "$DEPLOY/scripts/install.sh" --non-interactive --force >"$TMP/install-term.log" 2>&1 &
+ipid=$!
+w=0
+until [ -f "$DEPLOY/.env" ] && [ -n "$(dc ps -q app 2>/dev/null)" ]; do
+  kill -0 "$ipid" 2>/dev/null || break
+  w=$((w + 1)); [ "$w" -lt 1200 ] || break
+  sleep 0.1
+done
+kill -TERM "$ipid" 2>/dev/null || true
+rc=0; wait "$ipid" || rc=$?
+[ "$rc" -eq 143 ] || { tail -n 10 "$TMP/install-term.log" >&2; fail "install.sh 被 TERM 后退出码应为 143,实际 $rc(测试自身问题:TERM 没有赶在安装结束之前?)"; }
+[ -f "$DEPLOY/.env" ] || fail "TERM 时 .env 已生成,不应被清理掉(.env 一旦存在就是完整的)"
+[ "$(ls -l "$DEPLOY/.env" | cut -c1-10)" = "-rw-------" ] || fail "被打断后 .env 权限应仍为 600"
+[ ! -e "$DEPLOY/.env.tmp" ] || fail "被 TERM 打断后残留了 .env.tmp"
+[ -z "$(find "$DEPLOY" -maxdepth 1 -name '.env.*' ! -name .env.example)" ] || fail "被 TERM 打断后残留了 .env.XXXXXX 临时文件"
+[ ! -e "$DEPLOY/backups/.lock" ] || fail "被 TERM 打断后锁目录没有释放"
+[ -z "$(find "$DEPLOY" -path "$DEPLOY/data" -prune -o -name '*.new.*' -print)" ] || fail "被 TERM 打断后残留了 *.new.* 文件"
+assert_no_secrets "被 TERM 打断的安装输出" "$TMP/install-term.log"
+pass "install.sh 被 TERM 打断:退出码 143,.env 完整(600),无 .env.tmp / 锁 / *.new.* 残留"
+
+echo "== 1/6 第一次安装(密码经环境变量;接着上面被打断的安装,.env 已在,应走「已安装」分支补完)"
 rc=0
 run_install "$TMP/install1.log" || rc=$?
 if [ "$rc" -ne 0 ]; then tail -n 20 "$TMP/install1.log" >&2; fail "第一次安装退出码 $rc"; fi

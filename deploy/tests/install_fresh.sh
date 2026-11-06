@@ -116,6 +116,13 @@ for svc in postgres redis app scheduler stream-worker web; do
   [ "$lc" = "json-file 10m 5" ] || fail "$svc 的日志配置应为 json-file max-size=10m max-file=5,实际:$lc"
 done
 pass "六个容器的 stdout 日志都限制为 10m × 5"
+# L157:/api/* 的请求体超过 4 MB 在 Caddy 就被 413 拒绝(不到应用);正常大小的请求不受影响(上面登录已证明)
+head -c 5242880 /dev/zero >"$TMP/big.bin"
+code="$(curl -ksS --max-time 30 -o /dev/null -w '%{http_code}' -X POST "https://localhost:$HTTPS_PORT/api/v1/auth/login" \
+  -H 'Content-Type: application/json' --data-binary @"$TMP/big.bin")" || fail "发送 5 MB 请求失败"
+rm -f "$TMP/big.bin"
+[ "$code" = "413" ] || fail "5 MB 请求体应被 Caddy 以 413 拒绝,实际 $code"
+pass "5 MB 请求体被 Caddy 以 413 拒绝"
 
 echo "== 5/5 密钥出口扫描(规则 15)"
 selftest_scanner
