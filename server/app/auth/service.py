@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from typing import Literal
 from uuid import UUID
 
+import structlog
 from fastapi import Request
 from pydantic import BaseModel
 from redis import Redis
@@ -11,19 +12,21 @@ from sqlalchemy.orm import Session
 
 from app import clock
 from app.audit.service import record
-from app.auth import mfa, sessions, totp
+from app.auth import login_log, mfa, sessions, totp
 from app.auth.passwords import check_policy, hash_password, verify_password
 from app.auth.tokens import issue_access_token
 from app.config import Settings
 from app.crypto import CryptoError, decrypt, encrypt
 from app.domain.school_settings.service import get_security
-from app.domain.schools.service import active_academic_year
+from app.domain.schools.service import active_academic_year, school_tz
 from app.errors import ApiError
-from app.models import School, User
+from app.models import Notice, NoticeRecipient, RoleBinding, School, User
 from app.rbac.admin import admin_perms
 from app.rbac.bindings import Binding, load_bindings
-from app.rbac.roles import ADMIN_ROLES, PARENT_ROLES, TEACHER_ROLES
+from app.rbac.roles import ADMIN_ROLES, PARENT_ROLES, TEACHER_ROLES, Role
 from app.ws.hub import publish
+
+log = structlog.get_logger()
 
 
 class UserBrief(BaseModel):
@@ -135,27 +138,139 @@ def _check_not_locked(redis: Redis, settings: Settings, login_name: str, message
     return fail_key
 
 
-def _finish_login(db: Session, redis: Redis, settings: Settings, user: User) -> LoginResult:
+def _log(
+    db: Session,
+    settings: Settings,
+    user: User | None,
+    login_name: str,
+    result: login_log.LoginOutcome,
+    request: Request | None,
+) -> login_log.LoginLog:
+    return login_log.write(
+        db,
+        settings,
+        user=user,
+        login_name=login_name,
+        result=result,
+        request=request,
+        now=clock.utc_now(),
+    )
+
+
+_REASON_TEXT = {"night": "凌晨时段", "new_network": "新的网络环境"}
+_ALERT_TTL = 2 * 86400
+
+
+def alert(db: Session, redis: Redis, user: User, entry: login_log.LoginLog) -> None:
+    """成功登录且可疑时,给本人和本校在用的信息中心发系统通知;同一用户同一网段每天只提醒一次。"""
+    if not entry.suspicious:
+        return
+    tz = school_tz(db, user.school_id)
+    local = entry.created_at.astimezone(tz)
+    ip = None if entry.ip is None else str(entry.ip)
+    net = "unknown" if ip is None else login_log.network_of(ip)
+    key = f"ws:alert:{user.id}:{net}:{local.date().isoformat()}"
+    if not redis.set(key, "1", nx=True, ex=_ALERT_TTL):
+        return
+    reasons = "、".join(_REASON_TEXT.get(r, r) for r in entry.suspicious)
+    when, where = local.strftime("%Y-%m-%d %H:%M"), ip or "未知网络"
+    admins = db.scalars(
+        select(User.id)
+        .join(RoleBinding, RoleBinding.user_id == User.id)
+        .where(
+            User.school_id == user.school_id,
+            User.status == "active",
+            RoleBinding.role_type == Role.it_admin.value,
+            RoleBinding.ended_at.is_(None),
+        )
+        .distinct()
+    ).all()
+    to_self = (
+        f"你的账号于 {when} 从 {where} 登录({reasons})。"
+        "如果不是你本人操作,请立即修改密码并联系信息中心。"
+    )
+    to_admin = f"{user.display_name}({user.login_name})于 {when} 从 {where} 登录({reasons})。"
+    others = [uid for uid in admins if uid != user.id]
+    plan = [(to_self, [user.id])] + ([(to_admin, others)] if others else [])
+    events: list[tuple[list[UUID], dict]] = []
+    for content, recipients in plan:
+        notice = Notice(
+            school_id=user.school_id,
+            from_user_id=None,
+            title="账号安全提醒",
+            content=content,
+            target={"type": "system", "kind": "security"},
+            target_label="系统",
+            require_ack=False,
+            created_at=entry.created_at,
+        )
+        db.add(notice)
+        db.flush()
+        db.add_all(NoticeRecipient(notice_id=notice.id, user_id=uid) for uid in recipients)
+        events.append(
+            (
+                recipients,
+                {
+                    "type": "notice.new",
+                    "id": str(notice.id),
+                    "title": notice.title,
+                    "from_name": None,
+                    "created_at": notice.created_at.isoformat(),
+                },
+            )
+        )
+    db.commit()
+    for recipients, event in events:
+        publish(redis, recipients, event)
+
+
+def _finish_login(
+    db: Session, redis: Redis, settings: Settings, user: User, request: Request | None
+) -> LoginResult:
     """登录的最后一步(无两步验证的登录与通过第二步的登录共用):清失败计数、写时间、签发令牌。"""
     redis.delete(_fail_key(settings, user.login_name))
     user.last_login_at = clock.utc_now()
     db.commit()
+    entry = _log(db, settings, user, user.login_name, "success", request)
+    try:
+        alert(db, redis, user, entry)
+    except Exception as exc:  # 提醒是尽力而为,不能挡住登录
+        db.rollback()
+        log.warning("login.alert_failed", error=type(exc).__name__)
     access_token, expires_at = issue_access_token(user.id, settings)
     refresh_token = sessions.issue_refresh(redis, settings, user.id)
     return LoginResult(access_token, refresh_token, expires_at, user)
 
 
 def login(
-    db: Session, redis: Redis, settings: Settings, login_name: str, password: str
+    db: Session,
+    redis: Redis,
+    settings: Settings,
+    login_name: str,
+    password: str,
+    request: Request | None = None,
 ) -> LoginResult | MfaChallengeResult:
     login_name = login_name.strip()
-    fail_key = _check_not_locked(redis, settings, login_name, "登录失败次数过多,请稍后再试")
+    try:
+        fail_key = _check_not_locked(redis, settings, login_name, "登录失败次数过多,请稍后再试")
+    except ApiError:
+        known = get_user_by_login(db, settings.school_id, login_name)
+        _log(db, settings, known, login_name, "locked", request)
+        raise
 
     user = get_user_by_login(db, settings.school_id, login_name)
     hashed = user.password_hash if user is not None and user.status == "active" else _DUMMY_HASH
     password_ok = verify_password(password, hashed)
     if user is None or user.status != "active" or not password_ok:
         _record_failure(redis, settings, fail_key)
+        outcome = (
+            "unknown_user"
+            if user is None
+            else "inactive"
+            if user.status != "active"
+            else "bad_password"
+        )
+        _log(db, settings, user, login_name, outcome, request)
         raise ApiError(401, "INVALID_CREDENTIALS", "登录名或密码不正确")
 
     if user.totp_enabled_at is not None:
@@ -163,7 +278,7 @@ def login(
         # 也不清失败计数,否则拿着密码的人可以靠反复第一步重置计数来无限试验证码
         token = mfa.issue_challenge(redis, user.id)
         return MfaChallengeResult(token, mfa.CHALLENGE_TTL)
-    return _finish_login(db, redis, settings, user)
+    return _finish_login(db, redis, settings, user, request)
 
 
 def _mfa_expired() -> ApiError:
@@ -183,17 +298,26 @@ def login_totp(
     if user is None or user.status != "active" or user.totp_enabled_at is None:
         # 账号在两步之间被冻结 / 归档 / 被重置了两步验证:挑战作废,从头来
         redis.delete(f"ws:mfa:{mfa_token}")
+        if user is not None and user.status != "active":
+            _log(db, settings, user, user.login_name, "inactive", request)
         raise _mfa_expired()
     # 锁定按登录名算:换一个 mfa_token 也一样被拒
-    fail_key = _check_not_locked(redis, settings, user.login_name, "登录失败次数过多,请稍后再试")
+    try:
+        fail_key = _check_not_locked(
+            redis, settings, user.login_name, "登录失败次数过多,请稍后再试"
+        )
+    except ApiError:
+        _log(db, settings, user, user.login_name, "locked", request)
+        raise
     secret = _load_secret(settings, user)
     if not totp.verify(redis, user.id, secret, code, clock.utc_now()):
         _record_failure(redis, settings, fail_key)
         mfa.record_try(redis, mfa_token)
+        _log(db, settings, user, user.login_name, "totp_failed", request)
         raise ApiError(401, "TOTP_INVALID", "验证码不正确或已过期,请检查手机时间")
     if mfa.consume(redis, mfa_token) != user.id:  # 并发的另一个请求已经用掉
         raise _mfa_expired()
-    return _finish_login(db, redis, settings, user)
+    return _finish_login(db, redis, settings, user, request)
 
 
 def _aad(user_id: UUID) -> str:

@@ -24,6 +24,7 @@ from app.domain.exams.router import router as exams_router
 from app.domain.grade_exams.router import router as grade_exams_router  # M3b 段 C
 from app.domain.growth.router import router as growth_router
 from app.domain.history.router import router as history_router  # M3b 段 H
+from app.domain.login_logs.router import router as login_logs_router  # M5b 段 A
 from app.domain.notices.acks_router import router as acks_router  # M4b 段 A
 from app.domain.notices.class_router import router as class_notices_router  # M4b 段 A
 from app.domain.notices.router import router as notices_router  # M3b 段 E
@@ -119,5 +120,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     router.include_router(system_router)  # M5a 段 A
     router.include_router(security_settings_router)  # M5b 段 A
     router.include_router(account_security_router)  # M5b 段 A
+    router.include_router(login_logs_router)  # M5b 段 A
     app.include_router(router)
     return app

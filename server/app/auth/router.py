@@ -111,8 +111,9 @@ def login(
     db: DbDep,
     redis: RedisDep,
     settings: SettingsDep,
+    request: Request,
 ) -> LoginResponse | MfaChallenge:
-    result = service.login(db, redis, settings, body.login_name, body.password)
+    result = service.login(db, redis, settings, body.login_name, body.password, request)
     if isinstance(result, service.MfaChallengeResult):  # M5b 段 A
         return MfaChallenge(mfa_token=result.mfa_token, expires_in=result.expires_in)
     return _login_response(db, result)
