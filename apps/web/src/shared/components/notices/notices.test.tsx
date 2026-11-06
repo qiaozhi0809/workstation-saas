@@ -106,6 +106,16 @@ describe('AckSettings', () => {
     expect(screen.queryByText('至少要 2 个选项')).toBeNull()
   })
 
+  it('已有 2 个有效选项后再添一个空选项:提示"选项不能为空",与提交前的 ackSpecError 一致(L89)', () => {
+    render(<Harness initial={{ kind: 'choice', options: ['去', '不去'], allow_note: false }} />)
+    expect(screen.queryByRole('alert')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '添加选项' }))
+    expect(screen.getByText('选项不能为空')).toBeInTheDocument()
+    expect(screen.queryByText('至少要 2 个选项')).toBeNull()
+    typeOpt(3, '待定')
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
   it('截止时间早于现在报错,晚于现在无错;清空回 null', () => {
     const onDeadline = vi.fn()
     render(<Harness initial={{ kind: 'confirm' }} onDeadline={onDeadline} />)

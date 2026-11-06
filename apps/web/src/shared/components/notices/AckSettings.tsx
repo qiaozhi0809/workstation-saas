@@ -4,9 +4,8 @@ import { Button } from '@/shared/components/ui/button'
 import { formatInTz } from '@/shared/lib/date'
 import { localTz } from '@/shared/lib/time'
 import type { AckSpec } from '@/shared/types/admin'
+import { MAX_OPTIONS, MIN_OPTIONS, optionsError } from './ackSpec'
 
-const MIN_OPTIONS = 2
-const MAX_OPTIONS = 5
 const MAX_OPTION_LEN = 20
 
 const KINDS: readonly { kind: AckSpec['kind']; label: string }[] = [
@@ -20,19 +19,11 @@ function toLocalInput(iso: string | null | undefined): string {
   return iso ? formatInTz(iso, localTz()).replace(' ', 'T') : ''
 }
 
-/** 选项校验:有效选项(去空格后非空)不足 2 个、或有重复,返回提示文案 */
-function optionsError(options: string[]): string | null {
-  const filled = options.map((o) => o.trim()).filter(Boolean)
-  if (filled.length < MIN_OPTIONS) return '至少要 2 个选项'
-  if (new Set(filled).size !== filled.length) return '选项不能重复'
-  return null
-}
-
 /**
  * 回执设置:不要回执 / 已知晓 / 单选。
  * - value / onChange:回执方式(AckSpec)受控。
  * - deadline(ISO 或 null)/ onDeadlineChange(ISO 或 null):截止时间,可选;不传 deadline 时组件内部自己记着,只用于显示错误。
- * 校验错误只显示,不阻止调用方;调用方提交前需自行拦截(选项 2 到 5 个且不重复,截止时间晚于现在)。
+ * 校验错误只显示,不阻止调用方;调用方提交前用 ackSpecError 拦截——选项文案与这里同出 optionsError(L89)。
  */
 export default function AckSettings({
   value,
