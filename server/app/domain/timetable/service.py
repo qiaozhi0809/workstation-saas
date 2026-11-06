@@ -40,6 +40,13 @@ def list_periods(db: Session, school_id: UUID) -> list[Period]:
     return [Period(no=r.no, starts_at=_hhmm(r.starts_at), ends_at=_hhmm(r.ends_at)) for r in rows]
 
 
+def lock_school(db: Session, school_id: UUID) -> None:
+    """作息与课表共用这一把锁(L156):删节次(save_periods)与写课表(save_class_timetable)串行,
+    写课表时读到的"已设节次"在它提交前不会被另一边删掉,不会留下引用已删节次的格子。
+    加锁顺序固定:先 School 行,再班级行。"""
+    db.execute(select(School.id).where(School.id == school_id).with_for_update())
+
+
 def save_periods(
     db: Session,
     school_id: UUID,
@@ -47,7 +54,7 @@ def save_periods(
     actor: UUID,
     request: Request | None,
 ) -> list[Period]:
-    db.execute(select(School.id).where(School.id == school_id).with_for_update())
+    lock_school(db, school_id)
     keep = {p.no for p in periods}
     in_use = db.execute(
         select(SchoolClass.name, TimetableEntry.period_no)
@@ -220,6 +227,7 @@ def save_class_timetable(
 ) -> ClassTimetable:
     if cls.academic_year_id != year.id:
         raise ApiError(400, "BAD_REQUEST", "只能修改当前学年班级的课表")
+    lock_school(db, cls.school_id)  # 先 School 再班级(与 save_periods 同一把锁,L156)
     cls = lock_class(db, cls.id)
     periods = defined_period_nos(db, cls.school_id)
     subjects = {s.name for s in class_subjects(db, cls)}
