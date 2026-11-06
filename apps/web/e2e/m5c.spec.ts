@@ -435,8 +435,12 @@ test('H.265 camera: the test reports hevc as not playable with a hint, shown in 
   const camera = await addCamera(request, it, CLASS_3_2, CAM2, 'E2E高清机位')
   try {
     const result = await testCamera(request, it, camera.id)
-    // cam2 的推流镜像可能没有 libx265(CI 第一次跑才知道):连不上就跳过,由后续段据此决定是否换镜像
-    test.skip(!result.ok && result.probe === null, `cam2 不可用:${result.message}`)
+    // cam2 的推流镜像可能没有 libx265(CI 第一次跑才知道):只有 worker 明确回"连不上摄像头"才跳过,
+    // 由后续段据此决定是否换镜像;"转流服务没有响应"等其它失败是环境坏了,要让用例红
+    test.skip(
+      result.probe === null && result.message.includes('连不上'),
+      `cam2 不可用:${result.message}`,
+    )
     expect(result.probe, `连接通了却没有 ffprobe 流信息:${result.message}`).not.toBeNull()
     expect(result.probe!.video_codec).toBe('hevc')
     expect(result.probe!.browser_playable).toBe(false)

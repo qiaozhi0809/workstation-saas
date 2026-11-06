@@ -172,10 +172,13 @@ jobs:
         run: |
           nohup uv run uvicorn --factory app.main:create_app --port 8080 > "$RUNNER_TEMP/backend.log" 2>&1 &
 
-      # 转流 worker:扫 ws:cam:want:* 起 ffmpeg 写 HLS、回答"测试连接";WS_ENV=dev 才放行回环地址的摄像头
+      # 转流 worker:扫 ws:cam:want:* 起 ffmpeg 写 HLS、回答"测试连接";WS_ENV=dev 才放行回环地址的摄像头。
+      # 心跳文件显式放到 RUNNER_TEMP,Wait for services 据此确认 worker 真的在跑(而不只是进程起了)
       - name: Start stream worker
         working-directory: server
         run: |
+          export WS_STREAM_HEARTBEAT="$RUNNER_TEMP/ws-stream-alive"
+          echo "WS_STREAM_HEARTBEAT=$WS_STREAM_HEARTBEAT" >> "$GITHUB_ENV"
           nohup uv run python -m app.stream > "$RUNNER_TEMP/stream.log" 2>&1 &
 
       - name: Install frontend dependencies
@@ -211,7 +214,19 @@ jobs:
             echo "--- fakellm.log ---"; cat "$RUNNER_TEMP/fakellm.log" || true
             return 1
           }
-          # mediamtx 没有 HTTP 健康接口:先等 RTSP 端口可连,再用 ffprobe 确认推流到位(最多各 60 秒)
+          # 转流 worker 没有 HTTP 接口:它每秒 touch 一次 WS_STREAM_HEARTBEAT,文件出现即视为活着(最多 60 秒)
+          wait_for_file() {
+            for _ in $(seq 1 30); do
+              if [ -f "$1" ]; then
+                echo "$1 exists"
+                return 0
+              fi
+              sleep 2
+            done
+            echo "Timed out waiting for $1"
+            return 1
+          }
+          # mediamtx 没有 HTTP 健康接口:先等 RTSP 端口可连(最多 60 秒),再用 ffprobe 确认推流到位
           wait_rtsp_port() {
             for _ in $(seq 1 30); do
               if (echo > "/dev/tcp/127.0.0.1/$WS_RTSP_PORT") 2>/dev/null; then
@@ -223,9 +238,10 @@ jobs:
             echo "Timed out waiting for rtsp port $WS_RTSP_PORT"
             return 1
           }
+          # 15 次 × (ffprobe 最多 4 秒 + 歇 2 秒) ≈ 90 秒封顶;cam2 起不来时不能把整个 job 拖住
           wait_rtsp_stream() {
-            for _ in $(seq 1 30); do
-              if timeout 15 ffprobe -v error -rtsp_transport tcp -i "rtsp://127.0.0.1:$WS_RTSP_PORT/$1" -show_streams > /dev/null 2>&1; then
+            for _ in $(seq 1 15); do
+              if timeout 4 ffprobe -v error -rtsp_transport tcp -i "rtsp://127.0.0.1:$WS_RTSP_PORT/$1" -show_streams > /dev/null 2>&1; then
                 echo "rtsp stream $1 is up"
                 return 0
               fi
@@ -238,6 +254,11 @@ jobs:
           wait_for http://localhost:8080/api/v1/healthz
           wait_for http://localhost:5173/
           wait_for http://localhost:5173/api/v1/healthz
+          wait_for_file "$WS_STREAM_HEARTBEAT" || {
+            echo "::error::转流 worker 没有心跳"
+            echo "--- stream.log ---"; cat "$RUNNER_TEMP/stream.log" || true
+            exit 1
+          }
           wait_rtsp_port
           # cam1(H.264)是所有真流用例的前提,起不来就中止;cam2(H.265)的推流镜像可能没有 libx265,
           # 起不来只告警——m5c.spec 的 HEVC 用例会据此 skip,由后续段决定是否换镜像
@@ -248,7 +269,13 @@ jobs:
           }
           wait_rtsp_stream cam2 || echo "::warning::H.265 假摄像头 cam2 不可用(镜像可能没有 libx265),m5c 的 HEVC 用例会跳过"
 
-      # R7:真 ffmpeg 组需要 ffmpeg + 假摄像头,只有这里具备(backend job 里 skip);性能冒烟另起一步
+      - name: Playwright e2e
+        working-directory: apps/web
+        run: npm run e2e -- --trace retain-on-failure
+
+      # R7:真 ffmpeg 组需要 ffmpeg + 假摄像头,只有这里具备(backend job 里 skip)。放在 Playwright 之后:
+      # 它和 Playwright 的真流用例都要起 ffmpeg 拉同一路 cam1,先跑完浏览器用例再跑它,互不抢 CPU;
+      # 仍是必过步骤(没有 continue-on-error)。性能冒烟另起一步
       - name: Pytest ffmpeg group
         working-directory: server
         run: uv run pytest -m "ffmpeg and not perf" -q
@@ -268,10 +295,6 @@ jobs:
           name: stream-perf
           path: ${{ runner.temp }}/perf.txt
           if-no-files-found: ignore
-
-      - name: Playwright e2e
-        working-directory: apps/web
-        run: npm run e2e -- --trace retain-on-failure
 
       - name: Show service logs
         if: failure()
