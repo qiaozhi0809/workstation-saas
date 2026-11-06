@@ -7,7 +7,18 @@ export function useMeta() {
   return useQuery({ queryKey: ['meta'], queryFn: schoolApi.meta, staleTime: 60 * 60_000 })
 }
 
-/** 学校时区(L79):/meta 还没回来或失败时先按浏览器时区显示 */
+/** 不是 Intl 认得的时区名(含空串)就回落浏览器时区,免得 formatInTz 抛 RangeError;与 LiveWatermark 的 L172 同一做法 */
+function validTz(tz: string | undefined): string | null {
+  if (!tz) return null
+  try {
+    new Intl.DateTimeFormat(undefined, { timeZone: tz })
+    return tz
+  } catch {
+    return null
+  }
+}
+
+/** 学校时区(L79):/meta 还没回来、失败或给了不合法的值时按浏览器时区显示 */
 export function useSchoolTz(): string {
-  return useMeta().data?.school_tz ?? localTz()
+  return validTz(useMeta().data?.school_tz) ?? localTz()
 }
