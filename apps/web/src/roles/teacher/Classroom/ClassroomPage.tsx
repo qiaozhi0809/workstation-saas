@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Dices, PencilLine, School } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -51,6 +51,7 @@ import TodoSection from './panel/TodoSection'
 import FeedSection from './panel/FeedSection'
 import ExamSection from './panel/ExamSection'
 import { modesFor, type ClassroomUiMode } from './ModeBar'
+import CameraStrip from './CameraStrip'
 import ClassroomDock from './ClassroomDock'
 import { useAttendanceDate } from './useAttendanceDate'
 import { useFullscreen } from './useFullscreen'
@@ -134,6 +135,9 @@ function ClassroomView({ cls }: { cls: ClassView }) {
   const [editingBoard, setEditingBoard] = useState(false)
   const [panelOpen, setPanelOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // "看看教室"默认收起;换班时整页按 key 重建,自然收起
+  const [camerasOpen, setCamerasOpen] = useState(false)
+  const [cameraFullscreen, setCameraFullscreen] = useState(false)
 
   const roster = useQuery({
     queryKey: ['class-students', classId],
@@ -323,6 +327,8 @@ function ClassroomView({ cls }: { cls: ClassView }) {
   const setMode = (next: ClassroomUiMode) => {
     if (mode === 'seating' && !confirmLeave(['seating'])) return
     if (next === 'seating') pick.close()
+    // 切换模式时收起教室画面(播放器随之销毁)
+    setCamerasOpen(false)
     // 离开考勤模式时考勤日期回到学校今天,日常 / 点评叠加的是今天的考勤
     if (mode === 'attendance' && next !== 'attendance') attDate.followToday()
     // 同步切换:路由默认在 transition 里更新,渲染较慢时模式条和地图会停在旧模式,点击落到旧模式上
@@ -430,11 +436,17 @@ function ClassroomView({ cls }: { cls: ClassView }) {
         .map((s) => s.enrollment_id),
     [roster.data],
   )
+  // 全屏看摄像头(多半在投屏)时舞台不再动
   const { idle, teacher: idleTeacher } = useIdleActions({
     ids: seatedIds,
     enabled: !!preferences.data?.idle_animation && !reducedMotion && mode !== 'seating',
-    paused: picking,
+    paused: picking || cameraFullscreen,
   })
+  const cameraCount = summary.data?.cameras ?? 0
+  // 概况刷新后本班没有可看的摄像头了:收起,之后再有也要老师重新点开
+  useEffect(() => {
+    if (cameraCount === 0) setCamerasOpen(false)
+  }, [cameraCount])
   const pickEffects: ClassroomEffects = {
     ...slot.effects,
     idle,
@@ -537,6 +549,16 @@ function ClassroomView({ cls }: { cls: ClassView }) {
         </div>
         {slot.tray}
         {review.leaderboard}
+        {camerasOpen && cameraCount > 0 && summary.data && (
+          <CameraStrip
+            classId={classId}
+            schoolName={summary.data.school_name}
+            viewerName={displayName ?? ''}
+            timeZone={summary.data.timezone}
+            onClose={() => setCamerasOpen(false)}
+            onFullscreenChange={setCameraFullscreen}
+          />
+        )}
         <ClassroomDock
           mode={mode}
           perms={perms}
@@ -591,6 +613,11 @@ function ClassroomView({ cls }: { cls: ClassView }) {
           presenting={presenting}
           onTogglePresent={togglePresent}
           onOpenPanel={() => setPanelOpen(true)}
+          cameras={
+            cameraCount > 0
+              ? { open: camerasOpen, onToggle: () => setCamerasOpen((o) => !o) }
+              : undefined
+          }
         />
       </section>
       {settingsOpen && summary.data && roster.data && (
