@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { Building2, Sun, Users } from 'lucide-react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore } from '@/shared/stores/auth'
@@ -206,6 +206,53 @@ describe('grouped nav (≥ 768)', () => {
     fireEvent.click(screen.getByRole('button', { name: '联考与报表' }))
     fireEvent.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: '成绩汇总' }))
     expect(screen.queryByRole('menu')).toBeNull()
+  })
+
+  // L58:导航下拉的键盘
+  it('opens with ArrowUp too, and ArrowUp on the open trigger jumps to the last item', () => {
+    renderNav()
+    const btn = screen.getByRole('button', { name: '系统' })
+    btn.focus()
+    fireEvent.keyDown(btn, { key: 'ArrowUp' })
+    const menu = screen.getByRole('menu', { name: '系统' })
+    const items = within(menu).getAllByRole('menuitem')
+    expect(items[0]).toHaveFocus()
+    btn.focus()
+    fireEvent.keyDown(btn, { key: 'ArrowUp' })
+    expect(items[items.length - 1]).toHaveFocus()
+    expect(screen.getByRole('menu', { name: '系统' })).toBeInTheDocument()
+  })
+
+  it('activates a focused menu item with Space: navigates and closes', () => {
+    function Probe() {
+      return <output data-testid="path">{useLocation().pathname}</output>
+    }
+    render(
+      <MemoryRouter initialEntries={['/admin/today']}>
+        <AdminNav pages={ADMIN_PAGES} />
+        <Probe />
+      </MemoryRouter>,
+    )
+    const btn = screen.getByRole('button', { name: '联考与报表' })
+    btn.focus()
+    fireEvent.keyDown(btn, { key: 'ArrowDown' })
+    const menu = screen.getByRole('menu', { name: '联考与报表' })
+    fireEvent.keyDown(menu, { key: 'ArrowDown' })
+    const item = within(menu).getByRole('menuitem', { name: '成绩汇总' })
+    expect(item).toHaveFocus()
+    const space = fireEvent.keyDown(item, { key: ' ' })
+    expect(space).toBe(false) // 已 preventDefault:空格不再滚动页面
+    expect(screen.getByTestId('path')).toHaveTextContent('/admin/reports/scores')
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(btn).toHaveFocus()
+  })
+
+  it('marks the current page inside the open menu', () => {
+    renderNav(ADMIN_PAGES, '/admin/org/classes/c1')
+    fireEvent.click(screen.getByRole('button', { name: '学校管理' }))
+    const items = within(screen.getByRole('menu', { name: '学校管理' })).getAllByRole('menuitem')
+    const marked = items.filter((i) => i.querySelector('svg.lucide-check') !== null)
+    expect(marked.map((i) => i.textContent?.trim())).toEqual(['组织架构'])
   })
 
   it('is data-driven: any page with a group lands in that group', () => {
