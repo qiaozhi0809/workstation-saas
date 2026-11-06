@@ -16,6 +16,8 @@ dependencies = [
   "tzdata>=2026.6",
   "httpx>=0.28,<1",
   "cryptography>=44,<47",
+  "pyotp==2.10.0",
+  "segno==1.6.6",
 ]
 
 [dependency-groups]
