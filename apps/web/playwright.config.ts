@@ -17,6 +17,7 @@ const M4A = 'm4a.spec.ts'
 const M4B = 'm4b.spec.ts'
 const M5B = 'm5b.spec.ts'
 const M5C = 'm5c.spec.ts'
+const WALKTHROUGH = 'walkthrough.spec.ts'
 
 export default defineConfig({
   testDir: './e2e',
@@ -48,8 +49,31 @@ export default defineConfig({
     { name: 'm5c', testMatch: M5C, dependencies: ['m5b'], use: { channel: 'chrome' } },
     {
       name: 'readonly',
-      testIgnore: [MUTATING, GRADES, STUDENTS, AI, PROFILE, DESKS, ADMIN, M3B, M4A, M4B, M5B, M5C],
+      testIgnore: [
+        MUTATING,
+        GRADES,
+        STUDENTS,
+        AI,
+        PROFILE,
+        DESKS,
+        ADMIN,
+        M3B,
+        M4A,
+        M4B,
+        M5B,
+        M5C,
+        WALKTHROUGH,
+      ],
       dependencies: ['m5c'],
+    },
+    // 走查截图(M5d R14):只读,把各端主要页面按视口 × 主题截成整页 PNG 到 apps/web/walkthrough/,CI 作为 artifact 上传。
+    // 排在整条链末尾、独占浏览器,不与只读 project 里量布局的用例抢 CPU;文件内 8 个用例声明为并行。
+    // 一个用例要截几十张图(约 1–2 分钟),单测超时放宽到 5 分钟;单张图的等待仍受 expect 10 秒约束,卡住时快速失败
+    {
+      name: 'walkthrough',
+      testMatch: WALKTHROUGH,
+      dependencies: ['readonly'],
+      timeout: 5 * 60_000,
     },
   ],
 })
