@@ -77,6 +77,13 @@ assert_services_up
 [ "$(docker inspect -f '{{.Config.Image}}' "$(dc ps -q stream-worker)")" = "workstation-stream:$NEWV" ] \
   || fail "升级后 stream-worker 容器没有用新版本标签的镜像"
 [ "$(user_count)" = "$users_before" ] || fail "升级后 users 行数变了"
+# L199:成功后给出旧镜像的清理命令(不自动删);L179:给出快照目录且状态文件已清
+grep -q "docker image rm workstation-app:$VERSION workstation-web:$VERSION workstation-stream:$VERSION" "$TMP/upgrade.log" \
+  || fail "升级输出里没有旧镜像清理命令(docker image rm …:$VERSION)"
+docker image inspect "workstation-app:$VERSION" >/dev/null 2>&1 || fail "升级不应删除旧版本镜像"
+[ -n "$(find "$DEPLOY/backups" -maxdepth 1 -name "pre-upgrade-$VERSION-*" -type d)" ] || fail "没有生成升级前快照 backups/pre-upgrade-$VERSION-*"
+[ ! -e "$DEPLOY/backups/.ws-upgrade-state" ] || fail "升级成功后状态文件应被清除"
+pass "输出含旧镜像清理命令且旧镜像仍在;升级前快照已保存,状态文件已清除"
 dump_logs "$TMP/compose.log"
 assert_no_secrets "升级输出" "$TMP/upgrade.log"
 assert_no_secrets "容器日志" "$TMP/compose.log"

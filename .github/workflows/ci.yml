@@ -386,3 +386,86 @@ jobs:
           name: deploy-service-logs
           path: ${{ runner.temp }}/service-logs/
           if-no-files-found: ignore
+
+  # 升级路径(段 O,L117 / L179 / L190):两个较慢的部署测试,独立于 deploy job,只在 main / tag 上跑
+  #   upgrade_rollback.sh      升级失败后 rollback.sh 回退、kill -9 中断后的提示与回退
+  #   upgrade_from_previous.sh 从上一个发布 tag 构建旧离线包装一套,再用本提交的包升级(真实跨版本迁移)
+  # 版本号用 1.0.0-ci:旧包是 0.7.2-ci,upgrade.sh 只放行 0.x → 1.x 这一种大版本跳跃;tag 不存在时跨版本测试以 ::warning 跳过。
+  # 验证本 PR 时临时加了 head_ref 条件,合并前去掉。
+  deploy-upgrade-path:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || github.head_ref == 'm5d-seg-o'
+    defaults:
+      run:
+        shell: bash
+    env:
+      WS_TEST_VERSION: 1.0.0-ci
+      WS_TEST_PROJECT: ws-m5a-up
+      WS_HTTP_PORT: 18080
+      WS_HTTPS_PORT: 18443
+      WS_PREVIOUS_TAG: v0.7.2-m5c-cameras
+      WS_PREVIOUS_VERSION: 0.7.2-ci
+    steps:
+      # 需要 tag 与完整历史:旧包从 tag 的 worktree 构建
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Build current bundle
+        run: deploy/release/build-bundle.sh "$WS_TEST_VERSION"
+
+      - name: Unpack current bundle
+        run: |
+          mkdir -p "$RUNNER_TEMP/bundle"
+          tar -xzf "dist/workstation-deploy-$WS_TEST_VERSION.tar.gz" -C "$RUNNER_TEMP/bundle"
+          echo "WS_TEST_DEPLOY_SRC=$RUNNER_TEMP/bundle/workstation-deploy-$WS_TEST_VERSION" >> "$GITHUB_ENV"
+          echo "WS_BUNDLE_PKG=$PWD/dist/workstation-deploy-$WS_TEST_VERSION.tar.gz" >> "$GITHUB_ENV"
+
+      # 旧包:tag 存在才构建(用 tag 那一版自己的 build-bundle.sh 与 Dockerfile),否则留空让测试跳过
+      - name: Build previous bundle from tag
+        run: |
+          if git rev-parse -q --verify "refs/tags/$WS_PREVIOUS_TAG^{commit}" >/dev/null; then
+            git worktree add "$RUNNER_TEMP/prev" "$WS_PREVIOUS_TAG"
+            (cd "$RUNNER_TEMP/prev" && deploy/release/build-bundle.sh "$WS_PREVIOUS_VERSION")
+            mkdir -p "$RUNNER_TEMP/prev-bundle"
+            tar -xzf "$RUNNER_TEMP/prev/dist/workstation-deploy-$WS_PREVIOUS_VERSION.tar.gz" -C "$RUNNER_TEMP/prev-bundle"
+            echo "WS_PREVIOUS_DEPLOY_SRC=$RUNNER_TEMP/prev-bundle/workstation-deploy-$WS_PREVIOUS_VERSION" >> "$GITHUB_ENV"
+            # 旧包构建出的镜像由测试从旧包的 images/ 里 docker load;这里删掉本机构建出的,证明用的是包里的
+            docker image rm "workstation-app:$WS_PREVIOUS_VERSION" "workstation-web:$WS_PREVIOUS_VERSION" "workstation-stream:$WS_PREVIOUS_VERSION"
+          else
+            echo "::warning::tag $WS_PREVIOUS_TAG 不存在,跳过跨版本升级测试(协调者打完 tag 后重跑本 job)"
+          fi
+
+      # 与 deploy job 同样的方式逐个跑;失败时上传各服务日志
+      - name: Upgrade path tests
+        run: |
+          for t in upgrade_rollback upgrade_from_previous; do
+            echo "::group::$t"
+            stop="$RUNNER_TEMP/stop-$t"
+            deploy/tests/bundle_collect_logs.sh "$WS_TEST_PROJECT" "$RUNNER_TEMP/service-logs/$t" "$stop" &
+            collector=$!
+            rc=0
+            set +e
+            "deploy/tests/$t.sh" 2>&1 | tee "$RUNNER_TEMP/service-logs-$t.out"
+            rc=${PIPESTATUS[0]}
+            set -e
+            touch "$stop"
+            wait "$collector" || true
+            mkdir -p "$RUNNER_TEMP/service-logs/$t"
+            mv "$RUNNER_TEMP/service-logs-$t.out" "$RUNNER_TEMP/service-logs/$t/test-output.txt"
+            echo "::endgroup::"
+            if [ "$rc" -ne 0 ]; then
+              echo "::error::$t 失败(退出码 $rc)"
+              exit "$rc"
+            fi
+          done
+
+      - name: Upload service logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-upgrade-path-service-logs
+          path: ${{ runner.temp }}/service-logs/
+          if-no-files-found: ignore

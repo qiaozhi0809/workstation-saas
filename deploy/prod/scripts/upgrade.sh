@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 # 升级:在部署目录里执行 ./scripts/upgrade.sh <离线包.tar.gz>
 #
-# 流程:校验离线包 → 强制备份 → 载入新镜像 → 用新镜像做迁移预检 → 覆盖程序文件 → 重启并等健康。
+# 流程:校验离线包 → 强制备份 → 载入新镜像 → 用新镜像做迁移预检 → 保存升级前快照 → 覆盖程序文件 → 重启并等健康。
 # 预检不通过时,在覆盖任何文件、动任何服务之前就停下(退出码 2),系统仍在旧版本上运行。
-# 本脚本不依赖 compose 的重启策略做回滚;覆盖文件开始之后任何一步失败,统一打印手动回退办法
-# (先把 .env 里的 WS_VERSION 改回旧版本,再用刚才的备份执行 restore.sh)。
+# 覆盖文件之前,先把旧版的 docker-compose.yml、Caddyfile*、VERSION、.env.example、scripts/、systemd/ 复制到
+# backups/pre-upgrade-<旧版>-<时间>/(L179),并在 backups/.ws-upgrade-state 记下"升级进行中"(L190);
+# 覆盖文件之后任何一步失败,统一打印回退办法:./scripts/rollback.sh <快照>(还原程序文件与 WS_VERSION,数据库未被新版改动
+# 时直接起旧版),数据库已被迁移时再 ./scripts/restore.sh <升级前备份>。本脚本不依赖 compose 的重启策略做回滚。
+# 断电 / kill -9 中断后状态文件会留下:下次运行本脚本会提示先 rollback.sh 或重跑同一个离线包。
+# 注意:执行升级的永远是"已装版本"的脚本,这些改进只对 1.0.0 之后的升级生效;更早版本升上来的处置见 README 第 9 节。
 #
 # 安全约定:不开 xtrace;不打印密钥;回显容器输出前先过 redact;解包前拒绝绝对路径、..、链接与特殊文件。
 # WS_INSTALL_SKIP_LOAD=1 跳过 docker load(仅测试用:镜像已在本机;正式升级不应设置)。
@@ -20,19 +24,32 @@ WORK=""
 OVERWRITE_STARTED=0
 OLD_VERSION=""
 BACKUP_FILE=""
+SNAPSHOT=""
+STATE_FILE="$DEPLOY_DIR/backups/.ws-upgrade-state"
 HEALTH_TIMEOUT="${WS_UPGRADE_HEALTH_TIMEOUT:-300}"
+
+usage() {
+  cat <<'USAGE'
+用法:./scripts/upgrade.sh <离线包.tar.gz>
+  在部署目录里执行。流程:校验离线包 → 强制备份 → 载入新镜像 → 迁移预检 → 保存升级前快照 → 覆盖程序文件 → 重启并等健康。
+  预检不通过退出码 2(系统仍在旧版本);覆盖文件后失败会打印回退办法(rollback.sh / restore.sh)。
+  环境变量:WS_UPGRADE_HEALTH_TIMEOUT 等应用就绪的秒数(默认 300)。
+USAGE
+}
 
 cleanup() {
   local rc=$?
   trap - EXIT
   if [ -n "$WORK" ] && [ -d "$WORK" ]; then rm -rf "$WORK"; fi
   lib_cleanup
-  # 覆盖文件之后才失败:打印统一的恢复办法
+  # 覆盖文件之后才失败:打印统一的回退办法(快照与升级前备份都保留着)
   if [ "$rc" -ne 0 ] && [ "$OVERWRITE_STARTED" -eq 1 ]; then
     {
       printf '\n升级在覆盖程序文件之后失败了。回到旧版本 %s 的办法(按顺序):\n' "$OLD_VERSION"
-      printf '  1) 先把 .env 里的 WS_VERSION 改回 %s\n' "$OLD_VERSION"
-      printf '  2) 再执行 ./scripts/restore.sh %s\n' "$BACKUP_FILE"
+      printf '  1) ./scripts/rollback.sh %s\n' "$SNAPSHOT"
+      printf '     (把升级前的程序文件复制回部署目录、.env 的 WS_VERSION 改回 %s;数据库没被新版本改动时会直接启动旧版本)\n' "$OLD_VERSION"
+      printf '  2) rollback.sh 若提示数据库已被新版本迁移,再执行 ./scripts/restore.sh %s\n' "$BACKUP_FILE"
+      printf '升级前的快照目录与备份文件都不会被删除;状态文件 backups/.ws-upgrade-state 由 rollback.sh 或下一次成功升级清除。\n'
     } >&2
   fi
   exit "$rc"
@@ -121,9 +138,64 @@ append_new_env_keys() {
 
 list_backups() { ls -1 "$DEPLOY_DIR"/backups/ws-backup-*.tar.gz 2>/dev/null | sort || true; }
 
+# 升级前快照(L179):把旧版的程序文件原样复制到 backups/pre-upgrade-<旧版>-<时间>/,回退时由 rollback.sh 复制回来。
+# 含正在生效的 Caddyfile(升级可能替换它,L198)。不含 .env(有密钥;备份包里已有一份)、data/、backups/。
+# 目录建在 umask 077 下(700),与 backups/ 一致。
+save_snapshot() {
+  local dir="$1" f
+  (umask 077; mkdir "$dir") || die "无法创建快照目录 $dir,未改动任何文件"
+  for f in VERSION BUILD_INFO docker-compose.yml Caddyfile Caddyfile.internal Caddyfile.custom Caddyfile.acme .env.example README.md; do
+    if [ -f "$DEPLOY_DIR/$f" ]; then cp -p "$DEPLOY_DIR/$f" "$dir/$f" || die "复制 $f 到快照目录失败,未改动任何文件"; fi
+  done
+  for f in scripts systemd; do
+    if [ -d "$DEPLOY_DIR/$f" ]; then cp -pR "$DEPLOY_DIR/$f" "$dir/$f" || die "复制 $f/ 到快照目录失败,未改动任何文件"; fi
+  done
+  [ -f "$dir/VERSION" ] && [ -f "$dir/docker-compose.yml" ] && [ -d "$dir/scripts" ] \
+    || die "快照不完整(缺 VERSION、docker-compose.yml 或 scripts/),未改动任何文件"
+}
+
+# 状态文件(L190):覆盖文件之前写、启动确认成功之后删。断电 / kill -9 时 EXIT trap 不会执行,它会留下来,
+# 下次运行本脚本(或 rollback.sh)据此知道上次升级没有做完。格式与 .env 一样是 键=值,用 read_env 读。
+write_state() {
+  local tmp="$STATE_FILE.tmp.$$"
+  register_tmp "$tmp"
+  (umask 077; {
+    printf 'OLD_VERSION=%s\n' "$OLD_VERSION"
+    printf 'NEW_VERSION=%s\n' "$1"
+    printf 'SNAPSHOT=%s\n' "$SNAPSHOT"
+    printf 'BACKUP=%s\n' "$BACKUP_FILE"
+    printf 'STARTED_AT=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  } >"$tmp") || die "写升级状态文件失败,未改动任何文件"
+  mv "$tmp" "$STATE_FILE" || die "写升级状态文件失败,未改动任何文件"
+}
+
+# 上次升级中断的处置(L190):状态文件在 → 上次在覆盖文件之后没有确认成功。
+#   * 这次的离线包与上次版本相同 → 视为重跑:沿用上次的快照与旧版本号(此时 VERSION 文件已是新版,不能再当旧版),继续;
+#   * 否则停下,提示先 rollback.sh 回到旧版,或重跑上次那个离线包。
+# 设置全局 RESUME_OLD / RESUME_SNAPSHOT 供 main 使用。
+RESUME_OLD=""
+RESUME_SNAPSHOT=""
+check_interrupted() {
+  local new_version="$1" s_old s_new s_snap s_at
+  [ -f "$STATE_FILE" ] || return 0
+  s_old="$(read_env OLD_VERSION "$STATE_FILE")"
+  s_new="$(read_env NEW_VERSION "$STATE_FILE")"
+  s_snap="$(read_env SNAPSHOT "$STATE_FILE")"
+  s_at="$(read_env STARTED_AT "$STATE_FILE")"
+  log_warn "上次升级(${s_old:-?} → ${s_new:-?},开始于 ${s_at:-?})在覆盖程序文件之后中断,没有确认成功"
+  if [ "$new_version" = "$s_new" ] && [ -n "$s_snap" ] && [ -d "$s_snap" ]; then
+    log_warn "本次离线包版本与上次相同,按重跑处理;回退时仍以上次的快照为准:$s_snap"
+    RESUME_OLD="$s_old"
+    RESUME_SNAPSHOT="$s_snap"
+    return 0
+  fi
+  die "请先回到旧版本 ${s_old:-?}:./scripts/rollback.sh ${s_snap:-<快照目录>};或者重跑上次那个离线包(版本 ${s_new:-?})。处理之后再升级到 $new_version"
+}
+
 main() {
-  [ "$#" -eq 1 ] || die "用法:./scripts/upgrade.sh <离线包.tar.gz>"
-  local pkg new_version newdir out rc entries before after
+  case "${1:-}" in -h|--help) usage; exit 0 ;; esac
+  [ "$#" -eq 1 ] || { usage >&2; die "需要且只需要一个参数:离线包路径"; }
+  local pkg new_version newdir out rc entries before after leftover
   [ -f "$1" ] || die "找不到离线包:$1"
   # 包路径先转成绝对路径,后面 cd 到部署目录后仍然有效
   pkg="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
@@ -135,6 +207,12 @@ main() {
   # 与备份 / 恢复互斥;升级里会调用 backup.sh,经环境变量告诉它"锁已由本进程持有"
   acquire_lock
   export WS_LOCK_OWNER_PID="$$"
+  # 持有锁之后,部署目录下任何 .ws-upgrade.* 都是上次被强行中断留下的解包目录,直接清掉(L190)
+  leftover="$(find "$DEPLOY_DIR" -maxdepth 1 -name '.ws-upgrade.*' -type d 2>/dev/null || true)"
+  if [ -n "$leftover" ]; then
+    log_warn "清理上次中断留下的升级临时目录"
+    find "$DEPLOY_DIR" -maxdepth 1 -name '.ws-upgrade.*' -type d -exec rm -rf {} + 2>/dev/null || true
+  fi
 
   # 1. 校验、解包、版本检查(解包目录放在部署目录下的隐藏临时目录,与磁盘门槛检查对应同一块盘)
   verify_checksum "$pkg"
@@ -154,12 +232,16 @@ main() {
   OLD_VERSION="$(tr -d '[:space:]' <"$DEPLOY_DIR/VERSION")"
   version_ok "$new_version" || die "离线包里的版本号格式不对:$new_version"
   version_ok "$OLD_VERSION" || die "当前版本号格式不对:$OLD_VERSION"
-  if [ "$(major_of "$new_version")" != "$(major_of "$OLD_VERSION")" ]; then
+  # 大版本不同一律拒绝,唯一例外是 0.x → 1.x:1.0.0 是本系统的首个正式版,0.7.x 试用版升上来是计划内路径(README 第 9 节)
+  if [ "$(major_of "$new_version")" != "$(major_of "$OLD_VERSION")" ] \
+    && ! { [ "$(major_of "$OLD_VERSION")" = "0" ] && [ "$(major_of "$new_version")" = "1" ]; }; then
     die "当前版本 $OLD_VERSION,离线包版本 $new_version:大版本升级需要专门的迁移说明,本脚本拒绝执行"
   fi
   if version_lt "$new_version" "$OLD_VERSION"; then
     die "离线包版本 $new_version 低于当前版本 $OLD_VERSION:不支持降级(数据库可能已迁移到更新的结构)。回退请用备份与 restore.sh"
   fi
+  check_interrupted "$new_version"
+  if [ -n "$RESUME_OLD" ]; then OLD_VERSION="$RESUME_OLD"; fi
   log_info "升级 $OLD_VERSION → $new_version"
 
   # 2. 强制备份,失败就停;备份前后各列一次清单,必须出现新文件
@@ -200,14 +282,24 @@ main() {
   fi
   log_info "迁移预检通过"
 
-  # 5. 覆盖程序文件(不动 .env、Caddyfile、certs/、data/、backups/)
-  # 从这里开始失败会由 EXIT trap 统一打印恢复办法。
+  # 5. 升级前快照 + 状态文件(L179 / L190),然后覆盖程序文件(不动 .env、certs/、data/、backups/)
+  # 重跑上次中断的升级时沿用上次的快照(当前目录里已是新文件,再照一遍就不是"升级前"了)
+  if [ -n "$RESUME_SNAPSHOT" ]; then
+    SNAPSHOT="$RESUME_SNAPSHOT"
+  else
+    SNAPSHOT="$DEPLOY_DIR/backups/pre-upgrade-$OLD_VERSION-$(date +%Y%m%d-%H%M%S)"
+    while [ -e "$SNAPSHOT" ]; do sleep 1; SNAPSHOT="$DEPLOY_DIR/backups/pre-upgrade-$OLD_VERSION-$(date +%Y%m%d-%H%M%S)"; done
+    log_info "保存升级前快照:$SNAPSHOT"
+    save_snapshot "$SNAPSHOT"
+  fi
+  write_state "$new_version"
+  # 从这里开始失败会由 EXIT trap 统一打印回退办法。
   # 用 replace_file(写临时文件再改名):正在运行的本脚本读的是旧文件,不会被改坏
   OVERWRITE_STARTED=1
   log_info "更新程序文件……"
   local f name
   mkdir -p "$DEPLOY_DIR/scripts" "$DEPLOY_DIR/systemd"
-  for f in docker-compose.yml Caddyfile.internal Caddyfile.custom Caddyfile.acme README.md .env.example VERSION; do
+  for f in docker-compose.yml Caddyfile.internal Caddyfile.custom Caddyfile.acme README.md .env.example VERSION BUILD_INFO; do
     if [ -f "$newdir/$f" ]; then replace_file "$newdir/$f" "$DEPLOY_DIR/$f"; fi
   done
   for f in "$newdir"/scripts/*; do
@@ -229,7 +321,13 @@ main() {
   log_info "重启服务……"
   start_and_verify "$HEALTH_TIMEOUT"
   OVERWRITE_STARTED=0
-  log_info "升级完成:当前版本 $new_version。升级前备份:$BACKUP_FILE"
+  rm -f "$STATE_FILE"
+  log_info "升级完成:当前版本 $new_version。升级前备份:$BACKUP_FILE;升级前快照:$SNAPSHOT"
+  # L199:旧镜像不自动删(回退要用),只给出整理命令
+  if [ "$OLD_VERSION" != "$new_version" ]; then
+    printf '  旧版本 %s 的镜像已保留(回退要用)。确认新版本运行稳定后,可执行下面这条释放磁盘(约 1 GB):\n' "$OLD_VERSION"
+    printf '    docker image rm workstation-app:%s workstation-web:%s workstation-stream:%s\n' "$OLD_VERSION" "$OLD_VERSION" "$OLD_VERSION"
+  fi
 }
 
 main "$@"

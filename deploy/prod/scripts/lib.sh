@@ -90,6 +90,23 @@ read_env() {
   printf '%s\n' "$v"
 }
 
+# require_same_user(L183):备份 / 恢复 / 升级 / 回退 / 再次安装必须由"安装这套系统的用户"执行(以 .env 的属主为准)。
+# root(sudo)安装后普通用户再跑,会撞上 root 的锁目录与 600 文件,报出来的是"另一个备份正在进行"、".env 可能被损坏"
+# 这类让人摸不着头脑的错误;普通用户安装后用 sudo 跑,又会把新文件写成 root 的,下次普通用户写不了。这里直接说清楚。
+# 还没有 .env(首次安装)时不检查。
+require_same_user() {
+  local owner me name
+  [ -f "$ENV_FILE" ] || return 0
+  owner="$(stat -c %u "$ENV_FILE" 2>/dev/null || stat -f %u "$ENV_FILE" 2>/dev/null || true)"
+  me="$(id -u)"
+  [ -n "$owner" ] && [ "$owner" != "$me" ] || return 0
+  if [ "$owner" = "0" ]; then
+    die "该部署由 root 安装(.env 的属主是 root),请用 sudo 执行同一条命令(例如 sudo ./scripts/backup.sh)。备份、恢复、升级、回退都必须用同一个用户执行"
+  fi
+  name="$(id -un "$owner" 2>/dev/null || true)"
+  die "该部署由用户 ${name:-uid $owner} 安装(.env 的属主),请切换到该用户执行,不要用 sudo。备份、恢复、升级、回退都必须用同一个用户执行"
+}
+
 # 临时文件登记:脚本退出(含 Ctrl-C、被 kill)时由 lib_cleanup 统一删除,不留半成品。
 # 各脚本需 trap 自己的清理函数(其中调用 lib_cleanup)并把 INT / TERM 转成 exit。
 _WS_TMPS=()
@@ -159,7 +176,8 @@ release_lock() {
   return 0
 }
 
-# clean_stale_tmp:清理超过 1 天的备份 / 恢复 / 升级临时残留(被强行中断时留下的)
+# clean_stale_tmp:清理超过 1 天的备份 / 恢复 / 升级临时残留(被强行中断时留下的)。
+# 不碰 backups/.ws-upgrade-state(升级中断的记录,由 rollback.sh 或下一次成功升级清除,L190)与 backups/pre-upgrade-*(升级前快照)。
 clean_stale_tmp() {
   find "$DEPLOY_DIR/backups" -maxdepth 1 \( -name '.stage.*' -o -name '.ws-backup.*.partial' -o -name '.lock.stale.*' \) -mtime +1 -exec rm -rf {} + 2>/dev/null || true
   find "$DEPLOY_DIR" -maxdepth 1 \( -name '.ws-restore.*' -o -name '.ws-upgrade.*' \) -mtime +1 -exec rm -rf {} + 2>/dev/null || true
@@ -213,13 +231,25 @@ mask_shapes() {
     -e 's/(^|[^0-9])(\+?86[- ]?)?1[3-9][0-9][- ]?[0-9]{4}[- ]?[0-9]{4}([^0-9]|$)/\11**********\3/g'
 }
 
-# check_disk:部署目录所在磁盘可用空间门槛(默认 20 GB;WS_INSTALL_MIN_DISK_GB 只在测试里下调)
+# disk_avail_kb <路径>:该路径所在文件系统的可用空间(KB)
+disk_avail_kb() { df -Pk "$1" | awk 'NR==2 {print $4}'; }
+
+# check_disk:安装 / 升级的磁盘门槛(默认 20 GB;WS_INSTALL_MIN_DISK_GB 只在测试里下调)。
+# 同时看两块盘(L199):部署目录所在盘(备份、数据)与 Docker 数据目录所在盘(镜像、容器日志,通常是 /var/lib/docker);
+# 两者在同一块盘时只查一次。docker 不可用时跳过后者。
 check_disk() {
-  local min_gb avail_kb
+  local min_gb avail_kb droot
   min_gb="${WS_INSTALL_MIN_DISK_GB:-20}"
-  avail_kb="$(df -Pk "$DEPLOY_DIR" | awk 'NR==2 {print $4}')"
+  avail_kb="$(disk_avail_kb "$DEPLOY_DIR")"
   if [ "$avail_kb" -lt $((min_gb * 1024 * 1024)) ]; then
     die "部署目录所在磁盘可用空间不足 ${min_gb} GB(当前约 $((avail_kb / 1024 / 1024)) GB)"
+  fi
+  droot="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
+  if [ -n "$droot" ] && [ -d "$droot" ] && [ "$(df -Pk "$droot" | awk 'NR==2 {print $1}')" != "$(df -Pk "$DEPLOY_DIR" | awk 'NR==2 {print $1}')" ]; then
+    avail_kb="$(disk_avail_kb "$droot")"
+    if [ "$avail_kb" -lt $((min_gb * 1024 * 1024)) ]; then
+      die "Docker 数据目录 $droot 所在磁盘可用空间不足 ${min_gb} GB(当前约 $((avail_kb / 1024 / 1024)) GB):镜像与容器日志都放在这里。请删除不再需要的旧版本镜像(docker image rm workstation-app:<旧版本> workstation-web:<旧版本> workstation-stream:<旧版本>)或扩容"
+    fi
   fi
 }
 

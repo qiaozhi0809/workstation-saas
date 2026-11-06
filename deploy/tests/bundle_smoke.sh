@@ -46,12 +46,12 @@ tar -xzf "$PKG" -C "$TMP"
 D="$TMP/$NAME"
 for f in VERSION docker-compose.yml .env.example Caddyfile.internal Caddyfile.custom Caddyfile.acme README.md \
   "images/workstation-images-$VERSION.tar" \
-  scripts/lib.sh scripts/install.sh scripts/backup.sh scripts/restore.sh scripts/upgrade.sh scripts/diagnose.sh \
+  scripts/lib.sh scripts/install.sh scripts/backup.sh scripts/restore.sh scripts/upgrade.sh scripts/rollback.sh scripts/diagnose.sh \
   systemd/workstation-backup.service systemd/workstation-backup.timer; do
   [ -s "$D/$f" ] || fail "缺少或为空:$f"
 done
 [ "$(tr -d '[:space:]' <"$D/VERSION")" = "$VERSION" ] || fail "VERSION 文件内容不是 $VERSION"
-for f in scripts/install.sh scripts/backup.sh scripts/restore.sh scripts/upgrade.sh scripts/diagnose.sh; do
+for f in scripts/install.sh scripts/backup.sh scripts/restore.sh scripts/upgrade.sh scripts/rollback.sh scripts/diagnose.sh; do
   [ -x "$D/$f" ] || fail "$f 没有可执行权限"
   bash -n "$D/$f" || fail "$f 语法检查失败"
 done
@@ -69,7 +69,7 @@ done
 actual="$(cd "$D" && find . -type f | LC_ALL=C sort)"
 expected="$(printf '%s\n' ./VERSION ./docker-compose.yml ./.env.example ./Caddyfile.internal ./Caddyfile.custom ./Caddyfile.acme ./README.md \
   "./images/workstation-images-$VERSION.tar" ./scripts/lib.sh ./scripts/install.sh ./scripts/backup.sh ./scripts/restore.sh \
-  ./scripts/upgrade.sh ./scripts/diagnose.sh ./systemd/workstation-backup.service ./systemd/workstation-backup.timer | LC_ALL=C sort)"
+  ./scripts/upgrade.sh ./scripts/rollback.sh ./scripts/diagnose.sh ./systemd/workstation-backup.service ./systemd/workstation-backup.timer | LC_ALL=C sort)"
 [ "$actual" = "$expected" ] || fail "文件清单与契约不一致:$(printf '%s\n' "$actual" | LC_ALL=C comm -3 - <(printf '%s\n' "$expected") | tr '\n' ' ')"
 pass "契约文件齐全且无多余文件,内容与仓库一致,VERSION 对,脚本可执行且语法正确"
 
