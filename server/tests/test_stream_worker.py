@@ -23,6 +23,7 @@ from redis.asyncio import Redis as AsyncRedis
 from sqlalchemy.orm import Session
 
 from app import crypto
+from app.domain.cameras import lan as backend_lan
 from app.models.cameras import Camera
 from app.stream import ffmpeg, lan, probe
 from app.stream.supervisor import PUBLIC_HOSTS_KEY, STATE_PREFIX, WANT_PREFIX, Supervisor
@@ -194,9 +195,17 @@ def test_lan_rules(monkeypatch):
     assert lan.is_lan_ip("169.254.1.1")
     assert not lan.is_lan_ip("8.8.8.8") and not lan.is_lan_ip("::ffff:8.8.8.8")
     assert not lan.is_lan_ip("127.0.0.1") and lan.is_lan_ip("127.0.0.1", allow_loopback=True)
-    assert not lan.is_lan_ip("not-an-ip")
+    assert not lan.is_lan_ip("not-an-ip") and not lan.is_lan_ip(None)  # type: ignore[arg-type]
     # 文档段、0.0.0.0、CGNAT 都不是内网(ipaddress.is_private 会把前两类当私有)
-    for bad in ("192.0.2.1", "198.51.100.1", "203.0.113.7", "0.0.0.0", "100.64.0.1", "2001:db8::1"):
+    for bad in (
+        "192.0.2.1",
+        "198.51.100.1",
+        "203.0.113.7",
+        "0.0.0.0",
+        "0.0.0.1",
+        "100.64.0.1",
+        "2001:db8::1",
+    ):
         assert not lan.is_lan_ip(bad), bad
 
     def fake_gai(host, *a, **k):
@@ -205,7 +214,7 @@ def test_lan_rules(monkeypatch):
             "lan.example.test": [(2, 1, 6, "", ("10.0.0.5", 0))],
         }.get(host) or (_ for _ in ()).throw(socket.gaierror())
 
-    monkeypatch.setattr(lan, "socket", SimpleNamespace(getaddrinfo=fake_gai, SOCK_STREAM=1))
+    monkeypatch.setattr(backend_lan, "socket", SimpleNamespace(getaddrinfo=fake_gai))
     assert lan.resolve_is_lan("lan.example.test")
     assert not lan.resolve_is_lan("mixed.example.test")  # 任一结果在公网就拒绝
     assert not lan.resolve_is_lan("nx.example.test")  # 解析失败即拒绝
@@ -353,7 +362,7 @@ def test_worker_refuses_public_host(db, redis_url, fake_ffmpeg, hls_root, tmp_pa
             return [(2, 1, 6, "", ("203.0.113.7", 0))]
         return real_gai(host, *a, **k)
 
-    monkeypatch.setattr(lan, "socket", SimpleNamespace(getaddrinfo=fake_gai, SOCK_STREAM=1))
+    monkeypatch.setattr(backend_lan, "socket", SimpleNamespace(getaddrinfo=fake_gai))
 
     async def body(redis):
         sup = make_supervisor(db, redis, fake_ffmpeg, hls_root)
