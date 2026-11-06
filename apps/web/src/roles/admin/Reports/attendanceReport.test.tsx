@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { adminApi } from '@/shared/api/admin'
+import { ApiError } from '@/shared/api/client'
 import type { AttendanceClassDetail, AttendanceReport } from '@/shared/types/admin'
 import { boardView } from '../Board/boardFixtures'
 import AttendanceReportPage from './AttendanceReportPage'
@@ -152,6 +153,16 @@ describe('月度考勤报告', () => {
     expect(clicked[0]).toEqual({ download: '考勤报告-2026-10.csv', href: 'blob:test-1' })
     expect(revoke).toHaveBeenCalledWith('blob:test-1')
     expect(document.querySelector('a[download]')).toBeNull()
+  })
+
+  it('403 时显示没有权限而不是可重试的通用错误(L41)', async () => {
+    vi.mocked(adminApi.attendanceReport).mockRejectedValue(
+      new ApiError(403, 'FORBIDDEN', 'forbidden'),
+    )
+    setup()
+    expect(await screen.findByText('没有权限查看考勤报告')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+    expect(screen.queryByText('加载失败')).toBeNull()
   })
 
   it('打印按钮调用 window.print', async () => {

@@ -2,8 +2,10 @@ import { useQuery } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { Fragment, useState } from 'react'
 import { adminApi } from '@/shared/api/admin'
+import { EmptyState } from '@/shared/components/feedback/EmptyState'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import type { AttendanceCounts, AttendanceReport } from '@/shared/types/admin'
+import { NO_PERM_ATTENDANCE, isForbidden } from './forbidden'
 
 const fmtRate = (r: number | null): string => (r === null ? '—' : `${(r * 100).toFixed(1)}%`)
 
@@ -30,6 +32,7 @@ function ClassDetail({ month, classId }: { month: string; classId: string }) {
     queryKey: ['report', 'attendance', month, classId],
     queryFn: () => adminApi.attendanceClass(month, classId),
   })
+  if (isForbidden(q.error)) return <EmptyState title={NO_PERM_ATTENDANCE} className="py-2" />
   if (q.isError)
     return (
       <ErrorState

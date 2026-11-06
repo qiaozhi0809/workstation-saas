@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { adminApi } from '@/shared/api/admin'
+import { ApiError } from '@/shared/api/client'
 import { toast } from '@/shared/components/Toast'
 import type { GradeExam, ScoreStudentRow, ScoreSummary, SubjectStat } from '@/shared/types/admin'
 import { ADMIN_PAGES } from '../pages'
@@ -139,6 +140,11 @@ const classRow = (name: string) =>
   within(screen.getByRole('table', { name: '班级成绩汇总' })).getByRole('row', {
     name: new RegExp(name),
   })
+// 格子里显示的值:带提示的格子取按钮上的文字(提示文字也在格子里),破折号格子取全文
+const cellTexts = (row: HTMLElement) =>
+  within(row)
+    .getAllByRole('cell')
+    .map((c) => within(c).queryByRole('button')?.textContent ?? c.textContent)
 
 it('defaults to the most recent grade exam and can switch', async () => {
   await renderPage()
@@ -154,8 +160,7 @@ it('defaults to the most recent grade exam and can switch', async () => {
 
 it('shows averages with one decimal, dashes for null, and a grade total row', async () => {
   await renderPage()
-  const r1 = within(classRow('三年一班'))
-  expect(r1.getAllByRole('cell').map((c) => c.textContent)).toEqual(['82.3', '—', '160.0'])
+  expect(cellTexts(classRow('三年一班'))).toEqual(['82.3', '—', '160.0'])
   expect(within(classRow('三年二班')).getByText('75.5')).toBeInTheDocument()
   const grade = within(classRow('全年级'))
   expect(grade.getByText('76.2')).toBeInTheDocument()
@@ -165,27 +170,11 @@ it('shows averages with one decimal, dashes for null, and a grade total row', as
 it('switches to pass rate and good rate shown as percentages with one decimal', async () => {
   await renderPage()
   fireEvent.click(screen.getByRole('tab', { name: '及格率' }))
-  expect(
-    within(classRow('三年一班'))
-      .getAllByRole('cell')
-      .map((c) => c.textContent),
-  ).toEqual(['85.7%', '—', '—'])
-  expect(
-    within(classRow('三年二班'))
-      .getAllByRole('cell')
-      .map((c) => c.textContent),
-  ).toEqual(['50.0%', '100.0%', '—'])
+  expect(cellTexts(classRow('三年一班'))).toEqual(['85.7%', '—', '—'])
+  expect(cellTexts(classRow('三年二班'))).toEqual(['50.0%', '100.0%', '—'])
   fireEvent.click(screen.getByRole('tab', { name: '优秀率' }))
-  expect(
-    within(classRow('三年一班'))
-      .getAllByRole('cell')
-      .map((c) => c.textContent),
-  ).toEqual(['25.0%', '—', '—'])
-  expect(
-    within(classRow('三年二班'))
-      .getAllByRole('cell')
-      .map((c) => c.textContent),
-  ).toEqual(['10.0%', '33.3%', '—'])
+  expect(cellTexts(classRow('三年一班'))).toEqual(['25.0%', '—', '—'])
+  expect(cellTexts(classRow('三年二班'))).toEqual(['10.0%', '33.3%', '—'])
 })
 
 it('maps cells by subject name when a class lists its subjects in a different order', async () => {
@@ -194,21 +183,70 @@ it('maps cells by subject name when a class lists its subjects in a different or
   vi.mocked(adminApi.scoreReport).mockResolvedValue(swapped)
   await renderPage()
   // 一班:语文 82.3,数学无数据,与表头顺序(语文、数学)对应,而不是跟着数组顺序走
-  expect(
-    within(classRow('三年一班'))
-      .getAllByRole('cell')
-      .map((c) => c.textContent),
-  ).toEqual(['82.3', '—', '160.0'])
+  expect(cellTexts(classRow('三年一班'))).toEqual(['82.3', '—', '160.0'])
 })
 
-it('puts max, min and participant count in the cell tooltip', async () => {
+it('exposes max, min and participant count as a focusable tip, not a title attribute (L41)', async () => {
   await renderPage()
-  const cell = within(classRow('三年一班')).getAllByRole('cell')[0]
-  expect(cell).toHaveAttribute('title', '最高 99 · 最低 41 · 参考 38 人')
-  expect(within(classRow('三年一班')).getAllByRole('cell')[1]).toHaveAttribute(
-    'title',
-    '最高 99 · 最低 41 · 参考 0 人',
+  const cells = within(classRow('三年一班')).getAllByRole('cell')
+  // 数值本身可聚焦(键盘能到),提示文字作为它的描述;没有 title
+  const stat = within(cells[0]).getByRole('button', { name: '82.3' })
+  expect(stat).toHaveAccessibleDescription('最高 99 · 最低 41 · 参考 38 人')
+  expect(within(cells[0]).getByRole('tooltip')).toHaveTextContent('最高 99 · 最低 41 · 参考 38 人')
+  expect(cells[0]).not.toHaveAttribute('title')
+  expect(stat).not.toHaveAttribute('title')
+  // 触屏:点一下固定显示,再点收起;移开焦点也收起
+  expect(within(cells[0]).getByRole('tooltip')).not.toHaveAttribute('data-open')
+  fireEvent.click(stat)
+  expect(within(cells[0]).getByRole('tooltip')).toHaveAttribute('data-open', 'true')
+  fireEvent.click(stat)
+  expect(within(cells[0]).getByRole('tooltip')).not.toHaveAttribute('data-open')
+  fireEvent.click(stat)
+  fireEvent.blur(stat, { relatedTarget: document.body })
+  expect(within(cells[0]).getByRole('tooltip')).not.toHaveAttribute('data-open')
+  // 没有数据的格子只有破折号,没有提示;总分格也有提示
+  expect(within(cells[1]).queryByRole('button')).toBeNull()
+  expect(within(cells[1]).queryByRole('tooltip')).toBeNull()
+  expect(within(cells[2]).getByRole('button', { name: '160.0' })).toHaveAccessibleDescription(
+    '最高 190 · 最低 90 · 参考 38 人',
   )
+  expect(
+    within(classRow('全年级')).getByRole('button', { name: '150.2' }),
+  ).toHaveAccessibleDescription('最高 190 · 最低 90 · 参考 38 人')
+})
+
+it('says there is no permission when the exam list is forbidden, without a retry button (L41)', async () => {
+  vi.mocked(adminApi.gradeExams).mockRejectedValue(new ApiError(403, 'FORBIDDEN', 'forbidden'))
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter>
+        <ScoresReportPage />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  )
+  expect(await screen.findByText('没有权限查看成绩汇总')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+  expect(screen.queryByText('加载失败')).toBeNull()
+})
+
+it('says there is no permission when the summary of the chosen exam is forbidden (L41)', async () => {
+  vi.mocked(adminApi.scoreReport).mockRejectedValue(new ApiError(403, 'FORBIDDEN', 'forbidden'))
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter>
+        <ScoresReportPage />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  )
+  expect(await screen.findByText('没有权限查看成绩汇总')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+  // 其他错误仍是可重试的通用错误
+  vi.mocked(adminApi.scoreReport).mockRejectedValue(new ApiError(500, 'X', 'boom'))
+  fireEvent.change(screen.getByLabelText('选择联考'), { target: { value: 'ge1' } })
+  expect(await screen.findByText('成绩汇总加载失败')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
 })
 
 it('expands a class into its student table with ranks and sorts by column', async () => {

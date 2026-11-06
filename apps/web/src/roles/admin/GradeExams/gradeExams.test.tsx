@@ -8,7 +8,7 @@ import { schoolApi } from '@/shared/api/school'
 import { toast } from '@/shared/components/Toast'
 import { useAuthStore } from '@/shared/stores/auth'
 import type { BoardView, GradeAdmin, GradeExam } from '@/shared/types/admin'
-import type { SubjectCatalog } from '@/shared/types/school'
+import type { Meta, SubjectCatalog } from '@/shared/types/school'
 import GradeExamsPage from './GradeExamsPage'
 
 vi.mock('@/shared/api/admin', () => ({
@@ -22,8 +22,10 @@ vi.mock('@/shared/api/admin', () => ({
     syncGradeExam: vi.fn(),
   },
 }))
-vi.mock('@/shared/api/school', () => ({ schoolApi: { subjectCatalog: vi.fn() } }))
+vi.mock('@/shared/api/school', () => ({ schoolApi: { subjectCatalog: vi.fn(), meta: vi.fn() } }))
 vi.mock('@/shared/components/Toast', () => ({ toast: vi.fn() }))
+
+const META: Meta = { version: '1.0.0', school_name: '示例小学', school_tz: 'Asia/Shanghai' }
 
 const CATALOG: SubjectCatalog = {
   primary: [
@@ -72,8 +74,12 @@ beforeEach(() => {
   vi.mocked(adminApi.board).mockResolvedValue(boardOf(G3, G4))
   vi.mocked(adminApi.gradeExams).mockImplementation(async (gid) => (gid === 'g4' ? [] : [exam()]))
   vi.mocked(schoolApi.subjectCatalog).mockResolvedValue(CATALOG)
+  vi.mocked(schoolApi.meta).mockResolvedValue(META)
 })
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.useRealTimers()
+})
 
 let client: QueryClient
 const renderPage = async () => {
@@ -138,6 +144,106 @@ it('offers to create the missing classes and calls sync', async () => {
 it('shows no sync prompt when no class is missing', async () => {
   await renderPage()
   expect(screen.queryByRole('button', { name: '补建' })).toBeNull()
+})
+
+it('toasts the backend message when sync fails (L41)', async () => {
+  vi.mocked(adminApi.gradeExams).mockResolvedValue([
+    exam({ missing_classes: [{ class_id: 'c3', class_name: '三年三班' }] }),
+  ])
+  vi.mocked(adminApi.syncGradeExam).mockRejectedValue(
+    new ApiError(409, 'NO_ACTIVE_YEAR', '学年已变动,请刷新'),
+  )
+  await renderPage()
+  fireEvent.click(within(row()).getByRole('button', { name: '补建' }))
+  await waitFor(() => expect(toast).toHaveBeenCalledWith('学年已变动,请刷新'))
+  expect(toast).not.toHaveBeenCalledWith('已补建')
+  // 失败后按钮恢复可用,能再试一次
+  expect(within(row()).getByRole('button', { name: '补建' })).toBeEnabled()
+})
+
+// 老师端的考试列表 / 成绩册 / 班级科目表查询键(与 roles/teacher 下的 useQuery 写法一致)
+const TEACHER_KEYS = ['exams', 'gradebook', 'class-subjects']
+const expectTeacherCachesInvalidated = (
+  spy: ReturnType<typeof vi.spyOn>,
+  classIds: string[],
+  untouched: string[] = [],
+) => {
+  for (const cid of classIds)
+    for (const k of TEACHER_KEYS) expect(spy).toHaveBeenCalledWith({ queryKey: [k, cid] })
+  for (const cid of untouched)
+    for (const k of TEACHER_KEYS) expect(spy).not.toHaveBeenCalledWith({ queryKey: [k, cid] })
+}
+
+it('invalidates the teacher caches of every class that got the exam after creating (L41)', async () => {
+  vi.mocked(adminApi.createGradeExam).mockResolvedValue(exam({ id: 'ge2', name: '期中联考' }))
+  await renderPage()
+  const spy = vi.spyOn(client, 'invalidateQueries')
+  fireEvent.click(screen.getByRole('button', { name: '新建联考' }))
+  const dlg = await fillBasics('期中联考')
+  await within(dlg).findByRole('checkbox', { name: '语文' })
+  fireEvent.click(within(dlg).getByRole('button', { name: '保存' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expectTeacherCachesInvalidated(spy, ['c1', 'c2'], ['c3'])
+  expect(spy).toHaveBeenCalledWith({ queryKey: ['grade-exams'] })
+})
+
+it('invalidates the teacher caches of the classes before and after an edit (L41)', async () => {
+  // 编辑前有 c1、c2;编辑后的返回里多了 c3(同时补建了班)——两边都要失效
+  vi.mocked(adminApi.updateGradeExam).mockResolvedValue(
+    exam({
+      classes: [
+        { class_id: 'c1', class_name: '三年一班', exam_id: 'e1', entered: 20, expected: 40 },
+        { class_id: 'c3', class_name: '三年三班', exam_id: 'e3', entered: 0, expected: 40 },
+      ],
+    }),
+  )
+  await renderPage()
+  const spy = vi.spyOn(client, 'invalidateQueries')
+  fireEvent.click(within(row()).getByRole('button', { name: '编辑' }))
+  const dlg = await screen.findByRole('dialog')
+  await within(dlg).findByRole('checkbox', { name: '语文' })
+  fireEvent.click(within(dlg).getByRole('button', { name: '保存' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expectTeacherCachesInvalidated(spy, ['c1', 'c2', 'c3'])
+})
+
+it('invalidates the teacher caches of the deleted exam classes (L41)', async () => {
+  vi.mocked(adminApi.deleteGradeExam).mockResolvedValue(undefined)
+  await renderPage()
+  const spy = vi.spyOn(client, 'invalidateQueries')
+  fireEvent.click(within(row()).getByRole('button', { name: '删除' }))
+  fireEvent.click(await screen.findByRole('button', { name: '确认删除' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expectTeacherCachesInvalidated(spy, ['c1', 'c2'], ['c3'])
+})
+
+it('invalidates the teacher caches of the classes returned by sync (L41)', async () => {
+  vi.mocked(adminApi.gradeExams).mockResolvedValue([
+    exam({ missing_classes: [{ class_id: 'c3', class_name: '三年三班' }] }),
+  ])
+  vi.mocked(adminApi.syncGradeExam).mockResolvedValue(
+    exam({
+      classes: [
+        ...exam().classes,
+        { class_id: 'c3', class_name: '三年三班', exam_id: 'e3', entered: 0, expected: 40 },
+      ],
+    }),
+  )
+  await renderPage()
+  const spy = vi.spyOn(client, 'invalidateQueries')
+  fireEvent.click(within(row()).getByRole('button', { name: '补建' }))
+  await waitFor(() => expect(toast).toHaveBeenCalledWith('已补建'))
+  expectTeacherCachesInvalidated(spy, ['c1', 'c2', 'c3'])
+})
+
+it('defaults the date of a new exam to today in the school time zone (L41 / L43)', async () => {
+  // 2026-11-04 16:30 UTC:上海已经是 11-05 00:30,UTC−12 … UTC+7 的浏览器还在 11-04
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date('2026-11-04T16:30:00Z'))
+  await renderPage()
+  fireEvent.click(screen.getByRole('button', { name: '新建联考' }))
+  const dlg = await screen.findByRole('dialog')
+  expect(within(dlg).getByLabelText('日期')).toHaveValue('2026-11-05')
 })
 
 it('shows the backend message when delete is rejected with 409', async () => {

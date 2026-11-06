@@ -9,6 +9,7 @@ import { toast } from '@/shared/components/Toast'
 import { Button } from '@/shared/components/ui/button'
 import { NativeSelect } from '@/shared/components/ui/native-select'
 import AttendanceClassTable from './AttendanceClassTable'
+import { NO_PERM_ATTENDANCE, isForbidden } from './forbidden'
 
 const pad = (n: number) => String(n).padStart(2, '0')
 const thisMonth = () => {
@@ -139,7 +140,9 @@ export default function AttendanceReportPage() {
         </label>
       </div>
 
-      {q.isError ? (
+      {isForbidden(q.error) ? (
+        <EmptyState title={NO_PERM_ATTENDANCE} />
+      ) : q.isError ? (
         <ErrorState title="加载失败" onRetry={() => void q.refetch()} retrying={q.isFetching} />
       ) : !q.data ? (
         <LoadingState />

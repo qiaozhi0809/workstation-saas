@@ -12,11 +12,13 @@ import { SegmentedTabs } from '@/shared/components/ui/segmented-tabs'
 import type { GradeExam } from '@/shared/types/admin'
 import ConfirmBox from '../Org/ConfirmBox'
 import { errMsg } from '../Org/errMsg'
+import { todayIn, useSchoolTz } from '../Reports/useSchoolTz'
 import GradeExamForm from './GradeExamForm'
+import { invalidateTeacherExamCaches } from './teacherCache'
 
 type Dialog = { kind: 'form'; exam?: GradeExam } | { kind: 'delete'; exam: GradeExam }
 
-const todayStr = () => new Date().toLocaleDateString('sv-SE')
+const classIdsOf = (exam: GradeExam) => exam.classes.map((c) => c.class_id)
 
 function Progress({ c }: { c: GradeExam['classes'][number] }) {
   const pct = c.expected > 0 ? Math.min(100, Math.round((c.entered / c.expected) * 100)) : 0
@@ -49,10 +51,11 @@ function ExamRow({
   const qc = useQueryClient()
   const sync = useMutation({
     mutationFn: () => adminApi.syncGradeExam(exam.id),
-    onSuccess: () => {
+    onSuccess: (saved) => {
       toast('已补建')
       void qc.invalidateQueries({ queryKey: ['grade-exams'] })
       void qc.invalidateQueries({ queryKey: ['report', 'scores'] })
+      invalidateTeacherExamCaches(qc, classIdsOf(saved))
     },
     onError: (e) => toast(errMsg(e)),
   })
@@ -104,6 +107,8 @@ export default function GradeExamsPage() {
     queryKey: ['admin', 'board', null],
     queryFn: () => adminApi.board(null),
   })
+  // 新建联考的默认日期按学校时区算"今天"(L41 / L43)
+  const school = useSchoolTz()
   const [sel, setSel] = useState<string | null>(null)
   const [dialog, setDialog] = useState<Dialog | null>(null)
   const [delError, setDelError] = useState<string | null>(null)
@@ -122,11 +127,12 @@ export default function GradeExamsPage() {
     setDelError(null)
   }
   const remove = useMutation({
-    mutationFn: (id: string) => adminApi.deleteGradeExam(id),
-    onSuccess: () => {
+    mutationFn: (exam: GradeExam) => adminApi.deleteGradeExam(exam.id),
+    onSuccess: (_, exam) => {
       close()
       void qc.invalidateQueries({ queryKey: ['grade-exams'] })
       void qc.invalidateQueries({ queryKey: ['report', 'scores'] })
+      invalidateTeacherExamCaches(qc, classIdsOf(exam))
     },
     onError: (e) => setDelError(errMsg(e)),
   })
@@ -140,7 +146,7 @@ export default function GradeExamsPage() {
         className="p-6"
       />
     )
-  if (!board.data) return <LoadingState />
+  if (!board.data || !school.ready) return <LoadingState />
 
   let body
   if (gradeId === null) body = <EmptyState title="还没有年级" />
@@ -201,7 +207,7 @@ export default function GradeExamsPage() {
           gradeId={gradeId}
           gradeName={gradeName}
           exam={dialog.exam}
-          today={todayStr()}
+          today={todayIn(school.tz)}
           onClose={close}
           onSaved={close}
         />
@@ -213,7 +219,7 @@ export default function GradeExamsPage() {
         error={delError}
         busy={remove.isPending}
         onClose={close}
-        onConfirm={() => dialog?.kind === 'delete' && remove.mutate(dialog.exam.id)}
+        onConfirm={() => dialog?.kind === 'delete' && remove.mutate(dialog.exam)}
       >
         <p>
           {dialog?.kind === 'delete'

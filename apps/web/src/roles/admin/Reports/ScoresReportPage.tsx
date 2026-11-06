@@ -9,6 +9,7 @@ import { toast } from '@/shared/components/Toast'
 import { Button } from '@/shared/components/ui/button'
 import { NativeSelect } from '@/shared/components/ui/native-select'
 import { SegmentedTabs } from '@/shared/components/ui/segmented-tabs'
+import { NO_PERM_SCORES, isForbidden } from './forbidden'
 import ScoreClassTable, { type ScoreView } from './ScoreClassTable'
 import ScoreStudentTable from './ScoreStudentTable'
 
@@ -46,6 +47,7 @@ function StudentSection({
     queryKey: ['report', 'scores', examId, classId],
     queryFn: () => adminApi.scoreStudents(examId, classId),
   })
+  if (isForbidden(q.error)) return <EmptyState title={NO_PERM_SCORES} />
   if (q.isError)
     return (
       <ErrorState
@@ -97,6 +99,7 @@ export default function ScoresReportPage() {
     }
   }
 
+  if (isForbidden(exams.error)) return <EmptyState title={NO_PERM_SCORES} className="p-6" />
   if (exams.isError)
     return (
       <ErrorState
@@ -111,6 +114,7 @@ export default function ScoresReportPage() {
   let body
   if (list.length === 0)
     body = <EmptyState title="还没有年级联考" description="先在“年级联考”里创建一场联考" />
+  else if (isForbidden(summary.error)) body = <EmptyState title={NO_PERM_SCORES} />
   else if (summary.isError) {
     body = (
       <ErrorState

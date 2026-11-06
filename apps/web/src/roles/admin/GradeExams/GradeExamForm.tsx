@@ -14,6 +14,7 @@ import { STAGE_LABEL } from '@/shared/types/school'
 import { errMsg } from '../Org/errMsg'
 import Field from '../Org/Field'
 import { catalogStage } from './catalogStage'
+import { invalidateTeacherExamCaches } from './teacherCache'
 
 const NAME_MAX = 30
 
@@ -78,9 +79,14 @@ export default function GradeExamForm({
   const save = useMutation({
     mutationFn: (input: GradeExamInput) =>
       exam ? adminApi.updateGradeExam(exam.id, input) : adminApi.createGradeExam(input),
-    onSuccess: () => {
+    onSuccess: (saved) => {
       void qc.invalidateQueries({ queryKey: ['grade-exams'] })
       void qc.invalidateQueries({ queryKey: ['report', 'scores'] })
+      // 编辑前后的班都算受影响(保存时可能顺带补建了班)
+      invalidateTeacherExamCaches(
+        qc,
+        [...(exam?.classes ?? []), ...saved.classes].map((c) => c.class_id),
+      )
       onSaved()
     },
     onError: (e) => setError(errMsg(e)),
