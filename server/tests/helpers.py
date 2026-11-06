@@ -35,3 +35,10 @@ def enrollment_of(db: Session, student_id: str | UUID) -> UUID:
 
 def freeze(monkeypatch, iso: str) -> None:
     monkeypatch.setattr(app.clock, "utc_now", lambda: datetime.fromisoformat(iso))
+
+
+def refreshed_headers(client, refresh_token: str) -> dict[str, str]:
+    """改密 / 开启两步验证后,旧 access 令牌可能因跨整秒被拒(R6);用保留的刷新令牌换新令牌。"""
+    res = client.post("/api/v1/auth/refresh", json={"refresh_token": refresh_token})
+    assert res.status_code == 200, res.text
+    return {"Authorization": f"Bearer {res.json()['access_token']}"}

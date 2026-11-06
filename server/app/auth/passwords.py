@@ -54,12 +54,12 @@ def _weak(reason: str, message: str) -> ApiError:
     return ApiError(400, "PASSWORD_WEAK", message, {"reason": reason})
 
 
-def check_policy(new: str, *, old: str | None = None) -> None:
+def check_policy(new: str, *, old: str | None = None, min_length: int = 8) -> None:
     data = unicodedata.normalize("NFC", new)
     if old is not None and data == unicodedata.normalize("NFC", old):
         raise _weak("same_as_old", "新密码不能与旧密码相同")
-    if len(data) < 8:
-        raise _weak("too_short", "新密码至少 8 位")
+    if len(data) < min_length:
+        raise _weak("too_short", f"新密码至少 {min_length} 位")
     if len(data.encode("utf-8")) > MAX_PASSWORD_BYTES:
         raise _weak("too_long", "密码不能超过 72 个字节")
     kinds = {"letter" if c.isalpha() else "digit" if c.isdigit() else "other" for c in data}

@@ -25,7 +25,7 @@ from app.deploy.precheck import (
 )
 
 VERSIONS = Path(__file__).resolve().parent.parent / "migrations" / "versions"
-ALL_REVISIONS = [f"{i:04d}" for i in range(1, 11)]
+ALL_REVISIONS = [f"{i:04d}" for i in range(1, 12)]
 
 
 @pytest.fixture(scope="module")

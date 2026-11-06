@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from sqlalchemy import func, select
 
 from app.models import User
@@ -87,7 +89,18 @@ def test_create_account_temp_password_works_once(client, settings, db, caplog, c
         },
     )
     assert changed.status_code == 200
-    assert client.get("/api/v1/me/classes", headers=h).status_code == 200
+    # R6:改密之前签发的 access 令牌不再有效;本会话用保留的刷新令牌换新令牌后继续可用
+    refreshed = client.post("/api/v1/auth/refresh", json={"refresh_token": tokens["refresh_token"]})
+    assert refreshed.status_code == 200
+    h2 = _bearer(refreshed.json()["access_token"])
+    assert client.get("/api/v1/me/classes", headers=h2).status_code == 200
+    # 同一整秒内签发的旧令牌会被放行(取整到秒),把改密时间推后几秒让断言与时钟无关
+    user = db.scalars(select(User).where(User.login_name == "newteacher01")).one()
+    user.password_changed_at = user.password_changed_at + timedelta(seconds=5)
+    db.flush()
+    stale = client.get("/api/v1/me/classes", headers=h)
+    assert stale.status_code == 401
+    assert stale.json()["error"]["code"] == "TOKEN_EXPIRED"
     assert _login(client, "newteacher01", temp).status_code == 401
 
     for row in db.scalars(select(AuditLog)).all():

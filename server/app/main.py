@@ -12,6 +12,7 @@ from app.auth.router import router as auth_router
 from app.config import Settings, get_settings
 from app.deploy.system_router import router as system_router  # M5a 段 A
 from app.domain.accounts.router import router as accounts_router  # M3a 段 E
+from app.domain.accounts.security_router import router as account_security_router  # M5b 段 A
 from app.domain.ai.router import router as ai_router
 from app.domain.ai_admin.router import router as ai_admin_router  # M3b 段 D
 from app.domain.attendance.router import router as attendance_router
@@ -23,6 +24,7 @@ from app.domain.exams.router import router as exams_router
 from app.domain.grade_exams.router import router as grade_exams_router  # M3b 段 C
 from app.domain.growth.router import router as growth_router
 from app.domain.history.router import router as history_router  # M3b 段 H
+from app.domain.login_logs.router import router as login_logs_router  # M5b 段 A
 from app.domain.notices.acks_router import router as acks_router  # M4b 段 A
 from app.domain.notices.class_router import router as class_notices_router  # M4b 段 A
 from app.domain.notices.router import router as notices_router  # M3b 段 E
@@ -36,6 +38,9 @@ from app.domain.reports.router import router as reports_router  # M3b 段 C
 from app.domain.reviews.router import router as reviews_router
 from app.domain.roster.router import router as roster_router
 from app.domain.school_settings.router import router as school_settings_router  # M3a 段 E
+from app.domain.school_settings.security_router import (
+    router as security_settings_router,
+)  # M5b 段 A
 from app.domain.seating.router import router as seating_router
 from app.domain.students.router import router as students_router
 from app.domain.todos.router import router as todos_router
@@ -113,5 +118,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     router.include_router(acks_router)  # M4b 段 A
     router.include_router(class_notices_router)  # M4b 段 A
     router.include_router(system_router)  # M5a 段 A
+    router.include_router(security_settings_router)  # M5b 段 A
+    router.include_router(account_security_router)  # M5b 段 A
+    router.include_router(login_logs_router)  # M5b 段 A
     app.include_router(router)
     return app

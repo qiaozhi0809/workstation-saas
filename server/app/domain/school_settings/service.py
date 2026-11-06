@@ -1,17 +1,22 @@
 from typing import Any
 from uuid import UUID
 
+import structlog
 from fastapi import Request
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.audit.service import record
-from app.domain.school_settings.schemas import Switches, TagRename
+from app.domain.school_settings.schemas import SecuritySettings, Switches, TagRename
 from app.errors import ApiError
 from app.models import SchoolSetting, Student
 
+log = structlog.get_logger()
+
 TAG_KEY = "tag_pool"
 SWITCHES_KEY = "switches"
+SECURITY_KEY = "security"
 
 DEFAULT_TAGS: tuple[str, ...] = (
     "重点关注",
@@ -38,6 +43,10 @@ DEFAULT_SWITCHES = Switches(
     ai_review_before_send=True,
     star_of_week=True,
     birthdays=True,
+)
+
+DEFAULT_SECURITY = SecuritySettings(
+    totp_allowed=False, password_min_length=8, password_max_age_days=0
 )
 
 
@@ -146,3 +155,36 @@ def save_switches(
     )
     db.commit()
     return switches
+
+
+def get_security(db: Session, school_id: UUID) -> SecuritySettings:
+    row = _row(db, school_id, SECURITY_KEY)
+    if row is None:
+        return DEFAULT_SECURITY
+    try:
+        return SecuritySettings(**{**DEFAULT_SECURITY.model_dump(), **row.value})
+    except (ValidationError, TypeError):
+        # 库里的值坏了:退回默认值,别让所有登录态请求变 500;不记值内容
+        log.warning("security_settings.invalid")
+        return DEFAULT_SECURITY
+
+
+def save_security(
+    db: Session,
+    school_id: UUID,
+    data: SecuritySettings,
+    actor: UUID,
+    request: Request | None = None,
+) -> SecuritySettings:
+    row = _upsert(db, school_id, SECURITY_KEY, data.model_dump())
+    record(
+        db,
+        user_id=actor,
+        action="settings.security_update",
+        success=True,
+        object_type="school_setting",
+        object_id=str(row.id),
+        request=request,
+    )
+    db.commit()
+    return data

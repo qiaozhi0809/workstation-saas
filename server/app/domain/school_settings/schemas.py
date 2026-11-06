@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, BeforeValidator, Field, field_validator
 
@@ -44,3 +44,9 @@ class Switches(BaseModel):
     ai_review_before_send: bool
     star_of_week: bool
     birthdays: bool
+
+
+class SecuritySettings(BaseModel):
+    totp_allowed: bool
+    password_min_length: Annotated[int, Field(ge=8, le=32)]
+    password_max_age_days: Literal[0, 90, 180, 365]

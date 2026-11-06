@@ -68,6 +68,10 @@ ACTION_LABELS: dict[str, str] = {
     "account.freeze": "冻结账号",
     "account.unfreeze": "解冻账号",
     "account.import": "导入账号",
+    "account.totp_enable": "开启两步验证",
+    "account.totp_disable": "关闭两步验证",
+    "account.totp_reset": "重置两步验证",
+    "account.login_logs_export": "导出登录日志",
     # 组织
     "org.manage": "管理组织",
     "org.school": "修改学校信息",
@@ -86,6 +90,7 @@ ACTION_LABELS: dict[str, str] = {
     "settings.manage": "管理学校设置",
     "settings.tag_pool": "修改标签池",
     "settings.switches": "修改功能开关",
+    "settings.security_update": "修改账号安全设置",
     # 学年
     "year.upgrade": "学年升级",
     "year.rollback": "回滚学年升级",
@@ -104,6 +109,7 @@ ACTION_LABELS: dict[str, str] = {
     "parent.reset": "重置家长密码",
     "parent.view": "查看孩子信息",
     "parent.archive": "归档家长账号",
+    "parent.reactivate": "恢复家长账号",
     "comment.share": "共享评语给家长",
     "comment.unshare": "取消共享评语",
     "student.parent_update": "家长修改家庭联系人",

@@ -9,7 +9,7 @@ from app.models import RoleBinding, User
 from app.models.audit import AuditLog
 from app.models.parents import Parent, ParentLink
 from tests.factories import make_user
-from tests.helpers import auth
+from tests.helpers import auth, refreshed_headers
 from tests.seed_ids import STUDENT_IDS, SUBJECT_USER_ID
 
 S3, S4 = STUDENT_IDS[2], STUDENT_IDS[3]
@@ -86,9 +86,8 @@ def test_create_new_parent_account(client, settings, db):
         },
     )
     assert res.status_code == 200
-    me = client.get(
-        "/api/v1/auth/me", headers={"Authorization": f"Bearer {tokens['access_token']}"}
-    )
+    # R6:改密前签发的 access 令牌可能因跨整秒被拒,换新令牌再取
+    me = client.get("/api/v1/auth/me", headers=refreshed_headers(client, tokens["refresh_token"]))
     assert me.json()["contexts"] == ["parent"]
 
 

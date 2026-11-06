@@ -351,3 +351,139 @@ def test_deliver_timeout(monkeypatch):
     assert fast.sent == [event]
     assert slow.closed == 4401
     assert slow not in hub._sockets.get(uid, set())
+
+
+# ---- M5b 段 A R5 / B-3:ws 鉴权与 HTTP 同一套判定 ----
+
+
+def _token_at(settings, user_id, when: datetime) -> str:
+    return jwt.encode(
+        {"sub": str(user_id), "iat": when, "exp": datetime.now(UTC) + timedelta(seconds=600)},
+        settings.jwt_secret,
+        algorithm="HS256",
+    )
+
+
+def _assert_rejected(ws_client, token, code=4401):
+    with ws_client.websocket_connect(PATH) as ws:
+        ws.send_json({"type": "auth", "token": token})
+        with pytest.raises(WebSocketDisconnect) as exc:
+            ws.receive_json()
+        assert exc.value.code == code
+
+
+def _set_max_age(db, uid, days):
+    from app.domain.school_settings.schemas import SecuritySettings
+    from app.domain.school_settings.service import save_security
+
+    user = db.get(User, uid)
+    save_security(
+        db,
+        user.school_id,
+        SecuritySettings(totp_allowed=True, password_min_length=8, password_max_age_days=days),
+        uid,
+    )
+
+
+def test_ws_rejects_expired_password(ws_client, settings, db):
+    from contextlib import ExitStack
+
+    uid = _uid(db, "teacher01")
+    _set_max_age(db, uid, 90)
+    user = db.get(User, uid)
+    user.password_changed_at = datetime.now(UTC) - timedelta(days=91)
+    db.flush()
+    _assert_rejected(ws_client, _token(settings, uid))
+    user.password_changed_at = datetime.now(UTC) - timedelta(days=10)
+    db.flush()
+    with ExitStack() as stack:  # 对照:未过期可连
+        _open(stack, ws_client, _token(settings, uid))
+    user.must_change_password = True
+    db.flush()
+    _assert_rejected(ws_client, _token(settings, uid))
+
+
+def test_ws_rejects_token_issued_before_password_change(ws_client, settings, db):
+    from contextlib import ExitStack
+
+    uid = _uid(db, "teacher01")
+    db.get(User, uid).password_changed_at = datetime.now(UTC) - timedelta(hours=1)
+    db.flush()
+    old = _token_at(settings, uid, datetime.now(UTC) - timedelta(seconds=30))
+    db.get(User, uid).password_changed_at = datetime.now(UTC) - timedelta(seconds=10)
+    db.flush()
+    _assert_rejected(ws_client, old)
+    with ExitStack() as stack:
+        _open(stack, ws_client, _token(settings, uid))
+
+
+def test_ws_rejects_token_issued_before_totp_enable(ws_client, settings, db):
+    from contextlib import ExitStack
+
+    uid = _uid(db, "teacher01")
+    user = db.get(User, uid)
+    user.password_changed_at = datetime.now(UTC) - timedelta(hours=1)
+    old = _token_at(settings, uid, datetime.now(UTC) - timedelta(seconds=30))
+    user.totp_secret = "placeholder-not-decrypted"
+    user.totp_enabled_at = datetime.now(UTC) - timedelta(seconds=10)
+    db.flush()
+    _assert_rejected(ws_client, old)
+    with ExitStack() as stack:
+        _open(stack, ws_client, _token(settings, uid))
+
+
+def test_ws_recheck_after_register_closes_on_password_change(ws_client, settings, db, monkeypatch):
+    uid = _uid(db, "teacher01")
+    original = Hub.register
+
+    def register_then_change_password(self, user_id, websocket, **kwargs):
+        original(self, user_id, websocket, **kwargs)
+        # 鉴权通过之后、register 之后:密码恰好被改(令牌 iat 早于改密时间)
+        db.get(User, user_id).password_changed_at = datetime.now(UTC) + timedelta(seconds=5)
+        db.flush()
+
+    monkeypatch.setattr(Hub, "register", register_then_change_password)
+    with ws_client.websocket_connect(PATH) as ws:
+        ws.send_json({"type": "auth", "token": _token(settings, uid)})
+        _expect_close(ws, 4401)
+    assert uid not in ws_client.app.state.hub._sockets
+
+
+def test_ws_recheck_after_register_closes_on_expired_or_must_change(
+    ws_client, settings, db, monkeypatch
+):
+    uid = _uid(db, "teacher01")
+    original = Hub.register
+
+    def register_then_force_change(self, user_id, websocket, **kwargs):
+        original(self, user_id, websocket, **kwargs)
+        db.get(User, user_id).must_change_password = True
+        db.flush()
+
+    monkeypatch.setattr(Hub, "register", register_then_force_change)
+    with ws_client.websocket_connect(PATH) as ws:
+        ws.send_json({"type": "auth", "token": _token(settings, uid)})
+        _expect_close(ws, 4401)
+
+
+def test_change_password_publishes_stale_end_to_end(ws_client, settings, db, redis_client):
+    from contextlib import ExitStack
+
+    other = _uid(db, "teacher02")
+    s1 = _login(ws_client)
+    with ExitStack() as stack:
+        w1 = _open(stack, ws_client, s1["access_token"])
+        wo = _open(stack, ws_client, _token(settings, other))
+        res = ws_client.post(
+            "/api/v1/auth/password",
+            headers={"Authorization": f"Bearer {s1['access_token']}"},
+            json={
+                "old_password": "dev123",
+                "new_password": "Newpass-9x",
+                "refresh_token": s1["refresh_token"],
+            },
+        )
+        assert res.status_code == 200
+        _expect_close(w1, 4401)  # 没有手动 publish:事件由改密码本身发布
+        publish(redis_client, [other], {"type": "notice.recalled", "id": "other-ok"})
+        assert wo.receive_json() == {"type": "notice.recalled", "id": "other-ok"}
