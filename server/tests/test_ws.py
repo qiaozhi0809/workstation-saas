@@ -1,6 +1,6 @@
 import asyncio
 import time
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -324,8 +324,9 @@ def test_status_recheck_after_register(ws_client, settings, db, monkeypatch):
 
 
 class _FakeSocket:
-    def __init__(self, hang: bool = False) -> None:
+    def __init__(self, hang: bool = False, close_hang: bool = False) -> None:
         self.hang = hang
+        self.close_hang = close_hang
         self.sent: list[dict] = []
         self.closed: int | None = None
 
@@ -335,6 +336,8 @@ class _FakeSocket:
         self.sent.append(event)
 
     async def close(self, code: int = 1000) -> None:
+        if self.close_hang:
+            await asyncio.sleep(0.5)
         self.closed = code
 
 
@@ -351,6 +354,72 @@ def test_deliver_timeout(monkeypatch):
     assert fast.sent == [event]
     assert slow.closed == 4401
     assert slow not in hub._sockets.get(uid, set())
+
+
+def test_deliver_slow_socket_does_not_block_others(monkeypatch):
+    """M5c R8 / L129:一个 socket 发送卡住,别的用户 1 秒内就收到(各 socket 并发)。"""
+    monkeypatch.setattr("app.ws.hub.SEND_TIMEOUT", 3.0)
+    slow_user, fast_user = UUID(ADMIN), UUID("55555555-5555-5555-5555-555555555547")
+    far = datetime.now(UTC) + timedelta(hours=1)
+    slow, fast = _FakeSocket(hang=True), _FakeSocket()
+    hub = Hub()
+    hub.register(slow_user, slow, expires_at=far)
+    hub.register(fast_user, fast, expires_at=far)
+    event = {"type": "notice.recalled", "id": "n"}
+    message = {"user_ids": [str(slow_user), str(fast_user)], "event": event}
+
+    async def scenario() -> None:
+        task = asyncio.create_task(hub.deliver(message))
+        await asyncio.sleep(1.0)
+        assert fast.sent == [event]
+        assert not task.done()  # 慢的还在等自己的 3 秒超时
+        await asyncio.wait_for(task, 5)
+
+    asyncio.run(scenario())
+    assert slow.closed == 4401
+
+
+def test_stale_closes_concurrently(monkeypatch):
+    """session.stale 的关闭也并发:一个 socket 的 close 卡住不拖慢其余。"""
+    monkeypatch.setattr("app.ws.hub.SEND_TIMEOUT", 0.5)
+    far = datetime.now(UTC) + timedelta(hours=1)
+    uids = [UUID(f"55555555-5555-5555-5555-5555555555{n:02d}") for n in range(40, 44)]
+    hub = Hub()
+    socks = []
+    for uid in uids:
+        sock = _FakeSocket(close_hang=True)
+        socks.append(sock)
+        hub.register(uid, sock, expires_at=far)
+    message = {"user_ids": [str(u) for u in uids], "event": {"type": STALE}}
+    started = time.monotonic()
+    asyncio.run(asyncio.wait_for(hub.deliver(message), 5))
+    assert time.monotonic() - started < 1.2  # 串行要 4 × 0.5 = 2 秒
+    assert not hub._sockets
+
+
+def test_per_user_socket_cap(ws_client, settings, db, redis_client):
+    """第 11 条连接 accept 后以 4429 关闭;已在线的 10 条不受影响。"""
+    from app.ws.hub import MAX_SOCKETS_PER_USER
+
+    assert MAX_SOCKETS_PER_USER == 10
+    uid = _uid(db, "teacher01")
+    hub = ws_client.app.state.hub
+    token = _token(settings, uid)
+    with ExitStack() as stack:
+        online = []
+        for _ in range(MAX_SOCKETS_PER_USER):
+            ws = stack.enter_context(ws_client.websocket_connect(PATH))
+            ws.send_json({"type": "auth", "token": token})
+            assert ws.receive_json() == {"type": "ready"}
+            online.append(ws)
+        extra = stack.enter_context(ws_client.websocket_connect(PATH))
+        extra.send_json({"type": "auth", "token": token})
+        with pytest.raises(WebSocketDisconnect) as exc:
+            extra.receive_json()
+        assert exc.value.code == 4429
+        assert len(hub._sockets[uid]) == MAX_SOCKETS_PER_USER
+        publish(redis_client, [uid], {"type": "notice.recalled", "id": "n"})
+        assert online[0].receive_json() == {"type": "notice.recalled", "id": "n"}
 
 
 # ---- M5b 段 A R5 / B-3:ws 鉴权与 HTTP 同一套判定 ----

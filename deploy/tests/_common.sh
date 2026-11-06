@@ -338,7 +338,7 @@ assert_static_safe() {
 # 造一个镜像标签别名($1=新版本号),测试结束自动删除;$2=distinct 时基于原镜像加一层,使镜像 ID 不同
 make_alias_tags() {
   local nv="$1" img
-  for img in workstation-app workstation-web; do
+  for img in workstation-app workstation-web workstation-stream; do
     if [ "${2:-}" = "distinct" ]; then
       printf 'FROM %s:%s\nLABEL ws.test.alias=%s\n' "$img" "$VERSION" "$nv" \
         | docker build -q -t "$img:$nv" - >/dev/null || fail "造镜像标签 $img:$nv 失败"
@@ -390,17 +390,19 @@ root_ca_fp() {
     | openssl x509 -noout -fingerprint -sha256 2>/dev/null
 }
 
-# 全部服务就绪的断言(M-1):scheduler 在运行且重启次数为 0(没有崩溃重启循环)、web 健康、app 健康。
+# 全部服务就绪的断言(M-1):scheduler、stream-worker 在运行且重启次数为 0(没有崩溃重启循环)、web 健康、app 健康。
 # 只能用在"这些容器是刚创建 / 刚启动"的场景(安装后、升级后、恢复后),已运行很久的容器重启次数可能合法地不为 0。
 assert_services_up() {
-  local sched web app
+  local sched web app stream
   sched="$(docker inspect -f '{{.State.Running}} {{.RestartCount}}' "$(dc ps -q scheduler)" 2>/dev/null)" || fail "取不到 scheduler 容器状态"
   [ "$sched" = "true 0" ] || fail "scheduler 应在运行且重启次数为 0,实际:$sched"
   web="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}nohealth{{end}}' "$(dc ps -q web)" 2>/dev/null)" || fail "取不到 web 容器状态"
   [ "$web" = "healthy" ] || fail "web 应为 healthy,实际:$web"
   app="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}nohealth{{end}}' "$(dc ps -q app)" 2>/dev/null)" || fail "取不到 app 容器状态"
   [ "$app" = "healthy" ] || fail "app 应为 healthy,实际:$app"
-  pass "scheduler 在运行且重启 0 次,web 与 app 均 healthy"
+  stream="$(docker inspect -f '{{.State.Running}} {{.RestartCount}}' "$(dc ps -q stream-worker)" 2>/dev/null)" || fail "取不到 stream-worker 容器状态"
+  [ "$stream" = "true 0" ] || fail "stream-worker 应在运行且重启次数为 0,实际:$stream"
+  pass "scheduler、stream-worker 在运行且重启 0 次,web 与 app 均 healthy"
 }
 
 # 备份 / 恢复 / 诊断留下的临时物:不允许残留

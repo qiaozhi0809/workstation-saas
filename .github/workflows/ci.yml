@@ -244,7 +244,7 @@ jobs:
       # 删掉本机构建出的镜像:离线包是唯一来源。bundle_upgrade 排在第一个,它真的 docker load 包里的镜像 tar,
       # 之后的测试沿用已载入的镜像(_common.sh 的 WS_INSTALL_SKIP_LOAD=1)
       - name: Remove locally built images
-        run: docker image rm "workstation-app:$WS_TEST_VERSION" "workstation-web:$WS_TEST_VERSION" postgres:16-alpine redis:7-alpine
+        run: docker image rm "workstation-app:$WS_TEST_VERSION" "workstation-web:$WS_TEST_VERSION" "workstation-stream:$WS_TEST_VERSION" postgres:16-alpine redis:7-alpine
 
       # 一个脚本一个脚本地跑;每个脚本后台抓各服务日志,失败时作为 artifact 上传
       - name: Deploy tests

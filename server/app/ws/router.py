@@ -14,7 +14,7 @@ from app.auth.service import can_use_api, get_user, token_is_current
 from app.auth.tokens import TokenExpired, TokenInvalid, decode_access_claims
 from app.config import Settings
 from app.db import SessionScope
-from app.ws.hub import CLOSE_REVOKED
+from app.ws.hub import CLOSE_REVOKED, CLOSE_TOO_MANY, MAX_SOCKETS_PER_USER
 
 router = APIRouter()
 
@@ -90,6 +90,9 @@ async def ws_endpoint(
         return
     user_id, expires_at, iat = authed
     hub = websocket.app.state.hub
+    if hub.socket_count(user_id) >= MAX_SOCKETS_PER_USER:
+        await websocket.close(code=CLOSE_TOO_MANY)
+        return
     hub.register(user_id, websocket, expires_at=expires_at)
     try:
         # L28 / B-3:鉴权与 register 之间账号可能已被冻结 / 归档,或密码已被改 / 重置

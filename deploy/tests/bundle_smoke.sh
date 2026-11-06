@@ -81,18 +81,18 @@ if grep -E '^(WS_JWT_SECRET|WS_MASTER_KEY|POSTGRES_PASSWORD)=.+' "$D/.env.exampl
 fi
 pass "没有 .env / data / backups / certs,.env.example 密钥为空"
 
-echo "== 5/5 镜像包里的四个镜像"
+echo "== 5/5 镜像包里的五个镜像"
 imgtar="$D/images/workstation-images-$VERSION.tar"
 manifest="$TMP/image-manifest.json"
 tar -xOf "$imgtar" manifest.json >"$manifest" || fail "镜像包里没有 manifest.json(不是 docker save 的产物?)"
-for tag in "workstation-app:$VERSION" "workstation-web:$VERSION" "postgres:16-alpine" "redis:7-alpine"; do
+for tag in "workstation-app:$VERSION" "workstation-web:$VERSION" "workstation-stream:$VERSION" "postgres:16-alpine" "redis:7-alpine"; do
   grep -qF "\"$tag\"" "$manifest" || fail "镜像包里没有 $tag"
 done
 # compose 里引用的镜像必须都在包里
 for img in postgres:16-alpine redis:7-alpine; do
   grep -qE "image: $img\$" "$D/docker-compose.yml" || fail "compose 里没有引用 $img,镜像清单需要同步"
 done
-# 学校服务器是 x86_64:四个镜像的 config 都必须是目标架构(默认 amd64),在 Apple 芯片上打包最容易打错
+# 学校服务器是 x86_64:五个镜像的 config 都必须是目标架构(默认 amd64),在 Apple 芯片上打包最容易打错
 ARCH="${WS_BUNDLE_ARCH:-amd64}"
 tar -xf "$imgtar" -C "$TMP" manifest.json
 python3 -I - "$imgtar" "$ARCH" <<'PY' || fail "镜像架构不是 $ARCH"
@@ -108,6 +108,6 @@ with tarfile.open(path) as tf:
     if not manifest:
         sys.exit(1)
 PY
-pass "镜像包含 workstation-app / workstation-web / postgres:16-alpine / redis:7-alpine,且都是 linux/$ARCH"
+pass "镜像包含 workstation-app / workstation-web / workstation-stream / postgres:16-alpine / redis:7-alpine,且都是 linux/$ARCH"
 
 echo "bundle_smoke 全部通过"

@@ -2,7 +2,7 @@
 # 真实离线包走一遍 upgrade.sh:用 build-bundle.sh 打出的 tar.gz(含 .sha256)升级到"同一版本"。
 # B 的 upgrade 测试用仓库源码自己重新打包、没有 .sha256,验证不到真实包的归档格式与校验和。
 # 需要:WS_TEST_DEPLOY_SRC(解开的离线包目录)、WS_BUNDLE_PKG(同一个包的 tar.gz,旁边有 .sha256)、WS_TEST_VERSION。
-# 这个脚本负责"真走离线包里的 docker load":本机不能已有 workstation-app / workstation-web 镜像,
+# 这个脚本负责"真走离线包里的 docker load":本机不能已有 workstation-app / workstation-web / workstation-stream 镜像,
 # 所以 CI 里它必须排在第一个跑(装好后镜像留在本机,后面的测试沿用 WS_INSTALL_SKIP_LOAD=1)。
 set -euo pipefail
 # shellcheck source=deploy/tests/_common.sh
@@ -10,7 +10,7 @@ set -euo pipefail
 
 [ -n "${WS_TEST_DEPLOY_SRC:-}" ] || fail "需要设置 WS_TEST_DEPLOY_SRC(离线包解开的目录)"
 [ "$(tr -d '[:space:]' <"$DEPLOY_SRC/VERSION")" = "$VERSION" ] || fail "离线包 VERSION 与 WS_TEST_VERSION($VERSION)不一致"
-for img in workstation-app workstation-web; do
+for img in workstation-app workstation-web workstation-stream; do
   if docker image inspect "$img:$VERSION" >/dev/null 2>&1; then
     fail "本机已有镜像 $img:$VERSION,无法证明是 docker load 载入的;请先 docker image rm 它"
   fi
