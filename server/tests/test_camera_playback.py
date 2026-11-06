@@ -1,3 +1,5 @@
+import base64
+import ipaddress
 import re
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
@@ -148,8 +150,8 @@ def test_playlist_rewrite_drops_unknown_lines():
     assert out.count("#EXTINF") == 2
 
 
-def _req(host):
-    scope = {"type": "http", "headers": [], "client": (host, 1) if host else None}
+def _req(host, headers=()):
+    scope = {"type": "http", "headers": list(headers), "client": (host, 1) if host else None}
     return Request(scope)
 
 
@@ -665,3 +667,74 @@ def test_db_released_before_waiting(make_client, pb_settings, db, on, monkeypatc
     assert "sleep" in events
     assert events.index("commit") < events.index("sleep")
     assert in_tx and not any(in_tx), in_tx  # 等待期间没有事务(连接已归还)
+
+
+# ---------- L177:可信网段漏配 / 配错时失败即关 ----------
+
+PROXY3 = ("172.30.0.3", 50000)  # Caddy 容器的另一个地址(compose 子网 172.30.0.0/24)
+PROD_MASTER_KEY = base64.b64encode(b"k" * 32).decode()
+XFF_PUBLIC = {"X-Forwarded-For": "203.0.113.9"}
+
+
+def _prod_settings(pb_settings, proxies):
+    """真正按 prod 规则构造(不用 model_copy:可信网段要重新解析,prod 的启动校验也要真的跑)。"""
+    return Settings(
+        _env_file=None,
+        env="prod",
+        database_url=pb_settings.database_url,
+        redis_url=pb_settings.redis_url,
+        jwt_secret=TEST_JWT_SECRET,
+        master_key=PROD_MASTER_KEY,
+        hls_root=pb_settings.hls_root,
+        trusted_proxies=proxies,
+    )
+
+
+def _assert_lan_only(res):
+    assert res.status_code == 403, (res.status_code, res.text[:60])
+    assert res.json()["error"]["code"] == "CAMERA_LAN_ONLY"
+
+
+def test_prod_misconfigured_trusted_proxies_fail_closed(make_client, pb_settings, cam):
+    # 可信网段配成 172.17.0.0/16(与 compose 的 172.30.0.0/24 不符):直连地址 172.30.0.3 不可信,
+    # 却带着 X-Forwarded-For —— 前面有一个未被采信的代理,真实来源不明 → 403。
+    # 修复前这里会把 Caddy 的容器地址(属 172.16/12 私网)当成内网客户端,对公网请求放行。
+    c = make_client(PROXY3, settings=_prod_settings(pb_settings, ["172.17.0.0/16"]))
+    _assert_lan_only(c.get(m3u8(cam.id), headers={**auth(pb_settings), **XFF_PUBLIC}))
+    _assert_lan_only(c.get(f"/api/v1/cameras/{cam.id}/hls/seg-0.ts", headers=XFF_PUBLIC))
+
+
+def test_prod_trusted_proxies_matrix(make_client, pb_settings, cam):
+    s = _prod_settings(pb_settings, ["172.30.0.0/24"])
+    via_proxy = make_client(PROXY3, settings=s)
+    # 内网客户端经可信代理 → 200(现有正向路径仍通)
+    lan_headers = {**auth(pb_settings), "X-Forwarded-For": "192.168.1.20"}
+    assert via_proxy.get(m3u8(cam.id), headers=lan_headers).status_code == 200
+    # 公网客户端经可信代理 → 403
+    _assert_lan_only(via_proxy.get(m3u8(cam.id), headers={**auth(pb_settings), **XFF_PUBLIC}))
+    # 没有代理、内网直连后端(无 X-Forwarded-For)→ 200
+    direct = make_client(("192.168.1.20", 50000), settings=s)
+    assert direct.get(m3u8(cam.id), headers=auth(pb_settings)).status_code == 200
+    # 内网直连却带 X-Forwarded-For(直连地址不在可信网段):来源不明 → 403
+    forged = {**auth(pb_settings), "X-Forwarded-For": "192.168.1.21"}
+    _assert_lan_only(direct.get(m3u8(cam.id), headers=forged))
+
+
+def test_is_lan_client_xff_from_untrusted_peer_unit():
+    xff = [(b"x-forwarded-for", b"192.168.1.20")]
+    prod = SimpleNamespace(env="prod", trusted_networks=[ipaddress.ip_network("172.30.0.0/24")])
+    assert playback.is_lan_client(_req("10.1.2.3"), prod) is True
+    assert playback.is_lan_client(_req("10.1.2.3", xff), prod) is False  # 不可信直连却带头
+    assert playback.is_lan_client(_req("10.1.2.3", [(b"x-forwarded-for", b"")]), prod) is False
+    assert playback.is_lan_client(_req("10.1.2.3", xff), SimpleNamespace(env="dev")) is True
+
+
+def test_peer_ip_unit():
+    from app.audit.service import peer_ip
+
+    assert peer_ip(None) is None
+    assert peer_ip(_req(None)) is None
+    assert peer_ip(_req("testclient")) is None
+    assert peer_ip(_req("fe80::1%eth0")) is None
+    assert peer_ip(_req("172.30.0.3")) == ipaddress.ip_address("172.30.0.3")
+    assert peer_ip(_req("::ffff:10.0.0.9")) == ipaddress.ip_address("10.0.0.9")

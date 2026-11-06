@@ -112,6 +112,8 @@ jobs:
           --health-timeout 3s
           --health-retries 30
     env:
+      # 没有 server/.env;WS_ENV 默认是 prod(L167),alembic / cli / uvicorn 都要显式 dev 才能起
+      WS_ENV: dev
       # 与 deploy/docker-compose.dev.yml 和 server/app/config.py 的开发默认值一致
       WS_DATABASE_URL: postgresql+psycopg://workstation:workstation@localhost:5432/workstation
       WS_REDIS_URL: redis://localhost:6379/0

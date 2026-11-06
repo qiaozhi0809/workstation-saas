@@ -23,15 +23,20 @@ def _parse_ip(value: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | Non
     return addr
 
 
+def peer_ip(request: Request | None) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+    """直连地址(TCP 对端)解析成 IP;没有 client 或不是合法 IP(如 "testclient")返回 None。"""
+    if request is None or request.client is None:
+        return None
+    return _parse_ip(request.client.host)
+
+
 def _client_ip(request: Request | None) -> str | None:
     """仅返回合法 IP(ip 列为 inet);TestClient 的 "testclient" 等返回 None。
 
     直连地址在 WS_TRUSTED_PROXIES 内时,取 X-Forwarded-For 从右往左第一个不可信的合法 IP;
     头里有非法值或全是可信地址时回退直连地址,绝不抛错。
     """
-    if request is None or request.client is None:
-        return None
-    peer = _parse_ip(request.client.host)
+    peer = peer_ip(request)
     if peer is None:
         return None
     settings = getattr(getattr(request.scope.get("app"), "state", None), "settings", None)
