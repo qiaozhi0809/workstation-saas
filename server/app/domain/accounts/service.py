@@ -140,6 +140,7 @@ def _views(db: Session, users: Sequence[User], year_id: UUID | None) -> list[Acc
             status=u.status,
             must_change_password=u.must_change_password,
             last_login_at=u.last_login_at,
+            totp_enabled=u.totp_enabled_at is not None,
             roles=tags.get(u.id, []),
         )
         for u in users

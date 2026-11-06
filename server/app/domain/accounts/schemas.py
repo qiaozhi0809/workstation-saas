@@ -59,6 +59,7 @@ class Account(BaseModel):
     status: str
     must_change_password: bool
     last_login_at: datetime | None
+    totp_enabled: bool
     roles: list[RoleTag]
 
 

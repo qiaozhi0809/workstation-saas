@@ -500,3 +500,16 @@ def test_admin_reset_sets_password_changed_at(client, settings, db):
     db.expire_all()
     after = db.scalar(select(User.password_changed_at).where(User.id == uid))
     assert after is not None and after > before
+
+
+def test_account_list_includes_totp_enabled(client, settings, db):
+    uid = _user_id(db, "teacher02")
+    user = db.get(User, uid)
+    user.totp_secret = "FICTIONALSECRET"
+    user.totp_enabled_at = clock.utc_now()
+    db.commit()
+    res = client.get(ACCOUNTS, headers=_admin(settings), params={"q": "teacher"})
+    assert res.status_code == 200
+    flags = {i["login_name"]: i["totp_enabled"] for i in res.json()["items"]}
+    assert flags["teacher02"] is True
+    assert [k for k, v in flags.items() if v] == ["teacher02"]
