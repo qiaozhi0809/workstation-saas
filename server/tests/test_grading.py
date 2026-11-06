@@ -7,12 +7,14 @@ import threading
 from datetime import date
 from uuid import UUID
 
+import pytest
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.ai.context import Access, class_context, exam_context, load_exam_data
 from app.ai.stats import exam_stats
 from app.domain.classes.service import class_scope_of
+from app.domain.classes.sort import class_sort_key
 from app.domain.exams.schemas import SubjectFull
 from app.domain.exams.subjects import PRESETS, merge_subjects
 from app.domain.school_settings.service import DEFAULT_GRADING, get_catalog, get_grading
@@ -414,3 +416,34 @@ def test_parent_can_read_grading(client, settings):
     assert client.get(CATALOG, headers=h).status_code == 200
     r = client.put(SAVE_GRADING, headers=h, json={"pass_ratio": 0.7, "good_ratio": 0.9})
     assert r.status_code == 403
+
+
+@pytest.mark.parametrize(
+    ("names", "expected"),
+    [
+        # 中文数字按数值比,不按码位("三" U+4E09 < "二" U+4E8C 的码位序是错的)
+        (["三年十班", "三年三班", "三年二班"], ["三年二班", "三年三班", "三年十班"]),
+        (["十年级", "一年级", "二年级"], ["一年级", "二年级", "十年级"]),
+        # 阿拉伯数字与中文数字同序
+        (["四班", "3班", "一班", "2班"], ["一班", "2班", "3班", "四班"]),
+        (["高三1班", "高一2班", "高二10班"], ["高一2班", "高二10班", "高三1班"]),
+        (["初三(10)班", "初三(2)班", "初三(1)班"], ["初三(1)班", "初三(2)班", "初三(10)班"]),
+        (["二十一班", "三班", "十二班"], ["三班", "十二班", "二十一班"]),
+        # 没有数字的按原文(码位序)
+        (["实验班", "国际部"], ["国际部", "实验班"]),
+        (["实验班", "三年二班", "三年一班"], ["三年一班", "三年二班", "实验班"]),
+    ],
+)
+def test_class_sort_key(names, expected):
+    assert sorted(names, key=class_sort_key) == expected
+    assert sorted(reversed(names), key=class_sort_key) == expected
+
+
+def test_class_sort_key_is_total_and_stable():
+    assert class_sort_key("3班")[:-1] == class_sort_key("三班")[:-1]  # 只差收尾的原文
+    assert class_sort_key("三班") < class_sort_key("4班")
+    assert class_sort_key("2班") < class_sort_key("三班")
+    # 前缀相同、长度不同的名字也能比(不会拿数字段和文字段直接比较)
+    assert class_sort_key("") < class_sort_key("一班")
+    assert class_sort_key("高一") < class_sort_key("高一1班") < class_sort_key("高一2班")
+    assert class_sort_key("一百零一班") < class_sort_key("一百零二班")
