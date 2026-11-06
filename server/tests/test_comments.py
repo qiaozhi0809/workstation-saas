@@ -179,7 +179,9 @@ def test_bulk_rejects_bad_shape_and_unenrolled(client, settings, db):
     assert _count(db) == 1
 
 
-def test_past_year_comment_read_only(client, settings, db):
+def _past_year_comment(db, *, in_current_class: bool = False) -> Comment:
+    """往年的一条评语:默认挂在往年的班(当前学年没人在那个班有权限);
+    ``in_current_class`` 时挂在当前班、学年仍是往年,用来单测 409 这一步。"""
     old = AcademicYear(
         school_id=UUID(SCHOOL_ID),
         name="2025-2026",
@@ -189,16 +191,16 @@ def test_past_year_comment_read_only(client, settings, db):
     )
     db.add(old)
     db.flush()
-    old_class = make_class(db, "二年一班", year_id=old.id)
+    class_id = UUID(CLASS_ID) if in_current_class else make_class(db, "二年一班", year_id=old.id)
     old_enr = Enrollment(
-        student_id=UUID(S1), class_id=old_class, academic_year_id=old.id, status="promoted"
+        student_id=UUID(S1), class_id=class_id, academic_year_id=old.id, status="promoted"
     )
     db.add(old_enr)
     db.flush()
     c = Comment(
         student_id=UUID(S1),
         enrollment_id=old_enr.id,
-        class_id=old_class,
+        class_id=class_id,
         academic_year_id=old.id,
         semester="2025-2026 第二学期",
         content="学期表现稳定",
@@ -207,9 +209,12 @@ def test_past_year_comment_read_only(client, settings, db):
     )
     db.add(c)
     db.flush()
+    return c
 
-    h = auth(settings)
-    items = client.get(URL, headers=h).json()["items"]
+
+def test_past_year_comment_listed_read_only(client, settings, db):
+    c = _past_year_comment(db)
+    items = client.get(URL, headers=auth(settings)).json()["items"]
     assert len(items) == 2
     past = next(i for i in items if i["id"] == str(c.id))
     assert past["current_year"] is False
@@ -217,10 +222,34 @@ def test_past_year_comment_read_only(client, settings, db):
     assert past["semester"] == "2025-2026 第二学期"
     assert next(i for i in items if i is not past)["current_year"] is True
 
-    res = client.delete(f"/api/v1/comments/{c.id}", headers=h)
-    assert res.status_code == 409
-    assert res.json()["error"]["code"] == "RECORD_READONLY"
+
+# 删除的判定顺序:404(不存在)→ 403(无权限)→ 409(往年只读),L97
+
+
+def test_delete_comment_unknown_is_404_before_permission(client, settings):
+    missing = "/api/v1/comments/00000000-0000-0000-0000-000000000000"
+    res = client.delete(missing, headers=auth(settings, SUBJECT_USER_ID))
+    assert (res.status_code, res.json()["error"]["code"]) == (404, "NOT_FOUND")
+
+
+def test_delete_past_year_comment_without_permission_is_403_before_409(client, settings, db):
+    """往年评语挂在往年的班:当前学年谁都没有那个班的 comment.write → 先 403(写审计),
+    不泄露\"它是往年的\"这一状态。"""
+    c = _past_year_comment(db)
+    for user in (TEACHER_USER_ID, SUBJECT_USER_ID):
+        res = client.delete(f"/api/v1/comments/{c.id}", headers=auth(settings, user))
+        assert (res.status_code, res.json()["error"]["code"]) == (403, "FORBIDDEN"), user
+    denied = [a for a in _audits(db, "comment.write") if a.object_id == str(c.id)]
+    assert [(a.success, a.object_type) for a in denied] == [(False, "comment")] * 2
     assert db.get(Comment, c.id) is not None
+
+
+def test_delete_past_year_comment_with_permission_is_409(client, settings, db):
+    c = _past_year_comment(db, in_current_class=True)
+    res = client.delete(f"/api/v1/comments/{c.id}", headers=auth(settings))
+    assert (res.status_code, res.json()["error"]["code"]) == (409, "RECORD_READONLY")
+    assert db.get(Comment, c.id) is not None
+    assert [a for a in _audits(db, "comment.write") if a.object_id == str(c.id)] == []
 
 
 def test_any_writer_deletes_and_unknown_404(client, settings):

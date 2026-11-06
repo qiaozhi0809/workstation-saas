@@ -355,6 +355,7 @@ def _serialize_upgrades(db: Session, school_id: UUID) -> None:
     学年行用 FOR NO KEY UPDATE 而不是 FOR UPDATE:持班级行锁的写入方(任命、加学生)随后
     插入带 academic_year_id 外键的行,外键会对学年行取 FOR KEY SHARE,与 FOR UPDATE 冲突,
     而与 FOR NO KEY UPDATE 相容,锁顺序因此统一为"先班级、后学年",不再死锁。
+    rollback 在拿齐新班的行锁之后再把学年行升级为 FOR UPDATE(见 rollback,L56)。
     """
     db.execute(
         text("SELECT pg_advisory_xact_lock(hashtext(:k)::bigint)"),
@@ -521,6 +522,7 @@ def apply(
     }
     new_enrollment_ids: list[UUID] = []
     new_enrollment_roles: dict[str, str | None] = {}
+    new_enrollment_classes: dict[str, str] = {}  # 新注册 → 升级时放进的新班(回滚检查 L51)
     insert_enr = text(
         "INSERT INTO enrollments (student_id, class_id, academic_year_id, seat_row, seat_col,"
         " seat_locked, class_role, entered_at, status)"
@@ -565,6 +567,7 @@ def apply(
             ).scalar_one()
             new_enrollment_ids.append(new_id)
             new_enrollment_roles[str(new_id)] = role
+            new_enrollment_classes[str(new_id)] = str(target)
     for status, ids in status_of.items():
         if ids:
             db.execute(
@@ -747,6 +750,7 @@ def apply(
         "new_class_ids": s(new_class_ids),
         "new_enrollment_ids": s(new_enrollment_ids),
         "new_enrollment_roles": new_enrollment_roles,
+        "new_enrollment_classes": new_enrollment_classes,
         "old_enrollment_ids": s([r.id for r in old_rows]),
         "old_class_ids": s(old_class_ids),
         "new_assignment_ids": s(new_assignment_ids),
@@ -815,8 +819,8 @@ def latest_rollbackable(db: Session, school_id: UUID, *, lock: bool = False) -> 
 def _edits_since_upgrade(
     db: Session, up: YearUpgrade, new_classes: list[UUID], new_enrollments: list[UUID]
 ) -> dict[str, int]:
-    """升级之后,新学年里被人动过的东西:看板、座位、班干部、转出、手动新建的年级 / 班级 / 任职 /
-    管理岗绑定、年级联考。非零才返回。"""
+    """升级之后,新学年里被人动过的东西:看板、座位、班干部、转出、换到另一个新班、手动新建的
+    年级 / 班级 / 任职 / 管理岗绑定、年级联考。非零才返回。"""
     sm = up.summary
     found: dict[str, int] = {}
     cs = {"cs": new_classes}
@@ -836,17 +840,25 @@ def _edits_since_upgrade(
     if seats:
         found["seats"] = seats
     recorded: dict[str, str | None] | None = sm.get("new_enrollment_roles")
-    if recorded is not None:  # 没有这个键的旧升级记录跳过
-        changed = sum(
-            1
-            for r in db.execute(
-                text("SELECT id, class_role FROM enrollments WHERE id = ANY(cast(:es as uuid[]))"),
-                {"es": new_enrollments},
-            )
-            if recorded.get(str(r.id)) != r.class_role
-        )
+    # 升级时放进的班(L51):新注册被改到另一个新班时 status 仍是 active,只能对着记录比
+    placed: dict[str, str] | None = sm.get("new_enrollment_classes")
+    if recorded is not None or placed is not None:  # 没有这些键的旧升级记录跳过对应检查
+        changed = moved = 0
+        for r in db.execute(
+            text(
+                "SELECT id, class_role, class_id FROM enrollments"
+                " WHERE id = ANY(cast(:es as uuid[]))"
+            ),
+            {"es": new_enrollments},
+        ):
+            if recorded is not None and recorded.get(str(r.id)) != r.class_role:
+                changed += 1
+            if placed is not None and placed.get(str(r.id)) != str(r.class_id):
+                moved += 1
         if changed:
             found["class_roles"] = changed
+        if moved:
+            found["class_changes"] = moved
     transfers = db.execute(
         text(
             "SELECT count(*) FROM enrollments"
@@ -930,6 +942,14 @@ def rollback(
     db.execute(
         text("SELECT id FROM classes WHERE id = ANY(CAST(:ids AS uuid[])) ORDER BY id FOR UPDATE"),
         {"ids": new_classes},
+    ).all()
+    # 再把新学年行从 NO KEY UPDATE 升级为 FOR UPDATE(L56):往新学年插外键行(建联考、建班、
+    # 加学生……)会对学年行取 KEY SHARE,与 FOR UPDATE 互斥——正在进行的插入提交后下面的计数才跑,
+    # 能数到它们;之后才来的插入要等回滚提交,学年已删,它们按学年状态被拒,不会被级联静默删掉。
+    # 必须放在班级锁之后:持班级锁的写入方随后才取 KEY SHARE,锁序仍是"先班级、后学年",不死锁。
+    db.execute(
+        text("SELECT id FROM academic_years WHERE id = :y FOR UPDATE"),
+        {"y": UUID(sm["new_year_id"])},
     ).all()
 
     found: dict[str, int] = {}

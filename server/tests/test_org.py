@@ -6,7 +6,7 @@ from sqlalchemy import select, text
 from app.domain.comments.service import semester_of
 from app.models import AcademicYear, ClassBoard, RoleBinding, SchoolClass, SeatArrangement
 from tests.helpers import audit_rows, auth
-from tests.seed_ids import CLASS_ID, GRADE_ID, SCHOOL_ID, TEACHER_USER_ID, YEAR_ID
+from tests.seed_ids import CLASS_ID, GRADE_ID, SCHOOL_ID, TEACHER_IDS, TEACHER_USER_ID, YEAR_ID
 
 PRINCIPAL = "55555555-5555-5555-5555-555555555543"
 DEAN = "55555555-5555-5555-5555-555555555544"
@@ -157,9 +157,25 @@ def test_list_and_get_classes(client, settings):
     one = client.get(f"{API}/classes/{CLASS_ID}", headers=h).json()
     assert one["student_count"] == 10
     assert one["homeroom"]["display_name"] == "张老师"
+    # L55 / L209:任职简要带 teachers.id(课表格子按 teacher_id 选在任老师)
+    assert set(one["homeroom"]) == {"assignment_id", "user_id", "teacher_id", "display_name"}
+    assert one["homeroom"]["user_id"] == TEACHER_USER_ID
+    assert one["homeroom"]["teacher_id"] == TEACHER_IDS["teacher01"]
     assert [a["display_name"] for a in one["assistants"]] == ["王老师"]
+    assert one["assistants"][0]["teacher_id"] == TEACHER_IDS["teacher02"]
     assert one["subjects"][0]["subject"] == "数学"
     assert one["subjects"][0]["teachers"][0]["display_name"] == "赵老师"
+    assert one["subjects"][0]["teachers"][0]["teacher_id"] == TEACHER_IDS["teacher03"]
+
+
+def test_classes_sorted_by_class_sort_key(client, settings):
+    """L40:同年级班名按数值排(三年二班 < 三年三班 < 三年十班),不按码位;年级仍按 display_order。"""
+    for name in ("三年十班", "三年三班"):
+        _create_class(client, settings, GRADE_ID, name=name, room="")
+    allc = client.get(f"{API}/classes", headers=auth(settings, PRINCIPAL)).json()
+    assert [c["name"] for c in allc] == ["三年一班", "三年二班", "三年三班", "三年十班", "四年一班"]
+    g3 = client.get(f"{API}/classes?grade_id={GRADE_ID}", headers=auth(settings, PRINCIPAL)).json()
+    assert [c["name"] for c in g3] == ["三年一班", "三年二班", "三年三班", "三年十班"]
 
 
 def test_rename_class_shows_in_my_classes(client, db, settings):

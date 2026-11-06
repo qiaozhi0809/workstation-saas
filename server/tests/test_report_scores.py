@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from app.models import Enrollment, Exam, Score, Student
 from app.rbac.roles import Role
-from tests.factories import bind, make_teacher_account
+from tests.factories import bind, make_class, make_student, make_teacher_account
 from tests.helpers import audit_rows, auth
 from tests.seed_ids import CLASS_ID, GRADE_ID, TEACHER_USER_ID
 
@@ -134,6 +134,17 @@ def test_summary_per_class_stats(client, settings, ge):
     assert _stat(b["subjects"], "数学")["avg"] == 87.5
     assert _stat(b["subjects"], "数学")["good_rate"] == 1.0
     assert b["total"] == {"full": 200, "count": 2, "avg": 165.0, "max": 185, "min": 145}
+
+
+def test_classes_sorted_by_class_sort_key(client, db, settings):
+    """L40:汇总里的班与学生行按班名数值排(三年三班在三年二班之后),不按码位。"""
+    extra = make_class(db, "三年三班")
+    make_student(db, extra, "新生", "S9301")
+    out = _create(client, settings)
+    body = _get(client, settings, grade_exam_id=out["id"]).json()
+    assert [c["class_name"] for c in body["classes"]] == ["三年一班", "三年二班", "三年三班"]
+    rows = _get(client, settings, "/students", grade_exam_id=out["id"]).json()["students"]
+    assert [r["class_name"] for r in rows] == ["三年一班"] * 6 + ["三年二班"] * 10 + ["三年三班"]
 
 
 def test_summary_grade_totals(client, settings, ge):

@@ -594,6 +594,103 @@ def test_sent_list(client, db, settings, monkeypatch):
     assert client.get(ADMIN, headers=auth(settings, DEAN)).json()["total"] == 1
 
 
+def _move_grade_head_to_g4(db):
+    db.execute(
+        text(
+            "UPDATE role_bindings SET scope = jsonb_build_object('grade_id', CAST(:g AS text))"
+            " WHERE user_id = :u AND role_type = 'grade_head'"
+        ),
+        {"u": GRADE_HEAD3, "g": G4},
+    )
+    db.flush()
+
+
+def test_sent_list_and_today_hide_former_senders_notices(client, db, settings):
+    """L140:年级组长发给本年级的通知,调去别的年级后(仍有发件权)"我发出的"与今日关注都不再列出,
+    与 _own_notice 的口径一致;调回来又能看到。"""
+    kept = send(client, settings, GRADE_HEAD3, {"kind": "grade", "grade_id": GRADE_ID})
+    assert kept.status_code == 201, kept.text
+    nid = kept.json()["id"]
+    h = auth(settings, GRADE_HEAD3)
+    assert client.get(ADMIN, headers=h).json()["total"] == 1
+    today = client.get("/api/v1/admin/today", headers=h).json()
+    assert [n["id"] for n in today["my_notices"]] == [nid]
+
+    _move_grade_head_to_g4(db)
+    listed = client.get(ADMIN, headers=h).json()
+    assert listed == {"items": [], "total": 0}
+    assert client.get("/api/v1/admin/today", headers=h).json()["my_notices"] == []
+    assert client.get(f"{ADMIN}/{nid}/recipients", headers=h).status_code == 404
+
+    db.execute(
+        text(
+            "UPDATE role_bindings SET scope = jsonb_build_object('grade_id', CAST(:g AS text))"
+            " WHERE user_id = :u AND role_type = 'grade_head'"
+        ),
+        {"u": GRADE_HEAD3, "g": GRADE_ID},
+    )
+    db.flush()
+    assert [i["id"] for i in client.get(ADMIN, headers=h).json()["items"]] == [nid]
+
+
+def test_sent_list_total_counts_only_entitled_and_pages_them(client, db, settings, monkeypatch):
+    """total 与分页都按仍有权限的通知算:21 条里 1 条是调岗前发的年级通知,调岗后剩 20 条正好一页。"""
+    freeze(monkeypatch, "2026-10-01T00:00:00+00:00")
+    old = send(client, settings, GRADE_HEAD3, {"kind": "grade", "grade_id": GRADE_ID}).json()["id"]
+    _move_grade_head_to_g4(db)
+    for n in range(20):
+        freeze(monkeypatch, f"2026-10-02T00:{n:02d}:00+00:00")
+        res = send(client, settings, GRADE_HEAD3, {"kind": "grade", "grade_id": G4}, title=f"n{n}")
+        assert res.status_code == 201, res.text
+    h = auth(settings, GRADE_HEAD3)
+    page1 = client.get(ADMIN, headers=h).json()
+    assert page1["total"] == 20 and len(page1["items"]) == 20
+    assert old not in {i["id"] for i in page1["items"]}
+    assert page1["items"][0]["title"] == "n19"
+    assert client.get(ADMIN, params={"page": 2}, headers=h).json() == {"items": [], "total": 20}
+
+
+def test_users_notice_requires_original_send_scope(client, db, settings):
+    """L140:点名通知记下发送时的发件范围;年级组长调去别的年级后,原来点名发给本年级老师的通知
+    不再属于他(列表、收件人、撤回都 404);校长的点名通知不受影响;L140 之前没记范围的旧通知
+    仍按"持有任一发件权"处理。"""
+    gh = send(client, settings, GRADE_HEAD3, {"kind": "users", "user_ids": [T01, T04]})
+    assert gh.status_code == 201, gh.text
+    gid = gh.json()["id"]
+    pr = send(client, settings, PRINCIPAL, {"kind": "users", "user_ids": [T01]})
+    assert pr.status_code == 201, pr.text
+    pid = pr.json()["id"]
+    legacy = Notice(
+        school_id=UUID(SCHOOL_ID),
+        from_user_id=UUID(GRADE_HEAD3),
+        title="旧点名",
+        content="c",
+        target={"kind": "users", "user_ids": [T01]},
+        target_label="指定 1 人",
+        created_at=datetime(2026, 9, 1, tzinfo=UTC),
+    )
+    db.add(legacy)
+    db.flush()
+    stored = db.get(Notice, UUID(gid)).target
+    assert stored["kind"] == "users" and stored["scope"] == {
+        "kind": "grades",
+        "grade_ids": [GRADE_ID],
+    }
+    assert db.get(Notice, UUID(pid)).target["scope"] == {"kind": "school"}
+
+    h = auth(settings, GRADE_HEAD3)
+    assert {i["id"] for i in client.get(ADMIN, headers=h).json()["items"]} == {gid, str(legacy.id)}
+    _move_grade_head_to_g4(db)
+    assert [i["id"] for i in client.get(ADMIN, headers=h).json()["items"]] == [str(legacy.id)]
+    assert client.get(f"{ADMIN}/{gid}/recipients", headers=h).status_code == 404
+    assert client.post(f"{ADMIN}/{gid}/recall", headers=h).status_code == 404
+    assert db.get(Notice, UUID(gid)).recalled_at is None
+    assert client.get(f"{ADMIN}/{legacy.id}/recipients", headers=h).status_code == 200
+    hp = auth(settings, PRINCIPAL)
+    assert pid in {i["id"] for i in client.get(ADMIN, headers=hp).json()["items"]}
+    assert client.get(f"{ADMIN}/{pid}/recipients", headers=hp).status_code == 200
+
+
 def test_sent_list_paging(client, db, settings):
     for n in range(21):
         db.add(

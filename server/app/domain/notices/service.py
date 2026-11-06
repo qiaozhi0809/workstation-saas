@@ -102,6 +102,14 @@ def _send_grades(bindings: Sequence[Binding]) -> set[UUID]:
     }
 
 
+def _send_scope(bindings: Sequence[Binding], school_id: UUID) -> dict:
+    """点名通知记下发送人当时的发件范围(L140):学校作用域,或可点名的那些年级。
+    之后判"仍有权"时要求范围不缩小,而不只是"还持有任一发件权"。"""
+    if _school_wide(bindings, school_id):
+        return {"kind": "school"}
+    return {"kind": "grades", "grade_ids": sorted(str(g) for g in _send_grades(bindings))}
+
+
 # ---- 收件人口径(与 rbac/bindings.py::load_bindings 的学年规则一致) ----
 
 
@@ -562,6 +570,8 @@ def send(
     year = require_active_year(db, sender.school_id)
     pairs: list[ParentPair] = []
     target = body.target.model_dump(mode="json")
+    if isinstance(body.target, UsersTarget):
+        target["scope"] = _send_scope(bindings, sender.school_id)
     if body.audience == "parents":
         recipients, pairs, without, label = resolve_parent_recipients(
             db, sender, bindings, body.target, year, request
@@ -764,31 +774,52 @@ def _audit_target(body: NoticeInput) -> dict:
     return body.target.model_dump(mode="json", exclude={"user_ids"})
 
 
-def _still_entitled(db: Session, sender: User, notice: Notice) -> bool:
-    """发送人现在仍有权限发这条通知(L86):班级公告 = 仍持有该班的 class.notice(班主任);
-    管理端通知 = 持有 notice.send 且作用域仍覆盖原对象(学校 / 年级 / 班;点名只要仍有发件权)。"""
+def _current_bindings(db: Session, sender: User) -> list[Binding]:
     year = active_academic_year(db, sender.school_id)
-    bindings = load_bindings(db, sender.id, year.id if year else None)
-    school_id = notice.school_id
-    if notice.class_id is not None:
-        cls = db.get(SchoolClass, notice.class_id)
+    return load_bindings(db, sender.id, year.id if year else None)
+
+
+def _entitled(
+    db: Session,
+    bindings: Sequence[Binding],
+    school_id: UUID,
+    class_id: UUID | None,
+    target: dict,
+) -> bool:
+    """发送人现在仍有权限发这条通知(L86 / L140):班级公告 = 仍持有该班的 class.notice(班主任);
+    管理端通知 = 持有 notice.send 且作用域仍覆盖原对象(学校 / 年级 / 班);点名通知 = 作用域仍
+    覆盖发送时记下的范围(学校,或当时可点名的全部年级);L140 之前的点名通知没记范围,只看仍有发件权。
+    涉及的班按 id 取(identity map 缓存,同一班只查一次)。"""
+    if class_id is not None:
+        cls = db.get(SchoolClass, class_id)
         if cls is None:
             return False
         scope = Scope(school_id=school_id, grade_id=cls.grade_id, class_id=cls.id)
         return can(bindings, Perm.CLASS_NOTICE, scope)
-    kind = notice.target.get("kind")
+    kind = target.get("kind")
     if kind == "school":
         return can(bindings, Perm.NOTICE_SEND, Scope(school_id=school_id))
     if kind == "grade":
-        grade_id = UUID(notice.target["grade_id"])
+        grade_id = UUID(target["grade_id"])
         return can(bindings, Perm.NOTICE_SEND, Scope(school_id=school_id, grade_id=grade_id))
     if kind == "class":
-        cls = db.get(SchoolClass, UUID(notice.target["class_id"]))
+        cls = db.get(SchoolClass, UUID(target["class_id"]))
         if cls is None:
             return False
         scope = Scope(school_id=school_id, grade_id=cls.grade_id, class_id=cls.id)
         return can(bindings, Perm.NOTICE_SEND, scope)
-    return _holds_send(bindings)
+    sent_as = target.get("scope")
+    if sent_as is None:
+        return _holds_send(bindings)
+    if sent_as.get("kind") == "school" or _school_wide(bindings, school_id):
+        return _school_wide(bindings, school_id)
+    wanted = {UUID(g) for g in sent_as.get("grade_ids", [])}
+    return bool(wanted) and wanted <= _send_grades(bindings)
+
+
+def _still_entitled(db: Session, sender: User, notice: Notice) -> bool:
+    bindings = _current_bindings(db, sender)
+    return _entitled(db, bindings, notice.school_id, notice.class_id, notice.target)
 
 
 def _own_notice(db: Session, sender: User, notice_id: UUID) -> Notice:
@@ -802,28 +833,38 @@ def _own_notice(db: Session, sender: User, notice_id: UUID) -> Notice:
     return notice
 
 
+def _entitled_ids(db: Session, sender: User, *, unrecalled_only: bool = False) -> list[UUID]:
+    """发送人仍有权限的自己发的通知 id,时间倒序(L140:前任发送人的通知不再出现在列表与计数里)。
+    只取判定要用的几列,绑定加载一次;分页与 total 都在这份 id 上做。"""
+    stmt = select(Notice.id, Notice.class_id, Notice.target).where(Notice.from_user_id == sender.id)
+    if unrecalled_only:
+        stmt = stmt.where(Notice.recalled_at.is_(None))
+    rows = db.execute(stmt.order_by(Notice.created_at.desc(), Notice.id)).all()
+    bindings = _current_bindings(db, sender)
+    return [
+        nid
+        for nid, class_id, target in rows
+        if _entitled(db, bindings, sender.school_id, class_id, target)
+    ]
+
+
+def _notices_in_order(db: Session, ids: Sequence[UUID]) -> list[Notice]:
+    if not ids:
+        return []
+    found = {n.id: n for n in db.scalars(select(Notice).where(Notice.id.in_(ids)))}
+    return [found[i] for i in ids if i in found]
+
+
 def sent_list(db: Session, sender: User, page: int) -> NoticeSentPage:
-    where = Notice.from_user_id == sender.id
-    total = db.scalar(select(func.count()).select_from(Notice).where(where)) or 0
-    notices = db.scalars(
-        select(Notice)
-        .where(where)
-        .order_by(Notice.created_at.desc(), Notice.id)
-        .limit(PAGE_SIZE)
-        .offset((page - 1) * PAGE_SIZE)
-    ).all()
-    return NoticeSentPage(items=sent_views(db, notices), total=total)
+    ids = _entitled_ids(db, sender)
+    page_ids = ids[(page - 1) * PAGE_SIZE : page * PAGE_SIZE]
+    return NoticeSentPage(items=sent_views(db, _notices_in_order(db, page_ids)), total=len(ids))
 
 
 def recent_sent(db: Session, sender: User, limit: int) -> list[NoticeSent]:
-    """自己最近发的未撤回通知(今日关注用)。"""
-    notices = db.scalars(
-        select(Notice)
-        .where(Notice.from_user_id == sender.id, Notice.recalled_at.is_(None))
-        .order_by(Notice.created_at.desc(), Notice.id)
-        .limit(limit)
-    ).all()
-    return sent_views(db, notices)
+    """自己最近发的、仍有权限的未撤回通知(今日关注用)。"""
+    ids = _entitled_ids(db, sender, unrecalled_only=True)[:limit]
+    return sent_views(db, _notices_in_order(db, ids))
 
 
 def recipients_of(db: Session, sender: User, notice_id: UUID) -> NoticeRecipients:

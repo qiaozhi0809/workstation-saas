@@ -30,7 +30,7 @@ def peer_ip(request: Request | None) -> ipaddress.IPv4Address | ipaddress.IPv6Ad
     return _parse_ip(request.client.host)
 
 
-def _client_ip(request: Request | None) -> str | None:
+def client_ip(request: Request | None) -> str | None:
     """仅返回合法 IP(ip 列为 inet);TestClient 的 "testclient" 等返回 None。
 
     直连地址在 WS_TRUSTED_PROXIES 内时,取 X-Forwarded-For 从右往左第一个不可信的合法 IP;
@@ -55,6 +55,10 @@ def _client_ip(request: Request | None) -> str | None:
     return str(peer)
 
 
+# 公开名是 client_ip(L59);auth/login_log.py 与 cameras/playback.py 仍按旧名导入,别名保留到它们切换
+_client_ip = client_ip
+
+
 def record(
     db: Session,
     *,
@@ -74,7 +78,7 @@ def record(
             success=success,
             object_type=object_type,
             object_id=object_id,
-            ip=_client_ip(request),
+            ip=client_ip(request),
             user_agent=request.headers.get("user-agent") if request is not None else None,
             extra=extra,
         )
