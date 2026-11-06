@@ -48,3 +48,10 @@ def url_host(url: str) -> str | None:
         return urlsplit(url).hostname
     except ValueError:
         return None
+
+
+def is_rtsp_url(url: str) -> bool:
+    try:
+        return urlsplit(url).scheme.lower() in ("rtsp", "rtsps")
+    except ValueError:
+        return False

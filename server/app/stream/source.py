@@ -54,7 +54,7 @@ async def load_all(db_factory: DbFactory) -> list[CameraRow]:
 async def host_is_lan(row: CameraRow, *, allow_loopback: bool) -> bool:
     """失败即关:取不到主机名、解析失败都算"不是内网"。DNS 解析是阻塞调用,放线程里。"""
     host = lan.url_host(row.url)
-    if host is None:
+    if host is None or not lan.is_rtsp_url(row.url):  # 只拉 rtsp / rtsps,不让 ffmpeg 去取别的协议
         return False
     return await asyncio.to_thread(lan.resolve_is_lan, host, allow_loopback=allow_loopback)
 

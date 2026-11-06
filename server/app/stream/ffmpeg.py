@@ -6,6 +6,8 @@ from urllib.parse import quote, urlsplit, urlunsplit
 
 # ffmpeg 拉不通时不能无限挂住:RTSP 套接字 I/O 超时 8 秒(微秒)
 RTSP_IO_TIMEOUT_US = "8000000"
+# 输入只允许 RTSP 及其传输层用到的协议,拒绝 http / file / concat 等(库里地址被改写也读不了本地文件)
+PROTOCOL_WHITELIST = "rtsp,rtsps,rtp,srtp,udp,tcp,tls,crypto"
 
 _USERINFO_RE = re.compile(r"(?i)([a-z][a-z0-9+.\-]*://)[^/@\s]*@")
 _QUERY_SECRET_RE = re.compile(r"(?i)\b(password|passwd|pwd|token|sig)=[^&\s]*")
@@ -14,6 +16,7 @@ _QUERY_SECRET_RE = re.compile(r"(?i)\b(password|passwd|pwd|token|sig)=[^&\s]*")
 def build_args(url: str, out_dir: Path, *, transcode: bool) -> list[str]:
     """不含可执行文件名。默认直接复制视频流;勾了"转码"改成 720p H.264。"""
     args = ["-hide_banner", "-loglevel", "warning", "-nostdin"]
+    args += ["-protocol_whitelist", PROTOCOL_WHITELIST]
     args += ["-rtsp_transport", "tcp", "-timeout", RTSP_IO_TIMEOUT_US, "-i", url, "-an"]
     if transcode:
         args += [
@@ -35,6 +38,7 @@ def probe_args(url: str) -> list[str]:
     """拉 3 秒、截一帧 JPEG(宽度不超过 640)写到 stdout。"""
     return [
         *("-hide_banner", "-loglevel", "warning", "-nostdin"),
+        *("-protocol_whitelist", PROTOCOL_WHITELIST),
         *("-rtsp_transport", "tcp", "-timeout", RTSP_IO_TIMEOUT_US, "-i", url),
         *("-t", "3", "-frames:v", "1", "-an"),
         *("-vf", "scale='min(640,iw)':-2"),

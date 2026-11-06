@@ -1,6 +1,7 @@
 """python -m app.stream:启动转流 supervisor 与测试连接循环。"""
 
 import asyncio
+import json
 import logging
 import os
 import signal
@@ -18,13 +19,24 @@ from app.stream.supervisor import Supervisor
 HEARTBEAT = Path(os.environ.get("WS_STREAM_HEARTBEAT", "/tmp/ws-stream-alive"))  # noqa: S108
 
 
+class _JsonFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        return json.dumps(
+            {
+                "ts": self.formatTime(record),
+                "level": record.levelname,
+                "logger": record.name,
+                "msg": record.getMessage(),
+            },
+            ensure_ascii=False,
+        )
+
+
 async def main() -> None:
     settings = get_settings()
-    logging.basicConfig(
-        level=settings.log_level.upper(),
-        stream=sys.stdout,
-        format='{"ts":"%(asctime)s","level":"%(levelname)s","logger":"%(name)s","msg":"%(message)s"}',
-    )
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(_JsonFormatter())
+    logging.basicConfig(level=settings.log_level.upper(), handlers=[handler])
     engine = create_engine(settings.database_url, pool_pre_ping=True)
     factory = sessionmaker(bind=engine)
     redis = Redis.from_url(settings.redis_url, decode_responses=True)

@@ -81,7 +81,12 @@ services:
     environment:
       WS_HLS_ROOT: /run/ws-hls
       TZ: ${TZ:-Asia/Shanghai}
-    # 日志只写 stdout(docker logs / diagnose.sh 收集),不挂 data/logs
+    # 日志只写 stdout(docker logs / diagnose.sh 收集),不挂 data/logs;限制大小防止写满磁盘
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "5"}
+    # 退出时要依次停掉最多 10 路 ffmpeg
+    stop_grace_period: 20s
     volumes:
       - ws-hls:/run/ws-hls
     # 等 app 健康(迁移已完成,cameras 表已存在)再起

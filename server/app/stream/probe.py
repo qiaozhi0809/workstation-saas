@@ -35,10 +35,12 @@ async def _grab(ffmpeg_bin: str, url: str, secrets: tuple[str, ...]) -> dict:
     try:
         out, err = await asyncio.wait_for(proc.communicate(), PROBE_TIMEOUT)
     except TimeoutError:
-        with contextlib.suppress(ProcessLookupError):
-            proc.kill()
-        await proc.wait()
         return _result(False, "连接超时,摄像头没有响应")
+    finally:  # 超时、被取消、异常都要收掉子进程
+        if proc.returncode is None:
+            with contextlib.suppress(ProcessLookupError):
+                proc.kill()
+            await asyncio.shield(proc.wait())
     if out.startswith(b"\xff\xd8") and proc.returncode == 0:
         return _result(True, "连接成功", out)
     lines = [ln for ln in err.decode("utf-8", "replace").splitlines() if ln.strip()]
@@ -75,8 +77,8 @@ async def handle_probe(
         else:
             try:
                 result = await _grab(ffmpeg_bin, url, secrets)
-            except OSError as exc:
-                result = _result(False, f"无法启动 ffmpeg:{type(exc).__name__}")
+            except Exception as exc:  # 不回写的话后端只能空等 10 秒
+                result = _result(False, f"测试失败:{type(exc).__name__}")
     await redis.set(reply_key, json.dumps(result, ensure_ascii=False), ex=30)
 
 

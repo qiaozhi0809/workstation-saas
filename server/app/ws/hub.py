@@ -20,7 +20,7 @@ CLOSE_REVOKED = 4403
 STALE = "session.stale"
 CLOSE_STALE = 4401  # 与 router.CLOSE_UNAUTHORIZED 同值:客户端走"刷新后重连"
 CLOSE_TOO_MANY = 4429  # 每用户连接数超限;前端按"非令牌原因的断线"退避重连
-MAX_SOCKETS_PER_USER = 10
+MAX_SOCKETS_PER_USER = 10  # 按 uvicorn 进程计;WS_WORKERS=2 时每用户最多 20 条
 SEND_TIMEOUT = 5.0  # 单个 socket 发送超时,慢客户端不能拖住别人
 
 
@@ -88,7 +88,7 @@ class Hub:
         kind = event.get("type")
         jobs = [
             self._deliver_one(UUID(raw), ws, event, kind)
-            for raw in message["user_ids"]
+            for raw in dict.fromkeys(message["user_ids"])  # 去重:同一 socket 不会被并发发两次
             for ws in list(self._sockets.get(UUID(raw), ()))
         ]
         await asyncio.gather(*jobs)

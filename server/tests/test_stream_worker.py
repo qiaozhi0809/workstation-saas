@@ -46,6 +46,9 @@ if "pipe:1" in args:
         sys.exit(1)
     sys.stdout.buffer.write(b"\\xff\\xd8\\xff\\xe0fake-jpeg\\xff\\xd9")
     sys.exit(0)
+if "barefail" in url:
+    sys.stderr.write("auth rejected, password campass-test and campass%2Dtest\\n")
+    sys.exit(1)
 if "fail" in url:
     sys.stderr.write("[rtsp] Error opening input " + url + ": Connection refused\\n")
     sys.stderr.flush()
@@ -520,5 +523,132 @@ def test_real_ffmpeg_probe_returns_jpeg(db, redis_url, real_ffmpeg):
         result = json.loads(await redis.get(key))
         assert result["ok"], result
         assert base64.b64decode(result["preview_jpeg_base64"]).startswith(b"\xff\xd8")
+
+    run_async(redis_url, body)
+
+
+# ---------------- 终审补充 ----------------
+
+
+def test_mask_text_bare_and_encoded_secrets():
+    """不含 URL 的裸口令、只以百分号编码形式出现的口令也要打码(不能只靠 userinfo 正则)。"""
+    text = "auth rejected, password campass-test and cam%20user%21"
+    masked = ffmpeg.mask_text(text, ("campass-test", "cam user!"))
+    assert "campass-test" not in masked and "cam%20user" not in masked
+
+
+def test_bare_password_in_stderr_is_masked(db, redis_url, fake_ffmpeg, hls_root):
+    cam = make_camera(db, "rtsp://10.0.0.5/barefail")
+
+    async def body(redis):
+        sup = make_supervisor(db, redis, fake_ffmpeg, hls_root)
+        await want(redis, cam)
+        await sup.tick(1)
+        st = sup._streams[cam.id]
+        await settle(lambda: st.proc.returncode is not None)
+        await sup.tick(2)
+        err = (await state(redis, cam))["last_error"]
+        assert PASSWORD not in err and "***" in err
+
+    run_async(redis_url, body)
+
+
+def test_backoff_caps_at_60_and_resets_after_stable_run(
+    db, redis_url, fake_ffmpeg, hls_root, tmp_path
+):
+    cam = make_camera(db, "rtsp://10.0.0.5/fail")
+
+    async def body(redis):
+        sup = make_supervisor(db, redis, fake_ffmpeg, hls_root)
+        await want(redis, cam)
+        t = 1000.0
+        delays = []
+        for _ in range(6):
+            await sup.tick(t)  # 启动
+            st = sup._streams[cam.id]
+            await settle(lambda s=st: s.proc.returncode is not None)
+            await sup.tick(t)  # 发现退出
+            delays.append(round(st.next_retry_at - t))
+            t = st.next_retry_at + 0.1
+        assert delays == [5, 10, 30, 60, 60, 60]
+        # 运行满 30 秒后再退出,算新的一轮失败,退避从 5 秒重新开始
+        st.fail_count = 4
+        await sup.tick(t)
+        await settle(lambda: st.proc is not None and st.proc.returncode is not None)
+        await sup.tick(t + 31)
+        assert round(st.next_retry_at - (t + 31)) == 5
+        await sup.shutdown()
+
+    run_async(redis_url, body)
+
+
+def test_one_bad_camera_does_not_block_others(db, redis_url, fake_ffmpeg, hls_root, tmp_path):
+    bad = make_camera(db, "rtsp://10.0.0.5:99999/x")  # 端口非法:拼凭据地址时抛 ValueError
+    good = make_camera(db)
+
+    async def body(redis):
+        sup = make_supervisor(db, redis, fake_ffmpeg, hls_root)
+        await want(redis, bad)
+        await want(redis, good)
+        await sup.tick(1)
+        await settle(lambda: len(calls(tmp_path)) == 1)
+        assert (await state(redis, bad))["status"] == "error"
+        assert sup._streams[good.id].proc is not None
+        await sup.shutdown()
+
+    run_async(redis_url, body)
+
+
+def test_reset_states_and_clear_hls_on_start(db, redis_url, fake_ffmpeg, hls_root):
+    """worker 重启:上个进程留下的 state 与 hls 目录都清掉。"""
+    stale = uuid4()
+    (hls_root / str(stale)).mkdir()
+    (hls_root / str(stale) / "seg-0.ts").write_bytes(b"x")
+
+    async def body(redis):
+        await redis.hset(f"{STATE_PREFIX}{stale}", mapping={"status": "streaming"})
+        sup = make_supervisor(db, redis, fake_ffmpeg, hls_root)
+        task = asyncio.create_task(sup.run())
+        await settle(lambda: not (hls_root / str(stale)).exists())
+        assert await redis.exists(f"{STATE_PREFIX}{stale}") == 0
+        sup.request_stop()
+        await asyncio.wait_for(task, 5)
+
+    run_async(redis_url, body)
+
+
+def test_reload_message_stops_stream(db, redis_url, fake_ffmpeg, hls_root, tmp_path):
+    """走真实的 ws:cam:reload 订阅路径(不是直接调 handle_reload)。"""
+    cam = make_camera(db)
+
+    async def body(redis):
+        sup = make_supervisor(db, redis, fake_ffmpeg, hls_root)
+        await want(redis, cam)
+        await sup.tick(1)
+        await settle(lambda: len(calls(tmp_path)) == 1)
+        old = sup._streams[cam.id].proc
+        task = asyncio.create_task(sup._reload_loop())
+        for _ in range(50):  # 等订阅建立
+            await redis.publish("ws:cam:reload", str(cam.id))
+            if old.returncode is not None:
+                break
+            await asyncio.sleep(0.1)
+        assert old.returncode is not None
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+    run_async(redis_url, body)
+
+
+def test_non_rtsp_scheme_refused(db, redis_url, fake_ffmpeg, hls_root, tmp_path):
+    cam = make_camera(db, "http://10.0.0.5/live.m3u8")
+
+    async def body(redis):
+        sup = make_supervisor(db, redis, fake_ffmpeg, hls_root)
+        await want(redis, cam)
+        await sup.tick(1)
+        assert calls(tmp_path) == []
+        assert (await state(redis, cam))["status"] == "error"
 
     run_async(redis_url, body)

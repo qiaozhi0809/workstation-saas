@@ -32,7 +32,8 @@ STDERR_KEEP = 5
 @dataclass
 class _Stream:
     proc: asyncio.subprocess.Process | None = None
-    started_at: float = 0.0
+    started_at: float = 0.0  # 单调时钟,只用于退避与稳定判定
+    started_wall: int = 0  # 墙上时间戳,写进 state
     fail_count: int = 0
     next_retry_at: float = 0.0
     secrets: tuple[str, ...] = ()
@@ -63,13 +64,16 @@ class Supervisor:
         self._allow_loopback = allow_loopback
         self._streams: dict[UUID, _Stream] = {}
         self._stopping = asyncio.Event()
+        self._lock = (
+            asyncio.Lock()
+        )  # tick / reload / shutdown 互斥,避免 reload 在 _launch 的 await 间隙里丢进程
 
     # ---- 状态 ----
     async def _write_state(self, cid: UUID, st: _Stream) -> None:
         mapping = {
             "status": st.status,
             "last_error": st.last_error,
-            "started_at": str(int(st.started_at)) if st.proc else "",
+            "started_at": str(st.started_wall) if st.proc else "",
             "updated_at": clock.utc_now().isoformat(),
         }
         await self._redis.hset(f"{STATE_PREFIX}{cid}", mapping=mapping)
@@ -92,6 +96,10 @@ class Supervisor:
 
     async def tick(self, now: float | None = None) -> None:
         now = time.monotonic() if now is None else now
+        async with self._lock:
+            await self._tick(now)
+
+    async def _tick(self, now: float) -> None:
         wanted = await self._wanted_ids()
         for cid, st in list(self._streams.items()):
             if st.proc is not None and st.proc.returncode is not None:
@@ -101,13 +109,18 @@ class Supervisor:
                 await self._stop(cid)
         for cid in sorted(wanted, key=str):
             st = self._streams.setdefault(cid, _Stream())
-            if st.proc is not None:
-                if st.status != "streaming" and (self._out_dir(cid) / "index.m3u8").exists():
-                    st.status, st.last_error = "streaming", ""
-                    await self._write_state(cid, st)
-                continue
-            if now >= st.next_retry_at:
-                await self._launch(cid, st, now)
+            try:
+                if st.proc is not None:
+                    if st.status != "streaming" and (self._out_dir(cid) / "index.m3u8").exists():
+                        st.status, st.last_error = "streaming", ""
+                        await self._write_state(cid, st)
+                elif now >= st.next_retry_at:
+                    await self._launch(cid, st, now)
+            except Exception as exc:  # 一路出错不能拖住后面的摄像头
+                log.warning("camera %s tick failed: %s", cid, type(exc).__name__)
+                if st.proc is not None:  # 进程已起但后续出错:保留进程,下一轮再看
+                    continue
+                await self._backoff(cid, st, now, f"内部错误:{type(exc).__name__}")
 
     def _running(self) -> int:
         return sum(1 for s in self._streams.values() if s.proc is not None)
@@ -151,6 +164,7 @@ class Supervisor:
         finally:
             del url, args
         st.started_at = now
+        st.started_wall = int(clock.utc_now().timestamp())
         st.stderr.clear()
         st.reader = asyncio.create_task(self._read_stderr(st))
         st.status, st.last_error = "idle", ""
@@ -158,13 +172,19 @@ class Supervisor:
         log.info("stream started camera=%s", cid)
 
     async def _read_stderr(self, st: _Stream) -> None:
+        """分块读 stderr 并按行打码;单行最多保留 8KiB,保证管道始终被读空(ffmpeg 不会被堵住)。"""
         proc = st.proc
         assert proc is not None and proc.stderr is not None
-        async for raw in proc.stderr:
-            line = ffmpeg.mask_text(raw.decode("utf-8", "replace").strip(), st.secrets)
-            if line:
-                st.stderr.append(line)
-                log.info("ffmpeg: %s", line)
+        buf = b""
+        while chunk := await proc.stderr.read(4096):
+            buf += chunk
+            *lines, buf = buf.split(b"\n")
+            buf = buf[-8192:]
+            for raw in lines:
+                line = ffmpeg.mask_text(raw.decode("utf-8", "replace").strip()[:2000], st.secrets)
+                if line:
+                    st.stderr.append(line)
+                    log.debug("ffmpeg: %s", line)  # 逐帧告警很多,默认不进日志;最后一行进 last_error
 
     async def _on_exit(self, cid: UUID, st: _Stream, now: float) -> None:
         if st.reader is not None:
@@ -209,25 +229,29 @@ class Supervisor:
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await st.reader
         shutil.rmtree(self._out_dir(cid), ignore_errors=True)
-        await self._redis.hset(
-            f"{STATE_PREFIX}{cid}",
-            mapping={
-                "status": "idle",
-                "last_error": "",
-                "started_at": "",
-                "updated_at": clock.utc_now().isoformat(),
-            },
-        )
+        try:
+            await self._redis.hset(
+                f"{STATE_PREFIX}{cid}",
+                mapping={
+                    "status": "idle",
+                    "last_error": "",
+                    "started_at": "",
+                    "updated_at": clock.utc_now().isoformat(),
+                },
+            )
+        except Exception as exc:  # Redis 不可用也要先把进程收掉
+            log.warning("state reset failed: %s", type(exc).__name__)
         log.info("stream stopped camera=%s", cid)
 
     async def handle_reload(self, cid: UUID) -> None:
         """后端改 / 删了摄像头:停旧进程;只要还有人在看,下一轮 tick 用新配置重起。"""
-        await self._stop(cid)
+        async with self._lock:
+            await self._stop(cid)
         await self.refresh_public_hosts()
 
     async def shutdown(self) -> None:
-        for cid in list(self._streams):
-            await self._stop(cid)
+        async with self._lock:
+            await asyncio.gather(*(self._stop(cid) for cid in list(self._streams)))
 
     # ---- 自检 ----
     async def refresh_public_hosts(self) -> list[str]:
@@ -246,23 +270,45 @@ class Supervisor:
             await self._redis.delete(key)
 
     async def _reload_loop(self) -> None:
-        pubsub = self._redis.pubsub()
-        await pubsub.subscribe(RELOAD_CHANNEL)
-        try:
-            async for item in pubsub.listen():
-                if item["type"] != "message":
-                    continue
-                try:
-                    await self.handle_reload(UUID(str(item["data"])))
-                except Exception as exc:
-                    log.warning("reload failed: %s", type(exc).__name__)
-        finally:
-            await pubsub.aclose()
+        """订阅断了就退避重连;断线期间可能错过 reload,所以重连前把全部流停掉重来。"""
+        delay = 0.5
+        while True:
+            pubsub = self._redis.pubsub()
+            try:
+                await pubsub.subscribe(RELOAD_CHANNEL)
+                delay = 0.5
+                async for item in pubsub.listen():
+                    if item["type"] != "message":
+                        continue
+                    try:
+                        await self.handle_reload(UUID(str(item["data"])))
+                    except Exception as exc:
+                        log.warning("reload failed: %s", type(exc).__name__)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                log.warning("reload subscription lost: %s", type(exc).__name__)
+            finally:
+                with contextlib.suppress(Exception):
+                    await pubsub.aclose()
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 10)
+            async with self._lock:  # 断线期间可能错过 reload:全部停掉,有人看的下一轮用新配置重起
+                await asyncio.gather(*(self._stop(c) for c in list(self._streams)))
 
     def request_stop(self) -> None:
         self._stopping.set()
 
+    def _clear_hls_root(self) -> None:
+        """worker 被 SIGKILL 后旧目录还在(app 一直挂着卷):启动时清空。"""
+        if self._root.is_dir():
+            for child in self._root.iterdir():
+                shutil.rmtree(child, ignore_errors=True) if child.is_dir() else child.unlink(
+                    missing_ok=True
+                )
+
     async def run(self, heartbeat: Path | None = None) -> None:
+        self._clear_hls_root()
         await self._reset_states()
         try:
             await self.refresh_public_hosts()
