@@ -10,6 +10,7 @@ from sqlalchemy import text
 
 from app.auth import sessions
 from app.cli import build_parser, init_school_cmd, migrate, parent_archive
+from app.deploy import precheck
 from tests.test_precheck import (  # noqa: F401  (fixtures)
     current_version,
     fresh_engine,
@@ -102,10 +103,12 @@ def test_migrate_check_only(fresh_engine):  # noqa: F811
 
 
 def test_migrate_upgrades_empty_db_then_is_idempotent(fresh_engine):  # noqa: F811
+    head = precheck.head_revision(fresh_engine)  # 不写死最新迁移号,从 alembic 动态取
+    assert head
     code, out = _migrate(fresh_engine)
     assert code == 0
-    assert "已迁移到 0012" in out
-    assert current_version(fresh_engine) == "0012"
+    assert f"已迁移到 {head}" in out
+    assert current_version(fresh_engine) == head
     code, out = _migrate(fresh_engine)
     assert code == 0
     assert "已是最新" in out

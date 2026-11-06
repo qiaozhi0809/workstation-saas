@@ -570,6 +570,80 @@ def test_totp_reset_unauthenticated_and_scope(client, db, settings):
     assert db.get(User, stranger.id).totp_enabled_at is not None
 
 
+def _token_at(settings, when: datetime) -> str:
+    """按指定 iat 签发 teacher01 的令牌(exp 仍在未来)。"""
+    import jwt
+
+    return jwt.encode(
+        {"sub": TEACHER_USER_ID, "iat": when, "exp": clock.utc_now() + timedelta(seconds=600)},
+        settings.jwt_secret,
+        algorithm="HS256",
+    )
+
+
+def _me(client, token):
+    return client.get(f"{API}/auth/me", headers=_bearer(token))
+
+
+def test_token_floor_after_totp_reset(client, db, settings):
+    """L144:开启两步验证之前签发的令牌,在关闭 / 管理员重置两步验证之后仍然 401(不复活);
+    只写 token_floor_at,不动 password_changed_at。"""
+    user = db.get(User, UUID(TEACHER_USER_ID))
+    user.password_changed_at = clock.utc_now() - timedelta(hours=1)
+    db.flush()
+    pw_changed = user.password_changed_at
+
+    # 自助关闭
+    before = _token_at(settings, clock.utc_now() - timedelta(minutes=30))
+    assert _me(client, before).status_code == 200
+    secret = _turn_on(db, settings)
+    assert _me(client, before).status_code == 401
+    token = _login(client).json()["mfa_token"]
+    s = _second_step(client, token, pyotp.TOTP(secret).now()).json()
+    off = client.post(
+        f"{API}/auth/totp/disable", headers=_bearer(s["access_token"]), json={"password": "dev123"}
+    )
+    assert off.status_code == 200
+    db.expire_all()
+    user = db.get(User, UUID(TEACHER_USER_ID))
+    assert user.totp_enabled_at is None and user.token_floor_at is not None
+    assert user.password_changed_at == pw_changed
+    res = _me(client, before)
+    assert (res.status_code, res.json()["error"]["code"]) == (401, "TOKEN_EXPIRED")
+    fresh = _login(client).json()
+    assert _me(client, fresh["access_token"]).status_code == 200
+
+    # 管理员重置:先清掉上面留下的下限,再走一遍
+    user.token_floor_at = None
+    db.flush()
+    before = _token_at(settings, clock.utc_now() - timedelta(minutes=30))
+    assert _me(client, before).status_code == 200
+    _turn_on(db, settings)
+    assert _me(client, before).status_code == 401
+    assert _reset(client, settings, IT_ADMIN, TEACHER_USER_ID).status_code == 200
+    db.expire_all()
+    user = db.get(User, UUID(TEACHER_USER_ID))
+    assert user.totp_enabled_at is None and user.token_floor_at is not None
+    assert user.password_changed_at == pw_changed
+    res = _me(client, before)
+    assert (res.status_code, res.json()["error"]["code"]) == (401, "TOKEN_EXPIRED")
+    fresh = _login(client).json()
+    assert "access_token" in fresh and _me(client, fresh["access_token"]).status_code == 200
+
+
+def test_totp_reset_on_user_without_totp_does_not_set_floor(client, db, settings):
+    """审查第 1 轮:对从未开启两步验证的人重置,不该写 token_floor_at(不踢他的会话)。"""
+    plain = make_user(db, "no_totp_x", "无两步")
+    assert plain.totp_enabled_at is None and plain.token_floor_at is None
+    assert _reset(client, settings, IT_ADMIN, plain.id).status_code == 200
+    db.expire_all()
+    plain = db.get(User, plain.id)
+    assert plain.totp_secret is None and plain.totp_enabled_at is None
+    assert plain.token_floor_at is None
+    # 审计照记,只是不动令牌下限
+    assert [r.action for r in audit_rows(db, plain.id)] == ["account.totp_reset"]
+
+
 def test_totp_reset_works_for_parent_only_account(client, db, settings):
     parent = make_user(db, "parent_only_x", "家长")
     parent.totp_enabled_at = clock.utc_now()

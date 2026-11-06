@@ -126,5 +126,7 @@ class UserPreference(Base):
     teacher_figure: Mapped[str] = mapped_column(Text, server_default=text("'female'"))
     idle_animation: Mapped[bool] = mapped_column(server_default=text("true"))
     review_reasons: Mapped[Any | None] = mapped_column(JSONB)
+    # {"teacher"|"parent"|"admin": ISO 时间}:各语境首次引导完成时间(0013)
+    onboarded: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
     created_at: Mapped[datetime] = mapped_column(**_NOW)
     updated_at: Mapped[datetime] = mapped_column(**_NOW)
