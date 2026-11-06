@@ -265,13 +265,15 @@ def update_account(
 ) -> Account:
     user.display_name = data.display_name
     user.phone = data.phone
-    db.execute(
-        text(
-            "INSERT INTO teachers (user_id, employee_no, subjects) VALUES (:uid, :no, :subs) "
-            "ON CONFLICT (user_id) DO UPDATE SET employee_no = :no, subjects = :subs"
-        ),
-        {"uid": user.id, "no": data.employee_no, "subs": data.subjects},
-    )
+    has_row = db.scalar(text("SELECT 1 FROM teachers WHERE user_id = :uid"), {"uid": user.id})
+    if has_row or data.employee_no or data.subjects:  # 纯家长账号改姓名电话不建教职工行
+        db.execute(
+            text(
+                "INSERT INTO teachers (user_id, employee_no, subjects) VALUES (:uid, :no, :subs) "
+                "ON CONFLICT (user_id) DO UPDATE SET employee_no = :no, subjects = :subs"
+            ),
+            {"uid": user.id, "no": data.employee_no, "subs": data.subjects},
+        )
     record(
         db,
         user_id=actor.id,

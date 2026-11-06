@@ -379,3 +379,38 @@ def test_list_page_and_q_caps(client, settings):
     assert client.get(ACCOUNTS, headers=h, params={"page": 1001}).status_code == 400
     assert client.get(ACCOUNTS, headers=h, params={"q": "字" * 50}).status_code == 200
     assert client.get(ACCOUNTS, headers=h, params={"q": "字" * 51}).status_code == 400
+
+
+def test_update_parent_account_keeps_it_parent_only(client, settings, db):
+    from sqlalchemy import text
+
+    from tests.seed_ids import STUDENT_IDS
+
+    created = client.post(
+        f"/api/v1/students/{STUDENT_IDS[2]}/parents",
+        headers=auth(settings),
+        json={"phone": "13800000041", "name": "虚构家长", "relation": "母亲"},
+    )
+    assert created.status_code == 201, created.text
+    link_id = created.json()["parent"]["link_id"]
+    uid = _user_id(db, "13800000041")
+    res = client.put(
+        f"{ACCOUNTS}/{uid}",
+        headers=_admin(settings),
+        json={
+            "display_name": "虚构家长B",
+            "phone": "13800000041",
+            "employee_no": None,
+            "subjects": [],
+        },
+    )
+    assert res.status_code == 200, res.text
+    assert db.scalar(text("SELECT count(*) FROM teachers WHERE user_id = :u"), {"u": uid}) == 0
+    assert (
+        client.delete(f"/api/v1/parent-links/{link_id}", headers=auth(settings)).status_code == 204
+    )
+    db.expire_all()
+    assert db.get(User, uid).status == "archived"
+    # 填了工号则照常建教职工行
+    other = _create(client, settings).json()["account"]["id"]
+    assert db.scalar(text("SELECT count(*) FROM teachers WHERE user_id = :u"), {"u": other}) == 1
