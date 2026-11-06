@@ -48,6 +48,9 @@ export default function AccountsPage() {
   const [freezing, setFreezing] = useState<Account | null>(null)
   const [freezeError, setFreezeError] = useState('')
   const [freezeBusy, setFreezeBusy] = useState(false)
+  const [totpTarget, setTotpTarget] = useState<Account | null>(null)
+  const [totpError, setTotpError] = useState('')
+  const [totpBusy, setTotpBusy] = useState(false)
   // 临时密码只放这里,关闭即置空
   const [temp, setTemp] = useState<{ entries: TempPassword[]; batch: boolean } | null>(null)
 
@@ -106,6 +109,28 @@ export default function AccountsPage() {
       setFreezeError(err instanceof ApiError ? err.message : '冻结失败,请重试')
     } finally {
       setFreezeBusy(false)
+    }
+  }
+
+  const resetTotp = async () => {
+    if (!totpTarget || totpBusy) return
+    setTotpError('')
+    setTotpBusy(true)
+    try {
+      await adminApi.resetTotp(totpTarget.id)
+      toast(`已重置${totpTarget.display_name}的两步验证`)
+      setTotpTarget(null)
+      refresh()
+    } catch (err) {
+      setTotpError(
+        err instanceof ApiError && err.code === 'CANNOT_RESET_SELF'
+          ? '不能重置自己的两步验证'
+          : err instanceof ApiError
+            ? err.message
+            : '重置失败,请重试',
+      )
+    } finally {
+      setTotpBusy(false)
     }
   }
 
@@ -201,6 +226,10 @@ export default function AccountsPage() {
                     setFreezing(a)
                   }}
                   onUnfreeze={() => void unfreeze(a)}
+                  onResetTotp={() => {
+                    setTotpError('')
+                    setTotpTarget(a)
+                  }}
                 />
               ))}
             </tbody>
@@ -270,6 +299,29 @@ export default function AccountsPage() {
               onClick={() => void freeze()}
             >
               确认冻结
+            </Button>
+          </div>
+        </Modal>
+      )}
+      {totpTarget && (
+        <Modal open onClose={() => setTotpTarget(null)} title="重置两步验证">
+          <p className="text-sm">{`重置后 ${totpTarget.display_name} 的两步验证会被关闭,该账号下次登录只需密码;之后可自行重新开启。`}</p>
+          {totpError && (
+            <p role="alert" className="mt-2 text-sm text-destructive">
+              {totpError}
+            </p>
+          )}
+          <div className="mt-4 flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setTotpTarget(null)}>
+              取消
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={totpBusy}
+              onClick={() => void resetTotp()}
+            >
+              确认重置
             </Button>
           </div>
         </Modal>

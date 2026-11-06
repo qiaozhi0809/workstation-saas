@@ -18,6 +18,7 @@ export default function AccountRow({
   onReset,
   onFreeze,
   onUnfreeze,
+  onResetTotp,
 }: {
   account: Account
   isSelf: boolean
@@ -25,11 +26,20 @@ export default function AccountRow({
   onReset(): void
   onFreeze(): void
   onUnfreeze(): void
+  onResetTotp(): void
 }) {
+  const totp = a.totp_enabled === true
   const frozen = a.status === 'frozen'
   return (
     <tr className="border-t align-middle">
-      <td className="whitespace-nowrap px-3 py-2 font-medium">{a.display_name}</td>
+      <td className="whitespace-nowrap px-3 py-2 font-medium">
+        {a.display_name}
+        {totp && (
+          <Badge variant="info" className="ml-1.5 align-middle">
+            两步验证
+          </Badge>
+        )}
+      </td>
       <td className="whitespace-nowrap px-3 py-2">{a.login_name}</td>
       <td className="px-3 py-2">
         {a.roles.length === 0 ? (
@@ -60,6 +70,11 @@ export default function AccountRow({
             {!isSelf && (
               <Button type="button" variant="ghost" size="sm" onClick={onReset}>
                 重置密码
+              </Button>
+            )}
+            {totp && !isSelf && (
+              <Button type="button" variant="ghost" size="sm" onClick={onResetTotp}>
+                重置两步验证
               </Button>
             )}
             {frozen ? (

@@ -18,7 +18,7 @@ export default function ParentNoticeItem({
   const unread = !item.recalled && !item.read_at
   const pending = !item.recalled && item.ack.kind !== 'none' && !item.my_ack && item.can_ack
   const meta = [
-    item.from_name,
+    item.from_name ?? '系统',
     formatInTz(item.created_at, localTz()),
     item.students.length > 0 ? `涉及:${item.students.join('、')}` : null,
   ]

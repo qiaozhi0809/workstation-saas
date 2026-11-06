@@ -1,11 +1,15 @@
+import type { ReactNode } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { authApi } from '@/shared/api/auth'
 import { useAuthStore } from '@/shared/stores/auth'
 import AccountMenu from './AccountMenu'
 
-vi.mock('@/shared/api/auth', () => ({ authApi: { changePassword: vi.fn(), me: vi.fn() } }))
+vi.mock('@/shared/api/auth', () => ({
+  authApi: { changePassword: vi.fn(), me: vi.fn(), passwordPolicy: vi.fn() },
+}))
 
 const user = {
   id: 'u',
@@ -13,10 +17,18 @@ const user = {
   contexts: ['teacher' as const],
   admin_perms: [],
   must_change_password: false,
+  password_change_reason: null,
 }
+
+const Wrap = ({ children }: { children: ReactNode }) => (
+  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <MemoryRouter>{children}</MemoryRouter>
+  </QueryClientProvider>
+)
 
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.mocked(authApi.passwordPolicy).mockResolvedValue({ min_length: 8, max_age_days: 0 })
   useAuthStore.setState({ accessToken: 'a', refreshToken: 'rt', user, lastContext: null })
 })
 afterEach(() => {
@@ -28,9 +40,9 @@ it('changes the password from the account menu and closes', async () => {
   vi.mocked(authApi.changePassword).mockResolvedValue(undefined)
   vi.mocked(authApi.me).mockResolvedValue(user)
   render(
-    <MemoryRouter>
+    <Wrap>
       <AccountMenu name="王老师" onLogout={() => {}} />
-    </MemoryRouter>,
+    </Wrap>,
   )
   fireEvent.click(screen.getByRole('button', { name: '账号菜单' }))
   fireEvent.click(screen.getByRole('menuitem', { name: '修改密码' }))
@@ -48,13 +60,13 @@ it('changes the password from the account menu and closes', async () => {
 
 it('switchTo records the last context before navigating', () => {
   render(
-    <MemoryRouter>
+    <Wrap>
       <AccountMenu
         name="王老师"
         onLogout={() => {}}
         switchTo={[{ label: '切换到管理端', to: '/admin', context: 'admin' }]}
       />
-    </MemoryRouter>,
+    </Wrap>,
   )
   fireEvent.click(screen.getByRole('button', { name: '账号菜单' }))
   fireEvent.click(screen.getByRole('menuitem', { name: '切换到管理端' }))
@@ -65,9 +77,9 @@ it('closes without a failure message when me() fails after the password changed'
   vi.mocked(authApi.changePassword).mockResolvedValue(undefined)
   vi.mocked(authApi.me).mockRejectedValue(new Error('net'))
   render(
-    <MemoryRouter>
+    <Wrap>
       <AccountMenu name="王老师" onLogout={() => {}} />
-    </MemoryRouter>,
+    </Wrap>,
   )
   fireEvent.click(screen.getByRole('button', { name: '账号菜单' }))
   fireEvent.click(screen.getByRole('menuitem', { name: '修改密码' }))
@@ -81,9 +93,9 @@ it('closes without a failure message when me() fails after the password changed'
 
 it('links the rule hint to the new password input', async () => {
   render(
-    <MemoryRouter>
+    <Wrap>
       <AccountMenu name="王老师" onLogout={() => {}} />
-    </MemoryRouter>,
+    </Wrap>,
   )
   fireEvent.click(screen.getByRole('button', { name: '账号菜单' }))
   fireEvent.click(screen.getByRole('menuitem', { name: '修改密码' }))
@@ -98,9 +110,9 @@ it('lists every other context as a switch item and records the chosen one', () =
     { label: '切换到家长端', to: '/parent', context: 'parent' as const },
   ]
   render(
-    <MemoryRouter>
+    <Wrap>
       <AccountMenu name="王老师" onLogout={() => {}} switchTo={switchTo} />
-    </MemoryRouter>,
+    </Wrap>,
   )
   fireEvent.click(screen.getByRole('button', { name: '账号菜单' }))
   expect(screen.getByRole('menuitem', { name: '切换到教师端' })).toBeInTheDocument()
@@ -111,9 +123,9 @@ it('lists every other context as a switch item and records the chosen one', () =
 
 it('shows no switch item without other contexts', () => {
   render(
-    <MemoryRouter>
+    <Wrap>
       <AccountMenu name="王老师" onLogout={() => {}} />
-    </MemoryRouter>,
+    </Wrap>,
   )
   fireEvent.click(screen.getByRole('button', { name: '账号菜单' }))
   expect(screen.queryByRole('menuitem', { name: /切换到/ })).toBeNull()

@@ -25,6 +25,8 @@ import type {
   HistoryStudent,
   HistoryYear,
   ImportRow,
+  LoginLogPage,
+  LoginResult,
   NoticeInput,
   NoticeOptions,
   NoticePerson,
@@ -35,6 +37,7 @@ import type {
   ScoreStudentRow,
   ScoreSummary,
   StaffInput,
+  SecuritySettings,
   Switches,
   TagPool,
   TagPoolSave,
@@ -64,6 +67,28 @@ export interface AccountFilters {
   role?: string
   status?: string
   page?: number
+}
+
+export interface LoginLogFilters {
+  from?: string
+  to?: string
+  q?: string
+  result?: LoginResult[]
+  suspicious?: boolean
+  page?: number
+}
+
+/** result 多选用重复参数;suspicious 只在为真时发 1 */
+function loginLogQs(f: LoginLogFilters): string {
+  const sp = new URLSearchParams()
+  if (f.from) sp.set('from', f.from)
+  if (f.to) sp.set('to', f.to)
+  if (f.q) sp.set('q', f.q)
+  for (const r of f.result ?? []) sp.append('result', r)
+  if (f.suspicious) sp.set('suspicious', '1')
+  if (f.page !== undefined) sp.set('page', String(f.page))
+  const s = sp.toString()
+  return s ? `?${s}` : ''
 }
 
 export interface AuditFilters {
@@ -139,6 +164,11 @@ export const adminApi = {
   saveTagPool: (b: TagPoolSave) => api<TagPool>('PUT', '/admin/settings/tag-pool', b),
   switches: () => api<Switches>('GET', '/admin/settings/switches'),
   saveSwitches: (b: Switches) => api<Switches>('PUT', '/admin/settings/switches', b),
+  securitySettings: () => api<SecuritySettings>('GET', '/admin/settings/security'),
+  saveSecuritySettings: (b: SecuritySettings) =>
+    api<SecuritySettings>('PUT', '/admin/settings/security', b),
+  resetTotp: (userId: string) =>
+    api<{ ok: true }>('POST', `/admin/accounts/${seg(userId)}/totp-reset`),
   today: () => api<TodayView>('GET', '/admin/today'),
   board: (gradeId?: string | null) =>
     api<BoardView>('GET', `/admin/board${qs({ grade_id: gradeId })}`),
@@ -186,6 +216,12 @@ export const adminApi = {
         page: f.page,
       })}`,
     ),
+  // ---- 登录日志 ----
+  loginLogs: (f: LoginLogFilters = {}) =>
+    api<LoginLogPage>('GET', `/admin/login-logs${loginLogQs(f)}`),
+  /** 带 Bearer 取回 CSV(令牌走请求头,不进 URL) */
+  loginLogsCsv: (f: LoginLogFilters = {}): Promise<Blob> =>
+    download(`/admin/login-logs.csv${loginLogQs({ ...f, page: undefined })}`),
   // ---- AI ----
   aiUsage: (month: string) => api<AiUsage>('GET', `/admin/ai/usage${qs({ month })}`),
   aiConfig: () => api<AiConfigView>('GET', '/admin/ai/config'),

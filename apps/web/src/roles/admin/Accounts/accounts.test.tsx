@@ -18,6 +18,7 @@ vi.mock('@/shared/api/admin', () => ({
     unfreeze: vi.fn(),
     importPreview: vi.fn(),
     importAccounts: vi.fn(),
+    resetTotp: vi.fn(),
   },
 }))
 vi.mock('@/shared/components/Toast', () => ({ toast: vi.fn() }))
@@ -70,6 +71,7 @@ beforeEach(() => {
       contexts: ['admin'],
       admin_perms: ['account.manage'],
       must_change_password: false,
+      password_change_reason: null,
     },
   })
   vi.mocked(adminApi.accounts).mockResolvedValue({ items: [me, acc(), other, frozen], total: 4 })
@@ -361,4 +363,62 @@ it('shows the backend message if resetting is still refused', async () => {
     within(screen.getByRole('row', { name: /王芳/ })).getByRole('button', { name: '重置密码' }),
   )
   await waitFor(() => expect(toast).toHaveBeenCalledWith('不能重置自己的密码,请用修改密码'))
+})
+
+const withTotp = acc({
+  id: 'u7',
+  login_name: 'teacher07',
+  display_name: '孙丽',
+  totp_enabled: true,
+})
+const meTotp = { ...me, totp_enabled: true }
+
+it('marks 2FA accounts and offers reset only for them, never on your own row', async () => {
+  vi.mocked(adminApi.accounts).mockResolvedValue({ items: [meTotp, withTotp, other], total: 3 })
+  renderPage()
+  await screen.findByText('孙丽')
+  const row = screen.getByRole('row', { name: /孙丽/ })
+  expect(within(row).getByText('两步验证')).toBeInTheDocument()
+  expect(within(row).getByRole('button', { name: '重置两步验证' })).toBeInTheDocument()
+  const plain = screen.getByRole('row', { name: /王芳/ })
+  expect(within(plain).queryByText('两步验证')).toBeNull()
+  expect(within(plain).queryByRole('button', { name: '重置两步验证' })).toBeNull()
+  const mine = screen.getByRole('row', { name: /陈校长/ })
+  expect(within(mine).getByText('两步验证')).toBeInTheDocument()
+  expect(within(mine).queryByRole('button', { name: '重置两步验证' })).toBeNull()
+})
+
+it('resets totp after confirm', async () => {
+  vi.mocked(adminApi.accounts).mockResolvedValue({ items: [me, withTotp], total: 2 })
+  vi.mocked(adminApi.resetTotp).mockResolvedValue({ ok: true })
+  renderPage()
+  await screen.findByText('孙丽')
+  fireEvent.click(
+    within(screen.getByRole('row', { name: /孙丽/ })).getByRole('button', { name: '重置两步验证' }),
+  )
+  const dlg = screen.getByRole('dialog', { name: '重置两步验证' })
+  expect(dlg).toHaveTextContent('该账号下次登录只需密码')
+  expect(adminApi.resetTotp).not.toHaveBeenCalled()
+  const before = vi.mocked(adminApi.accounts).mock.calls.length
+  fireEvent.click(within(dlg).getByRole('button', { name: '确认重置' }))
+  await waitFor(() => expect(adminApi.resetTotp).toHaveBeenCalledWith('u7'))
+  await waitFor(() => expect(toast).toHaveBeenCalledWith('已重置孙丽的两步验证'))
+  await waitFor(() =>
+    expect(vi.mocked(adminApi.accounts).mock.calls.length).toBeGreaterThan(before),
+  )
+  expect(screen.queryByRole('dialog', { name: '重置两步验证' })).toBeNull()
+})
+
+it('shows a readable message when resetting yourself is rejected', async () => {
+  vi.mocked(adminApi.accounts).mockResolvedValue({ items: [me, withTotp], total: 2 })
+  vi.mocked(adminApi.resetTotp).mockRejectedValue(
+    new ApiError(409, 'CANNOT_RESET_SELF', 'cannot reset self'),
+  )
+  renderPage()
+  await screen.findByText('孙丽')
+  fireEvent.click(
+    within(screen.getByRole('row', { name: /孙丽/ })).getByRole('button', { name: '重置两步验证' }),
+  )
+  fireEvent.click(screen.getByRole('button', { name: '确认重置' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('不能重置自己的两步验证')
 })
