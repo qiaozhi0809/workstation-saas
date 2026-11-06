@@ -174,6 +174,11 @@ describe('审计日志', () => {
     expect(screen.getByRole('button', { name: '选择 李老师(li)' })).toBeInTheDocument()
     fireEvent.keyDown(input, { key: 'Escape' })
     expect(screen.queryByRole('button', { name: '选择 李老师(li)' })).toBeNull()
+    // 点到页面上不可聚焦的地方(relatedTarget 为空)也收起
+    fireEvent.focus(input)
+    expect(screen.getByRole('button', { name: '选择 李老师(li)' })).toBeInTheDocument()
+    fireEvent.pointerDown(document.body)
+    expect(screen.queryByRole('button', { name: '选择 李老师(li)' })).toBeNull()
   })
 
   it('操作人搜索结果超过一页时能加载更多,不只首页(L59)', async () => {

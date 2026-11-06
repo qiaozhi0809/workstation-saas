@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { X } from 'lucide-react'
 import { adminApi } from '@/shared/api/admin'
@@ -22,7 +22,8 @@ export interface AuditFilterValue {
 
 /**
  * 操作人搜索:沿用账号页的账号搜索接口(审计权限的持有者同时有账号管理权限)。
- * 结果按页取,超过一页时可"加载更多"(L59);焦点移出组件或按 Esc 时收起下拉,回到输入框再展开。
+ * 结果按页取,超过一页时可"加载更多"(L59);焦点移出组件、点到组件外或按 Esc 时收起下拉,
+ * 回到输入框再展开。
  */
 function OperatorSearch({
   value,
@@ -34,10 +35,20 @@ function OperatorSearch({
   const [text, setText] = useState('')
   const [q, setQ] = useState('')
   const [open, setOpen] = useState(false)
+  const wrapRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const t = setTimeout(() => setQ(text.trim()), 300)
     return () => clearTimeout(t)
   }, [text])
+  // 点到组件外:点的是不可聚焦的地方时 blur 的 relatedTarget 为空,靠这里收起(与 useAnchoredLayer 同思路)
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: PointerEvent) => {
+      if (e.target instanceof Node && !wrapRef.current?.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('pointerdown', onDown, true)
+    return () => document.removeEventListener('pointerdown', onDown, true)
+  }, [open])
   const res = useInfiniteQuery({
     queryKey: ['admin', 'audit-people', q],
     queryFn: ({ pageParam }) => adminApi.accounts({ q, page: pageParam }),
@@ -72,6 +83,7 @@ function OperatorSearch({
   const total = res.data?.pages[0]?.total ?? 0
   return (
     <div
+      ref={wrapRef}
       className="relative"
       onBlur={(e) => {
         // 焦点移到组件外才收起;移到"加载更多"等组件内的按钮上不算
@@ -192,7 +204,6 @@ export default function AuditFilters({
         操作
         <NativeSelect
           aria-label="操作"
-          className="max-w-48"
           value={value.action}
           onChange={(e) => onChange({ action: e.target.value })}
         >
