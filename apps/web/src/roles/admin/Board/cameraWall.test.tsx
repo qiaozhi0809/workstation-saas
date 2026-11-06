@@ -23,9 +23,11 @@ const h = vi.hoisted(() => {
       MANIFEST_PARSED: 'hlsManifestParsed',
       FRAG_LOADED: 'hlsFragLoaded',
     }
+    static ErrorTypes = { NETWORK_ERROR: 'networkError', MEDIA_ERROR: 'mediaError' }
     static ErrorDetails = {
       MANIFEST_LOAD_ERROR: 'manifestLoadError',
       LEVEL_LOAD_ERROR: 'levelLoadError',
+      FRAG_LOAD_ERROR: 'fragLoadError',
     }
     handlers = new Map<string, Handler[]>()
     config: { xhrSetup?: (xhr: XMLHttpRequest, url: string) => void }
@@ -34,6 +36,7 @@ const h = vi.hoisted(() => {
     attachMedia = vi.fn()
     stopLoad = vi.fn()
     startLoad = vi.fn()
+    recoverMediaError = vi.fn()
     destroy = vi.fn()
     constructor(config: FakeHls['config']) {
       this.config = config

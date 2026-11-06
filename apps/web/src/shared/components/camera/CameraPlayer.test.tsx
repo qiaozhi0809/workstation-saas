@@ -15,9 +15,11 @@ const h = vi.hoisted(() => {
       MANIFEST_PARSED: 'hlsManifestParsed',
       FRAG_LOADED: 'hlsFragLoaded',
     }
+    static ErrorTypes = { NETWORK_ERROR: 'networkError', MEDIA_ERROR: 'mediaError' }
     static ErrorDetails = {
       MANIFEST_LOAD_ERROR: 'manifestLoadError',
       LEVEL_LOAD_ERROR: 'levelLoadError',
+      FRAG_LOAD_ERROR: 'fragLoadError',
       BUFFER_INCOMPATIBLE_CODECS_ERROR: 'bufferIncompatibleCodecsError',
       BUFFER_ADD_CODEC_ERROR: 'bufferAddCodecError',
       MANIFEST_INCOMPATIBLE_CODECS_ERROR: 'manifestIncompatibleCodecsError',
@@ -28,6 +30,7 @@ const h = vi.hoisted(() => {
     attachMedia = vi.fn()
     stopLoad = vi.fn()
     startLoad = vi.fn()
+    recoverMediaError = vi.fn()
     destroy = vi.fn()
     constructor(config: FakeHls['config']) {
       this.config = config
@@ -55,6 +58,20 @@ const manifestError = (code: number, body = '') => ({
   networkDetails: { responseText: body },
 })
 const errBody = (code: string) => JSON.stringify({ error: { code, message: 'x' } })
+/**
+ * hls.js 1.7 片段请求失败的样子:4xx 不按 fragLoadPolicy 重试(retryForHttpStatus),单码率层又无处可切,
+ * ErrorController.onErrorOut 在我们的监听之前就把 fatal 置真并 stopLoad——所以到这里时已经是 fatal
+ */
+const segmentError = (code: number, body = '') => ({
+  type: 'networkError',
+  details: 'fragLoadError',
+  fatal: true,
+  frag: { sn: 7, url: `/api/v1/cameras/c1/hls/seg7.ts?exp=1&u=u&sig=s` },
+  response: { code, text: body },
+  networkDetails: { responseText: body },
+})
+const mediaError = (details = 'bufferAppendError') => ({ type: 'mediaError', details, fatal: true })
+const video = (title = 't') => screen.getByLabelText(title) as HTMLVideoElement
 
 beforeEach(() => {
   FakeHls.instances = []
@@ -166,11 +183,180 @@ describe('CameraPlayer', () => {
     )
     expect(screen.queryByRole('alert')).toBeNull()
     expect(hls().destroy).not.toHaveBeenCalled()
-    // 其他致命媒体错误仍是"连不上"
-    act(() =>
-      hls().emit('hlsError', { type: 'mediaError', details: 'fragParsingError', fatal: true }),
-    )
+    // 其他致命媒体错误:先 recoverMediaError 一次,再来才是"连不上"(编码错误不走恢复,上面已验)
+    act(() => hls().emit('hlsError', mediaError('fragParsingError')))
+    expect(hls().recoverMediaError).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('alert')).toBeNull()
+    act(() => hls().emit('hlsError', mediaError('fragParsingError')))
     expect(screen.getByRole('alert')).toHaveTextContent('摄像头连不上')
+  })
+
+  it('segment 403 reloads playlist once', () => {
+    // 签名过期(隐藏超过 60 秒再回来)/ 换班:重新取播放列表拿新签名,而不是"摄像头连不上"
+    render(<CameraPlayer cameraId="c1" title="t" />)
+    act(() => hls().emit('hlsManifestParsed'))
+    act(() => hls().emit('hlsFragLoaded'))
+    act(() => hls().emit('hlsError', segmentError(403)))
+    expect(hls().loadSource).toHaveBeenCalledTimes(2)
+    expect(hls().loadSource).toHaveBeenLastCalledWith('/api/v1/cameras/c1/stream.m3u8')
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(hls().destroy).not.toHaveBeenCalled()
+    // 重取之后片段还是 403(中间没有任何片段成功)→ 才算连不上
+    act(() => hls().emit('hlsError', segmentError(403)))
+    expect(hls().loadSource).toHaveBeenCalledTimes(2)
+    expect(screen.getByRole('alert')).toHaveTextContent('摄像头连不上')
+    expect(hls().destroy).toHaveBeenCalled()
+  })
+
+  it('segment 404 after a stream restart takes the same reload path', () => {
+    render(<CameraPlayer cameraId="c1" title="t" />)
+    act(() => hls().emit('hlsFragLoaded'))
+    act(() => hls().emit('hlsError', segmentError(404)))
+    expect(hls().loadSource).toHaveBeenCalledTimes(2)
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('a loaded fragment resets the segment budget; a playlist 403 after the reload still ends', () => {
+    const onEnded = vi.fn()
+    render(<CameraPlayer cameraId="c1" title="t" onEnded={onEnded} />)
+    act(() => hls().emit('hlsFragLoaded'))
+    act(() => hls().emit('hlsError', segmentError(403)))
+    act(() => hls().emit('hlsFragLoaded'))
+    act(() => hls().emit('hlsError', segmentError(403)))
+    expect(hls().loadSource).toHaveBeenCalledTimes(3)
+    expect(screen.queryByRole('alert')).toBeNull()
+    // 播放列表本身 403:课已结束 / 权限没了,照旧 ended
+    act(() => hls().emit('hlsError', manifestError(403)))
+    expect(screen.getByRole('status')).toHaveTextContent('本节课已结束,看不到了')
+    expect(onEnded).toHaveBeenCalledTimes(1)
+  })
+
+  it('a non-4xx fatal segment error is still offline', () => {
+    render(<CameraPlayer cameraId="c1" title="t" />)
+    act(() => hls().emit('hlsFragLoaded'))
+    act(() => hls().emit('hlsError', segmentError(0)))
+    expect(hls().loadSource).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('alert')).toHaveTextContent('摄像头连不上')
+  })
+
+  it('recovers media error once', () => {
+    render(<CameraPlayer cameraId="c1" title="t" />)
+    act(() => hls().emit('hlsFragLoaded'))
+    act(() => hls().emit('hlsError', mediaError()))
+    expect(hls().recoverMediaError).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(hls().destroy).not.toHaveBeenCalled()
+    // 恢复后视频没有真的播起来(只是又下到片段)就再次致命 → 连不上,不无限循环
+    act(() => hls().emit('hlsFragLoaded'))
+    act(() => hls().emit('hlsError', mediaError()))
+    expect(hls().recoverMediaError).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('alert')).toHaveTextContent('摄像头连不上')
+    expect(hls().destroy).toHaveBeenCalled()
+  })
+
+  it('allows another media recovery once the video really plays again', () => {
+    render(<CameraPlayer cameraId="c1" title="t" />)
+    act(() => hls().emit('hlsFragLoaded'))
+    act(() => hls().emit('hlsError', mediaError()))
+    act(() => void video().dispatchEvent(new Event('playing')))
+    act(() => hls().emit('hlsError', mediaError()))
+    expect(hls().recoverMediaError).toHaveBeenCalledTimes(2)
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('a non-fatal media error is left to hls.js', () => {
+    render(<CameraPlayer cameraId="c1" title="t" />)
+    act(() => hls().emit('hlsError', { ...mediaError('bufferStalledError'), fatal: false }))
+    expect(hls().recoverMediaError).not.toHaveBeenCalled()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('stall reloads then shows retry', () => {
+    vi.useFakeTimers()
+    render(<CameraPlayer cameraId="c1" title="t" />)
+    act(() => hls().emit('hlsManifestParsed'))
+    act(() => hls().emit('hlsFragLoaded'))
+    const h0 = hls()
+    // 20 秒没有新片段也没有 timeupdate:先悄悄重取一次播放列表
+    act(() => void vi.advanceTimersByTime(19999))
+    expect(h0.loadSource).toHaveBeenCalledTimes(1)
+    act(() => void vi.advanceTimersByTime(1))
+    expect(h0.loadSource).toHaveBeenCalledTimes(2)
+    expect(screen.queryByRole('alert')).toBeNull()
+    // 再 20 秒还是没动静:提示 + 重试按钮,同时继续自动重连
+    act(() => void vi.advanceTimersByTime(20000))
+    expect(screen.getByRole('alert')).toHaveTextContent('画面已停止,正在重连…')
+    expect(h0.loadSource).toHaveBeenCalledTimes(3)
+    expect(h0.destroy).not.toHaveBeenCalled()
+    act(() => void vi.advanceTimersByTime(20000))
+    expect(h0.loadSource).toHaveBeenCalledTimes(4)
+    // 重试 = 重建 hls 实例
+    act(() => void screen.getByRole('button', { name: '重试' }).click())
+    expect(h0.destroy).toHaveBeenCalledTimes(1)
+    expect(FakeHls.instances).toHaveLength(2)
+    expect(hls().loadSource).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('status')).toHaveTextContent('加载中')
+    expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+  })
+
+  it('new fragments and timeupdate keep the stall watchdog quiet', () => {
+    vi.useFakeTimers()
+    render(<CameraPlayer cameraId="c1" title="t" />)
+    act(() => hls().emit('hlsFragLoaded'))
+    for (let i = 0; i < 4; i++) {
+      act(() => void vi.advanceTimersByTime(15000))
+      act(() => hls().emit('hlsFragLoaded'))
+    }
+    for (let i = 0; i < 4; i++) {
+      act(() => void vi.advanceTimersByTime(15000))
+      act(() => void video().dispatchEvent(new Event('timeupdate')))
+    }
+    expect(hls().loadSource).toHaveBeenCalledTimes(1)
+    act(() => void vi.advanceTimersByTime(20000))
+    expect(hls().loadSource).toHaveBeenCalledTimes(2)
+  })
+
+  it('progress after a stall clears the message and resets the budget', () => {
+    vi.useFakeTimers()
+    render(<CameraPlayer cameraId="c1" title="t" />)
+    act(() => hls().emit('hlsFragLoaded'))
+    act(() => void vi.advanceTimersByTime(40000))
+    expect(screen.getByRole('alert')).toHaveTextContent('画面已停止,正在重连…')
+    act(() => hls().emit('hlsFragLoaded'))
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(hls().loadSource).toHaveBeenCalledTimes(3)
+    // 又停了:还是先悄悄重取一次
+    act(() => void vi.advanceTimersByTime(20000))
+    expect(hls().loadSource).toHaveBeenCalledTimes(4)
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('the stall watchdog pauses while hidden and resumes when visible', () => {
+    let hidden = false
+    vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden)
+    vi.useFakeTimers()
+    render(<CameraPlayer cameraId="c1" title="t" />)
+    act(() => hls().emit('hlsFragLoaded'))
+    act(() => void vi.advanceTimersByTime(15000))
+    hidden = true
+    act(() => void document.dispatchEvent(new Event('visibilitychange')))
+    act(() => void vi.advanceTimersByTime(120000))
+    expect(hls().loadSource).toHaveBeenCalledTimes(1)
+    hidden = false
+    act(() => void document.dispatchEvent(new Event('visibilitychange')))
+    expect(hls().startLoad).toHaveBeenCalledTimes(1)
+    act(() => void vi.advanceTimersByTime(19999))
+    expect(hls().loadSource).toHaveBeenCalledTimes(1)
+    act(() => void vi.advanceTimersByTime(1))
+    expect(hls().loadSource).toHaveBeenCalledTimes(2)
+  })
+
+  it('no stall watchdog before the first picture', () => {
+    vi.useFakeTimers()
+    render(<CameraPlayer cameraId="c1" title="t" />)
+    act(() => void vi.advanceTimersByTime(60000))
+    expect(hls().loadSource).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('status')).toHaveTextContent('加载中')
   })
 
   it('an unknown non-fatal 503 falls through to the fatal check', () => {
