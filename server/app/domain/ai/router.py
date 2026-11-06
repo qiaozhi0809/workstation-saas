@@ -1,9 +1,11 @@
 from typing import Annotated
 from uuid import UUID
 
+import structlog
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import StreamingResponse
 from redis import Redis
+from redis.exceptions import RedisError
 from sqlalchemy.orm import Session
 
 from app import clock
@@ -68,6 +70,7 @@ from app.rbac.guard import ensure
 from app.rbac.roles import Perm
 from app.redis import get_redis
 
+log = structlog.get_logger()
 router = APIRouter(prefix="/ai", tags=["ai"])
 
 DbDep = Annotated[Session, Depends(get_db)]
@@ -222,13 +225,13 @@ def get_ai_chat(
 ) -> AiChatOut:
     chat = get_own_chat(db, user.id, chat_id)
     cfg = load_ai_config(db, settings.school_id, settings.master_key_bytes)
-    return chat_out(
-        db,
-        chat,
-        clock.utc_now(),
-        mask_forced=_mask_forced(cfg),
-        generating=redis.exists(lock_key(chat.id)) == 1,
-    )
+    try:
+        generating = redis.exists(lock_key(chat.id)) == 1
+    except RedisError:
+        # Redis 不可用不能让本来能读的详情变 500:当作没在生成,退化为旧的 2 分钟陈旧规则
+        log.warning("ai_chat_lock_unreadable", chat_id=str(chat.id))
+        generating = False
+    return chat_out(db, chat, clock.utc_now(), mask_forced=_mask_forced(cfg), generating=generating)
 
 
 @router.delete("/chats/{chat_id}", status_code=204)

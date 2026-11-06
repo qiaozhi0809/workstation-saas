@@ -426,6 +426,28 @@ def test_ai_generate_over_two_minutes_still_shows_streaming(
     assert (msg["status"], msg["error"]) == ("error", INTERRUPTED)
 
 
+def test_chat_detail_tolerates_redis_outage(client, settings, db, redis_client, monkeypatch):
+    """读对话详情时 Redis 不可用:不 500,退化为旧的 2 分钟陈旧规则(当作没在生成)。"""
+    chat = create(client, settings, lesson_body())
+    db.add(
+        AiMessage(
+            chat_id=UUID(chat["id"]), role="assistant", content="写到一半", status="streaming"
+        )
+    )
+    db.commit()
+
+    def redis_down(*args, **kwargs):
+        raise redis_exceptions.ConnectionError("Error 111 connecting to redis")
+
+    monkeypatch.setattr(redis_client, "exists", redis_down)
+    res = get_chat(client, settings, chat["id"])
+    assert res.status_code == 200
+    assert res.json()["messages"][1]["status"] == "streaming"  # 2 分钟内照旧显示生成中
+    freeze(monkeypatch, (datetime.now(UTC) + timedelta(minutes=3)).isoformat())
+    msg = get_chat(client, settings, chat["id"]).json()["messages"][1]
+    assert (msg["status"], msg["error"]) == ("error", INTERRUPTED)
+
+
 def test_ai_generate_running_item_over_two_minutes_still_shows_run(
     client, settings, db, redis_client, monkeypatch
 ):
