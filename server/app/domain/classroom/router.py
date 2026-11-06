@@ -43,7 +43,7 @@ def classroom_summary(
         object_id=str(class_id),
     )
     year = require_active_year(db, cls.school_id)
-    return build_summary(db, cls, bindings, year)
+    return build_summary(db, cls, bindings, year, user)
 
 
 @router.put("/classes/{class_id}/board")

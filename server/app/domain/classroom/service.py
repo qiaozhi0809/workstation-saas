@@ -6,7 +6,9 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
+from app import clock
 from app.audit.service import record
+from app.domain.cameras.access import class_cameras
 from app.domain.classes.service import class_scope_of
 from app.domain.classroom.schemas import (
     Board,
@@ -18,7 +20,7 @@ from app.domain.classroom.schemas import (
 from app.domain.school_settings.service import get_switches
 from app.domain.schools.service import school_today, school_tz, week_monday, week_no
 from app.domain.students.service import require_enrollment
-from app.models import AcademicYear, ClassBoard, School, SchoolClass
+from app.models import AcademicYear, ClassBoard, School, SchoolClass, User
 from app.rbac.bindings import Binding, can, subjects_in_class
 from app.rbac.roles import CLASSROOM_PERMS
 
@@ -77,8 +79,20 @@ def set_class_role(
     return ClassRoleUpdated(enrollment_id=enrollment_id, class_role=class_role)
 
 
+def _camera_count(
+    db: Session, user: User, bindings: Sequence[Binding], cls: SchoolClass, switches
+) -> int:
+    if not switches.monitor:
+        return 0
+    return len(class_cameras(db, user, bindings, cls, clock.utc_now()).cameras)
+
+
 def build_summary(
-    db: Session, cls: SchoolClass, bindings: Sequence[Binding], year: AcademicYear
+    db: Session,
+    cls: SchoolClass,
+    bindings: Sequence[Binding],
+    year: AcademicYear,
+    user: User,
 ) -> ClassroomSummary:
     scope = class_scope_of(cls)
     today = school_today(db, cls.school_id)
@@ -99,4 +113,5 @@ def build_summary(
         switches=ClassroomSwitches(
             star_of_week=switches.star_of_week, birthdays=switches.birthdays
         ),
+        cameras=_camera_count(db, user, bindings, cls, switches),
     )

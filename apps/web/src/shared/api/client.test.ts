@@ -365,3 +365,30 @@ it('400 WRONG_PASSWORD on /auth/totp/disable surfaces the error without refresh 
   expect(fetchMock).toHaveBeenCalledTimes(1)
   expect(useAuthStore.getState().accessToken).toBe('old')
 })
+
+it('sends a raw body untouched with caller Content-Type and resends it after refresh', async () => {
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(json({ error: { code: 'TOKEN_EXPIRED', message: 'x' } }, 401))
+    .mockResolvedValueOnce(json({ access_token: 'new' }))
+    .mockResolvedValueOnce(json({ ok: true }))
+  vi.stubGlobal('fetch', fetchMock)
+  const blob = new Blob(['a,b'], { type: 'text/csv' })
+  await api('POST', '/x', undefined, { raw: blob, headers: { 'Content-Type': 'text/csv' } })
+  const first = fetchMock.mock.calls[0][1]
+  expect(first.body).toBe(blob)
+  expect(first.headers['Content-Type']).toBe('text/csv')
+  expect(first.headers.Authorization).toBe('Bearer old')
+  const resend = fetchMock.mock.calls[2][1]
+  expect(resend.body).toBe(blob)
+  expect(resend.headers['Content-Type']).toBe('text/csv')
+  expect(resend.headers.Authorization).toBe('Bearer new')
+})
+
+it('still JSON-stringifies normal bodies', async () => {
+  const fetchMock = vi.fn().mockResolvedValueOnce(json({}))
+  vi.stubGlobal('fetch', fetchMock)
+  await api('POST', '/x', { a: 1 })
+  expect(fetchMock.mock.calls[0][1].body).toBe('{"a":1}')
+  expect(fetchMock.mock.calls[0][1].headers['Content-Type']).toBe('application/json')
+})
