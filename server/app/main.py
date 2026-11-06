@@ -12,6 +12,7 @@ from app.auth.router import router as auth_router
 from app.config import Settings, get_settings
 from app.deploy.system_router import router as system_router  # M5a 段 A
 from app.domain.accounts.router import router as accounts_router  # M3a 段 E
+from app.domain.accounts.security_router import router as account_security_router  # M5b 段 A
 from app.domain.ai.router import router as ai_router
 from app.domain.ai_admin.router import router as ai_admin_router  # M3b 段 D
 from app.domain.attendance.router import router as attendance_router
@@ -117,5 +118,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     router.include_router(class_notices_router)  # M4b 段 A
     router.include_router(system_router)  # M5a 段 A
     router.include_router(security_settings_router)  # M5b 段 A
+    router.include_router(account_security_router)  # M5b 段 A
     app.include_router(router)
     return app

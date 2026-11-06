@@ -218,6 +218,7 @@ def test_locked_login_has_retry_after(client, settings):
 
 
 def test_first_failure_sets_ttl_atomically(client, settings, redis_client, monkeypatch):
+    settings.login_max_failures = 5  # M5b R11:不依赖默认值
     key = f"ws:login_fail:{SCHOOL_ID}:teacher01"
     flags = []
     real_pipeline = redis_client.pipeline
