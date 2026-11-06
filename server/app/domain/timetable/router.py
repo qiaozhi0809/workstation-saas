@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, Request
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 from app.audit.service import deny
@@ -35,6 +35,29 @@ MAX_CSV_BYTES = 1_000_000
 
 def _org(db: Session, request: Request, user: User, bindings: list[Binding]) -> None:
     ensure_admin(db, request, user.id, bindings, Perm.ORG_MANAGE, user.school_id)
+
+
+def _too_large() -> ApiError:
+    return ApiError(413, "PAYLOAD_TOO_LARGE", "文件太大,最多 1 MB")
+
+
+async def _read_csv_body(request: Request) -> bytes:
+    """先看 Content-Length 再读体(L157):声明超限直接 413,不把 1 MB 以上的内容读进内存;
+    没有声明长度(分块传输)时边读边数,超过同样 413。作为依赖排在鉴权之后,未登录的请求不读体。"""
+    declared = request.headers.get("content-length", "")
+    if declared.isdigit() and int(declared) > MAX_CSV_BYTES:
+        raise _too_large()
+    chunks: list[bytes] = []
+    size = 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > MAX_CSV_BYTES:
+            raise _too_large()
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+CsvBody = Annotated[bytes, Depends(_read_csv_body)]
 
 
 @router.get("/periods")
@@ -107,11 +130,9 @@ def import_timetable(
     user: Auth,
     bindings: Bind,
     db: Db,
-    raw: Annotated[bytes, Body(media_type="text/csv")],
+    raw: CsvBody,  # 依赖按参数顺序解析:先 user(401)再读体
 ) -> TimetableImportResult:
     _org(db, request, user, bindings)
-    if len(raw) > MAX_CSV_BYTES:
-        raise ApiError(400, "BAD_REQUEST", "文件太大")
     year = require_active_year(db, user.school_id)
     rows = importer.parse_csv(raw)
     return importer.import_rows(db, user.school_id, year, rows, user.id, request)

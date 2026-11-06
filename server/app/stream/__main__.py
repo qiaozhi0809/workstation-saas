@@ -18,6 +18,19 @@ from app.stream.probe import probe_loop
 from app.stream.supervisor import Supervisor
 
 HEARTBEAT = Path(os.environ.get("WS_STREAM_HEARTBEAT", "/tmp/ws-stream-alive"))  # noqa: S108
+REDIS_TIMEOUT = 5  # 秒:连接与单次读写的上限
+
+
+def make_redis(url: str) -> Redis:
+    """worker 的 Redis 客户端带超时(L196):Redis 挂住时 tick 抛 TimeoutError 被主循环当作一次失败
+    告警、心跳继续,而不是永久等待。pubsub 的 listen() 在 redis-py 8 里显式不受 socket_timeout 约束,
+    空闲的 reload 订阅不会被误判成断线(test_reload_loop_idle_with_socket_timeout 钉住这一点)。"""
+    return Redis.from_url(
+        url,
+        decode_responses=True,
+        socket_timeout=REDIS_TIMEOUT,
+        socket_connect_timeout=REDIS_TIMEOUT,
+    )
 
 
 class _JsonFormatter(logging.Formatter):
@@ -40,7 +53,7 @@ async def main() -> None:
     logging.basicConfig(level=settings.log_level.upper(), handlers=[handler])
     engine = create_engine(settings.database_url, pool_pre_ping=True)
     factory = sessionmaker(bind=engine)
-    redis = Redis.from_url(settings.redis_url, decode_responses=True)
+    redis = make_redis(settings.redis_url)
     allow_loopback = settings.env == "dev"
     ffmpeg_bin = os.environ.get("WS_FFMPEG_BIN", "ffmpeg")
     ffprobe_bin = ffmpeg.ffprobe_bin_for(ffmpeg_bin)  # 测试连接读编解码信息用,与 ffmpeg 同目录
@@ -52,6 +65,7 @@ async def main() -> None:
         ffmpeg_bin=ffmpeg_bin,
         master_key=settings.master_key_bytes,
         allow_loopback=allow_loopback,
+        denied_networks=settings.trusted_networks,
     )
     stop = asyncio.Event()
 
@@ -71,6 +85,7 @@ async def main() -> None:
             allow_loopback=allow_loopback,
             stop=stop,
             ffprobe_bin=ffprobe_bin,
+            denied_networks=settings.trusted_networks,
         )
     )
     try:

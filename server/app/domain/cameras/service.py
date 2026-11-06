@@ -1,14 +1,17 @@
 import base64
 import binascii
+import contextlib
 import json
 import time
 import uuid
-from types import SimpleNamespace
+from types import SimpleNamespace, TracebackType
 from uuid import UUID
 
+import structlog
 from fastapi import Request
 from pydantic import ValidationError
 from redis import Redis
+from redis.exceptions import RedisError
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
@@ -35,6 +38,47 @@ PROBE_QUEUE = "ws:cam:probe"
 PROBE_REPLY = "ws:cam:probe:reply:{}"
 RELOAD_CHANNEL = "ws:cam:reload"
 PUBLIC_HOSTS_KEY = "ws:cam:public_hosts"
+REDIS_DOWN = "转流服务暂时不可用,请稍后再试"
+
+log = structlog.get_logger()
+
+
+class Redis503(contextlib.ContextDecorator):
+    """Redis 故障(连不上、超时)→ 503 SERVICE_UNAVAILABLE + 中文提示,不是 500(L163)。
+
+    状态 / 测试连接 / 按需拉流都经 Redis,它一挂摄像头功能就整个不可用,给用户一句能看懂的话。
+    既可当装饰器包整个服务函数,也可 with 包一段。只拦 RedisError,别的异常照常冒出去。"""
+
+    def __enter__(self) -> "Redis503":
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> bool:
+        if isinstance(exc, RedisError):
+            log.warning("cameras.redis_unavailable", error=type(exc).__name__)
+            raise ApiError(
+                503, "SERVICE_UNAVAILABLE", REDIS_DOWN, headers={"Cache-Control": "no-store"}
+            ) from exc
+        return False
+
+
+def _notify_reload(redis: Redis, camera_id: UUID) -> None:
+    """改 / 删已经提交之后才通知 worker:Redis 这时出错只告警,不能把已保存的改动报成失败。
+
+    吞掉这个错误的代价是一个窗口:通知没送到,worker 继续按旧地址 / 旧凭据拉流,或继续拉一个
+    已停用 / 已删除的摄像头。窗口结束于三者之一:没人看了、ws:cam:want 键过期(30 秒)worker
+    把流停掉;worker 的订阅断线重连(重连前停掉全部流重读配置);worker 重启。有人一直在看、
+    且 Redis 只是瞬断没触发订阅重连时,旧流会一直拉到有人停看为止——这是接受的代价,不在这里重试。"""
+    try:
+        redis.publish(RELOAD_CHANNEL, str(camera_id))
+    except RedisError as exc:
+        log.warning(
+            "cameras.reload_publish_failed", camera_id=str(camera_id), error=type(exc).__name__
+        )
 
 
 def require_monitor(db: Session, school_id: UUID) -> None:
@@ -95,15 +139,11 @@ def _class_name(db: Session, class_id: UUID | None) -> str | None:
     return db.scalar(select(SchoolClass.name).where(SchoolClass.id == class_id))
 
 
-def _out(db: Session, redis: Redis, camera: Camera) -> CameraOut:
-    return camera_out(
-        camera,
-        _state(redis, camera.id),
-        include_url=True,
-        class_name=_class_name(db, camera.class_id),
-    )
+def _out(db: Session, camera: Camera, state: tuple[str, str | None]) -> CameraOut:
+    return camera_out(camera, state, include_url=True, class_name=_class_name(db, camera.class_id))
 
 
+@Redis503()
 def list_cameras(db: Session, redis: Redis, school_id: UUID) -> list[CameraOut]:
     rows = db.execute(
         select(Camera, SchoolClass.name)
@@ -144,7 +184,8 @@ def _check_class(db: Session, school_id: UUID, class_id: UUID | None) -> None:
 
 
 def _url(data: CameraInput, settings: Settings) -> str:
-    return validate_rtsp_url(data.rtsp_url, allow_loopback=settings.env == "dev")
+    # settings 带可信网段:解析到 compose 子网的地址也拒绝(L159)
+    return validate_rtsp_url(data.rtsp_url, allow_loopback=settings.env == "dev", settings=settings)
 
 
 def _audit(db, request, user_id, action, camera: Camera) -> None:
@@ -193,9 +234,11 @@ def create_camera(
     _audit(db, request, user_id, "camera.create", camera)
     db.commit()
     db.refresh(camera)
-    return _out(db, redis, camera)
+    # 新摄像头不可能有 worker 状态:不读 Redis,Redis 故障时也能登记(重试不会重复建)
+    return _out(db, camera, ("idle", None))
 
 
+@Redis503()
 def update_camera(
     db: Session,
     redis: Redis,
@@ -209,6 +252,7 @@ def update_camera(
     url = _url(data, settings)
     camera = get_camera(db, school_id, camera_id)
     _check_class(db, school_id, data.class_id)
+    state = _state(redis, camera.id)  # 提交之前读:Redis 故障就 503,不会出现"存了却报错"
     key = settings.master_key_bytes
     changed = (
         url != camera.rtsp_url
@@ -234,8 +278,8 @@ def update_camera(
     db.commit()
     db.refresh(camera)
     if changed:
-        redis.publish(RELOAD_CHANNEL, str(camera.id))
-    return _out(db, redis, camera)
+        _notify_reload(redis, camera.id)
+    return _out(db, camera, state)
 
 
 def delete_camera(
@@ -250,7 +294,7 @@ def delete_camera(
     _audit(db, request, user_id, "camera.delete", camera)
     db.execute(delete(Camera).where(Camera.id == camera.id))
     db.commit()
-    redis.publish(RELOAD_CHANNEL, str(camera_id))
+    _notify_reload(redis, camera_id)
 
 
 def _checked(result: CameraTestResult) -> CameraTestResult:
@@ -307,6 +351,7 @@ def probe_camera(
         time.sleep(min(interval, remaining))
 
 
+@Redis503()
 def run_test(
     db: Session,
     redis: Redis,
@@ -343,6 +388,7 @@ def run_test(
     )
 
 
+@Redis503()
 def public_hosts(redis: Redis) -> list[str]:
     raw = redis.get(PUBLIC_HOSTS_KEY)
     if not raw:

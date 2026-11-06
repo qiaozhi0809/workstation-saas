@@ -1,3 +1,4 @@
+import pytest
 from sqlalchemy import func, select
 
 from app.domain.timetable.importer import parse_csv
@@ -164,6 +165,75 @@ def test_import_later_class_failure_rolls_back(client, settings, db, monkeypatch
     res = c.post(URL, headers={**auth(settings, IT_ADMIN), "Content-Type": "text/csv"}, content=raw)
     assert res.status_code == 500
     assert calls and _count(db) == 0
+
+
+def test_import_declared_too_large_is_413_before_reading(client, settings, db):
+    """L157:Content-Length 超过 1 MB 直接 413;实际体超限也是 413;1 MB 以内照常。"""
+    _periods(db)
+    h = {**auth(settings, IT_ADMIN), "Content-Type": "text/csv"}
+    res = client.post(URL, headers={**h, "Content-Length": "2000000"}, content=b"x")
+    assert res.status_code == 413, res.text
+    assert res.json()["error"]["code"] == "PAYLOAD_TOO_LARGE"
+    big = f"{HEADER}\n".encode() + b"x" * 1_000_001
+    res = _post(client, settings, big)
+    assert res.status_code == 413 and res.json()["error"]["code"] == "PAYLOAD_TOO_LARGE"
+    assert _count(db) == 0
+    assert (
+        _post(client, settings, f"{HEADER}\n三年二班,周一,1,数学,T003".encode()).status_code == 200
+    )
+    # 未登录的超大请求:先 401(鉴权依赖排在读体之前),不白读体
+    anon = client.post(URL, headers={"Content-Type": "text/csv"}, content=big)
+    assert anon.status_code == 401
+
+
+def _fake_request(headers: dict[str, str], chunks: list[bytes], consumed: list[bytes]):
+    from starlette.requests import Request
+
+    messages = [{"type": "http.request", "body": c, "more_body": True} for c in chunks]
+    messages.append({"type": "http.request", "body": b"", "more_body": False})
+    it = iter(messages)
+
+    async def receive():
+        msg = next(it)
+        consumed.append(msg["body"])
+        return msg
+
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": URL,
+        "query_string": b"",
+        "headers": [(k.lower().encode(), v.encode()) for k, v in headers.items()],
+    }
+    return Request(scope, receive)
+
+
+def test_read_csv_body_unit():
+    """声明超限不读体;分块(无 Content-Length)边读边数,超过就停;正常体原样拼回。"""
+    import asyncio
+
+    from app.domain.timetable import router as tt_router
+    from app.errors import ApiError
+
+    consumed: list[bytes] = []
+    req = _fake_request({"Content-Length": "1000001"}, [b"x" * 10], consumed)
+    with pytest.raises(ApiError) as e:
+        asyncio.run(tt_router._read_csv_body(req))
+    assert e.value.status == 413 and consumed == []
+    consumed = []
+    chunks = [b"y" * 400_000] * 4  # 1.6 MB,分 4 块
+    with pytest.raises(ApiError) as e:
+        asyncio.run(tt_router._read_csv_body(_fake_request({}, chunks, consumed)))
+    assert e.value.status == 413 and len(consumed) == 3  # 第 3 块就超了,第 4 块没读
+    consumed = []
+    body = asyncio.run(tt_router._read_csv_body(_fake_request({}, [b"ab", b"cd"], consumed)))
+    assert body == b"abcd"
+    exact = asyncio.run(
+        tt_router._read_csv_body(
+            _fake_request({"Content-Length": "1000000"}, [b"z" * 1_000_000], [])
+        )
+    )
+    assert len(exact) == 1_000_000
 
 
 def test_import_nul_byte_rejected(client, settings, db):
