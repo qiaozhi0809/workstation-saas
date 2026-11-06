@@ -108,6 +108,24 @@ it('saves a handwritten comment', async () => {
   )
   await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['comments', 's1'] }))
   await waitFor(() => expect(box).toHaveValue(''))
+  // L19:保存成功要有反馈,不能只是输入框悄悄清空
+  expect(await screen.findByText('已保存评语')).toBeInTheDocument()
+})
+
+// L19:删除进行中只禁用正在删的那一条,其他评语的删除按钮照常可点
+it('disables only the delete button of the comment being deleted', async () => {
+  vi.mocked(commentsApi.list).mockResolvedValue({
+    items: [cm({ id: 'm1', content: '第一条' }), cm({ id: 'm2', content: '第二条' })],
+  })
+  vi.mocked(commentsApi.remove).mockReturnValue(new Promise(() => {}))
+  vi.spyOn(window, 'confirm').mockReturnValue(true)
+  setup(<CommentsTab profile={profile} />, ['comment.read', 'comment.write'])
+  await screen.findByText('第二条')
+  const del = screen.getAllByRole('button', { name: '删除' })
+  fireEvent.click(del[0])
+  await waitFor(() => expect(commentsApi.remove).toHaveBeenCalledWith('m1'))
+  await waitFor(() => expect(del[0]).toBeDisabled())
+  expect(del[1]).toBeEnabled()
 })
 
 it('copies and deletes a comment', async () => {

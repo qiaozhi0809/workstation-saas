@@ -151,6 +151,29 @@ describe('algorithms', () => {
     expect(new Set(pair)).toEqual(new Set(['male', 'female']))
   })
 
+  // L19:溢出分支——男女配完对后多出来的同学(rest)自己凑桌,桌子不够时才进待安排
+  it('seats the leftover of the larger gender together and overflows to the tray when desks run out', () => {
+    const students = [
+      ...['m1', 'm2', 'm3', 'm4', 'm5'].map((id) => st(id, 'male', null, null)),
+      st('f1', 'female', null, null),
+    ]
+    for (const seed of [1, 4, 9]) {
+      // 1 排 × 4 列 = 两张双人桌:一对男女 + 剩下 4 个男生两两成桌,共 3 桌,只放得下 2 桌,整桌溢出到待安排
+      const out = genderPairSeats(students, grid(1, 4), lcg(seed))
+      const seated = out.filter((x) => x.row !== null)
+      const unseated = out.filter((x) => x.row === null)
+      expect(seated).toHaveLength(4)
+      expect(unseated).toHaveLength(2)
+      expect(new Set(seated.map((x) => `${x.row},${x.col}`)).size).toBe(4)
+      const desk = (left: number) =>
+        seated.filter((x) => x.col === left || x.col === left + 1).map((x) => x.gender)
+      const groups = [desk(1), desk(3), unseated.map((x) => x.gender)].map((g) =>
+        [...g].sort().join(),
+      )
+      expect(groups.sort()).toEqual(['female,male', 'male,male', 'male,male'])
+    }
+  })
+
   it('returns inputs in order without mutating them', () => {
     const students = [st('a', null, null, null), st('b', null, null, null)]
     const out = shuffleSeats(students, grid(1, 2), lcg())

@@ -34,6 +34,7 @@ function AddForm({ profile, canUseAi }: { profile: StudentProfile; canUseAi: boo
       commentsApi.create(profile.id, { content: content.trim(), generated_by_ai: false }),
     onSuccess: () => {
       setContent('')
+      toast('已保存评语')
       return queryClient.invalidateQueries({ queryKey: ['comments', profile.id] })
     },
     onError: (err) => toast(err instanceof ApiError ? err.message : '保存失败,请重试'),
@@ -134,7 +135,7 @@ function CommentList({
                   variant="ghost"
                   size="sm"
                   className="h-7 px-2"
-                  disabled={remove.isPending}
+                  disabled={remove.isPending && remove.variables === c.id}
                   onClick={() => {
                     if (window.confirm('删除这条评语?')) remove.mutate(c.id)
                   }}
