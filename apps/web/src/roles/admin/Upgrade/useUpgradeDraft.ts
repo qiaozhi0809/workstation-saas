@@ -101,6 +101,17 @@ function drop() {
   }
 }
 
+/** 清草稿(L54):管理端"退出登录"动作调用——主动退出才清,令牌失效 / 被踢下线不清,同一人重新登录后草稿还在 */
+export const dropUpgradeDraft = drop
+
+// 换号即清草稿(L54):不经 logout 直接换成另一个人登录时,上个人的草稿不留给下一个人;
+// user → null(会话丢失)不算换号,留给 read() 的 owner 校验兜底
+useAuthStore.subscribe((state, prev) => {
+  const was = prev.user?.id
+  const now = state.user?.id
+  if (was && now && now !== was) drop()
+})
+
 /** 升级方案草稿:每次改动写入 localStorage(读写都容错),执行成功或放弃后清除 */
 export function useUpgradeDraft() {
   const owner = useAuthStore((s) => s.user?.id ?? null)

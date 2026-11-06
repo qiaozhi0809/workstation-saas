@@ -12,6 +12,7 @@ import { useAuthStore } from '@/shared/stores/auth'
 import ThemeToggle from '@/theme/ThemeToggle'
 import AdminNav from './AdminNav'
 import { ADMIN_PAGES, type AdminPage } from './pages'
+import { dropUpgradeDraft } from './Upgrade/useUpgradeDraft'
 
 export default function AdminLayout({ pages = ADMIN_PAGES }: { pages?: AdminPage[] }) {
   const navigate = useNavigate()
@@ -28,6 +29,8 @@ export default function AdminLayout({ pages = ADMIN_PAGES }: { pages?: AdminPage
   const logout = () => {
     const refreshToken = useAuthStore.getState().refreshToken
     if (refreshToken) authApi.logout(refreshToken).catch(() => {})
+    // 主动退出才清升级向导草稿(L54);会话过期等被动登出不清
+    dropUpgradeDraft()
     useAuthStore.getState().logout()
     navigate('/login', { replace: true })
   }

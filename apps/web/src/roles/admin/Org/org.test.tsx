@@ -53,7 +53,7 @@ const cls: ClassAdmin = {
   grade_name: '三年级',
   room: '301',
   student_count: 40,
-  homeroom: { assignment_id: 'a1', user_id: 'u1', display_name: '李老师' },
+  homeroom: { assignment_id: 'a1', user_id: 'u1', teacher_id: 't1', display_name: '李老师' },
   assistants: [],
   subjects: [],
   desk_size: 2,
@@ -107,6 +107,16 @@ it('blocks a term-2 date earlier than the start date', async () => {
   expect(await screen.findByRole('alert')).toHaveTextContent('第二学期开学日期')
   expect(api.saveYear).not.toHaveBeenCalled()
   expect(screen.getByText('开学日期决定教室顶栏的第几周')).toBeInTheDocument()
+})
+
+it('shows an empty state, not a spinner, when there is no academic year at all (L126)', async () => {
+  api.years.mockResolvedValue([])
+  renderPage()
+  const empty = await screen.findByText('还没有学年记录')
+  const card = empty.closest('.rounded-xl') as HTMLElement
+  expect(within(card).getByText('学年')).toBeInTheDocument()
+  expect(within(card).queryByRole('status')).toBeNull()
+  expect(screen.queryByLabelText('学年名称')).toBeNull()
 })
 
 it('refreshes the grade list after creating a grade', async () => {

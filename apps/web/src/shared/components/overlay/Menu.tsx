@@ -124,11 +124,27 @@ export function MenuItem({
   )
 }
 
-export function MenuLinkItem({ to, children }: { to: string; children: ReactNode }) {
+/** current:这一项就是当前页(aria-current="page",L58) */
+export function MenuLinkItem({
+  to,
+  current,
+  children,
+}: {
+  to: string
+  current?: boolean
+  children: ReactNode
+}) {
   const closeMenu = useContext(CloseMenu)
   // Link 先执行这里的 onClick,再导航
   return (
-    <Link to={to} role="menuitem" tabIndex={-1} className={ITEM} onClick={closeMenu}>
+    <Link
+      to={to}
+      role="menuitem"
+      tabIndex={-1}
+      aria-current={current ? 'page' : undefined}
+      className={ITEM}
+      onClick={closeMenu}
+    >
       {children}
     </Link>
   )
