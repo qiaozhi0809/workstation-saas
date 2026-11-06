@@ -30,6 +30,44 @@
 - 部署目录路径里**不能含空格,也不能含 `%`、`$`、`&`**(会让脚本与 systemd 定时备份出错)。建议放在 `/opt/workstation` 这类简单路径。
 - 安装与升级全程**不需要外网**(只有证书方式选"公网域名自动申请"时才联网)。
 
+### 离线安装 Docker(服务器不能上网时)
+
+离线包里**不含 Docker 本身**。服务器不能联网时,先在一台能上网的电脑上把安装包下好,用 U 盘带过去。两种来源选一种;两种装出来的 `docker compose` 都是 v2 插件(老的 python 版 `docker-compose` v1 不行)。
+
+**来源 A:Ubuntu 自带仓库(`docker.io` + `docker-compose-v2`)**——22.04 与 24.04 的仓库里都有这两个包(22.04 的 compose 是 2.20.x,刚好达到门槛;24.04 是 2.24 以上)。在一台**同版本(22.04 对 22.04、24.04 对 24.04)、刚装好系统、能联网**的 Ubuntu 上:
+
+```bash
+sudo apt-get update && sudo apt-get clean
+sudo apt-get install -y --download-only docker.io docker-compose-v2
+mkdir -p ~/docker-debs && cp /var/cache/apt/archives/*.deb ~/docker-debs/     # 把这一批 .deb 拷到 U 盘
+```
+
+到服务器上(全部 .deb 放在同一个目录):
+
+```bash
+cd /path/to/docker-debs && sudo dpkg -i ./*.deb      # dpkg 会自己排安装顺序
+sudo systemctl enable --now docker
+```
+
+`dpkg -i` 报"依赖关系问题"说明两台机器的系统补丁级别不一样(服务器缺某个基础包):把报错里提到的包也在联网机器上 `apt-get download <包名>` 下回来一起装。
+
+**来源 B:Docker 官方 .deb(`docker-ce`)**——在联网电脑上打开 `https://download.docker.com/linux/ubuntu/dists/<代号>/pool/stable/amd64/`(22.04 的代号是 `jammy`,24.04 是 `noble`),下载同一发布批次的五个文件:`containerd.io_*.deb`、`docker-ce_*.deb`、`docker-ce-cli_*.deb`、`docker-buildx-plugin_*.deb`、`docker-compose-plugin_*.deb`。到服务器上:
+
+```bash
+sudo dpkg -i ./containerd.io_*.deb ./docker-ce_*.deb ./docker-ce-cli_*.deb ./docker-buildx-plugin_*.deb ./docker-compose-plugin_*.deb
+sudo systemctl enable --now docker
+```
+
+装完后核对(两种来源相同):
+
+```bash
+docker --version                   # 任意版本的 Docker Engine 均可
+docker compose version --short     # 必须 ≥ 2.20,否则 install.sh / upgrade.sh / restore.sh 会拒绝运行
+sudo docker info | grep -i 'docker root dir'   # Docker 数据目录所在盘要有足够空间(第 9 节"升级后的磁盘整理")
+```
+
+之后按第 3 节"用哪个用户执行脚本"决定是全程 root(sudo)还是把一个普通用户加进 `docker` 组。
+
 ## 2. 拿到离线包后
 
 离线包的文件名是 `workstation-deploy-<版本>.tar.gz`,旁边应有校验文件 `workstation-deploy-<版本>.tar.gz.sha256`(`upgrade.sh` 也接受去掉 `.tar.gz` 的 `workstation-deploy-<版本>.sha256`,两个都有时用前者)。校验文件只取第一行的第一列(与 `sha256sum` 输出格式一致)。
@@ -43,8 +81,8 @@
    cd /opt/workstation
    ```
 
-3. 目录里有:`VERSION`、`docker-compose.yml`、`.env.example`、`Caddyfile.internal / .custom / .acme`、`images/workstation-images-<版本>.tar`、`scripts/`、`systemd/`、本手册。
-4. 安装后会多出:`.env`(权限 600)、`Caddyfile`、`certs/`、`data/{pg,redis,caddy,logs}/`、`backups/`。
+3. 目录里有:`VERSION`、`BUILD_INFO`(版本、构建所用的 git 提交号与时间,报障时请一并提供)、`docker-compose.yml`、`.env.example`、`Caddyfile.internal / .custom / .acme`、`images/workstation-images-<版本>.tar`、`scripts/`、`systemd/`、本手册。
+4. 安装后会多出:`.env`(权限 600)、`Caddyfile`、`certs/`、`data/{pg,redis,caddy,logs}/`、`backups/`;每次升级后 `backups/` 里还会多一个 `pre-upgrade-<旧版本>-<时间>/` 快照目录(第 9 节)。
 
 ## 3. 安装
 
@@ -361,7 +399,14 @@ tar -xzf <新包>/workstation-deploy-1.0.0.tar.gz -C . --strip-components=1 work
 | 安装或升级提示"可用空间不足" | 部署目录所在磁盘空间不够(安装门槛 20 GB)。清理磁盘或把部署目录迁到大盘;备份也很占空间,可调小 `--keep`、把旧备份挪到别的设备。 |
 | 磁盘满了系统异常 | 先 `df -h` 与 `du -sh data/* backups` 找大头;清理旧备份与旧日志后 `docker compose restart`。 |
 | 升级报"迁移预检不通过"(退出码 2) | 现有数据不满足新版本的约束(如登录名大小写重复、座位行列数越界)。系统仍在旧版本运行。按报告里的"定位"SQL 找到数据、改正后重新运行升级。 |
-| 提示"另一个备份、恢复或升级正在进行" | 有另一个脚本在跑,等它结束;确认没有在跑时删除报告里的 `backups/.lock` 目录。 |
+| 提示"另一个备份、恢复或升级正在进行" | 有另一个脚本在跑(`install.sh` 也会加同一把锁),等它结束;确认没有在跑时删除报告里的 `backups/.lock` 目录。 |
+| 提示"该部署由 root 安装,请用 sudo 执行"或"该部署由用户 X 安装,请切换到该用户" | 用错了用户。按第 3 节"用哪个用户执行脚本",改用安装时那个用户(root 就加 `sudo`,普通用户就不加)再跑。 |
+| 升级提示"上次升级(… → …)在覆盖程序文件之后中断,没有确认成功" | 上次升级被断电或强制结束。按第 9 节"升级中断":`./scripts/rollback.sh` 回到旧版,或重跑同一个离线包。 |
+| 升级失败,屏幕上出现"回到旧版本 … 的办法" | 照着执行:先 `./scripts/rollback.sh <快照目录>`,它提示数据库已被迁移时再 `./scripts/restore.sh <升级前备份>`(第 9 节)。 |
+| 备份提示"web 服务没有在运行,本次备份不含 Caddy 数据" | 备份已成功,只是没带证书与内部 CA 私钥。`docker compose up -d web` 后再备份一次即可得到完整备份。 |
+| 安装或升级提示"Docker 数据目录 … 所在磁盘可用空间不足" | 镜像与容器日志所在的盘(通常是 `/var/lib/docker` 所在的系统盘)不够 20 GB。删除旧版本镜像(第 9 节"升级后的磁盘整理")或扩容。 |
+| 安装提示"候选子网(…)都与本机网段重叠" | 校园网把 172.30 / 172.31 / 10.250 都用了。看 `ip route`,挑一个没用的网段:`WS_SUBNET=10.251.0.0/24 ./scripts/install.sh …`(第 5 节)。 |
+| 提示"WS_TRUSTED_PROXIES(…)不包含 compose 子网"或"ws-net 现在的子网是 … 而 .env 的 WS_SUBNET 是 …" | `.env` 里两个网段键改得不一致,或改了 `WS_SUBNET` 没有 `docker compose down`。按第 5 节改正。 |
 | 备份提示写 `backup-last.json` 失败 | 该文件被另一个用户先建成了只读。统一用同一个用户备份(第 7 节);或用原来的用户删除该文件后重做。 |
 | 安装提示部署目录含空格或 `% $ &` | 把部署目录移到不含这些字符的路径(如 `/opt/workstation`)再安装。 |
 | 应用没起来 | `docker compose logs app`(在部署目录里执行,若用了自定义项目名需加 `-p`)查看原因,必要时按第 10 节导出诊断包。 |

@@ -44,13 +44,21 @@ pass "顶层只有 $NAME,无链接、无 ._ 文件"
 echo "== 3/5 解包并核对契约里的全部文件"
 tar -xzf "$PKG" -C "$TMP"
 D="$TMP/$NAME"
-for f in VERSION docker-compose.yml .env.example Caddyfile.internal Caddyfile.custom Caddyfile.acme README.md \
+for f in VERSION BUILD_INFO docker-compose.yml .env.example Caddyfile.internal Caddyfile.custom Caddyfile.acme README.md \
   "images/workstation-images-$VERSION.tar" \
   scripts/lib.sh scripts/install.sh scripts/backup.sh scripts/restore.sh scripts/upgrade.sh scripts/rollback.sh scripts/diagnose.sh \
   systemd/workstation-backup.service systemd/workstation-backup.timer; do
   [ -s "$D/$f" ] || fail "缺少或为空:$f"
 done
 [ "$(tr -d '[:space:]' <"$D/VERSION")" = "$VERSION" ] || fail "VERSION 文件内容不是 $VERSION"
+# L122 / L189:BUILD_INFO 能追溯到提交(40 位 sha);正式路径(不带 --allow-dirty)下不得有 DIRTY=1
+grep -qx "VERSION=$VERSION" "$D/BUILD_INFO" || fail "BUILD_INFO 里的 VERSION 不是 $VERSION"
+grep -Eqx 'COMMIT=[0-9a-f]{40}' "$D/BUILD_INFO" || fail "BUILD_INFO 里没有 40 位的 COMMIT:$(cat "$D/BUILD_INFO")"
+grep -Eqx 'BUILT_AT=[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z' "$D/BUILD_INFO" || fail "BUILD_INFO 里的 BUILT_AT 格式不对"
+if [ "${WS_BUNDLE_ALLOW_DIRTY:-0}" != "1" ]; then
+  grep -q '^DIRTY=' "$D/BUILD_INFO" && fail "正式包的 BUILD_INFO 不应有 DIRTY 标记(工作区不干净时打的包)"
+fi
+pass "BUILD_INFO 含 VERSION、40 位 COMMIT、BUILT_AT"
 for f in scripts/install.sh scripts/backup.sh scripts/restore.sh scripts/upgrade.sh scripts/rollback.sh scripts/diagnose.sh; do
   [ -x "$D/$f" ] || fail "$f 没有可执行权限"
   bash -n "$D/$f" || fail "$f 语法检查失败"
@@ -67,7 +75,7 @@ for f in "$ROOT"/deploy/prod/scripts/*.sh "$ROOT"/deploy/prod/systemd/*; do
 done
 # 文件清单与契约完全相等,不许多出文件
 actual="$(cd "$D" && find . -type f | LC_ALL=C sort)"
-expected="$(printf '%s\n' ./VERSION ./docker-compose.yml ./.env.example ./Caddyfile.internal ./Caddyfile.custom ./Caddyfile.acme ./README.md \
+expected="$(printf '%s\n' ./VERSION ./BUILD_INFO ./docker-compose.yml ./.env.example ./Caddyfile.internal ./Caddyfile.custom ./Caddyfile.acme ./README.md \
   "./images/workstation-images-$VERSION.tar" ./scripts/lib.sh ./scripts/install.sh ./scripts/backup.sh ./scripts/restore.sh \
   ./scripts/upgrade.sh ./scripts/rollback.sh ./scripts/diagnose.sh ./systemd/workstation-backup.service ./systemd/workstation-backup.timer | LC_ALL=C sort)"
 [ "$actual" = "$expected" ] || fail "文件清单与契约不一致:$(printf '%s\n' "$actual" | LC_ALL=C comm -3 - <(printf '%s\n' "$expected") | tr '\n' ' ')"

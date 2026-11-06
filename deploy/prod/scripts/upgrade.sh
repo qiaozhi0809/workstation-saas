@@ -169,6 +169,24 @@ write_state() {
   mv "$tmp" "$STATE_FILE" || die "写升级状态文件失败,未改动任何文件"
 }
 
+# 生效的 Caddyfile 随升级更新(L198):与新包里对应证书方式(.env 的 WS_TLS_MODE)的模板比对,不同就替换并提示;
+# 升级前的那份已在快照里。方式不认识时不动。替换后由 main 重启 web 使其生效(bind 挂载的配置改了容器不会自动重读)。
+CADDYFILE_CHANGED=0
+update_caddyfile() {
+  local newdir="$1" mode tpl
+  mode="$(read_env WS_TLS_MODE)"
+  case "$mode" in
+    internal|custom|acme) ;;
+    *) log_warn ".env 里的 WS_TLS_MODE 不是 internal / custom / acme(当前「$mode」),不更新 Caddyfile"; return 0 ;;
+  esac
+  tpl="$newdir/Caddyfile.$mode"
+  [ -f "$tpl" ] || return 0
+  if [ -f "$DEPLOY_DIR/Caddyfile" ] && cmp -s "$tpl" "$DEPLOY_DIR/Caddyfile"; then return 0; fi
+  replace_file "$tpl" "$DEPLOY_DIR/Caddyfile"
+  CADDYFILE_CHANGED=1
+  log_warn "Caddyfile 已更新为新版本的 Caddyfile.$mode(升级前的那份在快照 $SNAPSHOT/Caddyfile)。如果你手工改过 Caddyfile,请把改动重新合并后执行 docker compose restart web"
+}
+
 # 上次升级中断的处置(L190):状态文件在 → 上次在覆盖文件之后没有确认成功。
 #   * 这次的离线包与上次版本相同 → 视为重跑:沿用上次的快照与旧版本号(此时 VERSION 文件已是新版,不能再当旧版),继续;
 #   * 否则停下,提示先 rollback.sh 回到旧版,或重跑上次那个离线包。
@@ -314,6 +332,7 @@ main() {
       replace_file "$f" "$DEPLOY_DIR/systemd/$name"
     done
   fi
+  update_caddyfile "$newdir"
   append_new_env_keys "$newdir/.env.example"
   set_env WS_VERSION "$new_version"
 
@@ -321,6 +340,12 @@ main() {
   # 失败时 start_and_verify 会 die(退出码 1),EXIT trap 随后打印回退办法(OVERWRITE_STARTED 仍为 1)
   log_info "重启服务……"
   start_and_verify "$HEALTH_TIMEOUT"
+  if [ "$CADDYFILE_CHANGED" -eq 1 ]; then
+    # 同版本重装时 web 容器不会被重建,bind 挂载的新 Caddyfile 要重启才生效
+    log_info "Caddyfile 有更新,重启 web 使其生效……"
+    compose restart web 2>&1 | redact >/dev/null || die "重启 web 失败。请运行 docker compose -p ${WS_COMPOSE_PROJECT:-workstation} --project-directory '$DEPLOY_DIR' logs web 查看原因"
+    wait_healthy web 120 || die "web 服务(反向代理)重启后 120 秒内没有就绪。请运行 docker compose -p ${WS_COMPOSE_PROJECT:-workstation} --project-directory '$DEPLOY_DIR' logs web 查看原因"
+  fi
   OVERWRITE_STARTED=0
   rm -f "$STATE_FILE"
   log_info "升级完成:当前版本 $new_version。升级前备份:$BACKUP_FILE;升级前快照:$SNAPSHOT"

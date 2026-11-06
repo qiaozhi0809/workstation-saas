@@ -171,6 +171,21 @@ else
   echo "  跳过:本机没有免密 sudo 或 nobody 用户(CI 的 runner 有)"
 fi
 
+echo "== 4d L200:备份 / 恢复 / 升级持锁时 install.sh 被拒,锁不被抢"
+mkdir "$DEPLOY/backups/.lock"
+sleep 300 &
+HOLDER=$!
+printf '%s\n' "$HOLDER" >"$DEPLOY/backups/.lock/pid"
+rc=0; run_install "$TMP/install-locked.log" || rc=$?
+kill "$HOLDER" 2>/dev/null || true
+wait "$HOLDER" 2>/dev/null || true
+[ "$rc" -ne 0 ] || fail "锁被活进程持有时 install.sh 应拒绝"
+grep -q '正在进行' "$TMP/install-locked.log" || fail "install 锁冲突时的提示不对"
+[ "$(cat "$DEPLOY/backups/.lock/pid")" = "$HOLDER" ] || fail "install 不应改动别人持有的锁"
+rm -rf "$DEPLOY/backups/.lock"
+[ "$(sha256_of "$DEPLOY/.env")" = "$env_sha" ] || fail "被锁拒绝时不应改动 .env"
+pass "持锁时 install.sh 被拒绝(提示「正在进行」),锁与 .env 未动"
+
 echo "== 5/6 故意配错 WS_MASTER_KEY:安装输出不得泄露密钥"
 bad_key="not-a-valid-key-$(openssl rand -hex 16)"
 awk -F= -v k="$bad_key" '$1=="WS_MASTER_KEY" {print "WS_MASTER_KEY=" k; next} {print}' "$TMP/env.good" >"$DEPLOY/.env"

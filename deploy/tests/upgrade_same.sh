@@ -24,6 +24,9 @@ make_package() {  # $1=输出 tar.gz;包里的 compose 文件末尾加一行注�
   cp -R "$DEPLOY_SRC/." "$pkg/"
   printf '%s\n' "$NEWV" >"$pkg/VERSION"
   printf '# upgraded-marker\n' >>"$pkg/docker-compose.yml"
+  # L198:新包的 Caddyfile.internal 多发一个响应头,升级后生效的 Caddyfile 应被替换、web 重读配置后浏览器能看到它
+  awk '{ print } /^\theader [{]$/ { print "\t\tX-Ws-Upgrade-Marker \"1\"" }' "$DEPLOY_SRC/Caddyfile.internal" >"$pkg/Caddyfile.internal"
+  grep -q 'X-Ws-Upgrade-Marker' "$pkg/Caddyfile.internal" || fail "测试自身问题:没能把标记头加进 Caddyfile.internal"
   tar -C "$TMP/pkgsrc" -czf "$1" "workstation-deploy-$NEWV"
 }
 PKG="$TMP/workstation-deploy-$NEWV.tar.gz"
@@ -63,13 +66,22 @@ net_subnet="$(docker network inspect "${PROJECT}_ws-net" -f '{{range .IPAM.Confi
 [ "$(env_value WS_SUBNET)" = "$net_subnet" ] || fail "升级后 .env 应补上 WS_SUBNET=$net_subnet(当前网络子网),实际「$(env_value WS_SUBNET)」"
 grep -q 'WS_SUBNET' "$TMP/upgrade.log" || fail "升级输出里没有提示补上了 WS_SUBNET"
 [ "$(tr -d '[:space:]' <"$DEPLOY/VERSION")" = "$NEWV" ] || fail "部署目录的 VERSION 没有更新"
-[ "$(sha256_of "$DEPLOY/Caddyfile")" = "$caddy_sha" ] || fail "升级改动了 Caddyfile"
-pass "compose 文件已覆盖;.env 只有 WS_VERSION 变为新版本、补上 WS_SUBNET=$net_subnet;Caddyfile 未动"
+# L198:生效的 Caddyfile 被替换成新包的模板,升级前的那份在快照里,输出有提示
+[ "$(sha256_of "$DEPLOY/Caddyfile")" != "$caddy_sha" ] || fail "新包的 Caddyfile.internal 变了,生效的 Caddyfile 却没有更新"
+cmp -s "$DEPLOY/Caddyfile" "$DEPLOY/Caddyfile.internal" || fail "升级后生效的 Caddyfile 应等于新包的 Caddyfile.internal"
+grep -q 'Caddyfile 已更新' "$TMP/upgrade.log" || fail "升级输出里没有 Caddyfile 更新的提示"
+snap_dir="$(find "$DEPLOY/backups" -maxdepth 1 -name "pre-upgrade-$VERSION-*" -type d | head -n 1)"
+[ -n "$snap_dir" ] && [ "$(sha256_of "$snap_dir/Caddyfile")" = "$caddy_sha" ] || fail "快照里应保存升级前的 Caddyfile"
+pass "compose 文件已覆盖;.env 只有 WS_VERSION 变为新版本、补上 WS_SUBNET=$net_subnet;Caddyfile 更新为新模板,旧的在快照里"
 
 echo "== 3/3 升级后可用性与密钥出口"
 assert_healthz
 assert_login_ok
 assert_services_up
+# L198:新 Caddyfile 真的生效(web 重读了配置):响应里有新包加的标记头
+hdrs="$(curl -ksS --max-time 10 -o /dev/null -D - "https://localhost:$HTTPS_PORT/")" || fail "取响应头失败"
+grep -qi '^x-ws-upgrade-marker: 1' <<<"$hdrs" || fail "升级后响应里没有新 Caddyfile 加的 X-Ws-Upgrade-Marker 头(web 没有重读配置?)"
+pass "新 Caddyfile 已生效(响应含 X-Ws-Upgrade-Marker)"
 [ "$(docker inspect -f '{{.Config.Image}}' "$(dc ps -q app)")" = "workstation-app:$NEWV" ] \
   || fail "升级后 app 容器没有用新版本标签的镜像"
 [ "$(docker inspect -f '{{.Config.Image}}' "$(dc ps -q scheduler)")" = "workstation-app:$NEWV" ] \

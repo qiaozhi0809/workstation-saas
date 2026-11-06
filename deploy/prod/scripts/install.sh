@@ -76,7 +76,16 @@ parse_args() {
   done
 }
 
-port_in_use() { (exec 3<>"/dev/tcp/127.0.0.1/$1") >/dev/null 2>&1; }
+# port_in_use <端口>:本机有进程在监听该端口(任何地址:0.0.0.0、*、具体 IP、[::])就算占用(L200)。
+# 优先 ss -ltn 看监听表(只连 127.0.0.1 探不到绑在具体网卡地址上的监听);没有 ss 的系统退回 /dev/tcp 探测
+port_in_use() {
+  local p="$1"
+  if command -v ss >/dev/null 2>&1; then
+    ss -Hltn 2>/dev/null | awk -v p=":$p" '{ a = $4; if (substr(a, length(a) - length(p) + 1) == p) found = 1 } END { exit found ? 0 : 1 }'
+  else
+    (exec 3<>"/dev/tcp/127.0.0.1/$p") >/dev/null 2>&1
+  fi
+}
 
 check_os() {
   local id="" ver=""
@@ -500,6 +509,10 @@ main() {
   esac
   [ -f "$DEPLOY_DIR/VERSION" ] || die "部署目录里缺少 VERSION 文件,请在解开的离线包目录里运行"
   [ -f "$DEPLOY_DIR/docker-compose.yml" ] || die "部署目录里缺少 docker-compose.yml"
+  # 已安装时必须是安装者本人(L183;要在加锁之前判,否则另一个用户会撞上锁目录报成"正在进行");
+  # 与备份 / 恢复 / 升级互斥(L200):锁由 EXIT trap 的 lib_cleanup 释放
+  require_same_user
+  acquire_lock
 
   check_os
   check_docker
@@ -507,7 +520,6 @@ main() {
   if [ -f "$ENV_FILE" ]; then
     # R9:.env 存在即视为已安装,绝不重新生成密钥
     log_info "检测到 .env:系统已安装,不会重新生成密钥,只确保服务已启动"
-    require_same_user
     HTTP_PORT="$(read_env WS_HTTP_PORT)"; HTTPS_PORT="$(read_env WS_HTTPS_PORT)"
     check_env_complete
     check_disk
