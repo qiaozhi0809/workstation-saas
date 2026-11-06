@@ -21,8 +21,12 @@ export const authApi = {
   passwordPolicy: () => api<PasswordPolicy>('GET', '/auth/password-policy'),
   totpStatus: () => api<TotpStatus>('GET', '/auth/totp'),
   totpSetup: () => api<TotpSetup>('POST', '/auth/totp/setup'),
-  totpEnable: (code: string, refreshToken: string) =>
-    api<{ enabled: true }>('POST', '/auth/totp/enable', { code, refresh_token: refreshToken }),
+  totpEnable: (code: string, password: string, refreshToken: string) =>
+    api<{ enabled: true }>('POST', '/auth/totp/enable', {
+      code,
+      password,
+      refresh_token: refreshToken,
+    }),
   totpDisable: (password: string) =>
     api<{ enabled: false }>('POST', '/auth/totp/disable', { password }),
 }

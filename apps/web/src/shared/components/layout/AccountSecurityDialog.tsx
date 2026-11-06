@@ -13,7 +13,15 @@ import { Label } from '@/shared/components/ui/label'
 import { useAuthStore } from '@/shared/stores/auth'
 import type { TotpSetup } from '@/shared/types/api'
 
-const errText = (err: unknown) => (err instanceof ApiError ? err.message : '操作失败,请稍后再试')
+const CODE_MESSAGES: Record<string, string> = {
+  WRONG_PASSWORD: '密码不正确',
+  INVALID_CREDENTIALS: '密码不正确',
+  ACCOUNT_LOCKED: '尝试次数过多,请稍后再试',
+  TOTP_INVALID: '验证码不正确或已过期,请检查手机时间',
+  TOTP_SETUP_EXPIRED: '二维码已过期,请重新开启',
+}
+const errText = (err: unknown) =>
+  err instanceof ApiError ? (CODE_MESSAGES[err.code] ?? err.message) : '操作失败,请稍后再试'
 
 /** 手动输入用的密钥:每 4 位一组 */
 const groupSecret = (s: string) => s.replace(/\s+/g, '').replace(/(.{4})(?=.)/g, '$1 ')
@@ -31,18 +39,26 @@ function ErrorLine({ message }: { message: string | null }) {
 function EnableFlow({ onDone, onCancel }: { onDone(): void; onCancel(): void }) {
   const [setup, setSetup] = useState<TotpSetup | null>(null)
   const [code, setCode] = useState('')
+  const [password, setPassword] = useState('') // 只在组件状态里,关闭对话框即卸载清空;不持久化、不记录
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [starting, setStarting] = useState(true)
+
+  const begin = () => {
+    setStarting(true)
+    authApi
+      .totpSetup()
+      .then(setSetup)
+      .catch((err) => setError(errText(err)))
+      .finally(() => setStarting(false))
+  }
 
   // 进入即生成(服务端每次生成都会覆盖待确认的密钥,所以只发一次)
   const started = useRef(false)
   useEffect(() => {
     if (started.current) return
     started.current = true
-    authApi
-      .totpSetup()
-      .then(setSetup)
-      .catch((err) => setError(errText(err)))
+    begin()
   }, [])
 
   const confirm = async (e: FormEvent) => {
@@ -50,12 +66,19 @@ function EnableFlow({ onDone, onCancel }: { onDone(): void; onCancel(): void }) 
     setError(null)
     setBusy(true)
     try {
-      await authApi.totpEnable(code, useAuthStore.getState().refreshToken ?? '')
+      await authApi.totpEnable(code, password, useAuthStore.getState().refreshToken ?? '')
+      setPassword('')
       toast('已开启两步验证')
       onDone()
     } catch (err) {
       setError(errText(err))
+      setPassword('')
       setBusy(false)
+      if (err instanceof ApiError && err.code === 'TOTP_SETUP_EXPIRED') {
+        setSetup(null)
+        setCode('')
+        begin()
+      }
     }
   }
 
@@ -70,7 +93,8 @@ function EnableFlow({ onDone, onCancel }: { onDone(): void; onCancel(): void }) 
   if (!setup) {
     return (
       <div className="space-y-3">
-        {error ? <ErrorLine message={error} /> : <LoadingState />}
+        <ErrorLine message={error} />
+        {starting && <LoadingState />}
         <div className="flex justify-end">
           <Button type="button" variant="outline" onClick={onCancel}>
             取消
@@ -105,12 +129,22 @@ function EnableFlow({ onDone, onCancel }: { onDone(): void; onCancel(): void }) 
           maxLength={6}
         />
       </div>
+      <div className="space-y-2">
+        <Label htmlFor="totp-enable-pw">当前密码</Label>
+        <Input
+          id="totp-enable-pw"
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          autoComplete="current-password"
+        />
+      </div>
       <ErrorLine message={error} />
       <div className="flex justify-end gap-2">
         <Button type="button" variant="outline" onClick={onCancel}>
           取消
         </Button>
-        <Button type="submit" disabled={busy || code.length !== 6} aria-busy={busy}>
+        <Button type="submit" disabled={busy || code.length !== 6 || !password} aria-busy={busy}>
           {busy && <Loader2 className="h-4 w-4 motion-safe:animate-spin" aria-hidden="true" />}
           确认开启
         </Button>
