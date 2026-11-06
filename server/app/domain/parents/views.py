@@ -468,6 +468,9 @@ def save_contacts(
         .execution_options(populate_existing=True)
     )
     assert student is not None  # child_link_or_deny 已保证绑定存在
+    # 等锁期间班主任可能已解绑/降级并提交:丢弃会话缓存的旧绑定,加锁后重新读库再判权(L78)
+    db.expire_all()
+    link = child_link_or_deny(db, request, user, student_id, now=now, write=True)
     student.contacts = [c.model_dump() for c in body.contacts]
     record(
         db,

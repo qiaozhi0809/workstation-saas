@@ -900,3 +900,56 @@ def test_reset_waits_for_concurrent_link_to_other_class(cengine):
     t.join(30)
     err = result["v"]
     assert isinstance(err, ApiError) and err.code == "PARENT_OTHER_CLASS", err
+
+
+def test_contacts_rechecks_authz_after_lock(cengine):
+    """班主任解绑(已锁学生行、未提交)时,家长的写入等锁后必须重新判权,不得落库(L78)。"""
+    import threading
+    from datetime import UTC, datetime
+
+    from sqlalchemy import text as sql
+    from sqlalchemy.orm import Session
+
+    from app.domain.parents.views import save_contacts
+    from app.errors import ApiError
+    from tests.factories import make_class, make_student, make_user
+
+    with Session(cengine) as db:
+        cls = make_class(db, "虚构联系人班")
+        s_id = make_student(db, cls, "虚构学生", "mk-c-contacts")
+        puser = make_user(db, "13800000064", "虚构家长")
+        parent = Parent(user_id=puser.id, name="虚构家长", phone="13800000064")
+        db.add(parent)
+        db.flush()
+        link = ParentLink(parent_id=parent.id, student_id=s_id, relation="母亲", is_primary=True)
+        db.add(link)
+        db.commit()
+        uid, link_id = puser.id, link.id
+
+    holder = Session(cengine)
+    holder.execute(sql("SELECT 1 FROM students WHERE id = :s FOR UPDATE"), {"s": s_id})
+    holder.execute(sql("DELETE FROM parent_links WHERE id = :i"), {"i": link_id})
+    result: dict[str, object] = {}
+
+    def run() -> None:
+        try:
+            with Session(cengine) as db:
+                parent = db.get(User, uid)
+                c = {"name": "不该落库", "relation": "母亲", "phone": "13800000064", "job": "医生"}
+                payload = {"contacts": [c]}
+                result["v"] = save_contacts(db, None, parent, s_id, payload, datetime.now(UTC))
+        except BaseException as exc:  # noqa: BLE001 - 带回主线程断言
+            result["v"] = exc
+
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    t.join(1.5)
+    assert t.is_alive(), result  # 被学生行锁挡住
+    holder.commit()
+    holder.close()
+    t.join(30)
+    err = result["v"]
+    assert isinstance(err, ApiError) and err.status == 403 and err.code == "FORBIDDEN", err
+    with Session(cengine) as db:
+        contacts = db.scalar(sql("SELECT contacts FROM students WHERE id = :s"), {"s": s_id})
+    assert not contacts or all(c.get("name") != "不该落库" for c in contacts)
