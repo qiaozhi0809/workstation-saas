@@ -2,19 +2,12 @@ import { Link } from 'react-router-dom'
 import { GRADE_TINTS } from '@/shared/components/ClassroomMap/art/palette'
 import { Button } from '@/shared/components/ui/button'
 import { NativeSelect } from '@/shared/components/ui/native-select'
+import { RANK_BANDS as LEGEND } from './rankBands'
 
 export interface GradesBarExam {
   id: string
   name: string
 }
-
-const LEGEND = [
-  { tint: 1, label: '前 20%' },
-  { tint: 2, label: '20–40%' },
-  { tint: 3, label: '40–60%' },
-  { tint: 4, label: '60–80%' },
-  { tint: 5, label: '后 20%' },
-] as const
 
 /** exams:新→旧;没有考试时显示空提示和录入入口。 */
 export default function GradesBar({

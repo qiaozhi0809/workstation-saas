@@ -20,8 +20,14 @@ export function layerClass(side: LayerSide, align: LayerAlign, className?: strin
   )
 }
 
-/** initialFocus:打开后要聚焦的元素;返回 null 时聚焦浮层本身(浮层带 tabIndex=-1) */
-export function useAnchoredLayer(initialFocus: (layer: HTMLElement) => HTMLElement | null) {
+/**
+ * initialFocus:打开后要聚焦的元素;返回 null 时聚焦浮层本身(浮层带 tabIndex=-1)。
+ * triggerDisabled:触发按钮当前是否 disabled;开着时变成 disabled 就自动关闭(L13)。
+ */
+export function useAnchoredLayer(
+  initialFocus: (layer: HTMLElement) => HTMLElement | null,
+  triggerDisabled = false,
+) {
   const [open, setOpen] = useState(false)
   const layerId = useId()
   const wrapperRef = useRef<HTMLDivElement>(null)
@@ -50,6 +56,19 @@ export function useAnchoredLayer(initialFocus: (layer: HTMLElement) => HTMLEleme
   }, [open, close])
 
   useEscapeLayer(open, () => close(true))
+
+  // 浏览器后退 / 前进(popstate):页面要换了,开着的浮层跟着关;焦点不还给触发按钮(L13)
+  useEffect(() => {
+    if (!open) return
+    const onPopState = () => close(false)
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [open, close])
+
+  // 触发按钮变 disabled(比如开始保存):disabled 的按钮聚焦不了,只关浮层不还焦点(L13)
+  useEffect(() => {
+    if (open && triggerDisabled) close(false)
+  }, [open, triggerDisabled, close])
 
   // 打开后把焦点移进浮层
   useLayoutEffect(() => {

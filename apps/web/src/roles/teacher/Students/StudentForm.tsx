@@ -171,6 +171,8 @@ export default function StudentForm({
   const id = (k: string) => `${uid}-${k}`
   const editing = !!record
   const nameRef = useRef<HTMLInputElement>(null)
+  // 每行联系人的"姓名"框:校验出错时焦点落到第一个出错的那行(L14)
+  const contactNameRefs = useRef<(HTMLInputElement | null)[]>([])
   const [f, setF] = useState(() =>
     initialState(record, roster, wantsAutoSeat(cls, roster, !!record)),
   )
@@ -179,13 +181,16 @@ export default function StudentForm({
     useQuery({ queryKey: ['tag-pool'], queryFn: schoolApi.tagPool }).data?.tags ?? DEFAULT_TAG_POOL
   const [custom, setCustom] = useState(() => record?.tags ?? [])
   const [customDraft, setCustomDraft] = useState('')
+  // 想选第 13 个标签时提示,取消一个后清掉(L15)
+  const [tagsFull, setTagsFull] = useState(false)
   const [keepAdding, setKeepAdding] = useState(false)
   const [busy, setBusy] = useState(false)
   const [errors, setErrors] = useState<{
     name?: string
     studentNo?: string
     seat?: string
-    contact?: string
+    /** 出错的联系人行号(0 起)与提示 */
+    contact?: { at: number; text: string }
     form?: string
   }>({})
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -194,26 +199,31 @@ export default function StudentForm({
   const setContact = (i: number, patch: Partial<Contact>) =>
     setF((s) => ({ ...s, contacts: s.contacts.map((c, j) => (j === i ? { ...c, ...patch } : c)) }))
 
-  const toggleTag = (tag: string) =>
+  const toggleTag = (tag: string) => {
+    const on = !f.tags.includes(tag)
+    if (on && f.tags.length >= MAX_TAGS) {
+      setTagsFull(true)
+      return
+    }
+    setTagsFull(false)
     setF((s) => {
-      const on = !s.tags.includes(tag)
-      if (on && s.tags.length >= MAX_TAGS) return s
       const tags = on ? [...s.tags, tag] : s.tags.filter((t) => t !== tag)
       return { ...s, tags, boarding: tag === BOARDING_TAG ? on : s.boarding }
     })
-  const toggleBoarding = (on: boolean) =>
-    setF((s) => ({
-      ...s,
-      boarding: on,
-      tags: on
-        ? s.tags.includes(BOARDING_TAG)
-          ? s.tags
-          : [...s.tags, BOARDING_TAG]
-        : s.tags.filter((t) => t !== BOARDING_TAG),
-    }))
+  }
+  // 住校勾选框与"住校"标签同步:走 toggleTag,满 12 个时同样只提示、不加第 13 个;取消时同样清掉提示
+  const toggleBoarding = (on: boolean) => {
+    if (on === f.tags.includes(BOARDING_TAG)) set('boarding', on)
+    else toggleTag(BOARDING_TAG)
+  }
   const addCustomTag = () => {
     const tag = customDraft.trim()
     if (!tag) return
+    // 已满:只提示,输入保留,不悄悄丢掉
+    if (!f.tags.includes(tag) && f.tags.length >= MAX_TAGS) {
+      setTagsFull(true)
+      return
+    }
     if (!pool.includes(tag) && !custom.includes(tag)) setCustom((c) => [...c, tag])
     if (!f.tags.includes(tag)) toggleTag(tag)
     setCustomDraft('')
@@ -245,20 +255,23 @@ export default function StudentForm({
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     const name = f.name.trim()
-    const contacts = f.contacts
-      .map((c) => ({
-        name: c.name.trim(),
-        relation: c.relation.trim(),
-        phone: c.phone.trim(),
-        job: c.job.trim(),
-      }))
-      .filter((c) => c.name || c.relation || c.phone || c.job)
+    const trimmed = f.contacts.map((c) => ({
+      name: c.name.trim(),
+      relation: c.relation.trim(),
+      phone: c.phone.trim(),
+      job: c.job.trim(),
+    }))
+    const filled = (c: Contact) => !!(c.name || c.relation || c.phone || c.job)
+    const contacts = trimmed.filter(filled)
     const next: typeof errors = {}
     if (!name) next.name = '请填写姓名'
-    if (contacts.some((c) => !c.name && !c.phone)) next.contact = '联系人姓名和电话至少填一项'
+    const badContact = trimmed.findIndex((c) => filled(c) && !c.name && !c.phone)
+    if (badContact >= 0) next.contact = { at: badContact, text: '联系人姓名和电话至少填一项' }
     setErrors(next)
     if (Object.keys(next).length > 0) {
+      // 焦点移到表单里最靠前的出错字段
       if (next.name) nameRef.current?.focus()
+      else if (next.contact) contactNameRefs.current[next.contact.at]?.focus()
       return
     }
 
@@ -467,6 +480,11 @@ export default function StudentForm({
               addCustomTag()
             }}
           />
+          {tagsFull && (
+            <p role="status" className="text-sm text-muted-foreground">
+              {`最多选 ${MAX_TAGS} 个标签,先取消一个再选`}
+            </p>
+          )}
         </div>
 
         <div className="space-y-2">
@@ -476,40 +494,56 @@ export default function StudentForm({
               <option key={r} value={r} />
             ))}
           </datalist>
-          {f.contacts.map((c, i) => (
-            <div key={i} className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <Input
-                aria-label={`联系人${i + 1}姓名`}
-                placeholder="姓名"
-                maxLength={20}
-                value={c.name}
-                onChange={(e) => setContact(i, { name: e.target.value })}
-              />
-              <Input
-                aria-label={`联系人${i + 1}关系`}
-                placeholder="关系"
-                list={id('relations')}
-                maxLength={10}
-                value={c.relation}
-                onChange={(e) => setContact(i, { relation: e.target.value })}
-              />
-              <Input
-                aria-label={`联系人${i + 1}电话`}
-                placeholder="电话"
-                maxLength={20}
-                value={c.phone}
-                onChange={(e) => setContact(i, { phone: e.target.value })}
-              />
-              <Input
-                aria-label={`联系人${i + 1}职业`}
-                placeholder="职业"
-                maxLength={20}
-                value={c.job}
-                onChange={(e) => setContact(i, { job: e.target.value })}
-              />
-            </div>
-          ))}
-          {errors.contact && <p className="text-sm text-destructive">{errors.contact}</p>}
+          {f.contacts.map((c, i) => {
+            // 出错的那行:姓名与电话(二选一的两个字段)标 aria-invalid 并关联提示
+            const bad = errors.contact?.at === i
+            const invalid = bad
+              ? { 'aria-invalid': true, 'aria-describedby': id('contact-error') }
+              : {}
+            return (
+              <div key={i} className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <Input
+                  ref={(el) => {
+                    contactNameRefs.current[i] = el
+                  }}
+                  aria-label={`联系人${i + 1}姓名`}
+                  placeholder="姓名"
+                  maxLength={20}
+                  value={c.name}
+                  onChange={(e) => setContact(i, { name: e.target.value })}
+                  {...invalid}
+                />
+                <Input
+                  aria-label={`联系人${i + 1}关系`}
+                  placeholder="关系"
+                  list={id('relations')}
+                  maxLength={10}
+                  value={c.relation}
+                  onChange={(e) => setContact(i, { relation: e.target.value })}
+                />
+                <Input
+                  aria-label={`联系人${i + 1}电话`}
+                  placeholder="电话"
+                  maxLength={20}
+                  value={c.phone}
+                  onChange={(e) => setContact(i, { phone: e.target.value })}
+                  {...invalid}
+                />
+                <Input
+                  aria-label={`联系人${i + 1}职业`}
+                  placeholder="职业"
+                  maxLength={20}
+                  value={c.job}
+                  onChange={(e) => setContact(i, { job: e.target.value })}
+                />
+              </div>
+            )
+          })}
+          {errors.contact && (
+            <p id={id('contact-error')} className="text-sm text-destructive">
+              {errors.contact.text}
+            </p>
+          )}
         </div>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

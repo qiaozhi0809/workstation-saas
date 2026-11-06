@@ -41,17 +41,23 @@ export default function ScoresTab({ profile }: { profile: StudentProfile }) {
   return (
     <div className="space-y-4">
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full text-sm" aria-label="历次成绩">
           <thead>
             <tr className="text-left text-muted-foreground">
-              <th className="py-1 pr-2 font-normal">考试</th>
+              <th scope="col" className="py-1 pr-2 font-normal">
+                考试
+              </th>
               {subjectNames.map((n) => (
-                <th key={n} className="px-2 py-1 font-normal">
+                <th key={n} scope="col" className="px-2 py-1 font-normal">
                   {n}
                 </th>
               ))}
-              <th className="px-2 py-1 font-normal">总分</th>
-              <th className="py-1 pl-2 font-normal">排名</th>
+              <th scope="col" className="px-2 py-1 font-normal">
+                总分
+              </th>
+              <th scope="col" className="py-1 pl-2 font-normal">
+                排名
+              </th>
             </tr>
           </thead>
           <tbody>

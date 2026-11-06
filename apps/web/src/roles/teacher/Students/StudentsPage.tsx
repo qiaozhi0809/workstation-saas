@@ -409,7 +409,7 @@ function StudentRow({
       <td className="whitespace-nowrap px-3 py-2 font-medium">
         <button
           type="button"
-          className="text-left hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          className="touch-target text-left hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           onClick={(e) => {
             e.stopPropagation()
             onOpen()
@@ -478,6 +478,7 @@ function StudentRow({
             type="button"
             variant="ghost"
             size="sm"
+            className="touch-target"
             onClick={(e) => {
               e.stopPropagation()
               onEdit()

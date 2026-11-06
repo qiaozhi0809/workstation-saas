@@ -116,6 +116,15 @@ it('lists exams with failing scores in red and absent badges', async () => {
   expect(screen.getByText('红色为不及格(低于满分的 60%)')).toBeInTheDocument()
 })
 
+// L14:成绩表有可访问名称,表头单元格声明为列头,读屏逐格朗读时能带出列名
+it('names the scores table and marks every header cell as a column header', async () => {
+  renderTab()
+  const table = await screen.findByRole('table', { name: '历次成绩' })
+  const headers = within(table).getAllByRole('columnheader')
+  expect(headers.map((h) => h.textContent)).toEqual(['考试', '语文', '数学', '总分', '排名'])
+  for (const h of headers) expect(h).toHaveAttribute('scope', 'col')
+})
+
 it('draws the rank curve reversed', async () => {
   renderTab()
   await screen.findByRole('img', { name: '排名变化' })

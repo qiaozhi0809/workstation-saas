@@ -51,7 +51,7 @@ export default function Modal({
         onEscapeKeyDown={(e) => e.preventDefault()}
         onInteractOutside={dismissOnOutside ? undefined : (e) => e.preventDefault()}
       >
-        <DialogHeader className="pr-6">
+        <DialogHeader className="touch-dialog-header pr-6">
           <DialogTitle>{title}</DialogTitle>
           {description && <DialogDescription>{description}</DialogDescription>}
         </DialogHeader>

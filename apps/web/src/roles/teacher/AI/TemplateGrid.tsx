@@ -21,6 +21,10 @@ export default function TemplateGrid({
         value={cat}
         onChange={(v) => setCat(v as AiCategory)}
       />
+      {/* 分类下一个可显示的模板都没有(全被隐藏 / 后端没下发):说一句,而不是一片空白(L17) */}
+      {shown.length === 0 && (
+        <p className="text-sm text-muted-foreground">这个分类下还没有可用的模板</p>
+      )}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {shown.map((t) => (
           <button

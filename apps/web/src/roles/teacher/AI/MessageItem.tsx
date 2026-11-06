@@ -146,10 +146,11 @@ export default function MessageItem({
             >
               复制
             </Button>
+            {/* 可访问名称以可见文字开头(WCAG 2.5.3),再说明范围,与顶栏"导出 Word"(整段)区分 */}
             <Button
               size="sm"
               variant="ghost"
-              aria-label="导出该条 Word"
+              aria-label="导出 Word(这一条)"
               onClick={() => exportWord(chat.title, message.content)}
             >
               导出 Word

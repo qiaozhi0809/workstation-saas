@@ -10,6 +10,7 @@ export default function PickCard({
   seat,
   groupOf,
   presenting = false,
+  alone = false,
   canReward,
   rewarding,
   onReward,
@@ -21,6 +22,8 @@ export default function PickCard({
   groupOf(seat: StudentSeat): number
   /** 投屏时只显示姓名(不投学号、职务) */
   presenting?: boolean
+  /** 点名池只剩这一位:再抽也只会是同一个人,卡片上说明(L19) */
+  alone?: boolean
   canReward: boolean
   rewarding: boolean
   onReward(): void
@@ -54,6 +57,7 @@ export default function PickCard({
               )}
             </div>
           </div>
+          {alone && <p className="text-sm text-muted-foreground">今天只有这一位同学可点名</p>}
           <div className="flex flex-wrap justify-center gap-2">
             {canReward && (
               <Button type="button" size="sm" disabled={rewarding} onClick={onReward}>
