@@ -181,17 +181,18 @@ def delete_comment(
     bindings: Annotated[list[Binding], Depends(get_bindings)],
     db: Annotated[Session, Depends(get_db)],
 ) -> Response:
+    # 判定顺序:404(不存在)→ 403(无权限,写审计)→ 409(往年只读),L97
     year = require_active_year(db, user.school_id)
     comment = db.get(Comment, comment_id)
     if comment is None:
         raise ApiError(404, "NOT_FOUND", "评语不存在")
-    if comment.academic_year_id != year.id:
-        raise ApiError(409, "RECORD_READONLY", "往年的评语只读,不能删除")
     cls = get_class_or_404(db, comment.class_id)
     ensure(
         db, request, user.id, bindings, Perm.COMMENT_WRITE, class_scope_of(cls),
         object_id=str(comment_id), object_type="comment",
     )  # fmt: skip
+    if comment.academic_year_id != year.id:
+        raise ApiError(409, "RECORD_READONLY", "往年的评语只读,不能删除")
     db.delete(comment)
     record(
         db,

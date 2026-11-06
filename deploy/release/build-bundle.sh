@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # 构建离线部署包:
-#   deploy/release/build-bundle.sh <版本>      例:0.7.0 / 0.7.0-rc.1 / 0.0.0-ci
+#   deploy/release/build-bundle.sh <版本> [--allow-dirty]      例:0.7.0 / 0.7.0-rc.1 / 0.0.0-ci
 # 产物:dist/workstation-deploy-<版本>.tar.gz 与同名 .sha256
 # 步骤:构建 app / web / stream 镜像 → 拉取 postgres / redis → docker save 五个镜像 → 按契约组装部署目录 → 打包。
 # 需要联网(拉基础镜像、npm ci、uv sync);产物本身安装时不需要联网。
+# 包里的 BUILD_INFO 记录 VERSION、COMMIT(40 位 git sha)、BUILT_AT(L122 / L189):正式打包要求工作区干净(没有未提交改动),
+# 否则拒绝;--allow-dirty 只给本机试验用,会在 BUILD_INFO 里记 DIRTY=1。
 # 可用环境变量:
 #   WS_BUNDLE_SKIP_PULL=1  不 docker pull postgres / redis(要求它们已在本机;只用于本机重复构建)
 #   WS_BUNDLE_PLATFORM     目标平台,默认 linux/amd64(学校服务器是 x86_64 Ubuntu;在 Apple 芯片的 Mac 上打包时
@@ -19,13 +21,52 @@ THIRD_PARTY_IMAGES="postgres:16-alpine redis:7-alpine"
 die() { echo "错误:$1" >&2; exit 1; }
 info() { echo "== $1"; }
 
-[ "$#" -eq 1 ] || die "用法:$0 <版本>(如 0.7.0、0.7.0-rc.1)"
-VERSION="$1"
+VERSION=""
+ALLOW_DIRTY=0
+for arg in "$@"; do
+  case "$arg" in
+    --allow-dirty) ALLOW_DIRTY=1 ;;
+    -h|--help) echo "用法:$0 <版本> [--allow-dirty](如 0.7.0、0.7.0-rc.1、0.0.0-ci)"; exit 0 ;;
+    -*) die "不认识的参数:$arg(用法:$0 <版本> [--allow-dirty])" ;;
+    *) [ -z "$VERSION" ] || die "只能给一个版本号"; VERSION="$arg" ;;
+  esac
+done
+[ -n "$VERSION" ] || die "用法:$0 <版本> [--allow-dirty](如 0.7.0、0.7.0-rc.1)"
 # 用 [[ =~ ]] 而不是 grep:grep 按行匹配,带换行的参数会蒙混过关
 VERSION_RE='^[0-9]+\.[0-9]+\.[0-9]+(-(rc\.[0-9]+|ci))?$'
 [[ "$VERSION" =~ $VERSION_RE ]] || die "版本号格式不对:$VERSION(应为 1.2.3、1.2.3-rc.1 或 1.2.3-ci)"
 command -v docker >/dev/null 2>&1 || die "找不到 docker"
 docker info >/dev/null 2>&1 || die "docker 没有运行或当前用户无权使用"
+
+# L122:正式包必须能追溯到一个提交。不是 git 仓库或有未提交改动 → 拒绝(--allow-dirty 放行并记录)
+COMMIT="unknown"
+DIRTY=0
+if git -C "$ROOT" rev-parse --verify HEAD >/dev/null 2>&1; then
+  COMMIT="$(git -C "$ROOT" rev-parse --verify HEAD)"
+  if [ -n "$(git -C "$ROOT" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
+    DIRTY=1
+    [ "$ALLOW_DIRTY" -eq 1 ] || die "工作区有未提交的改动,正式打包必须基于一个提交(git status 查看);本机试验可加 --allow-dirty"
+    echo "警告:工作区不干净,按 --allow-dirty 继续,BUILD_INFO 里记 DIRTY=1" >&2
+  fi
+else
+  [ "$ALLOW_DIRTY" -eq 1 ] || die "$ROOT 不是 git 仓库,无法记录提交号;本机试验可加 --allow-dirty"
+  echo "警告:不是 git 仓库,BUILD_INFO 里 COMMIT=unknown" >&2
+fi
+
+# docker save --platform 需要服务端 API 1.48(Docker 28)以上,Ubuntu 仓库的 docker.io 可能没有(L189):
+# 客户端认识该参数且服务端够新才带上;否则不带——bundle_smoke.sh 会核对包里五个镜像的架构,打错平台照样会被拦下
+api_ge() {  # <实际 API 版本> <要求的版本>:实际 ≥ 要求 返回 0
+  local a1 a2 b1 b2
+  a1="${1%%.*}"; a2="${1#*.}"; b1="${2%%.*}"; b2="${2#*.}"
+  case "$a1$a2" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$a1" -gt "$b1" ] || { [ "$a1" -eq "$b1" ] && [ "$a2" -ge "$b2" ]; }
+}
+SAVE_ARGS=()
+if docker save --help 2>/dev/null | grep -q -- '--platform' && api_ge "$(docker version --format '{{.Server.APIVersion}}' 2>/dev/null || true)" 1.48; then
+  SAVE_ARGS=(--platform "${WS_BUNDLE_PLATFORM:-linux/amd64}")
+else
+  echo "提示:本机 docker 不支持 docker save --platform,按镜像本身保存(bundle_smoke 会核对架构)" >&2
+fi
 
 NAME="workstation-deploy-$VERSION"
 DIST="$ROOT/dist"
@@ -60,17 +101,23 @@ done
 info "3/5 组装部署目录 $NAME"
 mkdir -p "$D/images" "$D/scripts" "$D/systemd"
 printf '%s\n' "$VERSION" >"$D/VERSION"
+{
+  printf 'VERSION=%s\n' "$VERSION"
+  printf 'COMMIT=%s\n' "$COMMIT"
+  printf 'BUILT_AT=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  [ "$DIRTY" -eq 0 ] || printf 'DIRTY=1\n'
+} >"$D/BUILD_INFO"
 cp "$ROOT/deploy/prod/docker-compose.yml" "$ROOT/deploy/prod/.env.example" "$D/"
 cp "$ROOT"/deploy/prod/Caddyfile.internal "$ROOT"/deploy/prod/Caddyfile.custom "$ROOT"/deploy/prod/Caddyfile.acme "$D/"
 cp "$ROOT"/deploy/prod/scripts/*.sh "$D/scripts/"
 cp "$ROOT"/deploy/prod/systemd/workstation-backup.service "$ROOT"/deploy/prod/systemd/workstation-backup.timer "$D/systemd/"
 cp "$ROOT/deploy/README.md" "$D/README.md"
 chmod 755 "$D"/scripts/*.sh
-chmod 644 "$D/VERSION" "$D/docker-compose.yml" "$D/.env.example" "$D"/Caddyfile.* "$D/README.md" "$D"/systemd/*
+chmod 644 "$D/VERSION" "$D/BUILD_INFO" "$D/docker-compose.yml" "$D/.env.example" "$D"/Caddyfile.* "$D/README.md" "$D"/systemd/*
 
 info "4/5 docker save(可能需要几分钟)"
 # shellcheck disable=SC2086  # THIRD_PARTY_IMAGES 是空格分隔的镜像名,需要拆开
-docker save --platform "$PLATFORM" -o "$D/images/workstation-images-$VERSION.tar" "$APP_IMG" "$WEB_IMG" "$STREAM_IMG" $THIRD_PARTY_IMAGES
+docker save ${SAVE_ARGS[@]+"${SAVE_ARGS[@]}"} -o "$D/images/workstation-images-$VERSION.tar" "$APP_IMG" "$WEB_IMG" "$STREAM_IMG" $THIRD_PARTY_IMAGES
 chmod 644 "$D/images/workstation-images-$VERSION.tar"
 
 info "5/5 打包并生成 sha256"

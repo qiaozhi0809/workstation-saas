@@ -15,6 +15,7 @@ from app.auth.deps import get_current_user
 from app.config import Settings, settings_dep
 from app.db import get_db
 from app.domain.cameras import access, playback
+from app.domain.cameras.service import Redis503
 from app.errors import ApiError
 from app.models import User
 from app.models.cameras import Camera
@@ -67,6 +68,7 @@ def _enabled_camera(db: Session, camera_id: UUID, school_id: UUID | None) -> Cam
 
 
 @router.get("/cameras/{camera_id}/stream.m3u8")
+@Redis503()  # 去重键 / 状态 / want / 审计节流都在 Redis:它故障时 503,不 500(L163)
 def get_playlist(
     camera_id: UUID,
     request: Request,

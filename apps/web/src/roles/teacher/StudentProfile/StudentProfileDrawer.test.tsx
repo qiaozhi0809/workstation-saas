@@ -21,6 +21,11 @@ vi.mock('@/shared/api/growth', () => ({
 vi.mock('@/shared/api/reviews', () => ({
   reviewsApi: { listForStudent: vi.fn(), revokeItem: vi.fn(), summary: vi.fn() },
 }))
+// 及格 / 优秀比例固定为默认值,不依赖 /school/grading 的真实请求失败后回退
+vi.mock('@/shared/hooks/useGrading', async () => {
+  const { DEFAULT_GRADING } = await import('@/shared/lib/grades')
+  return { useGrading: () => DEFAULT_GRADING }
+})
 
 const student = {
   id: 's1',

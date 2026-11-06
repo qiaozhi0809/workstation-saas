@@ -122,10 +122,17 @@ expect_reject manifest多出文件键 "$TMP/bad/manextra.tar.gz" "不是本系�
 tamper_backup "$GOOD" "$TMP/bad/caddygarbage.tar.gz" caddygarbage
 expect_reject caddy数据是垃圾但sha自洽 "$TMP/bad/caddygarbage.tar.gz" "caddy.tar 不是有效的归档" --yes
 
-# 校验阶段全过、pg_restore 才失败:报错原因与"校验和不符"不同;临时库被清;服务全程在线(expect_reject 里查 app 的 StartedAt)
+# 校验阶段全过、pg_restore 才失败:报错原因与"校验和不符"不同;临时库被清;服务全程在线(expect_reject 里查 app 的 StartedAt)。
+# 1.0.0 起 db.dump 先过 pg_restore -l(L188):不是 pg_dump 归档、被截断的在建临时库之前就被拒
 tamper_backup "$GOOD" "$TMP/bad/dbcorrupt.tar.gz" dbcorrupt
-expect_reject db数据损坏但sha自洽 "$TMP/bad/dbcorrupt.tar.gz" "pg_restore 失败" --yes
-grep -q '校验和不符' "$TMP/reject-db数据损坏但sha自洽.log" && fail "db数据损坏但sha自洽:不应报校验和不符(原因应是 pg_restore 失败)"
+expect_reject db数据损坏但sha自洽 "$TMP/bad/dbcorrupt.tar.gz" "pg_restore" --yes
+grep -q '校验和不符' "$TMP/reject-db数据损坏但sha自洽.log" && fail "db数据损坏但sha自洽:不应报校验和不符(原因应是 pg_restore 读不出)"
+tamper_backup "$GOOD" "$TMP/bad/dbtrunc.tar.gz" dbtrunc
+expect_reject db数据被截断但sha自洽 "$TMP/bad/dbtrunc.tar.gz" "被截断" --yes
+grep -q '校验和不符' "$TMP/reject-db数据被截断但sha自洽.log" && fail "db数据被截断:不应报校验和不符(原因应是 pg_restore 读不出)"
+# manifest 说有 caddy.tar(included)而包里没有:清单与内容不一致
+tamper_backup "$GOOD" "$TMP/bad/nocaddy.tar.gz" nocaddy
+expect_reject manifest含caddy但包里没有 "$TMP/bad/nocaddy.tar.gz" "文件清单与备份内容不一致" --yes
 
 echo "== 2b 换库阶段失败:临时库被占用,旧库必须自动改回"
 # 后台等 ws_restore_tmp 出现就占一个长连接,使"临时库改名为正式库"失败;此时正式库已改名为 ws_restore_old,

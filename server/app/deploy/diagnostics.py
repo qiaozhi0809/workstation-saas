@@ -33,9 +33,10 @@ _BCRYPT = re.compile(r"\$2[aby]\$\d\d\$[./A-Za-z0-9]{53}")
 _API_KEY = re.compile(r"sk-[A-Za-z0-9_\-]{16,}")
 # SQLAlchemy 异常里的 [parameters: (...)] 带真实列值(姓名、哈希……),整段抹掉;贪婪到最后一个 ]
 _SQL_PARAMS = re.compile(r"\[parameters: .*\]")
-# URL 查询参数里键名含 password/secret/token/key 的值
+# URL 查询参数里键名含 password/secret/token/key 的值;另有播放片段地址里的 u(用户)与 sig(签名)
+# 两个整键(L158):访问日志里带着它们,60 秒内就能冒充播放
 _QUERY_SECRET = re.compile(
-    r"([?&;](?:[\w\-]*(?:password|passwd|pwd|secret|token|key)[\w\-]*)=)[^&\s\"'#\\]*",
+    r"([?&;](?:[\w\-]*(?:password|passwd|pwd|secret|token|key)[\w\-]*|u|sig)=)[^&\s\"'#\\]*",
     re.IGNORECASE,
 )
 # 通用键值:键名含 secret/password/passwd/pwd/token/authorization/cookie,或以 key 结尾(key、ai_key、

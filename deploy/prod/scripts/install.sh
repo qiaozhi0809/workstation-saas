@@ -14,6 +14,7 @@
 #   WS_INSTALL_TLS(1/internal 内部证书,2/custom 自备证书,3/acme 自动申请;默认 1)
 #   WS_INSTALL_CERT、WS_INSTALL_KEY(自备证书的文件路径) WS_INSTALL_ACME_EMAIL(acme 用)
 #   WS_HTTP_PORT、WS_HTTPS_PORT(默认 80 / 443)
+#   WS_SUBNET(可选)compose 内网子网;不指定时依次试 172.30.0.0/24、172.31.0.0/24、10.250.0.0/24,跳过与本机路由重叠的(L186)
 # 其他开关:
 #   WS_INSTALL_MIN_DISK_GB 磁盘可用空间门槛(默认 20,只在测试里下调)
 #   WS_INSTALL_HEALTH_TIMEOUT 等应用就绪的秒数(默认 180,只在测试里下调)
@@ -26,6 +27,9 @@
 set +x
 unset BASH_XTRACEFD
 set -euo pipefail
+
+# 首装时允许用环境变量 WS_SUBNET 指定 compose 子网;lib.sh 一 source 就会把它从环境清掉(只认 .env),所以先收进变量
+INSTALL_SUBNET_ENV="${WS_SUBNET:-}"
 
 # shellcheck source-path=SCRIPTDIR
 # shellcheck source=lib.sh
@@ -51,6 +55,9 @@ TLS_MODE=""
 ACME_EMAIL=""
 CERT_SRC=""
 KEY_SRC=""
+SUBNET=""
+# compose 内网子网的候选(L186):学校常用 172.16–31 做校园网 / 摄像头 VLAN,172.30 冲突时依次换下一个
+SUBNET_CANDIDATES="172.30.0.0/24 172.31.0.0/24 10.250.0.0/24"
 
 usage() {
   cat <<'USAGE'
@@ -72,7 +79,16 @@ parse_args() {
   done
 }
 
-port_in_use() { (exec 3<>"/dev/tcp/127.0.0.1/$1") >/dev/null 2>&1; }
+# port_in_use <端口>:本机有进程在监听该端口(任何地址:0.0.0.0、*、具体 IP、[::])就算占用(L200)。
+# 优先 ss -ltn 看监听表(只连 127.0.0.1 探不到绑在具体网卡地址上的监听);没有 ss 的系统退回 /dev/tcp 探测
+port_in_use() {
+  local p="$1"
+  if command -v ss >/dev/null 2>&1; then
+    ss -Hltn 2>/dev/null | awk -v p=":$p" '{ a = $4; if (substr(a, length(a) - length(p) + 1) == p) found = 1 } END { exit found ? 0 : 1 }'
+  else
+    (exec 3<>"/dev/tcp/127.0.0.1/$p") >/dev/null 2>&1
+  fi
+}
 
 check_os() {
   local id="" ver=""
@@ -234,6 +250,46 @@ collect_site_inputs() {
   esac
 }
 
+# 选 compose 内网子网(L186),结果放 SUBNET:
+#   1) 环境变量 WS_SUBNET 指定 → 用它(与本机网段重叠只告警,指定即明确);但本项目的 compose 网络已存在且子网不同时停下:
+#      compose up 会复用旧网络,.env 里却写了另一个,两者对不上(先 docker compose down 删掉旧网络再装);
+#   2) 本项目的 compose 网络已存在(上次安装没清干净)→ 沿用它的子网,避免 compose 复用旧网络而 .env 写了另一个;
+#   3) 否则按候选顺序取第一个不与本机路由、其他 docker 网络重叠的;都重叠就停下让管理员指定。
+choose_subnet() {
+  local known existing cand hit
+  known="$( { host_routes; docker_subnets; } | sort -u )"
+  existing="$(compose_network_subnet)"
+  if [ -n "$INSTALL_SUBNET_ENV" ]; then
+    cidr_valid "$INSTALL_SUBNET_ENV" || die "WS_SUBNET 不是合法的 IPv4 网段(应形如 172.30.0.0/24,主机位为 0):$INSTALL_SUBNET_ENV"
+    SUBNET="$INSTALL_SUBNET_ENV"
+    if [ -n "$existing" ] && [ "$existing" != "$SUBNET" ]; then
+      die "本项目的 compose 网络 ws-net 已存在,现在的子网是 $existing,与指定的 WS_SUBNET=$SUBNET 不同;继续装会让 .env 与实际网络对不上。请先执行 docker compose -p ${WS_COMPOSE_PROJECT:-workstation} --project-directory '$DEPLOY_DIR' down 删掉旧网络(数据不受影响),或不指定 WS_SUBNET 沿用 $existing"
+    fi
+    hit="$(first_overlap "$SUBNET" "$known")"
+    if [ -n "$hit" ]; then
+      log_warn "指定的 WS_SUBNET=$SUBNET 与本机网段 $hit 重叠,容器可能到不了该网段里的摄像头;按指定值继续"
+    else
+      log_info "compose 内网子网(WS_SUBNET 指定):$SUBNET"
+    fi
+    return 0
+  fi
+  if [ -n "$existing" ]; then
+    SUBNET="$existing"
+    log_info "沿用已存在的 compose 网络子网:$SUBNET"
+    return 0
+  fi
+  for cand in $SUBNET_CANDIDATES; do
+    hit="$(first_overlap "$cand" "$known")"
+    if [ -z "$hit" ]; then
+      SUBNET="$cand"
+      log_info "compose 内网子网:$SUBNET(未与本机网段重叠)"
+      return 0
+    fi
+    log_warn "候选子网 $cand 与本机网段 $hit 重叠,换下一个"
+  done
+  die "候选子网($SUBNET_CANDIDATES)都与本机网段重叠。请用环境变量 WS_SUBNET 指定一个不与校园网、摄像头网段重叠的 /24 网段(如 WS_SUBNET=10.251.0.0/24)后重试"
+}
+
 load_images() {
   local version tar
   version="$(tr -d '[:space:]' <"$DEPLOY_DIR/VERSION")"
@@ -277,6 +333,9 @@ generate_env() {
   set_env WS_DATABASE_URL "postgresql+psycopg://workstation:${pg}@postgres:5432/workstation" "$tmp"
   set_env WS_JWT_SECRET "$(rand_secret 48)" "$tmp"
   set_env WS_MASTER_KEY "$(rand_secret 32)" "$tmp"
+  # 子网与可信代理网段写成同一个值(L186):应用只采信来自 compose 内网(即 Caddy)的 X-Forwarded-For
+  set_env WS_SUBNET "$SUBNET" "$tmp"
+  set_env WS_TRUSTED_PROXIES "$SUBNET" "$tmp"
   set_env WS_SITE_ADDRESS "$SITE" "$tmp"
   set_env WS_TLS_MODE "$TLS_MODE" "$tmp"
   set_env WS_ACME_EMAIL "$ACME_EMAIL" "$tmp"
@@ -297,11 +356,25 @@ check_env_complete() {
   # 失败即关(L167 / L177):WS_ENV 必须显式写 prod,WS_TRUSTED_PROXIES 为空时应用拒绝启动;它们不是密钥,照 .env.example 补上即可
   for k in WS_ENV WS_TRUSTED_PROXIES; do
     [ -n "$(read_env "$k")" ] \
-      || die ".env 里的 $k 为空;请参照 .env.example 补上(WS_ENV=prod;WS_TRUSTED_PROXIES 必须等于 docker-compose.yml 里 ws-net 的子网,例如 172.30.0.0/24)"
+      || die ".env 里的 $k 为空;请参照 .env.example 补上(WS_ENV=prod;WS_TRUSTED_PROXIES 必须包含 compose 子网 WS_SUBNET,例如 172.30.0.0/24)"
   done
   case "$(read_env WS_DATABASE_URL)" in
     *workstation:@*|"") die ".env 里的 WS_DATABASE_URL 缺少数据库密码,.env 可能被损坏;请从最近一次备份恢复 .env" ;;
   esac
+  # L207:可信代理网段必须包含 compose 子网,否则 Caddy 转来的来源地址一律不采信、所有人都看不了摄像头。
+  # 老 .env(1.0.0 之前安装)没有 WS_SUBNET,此时 compose 用默认的 172.30.0.0/24
+  local subnet tp existing
+  subnet="$(read_env WS_SUBNET)"
+  [ -n "$subnet" ] || subnet="172.30.0.0/24"
+  cidr_valid "$subnet" || die ".env 里的 WS_SUBNET 不是合法的 IPv4 网段(应形如 172.30.0.0/24):$subnet"
+  tp="$(read_env WS_TRUSTED_PROXIES)"
+  trusted_proxies_cover "$tp" "$subnet" \
+    || die ".env 里的 WS_TRUSTED_PROXIES($tp)不包含 compose 子网 $subnet(WS_SUBNET):Caddy 转来的来源地址不会被采信,所有人都看不了摄像头。请把 $subnet 加进 WS_TRUSTED_PROXIES(逗号分隔)后重试"
+  # 改了 WS_SUBNET 却没有 docker compose down:已存在的网络仍是旧子网,compose up 不会重建它
+  existing="$(compose_network_subnet)"
+  if [ -n "$existing" ] && [ "$existing" != "$subnet" ]; then
+    die "compose 网络 ws-net 现在的子网是 $existing,而 .env 的 WS_SUBNET 是 $subnet。改子网需要先执行 docker compose -p ${WS_COMPOSE_PROJECT:-workstation} --project-directory '$DEPLOY_DIR' down(数据不受影响),再重新运行本脚本"
+  fi
 }
 
 prepare_dirs() {
@@ -359,36 +432,23 @@ init_school() {
   esac
 }
 
-# 写单元文件并启用定时器;任何一步失败返回非 0(调用者降级为 crontab 提示)
-enable_backup_timer() {
-  local unit content unit_dir pct='%' dollar='$'
-  shopt -u patsub_replacement 2>/dev/null || true
-  unit_dir="${DEPLOY_DIR//$pct/$pct$pct}"
-  unit_dir="${unit_dir//$dollar/$dollar$dollar}"
-  for unit in workstation-backup.service workstation-backup.timer; do
-    [ -f "$DEPLOY_DIR/systemd/$unit" ] || { log_warn "没有找到 systemd 单元文件 systemd/$unit"; return 1; }
-  done
-  for unit in workstation-backup.service workstation-backup.timer; do
-    # 单元模板里的 @DEPLOY_DIR@ 替换为本部署目录
-    # systemd 里 % 与 $ 有特殊含义,写进单元前转义;bash 5.2 的替换串里 & 也有特殊含义,先关掉(install 已拒绝含这些字符的目录,这里是双保险)
-    content="$(<"$DEPLOY_DIR/systemd/$unit")"
-    printf '%s\n' "${content//@DEPLOY_DIR@/$unit_dir}" >"/etc/systemd/system/$unit" || return 1
-  done
-  systemctl daemon-reload || return 1
-  systemctl enable --now workstation-backup.timer || return 1
-}
-
+# 写单元文件并启用定时器(lib.sh 的 write_backup_timer_units:模板里的 @DEPLOY_DIR@ 换成本部署目录,@TZ@ 换成 .env 的 TZ,
+# L184:定时器按学校时区,不按服务器的 UTC);失败降级为 crontab 提示。升级成功后由 upgrade.sh 用同一函数重写(I-1)。
 install_backup_timer() {
-  if [ "$(id -u)" -eq 0 ] && command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
-    if enable_backup_timer; then
-      log_info "已启用每日 02:30 自动备份(systemd 定时器 workstation-backup.timer)"
+  local tz
+  tz="$(backup_timezone)"
+  if [ "$(id -u)" -eq 0 ] && systemd_available; then
+    if write_backup_timer_units; then
+      log_info "已启用每日 02:30($tz)自动备份(systemd 定时器 workstation-backup.timer)"
       return 0
     fi
     log_warn "systemd 定时器没有装好(上面是原因),改用 crontab:"
   else
-    log_warn "未安装自动备份定时器(非 root 或没有 systemd)。请手动添加 crontab(crontab -e):"
+    log_warn "未安装自动备份定时器(非 root 或没有 systemd)。请手动添加 crontab(crontab -e),日志交给 syslog / journal 轮转(L201):"
   fi
-  printf '    30 2 * * * cd %q && ./scripts/backup.sh >> data/logs/backup.log 2>&1\n' "$DEPLOY_DIR"
+  printf '    CRON_TZ=%s\n' "$tz"
+  printf '    30 2 * * * cd %q && ./scripts/backup.sh 2>&1 | logger -t workstation-backup\n' "$DEPLOY_DIR"
+  printf '  (CRON_TZ 让 02:30 按学校时区计;服务器系统时区就是 %s 时可省略。查看日志:journalctl -t workstation-backup)\n' "$tz"
 }
 
 export_root_ca() {
@@ -422,6 +482,12 @@ print_summary() {
   fi
   printf '  备份目录:%s/backups\n' "$DEPLOY_DIR"
   printf '  注意:%s 里有主密钥,请连同备份一起妥善保管,不要上传到外网\n' ".env"
+  # L183:sudo / 非 sudo 混用会让另一个用户撞上锁目录与 600 文件;以后所有脚本都用现在这个用户
+  if [ "$(id -u)" -eq 0 ]; then
+    printf '  以后的备份、恢复、升级、回退请都用 root 执行(sudo ./scripts/…):本次安装是 root 做的,文件属主都是 root\n'
+  else
+    printf '  以后的备份、恢复、升级、回退请都用当前用户 %s 执行,不要加 sudo:文件属主都是这个用户\n' "$(id -un)"
+  fi
 }
 
 main() {
@@ -437,11 +503,21 @@ main() {
   esac
   [ -f "$DEPLOY_DIR/VERSION" ] || die "部署目录里缺少 VERSION 文件,请在解开的离线包目录里运行"
   [ -f "$DEPLOY_DIR/docker-compose.yml" ] || die "部署目录里缺少 docker-compose.yml"
+  # 已安装时必须是安装者本人(L183;要在加锁之前判,否则另一个用户会撞上锁目录报成"正在进行");
+  # 与备份 / 恢复 / 升级互斥(L200):锁由 EXIT trap 的 lib_cleanup 释放
+  require_same_user
+  acquire_lock
 
   check_os
   check_docker
 
   if [ -f "$ENV_FILE" ]; then
+    # I-2:上次升级在覆盖文件之后中断(断电 / kill -9)时状态文件还在。本脚本若照常"确保服务已启动",会用新 compose 与新
+    # WS_VERSION 把新版起来、应用自动迁移数据库,而状态文件仍留着——下次升级会让人去 rollback.sh,届时数据库已被迁移、
+    # 只剩丢数据的恢复一条路。所以这里停下,把处置交给 upgrade.sh / rollback.sh(README 第 9 节「升级中断」)。
+    if [ -f "$DEPLOY_DIR/backups/.ws-upgrade-state" ]; then
+      die "上次升级($(read_env OLD_VERSION "$DEPLOY_DIR/backups/.ws-upgrade-state") → $(read_env NEW_VERSION "$DEPLOY_DIR/backups/.ws-upgrade-state"))在覆盖程序文件之后中断,还没有确认完成;本脚本不会在这种状态下启动服务。请先二选一:./scripts/rollback.sh 回到旧版本,或重新运行同一个离线包的 ./scripts/upgrade.sh。如果已确认新版本在正常运行(docker compose ps 全部 Up、能登录),可删除 backups/.ws-upgrade-state 后重试"
+    fi
     # R9:.env 存在即视为已安装,绝不重新生成密钥
     log_info "检测到 .env:系统已安装,不会重新生成密钥,只确保服务已启动"
     HTTP_PORT="$(read_env WS_HTTP_PORT)"; HTTPS_PORT="$(read_env WS_HTTPS_PORT)"
@@ -468,6 +544,7 @@ main() {
     check_port_number WS_HTTPS_PORT "$HTTPS_PORT"
     check_disk
     check_ports "$HTTP_PORT" "$HTTPS_PORT"
+    choose_subnet
     collect_school_inputs
     collect_site_inputs
     load_images

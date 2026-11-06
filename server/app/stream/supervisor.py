@@ -87,6 +87,7 @@ class Supervisor:
         ffmpeg_bin: str = "ffmpeg",
         master_key: bytes,
         allow_loopback: bool = False,
+        denied_networks: source.Networks = (),
     ) -> None:
         self._db_factory = db_factory
         self._redis = redis
@@ -95,6 +96,8 @@ class Supervisor:
         self._bin = ffmpeg_bin
         self._key = master_key
         self._allow_loopback = allow_loopback
+        # 可信代理 / compose 子网:解析到这里的摄像头地址拒绝拉流(L159,与保存时同口径)
+        self._denied = tuple(denied_networks)
         self._streams: dict[UUID, _Stream] = {}
         self._stopping = asyncio.Event()
         self._lock = (
@@ -169,13 +172,14 @@ class Supervisor:
             st.next_retry_at = now + 5
             await self._set_error(cid, st, "摄像头不存在或已停用")
             return
-        if not await source.host_is_lan(row, allow_loopback=self._allow_loopback):
+        ip = await source.resolve_lan(row, allow_loopback=self._allow_loopback, denied=self._denied)
+        if ip is None:
             st.next_retry_at = now + 60
             log.warning("refuse non-LAN camera %s", cid)
             await self._set_error(cid, st, "摄像头地址不在内网,已拒绝拉流")
             return
         try:
-            url, st.secrets = source.stream_url(row, self._key)
+            url, st.secrets = source.stream_url(row, self._key, pin_ip=ip)
         except crypto.CryptoError:
             st.next_retry_at = now + 60
             await self._set_error(cid, st, "摄像头凭据无法解密(主密钥是否改过?)")
@@ -328,7 +332,9 @@ class Supervisor:
         """全部登记的摄像头里,地址没解析到内网的主机名(不含凭据)写进 ws:cam:public_hosts。"""
         hosts: set[str] = set()
         for row in await source.load_all(self._db_factory):
-            if not await source.host_is_lan(row, allow_loopback=self._allow_loopback):
+            if not await source.host_is_lan(
+                row, allow_loopback=self._allow_loopback, denied=self._denied
+            ):
                 hosts.add(lan.url_host(row.url) or "(无法解析)")
         result = sorted(hosts)
         await self._redis.set(PUBLIC_HOSTS_KEY, json.dumps(result, ensure_ascii=False))

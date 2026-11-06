@@ -301,3 +301,14 @@ JOIN students s ON s.mk = v.mk;
 
 -- S0001 已有 M2c 种子里的"表扬"成长记录(f0000001);S0002 已有手写评语(parent_visible 默认 true)。
 -- 不再新增,避免改变 test_comments / test_growth 对种子条数的断言。
+
+-- M5d:种子账号都是"已经在用"的老账号,不是新老师 / 新家长——三种语境的首次引导一律记为已看过,
+-- 否则 E2E 第一次登录会被欢迎页 / 首次说明卡挡住(欢迎页本身的 E2E 用新建账号验证)。
+INSERT INTO user_preferences (user_id, onboarded)
+SELECT u.id, jsonb_build_object(
+  'teacher', '2026-09-01T00:00:00+08:00',
+  'parent',  '2026-09-01T00:00:00+08:00',
+  'admin',   '2026-09-01T00:00:00+08:00')
+FROM users u
+WHERE u.school_id = '11111111-1111-1111-1111-111111111111'
+ON CONFLICT (user_id) DO UPDATE SET onboarded = user_preferences.onboarded || EXCLUDED.onboarded;

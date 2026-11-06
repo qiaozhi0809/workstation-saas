@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import contextlib
+import ipaddress
 import json
 import logging
 import os
@@ -25,7 +26,7 @@ from sqlalchemy.orm import Session
 from app import crypto
 from app.domain.cameras import lan as backend_lan
 from app.models.cameras import Camera
-from app.stream import ffmpeg, lan, probe
+from app.stream import ffmpeg, lan, probe, source
 from app.stream.supervisor import PUBLIC_HOSTS_KEY, STATE_PREFIX, WANT_PREFIX, Supervisor
 from tests.conftest import TEST_JWT_SECRET  # noqa: F401  (确保 conftest 已加载)
 from tests.seed_ids import SCHOOL_ID
@@ -94,6 +95,10 @@ if "badjson" in url:
     sys.exit(0)
 if "slowprobe" in url:
     time.sleep(30)
+if "audioonly" in url:  # 合法 JSON、只有音频流
+    print(json.dumps({{"streams": [{{"codec_type": "audio", "codec_name": "aac"}}],
+                       "format": {{"filename": url, "bit_rate": "64000"}}}}))
+    sys.exit(0)
 if "hevc" in url:
     video = {{"codec_type": "video", "codec_name": "hevc", "width": 2560, "height": 1440,
              "r_frame_rate": "20/1"}}
@@ -244,6 +249,23 @@ def test_credentials_url_encodes_and_mask_hides():
     masked = ffmpeg.mask_text(f"open {url} failed; password=hunter2&a=1", ("p@ss:/word",))
     assert "p%40ss" not in masked and "cam%20user" not in masked and "hunter2" not in masked
     assert "***" in masked
+
+
+@pytest.mark.parametrize(
+    "password",
+    ["p/w", "p?w", "p#w", "p@w", "a/b?c#d@e", "p%2Fw", "p/w?x=1&y#f"],
+)
+def test_mask_text_password_with_url_delimiters(password):
+    """L164:口令里带 / ? # @ 的地址(未编码地写进错误文本)也要整段打码,不能只打到第一个分隔符。"""
+    url = f"rtsp://camuser:{password}@10.0.0.2:554/live?token=t1"
+    for text in (url, f"[rtsp] Error opening {url}: Connection refused"):
+        masked = ffmpeg.mask_text(text)
+        assert password not in masked and "camuser" not in masked, masked
+        assert "***@10.0.0.2:554/live" in masked and "t1" not in masked
+    assert ffmpeg.mask_url(url) == "rtsp://***@10.0.0.2:554/live?token=***"
+    # 没有 userinfo 的地址不受影响;文本里后面出现的 @ 不会把主机吞掉
+    plain = "rtsp://10.0.0.2/live 失败,联系 admin@school"
+    assert ffmpeg.mask_text(plain) == plain
 
 
 def test_hls_flags_include_discont_start(tmp_path):
@@ -653,6 +675,127 @@ def test_worker_refuses_public_host(db, redis_url, fake_ffmpeg, hls_root, tmp_pa
     run_async(redis_url, body)
 
 
+def _fake_dns(monkeypatch, table: dict[str, str]) -> None:
+    """只伪造表里的名字;IP 字面量走真实实现(不联网)。"""
+    real_gai = socket.getaddrinfo
+
+    def fake_gai(host, *a, **k):
+        if host in table:
+            return [(2, 1, 6, "", (table[host], 0))]
+        return real_gai(host, *a, **k)
+
+    monkeypatch.setattr(backend_lan, "socket", SimpleNamespace(getaddrinfo=fake_gai))
+
+
+def test_source_resolves_through_stream_lan_facade(db, monkeypatch):
+    """复审 Minor 8:worker 侧只认 app.stream.lan 这一道门,source 不直接 import 后端的 lan 模块。"""
+    assert "resolve_lan_ips" in lan.__all__ and "IPNetwork" in lan.__all__
+    assert not hasattr(source, "resolve_lan_ips")  # 没有绕过门面的直接引用
+    monkeypatch.setattr(lan, "resolve_lan_ips", lambda host, **kw: ["10.0.0.77"])
+    row = source._row(make_camera(db, "rtsp://cam.example.test/x"))
+    assert asyncio.run(source.resolve_lan(row, allow_loopback=False)) == "10.0.0.77"
+
+
+def test_stream_url_pins_resolved_ip(db, monkeypatch):
+    """L155:拉流地址里的主机换成判定过的 IP(仅 rtsp://),ffmpeg 不再自己解析一次(DNS 重绑定)。"""
+    _fake_dns(monkeypatch, {"cam.example.test": "10.0.0.9"})
+    row = source._row(make_camera(db, "rtsp://cam.example.test:554/live?x=1"))
+    ip = asyncio.run(source.resolve_lan(row, allow_loopback=False))
+    assert ip == "10.0.0.9"
+    url, secrets = source.stream_url(row, KEY, pin_ip=ip)
+    assert url == f"rtsp://{USER}:{PASSWORD}@10.0.0.9:554/live?x=1"
+    assert url in secrets
+    # IPv6 结果加方括号;不钉(None)就是原样
+    assert source.stream_url(row, KEY, pin_ip="fd00::9")[0] == (
+        f"rtsp://{USER}:{PASSWORD}@[fd00::9]:554/live?x=1"
+    )
+    assert (
+        source.stream_url(row, KEY)[0] == f"rtsp://{USER}:{PASSWORD}@cam.example.test:554/live?x=1"
+    )
+    # rtsps:// 保留主机名(TLS 证书按主机名校验),判定照样做
+    srow = source._row(make_camera(db, "rtsps://cam.example.test/live"))
+    assert asyncio.run(source.resolve_lan(srow, allow_loopback=False)) == "10.0.0.9"
+    assert source.stream_url(srow, KEY, pin_ip="10.0.0.9")[0] == (
+        f"rtsps://{USER}:{PASSWORD}@cam.example.test/live"
+    )
+    # 不是内网 / 解析失败 → None
+    _fake_dns(monkeypatch, {"cam.example.test": "203.0.113.7"})
+    assert asyncio.run(source.resolve_lan(row, allow_loopback=False)) is None
+    nx = source._row(make_camera(db, "rtsp://nx.example.test/live"))
+    monkeypatch.setattr(
+        backend_lan,
+        "socket",
+        SimpleNamespace(getaddrinfo=lambda *a, **k: (_ for _ in ()).throw(socket.gaierror())),
+    )
+    assert asyncio.run(source.resolve_lan(nx, allow_loopback=False)) is None
+
+
+def test_worker_and_probe_use_pinned_ip(
+    db, redis_url, fake_ffmpeg, fake_ffprobe, hls_root, tmp_path, monkeypatch
+):
+    _fake_dns(monkeypatch, {"cam.example.test": "10.0.0.9"})
+    cam = make_camera(db, "rtsp://cam.example.test/live")
+
+    async def body(redis):
+        sup = make_supervisor(db, redis, fake_ffmpeg, hls_root)
+        await want(redis, cam)
+        await sup.tick(1)
+        await settle(lambda: len(calls(tmp_path)) == 1)
+        argv = calls(tmp_path)[0]
+        assert f"-i rtsp://{USER}:{PASSWORD}@10.0.0.9/live" in argv
+        assert "cam.example.test" not in argv
+        await sup.shutdown()
+        r, raw = await _ask(redis, db, cam, fake_ffmpeg)
+        assert r["ok"] is True
+        (probe_argv,) = probe_calls(tmp_path)
+        assert "@10.0.0.9/live" in probe_argv and "cam.example.test" not in probe_argv
+        assert PASSWORD not in raw and "10.0.0.9" not in raw  # 回写里没有地址,更没有凭据
+
+    run_async(redis_url, body)
+
+
+def test_worker_refuses_trusted_network_host(db, redis_url, fake_ffmpeg, hls_root, tmp_path):
+    """L159:worker 与保存时同口径——解析到可信代理 / compose 子网的地址拒绝拉流、进自检名单。"""
+    denied = [ipaddress.ip_network("172.30.0.0/24")]
+    inside = make_camera(db, "rtsp://172.30.0.5:5432/x")
+    ok = make_camera(db, "rtsp://192.168.1.10/live")
+
+    async def body(redis):
+        sup = make_supervisor(db, redis, fake_ffmpeg, hls_root, denied_networks=denied)
+        await want(redis, inside)
+        await want(redis, ok)
+        await sup.tick(1)
+        await settle(lambda: len(calls(tmp_path)) == 1)
+        assert "192.168.1.10" in calls(tmp_path)[0] and "172.30.0.5" not in calls(tmp_path)[0]
+        st = await state(redis, inside)
+        assert st["status"] == "error" and "内网" in st["last_error"]
+        assert await sup.refresh_public_hosts() == ["172.30.0.5"]
+        await sup.shutdown()
+        key = f"{probe.REPLY_PREFIX}denied"
+
+        @contextmanager
+        def scope():
+            yield db
+
+        await probe.handle_probe(
+            json.dumps({"id": str(inside.id), "reply_key": key}),
+            redis,
+            scope,
+            ffmpeg_bin=str(fake_ffmpeg),
+            master_key=KEY,
+            allow_loopback=False,
+            denied_networks=denied,
+        )
+        r = json.loads(await redis.get(key))
+        assert r["ok"] is False and "内网" in r["message"]
+        assert len(calls(tmp_path)) == 1  # 没有为它起过 ffmpeg
+        # 没配拒绝网段(开发环境)时 172.30.0.5 只是普通私网地址
+        plain = make_supervisor(db, redis, fake_ffmpeg, hls_root)
+        assert await plain.refresh_public_hosts() == []
+
+    run_async(redis_url, body)
+
+
 def test_logs_mask_credentials(db, redis_url, fake_ffmpeg, hls_root, caplog):
     cam = make_camera(db, "rtsp://10.0.0.5/fail")
     caplog.set_level(logging.DEBUG)
@@ -827,6 +970,38 @@ def test_probe_h264_no_hint(db, redis_url, fake_ffmpeg, fake_ffprobe):
         assert "mpeg4" in r["probe"]["hint"]
 
     run_async(redis_url, body)
+
+
+NO_VIDEO_PROBE = {
+    "video_codec": None,
+    "width": None,
+    "height": None,
+    "fps": None,
+    "bitrate_kbps": None,
+    "audio_codec": "aac",
+    "browser_playable": False,
+    "hint": "没有探测到视频流",
+}
+
+
+def test_probe_without_video_stream_is_an_object(db, redis_url, fake_ffmpeg, fake_ffprobe):
+    """L219:ffprobe 输出合法但没有视频流 → probe 是对象(不可播 + 提示),与"探测失败"(null)分开。"""
+    cam = make_camera(db, "rtsp://10.0.0.5/audioonly")
+
+    async def body(redis):
+        r, raw = await _ask(redis, db, cam, fake_ffmpeg)
+        assert r["probe"] == NO_VIDEO_PROBE
+        assert PASSWORD not in raw and USER not in raw
+
+    run_async(redis_url, body)
+    audio = {"codec_type": "audio", "codec_name": "aac"}
+    assert probe.parse_ffprobe({"streams": [audio], "format": {"bit_rate": "64000"}}) == {
+        k: v for k, v in NO_VIDEO_PROBE.items() if k not in ("browser_playable", "hint")
+    }
+    assert probe.parse_ffprobe({"streams": []})["video_codec"] is None
+    # 结构不对才是 None(探测失败)
+    assert probe.parse_ffprobe({}) is None and probe.parse_ffprobe("x") is None
+    assert probe.parse_ffprobe({"streams": "nope"}) is None
 
 
 @pytest.mark.parametrize("path", ["brokenprobe", "badjson", "slowprobe", "noprobe"])
@@ -1030,6 +1205,96 @@ def test_reset_states_and_clear_hls_on_start(db, redis_url, fake_ffmpeg, hls_roo
         assert await redis.exists(f"{STATE_PREFIX}{stale}") == 0
         sup.request_stop()
         await asyncio.wait_for(task, 5)
+
+    run_async(redis_url, body)
+
+
+def test_worker_redis_client_has_socket_timeouts(redis_url):
+    """L196:worker 的 Redis 客户端带 socket_timeout / socket_connect_timeout,
+    Redis 挂住不会让 tick 永久等待。"""
+    from app.stream import __main__ as worker_main
+
+    client = worker_main.make_redis(redis_url)
+    try:
+        kw = client.connection_pool.connection_kwargs
+        assert kw["socket_timeout"] == 5 and kw["socket_connect_timeout"] == 5
+        assert kw["decode_responses"] is True
+    finally:
+        asyncio.run(client.aclose())
+
+
+def test_tick_survives_redis_timeout(db, redis_url, fake_ffmpeg, hls_root, tmp_path, caplog):
+    """L196:Redis 超时 / 断开时 tick 只告警,主循环与心跳继续、已起的流不受影响;恢复后照常。"""
+    from redis import exceptions as redis_exceptions
+
+    caplog.set_level(logging.WARNING, logger="app.stream")
+    cam = make_camera(db)
+    heartbeat = tmp_path / "alive"
+
+    async def body(redis):
+        sup = make_supervisor(db, redis, fake_ffmpeg, hls_root)
+        await want(redis, cam)
+        task = asyncio.create_task(sup.run(heartbeat))
+        await settle(lambda: len(calls(tmp_path)) == 1)
+        proc = sup._streams[cam.id].proc
+        real_scan, broken = redis.scan_iter, True
+
+        def scan_iter(*a, **k):
+            if broken:
+                raise redis_exceptions.TimeoutError("Timeout reading from socket")
+            return real_scan(*a, **k)
+
+        redis.scan_iter = scan_iter
+        try:
+            before = heartbeat.stat().st_mtime
+            await asyncio.sleep(2.3)
+            assert not task.done()
+            assert heartbeat.stat().st_mtime > before  # 心跳没停
+            assert "tick failed: TimeoutError" in caplog.text
+            assert proc.returncode is None and cam.id in sup._streams  # 流没被动过
+            broken = False
+            await redis.delete(f"{WANT_PREFIX}{cam.id}")  # 恢复后 tick 又能正常停流
+            await settle(lambda: proc.returncode is not None, 5)
+        finally:
+            redis.scan_iter = real_scan
+            sup.request_stop()
+            await asyncio.wait_for(task, 5)
+
+    run_async(redis_url, body)
+
+
+def test_reload_loop_idle_with_socket_timeout(
+    db, redis_url, fake_ffmpeg, hls_root, tmp_path, caplog
+):
+    """L196:客户端带 socket_timeout 后,空闲的 reload 订阅不能因读超时被当成断线(那会停掉全部流)。"""
+    caplog.set_level(logging.WARNING, logger="app.stream")
+    cam = make_camera(db)
+
+    async def body(_redis):
+        redis = AsyncRedis.from_url(
+            redis_url, decode_responses=True, socket_timeout=0.3, socket_connect_timeout=0.3
+        )
+        try:
+            sup = make_supervisor(db, redis, fake_ffmpeg, hls_root)
+            await want(redis, cam)
+            await sup.tick(1)
+            await settle(lambda: len(calls(tmp_path)) == 1)
+            proc = sup._streams[cam.id].proc
+            task = asyncio.create_task(sup._reload_loop())
+            await asyncio.sleep(1.2)  # 远超 socket_timeout 的空闲
+            assert proc.returncode is None and cam.id in sup._streams
+            assert "reload subscription lost" not in caplog.text
+            for _ in range(50):  # 订阅仍然活着:一条 reload 能停掉旧进程
+                await redis.publish("ws:cam:reload", str(cam.id))
+                if proc.returncode is not None:
+                    break
+                await asyncio.sleep(0.1)
+            assert proc.returncode is not None
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        finally:
+            await redis.aclose()
 
     run_async(redis_url, body)
 

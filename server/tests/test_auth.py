@@ -8,7 +8,7 @@ from jwt.warnings import InsecureKeyLengthWarning
 from sqlalchemy import func, select
 
 from app import clock
-from app.auth import sessions
+from app.auth import service, sessions
 from app.auth.tokens import decode_access_token, issue_access_token
 from app.domain.school_settings.schemas import SecuritySettings
 from app.domain.school_settings.service import save_security
@@ -111,12 +111,22 @@ def test_validation_error_does_not_echo_input(client):
 
 
 def test_lockout_lasts_full_window_after_final_failure(client, settings, redis_client):
-    key = f"ws:login_fail:{SCHOOL_ID}:teacher01"
+    key = service._fail_key(settings, "teacher01")
     login(client, pw="wrong")
     redis_client.expire(key, 10)
     for _ in range(4):
         login(client, pw="wrong")
     assert redis_client.ttl(key) > settings.login_lock_seconds - 5
+
+
+def test_fail_key_does_not_carry_login_name(client, settings, redis_client):
+    """复审 Minor 2:把口令误填进用户名框再按登录,原文不能在 Redis 键名里躺 login_lock_seconds。"""
+    login(client, name="Hunter2-typed-here", pw="x")
+    login(client, pw="wrong")
+    keys = redis_client.keys("ws:login_fail:*")
+    assert len(keys) == 2 and all(k.startswith(f"ws:login_fail:{SCHOOL_ID}:") for k in keys)
+    assert not any("Hunter2" in k or "teacher01" in k for k in keys)
+    assert service._fail_key(settings, "teacher01") in keys
 
 
 def test_test_settings_sign_tokens_without_key_length_warning(settings):
@@ -223,7 +233,7 @@ def test_locked_login_has_retry_after(client, settings):
 
 def test_first_failure_sets_ttl_atomically(client, settings, redis_client, monkeypatch):
     settings.login_max_failures = 5  # M5b R11:不依赖默认值
-    key = f"ws:login_fail:{SCHOOL_ID}:teacher01"
+    key = service._fail_key(settings, "teacher01")
     flags = []
     real_pipeline = redis_client.pipeline
 
@@ -243,7 +253,7 @@ def test_first_failure_sets_ttl_atomically(client, settings, redis_client, monke
 
 
 def test_nth_failure_resets_ttl(client, settings, redis_client):
-    key = f"ws:login_fail:{SCHOOL_ID}:teacher01"
+    key = service._fail_key(settings, "teacher01")
     for _ in range(settings.login_max_failures - 1):
         login(client, pw="wrong")
     redis_client.expire(key, 10)

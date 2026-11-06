@@ -7,7 +7,7 @@ from sqlalchemy import delete, select, text
 from sqlalchemy.orm import Session
 
 from app.audit.service import record
-from app.domain.exams.subjects import class_subjects
+from app.domain.exams.subjects import class_subjects, merge_subjects
 from app.domain.schools.service import active_academic_year, school_tz
 from app.domain.timetable.schemas import (
     CellInput,
@@ -40,6 +40,13 @@ def list_periods(db: Session, school_id: UUID) -> list[Period]:
     return [Period(no=r.no, starts_at=_hhmm(r.starts_at), ends_at=_hhmm(r.ends_at)) for r in rows]
 
 
+def lock_school(db: Session, school_id: UUID) -> None:
+    """作息与课表共用这一把锁(L156):删节次(save_periods)与写课表(save_class_timetable)串行,
+    写课表时读到的"已设节次"在它提交前不会被另一边删掉,不会留下引用已删节次的格子。
+    加锁顺序固定:先 School 行,再班级行。"""
+    db.execute(select(School.id).where(School.id == school_id).with_for_update())
+
+
 def save_periods(
     db: Session,
     school_id: UUID,
@@ -47,7 +54,7 @@ def save_periods(
     actor: UUID,
     request: Request | None,
 ) -> list[Period]:
-    db.execute(select(School.id).where(School.id == school_id).with_for_update())
+    lock_school(db, school_id)
     keep = {p.no for p in periods}
     in_use = db.execute(
         select(SchoolClass.name, TimetableEntry.period_no)
@@ -166,14 +173,30 @@ def defined_period_nos(db: Session, school_id: UUID) -> set[int]:
     return set(db.scalars(select(PeriodRow.no).where(PeriodRow.school_id == school_id)))
 
 
+_WEEKDAY_NAMES = "一二三四五六日"
+
+
 def resolve_cell_teacher(
-    assignments: Sequence[tuple[UUID, str, str | None]], cell: CellInput
+    assignments: Sequence[tuple[UUID, str, str | None]],
+    cell: CellInput,
+    *,
+    teacher_name: str | None = None,
 ) -> UUID | None:
-    """显式 teacher_id 必须是该班该科在任的任课老师或班主任;省略时唯一匹配才填。"""
+    """显式 teacher_id 必须是该班该科在任的任课老师或班主任;省略时唯一匹配才填。
+
+    不满足时 400 的 message 与 details 指出是哪一格、哪位老师(L211):整班保存会原样带回
+    未改格子的 teacher_id,其中某位已卸任时,管理员要能直接找到那一格改掉。"""
     if cell.teacher_id is None:
         return _auto(assignments, cell.subject)
     if not _may_teach(assignments, cell.teacher_id, cell.subject):
-        raise ApiError(400, "BAD_REQUEST", "该老师不是本班本科目在任的任课老师或班主任")
+        who = teacher_name or str(cell.teacher_id)
+        raise ApiError(
+            400,
+            "BAD_REQUEST",
+            f"星期{_WEEKDAY_NAMES[cell.weekday - 1]}第 {cell.period_no} 节:"
+            f"「{who}」不是本班本科目在任的任课老师或班主任",
+            {"weekday": cell.weekday, "period_no": cell.period_no, "teacher": who},
+        )
     return cell.teacher_id
 
 
@@ -220,20 +243,31 @@ def save_class_timetable(
 ) -> ClassTimetable:
     if cls.academic_year_id != year.id:
         raise ApiError(400, "BAD_REQUEST", "只能修改当前学年班级的课表")
+    lock_school(db, cls.school_id)  # 先 School 再班级(与 save_periods 同一把锁,L156)
     cls = lock_class(db, cls.id)
+    # 班级行已锁:顺手把还是 NULL 的 classes.subjects 按目录物化(写入口物化、读接口不写库)
+    merge_subjects(db, cls, [])
     periods = defined_period_nos(db, cls.school_id)
-    subjects = {s.name for s in class_subjects(db, cls)}
+    assignments = _assignments(db, cls.id, year.id)
+    # 可排的科目 = 本班科目(考试科目表 / 目录)∪ 本班在任老师登记的任教科目(L210):
+    # 组织架构里有"信息技术"老师、考试科目表没有这门课,也该能排进课表
+    subjects = {s.name for s in class_subjects(db, cls)} | {
+        subj for _, _, subj in assignments if subj
+    }
     seen: set[tuple[int, int]] = set()
     for c in cells:
         if c.period_no not in periods:
             raise ApiError(400, "BAD_REQUEST", f"第 {c.period_no} 节尚未在作息时间中设置")
         if c.subject not in subjects:
-            raise ApiError(400, "BAD_REQUEST", f"「{c.subject}」不是本班科目")
+            raise ApiError(400, "BAD_REQUEST", f"「{c.subject}」不是本班科目,也没有在任老师任教它")
         if (c.weekday, c.period_no) in seen:
             raise ApiError(400, "BAD_REQUEST", "同一星期同一节次不能重复安排")
         seen.add((c.weekday, c.period_no))
-    assignments = _assignments(db, cls.id, year.id)
-    resolved = [(c, resolve_cell_teacher(assignments, c)) for c in cells]
+    names = teacher_names(db, [c.teacher_id for c in cells if c.teacher_id])
+    resolved = [
+        (c, resolve_cell_teacher(assignments, c, teacher_name=names.get(c.teacher_id)))
+        for c in cells
+    ]
     replace_entries(db, cls, year, resolved)
     record(
         db,

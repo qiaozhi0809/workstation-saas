@@ -21,8 +21,9 @@ export interface UserBrief {
   contexts: Context[]
   admin_perms: AdminPerm[]
   must_change_password: boolean
-  /** 为真当且仅当 must_change_password 为真;first_login 优先 */
-  password_change_reason: 'first_login' | 'expired' | null
+  /** 为真当且仅当 must_change_password 为真;first_login 优先。
+   * 'required' 只由前端写:会话中撞到 403 PASSWORD_CHANGE_REQUIRED 而取不到服务端原因时的兜底 */
+  password_change_reason: 'first_login' | 'expired' | 'required' | null
 }
 export interface ChangePassword {
   old_password: string

@@ -4,10 +4,11 @@ import { useNavigate } from 'react-router-dom'
 import Menu, { MenuItem, MenuLabel, MenuLinkItem } from '@/shared/components/overlay/Menu'
 import { useAuthStore } from '@/shared/stores/auth'
 import type { Context } from '@/shared/types/admin'
+import AboutDialog from './AboutDialog'
 import AccountSecurityDialog from './AccountSecurityDialog'
 import ChangePasswordDialog from './ChangePasswordDialog'
 
-/** 头像菜单:首字当头像,修改密码 / 切换端 / 退出登录收在里面 */
+/** 头像菜单:首字当头像,修改密码 / 账号安全 / 切换端 / 关于 / 退出登录收在里面 */
 export default function AccountMenu({
   name,
   onLogout,
@@ -23,6 +24,7 @@ export default function AccountMenu({
   const navigate = useNavigate()
   const [pwOpen, setPwOpen] = useState(false)
   const [secOpen, setSecOpen] = useState(false)
+  const [aboutOpen, setAboutOpen] = useState(false)
   const onSwitch = (s: { to: string; context: Context }) => {
     useAuthStore.getState().setLastContext(s.context)
     navigate(s.to)
@@ -58,10 +60,12 @@ export default function AccountMenu({
             {s.label}
           </MenuItem>
         ))}
+        <MenuItem onSelect={() => setAboutOpen(true)}>关于</MenuItem>
         <MenuItem onSelect={onLogout}>退出登录</MenuItem>
       </Menu>
       <ChangePasswordDialog open={pwOpen} onClose={() => setPwOpen(false)} />
       <AccountSecurityDialog open={secOpen} onClose={() => setSecOpen(false)} />
+      <AboutDialog open={aboutOpen} onClose={() => setAboutOpen(false)} />
     </>
   )
 }

@@ -12,7 +12,7 @@ import contextlib
 import json
 import re
 import secrets
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from dataclasses import dataclass
 from functools import partial
 from typing import Any
@@ -23,8 +23,11 @@ import anyio.to_thread
 import httpx
 import structlog
 from redis import Redis
+from redis.exceptions import RedisError
 from sqlalchemy import func, update
 from sqlalchemy.orm import Session
+from starlette.responses import StreamingResponse
+from starlette.types import Receive, Scope, Send
 
 from app.ai.chats import chat_items, ordered_messages
 from app.ai.client import AIUpstreamError, ChatMessage, Delta, Usage
@@ -44,7 +47,10 @@ from app.rbac.bindings import load_bindings
 log = structlog.get_logger()
 
 LOCK_TTL = 300
+UNLOCK_ATTEMPTS = 3
+UNLOCK_RETRY_SECONDS = 0.5
 GENERIC_ERROR = "生成出错了,请稍后再试"
+SAVE_ERROR = "生成结果没能保存,请重新生成"
 
 _RELEASE = (
     "if redis.call('get', KEYS[1]) == ARGV[1] then "
@@ -169,6 +175,15 @@ def _finalize(
             except Exception:
                 log.exception("ai_save_failed", chat_id=str(ctx.chat_id))
                 s.rollback()
+                # 结果没存下来就不能对前端说 done:事件、审计都按出错;再试一次把行标为失败,
+                # 别把它留在 streaming / run("生成中")
+                state.status, state.error_code, state.error = "error", "AI_SAVE_FAILED", SAVE_ERROR
+                try:
+                    save(s, prep, state)
+                    s.flush()
+                except Exception:
+                    log.exception("ai_save_failed_again", chat_id=str(ctx.chat_id))
+                    s.rollback()
         s.execute(
             update(AiChat).where(AiChat.id == ctx.chat_id).values(updated_at=func.clock_timestamp())
         )
@@ -198,6 +213,22 @@ def _finalize(
         s.commit()
 
 
+async def _unlock(ctx: GenContext) -> None:
+    """释放对话锁;Redis 暂时不可用就重试几次,仍失败只记日志——结局已经落库,
+    不能因为放锁失败对前端改口,锁最晚随 LOCK_TTL 过期。"""
+    for attempt in range(1, UNLOCK_ATTEMPTS + 1):
+        try:
+            await anyio.to_thread.run_sync(
+                partial(release_lock, ctx.redis, ctx.lock_key, ctx.lock_token)
+            )
+            return
+        except RedisError:
+            if attempt == UNLOCK_ATTEMPTS:
+                log.exception("ai_unlock_failed", chat_id=str(ctx.chat_id), attempts=attempt)
+            else:
+                await anyio.sleep(UNLOCK_RETRY_SECONDS)
+
+
 async def _finalize_and_unlock(
     ctx: GenContext,
     prep: Prepared | None,
@@ -208,16 +239,14 @@ async def _finalize_and_unlock(
         try:
             await anyio.to_thread.run_sync(partial(_finalize, ctx, prep, state, save))
         finally:
-            await anyio.to_thread.run_sync(
-                partial(release_lock, ctx.redis, ctx.lock_key, ctx.lock_token)
-            )
+            await _unlock(ctx)
 
 
 async def generation_events(
     ctx: GenContext,
     prepare: Callable[[Session], Prepared],
     save: Callable[[Session, Prepared, GenState], None],
-) -> AsyncIterator[bytes]:
+) -> AsyncGenerator[bytes]:
     state = GenState()
     prep: Prepared | None = None
     finalized = False
@@ -246,6 +275,47 @@ async def generation_events(
     finally:
         if not finalized:
             await _finalize_and_unlock(ctx, prep, state, save)
+
+
+# ---------------------------------------------------------------- SSE 响应
+
+
+class _Started:
+    __slots__ = ("value",)
+
+    def __init__(self) -> None:
+        self.value = False
+
+
+async def _guarded(events: AsyncGenerator[bytes], started: _Started) -> AsyncIterator[bytes]:
+    started.value = True
+    async with contextlib.aclosing(events):
+        async for chunk in events:
+            yield chunk
+
+
+class GenerationResponse(StreamingResponse):
+    """生成用的 SSE 响应。正常收尾、中途停止 / 断开都由 ``generation_events`` 自己落库放锁;
+    这里只兜"生成器一次都没开始迭代"的情况——响应头发不出去(ASGI 2.4 服务器 send 抛
+    OSError)或在取第一口之前就被取消——那时生成器的 finally 根本不会跑,锁要等 LOCK_TTL
+    才过期,新一次生成会一直撞 AI_BUSY。"""
+
+    def __init__(self, ctx: GenContext, events: AsyncGenerator[bytes]) -> None:
+        self._ctx = ctx
+        self._started = _Started()
+        super().__init__(
+            _guarded(events, self._started),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            if not self._started.value:
+                with anyio.CancelScope(shield=True):
+                    await _unlock(self._ctx)
 
 
 # ---------------------------------------------------------------- reply
@@ -342,7 +412,7 @@ def save_reply(s: Session, prep: Prepared, state: GenState) -> None:
     msg.completion_tokens = state.completion_tokens
 
 
-def reply_events(ctx: GenContext, body: AiReplyIn) -> AsyncIterator[bytes]:
+def reply_events(ctx: GenContext, body: AiReplyIn) -> AsyncGenerator[bytes]:
     return generation_events(ctx, partial(prepare_reply, ctx=ctx, body=body), save_reply)
 
 
@@ -425,13 +495,14 @@ def save_item(s: Session, prep: Prepared, state: GenState) -> None:
         item.status, item.content, item.error = "wait", "", None
 
 
-def run_item_events(ctx: GenContext, item_id: UUID) -> AsyncIterator[bytes]:
+def run_item_events(ctx: GenContext, item_id: UUID) -> AsyncGenerator[bytes]:
     return generation_events(ctx, partial(prepare_item, ctx=ctx, item_id=item_id), save_item)
 
 
 __all__ = [
     "GenContext",
     "GenState",
+    "GenerationResponse",
     "Prepared",
     "acquire_lock",
     "generation_events",

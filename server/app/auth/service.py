@@ -1,5 +1,7 @@
 import base64
 import binascii
+import hashlib
+import ipaddress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Literal
@@ -13,12 +15,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import clock
-from app.audit.service import record
+from app.audit.service import _client_ip, record
 from app.auth import login_log, mfa, sessions, totp
 from app.auth.passwords import check_policy, hash_password, verify_password
 from app.auth.tokens import issue_access_token
 from app.config import Settings
 from app.crypto import CryptoError, decrypt, encrypt
+from app.domain.accounts.schemas import LOGIN_RE
+from app.domain.cameras.lan import is_lan_ip
 from app.domain.school_settings.service import get_security
 from app.domain.schools.service import active_academic_year, school_tz
 from app.errors import ApiError
@@ -125,7 +129,9 @@ class MfaChallengeResult:
 
 
 def _fail_key(settings: Settings, login_name: str) -> str:
-    return f"ws:login_fail:{settings.school_id}:{login_name}"
+    # 用户名框里误填的口令也会走到这里,键名只放摘要,原文不在 Redis 里躺 login_lock_seconds
+    digest = hashlib.sha256(login_name.encode()).hexdigest()[:32]
+    return f"ws:login_fail:{settings.school_id}:{digest}"
 
 
 # 用户不存在 / 已冻结时也跑一次同成本的 bcrypt 校验,抹平响应时间差
@@ -186,6 +192,47 @@ def _log(
         db.rollback()
         log.warning("login.log_failed", error=type(exc).__name__)
         return None
+
+
+# 不存在的用户的日志行(unknown_user / 该名字被锁后的 locked)来自未认证请求,按来源 IP 限额(L145):
+# 内网 / 可信代理网段不限(校内误输不丢记录),其余每个 IP 每小时最多这么多行;超限仍 401、仍跑假哈希
+UNKNOWN_LOG_LIMIT = 20
+UNKNOWN_LOG_WINDOW = 3600
+
+
+def _unknown_name(login_name: str) -> str:
+    """不存在的用户:登录名很可能是误填进去的密码,不符合登录名格式的一律存 ***(长度也不泄露)。"""
+    return login_name if LOGIN_RE.fullmatch(login_name) else "***"
+
+
+def _unknown_log_allowed(redis: Redis, settings: Settings, request: Request | None) -> bool:
+    ip = _client_ip(request)
+    bucket = "unknown"  # 来源不明(非法对端地址)也按失败即关计入
+    if ip is not None:
+        addr = ipaddress.ip_address(ip)
+        if is_lan_ip(ip, allow_loopback=settings.env == "dev") or any(
+            addr in net for net in settings.trusted_networks
+        ):
+            return True
+        # IPv6 一个用户常握有整个 /64,按单地址计数形同不限;IPv4 仍按单个地址
+        bucket = str(ipaddress.ip_network(f"{ip}/64", strict=False)) if addr.version == 6 else ip
+    key = f"ws:login_unknown:{bucket}"
+    pipe = redis.pipeline(transaction=True)
+    pipe.incr(key)
+    pipe.expire(key, UNKNOWN_LOG_WINDOW, nx=True)
+    return int(pipe.execute()[0]) <= UNKNOWN_LOG_LIMIT
+
+
+def _log_unknown(
+    db: Session,
+    redis: Redis,
+    settings: Settings,
+    login_name: str,
+    result: login_log.LoginOutcome,
+    request: Request | None,
+) -> None:
+    if _unknown_log_allowed(redis, settings, request):
+        _log(db, settings, None, _unknown_name(login_name), result, request)
 
 
 _REASON_TEXT = {"night": "凌晨时段", "new_network": "新的网络环境"}
@@ -288,21 +335,22 @@ def login(
         fail_key = _check_not_locked(redis, settings, login_name, "登录失败次数过多,请稍后再试")
     except ApiError:
         known = get_user_by_login(db, settings.school_id, login_name)
-        _log(db, settings, known, login_name, "locked", request)
+        if known is None:
+            _log_unknown(db, redis, settings, login_name, "locked", request)
+        else:
+            _log(db, settings, known, login_name, "locked", request)
         raise
 
     user = get_user_by_login(db, settings.school_id, login_name)
     hashed = user.password_hash if user is not None and user.status == "active" else _DUMMY_HASH
     password_ok = verify_password(password, hashed)
-    if user is None or user.status != "active" or not password_ok:
+    if user is None:
         _record_failure(redis, settings, fail_key)
-        outcome = (
-            "unknown_user"
-            if user is None
-            else "inactive"
-            if user.status != "active"
-            else "bad_password"
-        )
+        _log_unknown(db, redis, settings, login_name, "unknown_user", request)
+        raise ApiError(401, "INVALID_CREDENTIALS", "登录名或密码不正确")
+    if user.status != "active" or not password_ok:
+        _record_failure(redis, settings, fail_key)
+        outcome = "inactive" if user.status != "active" else "bad_password"
         _log(db, settings, user, login_name, outcome, request)
         raise ApiError(401, "INVALID_CREDENTIALS", "登录名或密码不正确")
 
@@ -334,17 +382,20 @@ def login_totp(
         if user is not None and user.status != "active":
             _log(db, settings, user, user.login_name, "inactive", request)
         raise _mfa_expired()
-    # 锁定按登录名算:换一个 mfa_token 也一样被拒
-    try:
-        fail_key = _check_not_locked(
-            redis, settings, user.login_name, "登录失败次数过多,请稍后再试"
-        )
-    except ApiError:
+    # 锁定按登录名算:换一个 mfa_token 也一样被拒。先原子计数、再验证(L142):并发多个 mfa_token 时
+    # 第 N 个请求看到的计数已含前 N-1 个,超过上限的直接拒绝,不再给它一次猜码机会;验证通过后
+    # _finish_login 会把计数整个删掉,所以成功那次多计的一下不留痕迹
+    fail_key = _fail_key(settings, user.login_name)
+    if _record_failure(redis, settings, fail_key) > settings.login_max_failures:
         _log(db, settings, user, user.login_name, "locked", request)
-        raise
+        raise ApiError(
+            429,
+            "ACCOUNT_LOCKED",
+            "登录失败次数过多,请稍后再试",
+            headers=_retry_after(redis, settings, fail_key),
+        )
     secret = _load_secret(settings, user)
     if not totp.verify(redis, user.id, secret, code, clock.utc_now()):
-        _record_failure(redis, settings, fail_key)
         mfa.record_try(redis, mfa_token)
         _log(db, settings, user, user.login_name, "totp_failed", request)
         raise ApiError(401, "TOTP_INVALID", "验证码不正确或已过期,请检查手机时间")
@@ -389,6 +440,11 @@ def _pending_key(user_id: UUID) -> str:
     return f"ws:totp:pending:{user_id}"
 
 
+def _pending_aad(user_id: UUID) -> str:
+    # 与正式 secret 的 aad 不同:待确认的密文不能被挪去冒充已开启的 secret
+    return f"totp-pending:{user_id}"
+
+
 _PENDING_TTL = 600
 
 
@@ -402,7 +458,12 @@ def totp_setup(db: Session, redis: Redis, settings: Settings, user: User) -> tup
     if user.totp_enabled_at is not None:
         raise ApiError(409, "TOTP_ALREADY_ENABLED", "已开启两步验证")
     secret = totp.new_secret()
-    redis.set(_pending_key(user.id), secret, ex=_PENDING_TTL)
+    # Redis 里只放密文(L143):Redis 转储 / 监控里看不到 base32 原文
+    redis.set(
+        _pending_key(user.id),
+        encrypt(secret, settings.master_key_bytes, aad=_pending_aad(user.id)),
+        ex=_PENDING_TTL,
+    )
     school = db.get(School, settings.school_id)
     uri, svg = totp.provisioning(
         secret, issuer=school.name if school is not None else "workstation", account=user.login_name
@@ -428,9 +489,14 @@ def totp_enable(
     _require_allowed(db, settings)
     if user.totp_enabled_at is not None:
         raise ApiError(409, "TOTP_ALREADY_ENABLED", "已开启两步验证")
-    secret = redis.get(_pending_key(user.id))
-    if secret is None:
+    pending = redis.get(_pending_key(user.id))
+    if pending is None:
         raise ApiError(409, "TOTP_SETUP_EXPIRED", "设置已过期,请重新开始")
+    try:
+        secret = decrypt(pending, settings.master_key_bytes, aad=_pending_aad(user.id))
+    except CryptoError:  # 主密钥换过 / 值被改:当作过期,重新 setup 即可
+        redis.delete(_pending_key(user.id))
+        raise ApiError(409, "TOTP_SETUP_EXPIRED", "设置已过期,请重新开始") from None
     if not totp.verify(redis, user.id, secret, code, clock.utc_now()):
         raise ApiError(400, "TOTP_INVALID", "验证码不正确或已过期,请检查手机时间")
     user.totp_secret = encrypt(secret, settings.master_key_bytes, aad=_aad(user.id))

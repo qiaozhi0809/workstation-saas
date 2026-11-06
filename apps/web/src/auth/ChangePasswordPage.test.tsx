@@ -68,6 +68,22 @@ it('shows expired reason', async () => {
   expect(await screen.findByText('密码已超过 90 天未更换,请设置新密码')).toBeInTheDocument()
 })
 
+it('shows neutral copy when the reason is unknown (required, or a value this build does not know)', () => {
+  // 会话中撞到 403 PASSWORD_CHANGE_REQUIRED 而 /auth/me 取不到原因时,client.ts 兜底写 'required';
+  // 将来后端若新增原因值,也按同样的中性文案显示,不冒充"首次登录"或"已过期"
+  for (const reason of ['required', 'reset']) {
+    useAuthStore.setState({
+      user: { ...user, password_change_reason: reason as 'required' },
+    })
+    renderPage()
+    expect(screen.getByRole('heading', { name: '请先修改密码' })).toBeInTheDocument()
+    expect(screen.getByText('管理员要求你先修改密码')).toBeInTheDocument()
+    expect(screen.queryByText(/首次登录/)).toBeNull()
+    expect(screen.queryByText(/过期|未更换/)).toBeNull()
+    cleanup()
+  }
+})
+
 it('takes the minimum length from the school policy', async () => {
   vi.mocked(authApi.passwordPolicy).mockResolvedValue({ min_length: 12, max_age_days: 0 })
   renderPage()

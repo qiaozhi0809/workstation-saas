@@ -4,9 +4,11 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { adminApi } from '@/shared/api/admin'
 import { ApiError } from '@/shared/api/client'
+import { schoolApi } from '@/shared/api/school'
 import { toast } from '@/shared/components/Toast'
 import { useAuthStore } from '@/shared/stores/auth'
 import type { AiConfigView, AiUsage } from '@/shared/types/admin'
+import type { Meta } from '@/shared/types/school'
 import AdminNav from '../AdminNav'
 import AiConfigPage from './AiConfigPage'
 import AiUsagePage from './AiUsagePage'
@@ -20,7 +22,10 @@ vi.mock('@/shared/api/admin', () => ({
     testAiConfig: vi.fn(),
   },
 }))
+vi.mock('@/shared/api/school', () => ({ schoolApi: { meta: vi.fn() } }))
 vi.mock('@/shared/components/Toast', () => ({ toast: vi.fn() }))
+
+const META: Meta = { version: '1.0.0', school_name: '示例小学', school_tz: 'Asia/Shanghai' }
 
 const PROVIDERS: AiConfigView['providers'] = [
   {
@@ -92,15 +97,20 @@ describe('AI 使用', () => {
 
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ['Date'] })
-    vi.setSystemTime(new Date(2026, 10, 4, 10, 0, 0))
+    // 2026-10-31 16:30 UTC:学校(上海)已进入 11 月,UTC−12 … UTC+7 的浏览器还在 10 月
+    vi.setSystemTime(new Date('2026-10-31T16:30:00Z'))
+    vi.mocked(schoolApi.meta).mockResolvedValue(META)
     vi.mocked(adminApi.aiUsage).mockResolvedValue(USAGE)
   })
   afterEach(() => vi.useRealTimers())
 
-  it('默认请求本月(YYYY-MM),列出各列与合计行', async () => {
+  it('默认请求学校时区里的本月(YYYY-MM,L43),列出各列与合计行', async () => {
     wrap(<AiUsagePage />)
     expect(await screen.findByText('李老师')).toBeInTheDocument()
     expect(adminApi.aiUsage).toHaveBeenCalledWith('2026-11')
+    expect(adminApi.aiUsage).toHaveBeenCalledTimes(1)
+    expect(screen.getByText('2026年11月')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '下一月' })).toBeDisabled()
     expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toEqual([
       '老师',
       '调用次数',
@@ -342,6 +352,62 @@ describe('AI 配置', () => {
     await renderConfig()
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
     expect(await screen.findByText(NOTICE)).toBeInTheDocument()
+  })
+
+  it('换服务商时清掉上一次的错误提示(L59)', async () => {
+    await renderConfig()
+    fireEvent.change(screen.getByLabelText('温度'), { target: { value: '3' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    expect(await screen.findByText('温度需要在 0 到 2 之间')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('服务商'), { target: { value: 'qwen' } })
+    expect(screen.queryByText('温度需要在 0 到 2 之间')).toBeNull()
+  })
+
+  it('接口地址的 scheme 不区分大小写(L59)', async () => {
+    vi.mocked(adminApi.saveAiConfig).mockResolvedValue(view())
+    await renderConfig()
+    fireEvent.change(screen.getByLabelText('接口地址'), {
+      target: { value: 'HTTPS://api.deepseek.example/v1' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() =>
+      expect(adminApi.saveAiConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ base_url: 'HTTPS://api.deepseek.example/v1' }),
+      ),
+    )
+    expect(screen.queryByText('接口地址要以 http:// 或 https:// 开头')).toBeNull()
+    // 真不是 http(s) 的仍然拦
+    fireEvent.change(screen.getByLabelText('接口地址'), {
+      target: { value: 'ftp://api.deepseek.example/v1' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    expect(await screen.findByText('接口地址要以 http:// 或 https:// 开头')).toBeInTheDocument()
+    expect(adminApi.saveAiConfig).toHaveBeenCalledTimes(1)
+  })
+
+  it('因为要重填 Key 被拦下时,点保存 / 测试连接会说明原因而不是没反应(L59)', async () => {
+    await renderConfig()
+    fireEvent.change(screen.getByLabelText('接口地址'), {
+      target: { value: 'https://other.example/v1' },
+    })
+    const reason = '已更换服务商或服务地址,请先填写新的 API Key'
+    expect(screen.queryByText(reason)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    expect(await screen.findByText(reason)).toBeInTheDocument()
+    expect(adminApi.saveAiConfig).not.toHaveBeenCalled()
+    // 填上 Key 再保存:原因消失,请求发出
+    vi.mocked(adminApi.saveAiConfig).mockResolvedValue(view())
+    fireEvent.change(screen.getByLabelText('API Key'), { target: { value: 'test-key-789' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(adminApi.saveAiConfig).toHaveBeenCalledTimes(1))
+    expect(screen.queryByText(reason)).toBeNull()
+    // 测试连接同样
+    fireEvent.change(screen.getByLabelText('接口地址'), {
+      target: { value: 'https://third.example/v1' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '测试连接' }))
+    expect(await screen.findByText(reason)).toBeInTheDocument()
+    expect(adminApi.testAiConfig).not.toHaveBeenCalled()
   })
 
   it('Key 无法解密时提示重新填写', async () => {

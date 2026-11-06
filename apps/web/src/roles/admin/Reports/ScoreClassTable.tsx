@@ -1,5 +1,6 @@
 import { cn } from '@/shared/lib/utils'
 import type { ScoreSummary, SubjectStat, TotalStat } from '@/shared/types/admin'
+import StatTip from './StatTip'
 
 export type ScoreView = 'avg' | 'pass' | 'good'
 
@@ -28,13 +29,20 @@ const cell = 'px-3 py-2 text-right tabular-nums'
 // 按科目名取统计,不依赖数组顺序与表头一致
 const byName = (stats: SubjectStat[], name: string) => stats.find((s) => s.subject === name)
 
+/** 有数值的格子带可聚焦的最高 / 最低 / 参考人数提示;破折号的格子没有 */
+function ValueCell({
+  text,
+  stat,
+}: {
+  text: string
+  stat: { max: number | null; min: number | null; count: number }
+}) {
+  return <td className={cell}>{text === DASH ? DASH : <StatTip text={text} tip={tip(stat)} />}</td>
+}
+
 function StatCell({ stat, view }: { stat: SubjectStat | undefined; view: ScoreView }) {
   if (!stat) return <td className={cell}>{DASH}</td>
-  return (
-    <td title={tip(stat)} className={cell}>
-      {subjectText(stat, view)}
-    </td>
-  )
+  return <ValueCell text={subjectText(stat, view)} stat={stat} />
 }
 
 export default function ScoreClassTable({
@@ -84,9 +92,7 @@ export default function ScoreClassTable({
                 {summary.subjects.map((h) => (
                   <StatCell key={h.name} stat={byName(c.subjects, h.name)} view={view} />
                 ))}
-                <td title={tip(c.total)} className={cell}>
-                  {totalText(c.total, view)}
-                </td>
+                <ValueCell text={totalText(c.total, view)} stat={c.total} />
               </tr>
             )
           })}
@@ -97,9 +103,7 @@ export default function ScoreClassTable({
             {summary.subjects.map((h) => (
               <StatCell key={h.name} stat={byName(summary.grade.subjects, h.name)} view={view} />
             ))}
-            <td title={tip(summary.grade.total)} className={cell}>
-              {totalText(summary.grade.total, view)}
-            </td>
+            <ValueCell text={totalText(summary.grade.total, view)} stat={summary.grade.total} />
           </tr>
         </tbody>
       </table>

@@ -181,6 +181,18 @@ def end_staff(
     ).first()
     if row is None:
         raise ApiError(404, "NOT_FOUND", "任职记录不存在或已结束")
+    # 班级行锁(L52):与换班主任(会结束旧任职)、删班、学年升级串行。不锁时两边会互相等对方
+    # 已改过的行(任职行 / 班级行)而死锁,或把对方刚结束的任职再"结束"一次并多记一条审计。
+    cls = db.get(SchoolClass, row.class_id)
+    if cls is None:
+        raise ApiError(404, "NOT_FOUND", "任职记录不存在或已结束")
+    service.lock_class(db, cls)
+    still_open = db.execute(
+        text("SELECT 1 FROM teacher_assignments WHERE id = :id AND ended_at IS NULL"),
+        {"id": assignment_id},
+    ).first()
+    if still_open is None:
+        raise ApiError(409, "STAFF_CHANGED", "该任职刚被其他操作结束,请刷新后重试")
     db.execute(
         text("UPDATE teacher_assignments SET ended_at = :now WHERE id = :id"),
         {"now": now, "id": assignment_id},

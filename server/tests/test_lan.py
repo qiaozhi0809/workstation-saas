@@ -1,4 +1,6 @@
+import ipaddress
 import socket
+from types import SimpleNamespace
 
 import pytest
 
@@ -79,11 +81,26 @@ def test_resolve_loopback_flag(monkeypatch):
     assert lan.resolve_is_lan("localhost", allow_loopback=True) is True
 
 
+NO_DENY = SimpleNamespace(trusted_networks=[])
+
+
+def _valid(url, **kw):
+    kw.setdefault("settings", NO_DENY)
+    return lan.validate_rtsp_url(url, **kw)
+
+
 def _code(url, **kw):
+    kw.setdefault("settings", NO_DENY)
     with pytest.raises(ApiError) as e:
         lan.validate_rtsp_url(url, **kw)
     assert e.value.status == 400
     return e.value.code
+
+
+def test_validate_rtsp_url_requires_settings():
+    """复审 Minor 4:settings 不再可省,省掉就等于关掉可信网段拒绝(fail-open)。"""
+    with pytest.raises(TypeError):
+        lan.validate_rtsp_url("rtsp://10.0.0.2/x")  # type: ignore[call-arg]
 
 
 def test_rtsp_url_with_userinfo_rejected():
@@ -107,18 +124,48 @@ def test_rtsp_url_public_rejected(monkeypatch):
 
 def test_rtsp_url_valid_normalized(monkeypatch):
     _fake_dns(monkeypatch, ["10.0.0.2"])
-    assert lan.validate_rtsp_url("  RTSP://10.0.0.2:8554/live/1?x=1 ") == (
-        "rtsp://10.0.0.2:8554/live/1?x=1"
-    )
-    assert lan.validate_rtsp_url("rtsp://[fd00::1]/a") == "rtsp://[fd00::1]/a"
+    assert _valid("  RTSP://10.0.0.2:8554/live/1?x=1 ") == ("rtsp://10.0.0.2:8554/live/1?x=1")
+    assert _valid("rtsp://[fd00::1]/a") == "rtsp://[fd00::1]/a"
 
 
 def test_rtsp_url_loopback_dev_only(monkeypatch):
     assert _code("rtsp://127.0.0.1:8554/cam1") == "RTSP_URL_NOT_LAN"
-    assert (
-        lan.validate_rtsp_url("rtsp://127.0.0.1:8554/cam1", allow_loopback=True)
-        == "rtsp://127.0.0.1:8554/cam1"
+    assert _valid("rtsp://127.0.0.1:8554/cam1", allow_loopback=True) == "rtsp://127.0.0.1:8554/cam1"
+
+
+DENY = SimpleNamespace(trusted_networks=[ipaddress.ip_network("172.30.0.0/24")])
+
+
+def test_is_denied_ip():
+    """L159:解析到可信代理 / compose 子网的地址是本系统自己的容器网络,摄像头不可能在那里。"""
+    assert lan.is_denied_ip("172.30.0.5", DENY) is True
+    assert lan.is_denied_ip("::ffff:172.30.0.5", DENY) is True
+    assert lan.is_denied_ip("192.168.1.10", DENY) is False
+    assert lan.is_denied_ip("172.31.0.5", DENY) is False
+    assert lan.is_denied_ip("not-an-ip", DENY) is False and lan.is_denied_ip(None, DENY) is False
+    assert lan.is_denied_ip("172.30.0.5", SimpleNamespace(trusted_networks=[])) is False
+
+
+def test_rtsp_url_in_denied_network_rejected(monkeypatch):
+    _fake_dns(monkeypatch, ["172.30.0.5"])
+    for url in ("rtsp://172.30.0.5/x", "rtsp://cam.example.test/x"):
+        with pytest.raises(ApiError) as e:
+            lan.validate_rtsp_url(url, settings=DENY)
+        assert (e.value.status, e.value.code) == (400, "RTSP_URL_NOT_LAN")
+        assert "容器" in e.value.message
+    _fake_dns(monkeypatch, ["192.168.1.10"])
+    assert lan.validate_rtsp_url("rtsp://cam.example.test/x", settings=DENY) == (
+        "rtsp://cam.example.test/x"
     )
+    assert lan.validate_rtsp_url("rtsp://192.168.1.10/x", settings=DENY) == "rtsp://192.168.1.10/x"
+    # 可信网段为空时 172.30.0.5 只是普通私网地址
+    assert _valid("rtsp://172.30.0.5/x") == "rtsp://172.30.0.5/x"
+    # worker 同口径:resolve_lan_ips 带拒绝网段
+    _fake_dns(monkeypatch, ["172.30.0.5"])
+    assert lan.resolve_lan_ips("cam.example.test") == ["172.30.0.5"]
+    assert lan.resolve_lan_ips("cam.example.test", denied=DENY.trusted_networks) == []
+    _fake_dns(monkeypatch, ["192.168.1.10", "172.30.0.5"])  # 任一结果落在拒绝网段就整个拒绝
+    assert lan.resolve_lan_ips("cam.example.test", denied=DENY.trusted_networks) == []
 
 
 def test_mask_url():
@@ -148,7 +195,7 @@ def test_rtsp_url_whitespace_or_control_rejected(bad):
 
 def test_stored_url_equals_validated(monkeypatch):
     _fake_dns(monkeypatch, ["10.0.0.2"])
-    out = lan.validate_rtsp_url("rtsp://10.0.0.2:554/a/b?x=1&y=2#f")
+    out = _valid("rtsp://10.0.0.2:554/a/b?x=1&y=2#f")
     assert out == "rtsp://10.0.0.2:554/a/b?x=1&y=2#f"
     assert lan.urlsplit(out).hostname == "10.0.0.2"
 
@@ -167,7 +214,7 @@ def test_trailing_dot_host_still_judged(monkeypatch):
     _fake_dns(monkeypatch, ["203.0.113.5"])
     assert _code("rtsp://pub.example.test./x") == "RTSP_URL_NOT_LAN"
     _fake_dns(monkeypatch, ["10.0.0.2"])
-    assert lan.validate_rtsp_url("rtsp://cam.example.test./x") == "rtsp://cam.example.test./x"
+    assert _valid("rtsp://cam.example.test./x") == "rtsp://cam.example.test./x"
 
 
 def test_mask_url_password_with_at_sign():
@@ -196,6 +243,18 @@ def test_mask_url_secret_query_keys(key):
     out = lan.mask_url(f"rtsp://10.0.0.2/x?a=1&{key}=s3cr3t&b=2")
     assert "s3cr3t" not in out and "a=1" in out and "b=2" in out
     assert f"{key}=***" in out
+
+
+@pytest.mark.parametrize("password", ["p/w", "p?w", "p#w", "a/b?c#d@e", "p/w?x=1&y#f"])
+def test_mask_url_password_with_url_delimiters(password):
+    """L164:口令里带 / ? # 的地址(state 里的错误文本可能未编码)整段打码到最后一个 @。"""
+    url = f"rtsp://camuser:{password}@10.0.0.2:554/x?token=t1"
+    for text in (url, f"连接失败 {url} 超时"):
+        out = lan.mask_url(text)
+        assert password not in out and "camuser" not in out and "t1" not in out, out
+        assert "***@10.0.0.2:554/x" in out
+    plain = "rtsp://10.0.0.2/x 失败,联系 admin@school"
+    assert lan.mask_url(plain) == plain
 
 
 def test_mask_url_keeps_unrelated_keys():

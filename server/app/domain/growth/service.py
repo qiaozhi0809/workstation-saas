@@ -10,15 +10,21 @@ from app.rbac.bindings import Binding, Scope, can, has_role_in_class
 from app.rbac.roles import Perm, Role
 
 
-def can_delete_record(
-    record: GrowthRecord, current_year_id: UUID, user_id: UUID, bindings: Sequence[Binding]
-) -> bool:
-    if record.academic_year_id != current_year_id:
-        return False
+def may_delete_record(record: GrowthRecord, user_id: UUID, bindings: Sequence[Binding]) -> bool:
+    """只看权限:记录所在班的班主任,或作者本人且在该班有 growth.write。"""
     if has_role_in_class(bindings, record.class_id, {Role.homeroom_teacher}):
         return True
     return record.created_by_user_id == user_id and can(
         bindings, Perm.GROWTH_WRITE, Scope(class_id=record.class_id)
+    )
+
+
+def can_delete_record(
+    record: GrowthRecord, current_year_id: UUID, user_id: UUID, bindings: Sequence[Binding]
+) -> bool:
+    """列表里的"能删"按钮:有权限且是本学年的记录。"""
+    return record.academic_year_id == current_year_id and may_delete_record(
+        record, user_id, bindings
     )
 
 

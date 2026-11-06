@@ -182,6 +182,8 @@ test('account menu works from the keyboard', async ({ page }) => {
   await page.keyboard.press('ArrowDown')
   await expect(page.getByRole('menuitem', { name: '账号安全' })).toBeFocused()
   await page.keyboard.press('ArrowDown')
+  await expect(page.getByRole('menuitem', { name: '关于' })).toBeFocused()
+  await page.keyboard.press('ArrowDown')
   await expect(page.getByRole('menuitem', { name: '退出登录' })).toBeFocused()
   await page.keyboard.press('Escape')
   await expect(page.getByRole('menuitem', { name: '退出登录' })).toBeHidden()

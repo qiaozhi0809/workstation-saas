@@ -354,6 +354,106 @@ def test_assignment_first_then_delete_ends_the_binding(cengine, monkeypatch):
     assert _open_bindings(cengine, class_id) == 0
 
 
+def _open_homeroom_assignment(engine: Engine, class_id: str = CLASS_ID) -> UUID:
+    with engine.connect() as conn:
+        return conn.execute(
+            text(
+                "SELECT id FROM teacher_assignments WHERE class_id = :c"
+                " AND identity = 'homeroom' AND ended_at IS NULL"
+            ),
+            {"c": class_id},
+        ).scalar_one()
+
+
+def _end_staff(assignment_id: UUID) -> Callable[[Session], Any]:
+    def run(db: Session) -> Any:
+        return staff.end_staff(
+            db, UUID(SCHOOL_ID), assignment_id, now=clock.utc_now(), actor_id=PRINCIPAL
+        )
+
+    return run
+
+
+def _ended_count(engine: Engine, class_id: str = CLASS_ID) -> int:
+    with engine.connect() as conn:
+        return conn.execute(
+            text(
+                "SELECT count(*) FROM teacher_assignments WHERE class_id = :c"
+                " AND identity = 'homeroom' AND ended_at IS NOT NULL"
+            ),
+            {"c": class_id},
+        ).scalar_one()
+
+
+def test_end_staff_queued_behind_add_staff_gets_409(cengine, monkeypatch):
+    """L52:卸任与换班主任并发:换班主任先拿到班级行锁并结束了旧任职,排在后面的卸任拿到锁时
+    任职已不在任 → 409,不再静默改写 ended_at、多记一条成功审计。"""
+    old = _open_homeroom_assignment(cengine)
+    locked, release = _hold_after_lock(monkeypatch, "add")
+
+    add = Worker(cengine, "add", _assign(TEACHER04)).start()
+    assert locked.wait(WAIT)
+    end = Worker(cengine, "end", _end_staff(old)).start()
+    _wait_blocked(cengine)  # 卸任卡在班级行锁上
+    release.set()
+    add.join()
+    end.join()
+
+    assert add.error is None, add.error
+    assert isinstance(end.error, ApiError), end.error
+    assert end.error.status == 409 and end.error.code == "STAFF_CHANGED"
+    _assert_single_homeroom(cengine, TEACHER04)
+    assert _ended_count(cengine) == 1  # 只有张老师那条被结束(由换班主任结束,一次)
+
+
+def test_add_staff_queued_behind_end_staff_sees_vacant_class(cengine, monkeypatch):
+    """L52 反向:卸任先持锁,换班主任等它提交后再进,看到的是"暂无班主任",两边都成功。"""
+    old = _open_homeroom_assignment(cengine)
+    locked, release = _hold_after_lock(monkeypatch, "end")
+
+    end = Worker(cengine, "end", _end_staff(old)).start()
+    assert locked.wait(WAIT)
+    add = Worker(cengine, "add", _assign(TEACHER04)).start()
+    _wait_blocked(cengine)  # 任命卡在班级行锁上
+    release.set()
+    end.join()
+    add.join()
+
+    assert end.error is None and add.error is None, (end.error, add.error)
+    _assert_single_homeroom(cengine, TEACHER04)
+    assert _ended_count(cengine) == 1
+
+
+def _rename_class(class_id: UUID) -> Callable[[Session], Any]:
+    def run(db: Session) -> Any:
+        cls = db.get(SchoolClass, class_id)
+        assert cls is not None
+        body = ClassInput(grade_id=UUID(GRADE_ID), name=f"{EMPTY_CLASS_NAME}改", room="")
+        return service.update_class(db, UUID(SCHOOL_ID), cls, body, PRINCIPAL, None)
+
+    return run
+
+
+def test_update_class_waits_for_lock_and_fails_after_delete(cengine, monkeypatch):
+    """L52:改班级信息也走班级行锁:删班先持锁,改名排在后面,删班提交后改名得到 404 而不是
+    对已不存在的行做 UPDATE(StaleDataError → 500)。"""
+    class_id = _new_empty_class(cengine)
+    locked, release = _hold_after_lock(monkeypatch, "del")
+
+    delete = Worker(cengine, "del", _delete_class(class_id)).start()
+    assert locked.wait(WAIT)
+    rename = Worker(cengine, "ren", _rename_class(class_id)).start()
+    _wait_blocked(cengine)  # 改名卡在班级行锁上
+    release.set()
+    delete.join()
+    rename.join()
+
+    assert delete.error is None, delete.error
+    assert isinstance(rename.error, ApiError), rename.error
+    assert rename.error.status == 404 and rename.error.code == "NOT_FOUND"
+    assert not _class_exists(cengine, class_id)
+
+
 def test_delete_first_then_assignment_fails_as_not_found(cengine, monkeypatch):
     class_id = _new_empty_class(cengine)
     locked, release = _hold_after_lock(monkeypatch, "del")
