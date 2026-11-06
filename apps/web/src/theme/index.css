@@ -109,3 +109,32 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* 触屏(没有精确指针)下把教师端常用小控件的点击区放大到 ≥ 44 × 44 px(台账 L82);鼠标下尺寸不变。
+   规则只写在这一处:组件挂 .touch-target(单个控件:顶栏导航、表格行按钮)或 .touch-tabs(档案抽屉页签条);
+   对话框 / 抽屉右上角的关闭按钮是 shadcn dialog / sheet 里的 Close,按它的结构选中。 */
+@media (pointer: coarse) {
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  /* 页签不折行、不缩小;间距收窄以便 6 个页签在 375 宽里放得下 */
+  .touch-tabs {
+    gap: 0.5rem;
+  }
+  .touch-tabs [role='tab'] {
+    min-height: 44px;
+    min-width: 44px;
+    white-space: nowrap;
+  }
+  /* 原本 16 × 16 的 X,放大成 44 × 44 的方块,图标中心位置不变(原 right/top 1rem + 8px = 24px) */
+  [role='dialog'] > button.absolute.right-4.top-4 {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    right: 2px;
+    top: 2px;
+  }
+}

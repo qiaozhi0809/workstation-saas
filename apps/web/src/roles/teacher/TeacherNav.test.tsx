@@ -44,3 +44,11 @@ it('shows 班级公告 with class.notice', () => {
   renderWith(['class.notice'])
   expect(screen.getByRole('link', { name: '班级公告' })).toHaveAttribute('href', '/teacher/notices')
 })
+
+// L82:触屏下点击区放大到 44 × 44 由 theme/index.css 的 .touch-target 规则负责,这里确认每个入口都挂了钩子
+it('marks every nav link as a touch target', () => {
+  renderWith(['class.notice'])
+  const links = screen.getAllByRole('link')
+  expect(links).toHaveLength(6)
+  for (const a of links) expect(a).toHaveClass('touch-target')
+})

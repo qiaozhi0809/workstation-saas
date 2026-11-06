@@ -66,6 +66,7 @@ export default function StudentProfileDrawer({ studentId }: { studentId: string 
           <SegmentedTabs<ProfileTab>
             label="档案分区"
             variant="underline"
+            className="touch-tabs"
             items={tabItems}
             value={tab}
             onChange={(t) => open(studentId, t)}
