@@ -14,16 +14,18 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.ai.stats import (
-    PASS_RATIO,
     ExamStats,
     exam_stats,
     exam_table,
     rank_changes,
+    score_line,
     subject_stats,
 )
 from app.domain.exams.schemas import SubjectFull
 from app.domain.exams.service import _scores_by_enrollment, _visible_of
 from app.domain.exams.subjects import Stage, stage_of
+from app.domain.school_settings.schemas import Grading
+from app.domain.school_settings.service import get_grading
 from app.domain.schools.service import local_day_start_utc, school_tz, week_no
 from app.domain.students.service import active_enrollments
 from app.models import (
@@ -221,9 +223,10 @@ def _latest_exam_line(db: Session, cls: SchoolClass, access: Access) -> str:
     ids = [e.id for e in active_enrollments(db, cls.id)]
     exams = _visible_exams(db, cls, access)
     scores = _scores_of(db, exams, ids, access)
+    ratios = get_grading(db, cls.school_id)
     for exam in reversed(exams):
         subjects = _visible_of(exam, access.visible_subjects)
-        st = exam_stats(subjects, scores[exam.id], ids)
+        st = exam_stats(subjects, scores[exam.id], ids, ratios=ratios)
         if st is None:
             continue
         rates = "、".join(f"{s.name} {s.rate:.1f}%" for s in st.subjects)
@@ -353,11 +356,12 @@ def _student_exam_lines(db: Session, enrollment: Enrollment, access: Access) -> 
     if latest:
         exam, subjects = latest
         mine = scores[exam.id][enrollment.id]
+        ratios = get_grading(db, cls.school_id)
         parts = []
         for s in subjects:
             if s.name not in mine:
                 continue
-            st = subject_stats(subjects, scores[exam.id], s.name, ids)
+            st = subject_stats(subjects, scores[exam.id], s.name, ids, ratios=ratios)
             avg = f"（班均 {st.avg:.1f}）" if st else ""
             parts.append(f"{s.name} {'缺考' if mine[s.name] is None else _g(mine[s.name])}{avg}")
         if parts:
@@ -458,13 +462,16 @@ def progressed_students(
 def failing_students(
     db: Session, cls: SchoolClass, exam: Exam, access: Access
 ) -> list[tuple[Enrollment, int]]:
-    """可见科目里有两科及以上低于 60% 的学生 (enrollment, 不及格科数),科数降序。"""
+    """可见科目里有两科及以上低于及格线(学校设置的比例)的学生 (enrollment, 不及格科数),科数降序。"""
     subjects, scores, ids = load_exam_data(db, cls, exam, access)
     table = exam_table(subjects, scores, ids)
+    pass_ratio = get_grading(db, cls.school_id).pass_ratio
     found = []
     for r in table:
         count = sum(
-            1 for s in subjects if (v := r.subs[s.name]) is not None and v < s.full * PASS_RATIO
+            1
+            for s in subjects
+            if (v := r.subs[s.name]) is not None and v < score_line(s.full, pass_ratio)
         )
         if count >= 2:
             found.append((r.enrollment_id, count))
@@ -482,7 +489,8 @@ def exam_context(
     db: Session, cls: SchoolClass, exam: Exam, compare: Exam | None, access: Access
 ) -> str:
     subjects, scores, ids = load_exam_data(db, cls, exam, access)
-    st = exam_stats(subjects, scores, ids)
+    ratios = get_grading(db, cls.school_id)
+    st = exam_stats(subjects, scores, ids, ratios=ratios)
     full = sum(s.full for s in subjects)
     lines = [
         "【考试数据】",
@@ -509,7 +517,7 @@ def exam_context(
         "前 5 名：" + "、".join(f"{names[r.enrollment_id]} {_g(r.total or 0)}" for r in top)
     )
     if compare is not None:
-        lines.extend(_compare_lines(db, cls, exam, compare, access, st, names))
+        lines.extend(_compare_lines(db, cls, exam, compare, access, st, names, ratios))
     if len(subjects) >= 2:
         failing = failing_students(db, cls, exam, access)
         lines.append("两科及以上不及格：" + ("、".join(names[e.id] for e, _ in failing) or "无"))
@@ -524,9 +532,10 @@ def _compare_lines(
     access: Access,
     st: ExamStats,
     names: dict[UUID, str],
+    ratios: Grading,
 ) -> list[str]:
     psubjects, pscores, ids = load_exam_data(db, cls, compare, access)
-    prev = exam_stats(psubjects, pscores, ids)
+    prev = exam_stats(psubjects, pscores, ids, ratios=ratios)
     if prev is None:
         return []
     before = {s.name: s.rate for s in prev.subjects}

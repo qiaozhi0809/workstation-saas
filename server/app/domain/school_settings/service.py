@@ -8,7 +8,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.audit.service import record
-from app.domain.school_settings.schemas import SecuritySettings, Switches, TagRename
+from app.domain.exams.schemas import SubjectFull
+from app.domain.exams.subjects import PRESETS, Stage
+from app.domain.school_settings.schemas import (
+    Grading,
+    SecuritySettings,
+    SubjectCatalog,
+    Switches,
+    TagRename,
+)
 from app.errors import ApiError
 from app.models import SchoolSetting, Student
 
@@ -17,6 +25,8 @@ log = structlog.get_logger()
 TAG_KEY = "tag_pool"
 SWITCHES_KEY = "switches"
 SECURITY_KEY = "security"
+GRADING_KEY = "grading"
+SUBJECT_CATALOG_KEY = "subject_catalog"
 
 DEFAULT_TAGS: tuple[str, ...] = (
     "重点关注",
@@ -48,6 +58,8 @@ DEFAULT_SWITCHES = Switches(
 DEFAULT_SECURITY = SecuritySettings(
     totp_allowed=False, password_min_length=8, password_max_age_days=0
 )
+
+DEFAULT_GRADING = Grading(pass_ratio=0.6, good_ratio=0.85)
 
 
 def _row(db: Session, school_id: UUID, key: str) -> SchoolSetting | None:
@@ -181,6 +193,78 @@ def save_security(
         db,
         user_id=actor,
         action="settings.security_update",
+        success=True,
+        object_type="school_setting",
+        object_id=str(row.id),
+        request=request,
+    )
+    db.commit()
+    return data
+
+
+def get_grading(db: Session, school_id: UUID) -> Grading:
+    """及格 / 优秀比例;没存过用默认 0.6 / 0.85,库里的值坏了也退回默认。"""
+    row = _row(db, school_id, GRADING_KEY)
+    if row is None:
+        return DEFAULT_GRADING
+    try:
+        return Grading(**{**DEFAULT_GRADING.model_dump(), **row.value})
+    except (ValidationError, TypeError):
+        log.warning("grading.invalid")
+        return DEFAULT_GRADING
+
+
+def save_grading(
+    db: Session,
+    school_id: UUID,
+    data: Grading,
+    actor: UUID,
+    request: Request | None = None,
+) -> Grading:
+    row = _upsert(db, school_id, GRADING_KEY, data.model_dump())
+    record(
+        db,
+        user_id=actor,
+        action="settings.grading_update",
+        success=True,
+        object_type="school_setting",
+        object_id=str(row.id),
+        request=request,
+    )
+    db.commit()
+    return data
+
+
+def _default_catalog() -> dict[Stage, list[SubjectFull]]:
+    return {stage: [s.model_copy() for s in subjects] for stage, subjects in PRESETS.items()}
+
+
+def get_catalog(db: Session, school_id: UUID) -> dict[Stage, list[SubjectFull]]:
+    """各学段的科目目录;没存过时返回内置预设的副本(调用方可以随意改)。"""
+    row = _row(db, school_id, SUBJECT_CATALOG_KEY)
+    if row is None:
+        return _default_catalog()
+    try:
+        catalog = SubjectCatalog(**{**_default_catalog(), **row.value})
+    except (ValidationError, TypeError):
+        log.warning("subject_catalog.invalid")
+        return _default_catalog()
+    return {stage: list(getattr(catalog, stage)) for stage in PRESETS}
+
+
+def save_catalog(
+    db: Session,
+    school_id: UUID,
+    data: SubjectCatalog,
+    actor: UUID,
+    request: Request | None = None,
+) -> SubjectCatalog:
+    """保存科目目录。不追溯已有班级:它们的科目列表存在 classes.subjects 里,不随目录变。"""
+    row = _upsert(db, school_id, SUBJECT_CATALOG_KEY, data.model_dump())
+    record(
+        db,
+        user_id=actor,
+        action="settings.subject_catalog_update",
         success=True,
         object_type="school_setting",
         object_id=str(row.id),

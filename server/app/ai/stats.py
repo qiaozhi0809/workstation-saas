@@ -1,4 +1,8 @@
-"""Exam statistics for AI context; rules mirror apps/web/src/shared/lib/grades.ts one for one."""
+"""Exam statistics for AI context; rules mirror apps/web/src/shared/lib/grades.ts one for one.
+
+及格 / 优秀比例不再是常量:调用方传学校设置里的 ``Grading``(``get_grading``),
+AI 统计、教师端分析数据、成绩汇总三处同一口径(M5d L2)。
+"""
 
 import math
 from collections.abc import Mapping, Sequence
@@ -6,9 +10,7 @@ from dataclasses import dataclass
 from uuid import UUID
 
 from app.domain.exams.schemas import SubjectFull
-
-PASS_RATIO = 0.6
-GOOD_RATIO = 0.85
+from app.domain.school_settings.schemas import Grading
 
 Scores = Mapping[UUID, Mapping[str, float | None]]
 
@@ -32,7 +34,7 @@ class SubjectStats:
     min: float
     pass_rate: float  # 小数 0-1
     good_rate: float
-    low: int  # 低于满分 60% 的人数
+    low: int  # 低于及格线(满分 × pass_ratio)的人数
 
 
 @dataclass
@@ -50,9 +52,16 @@ class ExamStats:
     subjects: list[SubjectStats]
 
 
-def _round1(x: float) -> float:
-    # 与 JS Math.round(x * 10) / 10 一致(半数向上)
+def round1(x: float) -> float:
+    """保留一位小数,与 JS ``Math.round(x * 10) / 10`` 一致(半数向上)。"""
     return math.floor(x * 10 + 0.5) / 10
+
+
+def score_line(full: int, ratio: float) -> float:
+    """及格 / 优秀线 = 满分 × 比例。"""
+    # 满分是整数、比例两位小数,乘积在数学上最多两位小数;round 掉浮点误差
+    # (100 × 0.57 = 56.99999999999999)
+    return round(full * ratio, 2)
 
 
 def exam_table(subjects: Sequence[SubjectFull], scores: Scores, ids: Sequence[UUID]) -> list[Row]:
@@ -66,7 +75,7 @@ def exam_table(subjects: Sequence[SubjectFull], scores: Scores, ids: Sequence[UU
             subs[s.name] = v
             if v is not None:
                 total = (total or 0) + v
-        rows.append(Row(eid, None if total is None else _round1(total), None, subs))
+        rows.append(Row(eid, None if total is None else round1(total), None, subs))
     # 稳定排序:有总分的按降序在前,缺总分的排末尾
     rows.sort(key=lambda r: (r.total is None, -(r.total or 0)))
     prev: float | None = None
@@ -82,7 +91,12 @@ def exam_table(subjects: Sequence[SubjectFull], scores: Scores, ids: Sequence[UU
 
 
 def subject_stats(
-    subjects: Sequence[SubjectFull], scores: Scores, subject: str, ids: Sequence[UUID]
+    subjects: Sequence[SubjectFull],
+    scores: Scores,
+    subject: str,
+    ids: Sequence[UUID],
+    *,
+    ratios: Grading,
 ) -> SubjectStats | None:
     sub = next((s for s in subjects if s.name == subject), None)
     if sub is None:
@@ -92,7 +106,10 @@ def subject_stats(
     if n == 0:
         return None
     avg = sum(vals) / n
-    pass_line, good_line = sub.full * PASS_RATIO, sub.full * GOOD_RATIO
+    pass_line, good_line = (
+        score_line(sub.full, ratios.pass_ratio),
+        score_line(sub.full, ratios.good_ratio),
+    )
     return SubjectStats(
         name=sub.name,
         full=sub.full,
@@ -108,7 +125,11 @@ def subject_stats(
 
 
 def exam_stats(
-    subjects: Sequence[SubjectFull], scores: Scores, ids: Sequence[UUID]
+    subjects: Sequence[SubjectFull],
+    scores: Scores,
+    ids: Sequence[UUID],
+    *,
+    ratios: Grading,
 ) -> ExamStats | None:
     table = exam_table(subjects, scores, ids)
     totals = [r.total for r in table if r.total is not None]
@@ -117,8 +138,13 @@ def exam_stats(
         return None
     full = sum(s.full for s in subjects)
     avg = sum(totals) / n
-    pass_line, good_line = full * PASS_RATIO, full * GOOD_RATIO
-    per_subject = [st for s in subjects if (st := subject_stats(subjects, scores, s.name, ids))]
+    pass_line, good_line = (
+        score_line(full, ratios.pass_ratio),
+        score_line(full, ratios.good_ratio),
+    )
+    per_subject = [
+        st for s in subjects if (st := subject_stats(subjects, scores, s.name, ids, ratios=ratios))
+    ]
     return ExamStats(
         full=full,
         n=n,

@@ -17,7 +17,7 @@ from app.domain.exams.schemas import (
     ScoresSaved,
     SubjectFull,
 )
-from app.domain.exams.subjects import class_subjects
+from app.domain.exams.subjects import class_subjects, fill_from_catalog
 from app.errors import ApiError
 from app.models import Exam, User
 from app.rbac.bindings import Binding, visible_subjects
@@ -47,6 +47,28 @@ def list_subjects(
         object_id=str(class_id),
     )
     return {"items": class_subjects(db, cls)}
+
+
+@router.post("/classes/{class_id}/subjects/fill-from-catalog")
+def fill_subjects_from_catalog(
+    class_id: UUID,
+    request: Request,
+    user: Annotated[User, Depends(get_current_user)],
+    bindings: Annotated[list[Binding], Depends(get_bindings)],
+    db: Annotated[Session, Depends(get_db)],
+) -> list[SubjectFull]:
+    """把学校目录里本班还没有的科目追加到末尾;已有科目的满分不动(M5d L2)。"""
+    cls = get_class_or_404(db, class_id)
+    ensure(
+        db,
+        request,
+        user.id,
+        bindings,
+        Perm.EXAM_WRITE,
+        class_scope_of(cls),
+        object_id=str(class_id),
+    )
+    return fill_from_catalog(db, cls)
 
 
 @router.get("/classes/{class_id}/exams")

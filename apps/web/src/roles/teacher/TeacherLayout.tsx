@@ -17,6 +17,7 @@ import ThemeToggle from '@/theme/ThemeToggle'
 import StudentProfileDrawer from './StudentProfile/StudentProfileDrawer'
 import { useStudentDrawer } from './StudentProfile/useStudentDrawer'
 import TeacherNav from './TeacherNav'
+import WelcomeDialog from './Welcome/WelcomeDialog'
 
 export default function TeacherLayout() {
   const navigate = useNavigate()
@@ -100,6 +101,7 @@ export default function TeacherLayout() {
         overlays={
           <>
             {studentId && <StudentProfileDrawer key={studentId} studentId={studentId} />}
+            <WelcomeDialog />
             <Toaster />
           </>
         }
