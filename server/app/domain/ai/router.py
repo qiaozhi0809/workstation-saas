@@ -216,10 +216,18 @@ def list_ai_chats(
 
 
 @router.get("/chats/{chat_id}", response_model=AiChatOut)
-def get_ai_chat(chat_id: UUID, db: DbDep, user: UserDep, settings: SettingsDep) -> AiChatOut:
+def get_ai_chat(
+    chat_id: UUID, db: DbDep, user: UserDep, settings: SettingsDep, redis: RedisDep
+) -> AiChatOut:
     chat = get_own_chat(db, user.id, chat_id)
     cfg = load_ai_config(db, settings.school_id, settings.master_key_bytes)
-    return chat_out(db, chat, clock.utc_now(), mask_forced=_mask_forced(cfg))
+    return chat_out(
+        db,
+        chat,
+        clock.utc_now(),
+        mask_forced=_mask_forced(cfg),
+        generating=redis.exists(lock_key(chat.id)) == 1,
+    )
 
 
 @router.delete("/chats/{chat_id}", status_code=204)

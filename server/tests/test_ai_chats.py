@@ -401,6 +401,47 @@ def test_stale_running_item_shown_as_wait(client, settings, db, monkeypatch):
     assert got["items"][0]["status"] == "wait" and got["items"][1]["status"] == "wait"
 
 
+def test_ai_generate_over_two_minutes_still_shows_streaming(
+    client, settings, db, redis_client, monkeypatch
+):
+    """生成超过 2 分钟但对话锁还在(确实还在生成):并发读取显示"生成中"而不是"中断";
+    锁一释放(生成器已收尾或崩溃)才按 2 分钟陈旧规则显示中断(L94)。"""
+    chat = create(client, settings, lesson_body())
+    db.add(
+        AiMessage(
+            chat_id=UUID(chat["id"]), role="assistant", content="写到一半", status="streaming"
+        )
+    )
+    db.commit()
+    redis_client.set(f"ai:chat:{chat['id']}", "running-token", ex=60)
+    freeze(monkeypatch, (datetime.now(UTC) + timedelta(minutes=3)).isoformat())
+    msg = get_chat(client, settings, chat["id"]).json()["messages"][1]
+    assert (msg["status"], msg["error"], msg["content"]) == ("streaming", None, "写到一半")
+    redis_client.delete(f"ai:chat:{chat['id']}")
+    msg = get_chat(client, settings, chat["id"]).json()["messages"][1]
+    assert (msg["status"], msg["error"]) == ("error", INTERRUPTED)
+
+
+def test_ai_generate_running_item_over_two_minutes_still_shows_run(
+    client, settings, db, redis_client, monkeypatch
+):
+    chat = create(client, settings, comments_body())
+    item = db.scalars(
+        select(AiBatchItem)
+        .where(AiBatchItem.chat_id == UUID(chat["id"]))
+        .order_by(AiBatchItem.position)
+    ).first()
+    item.status = "run"
+    db.commit()
+    redis_client.set(f"ai:chat:{chat['id']}", "running-token", ex=60)
+    freeze(monkeypatch, (datetime.now(UTC) + timedelta(minutes=3)).isoformat())
+    got = get_chat(client, settings, chat["id"]).json()
+    assert [i["status"] for i in got["items"]] == ["run", "wait"]
+    redis_client.delete(f"ai:chat:{chat['id']}")
+    got = get_chat(client, settings, chat["id"]).json()
+    assert [i["status"] for i in got["items"]] == ["wait", "wait"]
+
+
 def test_other_users_chat_is_404(client, settings, db):
     configure_ai(db, settings)
     chat = create(client, settings, lesson_body())

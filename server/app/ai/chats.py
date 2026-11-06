@@ -90,18 +90,29 @@ def _stale(updated_at: datetime, now: datetime) -> bool:
     return now - updated_at > STALE_AFTER
 
 
-def item_status(item: AiBatchItem, now: datetime) -> str:
-    """显示用状态:超过 2 分钟还在 run 的算 wait。"""
-    return "wait" if item.status == "run" and _stale(item.updated_at, now) else item.status
+def item_status(item: AiBatchItem, now: datetime, *, generating: bool = False) -> str:
+    """显示用状态:超过 2 分钟还在 run 的算 wait;``generating``(对话锁还在手里,
+    见 ``gateway.lock_key``)说明确实还在生成,再久也照样显示 run。"""
+    stale = item.status == "run" and not generating and _stale(item.updated_at, now)
+    return "wait" if stale else item.status
 
 
-def chat_out(db: Session, chat: AiChat, now: datetime, *, mask_forced: bool = False) -> AiChatOut:
+def chat_out(
+    db: Session,
+    chat: AiChat,
+    now: datetime,
+    *,
+    mask_forced: bool = False,
+    generating: bool = False,
+) -> AiChatOut:
     """``mask_forced``:学校当前是否强制脱敏;返回的 ``mask`` 是实际生效的值
-    (``chat.mask or mask_forced``,与追问 / 批量 / 复制提示词同一口径),不是建对话时存的值。"""
+    (``chat.mask or mask_forced``,与追问 / 批量 / 复制提示词同一口径),不是建对话时存的值。
+    ``generating``:这个对话的生成锁当前还被持有——一次生成超过 2 分钟时并发读取仍显示
+    "生成中",锁释放(生成器收尾或崩溃)后才按 2 分钟陈旧规则显示"中断"。"""
     messages = []
     for m in ordered_messages(db, chat.id):
         status, error = m.status, m.error
-        if status == "streaming" and _stale(m.updated_at, now):
+        if status == "streaming" and not generating and _stale(m.updated_at, now):
             status, error = "error", INTERRUPTED
         messages.append(
             AiMessageOut(
@@ -116,7 +127,7 @@ def chat_out(db: Session, chat: AiChat, now: datetime, *, mask_forced: bool = Fa
     items = []
     for it in chat_items(db, chat.id):
         student = db.get(Student, it.student_id)
-        status = item_status(it, now)
+        status = item_status(it, now, generating=generating)
         items.append(
             AiBatchItemOut(
                 id=it.id,
