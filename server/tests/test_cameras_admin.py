@@ -240,6 +240,38 @@ def test_rtsp_url_errors(client, settings, on):
     assert put.status_code == 400
 
 
+def test_rtsp_url_in_trusted_network_rejected(pg_url, redis_url, db, redis_client, on):
+    """L159:解析到 WS_TRUSTED_PROXIES(compose 子网)的地址虽是私网也拒绝,
+    堵住借"测试连接"探测容器端口。"""
+    from fastapi.testclient import TestClient
+
+    from app.db import get_db
+    from app.main import create_app
+    from app.redis import get_redis
+    from tests.conftest import TEST_JWT_SECRET
+
+    cfg = Settings(
+        _env_file=None,
+        env="dev",
+        database_url=pg_url,
+        redis_url=redis_url,
+        jwt_secret=TEST_JWT_SECRET,
+        trusted_proxies=["172.30.0.0/24"],
+    )
+    app = create_app(cfg)
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[get_redis] = lambda: redis_client
+    c = TestClient(app)
+    h = auth(cfg, IT_ADMIN)
+    res = c.post(URL, headers=h, json=body(rtsp_url="rtsp://172.30.0.5:5432/x"))
+    assert res.status_code == 400 and res.json()["error"]["code"] == "RTSP_URL_NOT_LAN"
+    assert db.scalars(select(Camera)).first() is None
+    ok = c.post(URL, headers=h, json=body(rtsp_url="rtsp://192.168.1.10/live/1"))
+    assert ok.status_code == 201, ok.text
+    put = c.put(f"{URL}/{ok.json()['id']}", headers=h, json=body(rtsp_url="rtsp://172.30.0.9/x"))
+    assert put.status_code == 400 and put.json()["error"]["code"] == "RTSP_URL_NOT_LAN"
+
+
 def test_loopback_allowed_only_in_dev(client, settings, on):
     assert settings.env == "dev"
     res = client.post(
@@ -542,6 +574,57 @@ def test_probe_garbage_reply(client, settings, on, redis_client):
     assert res.status_code == 200
     body_ = res.json()
     assert body_["ok"] is False and body_["preview_jpeg_base64"] is None
+
+
+def _break_redis(monkeypatch, redis_client, *methods):
+    from redis import exceptions as rex
+
+    def boom(*a, **k):
+        raise rex.ConnectionError("Error 111 connecting to redis:6379. Connection refused.")
+
+    for m in methods:
+        monkeypatch.setattr(redis_client, m, boom)
+
+
+REDIS_DOWN = {"code": "SERVICE_UNAVAILABLE", "message": "转流服务暂时不可用,请稍后再试"}
+
+
+def test_redis_down_gives_503_not_500(client, settings, db, on, redis_client, monkeypatch):
+    """L163:Redis 故障时摄像头接口 503 + 中文提示,不 500;新建不依赖 Redis;
+    改 / 删不会"存了却报错"。"""
+    h = auth(settings, IT_ADMIN)
+    cid = _create(client, settings, username=USER, password=PW)["id"]
+    _break_redis(
+        monkeypatch, redis_client, "hgetall", "hget", "hmget", "get", "set", "rpush", "publish"
+    )
+    for res in (
+        client.get(URL, headers=h),
+        client.get(f"{URL}/health", headers=h),
+        client.post(f"{URL}/{cid}/test", headers=h),
+        client.put(f"{URL}/{cid}", headers=h, json=body(name="改名")),
+    ):
+        assert res.status_code == 503, res.text
+        assert res.json()["error"] == REDIS_DOWN
+    assert _row(db, cid).name == "一楼走廊"  # 改名没有落库:重试不会出现"已保存却报错"
+    assert not any(r.action == "camera.test" for r in audit_rows(db, cid))
+    # 新建不读 Redis(新摄像头必然 idle);删除先落库,通知 worker 失败只告警
+    created = client.post(URL, headers=h, json=body(name="新增"))
+    assert created.status_code == 201, created.text
+    assert created.json()["status"] == "idle" and created.json()["last_error"] is None
+    assert client.delete(f"{URL}/{created.json()['id']}", headers=h).status_code == 204
+    assert db.get(Camera, UUID(created.json()["id"])) is None
+
+
+def test_update_publish_failure_after_commit_is_not_an_error(
+    client, settings, db, on, redis_client, monkeypatch
+):
+    """改动已提交后 publish 失败:改动保留、返回 200(worker 重连时会停掉全部流重读配置)。"""
+    h = auth(settings, IT_ADMIN)
+    cid = _create(client, settings)["id"]
+    _break_redis(monkeypatch, redis_client, "publish")
+    res = client.put(f"{URL}/{cid}", headers=h, json=body(name="改名", enabled=False))
+    assert res.status_code == 200, res.text
+    assert res.json()["name"] == "改名" and _row(db, cid).enabled is False
 
 
 def test_unauthorised_with_switch_off_is_403(client, settings, db, redis_client):

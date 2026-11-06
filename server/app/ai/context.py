@@ -471,12 +471,19 @@ def progressed_students(
 
 
 def failing_students(
-    db: Session, cls: SchoolClass, exam: Exam, access: Access
+    db: Session,
+    cls: SchoolClass,
+    exam: Exam,
+    access: Access,
+    *,
+    ratios: Grading | None = None,
 ) -> list[tuple[Enrollment, int]]:
-    """可见科目里有两科及以上低于及格线(学校设置的比例)的学生 (enrollment, 不及格科数),科数降序。"""
+    """可见科目里有两科及以上低于及格线(学校设置的比例)的学生 (enrollment, 不及格科数),科数降序。
+
+    ratios 由 exam_context 传入已读到的设置,整段资料只查一次及格线;单独调用时自己读。"""
     subjects, scores, ids = load_exam_data(db, cls, exam, access)
     table = exam_table(subjects, scores, ids)
-    pass_ratio = get_grading(db, cls.school_id).pass_ratio
+    pass_ratio = (ratios or get_grading(db, cls.school_id)).pass_ratio
     found = []
     for r in table:
         count = sum(
@@ -530,7 +537,7 @@ def exam_context(
     if compare is not None:
         lines.extend(_compare_lines(db, cls, exam, compare, access, st, names, ratios))
     if len(subjects) >= 2:
-        failing = failing_students(db, cls, exam, access)
+        failing = failing_students(db, cls, exam, access, ratios=ratios)
         lines.append("两科及以上不及格：" + ("、".join(names[e.id] for e, _ in failing) or "无"))
     return "\n".join(lines)
 

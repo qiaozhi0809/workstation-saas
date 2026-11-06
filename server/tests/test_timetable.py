@@ -194,6 +194,58 @@ def test_teacher_must_be_assigned(client, settings, db):
     assert db.scalar(select(func.count()).select_from(TimetableEntry)) == 0
 
 
+def test_subject_taught_by_active_teacher_allowed(client, settings, db):
+    """L210:组织架构里有"信息技术"老师、考试科目表没有这门 → 仍可排课,老师自动匹配。"""
+    _seed_periods(db)
+    user = make_teacher_account(db, SCHOOL_ID, "it_teacher")
+    tid = db.scalar(text("SELECT id FROM teachers WHERE user_id = :u"), {"u": user.id})
+    db.execute(
+        text(
+            "INSERT INTO teacher_assignments (teacher_id, class_id, academic_year_id, identity,"
+            " subject) VALUES (:t, :c, :y, 'subject', '信息技术')"
+        ),
+        {"t": tid, "c": CLASS_ID, "y": YEAR_ID},
+    )
+    db.flush()
+    subjects = client.get(f"/api/v1/classes/{CLASS_ID}/subjects", headers=auth(settings)).json()
+    assert "信息技术" not in {s["name"] for s in subjects["items"]}
+    res = _put_tt(client, settings, [{"weekday": 1, "period_no": 1, "subject": "信息技术"}])
+    assert res.status_code == 200, res.text
+    assert res.json()["cells"][0]["teacher"] == {"id": str(tid), "name": user.display_name}
+    # 已卸任老师的科目不算
+    db.execute(
+        text("UPDATE teacher_assignments SET ended_at = now() WHERE teacher_id = :t"), {"t": tid}
+    )
+    res = _put_tt(client, settings, [{"weekday": 1, "period_no": 2, "subject": "信息技术"}])
+    assert res.status_code == 400 and "信息技术" in res.json()["error"]["message"]
+
+
+def test_unassigned_teacher_error_points_at_cell(client, settings, db):
+    """L211:整班保存时某格老师已卸任 → 400 的 details 带 {weekday, period_no, teacher},
+    message 指出哪一格;整批不写。"""
+    _seed_periods(db)
+    db.execute(
+        text("UPDATE teacher_assignments SET ended_at = now() WHERE teacher_id = :t"),
+        {"t": T_MATH},
+    )
+    cells = [
+        {"weekday": 1, "period_no": 1, "subject": "语文", "teacher_id": T_HOME},
+        {"weekday": 3, "period_no": 2, "subject": "数学", "teacher_id": T_MATH},
+    ]
+    res = _put_tt(client, settings, cells)
+    assert res.status_code == 400, res.text
+    err = res.json()["error"]
+    assert err["code"] == "BAD_REQUEST"
+    assert err["details"] == {"weekday": 3, "period_no": 2, "teacher": "赵老师"}
+    assert "星期三" in err["message"] and "第 2 节" in err["message"] and "赵老师" in err["message"]
+    assert db.scalar(select(func.count()).select_from(TimetableEntry)) == 0
+    # 不存在的 teacher_id:teacher 退回 id 字符串
+    ghost = str(uuid4())
+    cell = {"weekday": 1, "period_no": 1, "subject": "语文", "teacher_id": ghost}
+    res = _put_tt(client, settings, [cell])
+    assert res.json()["error"]["details"] == {"weekday": 1, "period_no": 1, "teacher": ghost}
+
+
 def test_permissions(client, settings, db):
     other = make_class(db, "三年九班")
     homeroom_other = make_teacher_account(db, SCHOOL_ID, "home_other")

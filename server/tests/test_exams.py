@@ -95,6 +95,30 @@ def test_create_exam_writes_back_new_subject(client, settings):
     assert [s["name"] for s in got] == ["语文", "数学", "英语", "科学", "道法", "书法", "美术"]
 
 
+def test_create_exam_on_deleted_class_is_404_not_500(db):
+    """A1 遗留:班级在路由的 404 检查之后、插入之前被并发删掉 → merge_subjects 先锁行发现没了
+    → 404,而不是 exams.class_id 的外键 500。"""
+    from sqlalchemy import delete as sa_delete
+
+    from app.domain.exams import service
+    from app.domain.exams.schemas import ExamInput
+    from app.errors import ApiError
+    from app.models import SchoolClass
+    from app.rbac.bindings import load_bindings
+    from app.rbac.roles import Role
+    from tests.factories import bind, make_class
+    from tests.seed_ids import TEACHER_USER_ID, YEAR_ID
+
+    cid = make_class(db, "临时班")
+    bind(db, UUID(TEACHER_USER_ID), Role.homeroom_teacher, class_id=cid)
+    bindings = load_bindings(db, UUID(TEACHER_USER_ID), UUID(YEAR_ID))
+    cls = db.get(SchoolClass, cid)
+    db.execute(sa_delete(SchoolClass).where(SchoolClass.id == cid))
+    with pytest.raises(ApiError) as e:
+        service.create_exam(db, cls, ExamInput(**_body()), UUID(TEACHER_USER_ID), bindings, None)
+    assert (e.value.status, e.value.code) == (404, "NOT_FOUND")
+
+
 @pytest.mark.parametrize(
     "patch",
     [
