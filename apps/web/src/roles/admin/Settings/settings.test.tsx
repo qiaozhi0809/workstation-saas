@@ -5,6 +5,7 @@ import { adminApi } from '@/shared/api/admin'
 import { ApiError } from '@/shared/api/client'
 import { schoolApi } from '@/shared/api/school'
 import { toast } from '@/shared/components/Toast'
+import { downloadBlob } from '@/shared/lib/download'
 import { useAuthStore } from '@/shared/stores/auth'
 import type { Switches, SystemInfo } from '@/shared/types/admin'
 import type { SubjectCatalog } from '@/shared/types/school'
@@ -31,6 +32,7 @@ vi.mock('@/shared/api/school', () => ({
   },
 }))
 vi.mock('@/shared/components/Toast', () => ({ toast: vi.fn() }))
+vi.mock('@/shared/lib/download', () => ({ downloadBlob: vi.fn() }))
 
 const CATALOG: SubjectCatalog = {
   primary: [
@@ -64,7 +66,11 @@ beforeEach(() => {
   vi.mocked(schoolApi.grading).mockResolvedValue({ pass_ratio: 0.6, good_ratio: 0.85 })
   vi.mocked(schoolApi.subjectCatalog).mockResolvedValue(CATALOG)
 })
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  // asAdmin 写进 store 的权限不能漏到下一个用例:否则系统卡在没 mock systemInfo 的用例里也会去请求
+  useAuthStore.setState({ user: null })
+})
 
 let client: QueryClient
 const renderPage = async () => {
@@ -333,14 +339,17 @@ it('hides system card without settings.manage', async () => {
   expect(adminApi.systemInfo).not.toHaveBeenCalled()
 })
 
-it('says there is no backup record when last_backup is null', async () => {
+// L184:备份超过 48 小时或从未备份都要醒目告警(定时器失败只进 journal,这里是管理员唯一能看到的地方)
+it('alerts loudly when there has never been a backup', async () => {
   asAdmin(['settings.manage'])
   vi.mocked(adminApi.systemInfo).mockResolvedValue({ ...INFO, last_backup: null })
   await renderPage()
-  expect(await screen.findByText('还没有备份记录')).toBeInTheDocument()
+  const alert = await screen.findByRole('alert')
+  expect(alert).toHaveTextContent('从未备份,请检查定时任务')
+  expect(alert).toHaveClass('border-destructive')
 })
 
-it('warns when last backup is older than 2 days', async () => {
+it('alerts when the last backup is older than 48 hours, with the age in days', async () => {
   asAdmin(['settings.manage'])
   const at = new Date(Date.now() - 5 * 24 * 3600 * 1000).toISOString()
   vi.mocked(adminApi.systemInfo).mockResolvedValue({
@@ -348,10 +357,12 @@ it('warns when last backup is older than 2 days', async () => {
     last_backup: { at, file: 'f', size_bytes: 1 },
   })
   await renderPage()
-  expect(await screen.findByText('上次备份是 5 天前')).toHaveClass('text-warning')
+  const alert = await screen.findByRole('alert')
+  expect(alert).toHaveTextContent('上次备份是 5 天前,请检查定时任务')
+  expect(alert).toHaveClass('border-destructive')
 })
 
-it('does not warn at 1 day, warns just past 2 days', async () => {
+it('does not alert at 30 hours, alerts just past 48 hours', async () => {
   asAdmin(['settings.manage'])
   const ago = (h: number) => new Date(Date.now() - h * 3600 * 1000).toISOString()
   vi.mocked(adminApi.systemInfo).mockResolvedValue({
@@ -360,39 +371,45 @@ it('does not warn at 1 day, warns just past 2 days', async () => {
   })
   await renderPage()
   await screen.findByText('0.7.0')
-  expect(screen.queryByText(/上次备份是/)).toBeNull()
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(screen.queryByText(/请检查定时任务/)).toBeNull()
   cleanup()
   vi.mocked(adminApi.systemInfo).mockResolvedValue({
     ...INFO,
     last_backup: { at: ago(49), file: 'f', size_bytes: 1 },
   })
   await renderPage()
-  expect(await screen.findByText('上次备份是 2 天前')).toBeInTheDocument()
+  expect(await screen.findByRole('alert')).toHaveTextContent('上次备份是 2 天前,请检查定时任务')
 })
 
-it('downloads diagnostics, disabled while running', async () => {
+// 审查 Minor 5:备份时间解析不了时不能显示"NaN 天前"
+it('shows a neutral notice when the last backup time cannot be parsed', async () => {
+  asAdmin(['settings.manage'])
+  vi.mocked(adminApi.systemInfo).mockResolvedValue({
+    ...INFO,
+    last_backup: { at: 'not-a-date', file: 'f', size_bytes: 1 },
+  })
+  await renderPage()
+  const alert = await screen.findByRole('alert')
+  expect(alert).toHaveTextContent('上次备份时间无法识别,请检查备份记录')
+  expect(alert).not.toHaveTextContent('NaN')
+})
+
+it('downloads diagnostics through downloadBlob, disabled while running', async () => {
   asAdmin(['settings.manage'])
   vi.mocked(adminApi.systemInfo).mockResolvedValue(INFO)
   let done!: (v: { blob: Blob; filename: string }) => void
   vi.mocked(adminApi.downloadDiagnostics).mockReturnValue(new Promise((r) => (done = r)))
-  const createUrl = vi.fn(() => 'blob:x')
-  Object.assign(URL, { createObjectURL: createUrl, revokeObjectURL: vi.fn() })
-  const anchors: HTMLAnchorElement[] = []
-  const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
-    this: HTMLAnchorElement,
-  ) {
-    anchors.push(this)
-  })
   await renderPage()
   const btn = await screen.findByRole('button', { name: '导出诊断信息' })
   fireEvent.click(btn)
   await waitFor(() => expect(btn).toBeDisabled())
-  done({ blob: new Blob(['z']), filename: 'ws-diagnostics-20261105-100000.zip' })
-  await waitFor(() => expect(click).toHaveBeenCalled())
-  expect(createUrl).toHaveBeenCalled()
-  expect(anchors.at(-1)?.download).toBe('ws-diagnostics-20261105-100000.zip')
+  const blob = new Blob(['z'])
+  done({ blob, filename: 'ws-diagnostics-20261105-100000.zip' })
+  await waitFor(() =>
+    expect(downloadBlob).toHaveBeenCalledWith(blob, 'ws-diagnostics-20261105-100000.zip'),
+  )
   await waitFor(() => expect(btn).toBeEnabled())
-  click.mockRestore()
 })
 
 it('toasts when diagnostics export fails', async () => {

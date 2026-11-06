@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { adminApi } from '@/shared/api/admin'
@@ -144,19 +144,56 @@ function ScoresTab({ classId }: { classId: string }) {
   )
 }
 
+/**
+ * 没带 ?year= 直接打开(书签 / 手输地址)时,从最近的往年起逐个学年找这个班(L58):
+ * 接口没有按班 id 读学年的方法,而往年通常只有几个。学年与班级列表都经 queryClient 取,与列表页共用缓存。
+ */
+function useLocateClass(classId: string, enabled: boolean) {
+  const qc = useQueryClient()
+  return useQuery({
+    queryKey: ['history', 'class-year', classId],
+    enabled,
+    queryFn: async () => {
+      const years = await qc.fetchQuery({
+        queryKey: ['history', 'years'],
+        queryFn: () => adminApi.historyYears(),
+      })
+      for (const year of years) {
+        const classes = await qc.fetchQuery({
+          queryKey: ['history', 'classes', year.id],
+          queryFn: () => adminApi.historyClasses(year.id),
+        })
+        const cls = classes.find((c) => c.class_id === classId)
+        if (cls) return { year, cls }
+      }
+      return null
+    },
+  })
+}
+
 export default function HistoryClassPage() {
   const id = useParams().id ?? ''
-  const yearId = useSearchParams()[0].get('year') ?? ''
+  const paramYear = useSearchParams()[0].get('year') ?? ''
   const [tab, setTab] = useState<Tab>('roster')
   // 标题用的学年名 / 班名复用列表页的缓存(直接打开链接时才会真发请求);失败或查不到就退化为"往年班级"
-  const years = useQuery({ queryKey: ['history', 'years'], queryFn: () => adminApi.historyYears() })
-  const classes = useQuery({
-    queryKey: ['history', 'classes', yearId],
-    queryFn: () => adminApi.historyClasses(yearId),
-    enabled: yearId !== '',
+  const years = useQuery({
+    queryKey: ['history', 'years'],
+    queryFn: () => adminApi.historyYears(),
+    enabled: paramYear !== '',
   })
-  const yearName = years.data?.find((y) => y.id === yearId)?.name
-  const className = classes.data?.find((c) => c.class_id === id)?.class_name
+  const classes = useQuery({
+    queryKey: ['history', 'classes', paramYear],
+    queryFn: () => adminApi.historyClasses(paramYear),
+    enabled: paramYear !== '',
+  })
+  const located = useLocateClass(id, paramYear === '')
+  const yearId = paramYear || (located.data?.year.id ?? '')
+  const yearName = paramYear
+    ? years.data?.find((y) => y.id === paramYear)?.name
+    : located.data?.year.name
+  const className = paramYear
+    ? classes.data?.find((c) => c.class_id === id)?.class_name
+    : located.data?.cls.class_name
   const title = yearName && className ? `${yearName} ${className}` : '往年班级'
 
   return (

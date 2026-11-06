@@ -133,7 +133,7 @@ beforeEach(() => {
   api.years.mockResolvedValue([activeYear('y1')])
   students.listInClass.mockResolvedValue({ items: [seat('e1', '周小乐'), seat('e2', '吴小米')] })
   org.people.mockResolvedValue([
-    { user_id: 'u7', name: '王老师', login_name: 'wang', subjects: ['数学'] },
+    { user_id: 'u7', teacher_id: 't7', name: '王老师', login_name: 'wang', subjects: ['数学'] },
   ])
 })
 afterEach(() => {
@@ -333,6 +333,33 @@ describe('homeroom teacher id contract', () => {
     step('预览')
     await waitFor(() => expect(api.upgradePreview).toHaveBeenCalled())
     expect(lastPreviewBody().classes[0].homeroom_teacher_id).toBe('t1')
+  })
+
+  it('highlights the prefilled teacher by teacher_id, and a picked one by user_id (L55)', async () => {
+    org.people.mockResolvedValue([
+      { user_id: 'u1', teacher_id: 't1', name: '李老师', login_name: 'li', subjects: [] },
+      { user_id: 'u7', teacher_id: 't7', name: '王老师', login_name: 'wang', subjects: ['数学'] },
+    ])
+    renderPage()
+    await generate()
+    // 方案里预填的是 teachers.id('t1'),候选按 teacher_id 对上
+    fireEvent.click(screen.getByRole('button', { name: '三年一班 班主任' }))
+    expect(await screen.findByRole('button', { name: /李老师/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(screen.getByRole('button', { name: /王老师/ })).toHaveAttribute('aria-pressed', 'false')
+    // 选人写进方案的是 user_id('u7'),再打开时按 user_id 对上
+    fireEvent.click(screen.getByRole('button', { name: /王老师/ }))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '三年一班 班主任' })).toHaveTextContent('王老师'),
+    )
+    fireEvent.click(screen.getByRole('button', { name: '三年一班 班主任' }))
+    expect(await screen.findByRole('button', { name: /王老师/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(screen.getByRole('button', { name: /李老师/ })).toHaveAttribute('aria-pressed', 'false')
   })
 })
 
@@ -586,7 +613,7 @@ describe('errors from the backend', () => {
 })
 
 describe('preview (B-4)', () => {
-  it('renders each known action and falls back for an unknown one', async () => {
+  it('renders each of the three actions (the type admits no other, L53)', async () => {
     api.upgradePreview.mockResolvedValue(
       preview([
         cp({}),
@@ -607,7 +634,6 @@ describe('preview (B-4)', () => {
           leave: 0,
           repeat_in: 2,
         }),
-        cp({ from_name: '怪班', action: 'weird', to_label: '神秘去向' }),
       ]),
     )
     renderPage()
@@ -618,7 +644,6 @@ describe('preview (B-4)', () => {
     ).toBeInTheDocument()
     expect(screen.getByText(/六年一班 毕业.*毕业 40 人/)).toBeInTheDocument()
     expect(screen.getByText(/新建班 一年级 二班/)).toBeInTheDocument()
-    expect(screen.getByText(/神秘去向.*weird/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '执行升级' })).toBeInTheDocument()
   })
 
@@ -684,6 +709,7 @@ describe('latest upgrade and rollback', () => {
         new_classes: 2,
         new_assignments: 3,
         new_bindings: 4,
+        class_changes: 2,
         mystery: 7,
       }),
     )
@@ -706,6 +732,7 @@ describe('latest upgrade and rollback', () => {
       '手动新建的班级 2 个',
       '手动添加的任职 3 条',
       '手动添加的管理岗任命 4 条',
+      '学生换班 2 人',
       'mystery: 7',
     ])
       expect(screen.getByText(t)).toBeInTheDocument()

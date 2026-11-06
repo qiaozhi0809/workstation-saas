@@ -7,20 +7,13 @@ import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { toast } from '@/shared/components/Toast'
 import { Button } from '@/shared/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card'
+import { downloadBlob } from '@/shared/lib/download'
 import { useAuthStore } from '@/shared/stores/auth'
+import type { SystemInfo } from '@/shared/types/admin'
 
 const DAY_MS = 24 * 60 * 60 * 1000
-
-function saveBlob(filename: string, blob: Blob): void {
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 0)
-}
+/** 备份定时器每天跑一次;超过两天没有新备份就当它坏了 */
+const BACKUP_STALE_MS = 2 * DAY_MS
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`
@@ -43,6 +36,19 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   )
 }
 
+/**
+ * 备份告警(L184):定时器失败只进 journal,这张卡是管理员唯一能看到备份状况的地方,
+ * 所以从未备份、或上次备份距今超过 48 小时都要醒目地说出来;正常时只在"上次备份"行显示时间。
+ */
+function backupAlert(last: SystemInfo['last_backup']): string | null {
+  if (last === null) return '从未备份,请检查定时任务'
+  const age = Date.now() - new Date(last.at).getTime()
+  // 时间解析不了(备份记录被改坏等)不能算天数,给个中性提示而不是"NaN 天前"
+  if (Number.isNaN(age)) return '上次备份时间无法识别,请检查备份记录'
+  if (age <= BACKUP_STALE_MS) return null
+  return `上次备份是 ${Math.floor(age / DAY_MS)} 天前,请检查定时任务`
+}
+
 /** 系统信息与诊断包导出;只有 settings.manage 看得到 */
 export default function SystemCard() {
   const allowed = useAuthStore((s) => s.user?.admin_perms?.includes('settings.manage') ?? false)
@@ -59,7 +65,7 @@ export default function SystemCard() {
     setBusy(true)
     try {
       const { blob, filename } = await adminApi.downloadDiagnostics()
-      saveBlob(filename, blob)
+      downloadBlob(blob, filename)
     } catch (err) {
       toast(err instanceof ApiError ? err.message : '导出失败,请重试')
     } finally {
@@ -79,28 +85,28 @@ export default function SystemCard() {
     )
   } else {
     const info = q.data
-    const days = info.last_backup
-      ? Math.floor((Date.now() - new Date(info.last_backup.at).getTime()) / DAY_MS)
-      : null
-    const stale =
-      info.last_backup !== null && Date.now() - new Date(info.last_backup.at).getTime() > 2 * DAY_MS
+    const alert = backupAlert(info.last_backup)
     body = (
-      <dl className="space-y-2">
-        <Row label="版本">{info.version}</Row>
-        <Row label="数据库迁移">{info.migration}</Row>
-        <Row label="数据库大小">{formatBytes(info.db_size_bytes)}</Row>
-        <Row label="上次备份">
-          {info.last_backup === null ? (
-            '还没有备份记录'
-          ) : stale ? (
-            <span role="alert" className="text-warning">
-              上次备份是 {days} 天前
-            </span>
-          ) : (
-            new Date(info.last_backup.at).toLocaleString('zh-CN')
-          )}
-        </Row>
-      </dl>
+      <div className="space-y-3">
+        {alert && (
+          <p
+            role="alert"
+            className="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive"
+          >
+            {alert}
+          </p>
+        )}
+        <dl className="space-y-2">
+          <Row label="版本">{info.version}</Row>
+          <Row label="数据库迁移">{info.migration}</Row>
+          <Row label="数据库大小">{formatBytes(info.db_size_bytes)}</Row>
+          <Row label="上次备份">
+            {info.last_backup === null
+              ? '还没有备份记录'
+              : new Date(info.last_backup.at).toLocaleString('zh-CN')}
+          </Row>
+        </dl>
+      </div>
     )
   }
 
