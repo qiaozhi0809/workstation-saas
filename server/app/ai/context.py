@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.stats import (
     ExamStats,
+    Row,
     exam_stats,
     exam_table,
     rank_changes,
@@ -418,15 +419,29 @@ def _attendance_line(db: Session, enrollment: Enrollment) -> str:
 # ---------------------------------------------------------------- 考试资料
 
 
-def _rank_moves(
+def _rank_tables(
     db: Session, cls: SchoolClass, exam: Exam, compare: Exam, access: Access
-) -> tuple[list[tuple[UUID, int]], dict[UUID, int]]:
-    """(本场名次序的 enrollment_id, 名次变化);正 = 进步。"""
+) -> tuple[list[Row], list[Row]]:
+    """本场与对比场的名次表(同一份在籍名单)。"""
     subjects, scores, ids = load_exam_data(db, cls, exam, access)
     psubjects, pscores, _ = load_exam_data(db, cls, compare, access)
-    cur = exam_table(subjects, scores, ids)
-    changes = rank_changes(cur, exam_table(psubjects, pscores, ids))
-    return [(r.enrollment_id, 0) for r in cur], changes
+    return exam_table(subjects, scores, ids), exam_table(psubjects, pscores, ids)
+
+
+def _moved(
+    db: Session, cur: Sequence[Row], prev: Sequence[Row], threshold: int, *, up: bool
+) -> list[tuple[Enrollment, int]]:
+    """进步(``up``)或退步 ``threshold`` 名及以上的学生,按变动名次数降序;
+    只用两张已算好的名次表,不再取数。"""
+    changes = rank_changes(cur, prev)
+    sign = 1 if up else -1
+    picked = [
+        (r.enrollment_id, sign * changes[r.enrollment_id])
+        for r in cur
+        if sign * changes.get(r.enrollment_id, 0) >= threshold
+    ]
+    picked.sort(key=lambda t: -t[1])
+    return [(db.get(Enrollment, eid), n) for eid, n in picked]  # type: ignore[misc]
 
 
 def regressed_students(
@@ -438,10 +453,8 @@ def regressed_students(
     threshold: int = _MOVE_THRESHOLD,
 ) -> list[tuple[Enrollment, int]]:
     """退步 ``threshold`` 名及以上的学生,按退步名次数降序。"""
-    order, changes = _rank_moves(db, cls, exam, compare, access)
-    picked = [(eid, -changes[eid]) for eid, _ in order if changes.get(eid, 0) <= -threshold]
-    picked.sort(key=lambda t: -t[1])
-    return [(db.get(Enrollment, eid), n) for eid, n in picked]  # type: ignore[misc]
+    cur, prev = _rank_tables(db, cls, exam, compare, access)
+    return _moved(db, cur, prev, threshold, up=False)
 
 
 def progressed_students(
@@ -453,10 +466,8 @@ def progressed_students(
     threshold: int = _MOVE_THRESHOLD,
 ) -> list[tuple[Enrollment, int]]:
     """进步 ``threshold`` 名及以上的学生,按进步名次数降序。"""
-    order, changes = _rank_moves(db, cls, exam, compare, access)
-    picked = [(eid, changes[eid]) for eid, _ in order if changes.get(eid, 0) >= threshold]
-    picked.sort(key=lambda t: -t[1])
-    return [(db.get(Enrollment, eid), n) for eid, n in picked]  # type: ignore[misc]
+    cur, prev = _rank_tables(db, cls, exam, compare, access)
+    return _moved(db, cur, prev, threshold, up=True)
 
 
 def failing_students(
@@ -548,8 +559,9 @@ def _compare_lines(
         f"对比「{compare.name}」：总分得分率 {prev.rate:.1f}% → {st.rate:.1f}%"
         f"（{st.rate - prev.rate:+.1f} 个百分点）"
     )
-    up = progressed_students(db, cls, exam, compare, access)
-    down = regressed_students(db, cls, exam, compare, access)
+    # 两张名次表 exam_stats 已经算好(st.table / prev.table),进步 / 退步名单直接复用,不再取数
+    up = _moved(db, st.table, prev.table, _MOVE_THRESHOLD, up=True)
+    down = _moved(db, st.table, prev.table, _MOVE_THRESHOLD, up=False)
     return [
         head + (f"；各科：{subs}" if subs else ""),
         f"进步 {_MOVE_THRESHOLD} 名及以上：{_moves_text(up, names, '+')}",
