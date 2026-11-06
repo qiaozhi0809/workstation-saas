@@ -1,5 +1,6 @@
-"""ffmpeg 命令行拼装与日志打码。带凭据的地址只存在于 worker 进程内存里,不进日志、不进 Redis。"""
+"""ffmpeg / ffprobe 命令行拼装与日志打码。带凭据的地址只在 worker 内存里,不进日志、不进 Redis。"""
 
+import os
 import re
 from pathlib import Path
 from urllib.parse import quote, urlsplit, urlunsplit
@@ -44,6 +45,21 @@ def probe_args(url: str) -> list[str]:
         *("-vf", "scale='min(640,iw)':-2"),
         *("-f", "image2", "-c:v", "mjpeg", "pipe:1"),
     ]
+
+
+def ffprobe_args(url: str) -> list[str]:
+    """ffprobe 读流信息(编码、分辨率、帧率、码率),JSON 写到 stdout;网络约束与 ffmpeg 同一套。"""
+    return [
+        *("-v", "error", "-print_format", "json", "-show_streams", "-show_format"),
+        *("-protocol_whitelist", PROTOCOL_WHITELIST),
+        *("-rtsp_transport", "tcp", "-timeout", RTSP_IO_TIMEOUT_US, "-i", url),
+    ]
+
+
+def ffprobe_bin_for(ffmpeg_bin: str) -> str:
+    """ffprobe 与 ffmpeg 装在一起:给了目录就取同目录下的 ffprobe,只给名字就按 PATH 找。"""
+    directory = os.path.dirname(ffmpeg_bin)
+    return os.path.join(directory, "ffprobe") if directory else "ffprobe"
 
 
 def credentials_url(url: str, username: str | None, password: str | None) -> str:

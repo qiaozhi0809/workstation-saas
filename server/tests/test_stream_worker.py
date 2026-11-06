@@ -77,6 +77,55 @@ def calls(tmp_path: Path) -> list[str]:
     return log.read_text().splitlines() if log.exists() else []
 
 
+# 假 ffprobe:按地址里的关键字打印固定 JSON。音频流排在前面,实现必须取第一个 *视频* 流
+FAKE_FFPROBE = f"""#!{sys.executable}
+import json, os, sys, time
+args = sys.argv[1:]
+log = os.environ.get("FAKE_FFPROBE_LOG")
+if log:
+    with open(log, "a") as f:
+        f.write(" ".join(args) + "\\n")
+url = args[args.index("-i") + 1]
+if "brokenprobe" in url:  # 关键字不能含 fail:那是假 ffmpeg 截图失败的开关
+    sys.stderr.write(url + ": Connection refused\\n")
+    sys.exit(1)
+if "badjson" in url:
+    sys.stdout.write("{{not json")
+    sys.exit(0)
+if "slowprobe" in url:
+    time.sleep(30)
+if "hevc" in url:
+    video = {{"codec_type": "video", "codec_name": "hevc", "width": 2560, "height": 1440,
+             "r_frame_rate": "20/1"}}
+    fmt = {{"filename": url, "bit_rate": "6000000"}}
+elif "mpeg4" in url:
+    video = {{"codec_type": "video", "codec_name": "mpeg4", "width": 704, "height": 576,
+             "r_frame_rate": "0/0"}}
+    fmt = {{"filename": url}}
+else:
+    video = {{"codec_type": "video", "codec_name": "h264", "width": 1920, "height": 1080,
+             "r_frame_rate": "25/1", "bit_rate": "4096000"}}
+    fmt = {{"filename": url, "bit_rate": "4200000"}}
+streams = [{{"codec_type": "audio", "codec_name": "aac"}}, video]
+print(json.dumps({{"streams": streams, "format": fmt}}))
+"""
+
+
+@pytest.fixture
+def fake_ffprobe(tmp_path: Path, monkeypatch) -> Path:
+    """放在假 ffmpeg 同目录、名字就叫 ffprobe:默认推导(同目录下的 ffprobe)能找到它。"""
+    script = tmp_path / "ffprobe"
+    script.write_text(FAKE_FFPROBE)
+    script.chmod(script.stat().st_mode | stat.S_IEXEC)
+    monkeypatch.setenv("FAKE_FFPROBE_LOG", str(tmp_path / "probe-calls.log"))
+    return script
+
+
+def probe_calls(tmp_path: Path) -> list[str]:
+    log = tmp_path / "probe-calls.log"
+    return log.read_text().splitlines() if log.exists() else []
+
+
 @pytest.fixture
 def hls_root(tmp_path: Path) -> Path:
     root = tmp_path / "hls"
@@ -188,6 +237,45 @@ def test_credentials_url_encodes_and_mask_hides():
     masked = ffmpeg.mask_text(f"open {url} failed; password=hunter2&a=1", ("p@ss:/word",))
     assert "p%40ss" not in masked and "cam%20user" not in masked and "hunter2" not in masked
     assert "***" in masked
+
+
+def test_ffprobe_args_and_bin():
+    args = ffmpeg.ffprobe_args("rtsp://10.0.0.5/live")
+    assert args[-2:] == ["-i", "rtsp://10.0.0.5/live"]
+    assert args[args.index("-print_format") + 1] == "json"
+    assert "-show_streams" in args and "-show_format" in args
+    assert args[args.index("-rtsp_transport") + 1] == "tcp"
+    assert args[args.index("-timeout") + 1] == ffmpeg.RTSP_IO_TIMEOUT_US
+    assert args[args.index("-protocol_whitelist") + 1] == ffmpeg.PROTOCOL_WHITELIST
+    assert args[args.index("-v") + 1] == "error"
+    # ffprobe 与 ffmpeg 同目录;只给了名字时按 PATH 找
+    assert ffmpeg.ffprobe_bin_for("/usr/bin/ffmpeg") == "/usr/bin/ffprobe"
+    assert ffmpeg.ffprobe_bin_for("./bin/ffmpeg") == "./bin/ffprobe"
+    assert ffmpeg.ffprobe_bin_for("ffmpeg") == "ffprobe"
+
+
+@pytest.mark.parametrize(
+    "codec, transcode, expected",
+    [
+        ("hevc", False, "H.265"),
+        ("hevc", True, "已勾选转码"),
+        ("mpeg4", False, "视频编码 mpeg4 浏览器不支持"),
+        ("mjpeg", False, "视频编码 mjpeg 浏览器不支持"),
+        ("mpeg4", True, None),
+        ("h264", False, None),
+        ("h264", True, None),
+        (None, False, None),
+    ],
+)
+def test_probe_hint(codec, transcode, expected):
+    hint = probe.probe_hint(codec, transcode)
+    if expected is None:
+        assert hint is None
+    else:
+        assert hint is not None and expected in hint
+    if codec == "hevc" and not transcode:
+        assert "/Streaming/Channels/102" in hint and "subtype=1" in hint and "转码" in hint
+    assert probe.browser_playable(codec, transcode) is (codec == "h264" or transcode)
 
 
 def test_lan_rules(monkeypatch):
@@ -451,6 +539,7 @@ def test_probe_reply(db, redis_url, fake_ffmpeg):
     async def body(redis):
         r = await ask(redis, ok.id, f"{probe.REPLY_PREFIX}a")
         assert r["ok"] and base64.b64decode(r["preview_jpeg_base64"]).startswith(b"\xff\xd8")
+        assert r["probe"] is None  # 同目录下没有 ffprobe:只少编解码信息,截图照常
         r = await ask(redis, bad.id, f"{probe.REPLY_PREFIX}b")
         assert not r["ok"] and r["preview_jpeg_base64"] is None
         assert PASSWORD not in r["message"] and USER not in r["message"]
@@ -468,6 +557,125 @@ def test_probe_reply(db, redis_url, fake_ffmpeg):
         assert await redis.get("ws:cam:want:evil") is None
 
     run_async(redis_url, body)
+
+
+async def _ask(redis, db, cam: Camera, fake_ffmpeg: Path, **kw) -> tuple[dict, str]:
+    """跑一次测试连接,返回(结果字典, Redis 里的原始 JSON 文本)。"""
+
+    @contextmanager
+    def scope():
+        yield db
+
+    key = f"{probe.REPLY_PREFIX}{cam.id}"
+    await probe.handle_probe(
+        json.dumps({"id": str(cam.id), "reply_key": key}),
+        redis,
+        scope,
+        ffmpeg_bin=str(fake_ffmpeg),
+        master_key=KEY,
+        allow_loopback=False,
+        **kw,
+    )
+    raw = await redis.get(key)
+    return json.loads(raw), raw
+
+
+def test_probe_reports_hevc_not_playable(db, redis_url, fake_ffmpeg, fake_ffprobe, tmp_path):
+    """红队场景:H.265 主码流截图成功,但未转码时浏览器放不了——结果里要说清楚。"""
+    cam = make_camera(db, "rtsp://10.0.0.5/hevc/main")
+
+    async def body(redis):
+        r, raw = await _ask(redis, db, cam, fake_ffmpeg)  # 不传 ffprobe_bin:按 ffmpeg 同目录推导
+        assert r["ok"] is True and r["message"] == "连接成功"
+        assert base64.b64decode(r["preview_jpeg_base64"]).startswith(b"\xff\xd8")
+        assert r["probe"] == {
+            "video_codec": "hevc",
+            "width": 2560,
+            "height": 1440,
+            "fps": 20.0,
+            "bitrate_kbps": 6000,  # 流级没有码率:取 format.bit_rate
+            "audio_codec": "aac",
+            "browser_playable": False,
+            "hint": r["probe"]["hint"],
+        }
+        hint = r["probe"]["hint"]
+        assert "H.265" in hint and "/Streaming/Channels/102" in hint and "转码" in hint
+        # ffprobe 的参数与 ffmpeg 同一套网络约束;凭据只进子进程,不进 Redis
+        (argv,) = probe_calls(tmp_path)
+        assert "-rtsp_transport tcp" in argv and f"-timeout {ffmpeg.RTSP_IO_TIMEOUT_US}" in argv
+        assert f"-protocol_whitelist {ffmpeg.PROTOCOL_WHITELIST}" in argv
+        assert "-print_format json" in argv and "-show_streams" in argv
+        assert f"rtsp://{USER}:{PASSWORD}@10.0.0.5/hevc/main" in argv
+        assert PASSWORD not in raw and USER not in raw
+
+    run_async(redis_url, body)
+
+
+def test_probe_hevc_with_transcode_playable(db, redis_url, fake_ffmpeg, fake_ffprobe):
+    cam = make_camera(db, "rtsp://10.0.0.5/hevc", transcode=True)
+
+    async def body(redis):
+        r, _ = await _ask(redis, db, cam, fake_ffmpeg, ffprobe_bin=str(fake_ffprobe))
+        assert r["ok"] is True
+        assert r["probe"]["video_codec"] == "hevc"
+        assert r["probe"]["browser_playable"] is True
+        assert r["probe"]["hint"] == probe.probe_hint("hevc", True)
+        assert "已勾选转码" in r["probe"]["hint"]
+
+    run_async(redis_url, body)
+
+
+def test_probe_h264_no_hint(db, redis_url, fake_ffmpeg, fake_ffprobe):
+    h264 = make_camera(db)
+    mpeg4 = make_camera(db, "rtsp://10.0.0.5/mpeg4")
+
+    async def body(redis):
+        r, _ = await _ask(redis, db, h264, fake_ffmpeg)
+        assert r["ok"] is True
+        assert r["probe"] == {
+            "video_codec": "h264",
+            "width": 1920,
+            "height": 1080,
+            "fps": 25.0,
+            "bitrate_kbps": 4096,  # 流级码率优先于 format.bit_rate
+            "audio_codec": "aac",
+            "browser_playable": True,
+            "hint": None,
+        }
+        # 分母为 0 的帧率、没有码率 → null;非 h264 又没转码 → 不可播 + 提示
+        r, _ = await _ask(redis, db, mpeg4, fake_ffmpeg)
+        assert r["probe"]["video_codec"] == "mpeg4"
+        assert r["probe"]["fps"] is None and r["probe"]["bitrate_kbps"] is None
+        assert r["probe"]["browser_playable"] is False
+        assert "mpeg4" in r["probe"]["hint"]
+
+    run_async(redis_url, body)
+
+
+@pytest.mark.parametrize("path", ["brokenprobe", "badjson", "slowprobe", "noprobe"])
+def test_probe_failure_keeps_grab_result(
+    db, redis_url, fake_ffmpeg, fake_ffprobe, tmp_path, monkeypatch, caplog, path
+):
+    """ffprobe 退出非 0 / 输出不是 JSON / 超时 / 没有可执行文件:probe 为 null,截图结果不受影响。"""
+    monkeypatch.setattr(probe, "FFPROBE_TIMEOUT", 0.5)
+    caplog.set_level(logging.DEBUG)
+    good = make_camera(db, f"rtsp://10.0.0.5/{path}")
+    bad = make_camera(db, f"rtsp://10.0.0.5/fail/{path}")
+    kw = {"ffprobe_bin": str(tmp_path / "missing-ffprobe")} if path == "noprobe" else {}
+
+    async def body(redis):
+        started = time.monotonic()
+        r, raw = await _ask(redis, db, good, fake_ffmpeg, **kw)
+        assert time.monotonic() - started < 5  # 超时的 ffprobe 不拖慢整体
+        assert r["ok"] is True and r["probe"] is None
+        assert base64.b64decode(r["preview_jpeg_base64"]).startswith(b"\xff\xd8")
+        assert PASSWORD not in raw and USER not in raw
+        r, raw = await _ask(redis, db, bad, fake_ffmpeg, **kw)
+        assert r["ok"] is False and r["probe"] is None and r["preview_jpeg_base64"] is None
+        assert PASSWORD not in raw and USER not in raw
+
+    run_async(redis_url, body)
+    assert PASSWORD not in caplog.text and USER not in caplog.text
 
 
 # ---------------- 真 ffmpeg 组 ----------------
