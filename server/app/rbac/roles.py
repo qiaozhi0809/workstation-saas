@@ -56,6 +56,8 @@ class Perm(StrEnum):
     YEAR_UPGRADE = "year.upgrade"
     PARENT_MANAGE = "parent.manage"
     CLASS_NOTICE = "class.notice"
+    CAMERA_MANAGE = "camera.manage"
+    CAMERA_VIEW = "camera.view"
 
 
 # Order matches ClassroomSummary.my_perms.
@@ -117,6 +119,8 @@ ROLE_PERMS: dict[Role, frozenset[Perm]] = {
             Perm.NOTICE_SEND,
             Perm.GRADE_EXAM_WRITE,
             Perm.YEAR_UPGRADE,
+            Perm.CAMERA_MANAGE,
+            Perm.CAMERA_VIEW,
         }
     ),
     Role.dean: _LEADERS
@@ -127,11 +131,19 @@ ROLE_PERMS: dict[Role, frozenset[Perm]] = {
             Perm.NOTICE_SEND,
             Perm.GRADE_EXAM_WRITE,
             Perm.YEAR_UPGRADE,
+            Perm.CAMERA_VIEW,
         }
     ),
-    Role.grade_head: _LEADERS | frozenset({Perm.NOTICE_SEND, Perm.GRADE_EXAM_WRITE}),
+    Role.grade_head: _LEADERS
+    | frozenset({Perm.NOTICE_SEND, Perm.GRADE_EXAM_WRITE, Perm.CAMERA_VIEW}),
     Role.it_admin: frozenset(
-        {Perm.ORG_MANAGE, Perm.ACCOUNT_MANAGE, Perm.SETTINGS_MANAGE, Perm.AUDIT_READ}
+        {
+            Perm.ORG_MANAGE,
+            Perm.ACCOUNT_MANAGE,
+            Perm.SETTINGS_MANAGE,
+            Perm.AUDIT_READ,
+            Perm.CAMERA_MANAGE,
+        }
     ),
     Role.homeroom_teacher: frozenset(
         {
