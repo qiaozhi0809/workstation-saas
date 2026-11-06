@@ -13,7 +13,8 @@ from app.domain.school_settings.schemas import SecuritySettings
 from app.domain.school_settings.service import SECURITY_KEY, save_security
 from app.models import School, SchoolSetting, User
 from app.models.audit import AuditLog
-from tests.factories import make_teacher_account, make_user
+from app.rbac.roles import Role
+from tests.factories import make_admin, make_teacher_account, make_user
 from tests.helpers import audit_rows, auth
 from tests.seed_ids import SCHOOL_ID, TEACHER_USER_ID
 
@@ -483,6 +484,8 @@ def test_totp_reset_requires_account_manage(client, db, settings):
     assert _reset(client, settings, TEACHER_USER_ID, TEACHER_USER_ID).status_code == 403
     assert _reset(client, settings, HOMEROOM, TEACHER_USER_ID).status_code == 403
     assert _reset(client, settings, DEAN, TEACHER_USER_ID).status_code == 403
+    grade_head = make_admin(db, None, Role.grade_head.value)
+    assert _reset(client, settings, grade_head.id, TEACHER_USER_ID).status_code == 403
     db.expire_all()
     assert db.get(User, UUID(TEACHER_USER_ID)).totp_enabled_at is not None
     # 信息中心 200

@@ -1,3 +1,4 @@
+import json
 import warnings
 from datetime import datetime, timedelta
 from uuid import UUID
@@ -6,12 +7,15 @@ import jwt
 from jwt.warnings import InsecureKeyLengthWarning
 from sqlalchemy import func, select
 
+from app import clock
 from app.auth import sessions
 from app.auth.tokens import decode_access_token, issue_access_token
+from app.domain.school_settings.schemas import SecuritySettings
+from app.domain.school_settings.service import save_security
 from app.models import User
 from app.rbac.roles import Role
 from tests.factories import bind
-from tests.helpers import freeze
+from tests.helpers import auth, freeze
 from tests.seed_ids import GRADE_ID, SCHOOL_ID, TEACHER_USER_ID
 
 
@@ -266,3 +270,339 @@ def test_parent_context(client, db):
     db.execute(update(RoleBinding).where(RoleBinding.user_id == uid).values(ended_at=func.now()))
     db.flush()
     assert _parent_ctx(client, "13800000061") == []
+
+
+# ---- M5b 段 A Task 3a:密码有效期 / 改密原因 / iat 判定 ----
+
+API = "/api/v1"
+UID = UUID(TEACHER_USER_ID)
+
+
+def _set_security(db, max_age=0, min_length=8):
+    save_security(
+        db,
+        UUID(SCHOOL_ID),
+        SecuritySettings(
+            totp_allowed=True, password_min_length=min_length, password_max_age_days=max_age
+        ),
+        UID,
+    )
+
+
+def _user(db) -> User:
+    user = db.get(User, UID)
+    db.refresh(user)
+    return user
+
+
+def _token_at(settings, user_id, when: datetime) -> str:
+    """按指定 iat 签发的令牌(exp 仍在未来,用真实时钟校验)。"""
+    return jwt.encode(
+        {
+            "sub": str(user_id),
+            "iat": when,
+            "exp": clock.utc_now() + timedelta(seconds=600),
+        },
+        settings.jwt_secret,
+        algorithm="HS256",
+    )
+
+
+def _enable_totp_row(user: User, at: datetime) -> None:
+    user.totp_secret = "placeholder-not-decrypted"  # users_totp_pair_ck:两列须同时有值
+    user.totp_enabled_at = at
+
+
+def test_expiry_reason_priority(client, db):
+    _set_security(db, max_age=90)
+    user = _user(db)
+    # 临时密码 / 首次:first_login 优先,即使同时已过期
+    user.must_change_password = True
+    user.password_changed_at = clock.utc_now() - timedelta(days=91)
+    db.flush()
+    brief = login(client).json()["user"]
+    assert brief["password_change_reason"] == "first_login"
+    assert brief["must_change_password"] is True
+    # 仅过期
+    user.must_change_password = False
+    db.flush()
+    brief = login(client).json()["user"]
+    assert brief["password_change_reason"] == "expired"
+    assert brief["must_change_password"] is True
+    # 未满 90 天
+    user.password_changed_at = clock.utc_now() - timedelta(days=89)
+    db.flush()
+    brief = login(client).json()["user"]
+    assert brief["password_change_reason"] is None
+    assert brief["must_change_password"] is False
+    # 有效期关闭(0)则永不过期
+    _set_security(db, max_age=0)
+    user.password_changed_at = clock.utc_now() - timedelta(days=4000)
+    db.flush()
+    assert login(client).json()["user"]["password_change_reason"] is None
+
+
+def test_expiry_cleared_after_password_change(client, db):
+    _set_security(db, max_age=90)
+    _user(db).password_changed_at = clock.utc_now() - timedelta(days=91)
+    db.flush()
+    t = login(client).json()
+    assert t["user"]["password_change_reason"] == "expired"
+    res = client.post(
+        f"{API}/auth/password",
+        headers=bearer(t["access_token"]),
+        json={
+            "old_password": "dev123",
+            "new_password": "Brand-new-9x",
+            "refresh_token": t["refresh_token"],
+        },
+    )
+    assert res.status_code == 200
+    again = login(client, pw="Brand-new-9x").json()
+    assert again["user"]["password_change_reason"] is None
+    assert again["user"]["must_change_password"] is False
+
+
+def test_expired_password_blocks_business_api(client, db):
+    _set_security(db, max_age=90)
+    _user(db).password_changed_at = clock.utc_now() - timedelta(days=91)
+    db.flush()
+    h = bearer(login(client).json()["access_token"])
+    blocked = client.get(f"{API}/me/classes", headers=h)
+    assert blocked.status_code == 403
+    assert blocked.json()["error"]["code"] == "PASSWORD_CHANGE_REQUIRED"
+    me = client.get(f"{API}/auth/me", headers=h)
+    assert me.status_code == 200
+    assert me.json()["password_change_reason"] == "expired"
+    assert me.json()["must_change_password"] is True
+    assert client.get(f"{API}/auth/password-policy", headers=h).status_code == 200
+    # 关掉有效期后恢复
+    _set_security(db, max_age=0)
+    assert client.get(f"{API}/me/classes", headers=h).status_code == 200
+
+
+def test_change_password_publishes_stale(client, db, redis_client):
+    pubsub = redis_client.pubsub()
+    pubsub.subscribe("ws:events")
+    assert pubsub.get_message(timeout=2)["type"] == "subscribe"
+    t = login(client).json()
+    res = client.post(
+        f"{API}/auth/password",
+        headers=bearer(t["access_token"]),
+        json={
+            "old_password": "dev123",
+            "new_password": "Brand-new-9x",
+            "refresh_token": t["refresh_token"],
+        },
+    )
+    assert res.status_code == 200
+    got = []
+    while (msg := pubsub.get_message(timeout=0.5)) is not None:
+        if msg["type"] == "message":
+            got.append(json.loads(msg["data"]))
+    pubsub.close()
+    assert got == [{"user_ids": [TEACHER_USER_ID], "event": {"type": "session.stale"}}]
+
+
+def test_wrong_old_password_publishes_nothing(client, redis_client):
+    pubsub = redis_client.pubsub()
+    pubsub.subscribe("ws:events")
+    assert pubsub.get_message(timeout=2)["type"] == "subscribe"
+    t = login(client).json()
+    res = client.post(
+        f"{API}/auth/password",
+        headers=bearer(t["access_token"]),
+        json={"old_password": "nope", "new_password": "Brand-new-9x", "refresh_token": "x"},
+    )
+    assert res.status_code == 400
+    assert pubsub.get_message(timeout=0.5) is None
+    pubsub.close()
+
+
+def test_access_token_issued_before_password_change_rejected(client, db, settings):
+    _user(db).password_changed_at = clock.utc_now() - timedelta(hours=1)
+    db.flush()
+    old = _token_at(settings, UID, clock.utc_now() - timedelta(seconds=30))
+    assert client.get(f"{API}/auth/me", headers=bearer(old)).status_code == 200
+    _user(db).password_changed_at = clock.utc_now()
+    db.flush()
+    res = client.get(f"{API}/auth/me", headers=bearer(old))
+    assert res.status_code == 401
+    assert res.json()["error"]["code"] == "TOKEN_EXPIRED"
+    # 业务接口同样被拒(经 pending 依赖)
+    res2 = client.get(f"{API}/me/classes", headers=bearer(old))
+    assert (res2.status_code, res2.json()["error"]["code"]) == (401, "TOKEN_EXPIRED")
+
+
+def test_access_token_issued_before_totp_enable_rejected(client, db, settings):
+    _user(db).password_changed_at = clock.utc_now() - timedelta(hours=1)
+    db.flush()
+    old = _token_at(settings, UID, clock.utc_now() - timedelta(seconds=30))
+    assert client.get(f"{API}/auth/me", headers=bearer(old)).status_code == 200
+    _enable_totp_row(_user(db), clock.utc_now())
+    db.flush()
+    res = client.get(f"{API}/auth/me", headers=bearer(old))
+    assert res.status_code == 401
+    assert res.json()["error"]["code"] == "TOKEN_EXPIRED"
+
+
+def test_token_issued_same_second_as_password_change_passes(client, db, settings):
+    changed = clock.utc_now().replace(microsecond=900_000)
+    _user(db).password_changed_at = changed
+    db.flush()
+    same_second = _token_at(settings, UID, changed.replace(microsecond=0))
+    assert client.get(f"{API}/auth/me", headers=bearer(same_second)).status_code == 200
+    earlier = _token_at(settings, UID, changed.replace(microsecond=0) - timedelta(seconds=1))
+    res = client.get(f"{API}/auth/me", headers=bearer(earlier))
+    assert (res.status_code, res.json()["error"]["code"]) == (401, "TOKEN_EXPIRED")
+
+
+def test_iat_check_uses_later_of_password_and_totp(client, db, settings):
+    now = clock.utc_now()
+    user = _user(db)
+    user.password_changed_at = now - timedelta(seconds=100)
+    _enable_totp_row(user, now - timedelta(seconds=10))
+    db.flush()
+    between = _token_at(settings, UID, now - timedelta(seconds=50))
+    res = client.get(f"{API}/auth/me", headers=bearer(between))
+    assert (res.status_code, res.json()["error"]["code"]) == (401, "TOKEN_EXPIRED")
+    after = _token_at(settings, UID, now - timedelta(seconds=5))
+    assert client.get(f"{API}/auth/me", headers=bearer(after)).status_code == 200
+
+
+def test_fresh_login_token_after_change_not_rejected(client, db):
+    _set_security(db, max_age=90)
+    _user(db).password_changed_at = clock.utc_now() - timedelta(days=91)
+    db.flush()
+    t = login(client).json()
+    res = client.post(
+        f"{API}/auth/password",
+        headers=bearer(t["access_token"]),
+        json={
+            "old_password": "dev123",
+            "new_password": "Brand-new-9x",
+            "refresh_token": t["refresh_token"],
+        },
+    )
+    assert res.status_code == 200
+    # 改密后立刻登录并使用新令牌;刷新得到的令牌同样不被误拒
+    fresh = login(client, pw="Brand-new-9x").json()
+    assert client.get(f"{API}/me/classes", headers=bearer(fresh["access_token"])).status_code == 200
+    ref = client.post(f"{API}/auth/refresh", json={"refresh_token": fresh["refresh_token"]})
+    assert ref.status_code == 200
+    h = bearer(ref.json()["access_token"])
+    assert client.get(f"{API}/me/classes", headers=h).status_code == 200
+
+
+def test_first_login_token_usable_for_change_password(client, db):
+    user = _user(db)
+    user.must_change_password = True
+    db.flush()
+    t = login(client).json()
+    assert t["user"]["password_change_reason"] == "first_login"
+    me = client.get(f"{API}/auth/me", headers=bearer(t["access_token"]))
+    assert me.status_code == 200
+
+
+def test_archived_user_access_token_rejected(client, db, settings):
+    token = auth(settings)["Authorization"].removeprefix("Bearer ")
+    assert client.get(f"{API}/auth/me", headers=bearer(token)).status_code == 200
+    for status in ("archived", "frozen"):
+        _user(db).status = status
+        db.flush()
+        res = client.get(f"{API}/auth/me", headers=bearer(token))
+        assert (res.status_code, res.json()["error"]["code"]) == (401, "UNAUTHORIZED")
+        res = client.get(f"{API}/me/classes", headers=bearer(token))
+        assert (res.status_code, res.json()["error"]["code"]) == (401, "UNAUTHORIZED")
+
+
+def test_password_policy_endpoint(client, db, settings):
+    h = auth(settings)
+    assert client.get(f"{API}/auth/password-policy").status_code == 401
+    # 学校设置无行:默认值
+    r = client.get(f"{API}/auth/password-policy", headers=h)
+    assert r.status_code == 200
+    assert r.json() == {"min_length": 8, "max_age_days": 0}
+    _set_security(db, max_age=180, min_length=12)
+    assert client.get(f"{API}/auth/password-policy", headers=h).json() == {
+        "min_length": 12,
+        "max_age_days": 180,
+    }
+    # 需要改密码的账号也能读
+    _user(db).must_change_password = True
+    db.flush()
+    pending = client.get(f"{API}/auth/password-policy", headers=h)
+    assert pending.status_code == 200
+    assert pending.json() == {"min_length": 12, "max_age_days": 180}
+
+
+def test_pending_dependency_only_on_allowed_routes():
+    """只有 /auth/me、/auth/password、/auth/password-policy 允许需改密码的账号访问。"""
+    import ast
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent / "app"
+    users = {
+        str(path.relative_to(root))
+        for path in root.rglob("*.py")
+        if "get_current_user_pending" in path.read_text(encoding="utf-8")
+    }
+    assert users == {"auth/deps.py", "auth/router.py"}
+    tree = ast.parse((root / "auth" / "router.py").read_text(encoding="utf-8"))
+    pending_routes = {
+        node.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef)
+        and any(
+            isinstance(a.annotation, ast.Name) and a.annotation.id == "CurrentUser"
+            for a in node.args.args
+        )
+    }
+    assert pending_routes == {"me", "change_password", "password_policy"}
+
+
+# ---- 空库起步(init-school)----
+
+
+def test_init_school_admin_can_login_and_not_expired(db, settings, redis_client, monkeypatch):
+    from uuid import uuid4
+
+    from fastapi.testclient import TestClient
+
+    from app.db import get_db, session_scope
+    from app.deploy.bootstrap import init_school
+    from app.main import create_app
+    from app.redis import get_redis
+    from tests.conftest import _reuse
+
+    new = settings.model_copy(update={"school_id": uuid4()})
+    init_school(db, new, name="空库学校", admin_login="admin01", admin_password="Test-Pass-123x")
+    admin = db.scalars(select(User).where(User.login_name == "admin01")).one()
+    db.refresh(admin)
+    assert admin.password_changed_at is not None
+    app = create_app(new)
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[get_redis] = lambda: redis_client
+    app.dependency_overrides[session_scope] = lambda: _reuse(db)
+    app.state.ai_transport = None
+    c = TestClient(app)
+    # 学校把有效期设为 90 天:刚建的账号不会被判过期,只因临时密码被要求首次改密
+    save_security(
+        db,
+        new.school_id,
+        SecuritySettings(totp_allowed=False, password_min_length=8, password_max_age_days=90),
+        admin.id,
+    )
+    r = login(c, "admin01", "Test-Pass-123x")
+    assert r.status_code == 200
+    assert r.json()["user"]["password_change_reason"] == "first_login"
+    token = r.json()["access_token"]
+    me = c.get(f"{API}/auth/me", headers=bearer(token))
+    assert me.status_code == 200 and me.json()["password_change_reason"] == "first_login"
+    # 完成首次改密后:不再有任何原因,也不被判过期
+    admin.must_change_password = False
+    db.flush()
+    again = login(c, "admin01", "Test-Pass-123x").json()
+    assert again["user"]["password_change_reason"] is None
+    assert again["user"]["must_change_password"] is False
+    assert c.get(f"{API}/auth/me", headers=bearer(again["access_token"])).status_code == 200

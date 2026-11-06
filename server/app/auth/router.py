@@ -11,6 +11,7 @@ from app.auth.deps import get_current_user, get_current_user_pending
 from app.auth.service import UserBrief
 from app.config import Settings, settings_dep
 from app.db import get_db
+from app.domain.school_settings.service import get_security
 from app.models import User
 from app.redis import get_redis
 
@@ -149,6 +150,19 @@ def logout(body: RefreshRequest, redis: RedisDep) -> OkResponse:
 def me(user: CurrentUser, db: DbDep) -> MeResponse:
     brief = service.user_brief(db, user)
     return MeResponse(**brief.model_dump(), login_name=user.login_name)
+
+
+class PasswordPolicyResponse(BaseModel):  # M5b 段 A
+    min_length: int
+    max_age_days: int
+
+
+@router.get("/password-policy")
+def password_policy(user: CurrentUser, db: DbDep) -> PasswordPolicyResponse:  # M5b 段 A
+    sec = get_security(db, user.school_id)
+    return PasswordPolicyResponse(
+        min_length=sec.password_min_length, max_age_days=sec.password_max_age_days
+    )
 
 
 @router.post("/password")

@@ -1,5 +1,6 @@
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
+from typing import Literal
 from uuid import UUID
 
 from fastapi import Request
@@ -22,6 +23,7 @@ from app.models import School, User
 from app.rbac.admin import admin_perms
 from app.rbac.bindings import Binding, load_bindings
 from app.rbac.roles import ADMIN_ROLES, PARENT_ROLES, TEACHER_ROLES
+from app.ws.hub import publish
 
 
 class UserBrief(BaseModel):
@@ -30,6 +32,23 @@ class UserBrief(BaseModel):
     contexts: list[str]
     admin_perms: list[str]
     must_change_password: bool
+    password_change_reason: Literal["first_login", "expired"] | None
+
+
+def password_change_reason(
+    db: Session, user: User, now: datetime
+) -> Literal["first_login", "expired"] | None:
+    """必须先改密码的原因:临时密码 / 首次登录优先,其次学校设置的有效期已过。"""
+    if user.must_change_password:
+        return "first_login"
+    max_age = get_security(db, user.school_id).password_max_age_days
+    if max_age > 0 and now - user.password_changed_at > timedelta(days=max_age):
+        return "expired"
+    return None
+
+
+def can_use_api(db: Session, user: User, now: datetime) -> bool:
+    return password_change_reason(db, user, now) is None
 
 
 def contexts_of(bindings: list[Binding]) -> list[str]:
@@ -46,12 +65,14 @@ def contexts_of(bindings: list[Binding]) -> list[str]:
 def user_brief(db: Session, user: User) -> UserBrief:
     year = active_academic_year(db, user.school_id)
     bindings = load_bindings(db, user.id, year.id if year else None, include_parents=True)
+    reason = password_change_reason(db, user, clock.utc_now())
     return UserBrief(
         id=user.id,
         display_name=user.display_name,
         contexts=contexts_of(bindings),
         admin_perms=admin_perms(bindings),
-        must_change_password=user.must_change_password,
+        must_change_password=reason is not None,
+        password_change_reason=reason,
     )
 
 
@@ -333,9 +354,10 @@ def change_password(
     if not verify_password(old, user.password_hash):
         _record_failure(redis, settings, fail_key)
         raise ApiError(400, "WRONG_PASSWORD", "旧密码不正确")
-    check_policy(new, old=old)
+    check_policy(new, old=old, min_length=get_security(db, user.school_id).password_min_length)
     user.password_hash = hash_password(new)
     user.must_change_password = False
+    user.password_changed_at = clock.utc_now()
     record(
         db,
         user_id=user.id,
@@ -348,3 +370,4 @@ def change_password(
     db.commit()
     redis.delete(fail_key)
     sessions.revoke_all(redis, user.id, keep=keep_token)
+    publish(redis, [user.id], {"type": "session.stale"})  # 尽力而为,失败不影响改密码
