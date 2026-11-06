@@ -146,6 +146,29 @@ async function wsCloseCode(page: Page, token: string): Promise<number> {
   )
 }
 
+/** 正向对照:同样的握手,有效 access 令牌能收到 ready。 */
+async function wsGetsReady(page: Page, token: string): Promise<boolean> {
+  await page.goto('/login')
+  return page.evaluate(
+    (t) =>
+      new Promise<boolean>((resolve) => {
+        const proto = location.protocol === 'https:' ? 'wss' : 'ws'
+        const ws = new WebSocket(`${proto}://${location.host}/api/v1/ws`)
+        const timer = setTimeout(() => resolve(false), 8000)
+        ws.onopen = () => ws.send(JSON.stringify({ type: 'auth', token: t }))
+        ws.onmessage = (m) => {
+          if (JSON.parse(String(m.data)).type === 'ready') {
+            clearTimeout(timer)
+            ws.close()
+            resolve(true)
+          }
+        }
+        ws.onclose = () => resolve(false)
+      }),
+    token,
+  )
+}
+
 test('two-step verification: enable needs the password, login needs the code, it admin can reset', async ({
   page,
   browser,
@@ -174,7 +197,7 @@ test('two-step verification: enable needs the password, login needs the code, it
   const secret = await readSecret(t1.page)
   expect(secret).toMatch(/^[A-Z2-7]{16,}$/)
 
-  await dialog.getByLabel('验证码', { exact: true }).fill(totpCode(secret, Date.now(), -1))
+  await dialog.getByLabel('验证码', { exact: true }).fill(totpCode(secret, Date.now(), 0))
   await dialog.getByLabel('当前密码').fill('Wrong-pass-0')
   await dialog.getByRole('button', { name: '确认开启', exact: true }).click()
   await expect(dialog.getByRole('alert')).toHaveText('密码不正确')
@@ -203,10 +226,16 @@ test('two-step verification: enable needs the password, login needs the code, it
   expect(step1.body).not.toHaveProperty('access_token')
   expect(step1.body).not.toHaveProperty('refresh_token')
   const mfaToken = step1.body.mfa_token as string
+  expect(typeof mfaToken).toBe('string')
+  expect(mfaToken.length).toBeGreaterThan(20)
   const asBearer = await request.get(`${API}/auth/me`, { headers: auth(mfaToken) })
   expect(asBearer.status()).toBe(401)
+  expect(((await asBearer.json()) as { error: { code: string } }).error.code).toBe('UNAUTHORIZED')
   const asRefresh = await request.post(`${API}/auth/refresh`, { data: { refresh_token: mfaToken } })
   expect(asRefresh.status()).toBe(401)
+  expect(((await asRefresh.json()) as { error: { code: string } }).error.code).toBe(
+    'INVALID_REFRESH',
+  )
   expect(await wsCloseCode(t1.page, mfaToken)).toBe(4401)
 
   // 输对码进入教师端
@@ -231,6 +260,7 @@ test('two-step verification: enable needs the password, login needs the code, it
   const again = await rawLogin(request, teacher.loginName, PASSWORD)
   expect(again.body).toHaveProperty('access_token')
   expect(again.body).not.toHaveProperty('mfa_required')
+  expect(await wsGetsReady(t1.page, again.body.access_token as string)).toBe(true) // 与前面 mfa_token 的 4401 对照
 
   await t1.ctx.close()
   await it.ctx.close()
@@ -257,7 +287,7 @@ test('login logs list wrong-password and successful logins, filtered by result',
   await page.getByLabel('搜索登录名或姓名').fill(teacher.loginName)
   const rows = page.getByRole('row').filter({ hasText: teacher.loginName })
   await expect(rows.filter({ hasText: '密码错误' })).toHaveCount(1)
-  await expect(rows.filter({ hasText: '成功' }).first()).toBeVisible()
+  await expect(rows.filter({ hasText: '成功' })).toHaveCount(2) // 临时密码登录 + 新密码登录
 
   const fieldset = page.getByRole('group', { name: '结果' })
   await fieldset.getByLabel('密码错误', { exact: true }).check()
@@ -266,7 +296,7 @@ test('login logs list wrong-password and successful logins, filtered by result',
   await fieldset.getByLabel('密码错误', { exact: true }).uncheck()
   await fieldset.getByLabel('成功', { exact: true }).check()
   await expect(rows.filter({ hasText: '密码错误' })).toHaveCount(0)
-  await expect(rows.filter({ hasText: '成功' }).first()).toBeVisible()
+  await expect(rows.filter({ hasText: '成功' })).toHaveCount(2)
 })
 
 test('changing the password keeps this session and signs other sessions out', async ({
@@ -324,7 +354,8 @@ test('admin reset password signs the teacher out and voids the old access token'
   await expect(t.page).toHaveURL(/\/login/, { timeout: 20_000 })
   // 重置之前签发的 access 令牌不再可用(不是 200)
   const after = await request.get(`${API}/auth/me`, { headers: auth(oldToken) })
-  expect([401, 403]).toContain(after.status())
+  expect(after.status()).toBe(401)
+  expect(((await after.json()) as { error: { code: string } }).error.code).toBe('TOKEN_EXPIRED')
   const rows = await adminGet<{ items: { id: string }[] }>(
     request,
     it,
