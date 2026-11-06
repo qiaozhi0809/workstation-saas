@@ -75,6 +75,8 @@ class ParentChild(BaseModel):
     status: Literal["active", "readonly"]
     left_on: date | None
     archive_on: date | None
+    # 只读时的原因(L77):最后一条注册是毕业 → graduated;移出 / 转出 → left;在读为 null
+    left_reason: Literal["graduated", "left"] | None
 
 
 class Seat(BaseModel):
@@ -235,6 +237,15 @@ def _status(link: ParentLink, now: datetime) -> Literal["active", "readonly"]:
     return status
 
 
+def _left_reason(
+    status: Literal["active", "readonly"], shown: Row | None
+) -> Literal["graduated", "left"] | None:
+    """只读的原因(L77):看最后一条注册——毕业是 graduated,其余(移出 / 转出)都是离校。"""
+    if status != "readonly":
+        return None
+    return "graduated" if shown is not None and shown[0].status == "graduated" else "left"
+
+
 def _student(db: Session, student_id: UUID) -> Student:
     student = db.get(Student, student_id)
     if student is None:  # 绑定存在而学生不存在:外键保证不会发生
@@ -289,6 +300,7 @@ def children(db: Session, user: User, now: datetime) -> list[ParentChild]:
                 status=status,
                 left_on=left_on,
                 archive_on=archive_on,
+                left_reason=_left_reason(status, shown),
             )
         )
     out.sort(key=lambda c: (c.status != "active", c.name))

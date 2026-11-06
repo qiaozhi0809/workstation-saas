@@ -77,6 +77,29 @@ def test_children_list(client, settings, db):
     assert names == {"三年二班", "四年一班"}
     assert all(c["status"] == "active" and c["is_primary"] for c in items)
     assert all(c["left_on"] is None and c["archive_on"] is None for c in items)
+    assert all(c["left_reason"] is None for c in items)
+
+
+def test_left_reason_graduated_vs_left(client, settings, db):
+    """只读的孩子区分毕业与中途离校(L77):毕业注册 → graduated,移出 / 转出 → left。"""
+    s17 = sid(db, "S0017")
+    db.execute(
+        text("UPDATE enrollments SET status = 'graduated', left_at = now() WHERE student_id = :s"),
+        {"s": s17},
+    )
+    close_links_for(db, [s17], datetime.now(UTC))
+    s2 = _remove(db, "S0002")
+    by_name = {c["name"]: c for c in get(client, settings, "/children").json()}
+    assert by_name["王小一"]["status"] == "active" and by_name["王小一"]["left_reason"] is None
+    assert by_name["魏小七"]["status"] == "readonly"
+    assert by_name["魏小七"]["left_reason"] == "graduated"
+    removed = get(client, settings, "/children", user=T04).json()
+    assert [(c["status"], c["left_reason"]) for c in removed] == [("readonly", "left")]
+    db.execute(
+        text("UPDATE enrollments SET status = 'transferred' WHERE student_id = :s"), {"s": s2}
+    )
+    db.flush()
+    assert get(client, settings, "/children", user=T04).json()[0]["left_reason"] == "left"
 
 
 def test_other_child_forbidden(client, settings, db):
