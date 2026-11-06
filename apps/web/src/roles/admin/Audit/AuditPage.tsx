@@ -44,6 +44,8 @@ function AuditLog({ tz }: { tz: string }) {
     ...defaultRange(tz),
     user: null,
     group: '',
+    action: '',
+    objectType: '',
     deniedOnly: false,
   }))
   const [page, setPage] = useState(1)
@@ -54,6 +56,8 @@ function AuditLog({ tz }: { tz: string }) {
     ...(filter.to && { to: filter.to }),
     ...(filter.user && { user_id: filter.user.id }),
     ...(filter.group && { group: filter.group }),
+    ...(filter.action && { action: filter.action }),
+    ...(filter.objectType && { object_type: filter.objectType }),
     ...(filter.deniedOnly && { success: false }),
     page,
   }

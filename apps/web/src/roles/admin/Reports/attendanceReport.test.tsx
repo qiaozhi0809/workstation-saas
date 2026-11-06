@@ -158,6 +158,17 @@ describe('月度考勤报告', () => {
     expect(document.querySelector('a[download]')).toBeNull()
   })
 
+  it('年级列表加载失败时提示并可重试,而不是静默只剩"全部年级"(L59)', async () => {
+    vi.mocked(adminApi.board).mockRejectedValueOnce(new Error('boom'))
+    setup()
+    await screen.findByText('三年一班')
+    expect(await screen.findByRole('alert')).toHaveTextContent('年级列表加载失败')
+    expect(screen.queryByRole('option', { name: '四年级' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '重试加载年级' }))
+    expect(await screen.findByRole('option', { name: '四年级' })).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
   it('班名列不折行,窄屏时表格容器横向滚动(L58)', async () => {
     setup()
     const cell = (await screen.findByText('三年一班')).closest('td') as HTMLElement

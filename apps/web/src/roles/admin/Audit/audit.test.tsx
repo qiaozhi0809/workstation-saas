@@ -85,7 +85,7 @@ afterEach(() => {
 describe('审计日志', () => {
   it('默认查最近 7 天,结束日是学校时区里的今天(L43),从第 1 页开始', async () => {
     setup()
-    expect(await screen.findByText('修改学生档案')).toBeInTheDocument()
+    expect(await screen.findByRole('table')).toBeInTheDocument()
     expect(lastFilters()).toEqual({ from: '2026-10-30', to: '2026-11-05', page: 1 })
     expect(screen.getByLabelText('开始日期')).toHaveValue('2026-10-30')
     expect(screen.getByLabelText('结束日期')).toHaveValue('2026-11-05')
@@ -96,7 +96,7 @@ describe('审计日志', () => {
   it('取不到学校时区时退回浏览器日期,页面照常可用', async () => {
     vi.mocked(schoolApi.meta).mockRejectedValue(new Error('offline'))
     setup()
-    expect(await screen.findByText('修改学生档案')).toBeInTheDocument()
+    expect(await screen.findByRole('table')).toBeInTheDocument()
     const local = new Date().toLocaleDateString('sv-SE')
     expect(lastFilters()).toMatchObject({ to: local, page: 1 })
   })
@@ -104,7 +104,7 @@ describe('审计日志', () => {
   it('筛选改变时请求参数正确,并且页码回到 1', async () => {
     vi.mocked(adminApi.audit).mockResolvedValue({ items: [row()], total: 120 })
     setup()
-    await screen.findByText('修改学生档案')
+    await screen.findByRole('table')
     fireEvent.click(screen.getByRole('button', { name: '下一页' }))
     await waitFor(() => expect(lastFilters()).toMatchObject({ page: 2 }))
 
@@ -138,7 +138,7 @@ describe('审计日志', () => {
 
   it('分组下拉来自 auditActions', async () => {
     setup()
-    await screen.findByText('修改学生档案')
+    await screen.findByRole('table')
     const sel = screen.getByLabelText('分组')
     expect(
       within(sel)
@@ -149,14 +149,99 @@ describe('审计日志', () => {
 
   it('搜索操作人后按 user_id 过滤,可清除', async () => {
     setup()
-    await screen.findByText('修改学生档案')
+    await screen.findByRole('table')
     fireEvent.change(screen.getByLabelText('搜索操作人'), { target: { value: '李' } })
     const pick = await screen.findByRole('button', { name: '选择 李老师(li)' }, { timeout: 2000 })
-    expect(adminApi.accounts).toHaveBeenLastCalledWith({ q: '李' })
+    expect(adminApi.accounts).toHaveBeenLastCalledWith({ q: '李', page: 1 })
     fireEvent.click(pick)
     await waitFor(() => expect(lastFilters()).toMatchObject({ user_id: 'u1', page: 1 }))
     fireEvent.click(screen.getByRole('button', { name: '清除操作人' }))
     await waitFor(() => expect(lastFilters()?.user_id).toBeUndefined())
+  })
+
+  it('操作人下拉在焦点移出时关闭,回到输入框再打开(L59)', async () => {
+    setup()
+    await screen.findByRole('table')
+    const input = screen.getByLabelText('搜索操作人')
+    fireEvent.focus(input)
+    fireEvent.change(input, { target: { value: '李' } })
+    await screen.findByRole('button', { name: '选择 李老师(li)' }, { timeout: 2000 })
+    fireEvent.blur(input, { relatedTarget: screen.getByLabelText('分组') })
+    expect(screen.queryByRole('button', { name: '选择 李老师(li)' })).toBeNull()
+    // 输入的字还在;再聚焦就重新展开,不用重新输入
+    expect(input).toHaveValue('李')
+    fireEvent.focus(input)
+    expect(screen.getByRole('button', { name: '选择 李老师(li)' })).toBeInTheDocument()
+    fireEvent.keyDown(input, { key: 'Escape' })
+    expect(screen.queryByRole('button', { name: '选择 李老师(li)' })).toBeNull()
+  })
+
+  it('操作人搜索结果超过一页时能加载更多,不只首页(L59)', async () => {
+    const firstPage = Array.from({ length: 50 }, (_, i) =>
+      account({ id: `u${i}`, login_name: `li${i}`, display_name: `李老师${i}` }),
+    )
+    vi.mocked(adminApi.accounts).mockImplementation(async (f = {}) =>
+      f.page === 2
+        ? {
+            items: [account({ id: 'u99', login_name: 'li99', display_name: '李老师99' })],
+            total: 51,
+          }
+        : { items: firstPage, total: 51 },
+    )
+    setup()
+    await screen.findByRole('table')
+    fireEvent.change(screen.getByLabelText('搜索操作人'), { target: { value: '李' } })
+    const more = await screen.findByRole('button', { name: /加载更多/ }, { timeout: 2000 })
+    expect(more).toHaveTextContent('还有 1 个')
+    expect(screen.queryByRole('button', { name: '选择 李老师99(li99)' })).toBeNull()
+    fireEvent.click(more)
+    expect(await screen.findByRole('button', { name: '选择 李老师99(li99)' })).toBeInTheDocument()
+    expect(adminApi.accounts).toHaveBeenLastCalledWith({ q: '李', page: 2 })
+    expect(screen.getByRole('button', { name: '选择 李老师0(li0)' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /加载更多/ })).toBeNull()
+  })
+
+  it('可按具体操作与对象类型筛选;选了分组后操作下拉只剩该组的动作(L59)', async () => {
+    setup()
+    await screen.findByRole('table')
+    const options = (label: string) =>
+      within(screen.getByLabelText(label))
+        .getAllByRole('option')
+        .map((o) => o.textContent)
+    expect(options('操作')).toEqual(['全部操作', '修改学生档案', '导出成绩'])
+    fireEvent.change(screen.getByLabelText('操作'), { target: { value: 'score.export' } })
+    await waitFor(() =>
+      expect(lastFilters()).toEqual({
+        from: '2026-10-30',
+        to: '2026-11-05',
+        action: 'score.export',
+        page: 1,
+      }),
+    )
+    // 选分组:操作下拉只剩该组的动作,原来选的不在组里就清掉
+    fireEvent.change(screen.getByLabelText('分组'), { target: { value: 'student' } })
+    await waitFor(() =>
+      expect(lastFilters()).toEqual({
+        from: '2026-10-30',
+        to: '2026-11-05',
+        group: 'student',
+        page: 1,
+      }),
+    )
+    expect(options('操作')).toEqual(['全部操作', '修改学生档案'])
+    expect(screen.getByLabelText('操作')).toHaveValue('')
+    // 对象类型用中文名,发的是后端的 object_type
+    expect(options('对象类型')).toContain('通知')
+    fireEvent.change(screen.getByLabelText('对象类型'), { target: { value: 'notice' } })
+    await waitFor(() =>
+      expect(lastFilters()).toEqual({
+        from: '2026-10-30',
+        to: '2026-11-05',
+        group: 'student',
+        object_type: 'notice',
+        page: 1,
+      }),
+    )
   })
 
   it('被拒的行用红色标记,成功的不标', async () => {
@@ -182,7 +267,7 @@ describe('审计日志', () => {
       total: 1,
     })
     setup()
-    await screen.findByText('修改学生档案')
+    await screen.findByRole('table')
     expect(screen.queryByText('exam_name')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '展开 修改学生档案' }))
     expect(screen.getByText('exam_name')).toBeInTheDocument()
@@ -196,7 +281,7 @@ describe('审计日志', () => {
 
   it('没有 extra 的行不能展开', async () => {
     setup()
-    await screen.findByText('修改学生档案')
+    await screen.findByRole('table')
     expect(screen.queryByRole('button', { name: '展开 修改学生档案' })).toBeNull()
   })
 
@@ -248,7 +333,7 @@ describe('审计日志', () => {
 
   it('列出时间、操作人、操作、对象、IP、结果', async () => {
     setup()
-    await screen.findByText('修改学生档案')
+    await screen.findByRole('table')
     const heads = screen.getAllByRole('columnheader').map((h) => h.textContent)
     expect(heads).toEqual(['时间', '操作人', '操作', '对象', 'IP', '结果'])
     expect(screen.getByText('李老师')).toBeInTheDocument()

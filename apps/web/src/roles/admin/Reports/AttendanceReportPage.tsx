@@ -135,6 +135,27 @@ function AttendanceReport({ tz }: { tz: string }) {
             ))}
           </NativeSelect>
         </label>
+        {boardQ.isError && (
+          // 年级列表取不到时说出来并可重试,而不是静默只剩"全部年级"(L59)
+          <span
+            data-no-print
+            role="alert"
+            className="flex items-center gap-1 text-xs text-destructive"
+          >
+            年级列表加载失败
+            <Button
+              type="button"
+              variant="link"
+              size="sm"
+              className="h-auto p-0 text-xs"
+              aria-label="重试加载年级"
+              disabled={boardQ.isFetching}
+              onClick={() => void boardQ.refetch()}
+            >
+              重试
+            </Button>
+          </span>
+        )}
       </div>
 
       {isForbidden(q.error) ? (

@@ -354,6 +354,62 @@ describe('AI 配置', () => {
     expect(await screen.findByText(NOTICE)).toBeInTheDocument()
   })
 
+  it('换服务商时清掉上一次的错误提示(L59)', async () => {
+    await renderConfig()
+    fireEvent.change(screen.getByLabelText('温度'), { target: { value: '3' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    expect(await screen.findByText('温度需要在 0 到 2 之间')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('服务商'), { target: { value: 'qwen' } })
+    expect(screen.queryByText('温度需要在 0 到 2 之间')).toBeNull()
+  })
+
+  it('接口地址的 scheme 不区分大小写(L59)', async () => {
+    vi.mocked(adminApi.saveAiConfig).mockResolvedValue(view())
+    await renderConfig()
+    fireEvent.change(screen.getByLabelText('接口地址'), {
+      target: { value: 'HTTPS://api.deepseek.example/v1' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() =>
+      expect(adminApi.saveAiConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ base_url: 'HTTPS://api.deepseek.example/v1' }),
+      ),
+    )
+    expect(screen.queryByText('接口地址要以 http:// 或 https:// 开头')).toBeNull()
+    // 真不是 http(s) 的仍然拦
+    fireEvent.change(screen.getByLabelText('接口地址'), {
+      target: { value: 'ftp://api.deepseek.example/v1' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    expect(await screen.findByText('接口地址要以 http:// 或 https:// 开头')).toBeInTheDocument()
+    expect(adminApi.saveAiConfig).toHaveBeenCalledTimes(1)
+  })
+
+  it('因为要重填 Key 被拦下时,点保存 / 测试连接会说明原因而不是没反应(L59)', async () => {
+    await renderConfig()
+    fireEvent.change(screen.getByLabelText('接口地址'), {
+      target: { value: 'https://other.example/v1' },
+    })
+    const reason = '已更换服务商或服务地址,请先填写新的 API Key'
+    expect(screen.queryByText(reason)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    expect(await screen.findByText(reason)).toBeInTheDocument()
+    expect(adminApi.saveAiConfig).not.toHaveBeenCalled()
+    // 填上 Key 再保存:原因消失,请求发出
+    vi.mocked(adminApi.saveAiConfig).mockResolvedValue(view())
+    fireEvent.change(screen.getByLabelText('API Key'), { target: { value: 'test-key-789' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(adminApi.saveAiConfig).toHaveBeenCalledTimes(1))
+    expect(screen.queryByText(reason)).toBeNull()
+    // 测试连接同样
+    fireEvent.change(screen.getByLabelText('接口地址'), {
+      target: { value: 'https://third.example/v1' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '测试连接' }))
+    expect(await screen.findByText(reason)).toBeInTheDocument()
+    expect(adminApi.testAiConfig).not.toHaveBeenCalled()
+  })
+
   it('Key 无法解密时提示重新填写', async () => {
     vi.mocked(adminApi.aiConfig).mockResolvedValue(view({ key_undecryptable: true }))
     await renderConfig()
