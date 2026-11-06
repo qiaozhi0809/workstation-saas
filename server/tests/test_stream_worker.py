@@ -222,7 +222,9 @@ def test_build_args_copy_and_transcode(tmp_path):
     assert "-an" in args
     assert args[args.index("-hls_time") + 1] == "2"
     assert args[args.index("-hls_list_size") + 1] == "6"
-    assert args[args.index("-hls_flags") + 1] == "delete_segments+independent_segments"
+    flags = args[args.index("-hls_flags") + 1]
+    assert flags == "delete_segments+independent_segments+discont_start"
+    assert args[args.index("-start_number") + 1] == "0"
     assert args[args.index("-hls_segment_filename") + 1] == str(tmp_path / "seg-%d.ts")
     assert args[-1] == str(tmp_path / "index.m3u8")
     tc = ffmpeg.build_args("rtsp://10.0.0.5/live", tmp_path, transcode=True)
@@ -242,6 +244,18 @@ def test_credentials_url_encodes_and_mask_hides():
     masked = ffmpeg.mask_text(f"open {url} failed; password=hunter2&a=1", ("p@ss:/word",))
     assert "p%40ss" not in masked and "cam%20user" not in masked and "hunter2" not in masked
     assert "***" in masked
+
+
+def test_hls_flags_include_discont_start(tmp_path):
+    """重启后的新播放列表首段带 #EXT-X-DISCONTINUITY,序列号从给定值接着编(不回退到 0)。"""
+    for transcode in (False, True):
+        args = ffmpeg.build_args(
+            "rtsp://10.0.0.5/live", tmp_path, transcode=transcode, start_number=17623456
+        )
+        flags = args[args.index("-hls_flags") + 1].split("+")
+        assert {"delete_segments", "independent_segments", "discont_start"} <= set(flags)
+        assert args[args.index("-start_number") + 1] == "17623456"
+        assert args.index("-f") < args.index("-start_number")  # 输出选项,放在 -f hls 之后
 
 
 def test_ffprobe_args_and_bin():
@@ -417,6 +431,102 @@ def test_backoff_on_failure(db, redis_url, fake_ffmpeg, hls_root, tmp_path):
         await sup.tick(115.5)  # 第三次失败:间隔 30 秒
         await sup.tick(145.0)
         assert len(calls(tmp_path)) == 3
+        await sup.shutdown()
+
+    run_async(redis_url, body)
+
+
+def _start_numbers(tmp_path: Path) -> list[int]:
+    out = []
+    for line in calls(tmp_path):
+        argv = line.split(" ")
+        out.append(int(argv[argv.index("-start_number") + 1]))
+    return out
+
+
+def test_start_number_increases_across_restarts(db, redis_url, fake_ffmpeg, hls_root, tmp_path):
+    """每次重启按墙上秒数起编:序列号只增不减、不与上一轮重叠,且不超过片段白名单的 8 位。"""
+    cam = make_camera(db, "rtsp://10.0.0.5/fail")
+
+    async def body(redis):
+        sup = make_supervisor(db, redis, fake_ffmpeg, hls_root)
+        await want(redis, cam)
+        await sup.tick(100)
+        st = sup._streams[cam.id]
+        await settle(lambda: st.proc is not None and st.proc.returncode is not None)
+        await sup.tick(100.1)
+        await sup.tick(105.2)  # 退避 5 秒后第二次启动
+        await settle(lambda: len(calls(tmp_path)) == 2)
+        first, second = _start_numbers(tmp_path)
+        assert second >= first
+        assert 0 <= first <= 99_999_999 and 0 <= second <= 99_999_999
+        assert abs(first - int(time.time()) % 10**8) < 60  # 来源是墙上秒数(mod 1e8)
+        assert st.start_number == second
+        await sup.shutdown()
+
+    run_async(redis_url, body)
+
+
+def test_stall_restarts_stream(db, redis_url, fake_ffmpeg, hls_root, tmp_path):
+    """播放列表超过 STALL_SECONDS 没更新:收掉进程、清目录、按正常退避重连;稳定运行后退避仍重置。"""
+    from app.stream import supervisor as supervisor_mod
+
+    cam = make_camera(db)
+
+    async def body(redis):
+        sup = make_supervisor(db, redis, fake_ffmpeg, hls_root)
+        await want(redis, cam)
+        await sup.tick(1)
+        index = hls_root / str(cam.id) / "index.m3u8"
+        await settle(index.exists)
+        await sup.tick(2)
+        st = sup._streams[cam.id]
+        assert st.status == "streaming"
+        proc = st.proc
+        st.fail_count = 3  # 假装之前失败过多次:跑满 STABLE_AFTER 后停更,退避仍从 5 秒重来
+        stale = time.time() - (supervisor_mod.STALL_SECONDS + 5)
+        os.utime(index, (stale, stale))
+        now = 1 + supervisor_mod.STABLE_AFTER + 1
+        await sup.tick(now)
+        assert proc.returncode is not None  # 进程被收掉
+        assert st.proc is None and not (hls_root / str(cam.id)).exists()
+        s = await state(redis, cam)
+        assert s["status"] == "error" and "停止更新" in s["last_error"]
+        assert round(st.next_retry_at - now) == 5
+        assert len(calls(tmp_path)) == 1  # 退避期内不重启
+        await sup.tick(now + 5.1)
+        await settle(lambda: len(calls(tmp_path)) == 2)
+        await settle(index.exists)
+        await sup.tick(now + 6)
+        assert (await state(redis, cam))["status"] == "streaming"
+        await sup.shutdown()
+
+    run_async(redis_url, body)
+
+
+def test_no_stall_while_fresh(db, redis_url, fake_ffmpeg, hls_root, tmp_path):
+    from app.stream import supervisor as supervisor_mod
+
+    cam = make_camera(db)
+
+    async def body(redis):
+        sup = make_supervisor(db, redis, fake_ffmpeg, hls_root)
+        await want(redis, cam)
+        await sup.tick(1)
+        index = hls_root / str(cam.id) / "index.m3u8"
+        await settle(index.exists)
+        await sup.tick(2)
+        st = sup._streams[cam.id]
+        proc = st.proc
+        for t in (3, 60, 600):  # tick 的单调时钟走多久都无所谓,看的是播放列表的 mtime
+            await sup.tick(t)
+        assert st.proc is proc and proc.returncode is None and st.status == "streaming"
+        # 刚好不到阈值也不算停更
+        edge = time.time() - (supervisor_mod.STALL_SECONDS - 3)
+        os.utime(index, (edge, edge))
+        await sup.tick(601)
+        assert st.proc is proc and proc.returncode is None and st.status == "streaming"
+        assert len(calls(tmp_path)) == 1
         await sup.shutdown()
 
     run_async(redis_url, body)

@@ -27,6 +27,14 @@ BACKOFF = (5, 10, 30, 60)  # 同一路连续失败后的重启间隔(秒)
 STABLE_AFTER = 30  # 持续运行超过这么久再退出,算一次新的失败,退避重新从 5 秒开始
 TERM_WAIT = 3.0  # SIGTERM 后等这么久,仍不退出则 SIGKILL
 STDERR_KEEP = 5
+# 看门狗:ffmpeg 每 2 秒写一次播放列表;进程还在但播放列表超过这么久没更新(摄像头掉线、RTSP 读挂住),
+# 就当失败处理并重连。比较的是文件 mtime 与墙上时间,不用 tick 的单调时钟
+STALL_SECONDS = 15
+STALL_MESSAGE = "画面停止更新，正在重连"
+# 片段序列号从墙上秒数起编(mod 1e8,不超过后端片段白名单 ^seg-\d{1,8}\.ts$ 的 8 位)。
+# 两次启动至少隔一个退避周期,期间每 2 秒最多产出 1 个片段,所以新序列号总比上一轮用过的都大:
+# 正在看的 hls.js 看到的是序列号前跳 + 首段 #EXT-X-DISCONTINUITY,而不是回退到 0
+START_NUMBER_MOD = 10**8
 
 
 @dataclass
@@ -34,6 +42,7 @@ class _Stream:
     proc: asyncio.subprocess.Process | None = None
     started_at: float = 0.0  # 单调时钟,只用于退避与稳定判定
     started_wall: int = 0  # 墙上时间戳,写进 state
+    start_number: int = 0  # 本轮 ffmpeg 的首个片段序列号
     fail_count: int = 0
     next_retry_at: float = 0.0
     secrets: tuple[str, ...] = ()
@@ -114,6 +123,8 @@ class Supervisor:
                     if st.status != "streaming" and (self._out_dir(cid) / "index.m3u8").exists():
                         st.status, st.last_error = "streaming", ""
                         await self._write_state(cid, st)
+                    elif st.status == "streaming" and self._stalled(cid):
+                        await self._restart_stalled(cid, st, now)
                 elif now >= st.next_retry_at:
                     await self._launch(cid, st, now)
             except Exception as exc:  # 一路出错不能拖住后面的摄像头
@@ -148,7 +159,10 @@ class Supervisor:
         out_dir = self._out_dir(cid)
         shutil.rmtree(out_dir, ignore_errors=True)
         out_dir.mkdir(parents=True, exist_ok=True)
-        args = ffmpeg.build_args(url, out_dir, transcode=row.transcode)
+        st.start_number = int(time.time()) % START_NUMBER_MOD
+        args = ffmpeg.build_args(
+            url, out_dir, transcode=row.transcode, start_number=st.start_number
+        )
         try:
             st.proc = await asyncio.create_subprocess_exec(
                 self._bin,
@@ -187,10 +201,32 @@ class Supervisor:
                     log.debug("ffmpeg: %s", line)  # 逐帧告警很多,默认不进日志;最后一行进 last_error
 
     async def _on_exit(self, cid: UUID, st: _Stream, now: float) -> None:
+        await self._drain_reader(st)
+        message = st.stderr[-1] if st.stderr else f"ffmpeg 退出,代码 {st.proc.returncode}"  # type: ignore[union-attr]
+        await self._fail(cid, st, now, message)
+
+    def _stalled(self, cid: UUID) -> bool:
+        """进程还在、状态是 streaming,但播放列表很久没更新(或不见了)。"""
+        try:
+            mtime = (self._out_dir(cid) / "index.m3u8").stat().st_mtime
+        except OSError:
+            return True
+        return time.time() - mtime > STALL_SECONDS
+
+    async def _restart_stalled(self, cid: UUID, st: _Stream, now: float) -> None:
+        log.warning("stream stalled camera=%s", cid)
+        assert st.proc is not None
+        await self._terminate(st.proc)
+        await self._drain_reader(st)
+        await self._fail(cid, st, now, STALL_MESSAGE)
+
+    async def _drain_reader(self, st: _Stream) -> None:
         if st.reader is not None:
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(st.reader, 1)
-        message = st.stderr[-1] if st.stderr else f"ffmpeg 退出,代码 {st.proc.returncode}"  # type: ignore[union-attr]
+
+    async def _fail(self, cid: UUID, st: _Stream, now: float, message: str) -> None:
+        """进程已结束:清目录、按退避安排重启。稳定运行过一段的,退避重新从头算。"""
         if now - st.started_at >= STABLE_AFTER:
             st.fail_count = 0
         st.proc, st.reader = None, None

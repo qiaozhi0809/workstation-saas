@@ -14,8 +14,11 @@ _USERINFO_RE = re.compile(r"(?i)([a-z][a-z0-9+.\-]*://)[^/@\s]*@")
 _QUERY_SECRET_RE = re.compile(r"(?i)\b(password|passwd|pwd|token|sig)=[^&\s]*")
 
 
-def build_args(url: str, out_dir: Path, *, transcode: bool) -> list[str]:
-    """不含可执行文件名。默认直接复制视频流;勾了"转码"改成 720p H.264。"""
+def build_args(url: str, out_dir: Path, *, transcode: bool, start_number: int = 0) -> list[str]:
+    """不含可执行文件名。默认直接复制视频流;勾了"转码"改成 720p H.264。
+
+    start_number 是首个片段的序列号(也是 seg-%d.ts 的编号):重启时由 supervisor 给一个比上一轮
+    都大的值,配合 discont_start 让正在看的 hls.js 把它当作新的不连续段接着放,而不是序列回退。"""
     args = ["-hide_banner", "-loglevel", "warning", "-nostdin"]
     args += ["-protocol_whitelist", PROTOCOL_WHITELIST]
     args += ["-rtsp_transport", "tcp", "-timeout", RTSP_IO_TIMEOUT_US, "-i", url, "-an"]
@@ -31,7 +34,8 @@ def build_args(url: str, out_dir: Path, *, transcode: bool) -> list[str]:
         args += ["-c:v", "copy"]
     args += [
         *("-f", "hls", "-hls_time", "2", "-hls_list_size", "6"),
-        *("-hls_flags", "delete_segments+independent_segments"),
+        *("-hls_flags", "delete_segments+independent_segments+discont_start"),
+        *("-start_number", str(start_number)),
         *("-hls_segment_filename", str(out_dir / "seg-%d.ts")),
         str(out_dir / "index.m3u8"),
     ]
