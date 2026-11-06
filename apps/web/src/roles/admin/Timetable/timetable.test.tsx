@@ -192,6 +192,20 @@ it('offers teachers already seen for that subject, warns about ambiguous auto ma
   expect(screen.getByTestId('timetable-cell-2-1')).not.toHaveTextContent('数学')
 })
 
+it('does not guess about staff while class info is loading or failed', async () => {
+  vi.mocked(adminApi.class).mockRejectedValue(new ApiError(500, 'X', '班级信息挂了'))
+  renderPage()
+  fireEvent.click(await screen.findByTestId('timetable-cell-2-1'))
+  const dlg = await screen.findByRole('dialog', { name: '周二 第 1 节' })
+  await waitFor(() => expect(adminApi.class).toHaveBeenCalled())
+  expect(await within(dlg).findByText(/班级信息加载失败/)).toBeInTheDocument()
+  expect(dlg).not.toHaveTextContent('还没有本班')
+  expect(dlg).not.toHaveTextContent('在任老师:')
+  // 课表里已有的科目与老师仍可选
+  expect(within(dlg).getByRole('option', { name: '数学' })).toBeInTheDocument()
+  expect(within(dlg).getByRole('option', { name: '赵老师' })).toBeInTheDocument()
+})
+
 it('shows the backend message when saving a cell fails and keeps the dialog open', async () => {
   vi.mocked(timetableApi.saveClassTimetable).mockRejectedValue(
     new ApiError(400, 'BAD_REQUEST', '「语文」不是本班科目'),

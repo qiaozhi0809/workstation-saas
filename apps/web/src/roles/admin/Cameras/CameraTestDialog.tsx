@@ -1,4 +1,5 @@
-import { useQuery } from '@tanstack/react-query'
+import { useEffect } from 'react'
+import { useMutation } from '@tanstack/react-query'
 import { camerasApi } from '@/shared/api/cameras'
 import { ApiError } from '@/shared/api/client'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
@@ -35,15 +36,12 @@ export default function CameraTestDialog({
   camera: CameraOut
   onClose(): void
 }) {
-  const test = useQuery({
-    queryKey: ['cameras', 'test', camera.id],
-    queryFn: () => camerasApi.test(camera.id),
-    retry: false,
-    gcTime: 0,
-    staleTime: Infinity,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  })
+  // 测试是带审计的 POST:用 mutation,只在打开时发一次、点"重试"再发,不受 ['cameras'] 失效影响
+  const test = useMutation({ mutationFn: () => camerasApi.test(camera.id) })
+  const { mutate } = test
+  useEffect(() => {
+    mutate()
+  }, [mutate])
   const data = test.data
   const probe = data?.probe ?? null
   const line = probe ? probeLine(probe) : ''
@@ -78,7 +76,7 @@ export default function CameraTestDialog({
             role="alert"
             className="space-y-1 rounded-md border border-warning/40 bg-warning/10 p-3"
           >
-            <p className="font-medium">测试成功,但浏览器放不出这路画面</p>
+            {data?.ok && <p className="font-medium">测试成功,但浏览器放不出这路画面</p>}
             <p>{probe.hint ?? FALLBACK_HINT}</p>
           </div>
         )}
@@ -86,8 +84,8 @@ export default function CameraTestDialog({
           <Button
             type="button"
             variant="outline"
-            disabled={test.isFetching}
-            onClick={() => void test.refetch()}
+            disabled={test.isPending}
+            onClick={() => mutate()}
           >
             重试
           </Button>

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -320,6 +320,39 @@ it('shows codec hint', async () => {
   expect(warn).toHaveTextContent(
     '这路是 H.265(HEVC),浏览器放不出来;请在摄像头里改成 H.264,或勾选"转码"',
   )
+})
+
+it('does not re-run the test when the cameras cache is invalidated', async () => {
+  vi.mocked(camerasApi.test).mockResolvedValue(ok())
+  renderPage()
+  await screen.findByText('一楼走廊')
+  fireEvent.click(within(row(/三年二班教室/)).getByRole('button', { name: '测试连接' }))
+  const dlg = await screen.findByTestId('camera-test-dialog')
+  expect(await within(dlg).findByText('连接成功')).toBeInTheDocument()
+  expect(camerasApi.test).toHaveBeenCalledTimes(1)
+  await act(async () => {
+    await client.invalidateQueries({ queryKey: ['cameras'] })
+  })
+  await waitFor(() => expect(camerasApi.list).toHaveBeenCalledTimes(2))
+  expect(camerasApi.test).toHaveBeenCalledTimes(1)
+  expect(within(dlg).getByText('连接成功')).toBeInTheDocument()
+})
+
+it('shows only the hint, not "测试成功", when the test failed but a probe came back', async () => {
+  vi.mocked(camerasApi.test).mockResolvedValue(
+    ok({
+      ok: false,
+      message: '拉流中断',
+      probe: probe({ video_codec: 'hevc', browser_playable: false, hint: '编码是 H.265' }),
+    }),
+  )
+  renderPage()
+  await screen.findByText('一楼走廊')
+  fireEvent.click(within(row(/三年二班教室/)).getByRole('button', { name: '测试连接' }))
+  const dlg = await screen.findByTestId('camera-test-dialog')
+  expect(await within(dlg).findByText('编码是 H.265')).toBeInTheDocument()
+  expect(dlg).toHaveTextContent('拉流中断')
+  expect(dlg).not.toHaveTextContent('测试成功')
 })
 
 it('shows the probe line without a warning when the stream is playable', async () => {

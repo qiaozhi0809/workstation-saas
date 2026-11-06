@@ -45,6 +45,7 @@ function CellEditor({
   cell,
   cells,
   cls,
+  clsError,
   busy,
   error,
   onSave,
@@ -55,6 +56,7 @@ function CellEditor({
   cell: TimetableCell | undefined
   cells: TimetableCell[]
   cls: ClassAdmin | undefined
+  clsError: boolean
   busy: boolean
   error: string
   onSave(subject: string, teacherId: string | null): void
@@ -67,22 +69,19 @@ function CellEditor({
   const subjects = [
     ...new Set([...(cls?.subjects.map((s) => s.subject) ?? []), ...cells.map((c) => c.subject)]),
   ]
+  // 当前格子的老师本来就在 cells 里,所以一定已在候选中
   const candidates = seenTeachers(cells, subject)
-  if (
-    cell?.teacher &&
-    cell.subject === subject &&
-    !candidates.some((t) => t.id === cell.teacher?.id)
-  )
-    candidates.unshift(cell.teacher)
+  // 在任老师提示只在组织架构数据到手后给;还在加载 / 失败时不猜
   const staff =
     cls?.subjects.find((s) => s.subject === subject)?.teachers.map((t) => t.display_name) ?? []
-  const hint = !subject
-    ? ''
-    : staff.length === 0
-      ? `组织架构里还没有本班「${subject}」的在任老师,自动匹配会留空`
-      : staff.length === 1
-        ? `在任老师:${staff[0]}`
-        : `在任老师:${staff.join('、')}(多位时自动匹配会留空)`
+  const hint =
+    !subject || !cls
+      ? ''
+      : staff.length === 0
+        ? `组织架构里还没有本班「${subject}」的在任老师,自动匹配会留空`
+        : staff.length === 1
+          ? `在任老师:${staff[0]}`
+          : `在任老师:${staff.join('、')}(多位时自动匹配会留空)`
 
   return (
     <Modal
@@ -140,6 +139,11 @@ function CellEditor({
           </NativeSelect>
         </label>
         {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+        {clsError && (
+          <p className="text-xs text-destructive">
+            班级信息加载失败,看不到在任老师;科目与老师仍可按课表里已有的选择。
+          </p>
+        )}
         {error && (
           <p role="alert" className="text-sm text-destructive">
             {error}
@@ -319,6 +323,7 @@ export default function ClassTimetableGrid({
           cell={cellAt(editing)}
           cells={cells}
           cls={cls.data}
+          clsError={cls.isError}
           busy={save.isPending}
           error={error}
           onSave={(subject, teacherId) =>
