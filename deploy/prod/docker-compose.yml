@@ -79,11 +79,10 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      WS_LOG_DIR: /var/log/workstation
       WS_HLS_ROOT: /run/ws-hls
       TZ: ${TZ:-Asia/Shanghai}
+    # 日志只写 stdout(docker logs / diagnose.sh 收集),不挂 data/logs
     volumes:
-      - ./data/logs:/var/log/workstation
       - ws-hls:/run/ws-hls
     # 等 app 健康(迁移已完成,cameras 表已存在)再起
     depends_on:

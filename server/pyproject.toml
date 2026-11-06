@@ -33,6 +33,9 @@ package = false
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+    "ffmpeg: 需要本机 ffmpeg 和假摄像头(docker compose --profile camera);缺少时 skip",
+]
 
 [tool.ruff]
 line-length = 100

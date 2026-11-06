@@ -4,6 +4,20 @@ import ipaddress
 import socket
 from urllib.parse import urlsplit
 
+# 显式网段,不用 ipaddress 的 is_private:它把文档段(192.0.2.0/24、198.51.100.0/24、203.0.113.0/24)、
+# 0.0.0.0/8、198.18.0.0/15 等也算"私有",会让不该放行的地址通过
+LAN_NETWORKS = tuple(
+    ipaddress.ip_network(n)
+    for n in (
+        "10.0.0.0/8",
+        "172.16.0.0/12",
+        "192.168.0.0/16",
+        "169.254.0.0/16",
+        "fc00::/7",
+        "fe80::/10",
+    )
+)
+
 
 def is_lan_ip(ip: str, *, allow_loopback: bool = False) -> bool:
     try:
@@ -12,9 +26,9 @@ def is_lan_ip(ip: str, *, allow_loopback: bool = False) -> bool:
         return False
     if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
         addr = addr.ipv4_mapped  # ::ffff:8.8.8.8 按映射后的 v4 判
-    if addr.is_loopback:  # 先排除回环:ipaddress 认为回环也是 is_private
+    if addr.is_loopback:
         return allow_loopback
-    return addr.is_private or addr.is_link_local
+    return any(addr.version == net.version and addr in net for net in LAN_NETWORKS)
 
 
 def resolve_is_lan(host: str, *, allow_loopback: bool = False) -> bool:
