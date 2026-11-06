@@ -62,7 +62,7 @@ it('about shows version from meta', async () => {
 })
 
 it('reads the version from the shared meta cache key', async () => {
-  // 家长端顶栏等处已用 ['meta'] 取校名;"关于"共用同一份缓存,不再请求
+  // m5d-common 约定的 ['meta'] 键:别处刚取过的缓存"关于"直接复用,不再请求
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   client.setQueryData(['meta'], { ...META, version: '2.0.0' })
   render(

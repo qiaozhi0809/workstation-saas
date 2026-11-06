@@ -15,10 +15,11 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 
 /**
  * "关于":产品名、版本(/meta)、学校名,以及 spec §8.4 的承诺"数据只存在学校自己的服务器上"。
- * 版本与校名共用查询键 ['meta'](家长端顶栏也在用),打开时才取。不放许可证链接(R13)。
+ * 版本与校名用 m5d-common 约定的查询键 ['meta'](与其它读 /meta 的地方共用一份缓存),打开时才取。
+ * 不放许可证链接(R13)。
  */
 export default function AboutDialog({ open, onClose }: { open: boolean; onClose(): void }) {
-  // 版本与校名几乎不变:别处刚取过的 ['meta'] 直接用,不为打开一次"关于"再请求
+  // 版本与校名几乎不变:['meta'] 里刚取过的直接用,不为打开一次"关于"再请求
   const meta = useQuery({
     queryKey: ['meta'],
     queryFn: schoolApi.meta,
