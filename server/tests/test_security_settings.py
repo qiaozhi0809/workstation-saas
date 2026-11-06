@@ -27,8 +27,8 @@ def test_principal_can_save_and_read_back(client, settings, db):
 
 def test_dean_forbidden(client, settings):
     h = auth(settings, DEAN)
-    assert client.get(URL, headers=h).status_code == 403
-    assert client.put(URL, headers=h, json=VALID).status_code == 403
+    for res in (client.get(URL, headers=h), client.put(URL, headers=h, json=VALID)):
+        assert (res.status_code, res.json()["error"]["code"]) == (403, "FORBIDDEN")
 
 
 @pytest.mark.parametrize(

@@ -1,3 +1,4 @@
+import { useQuery } from '@tanstack/react-query'
 import { KeyRound } from 'lucide-react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { authApi } from '@/shared/api/auth'
@@ -7,6 +8,21 @@ import { useAuthStore } from '@/shared/stores/auth'
 import type { User } from '@/shared/types/user'
 import ThemeToggle from '@/theme/ThemeToggle'
 import { homeFor } from './home'
+
+function ReasonNote({ reason }: { reason: 'first_login' | 'expired' }) {
+  const policy = useQuery({
+    queryKey: ['auth', 'password-policy'],
+    queryFn: authApi.passwordPolicy,
+    staleTime: 60_000,
+  })
+  const days = policy.data?.max_age_days
+  if (reason === 'first_login') return <p className="text-sm">首次登录请设置新密码</p>
+  return (
+    <p className="text-sm">
+      {days ? `密码已超过 ${days} 天未更换,请设置新密码` : '密码已过期,请设置新密码'}
+    </p>
+  )
+}
 
 export default function ChangePasswordPage() {
   const navigate = useNavigate()
@@ -31,11 +47,13 @@ export default function ChangePasswordPage() {
         navigate('/login', { replace: true })
         return
       }
-      user = { ...cur, must_change_password: false }
+      user = { ...cur, must_change_password: false, password_change_reason: null }
     }
     useAuthStore.getState().setUser(user)
     navigate(homeFor(user, useAuthStore.getState().lastContext), { replace: true })
   }
+
+  const reason = user?.password_change_reason
 
   return (
     <div className="relative grid min-h-full place-items-center bg-muted/40 px-4 pb-8 pt-16">
@@ -43,9 +61,12 @@ export default function ChangePasswordPage() {
       <Card className="w-full max-w-sm">
         <CardHeader>
           <KeyRound className="h-8 w-8 text-primary" aria-hidden="true" />
-          <h1 className="text-xl font-semibold tracking-tight">首次登录请先修改密码</h1>
+          <h1 className="text-xl font-semibold tracking-tight">
+            {reason === 'expired' ? '请先修改密码' : '首次登录请先修改密码'}
+          </h1>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          {reason && <ReasonNote reason={reason} />}
           <ChangePasswordForm onSuccess={onSuccess} />
         </CardContent>
       </Card>

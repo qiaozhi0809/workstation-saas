@@ -8,7 +8,9 @@ export async function login(request: APIRequestContext, loginName: string): Prom
     data: { login_name: loginName, password: 'dev123' },
   })
   expect(res.ok()).toBeTruthy()
-  return ((await res.json()) as { access_token: string }).access_token
+  const body = (await res.json()) as { access_token?: string; mfa_required?: true }
+  if (body.mfa_required) throw new Error('E2E 账号不应开启两步验证')
+  return body.access_token as string
 }
 
 /** 把座位存回种子布局:6 × 4,按学号顺序每排 4 人,全部未锁定。 */

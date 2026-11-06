@@ -16,6 +16,8 @@ vi.mock('@/shared/api/admin', () => ({
     saveSwitches: vi.fn(),
     systemInfo: vi.fn(),
     downloadDiagnostics: vi.fn(),
+    securitySettings: vi.fn(),
+    saveSecuritySettings: vi.fn(),
   },
 }))
 vi.mock('@/shared/api/school', () => ({ schoolApi: { tagPool: vi.fn() } }))
@@ -36,6 +38,11 @@ beforeEach(() => {
   vi.resetAllMocks()
   vi.mocked(schoolApi.tagPool).mockResolvedValue({ tags: ['重点关注', '住校', '近视', '偏科'] })
   vi.mocked(adminApi.switches).mockResolvedValue(SW)
+  vi.mocked(adminApi.securitySettings).mockResolvedValue({
+    totp_allowed: false,
+    password_min_length: 8,
+    password_max_age_days: 0,
+  })
 })
 afterEach(cleanup)
 
@@ -377,4 +384,35 @@ it('toasts when diagnostics export fails', async () => {
   await renderPage()
   fireEvent.click(await screen.findByRole('button', { name: '导出诊断信息' }))
   await waitFor(() => expect(toast).toHaveBeenCalledWith('没有权限'))
+})
+
+it('saves security settings', async () => {
+  vi.mocked(adminApi.saveSecuritySettings).mockResolvedValue({
+    totp_allowed: true,
+    password_min_length: 12,
+    password_max_age_days: 90,
+  })
+  await renderPage()
+  const invSpy = vi.spyOn(client, 'invalidateQueries')
+  const card = await screen.findByRole('group', { name: '账号安全' })
+  expect(within(card).queryByText('已有密码不受影响,下次修改时生效')).toBeNull()
+  fireEvent.click(within(card).getByRole('switch', { name: '允许账号开启两步验证' }))
+  fireEvent.change(within(card).getByLabelText('密码最短长度'), { target: { value: '12' } })
+  expect(within(card).getByText('已有密码不受影响,下次修改时生效')).toBeInTheDocument()
+  fireEvent.change(within(card).getByLabelText('密码有效期'), { target: { value: '90' } })
+  fireEvent.click(within(card).getByRole('button', { name: '保存安全设置' }))
+  await waitFor(() =>
+    expect(adminApi.saveSecuritySettings).toHaveBeenCalledWith({
+      totp_allowed: true,
+      password_min_length: 12,
+      password_max_age_days: 90,
+    }),
+  )
+  expect(toast).toHaveBeenCalledWith('已保存')
+  expect(invSpy).toHaveBeenCalledWith({ queryKey: ['auth', 'password-policy'] })
+  expect(client.getQueryData(['admin', 'security-settings'])).toEqual({
+    totp_allowed: true,
+    password_min_length: 12,
+    password_max_age_days: 90,
+  })
 })

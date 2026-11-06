@@ -15,6 +15,7 @@ const renderWith = (perms: AdminPerm[]) => {
       contexts: ['admin'],
       admin_perms: perms,
       must_change_password: false,
+      password_change_reason: null,
     },
   })
   return render(

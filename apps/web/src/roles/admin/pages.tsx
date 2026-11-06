@@ -28,10 +28,11 @@ import { CalendarCheck } from 'lucide-react'
 import AttendanceReportPage from './Reports/AttendanceReportPage'
 // ── 段 D(报表 / 考勤):import 追加在此行之上 ──
 
-import { KeyRound, ScrollText, Sparkles } from 'lucide-react'
+import { KeyRound, LogIn, ScrollText, Sparkles } from 'lucide-react'
 import AiConfigPage from './Ai/AiConfigPage'
 import AiUsagePage from './Ai/AiUsagePage'
 import AuditPage from './Audit/AuditPage'
+import LoginLogsPage from './LoginLogs/LoginLogsPage'
 // ── 段 D(审计 / AI):import 追加在此行之上 ──
 
 import { Megaphone } from 'lucide-react'
@@ -173,6 +174,14 @@ export const ADMIN_PAGES: AdminPage[] = [
     icon: KeyRound,
     perm: 'settings.manage',
     element: <AiConfigPage />,
+    group: 'system',
+  },
+  {
+    path: 'login-logs',
+    label: '登录日志',
+    icon: LogIn,
+    perm: 'audit.read',
+    element: <LoginLogsPage />,
     group: 'system',
   },
   // ── audit-ai:追加在此行之上 ──

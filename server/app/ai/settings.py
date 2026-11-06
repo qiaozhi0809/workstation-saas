@@ -13,6 +13,11 @@ from app.models import SchoolSetting
 
 _KEY = "ai"
 
+
+def _aad(school_id: UUID) -> str:
+    return f"ai_key:{school_id}"
+
+
 log = structlog.get_logger()
 
 
@@ -41,7 +46,7 @@ def load_ai_config(db: Session, school_id: UUID, key: bytes) -> AIConfig | None:
     api_key: str | None = None
     if enc:
         try:
-            api_key = decrypt(enc, key)
+            api_key = decrypt(enc, key, aad=_aad(school_id))
         except CryptoError:
             # 主密钥可能已更换:按"未设置 Key"处理,不让状态接口和 CLI 崩溃
             log.warning("ai_key_decrypt_failed", school_id=str(school_id))
@@ -62,7 +67,7 @@ def key_undecryptable(db: Session, school_id: UUID, key: bytes) -> bool:
     if not enc:
         return False
     try:
-        decrypt(enc, key)
+        decrypt(enc, key, aad=_aad(school_id))
     except CryptoError:
         return True
     return False
@@ -74,7 +79,7 @@ def save_ai_config(db: Session, school_id: UUID, key: bytes, cfg: AIConfig) -> N
         "base_url": cfg.base_url,
         "model": cfg.model,
         "temperature": cfg.temperature,
-        "api_key_enc": encrypt(cfg.api_key, key) if cfg.api_key else None,
+        "api_key_enc": encrypt(cfg.api_key, key, aad=_aad(school_id)) if cfg.api_key else None,
         "mask_forced": cfg.mask_forced,
     }
     row = _row(db, school_id)
@@ -93,7 +98,10 @@ def clear_ai_config(db: Session, school_id: UUID) -> None:
 
 
 def _is_local(base_url: str) -> bool:
-    return urlparse(base_url).hostname in ("localhost", "127.0.0.1")
+    try:
+        return urlparse(base_url).hostname in ("localhost", "127.0.0.1")
+    except ValueError:  # 库里已有的坏地址(如 https://[bad)按非本地处理
+        return False
 
 
 def is_ready(cfg: AIConfig | None) -> bool:

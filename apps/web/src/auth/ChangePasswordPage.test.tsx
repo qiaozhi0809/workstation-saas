@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { authApi } from '@/shared/api/auth'
@@ -6,7 +7,9 @@ import { ApiError } from '@/shared/api/client'
 import { useAuthStore } from '@/shared/stores/auth'
 import ChangePasswordPage from './ChangePasswordPage'
 
-vi.mock('@/shared/api/auth', () => ({ authApi: { changePassword: vi.fn(), me: vi.fn() } }))
+vi.mock('@/shared/api/auth', () => ({
+  authApi: { changePassword: vi.fn(), me: vi.fn(), passwordPolicy: vi.fn() },
+}))
 
 const user = {
   id: 'u',
@@ -14,6 +17,7 @@ const user = {
   contexts: ['teacher' as const],
   admin_perms: [],
   must_change_password: true,
+  password_change_reason: 'first_login' as const,
 }
 
 const fill = (oldPw: string, newPw: string, confirm: string) => {
@@ -25,17 +29,22 @@ const fill = (oldPw: string, newPw: string, confirm: string) => {
 
 const renderPage = () =>
   render(
-    <MemoryRouter initialEntries={['/change-password']}>
-      <Routes>
-        <Route path="/change-password" element={<ChangePasswordPage />} />
-        <Route path="/login" element={<div>login page</div>} />
-        <Route path="/teacher" element={<div>teacher home</div>} />
-      </Routes>
-    </MemoryRouter>,
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      <MemoryRouter initialEntries={['/change-password']}>
+        <Routes>
+          <Route path="/change-password" element={<ChangePasswordPage />} />
+          <Route path="/login" element={<div>login page</div>} />
+          <Route path="/teacher" element={<div>teacher home</div>} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
   )
 
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.mocked(authApi.passwordPolicy).mockResolvedValue({ min_length: 8, max_age_days: 0 })
   useAuthStore.setState({ accessToken: 'a', refreshToken: 'rt', user, lastContext: null })
 })
 afterEach(() => {
@@ -43,10 +52,26 @@ afterEach(() => {
   useAuthStore.getState().logout()
 })
 
-it('shows the heading and the rule hint', () => {
+it('shows the heading and the rule hint', async () => {
   renderPage()
   expect(screen.getByRole('heading', { name: '首次登录请先修改密码' })).toBeInTheDocument()
-  expect(screen.getByText('至少 8 位,字母、数字、符号中至少两种')).toBeInTheDocument()
+  expect(await screen.findByText('至少 8 位,字母、数字、符号中至少两种')).toBeInTheDocument()
+  expect(screen.getByText('首次登录请设置新密码')).toBeInTheDocument()
+})
+
+it('shows expired reason', async () => {
+  vi.mocked(authApi.passwordPolicy).mockResolvedValue({ min_length: 8, max_age_days: 90 })
+  useAuthStore.setState({
+    user: { ...user, password_change_reason: 'expired' },
+  })
+  renderPage()
+  expect(await screen.findByText('密码已超过 90 天未更换,请设置新密码')).toBeInTheDocument()
+})
+
+it('takes the minimum length from the school policy', async () => {
+  vi.mocked(authApi.passwordPolicy).mockResolvedValue({ min_length: 12, max_age_days: 0 })
+  renderPage()
+  expect(await screen.findByText('至少 12 位,字母、数字、符号中至少两种')).toBeInTheDocument()
 })
 
 it('blocks mismatched passwords without a request', () => {

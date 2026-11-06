@@ -117,7 +117,11 @@ def test_change_password_keeps_current_session_only(client, db, redis_client):
     )
     user = db.scalars(select(User).where(User.login_name == "forced01")).one()
     assert user.must_change_password is False
-    assert client.get("/api/v1/me/classes", headers=bearer(a["access_token"])).status_code == 200
+    # R6:改密之前签发的 access 令牌可能因跨整秒被拒;本会话用保留的刷新令牌换新令牌后继续可用
+    refreshed = client.post("/api/v1/auth/refresh", json={"refresh_token": a["refresh_token"]})
+    assert refreshed.status_code == 200
+    h = bearer(refreshed.json()["access_token"])
+    assert client.get("/api/v1/me/classes", headers=h).status_code == 200
     assert login(client, "forced01", new_pw).status_code == 200
     rows = audit_rows(db, user.id)
     assert [r.action for r in rows] == ["account.password_change"]
@@ -194,3 +198,39 @@ def test_locked_change_password_has_retry_after(client, settings):
     res = _change(client, a, r, "wrong-old", "abcd1234")
     assert res.status_code == 429
     assert 1 <= int(res.headers["Retry-After"]) <= settings.login_lock_seconds
+
+
+def test_change_password_uses_school_min_length(client, db):
+    from uuid import UUID
+
+    from app.domain.school_settings.schemas import SecuritySettings
+    from app.domain.school_settings.service import save_security
+    from tests.seed_ids import SCHOOL_ID, TEACHER_USER_ID
+
+    save_security(
+        db,
+        UUID(SCHOOL_ID),
+        SecuritySettings(totp_allowed=False, password_min_length=12, password_max_age_days=0),
+        UUID(TEACHER_USER_ID),
+    )
+    t = login(client).json()
+    res = _change(client, t["access_token"], t["refresh_token"], "dev123", "abcd12345xy")  # 11 位
+    assert res.status_code == 400
+    assert res.json()["error"]["code"] == "PASSWORD_WEAK"
+    assert res.json()["error"]["details"]["reason"] == "too_short"
+    assert "至少 12 位" in res.json()["error"]["message"]
+    ok = _change(client, t["access_token"], t["refresh_token"], "dev123", "abcd12345xyz")
+    assert ok.status_code == 200
+
+
+def test_check_policy_min_length_configurable():
+    with pytest.raises(ApiError) as exc:
+        check_policy("abcdef12345", min_length=12)  # 11 位
+    assert exc.value.status == 400
+    assert exc.value.code == "PASSWORD_WEAK"
+    assert "至少 12 位" in exc.value.message
+    check_policy("abcdef123456", min_length=12)
+    check_policy("abcd1234")  # 默认 8 位不变
+    with pytest.raises(ApiError) as exc2:
+        check_policy("abc123")
+    assert "至少 8 位" in exc2.value.message

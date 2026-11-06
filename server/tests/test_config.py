@@ -69,3 +69,14 @@ def test_trusted_proxies_parse(monkeypatch):
         monkeypatch.setenv("WS_TRUSTED_PROXIES", bad)
         with pytest.raises(ValidationError, match="WS_TRUSTED_PROXIES"):
             Settings(_env_file=None)
+
+
+@pytest.mark.parametrize("days", [29, 731])
+def test_login_log_days_out_of_range_rejected(days):
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, login_log_days=days)
+
+
+@pytest.mark.parametrize("days", [30, 730])
+def test_login_log_days_bounds_accepted(days):
+    assert Settings(_env_file=None, login_log_days=days).login_log_days == days

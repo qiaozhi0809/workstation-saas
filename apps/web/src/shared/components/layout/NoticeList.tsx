@@ -36,7 +36,7 @@ export default function NoticeList({
           {items.map((it) => {
             const isUnread = !it.recalled && !it.read_at
             const expanded = openId === it.id
-            const meta = [it.from_name, formatInTz(it.created_at, localTz())]
+            const meta = [it.from_name ?? '系统', formatInTz(it.created_at, localTz())]
               .filter(Boolean)
               .join(' · ')
             // 已撤回:不可点,只展示标题与说明

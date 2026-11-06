@@ -74,6 +74,7 @@ export function setParentUser() {
       contexts: ['parent'],
       admin_perms: [],
       must_change_password: false,
+      password_change_reason: null,
     },
   })
 }
