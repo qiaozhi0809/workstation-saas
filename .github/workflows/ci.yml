@@ -182,9 +182,13 @@ jobs:
         working-directory: apps/web
         run: npm ci
 
+      # m5c project 用 runner 预装的 Google Chrome(channel: chrome):Playwright 自带的 Chromium 没有 H.264 解码器,
+      # 真流用例放不出画面。这里只确认它在,不重装
       - name: Install Playwright browser
         working-directory: apps/web
-        run: npx playwright install --with-deps chromium
+        run: |
+          npx playwright install --with-deps chromium
+          google-chrome --version
 
       - name: Start frontend
         working-directory: apps/web
