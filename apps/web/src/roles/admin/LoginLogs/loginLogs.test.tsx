@@ -3,7 +3,11 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { adminApi } from '@/shared/api/admin'
+import { schoolApi } from '@/shared/api/school'
 import { toast } from '@/shared/components/Toast'
+import { formatInTz } from '@/shared/lib/date'
+import { downloadBlob } from '@/shared/lib/download'
+import { localTz } from '@/shared/lib/time'
 import type { LoginLog } from '@/shared/types/admin'
 import { useAuthStore } from '@/shared/stores/auth'
 import type { AdminPerm } from '@/shared/types/admin'
@@ -14,6 +18,8 @@ import LoginLogsPage from './LoginLogsPage'
 vi.mock('@/shared/api/admin', () => ({
   adminApi: { loginLogs: vi.fn(), loginLogsCsv: vi.fn() },
 }))
+vi.mock('@/shared/api/school', () => ({ schoolApi: { meta: vi.fn() } }))
+vi.mock('@/shared/lib/download', () => ({ downloadBlob: vi.fn() }))
 vi.mock('@/shared/components/Toast', () => ({ toast: vi.fn() }))
 
 const log = (o: Partial<LoginLog> = {}): LoginLog => ({
@@ -43,6 +49,11 @@ beforeEach(() => {
   vi.resetAllMocks()
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date('2026-11-04T10:00:00Z'))
+  vi.mocked(schoolApi.meta).mockResolvedValue({
+    version: '1.0.0',
+    school_name: '示范小学',
+    school_tz: 'Asia/Shanghai',
+  })
   vi.mocked(adminApi.loginLogs).mockResolvedValue({
     items: [
       log(),
@@ -91,20 +102,41 @@ it('filters by suspicious and result', async () => {
   await waitFor(() => expect(lastFilters()?.result).toEqual(['bad_password', 'locked']))
 })
 
-it('exports csv with the same filters', async () => {
-  const createObjectURL = vi.fn(() => 'blob:x')
-  vi.stubGlobal('URL', { ...URL, createObjectURL, revokeObjectURL: vi.fn() })
-  vi.mocked(adminApi.loginLogsCsv).mockResolvedValue(new Blob(['a']))
+// L134:"今天"与时间列都按学校时区,不按浏览器时区
+it('computes the default range and renders times in the school time zone', async () => {
+  // 18:00Z 在上海已是 11-05 凌晨 2 点;浏览器(UTC 或更西的时区)还是 11-04
+  vi.setSystemTime(new Date('2026-11-04T18:00:00Z'))
+  setup()
+  const row = await screen.findByRole('row', { name: /teacher01/ })
+  expect(lastFilters()).toMatchObject({ from: '2026-10-30', to: '2026-11-05', page: 1 })
+  expect(screen.getByLabelText('开始日期')).toHaveValue('2026-10-30')
+  expect(screen.getByLabelText('结束日期')).toHaveValue('2026-11-05')
+  expect(within(row).getByText('2026-11-03 10:30')).toBeInTheDocument()
+  expect(adminApi.loginLogs).toHaveBeenCalledTimes(1) // 等到时区已知才发第一次请求
+})
+
+it('falls back to the browser time zone when /meta fails', async () => {
+  vi.mocked(schoolApi.meta).mockRejectedValue(new Error('offline'))
+  setup()
+  await screen.findByText('teacher01')
+  const to = formatInTz(new Date().toISOString(), localTz()).slice(0, 10)
+  expect(lastFilters()).toMatchObject({ to })
+})
+
+it('exports csv with the same filters through downloadBlob', async () => {
+  const blob = new Blob(['a'])
+  vi.mocked(adminApi.loginLogsCsv).mockResolvedValue(blob)
   setup()
   await screen.findByText('teacher01')
   fireEvent.click(screen.getByLabelText('只看可疑'))
   await waitFor(() => expect(lastFilters()?.suspicious).toBe(true))
   fireEvent.click(screen.getByRole('button', { name: '导出 CSV' }))
-  await waitFor(() => expect(createObjectURL).toHaveBeenCalled())
+  await waitFor(() =>
+    expect(downloadBlob).toHaveBeenCalledWith(blob, '登录日志-2026-10-29-2026-11-04.csv'),
+  )
   const f = vi.mocked(adminApi.loginLogsCsv).mock.calls[0][0]
   expect(f).toMatchObject({ from: '2026-10-29', to: '2026-11-04', suspicious: true })
   expect(f).not.toHaveProperty('page')
-  vi.unstubAllGlobals()
 })
 
 it('toasts when the export fails', async () => {
