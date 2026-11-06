@@ -1,20 +1,23 @@
 import { TrendLine } from '@/shared/components/charts/TrendLine'
 import { examStats, subjectStats, trendDomain } from '@/shared/lib/grades'
 import type { GradebookExam } from '@/shared/types/grades'
+import type { Grading } from '@/shared/types/school'
 import { round1 } from './round1'
 
-/** book:按时间排好的成绩册;ids:enrollment_id。至少两场有分数的考试才渲染。 */
+/** book:按时间排好的成绩册;ids:enrollment_id;ratios:学校及格比例(useGrading())。至少两场有分数的考试才渲染。 */
 export function TrendGrid({
   book,
   ids,
   width,
+  ratios,
 }: {
   book: GradebookExam[]
   ids: string[]
   width?: number
+  ratios: Grading
 }) {
   const scored = book.flatMap((exam) => {
-    const stats = examStats(exam, ids)
+    const stats = examStats(exam, ids, ratios)
     return stats ? [{ exam, stats }] : []
   })
   if (scored.length < 2) return null
@@ -33,7 +36,7 @@ export function TrendGrid({
       key: name,
       label: name,
       values: scored.map(({ exam }) => {
-        const st = subjectStats(exam, name, ids)
+        const st = subjectStats(exam, name, ids, ratios)
         return st ? round1(st.rate) : null
       }) as (number | null)[],
     })),

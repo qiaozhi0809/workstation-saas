@@ -2,6 +2,7 @@ import { Badge } from '@/shared/components/ui/badge'
 import { cellState, type Row } from '@/shared/lib/grades'
 import { cn } from '@/shared/lib/utils'
 import type { SubjectFull } from '@/shared/types/grades'
+import type { Grading } from '@/shared/types/school'
 
 function Change({ value }: { value: number | undefined }) {
   if (value === undefined) return <span className="text-muted-foreground">—</span>
@@ -10,18 +11,20 @@ function Change({ value }: { value: number | undefined }) {
   return <span className="text-muted-foreground">0</span>
 }
 
-/** rows/changes 的 id 是 enrollment_id;changes 为 null 表示没有对比,不显示进退列 */
+/** rows/changes 的 id 是 enrollment_id;changes 为 null 表示没有对比,不显示进退列;ratios:学校及格比例(useGrading()) */
 export function RankTable({
   subjects,
   rows,
   changes,
   names,
+  ratios,
   onOpen,
 }: {
   subjects: SubjectFull[]
   rows: Row[]
   changes: Map<string, number> | null
   names: Map<string, string>
+  ratios: Grading
   onOpen: (enrollmentId: string) => void
 }) {
   return (
@@ -58,7 +61,7 @@ export function RankTable({
                   </button>
                 </td>
                 {subjects.map((s) => {
-                  const state = cellState(r.subs[s.name], s.full)
+                  const state = cellState(r.subs[s.name], s.full, ratios)
                   return (
                     <td
                       key={s.name}

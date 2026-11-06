@@ -1,6 +1,8 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { examsApi } from '@/shared/api/exams'
+import { schoolApi } from '@/shared/api/school'
+import { DEFAULT_GRADING } from '@/shared/lib/grades'
 import type { GradebookExam } from '@/shared/types/grades'
 import { reviewsApi } from '@/shared/api/reviews'
 import { todosApi } from '@/shared/api/todos'
@@ -15,10 +17,12 @@ vi.mock('@/shared/api/seating')
 vi.mock('@/shared/api/todos')
 vi.mock('@/shared/api/preferences')
 vi.mock('@/shared/api/exams')
+vi.mock('@/shared/api/school')
 
 beforeEach(() => {
   vi.resetAllMocks()
   defaultApiMocks()
+  vi.mocked(schoolApi.grading).mockResolvedValue(DEFAULT_GRADING)
 })
 
 const openPanel = async () =>

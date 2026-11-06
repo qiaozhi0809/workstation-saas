@@ -15,6 +15,9 @@ const exam = (classId: string, examId: string) =>
 
 export const examsApi = {
   subjects: (classId: string) => api<ListResponse<SubjectFull>>('GET', `${base(classId)}/subjects`),
+  /** 把学校目录里该班还没有的科目追加到班级科目表末尾(已有的不改满分),返回补齐后的全部科目 */
+  fillFromCatalog: (classId: string) =>
+    api<SubjectFull[]>('POST', `${base(classId)}/subjects/fill-from-catalog`),
   list: (classId: string) => api<ListResponse<Exam>>('GET', `${base(classId)}/exams`),
   create: (classId: string, input: ExamInput) => api<Exam>('POST', `${base(classId)}/exams`, input),
   update: (classId: string, examId: string, input: ExamInput) =>

@@ -199,6 +199,7 @@ export default function GradeExamsPage() {
       {dialog?.kind === 'form' && gradeId !== null && (
         <GradeExamForm
           gradeId={gradeId}
+          gradeName={gradeName}
           exam={dialog.exam}
           today={todayStr()}
           onClose={close}

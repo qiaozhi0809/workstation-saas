@@ -1,6 +1,7 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 import { useAuthStore } from '@/shared/stores/auth'
 import type { GradeExamInput, NoticeInput, UpgradePlan } from '@/shared/types/admin'
+import type { SubjectCatalog } from '@/shared/types/school'
 import { adminApi } from './admin'
 import { noticesApi } from './notices'
 import { ApiError } from './client'
@@ -35,6 +36,11 @@ const lastCall = () => {
 }
 
 const schoolB = { name: '实验小学', address: null }
+const catalogB: SubjectCatalog = {
+  primary: [{ name: '语文', full: 100 }],
+  junior: [{ name: '语文', full: 120 }],
+  senior: [{ name: '语文', full: 150 }],
+}
 const yearB = {
   name: '2026-2027',
   start_date: '2026-09-01',
@@ -289,6 +295,23 @@ const cases: [string, () => Promise<unknown>, string, string, unknown?][] = [
   ['notices read', () => noticesApi.read('n1'), 'POST', '/notices/n1/read'],
   ['notices readAll', () => noticesApi.readAll(), 'POST', '/notices/read-all'],
   ['tagPool', () => schoolApi.tagPool(), 'GET', '/school/tag-pool'],
+  ['grading', () => schoolApi.grading(), 'GET', '/school/grading'],
+  [
+    'saveGrading',
+    () => schoolApi.saveGrading({ pass_ratio: 0.7, good_ratio: 0.9 }),
+    'PUT',
+    '/admin/settings/grading',
+    { pass_ratio: 0.7, good_ratio: 0.9 },
+  ],
+  ['subjectCatalog', () => schoolApi.subjectCatalog(), 'GET', '/school/subject-catalog'],
+  [
+    'saveSubjectCatalog',
+    () => schoolApi.saveSubjectCatalog(catalogB),
+    'PUT',
+    '/admin/settings/subject-catalog',
+    catalogB,
+  ],
+  ['meta', () => schoolApi.meta(), 'GET', '/meta'],
   ['me', () => authApi.me(), 'GET', '/auth/me'],
   [
     'changePassword',

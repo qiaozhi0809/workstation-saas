@@ -21,6 +21,7 @@ export const child = (over: Partial<ParentChild> = {}): ParentChild => ({
   status: 'active',
   left_on: null,
   archive_on: null,
+  left_reason: null,
   ...over,
 })
 

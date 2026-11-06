@@ -45,6 +45,8 @@ export interface ParentChild {
   left_on: string | null
   /** 只读时:left_on + 365 天 */
   archive_on: string | null
+  /** 只读时的原因:毕业 / 中途离校;在读为 null(L77) */
+  left_reason: 'graduated' | 'left' | null
 }
 export interface MiniSeatMap {
   rows: number

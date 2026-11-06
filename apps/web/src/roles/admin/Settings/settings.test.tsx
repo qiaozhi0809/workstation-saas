@@ -7,6 +7,7 @@ import { schoolApi } from '@/shared/api/school'
 import { toast } from '@/shared/components/Toast'
 import { useAuthStore } from '@/shared/stores/auth'
 import type { Switches, SystemInfo } from '@/shared/types/admin'
+import type { SubjectCatalog } from '@/shared/types/school'
 import SettingsPage from './SettingsPage'
 
 vi.mock('@/shared/api/admin', () => ({
@@ -20,8 +21,25 @@ vi.mock('@/shared/api/admin', () => ({
     saveSecuritySettings: vi.fn(),
   },
 }))
-vi.mock('@/shared/api/school', () => ({ schoolApi: { tagPool: vi.fn() } }))
+vi.mock('@/shared/api/school', () => ({
+  schoolApi: {
+    tagPool: vi.fn(),
+    grading: vi.fn(),
+    saveGrading: vi.fn(),
+    subjectCatalog: vi.fn(),
+    saveSubjectCatalog: vi.fn(),
+  },
+}))
 vi.mock('@/shared/components/Toast', () => ({ toast: vi.fn() }))
+
+const CATALOG: SubjectCatalog = {
+  primary: [
+    { name: '语文', full: 100 },
+    { name: '数学', full: 100 },
+  ],
+  junior: [{ name: '语文', full: 120 }],
+  senior: [{ name: '语文', full: 150 }],
+}
 
 const SW: Switches = {
   parent_rank: false,
@@ -43,6 +61,8 @@ beforeEach(() => {
     password_min_length: 8,
     password_max_age_days: 0,
   })
+  vi.mocked(schoolApi.grading).mockResolvedValue({ pass_ratio: 0.6, good_ratio: 0.85 })
+  vi.mocked(schoolApi.subjectCatalog).mockResolvedValue(CATALOG)
 })
 afterEach(cleanup)
 
@@ -415,4 +435,153 @@ it('saves security settings', async () => {
     password_min_length: 12,
     password_max_age_days: 90,
   })
+})
+
+// ---------- 及格线 ----------
+const gradingCard = async () => screen.findByRole('group', { name: '及格线与优秀线' })
+
+it('grading card validates', async () => {
+  vi.mocked(schoolApi.saveGrading).mockResolvedValue({ pass_ratio: 0.7, good_ratio: 0.9 })
+  await renderPage()
+  const card = within(await gradingCard())
+  expect(card.getByLabelText('及格线(%)')).toHaveValue(60)
+  expect(card.getByLabelText('优秀线(%)')).toHaveValue(85)
+  expect(
+    card.getByText('按各科满分的比例计算,老师端分析、AI 统计、成绩汇总一起生效'),
+  ).toBeInTheDocument()
+  const save = card.getByRole('button', { name: '保存及格线' })
+  expect(save).toBeDisabled() // 没改过
+
+  // 优秀线不高于及格线
+  fireEvent.change(card.getByLabelText('及格线(%)'), { target: { value: '85' } })
+  expect(card.getByRole('alert')).toHaveTextContent('优秀线要高于及格线')
+  expect(save).toBeDisabled()
+  // 越界
+  fireEvent.change(card.getByLabelText('及格线(%)'), { target: { value: '20' } })
+  expect(card.getByRole('alert')).toHaveTextContent('及格线要在 30%–95% 之间的整数')
+  fireEvent.change(card.getByLabelText('及格线(%)'), { target: { value: '70' } })
+  fireEvent.change(card.getByLabelText('优秀线(%)'), { target: { value: '101' } })
+  expect(card.getByRole('alert')).toHaveTextContent('优秀线要在 40%–100% 之间的整数')
+  fireEvent.change(card.getByLabelText('优秀线(%)'), { target: { value: '90.5' } })
+  expect(card.getByRole('alert')).toHaveTextContent('优秀线要在 40%–100% 之间的整数')
+  expect(save).toBeDisabled()
+  expect(schoolApi.saveGrading).not.toHaveBeenCalled()
+
+  // 合法:发两位小数的比例,保存后失效 ['school','grading'](重取时后端已是新值)
+  const invSpy = vi.spyOn(client, 'invalidateQueries')
+  vi.mocked(schoolApi.grading).mockResolvedValue({ pass_ratio: 0.7, good_ratio: 0.9 })
+  fireEvent.change(card.getByLabelText('优秀线(%)'), { target: { value: '90' } })
+  expect(card.queryByRole('alert')).toBeNull()
+  fireEvent.click(save)
+  await waitFor(() =>
+    expect(schoolApi.saveGrading).toHaveBeenCalledWith({ pass_ratio: 0.7, good_ratio: 0.9 }),
+  )
+  expect(toast).toHaveBeenCalledWith('已保存')
+  expect(invSpy).toHaveBeenCalledWith({ queryKey: ['school', 'grading'] })
+  expect(client.getQueryData(['school', 'grading'])).toEqual({ pass_ratio: 0.7, good_ratio: 0.9 })
+})
+
+it('shows the backend message when saving the grading fails', async () => {
+  vi.mocked(schoolApi.saveGrading).mockRejectedValue(
+    new ApiError(400, 'BAD_REQUEST', '优秀比例必须大于及格比例(后端)'),
+  )
+  await renderPage()
+  const card = within(await gradingCard())
+  fireEvent.change(card.getByLabelText('及格线(%)'), { target: { value: '70' } })
+  fireEvent.click(card.getByRole('button', { name: '保存及格线' }))
+  expect(await card.findByText('优秀比例必须大于及格比例(后端)')).toBeInTheDocument()
+})
+
+// ---------- 科目目录 ----------
+const catalogCard = async () => screen.findByRole('group', { name: '科目目录' })
+const subjectNames = (card: ReturnType<typeof within>) =>
+  card
+    .queryAllByRole('listitem')
+    .map((li: HTMLElement) => li.getAttribute('data-subject'))
+    .filter((s: string | null): s is string => s !== null)
+
+it('catalog card edits stage list', async () => {
+  vi.mocked(schoolApi.saveSubjectCatalog).mockImplementation(async (c) => c)
+  await renderPage()
+  const card = within(await catalogCard())
+  expect(card.getByText('只影响之后新建的班级和联考可选科目')).toBeInTheDocument()
+  expect(card.getByRole('tab', { name: '小学' })).toHaveAttribute('aria-selected', 'true')
+  expect(subjectNames(card)).toEqual(['语文', '数学'])
+  expect(card.getByLabelText('数学 满分')).toHaveValue(100)
+  const save = card.getByRole('button', { name: '保存科目目录' })
+  expect(save).toBeDisabled()
+
+  // 小学:加"科学"、上移、改满分、删"语文"
+  fireEvent.change(card.getByLabelText('新科目名称'), { target: { value: ' 科学 ' } })
+  fireEvent.change(card.getByLabelText('新科目满分'), { target: { value: '80' } })
+  fireEvent.click(card.getByRole('button', { name: '添加科目' }))
+  expect(subjectNames(card)).toEqual(['语文', '数学', '科学'])
+  expect(card.getByLabelText('科学 满分')).toHaveValue(80)
+  fireEvent.click(card.getByRole('button', { name: '上移 科学' }))
+  expect(subjectNames(card)).toEqual(['语文', '科学', '数学'])
+  expect(card.getByRole('button', { name: '上移 语文' })).toBeDisabled()
+  expect(card.getByRole('button', { name: '下移 数学' })).toBeDisabled()
+  fireEvent.change(card.getByLabelText('数学 满分'), { target: { value: '120' } })
+  fireEvent.click(card.getByRole('button', { name: '删除 语文' }))
+  expect(subjectNames(card)).toEqual(['科学', '数学'])
+  // 重名与空名
+  fireEvent.change(card.getByLabelText('新科目名称'), { target: { value: '数学' } })
+  fireEvent.click(card.getByRole('button', { name: '添加科目' }))
+  expect(card.getByText('这个学段已经有这门科目')).toBeInTheDocument()
+  expect(subjectNames(card)).toHaveLength(2)
+
+  // 切到初中:列表独立;删到空不能保存
+  fireEvent.click(card.getByRole('tab', { name: '初中' }))
+  expect(subjectNames(card)).toEqual(['语文'])
+  expect(card.getByLabelText('语文 满分')).toHaveValue(120)
+  fireEvent.click(card.getByRole('button', { name: '删除 语文' }))
+  expect(subjectNames(card)).toEqual([])
+  fireEvent.click(save)
+  expect(card.getByRole('alert')).toHaveTextContent('初中至少要有 1 门科目')
+  expect(schoolApi.saveSubjectCatalog).not.toHaveBeenCalled()
+  fireEvent.change(card.getByLabelText('新科目名称'), { target: { value: '物理' } })
+  fireEvent.click(card.getByRole('button', { name: '添加科目' }))
+  expect(card.getByLabelText('物理 满分')).toHaveValue(100)
+
+  // 保存:三个学段一起发,保存后失效 ['school','subject-catalog']
+  const invSpy = vi.spyOn(client, 'invalidateQueries')
+  fireEvent.click(save)
+  await waitFor(() =>
+    expect(schoolApi.saveSubjectCatalog).toHaveBeenCalledWith({
+      primary: [
+        { name: '科学', full: 80 },
+        { name: '数学', full: 120 },
+      ],
+      junior: [{ name: '物理', full: 100 }],
+      senior: [{ name: '语文', full: 150 }],
+    }),
+  )
+  expect(toast).toHaveBeenCalledWith('已保存')
+  expect(invSpy).toHaveBeenCalledWith({ queryKey: ['school', 'subject-catalog'] })
+  await waitFor(() => expect(save).toBeDisabled())
+})
+
+it('rejects a bad full mark in the catalog before saving', async () => {
+  await renderPage()
+  const card = within(await catalogCard())
+  fireEvent.change(card.getByLabelText('数学 满分'), { target: { value: '0' } })
+  fireEvent.click(card.getByRole('button', { name: '保存科目目录' }))
+  expect(card.getByRole('alert')).toHaveTextContent('小学「数学」的满分须为 1–1000 的整数')
+  expect(schoolApi.saveSubjectCatalog).not.toHaveBeenCalled()
+  fireEvent.change(card.getByLabelText('新科目名称'), {
+    target: { value: '很长很长很长很长很长的名' },
+  })
+  fireEvent.click(card.getByRole('button', { name: '添加科目' }))
+  expect(card.getByText('科目名要在 1–10 个字')).toBeInTheDocument()
+})
+
+it('shows the backend message when saving the catalog fails', async () => {
+  vi.mocked(schoolApi.saveSubjectCatalog).mockRejectedValue(
+    new ApiError(400, 'BAD_REQUEST', '科目名重复(后端)'),
+  )
+  await renderPage()
+  const card = within(await catalogCard())
+  fireEvent.click(card.getByRole('button', { name: '删除 数学' }))
+  fireEvent.click(card.getByRole('button', { name: '保存科目目录' }))
+  expect(await card.findByText('科目名重复(后端)')).toBeInTheDocument()
 })

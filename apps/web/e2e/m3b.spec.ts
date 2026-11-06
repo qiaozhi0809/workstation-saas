@@ -160,7 +160,10 @@ test.describe('grade exam', () => {
     await page.getByRole('button', { name: '新建联考' }).click()
     const form = page.getByRole('dialog', { name: '新建联考' })
     await form.getByLabel('考试名称').fill(NAME)
-    await form.getByRole('button', { name: '删除科目 3' }).click() // 默认语数英,只留语文、数学
+    // 小学目录默认勾选 语文、数学、英语、科学、道法,只留语文、数学
+    for (const subject of ['英语', '科学', '道法']) {
+      await form.getByLabel(subject, { exact: true }).uncheck()
+    }
     await form.getByRole('button', { name: '保存' }).click()
     const row = page.getByRole('listitem', { name: NAME })
     await expect(row).toBeVisible()

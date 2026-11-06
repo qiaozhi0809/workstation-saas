@@ -9,6 +9,7 @@ import { reviewsApi } from '@/shared/api/reviews'
 import { studentsApi } from '@/shared/api/students'
 import { ScoreRadar } from '@/shared/components/charts/ScoreRadar'
 import { TrendLine } from '@/shared/components/charts/TrendLine'
+import { useGrading } from '@/shared/hooks/useGrading'
 import { daysUntilBirthday, formatMonthDay } from '@/shared/lib/date'
 import {
   examStats,
@@ -170,6 +171,7 @@ function BirthdayCard({
 const roundOrNull = (v: number | null) => (v === null ? null : Math.round(v))
 
 function ScoreBlocks({ student, enabled }: { student: StudentProfile; enabled: boolean }) {
+  const grading = useGrading()
   const { data } = useQuery({
     queryKey: ['gradebook', student.class_id],
     queryFn: () => examsApi.gradebook(student.class_id),
@@ -189,7 +191,7 @@ function ScoreBlocks({ student, enabled }: { student: StudentProfile; enabled: b
   const change = rankChanges(cur, prev ? examTable(prev, ids) : null).get(me)
 
   const trend = studentTrend(withMe, me, ids)
-  const classRate = withMe.map((e) => examStats(e, ids)?.rate ?? null)
+  const classRate = withMe.map((e) => examStats(e, ids, grading)?.rate ?? null)
   const axes = latest.subjects.flatMap((s) => {
     const v = latest.scores[me]?.[s.name]
     return typeof v === 'number'
@@ -197,7 +199,7 @@ function ScoreBlocks({ student, enabled }: { student: StudentProfile; enabled: b
           {
             name: s.name,
             mine: Math.round((v / s.full) * 100),
-            avg: roundOrNull(subjectStats(latest, s.name, ids)?.rate ?? null),
+            avg: roundOrNull(subjectStats(latest, s.name, ids, grading)?.rate ?? null),
           },
         ]
       : []

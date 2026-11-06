@@ -1,39 +1,49 @@
 import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Trash2 } from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { adminApi } from '@/shared/api/admin'
+import { schoolApi } from '@/shared/api/school'
+import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import Modal from '@/shared/components/overlay/Modal'
 import { Button } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
 import { cn } from '@/shared/lib/utils'
+import { useAuthStore } from '@/shared/stores/auth'
 import type { GradeExam, GradeExamInput } from '@/shared/types/admin'
-import { EXAM_TYPES, type ExamType } from '@/shared/types/grades'
+import { EXAM_TYPES, type ExamType, type SubjectFull } from '@/shared/types/grades'
+import { STAGE_LABEL } from '@/shared/types/school'
 import { errMsg } from '../Org/errMsg'
 import Field from '../Org/Field'
+import { catalogStage } from './catalogStage'
 
 const NAME_MAX = 30
-const FULL_MSG = '满分须为 1–1000 的整数'
-const validFull = (n: number) => Number.isInteger(n) && n >= 1 && n <= 1000
 
-interface Row {
-  name: string
-  full: string
+/** 可选科目:目录里的按目录满分;考试里已有的按考试满分;考试里有但目录没有的保留并标注 */
+interface Option extends SubjectFull {
+  legacy: boolean
 }
 
-const DEFAULT_ROWS: Row[] = [
-  { name: '语文', full: '100' },
-  { name: '数学', full: '100' },
-  { name: '英语', full: '100' },
-]
+function buildOptions(catalog: SubjectFull[], exam: GradeExam | undefined): Option[] {
+  const inExam = new Map((exam?.subjects ?? []).map((s) => [s.name, s.full]))
+  const options: Option[] = catalog.map((s) => ({
+    name: s.name,
+    full: inExam.get(s.name) ?? s.full,
+    legacy: false,
+  }))
+  for (const [name, full] of inExam)
+    if (!options.some((o) => o.name === name)) options.push({ name, full, legacy: true })
+  return options
+}
 
 export default function GradeExamForm({
   gradeId,
+  gradeName,
   exam,
   today,
   onClose,
   onSaved,
 }: {
   gradeId: string
+  gradeName: string
   exam?: GradeExam
   today: string
   onClose(): void
@@ -43,10 +53,27 @@ export default function GradeExamForm({
   const [name, setName] = useState(exam?.name ?? '')
   const [date, setDate] = useState(exam?.date ?? today)
   const [type, setType] = useState<ExamType>(exam?.exam_type ?? '月考')
-  const [rows, setRows] = useState<Row[]>(() =>
-    exam ? exam.subjects.map((s) => ({ name: s.name, full: String(s.full) })) : DEFAULT_ROWS,
-  )
+  // null = 还没按目录初始化(新建默认全选,编辑默认选考试里已有的)
+  const [picked, setPicked] = useState<Set<string> | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  // 年级表只有 org.manage 能读(年级组长会 403);读不到就按年级名推断学段,与后端同规则
+  const canReadGrades = useAuthStore((s) => s.user?.admin_perms.includes('org.manage') ?? false)
+  const grades = useQuery({
+    queryKey: ['admin', 'grades'],
+    queryFn: adminApi.grades,
+    enabled: canReadGrades,
+  })
+  const stage = catalogStage(
+    grades.data?.find((g) => g.id === (exam?.grade_id ?? gradeId))?.effective_stage,
+    exam?.grade_name ?? gradeName,
+  )
+  const catalog = useQuery({
+    queryKey: ['school', 'subject-catalog'],
+    queryFn: schoolApi.subjectCatalog,
+  })
+  const options = catalog.data ? buildOptions(catalog.data[stage], exam) : null
+  const selected = picked ?? new Set((exam ? exam.subjects : (options ?? [])).map((s) => s.name))
 
   const save = useMutation({
     mutationFn: (input: GradeExamInput) =>
@@ -59,8 +86,12 @@ export default function GradeExamForm({
     onError: (e) => setError(errMsg(e)),
   })
 
-  const patch = (i: number, change: Partial<Row>) =>
-    setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...change } : r)))
+  const toggle = (subject: string) => {
+    const next = new Set(selected)
+    if (next.has(subject)) next.delete(subject)
+    else next.add(subject)
+    setPicked(next)
+  }
 
   const submit = () => {
     const n = name.trim()
@@ -76,21 +107,19 @@ export default function GradeExamForm({
       setError('请选择日期')
       return
     }
-    if (rows.length === 0) {
-      setError('至少添加一个科目')
-      return
-    }
-    const subjects = rows.map((r) => ({ name: r.name.trim(), full: Number(r.full) }))
-    if (subjects.some((s) => !s.name)) {
-      setError('科目名称不能为空')
-      return
-    }
-    if (new Set(subjects.map((s) => s.name)).size !== subjects.length) {
-      setError('科目名称不能重复')
-      return
-    }
-    if (subjects.some((s) => !validFull(s.full))) {
-      setError(FULL_MSG)
+    // 编辑时保持考试原有的科目顺序,新勾上的按目录序追加在后;新建时就是目录序
+    const all = options ?? []
+    const ordered = exam
+      ? [
+          ...exam.subjects.flatMap((s) => all.filter((o) => o.name === s.name)),
+          ...all.filter((o) => !exam.subjects.some((s) => s.name === o.name)),
+        ]
+      : all
+    const subjects = ordered
+      .filter((o) => selected.has(o.name))
+      .map((o) => ({ name: o.name, full: o.full }))
+    if (subjects.length === 0) {
+      setError('至少选择一个科目')
       return
     }
     setError(null)
@@ -143,47 +172,38 @@ export default function GradeExamForm({
         </div>
 
         <div role="group" aria-label="科目" className="grid gap-2 text-sm">
-          <span className="text-muted-foreground">科目与满分</span>
-          {rows.map((r, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <Input
-                aria-label={`科目 ${i + 1} 名称`}
-                maxLength={10}
-                className="h-8 w-32"
-                value={r.name}
-                onChange={(e) => patch(i, { name: e.target.value })}
-              />
-              <Input
-                type="number"
-                min={1}
-                max={1000}
-                step={1}
-                aria-label={`科目 ${i + 1} 满分`}
-                className="h-8 w-24"
-                value={r.full}
-                onChange={(e) => patch(i, { full: e.target.value })}
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                aria-label={`删除科目 ${i + 1}`}
-                onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))}
-              >
-                <Trash2 className="h-4 w-4" aria-hidden="true" />
-              </Button>
-            </div>
-          ))}
-          <div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setRows((rs) => [...rs, { name: '', full: '100' }])}
-            >
-              添加科目
-            </Button>
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-muted-foreground">科目与满分</span>
+            <span className="text-xs text-muted-foreground">{`${STAGE_LABEL[stage]}目录`}</span>
           </div>
+          {options ? (
+            <ul className="grid gap-1 sm:grid-cols-2">
+              {options.map((o) => (
+                <li key={o.name}>
+                  <label className="flex items-center gap-2 rounded-md border px-2 py-1.5">
+                    <input
+                      type="checkbox"
+                      aria-label={o.name}
+                      checked={selected.has(o.name)}
+                      onChange={() => toggle(o.name)}
+                    />
+                    <span className="flex-1">{o.name}</span>
+                    {o.legacy && <span className="text-xs text-warning">已不在目录</span>}
+                    <span className="text-xs text-muted-foreground">{`满分 ${o.full}`}</span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          ) : catalog.isError ? (
+            <p role="alert" className="text-destructive">
+              科目目录加载失败,请关闭后重试
+            </p>
+          ) : (
+            <LoadingState />
+          )}
+          <p className="text-xs text-muted-foreground">
+            可选科目来自学校设置里的科目目录;要加新科目请先去学校设置里维护目录。
+          </p>
         </div>
 
         {error && (
@@ -195,7 +215,7 @@ export default function GradeExamForm({
           <Button type="button" variant="outline" onClick={onClose}>
             取消
           </Button>
-          <Button type="submit" disabled={save.isPending}>
+          <Button type="submit" disabled={save.isPending || !options}>
             保存
           </Button>
         </div>
