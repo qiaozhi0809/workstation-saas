@@ -13,13 +13,11 @@ from app.domain.notices.service import _own_notice, ack_spec, without_parent_of
 from app.domain.schools.service import school_tz
 from app.errors import ApiError
 from app.models import (
-    Enrollment,
     Notice,
     NoticeRecipient,
     NoticeStudent,
     Parent,
     ParentLink,
-    SchoolClass,
     Student,
     User,
 )
@@ -152,8 +150,9 @@ def _rows(db: Session, notice: Notice) -> list[AckRow]:
             )
             for r, name in found
         ]
+    # 班名读发送时刻的快照(notice_students.class_name,L87),学年升级 / 转班 / 删班都不改统计
     found = db.execute(
-        select(NoticeStudent, NoticeRecipient, Student, User.display_name, SchoolClass.name)
+        select(NoticeStudent, NoticeRecipient, Student, User.display_name)
         .join(
             NoticeRecipient,
             (NoticeRecipient.notice_id == NoticeStudent.notice_id)
@@ -161,35 +160,25 @@ def _rows(db: Session, notice: Notice) -> list[AckRow]:
         )
         .join(Student, Student.id == NoticeStudent.student_id)
         .join(User, User.id == NoticeStudent.parent_user_id)
-        .outerjoin(
-            Enrollment,
-            (Enrollment.student_id == Student.id) & (Enrollment.status == "active"),
-        )
-        .outerjoin(SchoolClass, SchoolClass.id == Enrollment.class_id)
         .where(NoticeStudent.notice_id == notice.id)
     ).all()
-    seen: set[UUID] = set()
-    rows = []
-    for ns, r, stu, parent_name, class_name in sorted(
-        found, key=lambda x: (x[4] or "", x[2].student_no or "~", x[2].mk, str(x[2].id))
-    ):
-        if stu.id in seen:
-            continue
-        seen.add(stu.id)
-        rows.append(
-            AckRow(
-                user_id=ns.parent_user_id,
-                user_name=parent_name,
-                student_id=stu.id,
-                student_name=stu.name,
-                class_name=class_name,
-                read_at=r.read_at,
-                choice=r.ack_choice,
-                note=r.ack_content,
-                acked_at=r.acked_at,
-            )
+    return [
+        AckRow(
+            user_id=ns.parent_user_id,
+            user_name=parent_name,
+            student_id=stu.id,
+            student_name=stu.name,
+            class_name=ns.class_name,
+            read_at=r.read_at,
+            choice=r.ack_choice,
+            note=r.ack_content,
+            acked_at=r.acked_at,
         )
-    return rows
+        for ns, r, stu, parent_name in sorted(
+            found,
+            key=lambda x: (x[0].class_name or "", x[2].student_no or "~", x[2].mk, str(x[2].id)),
+        )
+    ]
 
 
 def ack_stats(db: Session, sender: User, notice_id: UUID) -> AckStats:

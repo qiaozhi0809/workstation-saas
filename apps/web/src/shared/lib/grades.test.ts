@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { GradebookExam, ScoreValue } from '../types/grades'
+import type { Grading } from '../types/school'
 import {
+  DEFAULT_GRADING,
   attention,
   cellState,
   examStats,
@@ -11,6 +13,7 @@ import {
   rankChanges,
   rankTint,
   scoreBands,
+  scoreLine,
   studentTrend,
   subjectStats,
   trendDomain,
@@ -96,14 +99,99 @@ describe('parseScore / cellState', () => {
     expect(parseScore('1.2.3')).toBe('invalid')
   })
   it('classifies cells against the full mark', () => {
-    expect(cellState(undefined, 100)).toBe('empty')
-    expect(cellState(null, 100)).toBe('absent')
-    expect(cellState(101, 100)).toBe('over')
-    expect(cellState(59.5, 100)).toBe('low')
-    expect(cellState(60, 100)).toBe('ok')
-    expect(cellState(-1, 100)).toBe('over')
-    expect(cellState(100, 100)).toBe('ok')
-    expect(cellState(0, 100)).toBe('low')
+    const D = DEFAULT_GRADING
+    expect(cellState(undefined, 100, D)).toBe('empty')
+    expect(cellState(null, 100, D)).toBe('absent')
+    expect(cellState(101, 100, D)).toBe('over')
+    expect(cellState(59.5, 100, D)).toBe('low')
+    expect(cellState(60, 100, D)).toBe('ok')
+    expect(cellState(-1, 100, D)).toBe('over')
+    expect(cellState(100, 100, D)).toBe('ok')
+    expect(cellState(0, 100, D)).toBe('low')
+  })
+})
+
+describe('uses given ratios', () => {
+  const R70: Grading = { pass_ratio: 0.7, good_ratio: 0.9 }
+  it('cellState follows the school pass line', () => {
+    expect(cellState(65, 100, R70)).toBe('low')
+    expect(cellState(70, 100, R70)).toBe('ok')
+    expect(cellState(65, 100, DEFAULT_GRADING)).toBe('ok')
+  })
+  it('subjectStats counts pass, good and low against the ratios', () => {
+    const s = subjectStats(mid, '数学', IDS, R70)!
+    // 95 88 85 70 55 90 60 98 78 82:>= 70 的 8 人,>= 90 的 3 人
+    expect(s.passRate).toBeCloseTo(0.8, 5)
+    expect(s.goodRate).toBeCloseTo(0.3, 5)
+    expect(s.low).toBe(2)
+  })
+  it('examStats applies the ratios to totals and to every subject', () => {
+    const st = examStats(mid, IDS, R70)!
+    // 总分 >= 210:278 270 239 247 255 199 289 211 256 → 8 人(117、199 不够)
+    expect(st.passRate).toBeCloseTo(0.8, 5)
+    // 总分 >= 270:278 270 289 → 3 人
+    expect(st.goodRate).toBeCloseTo(0.3, 5)
+    expect(st.subjects.find((s) => s.name === '数学')!.low).toBe(2)
+  })
+  it('attention lists students failing two subjects by the school pass line', () => {
+    const ex = exam2('t', {}, ['甲', '乙'])
+    const cur: Row[] = [
+      { id: 'a', total: 130, rank: 1, subs: { 甲: 65, 乙: 65 } },
+      { id: 'b', total: 150, rank: 2, subs: { 甲: 75, 乙: 75 } },
+    ]
+    expect(attention(ex, cur, new Map(), DEFAULT_GRADING).failing).toEqual([])
+    expect(attention(ex, cur, new Map(), R70).failing).toEqual([{ id: 'a', count: 2 }])
+  })
+  it('exposes the default ratios for placeholders', () => {
+    expect(DEFAULT_GRADING).toEqual({ pass_ratio: 0.6, good_ratio: 0.85 })
+  })
+})
+
+describe('scoreLine rounds like the backend round(full * ratio, 2)', () => {
+  it('computes the line to two decimals', () => {
+    expect(scoreLine(70, 0.6)).toBe(42)
+    expect(scoreLine(100, 0.57)).toBe(57) // 100 × 0.57 = 56.99999999999999
+    expect(scoreLine(100, 0.55)).toBe(55) // 100 × 0.55 = 55.00000000000001
+    expect(scoreLine(75, 0.56)).toBe(42) // 75 × 0.56 = 42.00000000000001
+    expect(scoreLine(70, 0.85)).toBe(59.5)
+    expect(scoreLine(150, 0.33)).toBe(49.5)
+  })
+  it('a score exactly on the line passes: 42 / 70 / 0.6', () => {
+    const R: Grading = { pass_ratio: 0.6, good_ratio: 0.85 }
+    expect(cellState(42, 70, R)).toBe('ok')
+    expect(cellState(41.9, 70, R)).toBe('low')
+  })
+  it('upward float noise never pushes an on-the-line score below it', () => {
+    // 100 × 0.55 与 75 × 0.56 裸乘都略大于整数线,未取整时 55 分 / 42 分会被判不及格
+    const R: Grading = { pass_ratio: 0.55, good_ratio: 0.56 }
+    expect(cellState(55, 100, R)).toBe('ok')
+    expect(cellState(54.9, 100, R)).toBe('low')
+    const ex: GradebookExam = {
+      ...exam2('line', { a: { 甲: 42, 乙: 56 }, b: { 甲: 41.9, 乙: 55 } }, ['甲', '乙']),
+      subjects: [
+        { name: '甲', full: 75 },
+        { name: '乙', full: 100 },
+      ],
+    }
+    // 甲:及格线 75 × 0.55 = 41.25、优秀线 75 × 0.56 = 42;乙:及格线 55、优秀线 56
+    const jia = subjectStats(ex, '甲', ['a', 'b'], R)!
+    expect(jia.passRate).toBe(1)
+    expect(jia.goodRate).toBe(0.5)
+    expect(jia.low).toBe(0)
+    const yi = subjectStats(ex, '乙', ['a', 'b'], R)!
+    expect(yi.passRate).toBe(1)
+    expect(yi.goodRate).toBe(0.5)
+    // 总分满分 175:175 × 0.56 = 98.00000000000001 → 优秀线 98;a 总分 98 恰好优秀
+    const st = examStats(ex, ['a', 'b'], R)!
+    expect(st.goodRate).toBe(0.5)
+    const cur: Row[] = [
+      { id: 'a', total: 98, rank: 1, subs: { 甲: 42, 乙: 56 } },
+      { id: 'b', total: 96.9, rank: 2, subs: { 甲: 41.9, 乙: 55 } },
+    ]
+    // 0.56:甲线 42、乙线 56;a 两科都恰在线上不算不及格,b 两科都低于线
+    expect(attention(ex, cur, new Map(), { pass_ratio: 0.56, good_ratio: 0.9 }).failing).toEqual([
+      { id: 'b', count: 2 },
+    ])
   })
 })
 
@@ -126,7 +214,7 @@ describe('examTable', () => {
     const t = examTable(ex, abc)
     expect(t.map((r) => r.id)).toEqual(['a', 'c', 'b'])
     expect(t[2]).toMatchObject({ id: 'b', total: null, rank: null })
-    const st = examStats(ex, abc)!
+    const st = examStats(ex, abc, DEFAULT_GRADING)!
     expect(st.n).toBe(2)
     expect(st.avg).toBe(150)
   })
@@ -164,8 +252,8 @@ describe('examTable', () => {
     expect(a.subs['甲']).toBeNull()
     expect(a.subs['乙']).toBeUndefined()
     expect(a.total).toBeNull()
-    expect(cellState(a.subs['甲'], 100)).toBe('absent')
-    expect(cellState(a.subs['乙'], 100)).toBe('empty')
+    expect(cellState(a.subs['甲'], 100, DEFAULT_GRADING)).toBe('absent')
+    expect(cellState(a.subs['乙'], 100, DEFAULT_GRADING)).toBe('empty')
   })
   it('sums only entered subjects and counts a partly absent student', () => {
     const t = examTable(mid, IDS)
@@ -178,7 +266,7 @@ describe('examTable', () => {
 
 describe('subjectStats', () => {
   it('excludes absent students from n and the average', () => {
-    const s = subjectStats(mid, '英语', IDS)!
+    const s = subjectStats(mid, '英语', IDS, DEFAULT_GRADING)!
     expect(s.n).toBe(9)
     expect(s.full).toBe(100)
     expect(s.avg).toBeCloseTo(742 / 9, 2)
@@ -190,19 +278,19 @@ describe('subjectStats', () => {
     expect(s.low).toBe(0)
   })
   it('counts failing students and returns null when nobody has a score', () => {
-    const s = subjectStats(mid, '数学', IDS)!
+    const s = subjectStats(mid, '数学', IDS, DEFAULT_GRADING)!
     expect(s.low).toBe(1) // 55
     expect(s.passRate).toBeCloseTo(0.9, 5)
     const ex = exam2('t', { a: { 甲: null } })
-    expect(subjectStats(ex, '甲', abc)).toBeNull()
-    expect(subjectStats(ex, '乙', abc)).toBeNull()
-    expect(subjectStats(ex, '不存在', abc)).toBeNull()
+    expect(subjectStats(ex, '甲', abc, DEFAULT_GRADING)).toBeNull()
+    expect(subjectStats(ex, '乙', abc, DEFAULT_GRADING)).toBeNull()
+    expect(subjectStats(ex, '不存在', abc, DEFAULT_GRADING)).toBeNull()
   })
 })
 
 describe('examStats', () => {
   it('computes exam stats like the original', () => {
-    const st = examStats(mid, IDS)!
+    const st = examStats(mid, IDS, DEFAULT_GRADING)!
     expect(st.full).toBe(300)
     expect(st.n).toBe(10)
     expect(st.avg).toBeCloseTo(236.1, 2)
@@ -218,8 +306,8 @@ describe('examStats', () => {
   })
   it('lists every top scorer and returns null with no totals', () => {
     const ex = exam2('t', { a: { 甲: 50, 乙: 50 }, b: { 甲: 60, 乙: 40 }, c: { 甲: 10, 乙: 10 } })
-    expect(examStats(ex, abc)!.maxIds).toEqual(['a', 'b'])
-    expect(examStats(empty, abc)).toBeNull()
+    expect(examStats(ex, abc, DEFAULT_GRADING)!.maxIds).toEqual(['a', 'b'])
+    expect(examStats(empty, abc, DEFAULT_GRADING)).toBeNull()
   })
 })
 
@@ -328,7 +416,7 @@ describe('rankChanges / attention', () => {
     cur[3].subs = { 甲: null, 乙: null, 丙: 10 }
     cur[4].subs = { 甲: 0, 乙: 0 }
     for (let i = 10; i < 20; i++) cur[i].subs = { 甲: 0, 乙: 0, 丙: 90 }
-    const a = attention(ex, cur, changes)
+    const a = attention(ex, cur, changes, DEFAULT_GRADING)
     expect(a.risers.map((r) => r.id)).toEqual(['s0', 's1', 's2', 's3', 's4'])
     expect(a.risers.map((r) => r.change)).toEqual([7, 6, 5, 4, 3])
     expect(a.fallers).toHaveLength(6)
@@ -357,6 +445,7 @@ describe('rankChanges / attention', () => {
         ['a', -4],
         ['b', -5],
       ]),
+      DEFAULT_GRADING,
     )
     expect(a.failing).toEqual([{ id: 'a', count: 2 }])
     expect(a.fallers).toEqual([{ id: 'b', change: -5 }])

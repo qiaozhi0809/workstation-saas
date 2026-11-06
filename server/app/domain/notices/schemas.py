@@ -173,6 +173,15 @@ class NoticeRecipients(BaseModel):
     unread: list[UnreadRecipient]
 
 
+class StudentDetail(BaseModel):
+    name: str
+    class_name: str | None  # 发送时刻所在的班(notice_students 快照)
+
+
+# 不能回执的原因(L88):撤回 / 已过截止(服务器时间)/ 孩子绑定只读 / 调用者不是主家长
+AckBlockReason = Literal["closed", "recalled", "readonly", "not_primary"]
+
+
 class InboxItem(BaseModel):
     id: UUID
     title: str
@@ -185,7 +194,9 @@ class InboxItem(BaseModel):
     ack_deadline: datetime | None
     my_ack: MyAck | None
     students: list[str]
+    students_detail: list[StudentDetail]
     can_ack: bool
+    ack_block_reason: AckBlockReason | None  # can_ack 为假时的原因;不需要回执的通知为 null
 
 
 class Inbox(BaseModel):

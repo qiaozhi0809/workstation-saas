@@ -18,6 +18,7 @@ from app.deploy import precheck
 from app.deploy.precheck import (
     CHECKS,
     EXEMPT_CONSTRAINTS,
+    REVIEWED_REVISIONS,
     alembic_config,
     pending_revisions,
     render,
@@ -25,7 +26,7 @@ from app.deploy.precheck import (
 )
 
 VERSIONS = Path(__file__).resolve().parent.parent / "migrations" / "versions"
-ALL_REVISIONS = [f"{i:04d}" for i in range(1, 13)]
+ALL_REVISIONS = [f"{i:04d}" for i in range(1, 14)]
 
 
 @pytest.fixture(scope="module")
@@ -382,6 +383,16 @@ def test_every_constraint_in_migrations_has_check():
     # 登记表里不能有迁移里不存在的名字
     assert not (registered | exempt) - scanned, sorted((registered | exempt) - scanned)
     assert all(reason.strip() for reason in EXEMPT_CONSTRAINTS.values())
+
+
+def test_every_revision_is_reviewed():
+    """L113:扫描器只认命名 CHECK / UNIQUE / 唯一索引 / SET NOT NULL,ALTER TYPE、DO 块、
+    ADD COLUMN NOT NULL DEFAULT、FK 回填都是盲区。每个 revision 都要人工核对后签进
+    REVIEWED_REVISIONS,新迁移不签收这里就红。"""
+    on_disk = {p.name[:4] for p in VERSIONS.glob("*.py")}
+    assert on_disk == set(ALL_REVISIONS)
+    assert on_disk - REVIEWED_REVISIONS == set(), "有迁移没有人工签收"
+    assert REVIEWED_REVISIONS - on_disk == set(), "签收表里有不存在的迁移"
 
 
 class _Base:

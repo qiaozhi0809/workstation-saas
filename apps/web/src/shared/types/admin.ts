@@ -432,8 +432,13 @@ export interface InboxItem {
   ack_deadline: string | null
   my_ack: { choice: number | null; note: string | null; acked_at: string } | null
   students: string[]
+  /** students 的明细:姓名 + 发送时的班名快照(L87);students 仍是字符串列表,第 2 波前端再切换 */
+  students_detail: { name: string; class_name: string | null }[]
   can_ack: boolean
+  /** can_ack 为假时后端给出的原因,为真时 null(L88) */
+  ack_block_reason: AckBlockReason
 }
+export type AckBlockReason = 'closed' | 'recalled' | 'readonly' | 'not_primary' | null
 export interface NoticeOptions {
   school_wide: boolean
   grades: { id: string; name: string }[]

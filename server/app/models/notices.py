@@ -63,3 +63,8 @@ class NoticeStudent(Base):
         ForeignKey("students.id", ondelete="CASCADE"), primary_key=True
     )
     parent_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    # 发送时刻学生所在的班(快照):班级删除后 class_id 置空,class_name 仍在(0013)
+    class_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("classes.id", ondelete="SET NULL")
+    )
+    class_name: Mapped[str | None] = mapped_column(Text)

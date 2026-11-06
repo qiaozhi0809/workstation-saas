@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { examsApi } from '@/shared/api/exams'
 import { Sparkline } from '@/shared/components/charts/Sparkline'
 import { Card } from '@/shared/components/ui/card'
+import { useGrading } from '@/shared/hooks/useGrading'
 import { examStats, latestExam } from '@/shared/lib/grades'
 import type { StudentSeat } from '@/shared/types/student'
 
@@ -15,6 +16,7 @@ export default function ExamSection({
   classId: string
   roster: StudentSeat[]
 }) {
+  const grading = useGrading()
   // 与成绩模式、排座共用同一份缓存
   const book = useQuery({
     queryKey: ['gradebook', classId],
@@ -23,8 +25,8 @@ export default function ExamSection({
   const exams = book.data?.exams ?? []
   const latest = latestExam(exams)
   const ids = roster.map((s) => s.enrollment_id)
-  const rates = exams.map((e) => examStats(e, ids)?.rate ?? null)
-  const stats = latest ? examStats(latest, ids) : null
+  const rates = exams.map((e) => examStats(e, ids, grading)?.rate ?? null)
+  const stats = latest ? examStats(latest, ids, grading) : null
   return (
     <Card className="p-3">
       <h3 className="text-sm font-semibold">最近考试</h3>

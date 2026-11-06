@@ -12,7 +12,7 @@ from app.domain.years import cli as years_cli
 from app.domain.years.plan import UpgradePlan
 from app.domain.years.service import UpgradeError, apply, preview, rollback, validate
 from app.domain.years.suggest import grade_index, next_class_name, next_grade, suggest
-from tests.factories import make_class, make_student
+from tests.factories import make_class, make_student, make_teacher_account
 from tests.helpers import auth
 from tests.seed_ids import (
     CLASS_ID,
@@ -691,6 +691,135 @@ def test_rollback_restores_everything(db):
     # 回滚后可以再次升级
     apply(db, SCHOOL, _plan(db), now=NOW)
     assert _active_year(db).name == "2027-2028"
+
+
+def _camera(db, name, class_id=None):
+    return db.execute(
+        text(
+            "INSERT INTO cameras (school_id, name, class_id, location, rtsp_url)"
+            " VALUES (:s, :n, :c, '教室', 'rtsp://10.0.0.9/stream1') RETURNING id"
+        ),
+        {"s": SCHOOL_ID, "n": name, "c": class_id},
+    ).scalar_one()
+
+
+def _camera_class(db, cam_id):
+    return _scalar(db, "SELECT class_id FROM cameras WHERE id = :i", i=cam_id)
+
+
+def _entry(db, class_id, weekday, period_no, subject, teacher_id=None):
+    db.execute(
+        text(
+            "INSERT INTO timetable_entries"
+            " (class_id, academic_year_id, weekday, period_no, subject, teacher_id)"
+            " VALUES (:c, :y, :w, :p, :s, :t)"
+        ),
+        {"c": class_id, "y": YEAR_ID, "w": weekday, "p": period_no, "s": subject, "t": teacher_id},
+    )
+
+
+def _timetable(db, class_id):
+    return [
+        tuple(r)
+        for r in db.execute(
+            text(
+                "SELECT weekday, period_no, subject, teacher_id, academic_year_id"
+                " FROM timetable_entries WHERE class_id = :c ORDER BY weekday, period_no"
+            ),
+            {"c": class_id},
+        )
+    ]
+
+
+def test_year_upgrade_carries_cameras_and_timetable(db):
+    """L154:升级后教室摄像头指向新班、课表复制到新班新学年(任课老师只在"保留任课老师"且仍在
+    新班任职时保留);回滚后摄像头回旧班、新班课表随班消失、旧班课表原样;升级后被管理员手动
+    改绑的摄像头回滚时不动。"""
+    outsider = make_teacher_account(db)  # 没有本班任职的老师
+    outsider_tid = db.execute(
+        text("SELECT id FROM teachers WHERE user_id = :u"), {"u": outsider.id}
+    ).scalar_one()
+    t01, t03 = UUID(TEACHER_IDS["teacher01"]), UUID(TEACHER_IDS["teacher03"])
+    _entry(db, CLASS_ID, 1, 1, "语文", t01)
+    _entry(db, CLASS_ID, 1, 2, "数学", t03)
+    _entry(db, CLASS_ID, 2, 1, "美术", outsider_tid)
+    _entry(db, CLASS_ID, 2, 2, "自习")
+    cam1, cam2, hall = (
+        _camera(db, "讲台", CLASS_ID),
+        _camera(db, "后排", CLASS_ID),
+        _camera(db, "走廊"),
+    )
+    old_rows = _timetable(db, CLASS_ID)
+    assert len(old_rows) == 4
+
+    up = apply(db, SCHOOL, _seed_plan(db, repeat=STUDENT_IDS[0]), now=NOW)
+    new_cls = _scalar(db, "SELECT id FROM classes WHERE name = '四年二班' AND active")
+    fresh = _scalar(db, "SELECT id FROM classes WHERE name = '三年一班' AND active")
+    new_year = up.to_year_id
+
+    assert (_camera_class(db, cam1), _camera_class(db, cam2)) == (new_cls, new_cls)
+    assert _camera_class(db, hall) is None
+    assert sorted(up.summary["camera_rebinds"]) == sorted(
+        [[str(cam1), CLASS_ID, str(new_cls)], [str(cam2), CLASS_ID, str(new_cls)]]
+    )
+    assert _timetable(db, new_cls) == [
+        (1, 1, "语文", t01, new_year),  # 班主任仍带新班
+        (1, 2, "数学", t03, new_year),  # keep_teachers:任课老师跟到新班
+        (2, 1, "美术", None, new_year),  # 新班没有这位老师的任职 → 置空
+        (2, 2, "自习", None, new_year),
+    ]
+    assert _timetable(db, fresh) == []  # 新建班不复制
+    assert _timetable(db, CLASS_ID) == old_rows
+
+    # 管理员升级后手动改绑了 cam2:回滚时不动它;cam1 回旧班;新班课表随班删除,旧班原样
+    db.execute(text("UPDATE cameras SET class_id = NULL WHERE id = :i"), {"i": cam2})
+    rollback(db, SCHOOL, now=NOW)
+    assert _camera_class(db, cam1) == UUID(CLASS_ID)
+    assert _camera_class(db, cam2) is None and _camera_class(db, hall) is None
+    assert (
+        _scalar(
+            db, "SELECT count(*) FROM timetable_entries WHERE academic_year_id = :y", y=new_year
+        )
+        == 0
+    )
+    assert _timetable(db, CLASS_ID) == old_rows
+
+    # 不保留任课老师:复制的课表 teacher_id 全部置空(班主任的也不例外)
+    plan = _plan(db)
+    plan.classes[0].keep_teachers = False
+    up2 = apply(db, SCHOOL, plan, now=NOW)
+    new_cls = _scalar(db, "SELECT id FROM classes WHERE name = '四年二班' AND active")
+    assert [(r[2], r[3]) for r in _timetable(db, new_cls)] == [
+        ("语文", None),
+        ("数学", None),
+        ("美术", None),
+        ("自习", None),
+    ]
+    assert _camera_class(db, cam1) == new_cls
+    assert up2.summary["camera_rebinds"] == [[str(cam1), CLASS_ID, str(new_cls)]]
+
+
+def test_year_upgrade_graduating_class_leaves_cameras_and_timetable(db):
+    db.execute(text("UPDATE grades SET name = '六年级', display_order = 6"))
+    cam = _camera(db, "讲台", CLASS_ID)
+    _entry(db, CLASS_ID, 1, 1, "语文", UUID(TEACHER_IDS["teacher01"]))
+    old_rows = _timetable(db, CLASS_ID)
+    up = apply(db, SCHOOL, _plan(db), now=NOW)
+    assert _camera_class(db, cam) == UUID(CLASS_ID)
+    assert up.summary["camera_rebinds"] == []
+    assert _scalar(db, "SELECT count(*) FROM timetable_entries") == 1
+    assert _timetable(db, CLASS_ID) == old_rows
+
+
+def test_rollback_of_legacy_summary_without_camera_rebinds(db):
+    cam = _camera(db, "讲台", CLASS_ID)
+    up = apply(db, SCHOOL, _plan(db), now=NOW)
+    summary = dict(up.summary)
+    del summary["camera_rebinds"]
+    up.summary = summary
+    db.flush()
+    rollback(db, SCHOOL, now=NOW)  # 旧记录没有这个键也能回滚;摄像头随新班删除置空
+    assert _camera_class(db, cam) is None
 
 
 def test_rollback_nothing_to_roll_back(db):

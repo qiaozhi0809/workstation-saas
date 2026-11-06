@@ -34,6 +34,7 @@ const cm = (over: Partial<Comment>): Comment => ({
   can_delete: true,
   created_at: '2026-10-30T08:00:00Z',
   parent_visible: false,
+  can_share: true,
   ...over,
 })
 

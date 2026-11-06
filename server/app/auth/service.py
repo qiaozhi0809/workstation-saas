@@ -60,11 +60,14 @@ def _whole_seconds(moment: datetime) -> int:
 
 
 def token_is_current(user: User, iat: int) -> bool:
-    """令牌签发于密码修改 / 开启两步验证之前则为过期(取整到秒:同一秒内签发的放行)。
+    """令牌签发于密码修改 / 开启两步验证 / 令牌下限之前则为过期(取整到秒:同一秒内签发的放行)。
+    下限 token_floor_at 在关闭 / 重置两步验证时写入,免得 totp_enabled_at 清空后旧令牌复活(L144)。
     HTTP 依赖与 WebSocket 鉴权共用这一个判定。"""
     changed = [user.password_changed_at]
     if user.totp_enabled_at is not None:
         changed.append(user.totp_enabled_at)
+    if user.token_floor_at is not None:
+        changed.append(user.token_floor_at)
     return iat >= max(_whole_seconds(m) for m in changed)
 
 
@@ -466,6 +469,7 @@ def totp_disable(
         return
     user.totp_secret = None
     user.totp_enabled_at = None
+    user.token_floor_at = clock.utc_now()  # 开启前签发的旧令牌不能因 totp_enabled_at 清空而复活
     record(
         db,
         user_id=user.id,
