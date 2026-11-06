@@ -1200,6 +1200,96 @@ def test_reset_states_and_clear_hls_on_start(db, redis_url, fake_ffmpeg, hls_roo
     run_async(redis_url, body)
 
 
+def test_worker_redis_client_has_socket_timeouts(redis_url):
+    """L196:worker 的 Redis 客户端带 socket_timeout / socket_connect_timeout,
+    Redis 挂住不会让 tick 永久等待。"""
+    from app.stream import __main__ as worker_main
+
+    client = worker_main.make_redis(redis_url)
+    try:
+        kw = client.connection_pool.connection_kwargs
+        assert kw["socket_timeout"] == 5 and kw["socket_connect_timeout"] == 5
+        assert kw["decode_responses"] is True
+    finally:
+        asyncio.run(client.aclose())
+
+
+def test_tick_survives_redis_timeout(db, redis_url, fake_ffmpeg, hls_root, tmp_path, caplog):
+    """L196:Redis 超时 / 断开时 tick 只告警,主循环与心跳继续、已起的流不受影响;恢复后照常。"""
+    from redis import exceptions as redis_exceptions
+
+    caplog.set_level(logging.WARNING, logger="app.stream")
+    cam = make_camera(db)
+    heartbeat = tmp_path / "alive"
+
+    async def body(redis):
+        sup = make_supervisor(db, redis, fake_ffmpeg, hls_root)
+        await want(redis, cam)
+        task = asyncio.create_task(sup.run(heartbeat))
+        await settle(lambda: len(calls(tmp_path)) == 1)
+        proc = sup._streams[cam.id].proc
+        real_scan, broken = redis.scan_iter, True
+
+        def scan_iter(*a, **k):
+            if broken:
+                raise redis_exceptions.TimeoutError("Timeout reading from socket")
+            return real_scan(*a, **k)
+
+        redis.scan_iter = scan_iter
+        try:
+            before = heartbeat.stat().st_mtime
+            await asyncio.sleep(2.3)
+            assert not task.done()
+            assert heartbeat.stat().st_mtime > before  # 心跳没停
+            assert "tick failed: TimeoutError" in caplog.text
+            assert proc.returncode is None and cam.id in sup._streams  # 流没被动过
+            broken = False
+            await redis.delete(f"{WANT_PREFIX}{cam.id}")  # 恢复后 tick 又能正常停流
+            await settle(lambda: proc.returncode is not None, 5)
+        finally:
+            redis.scan_iter = real_scan
+            sup.request_stop()
+            await asyncio.wait_for(task, 5)
+
+    run_async(redis_url, body)
+
+
+def test_reload_loop_idle_with_socket_timeout(
+    db, redis_url, fake_ffmpeg, hls_root, tmp_path, caplog
+):
+    """L196:客户端带 socket_timeout 后,空闲的 reload 订阅不能因读超时被当成断线(那会停掉全部流)。"""
+    caplog.set_level(logging.WARNING, logger="app.stream")
+    cam = make_camera(db)
+
+    async def body(_redis):
+        redis = AsyncRedis.from_url(
+            redis_url, decode_responses=True, socket_timeout=0.3, socket_connect_timeout=0.3
+        )
+        try:
+            sup = make_supervisor(db, redis, fake_ffmpeg, hls_root)
+            await want(redis, cam)
+            await sup.tick(1)
+            await settle(lambda: len(calls(tmp_path)) == 1)
+            proc = sup._streams[cam.id].proc
+            task = asyncio.create_task(sup._reload_loop())
+            await asyncio.sleep(1.2)  # 远超 socket_timeout 的空闲
+            assert proc.returncode is None and cam.id in sup._streams
+            assert "reload subscription lost" not in caplog.text
+            for _ in range(50):  # 订阅仍然活着:一条 reload 能停掉旧进程
+                await redis.publish("ws:cam:reload", str(cam.id))
+                if proc.returncode is not None:
+                    break
+                await asyncio.sleep(0.1)
+            assert proc.returncode is not None
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        finally:
+            await redis.aclose()
+
+    run_async(redis_url, body)
+
+
 def test_reload_message_stops_stream(db, redis_url, fake_ffmpeg, hls_root, tmp_path):
     """走真实的 ws:cam:reload 订阅路径(不是直接调 handle_reload)。"""
     cam = make_camera(db)
