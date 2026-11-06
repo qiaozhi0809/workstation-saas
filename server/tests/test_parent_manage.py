@@ -723,3 +723,74 @@ def test_parent_reset_and_unlink_redis_error_change_nothing(client, settings, db
     assert db.get(ParentLink, UUID(link)).status == "active"
     monkeypatch.undo()
     assert _login(client, "13800000057", created["temp_password"]).status_code == 200
+
+
+def _other_class(db):
+    from app.rbac.roles import Role
+    from tests.factories import bind, make_class, make_student, make_teacher_account
+
+    cls2 = make_class(db, "虚构二班")
+    s_other = str(make_student(db, cls2, "虚构学生", "mk-c-l73"))
+    teacher2 = make_teacher_account(db)
+    bind(db, teacher2.id, Role.homeroom_teacher, class_id=cls2)
+    db.commit()
+    return s_other, str(teacher2.id)
+
+
+def _reset(client, settings, link, who=None):
+    headers = auth(settings) if who is None else auth(settings, who)
+    return client.post(f"/api/v1/parent-links/{link}/reset-password", headers=headers)
+
+
+def test_reset_parent_with_graduated_child(client, settings, db):
+    s_other, t2 = _other_class(db)
+    mine = _add(client, settings, S3, "13800000058").json()["parent"]
+    other = _add(client, settings, s_other, "13800000058", user=t2).json()["parent"]
+    assert mine["user_id"] == other["user_id"]
+    _make_readonly(db, other)  # 另一个孩子已毕业,只读绑定不参与判定
+    res = _reset(client, settings, mine["link_id"])
+    assert res.status_code == 200, res.text
+    assert _login(client, "13800000058", res.json()["temp_password"]).status_code == 200
+
+
+def test_reset_parent_with_active_child_elsewhere_rejected(client, settings, db):
+    s_other, t2 = _other_class(db)
+    mine = _add(client, settings, S3, "13800000059").json()["parent"]
+    other = _add(client, settings, s_other, "13800000059", user=t2).json()["parent"]
+    third = _add(client, settings, S4, "13800000059").json()["parent"]
+    _make_readonly(db, third)  # 多一条只读绑定也不能抵消别班的在读孩子
+    before = _user(db, "13800000059").password_hash
+    for link, who in ((mine["link_id"], None), (other["link_id"], t2)):
+        res = _reset(client, settings, link, who)
+        assert res.status_code == 409, res.text
+        assert res.json()["error"]["code"] == "PARENT_OTHER_CLASS"
+        assert "temp_password" not in res.text
+    assert _user(db, "13800000059").password_hash == before
+    assert len([a for a in _audits(db, "parent.reset") if a.success is False]) == 2
+
+
+@pytest.mark.parametrize(
+    "who",
+    [
+        "55555555-5555-5555-5555-555555555544",  # 教务
+        "55555555-5555-5555-5555-555555555545",  # 年级组长
+        SUBJECT_USER_ID,  # 非班主任教师
+        "other-class-homeroom",
+        "parent-self",
+    ],
+)
+def test_reset_parent_forbidden_for_everyone_else(client, settings, db, who):
+    s_other, t2 = _other_class(db)
+    mine = _add(client, settings, S3, "13800000060").json()["parent"]
+    if who == "other-class-homeroom":
+        who = t2
+    elif who == "parent-self":
+        who = mine["user_id"]
+        _user(db, "13800000060").must_change_password = False  # 否则先被改密码要求拦下
+        db.flush()
+    before = _user(db, "13800000060").password_hash
+    res = _reset(client, settings, mine["link_id"], who)
+    assert res.status_code == 403, res.text
+    assert res.json()["error"]["code"] == "FORBIDDEN"
+    assert _user(db, "13800000060").password_hash == before
+    assert any(a.success is False and str(a.user_id) == who for a in _audits(db, "parent.manage"))

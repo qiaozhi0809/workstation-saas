@@ -491,12 +491,15 @@ def reset_parent_password(
         raise ApiError(409, "PARENT_ACCOUNT_SHARED", "该账号也是教职工账号,请联系信息中心重置")
     if user.status != "active":
         raise ApiError(409, "ACCOUNT_NOT_ACTIVE", "该账号已停用,不能重置密码")
+    # 只看在用(active)的绑定;只读 / 已结束的不参与(L73)。在读孩子在别班 → 仍拒绝(C-2)
     sibling_students = db.scalars(
         select(ParentLink.student_id).where(
-            ParentLink.parent_id == link.parent_id, ParentLink.status != "ended"
+            ParentLink.parent_id == link.parent_id, ParentLink.status == "active"
         )
     ).all()
-    if not all(_can_manage_student(db, bindings, sid) for sid in sibling_students):
+    if not sibling_students or not all(
+        _can_manage_student(db, bindings, sid) for sid in sibling_students
+    ):
         record(
             db,
             user_id=actor.id,
