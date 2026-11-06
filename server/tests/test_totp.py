@@ -367,7 +367,8 @@ def test_enable_totp_revokes_other_sessions(client, db, settings, redis_client):
     row = audit_rows(db, TEACHER_USER_ID)
     enabled = [r for r in row if r.action == "account.totp_enable"]
     assert len(enabled) == 1 and enabled[0].extra is None
-    # 已开启后再 setup / 再 login 都按两步走
+    # 已开启后再 setup / 再 login 都按两步走(旧令牌可能因跨整秒被拒,用刷新出的新令牌)
+    h2 = {"Authorization": f"Bearer {r2.json()['access_token']}"}
     assert client.post(f"{API}/auth/totp/setup", headers=h2).status_code == 409
     assert _login(client).json()["mfa_required"] is True
 
