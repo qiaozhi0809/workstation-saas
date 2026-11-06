@@ -391,8 +391,7 @@ def test_grade_exam_create_queued_behind_apply_is_rejected(clean):
         holder.rollback()
         holder.close()
     tu.join(WAIT)
-    if tc.ident is not None:  # 第一次等待就超时的话 creator 还没启动
-        tc.join(WAIT)
+    tc.join(WAIT)
     assert not tu.is_alive() and not tc.is_alive(), "线程没有在限时内结束(疑似死锁)"
     assert not isinstance(result["apply"], Exception), result["apply"]
     created = result["create"]
@@ -447,12 +446,14 @@ def test_staff_write_queued_behind_apply_fails_and_rollback_still_works(clean):
 
     tu = threading.Thread(target=upgrader)
     tu.start()
-    _wait_until_blocked(clean, 1)  # apply 排在第一个,等 holder 的班级锁
     ta = threading.Thread(target=assigner)
-    ta.start()
-    _wait_until_blocked(clean, 2)  # 任命排在第二个
-    holder.rollback()
-    holder.close()
+    try:
+        _wait_until_blocked(clean, 1)  # apply 排在第一个,等 holder 的班级锁
+        ta.start()
+        _wait_until_blocked(clean, 2)  # 任命排在第二个
+    finally:  # 等待超时也要放锁,否则两个线程会一直卡着
+        holder.rollback()
+        holder.close()
     tu.join(WAIT)
     ta.join(WAIT)
     assert not tu.is_alive() and not ta.is_alive(), "线程没有在限时内结束(疑似死锁)"
@@ -470,3 +471,171 @@ def test_staff_write_queued_behind_apply_fails_and_rollback_still_works(clean):
         assert n == 0
         rollback(s, SCHOOL, now=datetime.now(UTC))  # 且回滚不会撞唯一索引
     assert _assert_consistent(clean) == "2026-2027"
+
+
+def _grade_exam_body(grade_id: UUID, name: str, full: int = 100):
+    from app.domain.exams.schemas import SubjectFull
+    from app.domain.grade_exams.schemas import GradeExamInput
+
+    return GradeExamInput(
+        grade_id=grade_id,
+        name=name,
+        exam_type="期末",
+        date=date(2027, 1, 10),
+        subjects=[SubjectFull(name="语文", full=full)],
+    )
+
+
+def _create_grade_exam(engine: Engine, grade_id: UUID, user_id: UUID) -> UUID:
+    from app.domain.grade_exams import service as ge_service
+    from app.models import User
+
+    with Session(engine) as s:
+        out = ge_service.create(
+            s, s.get(User, user_id), _grade_exam_body(grade_id, "期末联考"), now=datetime.now(UTC)
+        )
+    return out.id
+
+
+def _grade_exam_names(engine: Engine, grade_exam_id: UUID) -> tuple[str, set[str]]:
+    """(联考名, 各场次名集合)。"""
+    with Session(engine) as s:
+        name = s.execute(
+            text("SELECT name FROM grade_exams WHERE id = :g"), {"g": grade_exam_id}
+        ).scalar_one()
+        exams = s.execute(
+            text("SELECT name FROM exams WHERE grade_exam_id = :g"), {"g": grade_exam_id}
+        ).scalars()
+        return name, set(exams)
+
+
+def _delete_grade_exam(engine: Engine, grade_exam_id: UUID) -> None:
+    with Session(engine) as s:
+        s.execute(text("DELETE FROM exams WHERE grade_exam_id = :g"), {"g": grade_exam_id})
+        s.execute(text("DELETE FROM grade_exams WHERE id = :g"), {"g": grade_exam_id})
+        s.commit()
+
+
+def _update_grade_exam(engine: Engine, grade_exam_id: UUID, user_id: UUID, result: dict) -> None:
+    """独立会话里按路由顺序走:锁联考行(学年此时还进行中)→ update。结果交给断言。"""
+    from app.domain.grade_exams import service as ge_service
+    from app.models import User
+
+    with Session(engine) as s:
+        try:
+            ge = ge_service.get_grade_exam(s, SCHOOL, grade_exam_id, lock=True)
+            result["update"] = ge_service.update(
+                s,
+                s.get(User, user_id),
+                ge,
+                _grade_exam_body(ge.grade_id, "期末联考(改)", full=120),
+                now=datetime.now(UTC),
+            )
+        except Exception as e:  # noqa: BLE001
+            s.rollback()
+            result["update"] = e
+
+
+def test_grade_exam_update_queued_behind_apply_is_rejected(clean):
+    """编辑联考与新建同序:先锁班级、再确认学年仍进行中。排在 apply 后面拿到班级锁时旧学年
+    已停用 → 409 NO_ACTIVE_YEAR,不把改动(联考、场次、班级科目)写进已成往年的学年。
+    apply 对学年行只持 NO KEY UPDATE,与 KEY SHARE 不冲突,所以"先看学年再锁班"挡不住它。"""
+    from app.errors import ApiError
+
+    class_id = UUID("44444444-4444-4444-4444-444444444444")
+    grade3 = UUID("33333333-3333-3333-3333-333333333333")
+    dean = UUID("55555555-5555-5555-5555-555555555544")
+    plan = _plan(clean)
+    result: dict[str, Any] = {}
+    ge_id = _create_grade_exam(clean, grade3, dean)
+    try:
+        holder = Session(clean)
+        holder.execute(text("SELECT id FROM classes WHERE id = :c FOR UPDATE"), {"c": class_id})
+
+        def upgrader() -> None:
+            with Session(clean) as s:
+                try:
+                    result["apply"] = apply(s, SCHOOL, plan, now=datetime.now(UTC))
+                except Exception as e:  # noqa: BLE001 — 结果交给断言
+                    s.rollback()
+                    result["apply"] = e
+
+        tu = threading.Thread(target=upgrader)
+        tu.start()
+        tp = threading.Thread(target=_update_grade_exam, args=(clean, ge_id, dean, result))
+        try:
+            _wait_until_blocked(clean, 1)  # apply 排在第一个,等 holder 的班级锁
+            tp.start()
+            _wait_until_blocked(clean, 2)  # 编辑排在第二个(卡在 apply 已持有的班级锁上)
+        finally:
+            holder.rollback()
+            holder.close()
+        tu.join(WAIT)
+        tp.join(WAIT)
+        assert not tu.is_alive() and not tp.is_alive(), "线程没有在限时内结束(疑似死锁)"
+        assert not isinstance(result["apply"], Exception), result["apply"]
+        updated = result["update"]
+        assert isinstance(updated, ApiError), updated
+        assert updated.status == 409 and updated.code == "NO_ACTIVE_YEAR", updated
+        # 联考、场次都保持原样(没有写进已成往年的学年)
+        assert _grade_exam_names(clean, ge_id) == ("期末联考", {"期末联考"})
+        assert _assert_consistent(clean) == "2027-2028"
+    finally:
+        _delete_grade_exam(clean, ge_id)
+
+
+def test_grade_exam_update_vs_rollback_does_not_deadlock(clean):
+    """回滚持新班行锁、正要锁学年行时进来一次编辑联考:编辑必须先排在班级锁后面,不能先对学年行
+    取 KEY SHARE 再去等班级锁(那样回滚等 KEY SHARE、编辑等班级锁 → 死锁,一方 500)。
+    结果要干净:回滚 409 HAS_DATA(新学年已有联考),编辑随后成功。"""
+    from sqlalchemy import event
+
+    dean = UUID("55555555-5555-5555-5555-555555555544")
+    with Session(clean) as s:
+        apply(s, SCHOOL, _plan(clean), now=datetime.now(UTC))
+        grade_id = s.execute(
+            text(
+                "SELECT g.id FROM grades g JOIN classes c ON c.grade_id = g.id"
+                " WHERE g.academic_year_id = (SELECT id FROM academic_years WHERE is_active)"
+                " ORDER BY g.display_order LIMIT 1"
+            )
+        ).scalar_one()
+    ge_id = _create_grade_exam(clean, grade_id, dean)
+    at_year, release = threading.Event(), threading.Event()
+    result: dict[str, Any] = {}
+
+    def roller() -> None:
+        with Session(clean) as s:
+
+            def stall(conn, cursor, statement, params, context, executemany):
+                if "FROM academic_years WHERE id" in statement and "FOR UPDATE" in statement:
+                    at_year.set()  # 新班行锁已持有,下一条就是锁学年行
+                    assert release.wait(WAIT)
+
+            event.listen(s.connection(), "before_cursor_execute", stall)
+            try:
+                result["rollback"] = rollback(s, SCHOOL, now=datetime.now(UTC))
+            except Exception as e:  # noqa: BLE001 — 结果交给断言
+                s.rollback()
+                result["rollback"] = e
+
+    try:
+        tr = threading.Thread(target=roller)
+        tr.start()
+        tp = threading.Thread(target=_update_grade_exam, args=(clean, ge_id, dean, result))
+        try:
+            assert at_year.wait(WAIT), "回滚没有走到锁学年行这一步"
+            tp.start()
+            _wait_until_blocked(clean, 1)  # 编辑卡在回滚持有的班级锁上
+        finally:
+            release.set()
+        tr.join(WAIT)
+        tp.join(WAIT)
+        assert not tr.is_alive() and not tp.is_alive(), "线程没有在限时内结束(疑似死锁)"
+        rolled = result["rollback"]
+        assert isinstance(rolled, UpgradeError) and rolled.code == "UPGRADE_HAS_DATA", rolled
+        assert not isinstance(result["update"], Exception), result["update"]
+        assert _grade_exam_names(clean, ge_id) == ("期末联考(改)", {"期末联考(改)"})
+        assert _assert_consistent(clean) == "2027-2028"
+    finally:
+        _delete_grade_exam(clean, ge_id)

@@ -82,8 +82,9 @@ def _grade_classes(
 
 
 def _lock_classes(db: Session, classes: Sequence[SchoolClass]) -> None:
-    """先按 id 升序锁住要建考试的班级行(与学年升级、课表导入同序,防死锁),再碰学年行(L56):
-    名册 / 任职写入也是"先班级、后学年(外键 KEY SHARE)",与回滚"先班级、后学年 FOR UPDATE"同序。"""
+    """先按 id 升序锁住联考涉及的班级行(与学年升级、课表导入同序,防死锁),再碰学年行(L56):
+    create / sync / update 都是"先这里、后 _ensure_year_live";名册 / 任职写入也是"先班级、
+    后学年(外键 KEY SHARE)",与回滚"先班级、后学年 FOR UPDATE"同序。"""
     if classes:
         db.execute(
             select(SchoolClass.id)
@@ -364,7 +365,17 @@ def update(
     assert grade is not None
     _ensure_in_catalog(db, grade, body.subjects, {s["name"] for s in ge.subjects})
     exams = _lock_class_exams(db, ge)
-    _ensure_year_live(db, ge.academic_year_id)  # 与新建/补齐一致:拿到锁后学年可能已停用(L56)
+    # 与新建/补齐/回滚同序:先锁班级行、再碰学年行(L56)。merge_subjects 里也会锁班级行,但那在
+    # _ensure_year_live 之后——若不先锁,编辑持学年 KEY SHARE 去等回滚持有的班级锁,回滚又等
+    # 学年 FOR UPDATE,就死锁;而排在 apply 后面的编辑会在这里等到 apply 提交,再发现学年已停用。
+    classes = {
+        c.id: c
+        for c in db.scalars(
+            select(SchoolClass).where(SchoolClass.id.in_([e.class_id for e in exams]))
+        )
+    }
+    _lock_classes(db, list(classes.values()))
+    _ensure_year_live(db, ge.academic_year_id)
     exam_ids = [e.id for e in exams]
     kept = {s.name for s in body.subjects}
     removed = [s["name"] for s in ge.subjects if s["name"] not in kept]
@@ -387,17 +398,11 @@ def update(
     subjects = [s.model_dump() for s in body.subjects]
     ge.name, ge.exam_type, ge.date, ge.subjects = body.name, body.exam_type, body.date, subjects
     ge.updated_at = now
-    classes = {
-        c.id: c
-        for c in db.scalars(
-            select(SchoolClass).where(SchoolClass.id.in_([e.class_id for e in exams]))
-        )
-    }
-    for e in sorted(exams, key=lambda e: e.class_id):  # 班级行锁按 id 升序,防死锁
+    for e in sorted(exams, key=lambda e: e.class_id):
         e.name, e.exam_type, e.date = body.name, body.exam_type, body.date
         e.subjects = [dict(s) for s in subjects]
         e.updated_at = now
-        merge_subjects(db, classes[e.class_id], body.subjects)
+        merge_subjects(db, classes[e.class_id], body.subjects)  # 班级行锁上面已持有,这里只是重取
     record(
         db,
         user_id=user.id,
