@@ -376,17 +376,20 @@ def login_totp(
         if user is not None and user.status != "active":
             _log(db, settings, user, user.login_name, "inactive", request)
         raise _mfa_expired()
-    # 锁定按登录名算:换一个 mfa_token 也一样被拒
-    try:
-        fail_key = _check_not_locked(
-            redis, settings, user.login_name, "登录失败次数过多,请稍后再试"
-        )
-    except ApiError:
+    # 锁定按登录名算:换一个 mfa_token 也一样被拒。先原子计数、再验证(L142):并发多个 mfa_token 时
+    # 第 N 个请求看到的计数已含前 N-1 个,超过上限的直接拒绝,不再给它一次猜码机会;验证通过后
+    # _finish_login 会把计数整个删掉,所以成功那次多计的一下不留痕迹
+    fail_key = _fail_key(settings, user.login_name)
+    if _record_failure(redis, settings, fail_key) > settings.login_max_failures:
         _log(db, settings, user, user.login_name, "locked", request)
-        raise
+        raise ApiError(
+            429,
+            "ACCOUNT_LOCKED",
+            "登录失败次数过多,请稍后再试",
+            headers=_retry_after(redis, settings, fail_key),
+        )
     secret = _load_secret(settings, user)
     if not totp.verify(redis, user.id, secret, code, clock.utc_now()):
-        _record_failure(redis, settings, fail_key)
         mfa.record_try(redis, mfa_token)
         _log(db, settings, user, user.login_name, "totp_failed", request)
         raise ApiError(401, "TOTP_INVALID", "验证码不正确或已过期,请检查手机时间")

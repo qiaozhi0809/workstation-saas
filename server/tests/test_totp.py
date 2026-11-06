@@ -229,6 +229,35 @@ def test_totp_bruteforce_locks(client, db, settings, redis_client):
     assert redis_client.get(f"ws:mfa:{token_a}") is None
 
 
+def test_totp_failure_counted_before_verify(client, db, settings, redis_client, monkeypatch):
+    """L142:先原子 INCR 再验证——校验验证码时计数已含本次;达到上限的请求不再验证,
+    并发多个 mfa_token 也放大不了单个锁定窗口里的猜码次数。"""
+    secret = _turn_on(db, settings)
+    key = f"ws:login_fail:{SCHOOL_ID}:teacher01"
+    seen: list[int] = []
+    real_verify = totp.verify
+
+    def spy(redis, uid, sec, code, now):
+        seen.append(int(redis.get(key) or 0))
+        return real_verify(redis, uid, sec, code, now)
+
+    monkeypatch.setattr(totp, "verify", spy)
+    tokens = [_login(client).json()["mfa_token"] for _ in range(3)]
+    wrong = _wrong_code(secret)
+    for n, tok in enumerate(tokens, start=1):
+        assert _second_step(client, tok, wrong).status_code == 401
+        assert int(redis_client.get(key)) == n
+    assert seen == [1, 2, 3]  # 每次校验时计数已经包含本次
+    for _ in range(2):
+        assert _second_step(client, tokens[0], wrong).status_code == 401
+    assert int(redis_client.get(key)) == settings.login_max_failures and len(seen) == 5
+    # 第 6 个请求(换一个 token、拿着正确的码)直接 429,根本不进入验证,正确码也没被消耗
+    res = _second_step(client, tokens[1], pyotp.TOTP(secret).now())
+    assert (res.status_code, res.json()["error"]["code"]) == (429, "ACCOUNT_LOCKED")
+    assert int(res.headers["Retry-After"]) > 0
+    assert len(seen) == 5 and redis_client.keys("ws:totp:used:*") == []
+
+
 def test_token_dies_after_five_tries_even_below_lock(client, db, settings, redis_client):
     settings.login_max_failures = 50
     secret = _turn_on(db, settings)
