@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, Text, UniqueConstraint, text
+from sqlalchemy import ForeignKey, Index, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -31,6 +31,12 @@ class ParentLink(Base):
     __tablename__ = "parent_links"
     __table_args__ = (
         UniqueConstraint("parent_id", "student_id", name="parent_links_parent_id_student_id_key"),
+        Index(
+            "parent_links_one_primary",
+            "student_id",
+            unique=True,
+            postgresql_where=text("is_primary AND status <> 'ended'"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, **_UUID_PK)

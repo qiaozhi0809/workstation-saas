@@ -520,3 +520,25 @@ def test_reset_rejected_when_parent_has_other_class_child(client, settings, db):
         f"/api/v1/parent-links/{solo['link_id']}/reset-password", headers=auth(settings)
     )
     assert res.status_code == 200
+
+
+def test_orm_declares_partial_index(db):
+    from sqlalchemy import text as sql
+    from sqlalchemy.dialects import postgresql
+
+    from app.models.base import Base
+
+    table = Base.metadata.tables["parent_links"]
+    idx = next((i for i in table.indexes if i.name == "parent_links_one_primary"), None)
+    assert idx is not None and idx.unique
+    assert [c.name for c in idx.columns] == ["student_id"]
+    where = idx.dialect_options["postgresql"]["where"]
+    declared = str(
+        where.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True})
+    )
+    assert declared == "is_primary AND status <> 'ended'"
+    live = db.scalar(
+        sql("SELECT indexdef FROM pg_indexes WHERE indexname = 'parent_links_one_primary'")
+    )
+    assert "UNIQUE" in live and "(student_id)" in live
+    assert "is_primary AND (status <> 'ended'" in live
