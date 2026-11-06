@@ -313,9 +313,19 @@ def add_parent(
         except IntegrityError:
             raise ApiError(409, "PHONE_AMBIGUOUS", "这个手机号刚被占用,请重试") from None
     if parent is None:
-        parent = Parent(user_id=user.id, name=body.name, phone=phone)
-        db.add(parent)
-        db.flush()
+        parent_id = db.scalar(
+            text(
+                "INSERT INTO parents (user_id, name, phone) VALUES (:u, :n, :p)"
+                " ON CONFLICT (user_id) DO NOTHING RETURNING id"
+            ),
+            {"u": user.id, "n": body.name, "p": phone},
+        )
+        parent = (
+            db.get(Parent, parent_id)
+            if parent_id is not None
+            else db.scalar(select(Parent).where(Parent.user_id == user.id))
+        )
+        assert parent is not None
 
     if existing is not None:  # ended -> 恢复同一行
         db.execute(

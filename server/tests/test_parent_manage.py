@@ -588,3 +588,53 @@ def test_authorize_ignores_other_year_enrollment(client, settings, db):
     assert client.get(_url(S3), headers=auth(settings)).status_code == 403
     assert _user(db, "13800000052") is None
     assert len([a for a in _audits(db, "parent.manage") if not a.success]) == 2
+
+
+@pytest.fixture(scope="module")
+def cengine():
+    from tests.concurrent_db import make_concurrent_engine
+
+    with make_concurrent_engine() as eng:
+        yield eng
+
+
+def test_concurrent_link_same_staff_no_500(cengine):
+    import threading
+
+    from sqlalchemy import text as sql
+    from sqlalchemy.orm import Session
+
+    from app.domain.parents import manage
+    from app.domain.parents.schemas import ParentInput
+    from app.rbac.bindings import load_bindings
+    from tests.seed_ids import TEACHER_USER_ID, YEAR_ID
+
+    barrier = threading.Barrier(2)
+    results: dict[str, object] = {}
+
+    def run(sid: str) -> None:
+        try:
+            with Session(cengine) as db:
+                actor = db.get(User, UUID(TEACHER_USER_ID))
+                bindings = load_bindings(db, actor.id, UUID(YEAR_ID))
+                barrier.wait(30)
+                body = ParentInput(phone="13800000004", name="虚构教师", relation="母亲")
+                results[sid] = manage.add_parent(db, None, actor, bindings, UUID(sid), body)
+        except BaseException as exc:  # noqa: BLE001 - 带回主线程断言
+            results[sid] = exc
+
+    threads = [threading.Thread(target=run, args=(sid,), daemon=True) for sid in (S3, S4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(60)
+    assert all(not isinstance(v, BaseException) for v in results.values()), results
+    assert len(results) == 2
+    with cengine.connect() as conn:
+        n = conn.execute(
+            sql(
+                "SELECT count(*) FROM parents p JOIN users u ON u.id = p.user_id"
+                " WHERE u.login_name = 'teacher04'"
+            )
+        ).scalar_one()
+    assert n == 1
