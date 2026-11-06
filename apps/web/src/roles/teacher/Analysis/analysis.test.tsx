@@ -160,6 +160,42 @@ describe('AnalysisPage', () => {
     expect(url).not.toContain('cmp=')
   })
 
+  it('lists exams newest first in both selects, like the scores page (L16)', async () => {
+    const earliest = exam('x0', '开学测验', '2026-09-01', {
+      e1: { 语文: 60, 数学: 60 },
+      e2: { 语文: 60, 数学: 60 },
+      e3: { 语文: 60, 数学: 60 },
+    })
+    setup([earliest, first, second, unscored])
+    await avgCard()
+    const names = (el: HTMLElement) =>
+      within(el)
+        .getAllByRole('option')
+        .map((o) => o.textContent)
+    expect(names(screen.getByLabelText('考试'))).toEqual(['期中考试', '第一次月考', '开学测验'])
+    // 当前考试不在对比列表里
+    expect(names(screen.getByLabelText('对比'))).toEqual(['不对比', '第一次月考', '开学测验'])
+  })
+
+  it('says so when the exam in the address has no scores yet and shows the latest instead (L16)', async () => {
+    setup([first, second, unscored], '/teacher/analysis?exam=x3')
+    const note = await screen.findByText(/这场考试还没有分数/)
+    expect(note).toHaveTextContent('「期末考试」这场考试还没有分数,先显示最近一场有分数的考试')
+    expect(note).toHaveAttribute('role', 'status')
+    expect(screen.getByLabelText('考试')).toHaveValue('x2')
+    // 选了有分数的考试,提示就没了
+    fireEvent.change(screen.getByLabelText('考试'), { target: { value: 'x1' } })
+    expect(screen.queryByText(/这场考试还没有分数/)).toBeNull()
+  })
+
+  it('explains the default comparison basis and drops the note once a comparison is chosen (L16)', async () => {
+    setup([first, second])
+    await avgCard()
+    expect(screen.getByText('默认与上一场有分数的考试比')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('对比'), { target: { value: 'none' } })
+    expect(screen.queryByText('默认与上一场有分数的考试比')).toBeNull()
+  })
+
   it('hides trends with fewer than two scored exams', async () => {
     setup([first, unscored])
     await avgCard()
@@ -269,7 +305,31 @@ describe('TrendGrid', () => {
         ratios={DEFAULT_GRADING}
       />,
     )
-    expect(screen.getByText('纵轴 55–85%')).toBeInTheDocument()
+    // 60–90 补白后是 55–85,跨度再补到 20 的倍数 → 55–95
+    expect(screen.getByText('纵轴 55–95%')).toBeInTheDocument()
     expect(screen.getAllByRole('img')).toHaveLength(3)
+  })
+
+  it('keeps the y-axis ticks on whole fives instead of values like 81% (L16)', () => {
+    // 得分率 62 / 70 / 66 与 84 / 80 / 82:补白到 5 的倍数是 55–90,跨 35 时 recharts 会给出 64%、73%、82% 这类刻度
+    const a = exam('a', '九月月考', '2026-09-20', {
+      e1: { 语文: 62, 数学: 70 },
+      e2: { 语文: 62, 数学: 70 },
+      e3: { 语文: 62, 数学: 70 },
+    })
+    const b = exam('b', '十月月考', '2026-10-20', {
+      e1: { 语文: 84, 数学: 80 },
+      e2: { 语文: 84, 数学: 80 },
+      e3: { 语文: 84, 数学: 80 },
+    })
+    const { container } = render(
+      <TrendGrid book={[a, b]} ids={['e1', 'e2', 'e3']} width={300} ratios={DEFAULT_GRADING} />,
+    )
+    const ticks = Array.from(
+      container.querySelectorAll('.recharts-yAxis .recharts-cartesian-axis-tick-value'),
+    ).map((el) => el.textContent ?? '')
+    // 三张图(总分 + 两科)共用同一纵轴
+    expect([...new Set(ticks)]).toEqual(['55%', '65%', '75%', '85%', '95%'])
+    expect(screen.getByText('纵轴 55–95%')).toBeInTheDocument()
   })
 })

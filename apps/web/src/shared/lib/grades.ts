@@ -213,10 +213,20 @@ export function scoreBands(totals: number[], full: number): Band[] {
   return bands
 }
 
+/**
+ * 得分率趋势图的纵轴范围:上下各留 4 个百分点、取到 5 的倍数、限在 0–100 内;
+ * 再把跨度补到 20 的倍数——recharts 固定范围时画 5 个刻度(4 段),跨度是 20 的倍数每段才是 5 的倍数,
+ * 不会出现 64%、81% 这类刻度(L16)。优先往上补,顶到 100 再往下补。
+ */
 export function trendDomain(values: number[]): [number, number] {
-  const lo = Math.min(...values)
-  const hi = Math.max(...values)
-  return [Math.max(0, Math.floor((lo - 4) / 5) * 5), Math.min(100, Math.ceil((hi + 4) / 5) * 5)]
+  if (values.length === 0) return [0, 100]
+  let lo = Math.max(0, Math.floor((Math.min(...values) - 4) / 5) * 5)
+  let hi = Math.min(100, Math.ceil((Math.max(...values) + 4) / 5) * 5)
+  while ((hi - lo) % 20 !== 0) {
+    if (hi < 100) hi += 5
+    else lo -= 5
+  }
+  return [lo, hi]
 }
 
 function hasScore(exam: GradebookExam): boolean {
@@ -230,6 +240,16 @@ export function latestExam(book: GradebookExam[]): GradebookExam | null {
   for (let i = book.length - 1; i >= 0; i--) if (hasScore(book[i])) return book[i]
   return null
 }
+
+/**
+ * 进退步口径(L16),文案与计算只在这里定义:
+ * - 文案 RANK_CHANGE_BASIS 给界面说明用;
+ * - 计算是下面的 previousExam:按成绩册顺序往前找最近一场有分数的考试,不看考试类型;
+ * - BIG_MOVE 是"大幅进退步"的门槛,attention() 的退步名单与界面标题共用。
+ * 改口径时三者一起改。
+ */
+export const RANK_CHANGE_BASIS = '与上一场有分数的考试比'
+export const BIG_MOVE = 5
 
 /** Any numeric score in the exam's scores map counts (the gradebook only contains active enrollments). */
 export function previousExam(book: GradebookExam[], examId: string): GradebookExam | null {
@@ -256,7 +276,7 @@ export interface Attention {
   failing: { id: string; count: number }[]
 }
 
-/** ratios:学校的及格 / 优秀比例;failing = 两科及以上低于及格线 */
+/** ratios:学校的及格 / 优秀比例;fallers = 退步 BIG_MOVE 名及以上;failing = 两科及以上低于及格线 */
 export function attention(
   exam: GradebookExam,
   cur: Row[],
@@ -269,7 +289,7 @@ export function attention(
     .sort((a, b) => b.change - a.change)
     .slice(0, 5)
   const fallers = entries
-    .filter((e) => e.change <= -5)
+    .filter((e) => e.change <= -BIG_MOVE)
     .sort((a, b) => a.change - b.change)
     .slice(0, 6)
   const failing = cur

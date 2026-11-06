@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import type { GradebookExam, ScoreValue } from '../types/grades'
 import type { Grading } from '../types/school'
 import {
+  BIG_MOVE,
   DEFAULT_GRADING,
+  RANK_CHANGE_BASIS,
   attention,
   cellState,
   examStats,
@@ -356,6 +358,16 @@ describe('scoreBands / trendDomain / rankTint', () => {
     expect(trendDomain([62, 91])).toEqual([55, 95])
     expect(trendDomain([2, 99])).toEqual([0, 100])
   })
+  it('widens the span to a multiple of 20 so five ticks land on fives (L16)', () => {
+    // 55–90 跨 35 → 往上补到 55–95;顶到 100 时往下补
+    expect(trendDomain([62, 84])).toEqual([55, 95])
+    expect(trendDomain([70, 72])).toEqual([65, 85])
+    expect(trendDomain([93, 98])).toEqual([80, 100])
+    expect(trendDomain([0, 3])).toEqual([0, 20])
+    expect(trendDomain([])).toEqual([0, 100])
+    for (const [lo, hi] of [trendDomain([62, 84]), trendDomain([93, 98]), trendDomain([40, 41])])
+      expect((hi - lo) % 20).toBe(0)
+  })
   it('tints ranks in fifths', () => {
     expect([1, 2, 10].map((r) => rankTint(r, 10))).toEqual([1, 1, 5])
   })
@@ -377,6 +389,28 @@ describe('exam navigation', () => {
     expect(previousExam(book, 's1')).toBeNull()
     expect(previousExam(book, 'blank')?.id).toBe('s1')
     expect(previousExam(book, 'missing')).toBeNull()
+  })
+  it('states the comparison basis next to the computation and ignores exam type (L16)', () => {
+    expect(RANK_CHANGE_BASIS).toBe('与上一场有分数的考试比')
+    // 期中之前最近一场有分数的是月考:口径不按考试类型挑
+    const monthly: GradebookExam = { ...s1, exam_type: '月考' }
+    const mid: GradebookExam = { ...s2, exam_type: '期中' }
+    expect(previousExam([monthly, blank, mid], 's2')?.id).toBe('s1')
+  })
+  it('exposes the big-move threshold used by attention()', () => {
+    expect(BIG_MOVE).toBe(5)
+    const ex = exam2('t', {}, ['甲'])
+    const cur: Row[] = [
+      { id: 'a', total: 90, rank: 1, subs: { 甲: 90 } },
+      { id: 'b', total: 80, rank: 2, subs: { 甲: 80 } },
+    ]
+    const changes = new Map([
+      ['a', -BIG_MOVE],
+      ['b', -(BIG_MOVE - 1)],
+    ])
+    expect(attention(ex, cur, changes, DEFAULT_GRADING).fallers).toEqual([
+      { id: 'a', change: -BIG_MOVE },
+    ])
   })
   it('finds the latest exam that has a score', () => {
     expect(latestExam([s1, s2, blank, noRec])?.id).toBe('s2')
