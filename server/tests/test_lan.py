@@ -198,5 +198,17 @@ def test_mask_url_secret_query_keys(key):
     assert f"{key}=***" in out
 
 
+@pytest.mark.parametrize("password", ["p/w", "p?w", "p#w", "a/b?c#d@e", "p/w?x=1&y#f"])
+def test_mask_url_password_with_url_delimiters(password):
+    """L164:口令里带 / ? # 的地址(state 里的错误文本可能未编码)整段打码到最后一个 @。"""
+    url = f"rtsp://camuser:{password}@10.0.0.2:554/x?token=t1"
+    for text in (url, f"连接失败 {url} 超时"):
+        out = lan.mask_url(text)
+        assert password not in out and "camuser" not in out and "t1" not in out, out
+        assert "***@10.0.0.2:554/x" in out
+    plain = "rtsp://10.0.0.2/x 失败,联系 admin@school"
+    assert lan.mask_url(plain) == plain
+
+
 def test_mask_url_keeps_unrelated_keys():
     assert lan.mask_url("rtsp://10.0.0.2/x?monkey=1&k=v") == "rtsp://10.0.0.2/x?monkey=1&k=v"

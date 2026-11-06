@@ -246,6 +246,23 @@ def test_credentials_url_encodes_and_mask_hides():
     assert "***" in masked
 
 
+@pytest.mark.parametrize(
+    "password",
+    ["p/w", "p?w", "p#w", "p@w", "a/b?c#d@e", "p%2Fw", "p/w?x=1&y#f"],
+)
+def test_mask_text_password_with_url_delimiters(password):
+    """L164:口令里带 / ? # @ 的地址(未编码地写进错误文本)也要整段打码,不能只打到第一个分隔符。"""
+    url = f"rtsp://camuser:{password}@10.0.0.2:554/live?token=t1"
+    for text in (url, f"[rtsp] Error opening {url}: Connection refused"):
+        masked = ffmpeg.mask_text(text)
+        assert password not in masked and "camuser" not in masked, masked
+        assert "***@10.0.0.2:554/live" in masked and "t1" not in masked
+    assert ffmpeg.mask_url(url) == "rtsp://***@10.0.0.2:554/live?token=***"
+    # 没有 userinfo 的地址不受影响;文本里后面出现的 @ 不会把主机吞掉
+    plain = "rtsp://10.0.0.2/live 失败,联系 admin@school"
+    assert ffmpeg.mask_text(plain) == plain
+
+
 def test_hls_flags_include_discont_start(tmp_path):
     """重启后的新播放列表首段带 #EXT-X-DISCONTINUITY,序列号从给定值接着编(不回退到 0)。"""
     for transcode in (False, True):

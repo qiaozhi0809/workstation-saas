@@ -18,7 +18,9 @@ LAN_NETWORKS = (
 )
 _LOOPBACK = (ipaddress.ip_network("127.0.0.0/8"), ipaddress.ip_network("::1/128"))
 
-_USERINFO = re.compile(r"(://)[^/\s?#]*@")  # 贪婪:口令里有 @ 时打码到最后一个 @
+# 贪婪:打码到同一串非空白文本里的最后一个 @,口令里有 @ / ? # 都不会停在半截(L164);
+# 路径或查询串里碰巧有 @ 的地址会多打码一截,宁可多打不能漏
+_USERINFO = re.compile(r"(://)\S*@")
 _SECRET_QUERY = re.compile(
     r"(?i)(?<![A-Za-z0-9])((?:api_key|key|secret|auth|token|password|passwd|pwd)=)[^&#\s]*"
 )
