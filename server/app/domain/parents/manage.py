@@ -6,6 +6,7 @@
 
 import re
 from collections.abc import Sequence
+from datetime import datetime
 from uuid import UUID
 
 from fastapi import Request
@@ -225,13 +226,18 @@ def _set_binding_role(db: Session, user_id: UUID, student_id: UUID, is_primary: 
     )
 
 
-def _end_binding(db: Session, user_id: UUID, student_id: UUID) -> None:
+def _end_binding(db: Session, user_id: UUID, student_id: UUID, ended_at: datetime) -> None:
     db.execute(
         text(
-            "UPDATE role_bindings SET ended_at = now() WHERE user_id = :u AND ended_at IS NULL"
+            "UPDATE role_bindings SET ended_at = :now WHERE user_id = :u AND ended_at IS NULL"
             " AND role_type = ANY(:roles) AND scope->>'student_id' = :sid"
         ),
-        {"u": user_id, "roles": _PARENT_ROLE_VALUES, "sid": str(student_id)},
+        {
+            "u": user_id,
+            "roles": _PARENT_ROLE_VALUES,
+            "sid": str(student_id),
+            "now": ended_at,
+        },
     )
 
 
@@ -394,12 +400,13 @@ def unlink(
     link, student = open_link(db, request, actor, bindings, link_id)
     user_id = _user_of(db, link)
     was_primary = link.is_primary
+    now = clock.utc_now()
     db.execute(
         ParentLink.__table__.update()
         .where(ParentLink.id == link.id)
-        .values(status="ended", ended_at=clock.utc_now(), readonly_since=None, is_primary=False)
+        .values(status="ended", ended_at=now, readonly_since=None, is_primary=False)
     )
-    _end_binding(db, user_id, student.id)
+    _end_binding(db, user_id, student.id, now)
     if was_primary:
         # 继任者只从在用绑定里选(和 set_primary 同口径);只读的保持次要,没有就不设主家长
         rest = [lk for lk in _live_links(db, student.id) if lk.status == "active"]

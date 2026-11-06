@@ -542,3 +542,22 @@ def test_orm_declares_partial_index(db):
     )
     assert "UNIQUE" in live and "(student_id)" in live
     assert "is_primary AND (status <> 'ended'" in live
+
+
+def test_unlink_binding_and_link_share_ended_at(client, settings, db, monkeypatch):
+    from tests.helpers import freeze
+
+    a = _add(client, settings, S3, "13800000051").json()["parent"]
+    _add(client, settings, S4, "13800000051")  # 账号不归档,绑定行保留可查
+    freeze(monkeypatch, "2026-11-05T08:00:00+00:00")
+    res = client.delete(f"/api/v1/parent-links/{a['link_id']}", headers=auth(settings))
+    assert res.status_code == 204
+    link_end = db.scalar(select(ParentLink.ended_at).where(ParentLink.id == UUID(a["link_id"])))
+    db.expire_all()
+    binding_end = db.scalar(
+        select(RoleBinding.ended_at).where(
+            RoleBinding.user_id == _user(db, "13800000051").id,
+            RoleBinding.scope["student_id"].astext == S3,
+        )
+    )
+    assert link_end == binding_end == datetime(2026, 11, 5, 8, tzinfo=UTC)
