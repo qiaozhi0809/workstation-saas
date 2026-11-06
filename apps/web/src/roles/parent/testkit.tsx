@@ -2,13 +2,30 @@
 import { cleanup, render } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
-import { afterEach, vi } from 'vitest'
+import { afterEach, beforeEach, vi } from 'vitest'
+import { preferencesApi, type PreferencesWithOnboarded } from '@/shared/api/preferences'
 import ProtectedRoute from '@/shared/components/ProtectedRoute'
 import { useAuthStore } from '@/shared/stores/auth'
 import type { ParentChild, ParentProfile, ParentToday } from '@/shared/types/parent'
 import ParentLayout, { ParentIndex } from './ParentLayout'
 import ProfilePage from './Profile/ProfilePage'
 import TodayPage from './Today/TodayPage'
+
+/** 已引导过的家长偏好:首次使用卡不出现 */
+export const onboardedPrefs = (): PreferencesWithOnboarded => ({
+  teacher_figure: 'female',
+  idle_animation: true,
+  review_reasons: [],
+  onboarded: { parent: '2026-01-01T00:00:00Z' },
+})
+
+// 家长壳里的 FirstVisit 会请求 /me/preferences:统一按"已引导"回答,不再靠真实 fetch 失败后的回退。
+// 用 spyOn 而不是 vi.mock:有的测试先 import ParentLayout 再 import 本文件,模块级 vi.mock 对已加载的模块不生效;
+// 自己 vi.mock 了 @/shared/api/preferences 的测试(parentLayout.test)在它的 beforeEach 里照常覆盖
+beforeEach(() => {
+  vi.spyOn(preferencesApi, 'get').mockResolvedValue(onboardedPrefs())
+  vi.spyOn(preferencesApi, 'save').mockImplementation(async (p) => ({ ...onboardedPrefs(), ...p }))
+})
 
 export const child = (over: Partial<ParentChild> = {}): ParentChild => ({
   student_id: 's1',
