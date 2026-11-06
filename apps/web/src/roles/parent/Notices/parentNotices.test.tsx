@@ -282,6 +282,54 @@ it('does not tag notices that need no ack, were acked, or cannot be acked', asyn
   expect(screen.queryByText('待回执')).toBeNull()
 })
 
+/** 25 条通知分两页(每页 20):第 1 页 n1–n20,第 2 页 n21–n25;unread 由后端按全量给 */
+function twoPages() {
+  const all = Array.from({ length: 25 }, (_, i) => item({ id: `n${i + 1}`, title: `通知${i + 1}` }))
+  return (page: number) => ({ items: all.slice((page - 1) * 20, page * 20), total: 25, unread: 23 })
+}
+
+it('loads the next inbox page from a 加载更多 button and keeps the badge on the full unread count (L90)', async () => {
+  const pages = twoPages()
+  vi.mocked(noticesApi.inbox).mockImplementation(async (page) => pages(page))
+  renderAt('/parent/notices?child=s1')
+  await screen.findByText('通知1')
+  expect(screen.getByText('通知20')).toBeInTheDocument()
+  expect(screen.queryByText('通知21')).toBeNull()
+  // 徽标按全量:23 条未读,不是第 1 页里数出来的 20
+  expect(tab()).toHaveAccessibleName('通知 23 条未读')
+  const more = screen.getByRole('button', { name: '加载更多' })
+  expect(
+    more.compareDocumentPosition(screen.getByText('通知20')) & Node.DOCUMENT_POSITION_PRECEDING,
+  ).toBeTruthy()
+  fireEvent.click(more)
+  expect(await screen.findByText('通知25')).toBeInTheDocument()
+  expect(noticesApi.inbox).toHaveBeenCalledWith(2)
+  expect(screen.getByText('通知1')).toBeInTheDocument()
+  await waitFor(() => expect(screen.queryByRole('button', { name: '加载更多' })).toBeNull())
+  expect(tab()).toHaveAccessibleName('通知 23 条未读')
+})
+
+it('has no 加载更多 when the inbox fits in one page', async () => {
+  vi.mocked(noticesApi.inbox).mockResolvedValue(inbox([item(), item({ id: 'n2', title: '班会' })]))
+  renderAt()
+  await screen.findByText('班会')
+  expect(screen.queryByRole('button', { name: '加载更多' })).toBeNull()
+})
+
+it('reports a failed next page and lets the parent try again', async () => {
+  const pages = twoPages()
+  vi.mocked(noticesApi.inbox)
+    .mockImplementationOnce(async (page) => pages(page))
+    .mockRejectedValueOnce(new Error('x'))
+    .mockImplementation(async (page) => pages(page))
+  renderAt()
+  fireEvent.click(await screen.findByRole('button', { name: '加载更多' }))
+  expect(await screen.findByText('加载更多失败')).toBeInTheDocument()
+  expect(screen.getByText('通知1')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '加载更多' }))
+  expect(await screen.findByText('通知25')).toBeInTheDocument()
+})
+
 it('shows 此通知已撤回 and no ack form for a recalled notice', async () => {
   vi.mocked(noticesApi.inbox).mockResolvedValue(
     inbox([item({ recalled: true, content: null, ack: { kind: 'confirm' }, can_ack: false })]),

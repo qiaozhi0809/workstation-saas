@@ -1,20 +1,24 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Bell } from 'lucide-react'
 import { noticesApi } from '@/shared/api/notices'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
+import {
+  INBOX_KEY,
+  inboxItems,
+  inboxUnread,
+  useInbox,
+  type InboxPages,
+} from '@/shared/components/notices/useInbox'
 import Popover from '@/shared/components/overlay/Popover'
 import { toast } from '@/shared/components/Toast'
 import { useRealtimeEvent } from '@/shared/realtime/useRealtimeEvent'
-import type { Inbox } from '@/shared/types/admin'
 import NoticeList from './NoticeList'
 
-const INBOX_KEY = ['notices', 'inbox'] as const
-
-/** 顶栏铃铛:未读数徽标 + 最近 20 条收件箱;必须在 RealtimeProvider 与 router 之内 */
+/** 顶栏铃铛:未读数徽标(全量)+ 收件箱按页加载(L90);必须在 RealtimeProvider 与 router 之内 */
 export default function NoticeBell() {
   const qc = useQueryClient()
-  const inbox = useQuery({ queryKey: INBOX_KEY, queryFn: () => noticesApi.inbox(1) })
+  const inbox = useInbox()
   const refresh = () => void qc.invalidateQueries({ queryKey: INBOX_KEY })
 
   useRealtimeEvent('notice.new', (e) => {
@@ -27,21 +31,21 @@ export default function NoticeBell() {
   const read = useMutation({
     mutationFn: (id: string) => noticesApi.read(id),
     onSuccess: (_, id) => {
-      qc.setQueryData<Inbox>(
-        INBOX_KEY,
-        (old) =>
-          old && {
-            ...old,
-            unread: Math.max(
-              0,
-              old.unread -
-                (old.items.some((i) => i.id === id && !i.read_at && !i.recalled) ? 1 : 0),
-            ),
-            items: old.items.map((i) =>
+      // 先就地改缓存让徽标立刻减一,再重取;每页都带全量 unread,所以每页一起减
+      qc.setQueryData<InboxPages>(INBOX_KEY, (old) => {
+        if (!old) return old
+        const wasUnread = inboxItems(old).some((i) => i.id === id && !i.read_at && !i.recalled)
+        return {
+          ...old,
+          pages: old.pages.map((p) => ({
+            ...p,
+            unread: Math.max(0, p.unread - (wasUnread ? 1 : 0)),
+            items: p.items.map((i) =>
               i.id === id && !i.read_at ? { ...i, read_at: new Date().toISOString() } : i,
             ),
-          },
-      )
+          })),
+        }
+      })
       refresh()
     },
     onError: () => toast('标记已读失败,请重试'),
@@ -52,7 +56,7 @@ export default function NoticeBell() {
     onError: () => toast('操作失败,请重试'),
   })
 
-  const unread = inbox.data?.unread ?? 0
+  const unread = inboxUnread(inbox.data)
   return (
     <Popover
       label="通知"
@@ -90,11 +94,15 @@ export default function NoticeBell() {
         <LoadingState />
       ) : (
         <NoticeList
-          items={inbox.data.items}
-          unread={inbox.data.unread}
+          items={inboxItems(inbox.data)}
+          unread={unread}
           onRead={(id) => read.mutate(id)}
           onReadAll={() => readAll.mutate()}
           readAllBusy={readAll.isPending}
+          hasMore={inbox.hasNextPage}
+          loadingMore={inbox.isFetchingNextPage}
+          loadMoreFailed={inbox.isFetchNextPageError}
+          onLoadMore={() => void inbox.fetchNextPage()}
         />
       )}
     </Popover>
