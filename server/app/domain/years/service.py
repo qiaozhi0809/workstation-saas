@@ -355,6 +355,7 @@ def _serialize_upgrades(db: Session, school_id: UUID) -> None:
     学年行用 FOR NO KEY UPDATE 而不是 FOR UPDATE:持班级行锁的写入方(任命、加学生)随后
     插入带 academic_year_id 外键的行,外键会对学年行取 FOR KEY SHARE,与 FOR UPDATE 冲突,
     而与 FOR NO KEY UPDATE 相容,锁顺序因此统一为"先班级、后学年",不再死锁。
+    rollback 在拿齐新班的行锁之后再把学年行升级为 FOR UPDATE(见 rollback,L56)。
     """
     db.execute(
         text("SELECT pg_advisory_xact_lock(hashtext(:k)::bigint)"),
@@ -941,6 +942,14 @@ def rollback(
     db.execute(
         text("SELECT id FROM classes WHERE id = ANY(CAST(:ids AS uuid[])) ORDER BY id FOR UPDATE"),
         {"ids": new_classes},
+    ).all()
+    # 再把新学年行从 NO KEY UPDATE 升级为 FOR UPDATE(L56):往新学年插外键行(建联考、建班、
+    # 加学生……)会对学年行取 KEY SHARE,与 FOR UPDATE 互斥——正在进行的插入提交后下面的计数才跑,
+    # 能数到它们;之后才来的插入要等回滚提交,学年已删,它们按学年状态被拒,不会被级联静默删掉。
+    # 必须放在班级锁之后:持班级锁的写入方随后才取 KEY SHARE,锁序仍是"先班级、后学年",不死锁。
+    db.execute(
+        text("SELECT id FROM academic_years WHERE id = :y FOR UPDATE"),
+        {"y": UUID(sm["new_year_id"])},
     ).all()
 
     found: dict[str, int] = {}

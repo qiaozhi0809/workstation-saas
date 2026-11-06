@@ -3,7 +3,7 @@ from datetime import datetime
 from uuid import UUID
 
 from fastapi import Request
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.orm import Session
 
 from app.audit.service import record
@@ -66,17 +66,41 @@ def _class_order(name: str, class_id: UUID) -> tuple:
     return (class_sort_key(name), str(class_id))
 
 
-def _grade_classes(db: Session, ge: GradeExam) -> list[SchoolClass]:
-    """Active classes of the grade in the grade exam's year, by name."""
+def _grade_classes(
+    db: Session, school_id: UUID, year_id: UUID, grade_id: UUID
+) -> list[SchoolClass]:
+    """Active classes of the grade in that year, by name."""
     classes = db.scalars(
         select(SchoolClass).where(
-            SchoolClass.school_id == ge.school_id,
-            SchoolClass.academic_year_id == ge.academic_year_id,
-            SchoolClass.grade_id == ge.grade_id,
+            SchoolClass.school_id == school_id,
+            SchoolClass.academic_year_id == year_id,
+            SchoolClass.grade_id == grade_id,
             SchoolClass.active.is_(True),
         )
     ).all()
     return sorted(classes, key=lambda c: _class_order(c.name, c.id))
+
+
+def _lock_classes(db: Session, classes: Sequence[SchoolClass]) -> None:
+    """先按 id 升序锁住要建考试的班级行(与学年升级、课表导入同序,防死锁),再碰学年行(L56):
+    名册 / 任职写入也是"先班级、后学年(外键 KEY SHARE)",与回滚"先班级、后学年 FOR UPDATE"同序。"""
+    if classes:
+        db.execute(
+            select(SchoolClass.id)
+            .where(SchoolClass.id.in_([c.id for c in classes]))
+            .order_by(SchoolClass.id)
+            .with_for_update()
+        ).all()
+
+
+def _ensure_year_live(db: Session, year_id: UUID) -> None:
+    """对学年行取 KEY SHARE(与回滚持有的 FOR UPDATE 互斥):回滚进行中就等它结束;等到时学年
+    已被回滚删掉或已被升级停用 → 409,而不是写进一个马上被级联删掉 / 已成往年的学年(L56)。"""
+    row = db.execute(
+        text("SELECT is_active FROM academic_years WHERE id = :y FOR KEY SHARE"), {"y": year_id}
+    ).first()
+    if row is None or not row[0]:
+        raise ApiError(409, "NO_ACTIVE_YEAR", "学年刚被升级或回滚,请刷新后重试")
 
 
 def _new_exam(ge: GradeExam, cls: SchoolClass, user_id: UUID, now: datetime) -> Exam:
@@ -151,7 +175,8 @@ def progress(db: Session, ge: GradeExam) -> list[GradeExamClass]:
 
 def _missing_classes(db: Session, ge: GradeExam) -> list[SchoolClass]:
     have = set(db.scalars(select(Exam.class_id).where(Exam.grade_exam_id == ge.id)).all())
-    return [c for c in _grade_classes(db, ge) if c.id not in have]
+    classes = _grade_classes(db, ge.school_id, ge.academic_year_id, ge.grade_id)
+    return [c for c in classes if c.id not in have]
 
 
 def grade_exam_outs(db: Session, ges: Sequence[GradeExam]) -> list[GradeExamOut]:
@@ -287,6 +312,10 @@ def create(
     if grade.academic_year_id != year.id:
         raise ApiError(400, "BAD_REQUEST", "只能给当前学年的年级建联考")
     _ensure_in_catalog(db, grade, body.subjects, set())
+    # 先锁班级、再确认学年仍进行中,之后才插联考行(锁序见 _lock_classes / _ensure_year_live)
+    classes = _grade_classes(db, user.school_id, year.id, grade.id)
+    _lock_classes(db, classes)
+    _ensure_year_live(db, year.id)
     ge = GradeExam(
         school_id=user.school_id,
         academic_year_id=year.id,
@@ -301,11 +330,9 @@ def create(
     )
     db.add(ge)
     db.flush()
-    classes = _grade_classes(db, ge)
-    # merge_subjects 会锁班级行:按班级 id 升序加锁防死锁(与学年升级、课表导入一致)
     for cls in sorted(classes, key=lambda c: c.id):
         db.add(_new_exam(ge, cls, user.id, now))
-        merge_subjects(db, cls, body.subjects)
+        merge_subjects(db, cls, body.subjects)  # 班级行已锁,这里只是追加科目
     record(
         db,
         user_id=user.id,
@@ -414,7 +441,9 @@ def sync(
     request: Request | None = None,
 ) -> GradeExamOut:
     missing = _missing_classes(db, ge)
-    for cls in sorted(missing, key=lambda c: c.id):  # 班级行锁按 id 升序,防死锁
+    _lock_classes(db, missing)  # 先锁班级,再确认学年,再插考试行(同 create)
+    _ensure_year_live(db, ge.academic_year_id)
+    for cls in sorted(missing, key=lambda c: c.id):
         db.add(_new_exam(ge, cls, user.id, now))
         merge_subjects(db, cls, [SubjectFull(**s) for s in ge.subjects])
     record(
