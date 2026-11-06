@@ -15,13 +15,14 @@ import { authApi } from '@/shared/api/auth'
 import { classesApi } from '@/shared/api/classes'
 import { classroomApi } from '@/shared/api/classroom'
 import { noticesApi } from '@/shared/api/notices'
+import { preferencesApi } from '@/shared/api/preferences'
 import { studentsApi } from '@/shared/api/students'
 import ProtectedRoute from '@/shared/components/ProtectedRoute'
 import { useRealtimeEvent } from '@/shared/realtime/useRealtimeEvent'
 import { useAuthStore } from '@/shared/stores/auth'
 import { useTeacherStore } from '@/shared/stores/teacher'
 import type { ClassView } from '@/shared/types/class'
-import { summaryFixture } from './Classroom/pageTestUtils'
+import { preferencesFixture, summaryFixture } from './Classroom/pageTestUtils'
 import TeacherLayout from './TeacherLayout'
 
 vi.mock('@/shared/api/classes', () => ({ classesApi: { mine: vi.fn() } }))
@@ -31,6 +32,8 @@ vi.mock('@/shared/api/students', () => ({ studentsApi: { detail: vi.fn() } }))
 vi.mock('@/shared/api/notices', () => ({
   noticesApi: { inbox: vi.fn(), read: vi.fn(), readAll: vi.fn() },
 }))
+// 壳里挂了欢迎页:默认当作已引导过,不弹
+vi.mock('@/shared/api/preferences', () => ({ preferencesApi: { get: vi.fn(), save: vi.fn() } }))
 
 const h = vi.hoisted(() => ({
   made: [] as { opts: { onEvent(e: unknown): void }; start: () => void; stop: () => void }[],
@@ -114,6 +117,10 @@ beforeEach(() => {
   h.made.length = 0
   vi.mocked(noticesApi.inbox).mockResolvedValue({ items: [], total: 0, unread: 1 })
   vi.mocked(classroomApi.summary).mockResolvedValue(summaryFixture())
+  vi.mocked(preferencesApi.get).mockResolvedValue({
+    ...preferencesFixture,
+    onboarded: { teacher: '2026-11-01T01:00:00Z' },
+  })
   useTeacherStore.setState({ classId: null, unsaved: { seating: false, scores: false } })
   useAuthStore.setState({
     accessToken: 'at',
@@ -526,6 +533,21 @@ it('puts the notice bell before the theme toggle in the top bar', async () => {
   const bell = await screen.findByRole('button', { name: '通知,1 条未读' })
   const theme = screen.getByRole('button', { name: /^主题:/ })
   expect(bell.compareDocumentPosition(theme) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+})
+
+it('mounts the welcome dialog only for a teacher who has not been onboarded', async () => {
+  vi.mocked(classesApi.mine).mockResolvedValue({
+    items: [cls('a', '三年二班', 'homeroom_teacher')],
+  })
+  const first = renderLayout()
+  await screen.findByText('三年二班')
+  await waitFor(() => expect(preferencesApi.get).toHaveBeenCalled())
+  expect(screen.queryByRole('dialog')).toBeNull()
+  first.unmount()
+  useTeacherStore.setState({ classId: null })
+  vi.mocked(preferencesApi.get).mockResolvedValue({ ...preferencesFixture, onboarded: {} })
+  renderLayout()
+  expect(await screen.findByRole('dialog', { name: '你好,王老师' })).toBeInTheDocument()
 })
 
 it('passes the current class my_perms to the nav: 班级公告 only with class.notice', async () => {
