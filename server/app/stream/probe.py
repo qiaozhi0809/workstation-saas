@@ -31,6 +31,7 @@ HINT_HEVC_TRANSCODED = (
     "H.265 源已勾选转码,浏览器可以播放;每路转码约占 1 核 CPU,建议改用 H.264 子码流以省资源"
 )
 HINT_OTHER = "视频编码 {codec} 浏览器不支持,请勾选转码或改用 H.264 码流"
+HINT_NO_VIDEO = "没有探测到视频流"
 
 
 def browser_playable(video_codec: str | None, transcode: bool) -> bool:
@@ -123,16 +124,25 @@ def _codec(stream: dict | None) -> str | None:
 
 
 def parse_ffprobe(data: object) -> dict | None:
-    """从 ffprobe 的 JSON 里取第一路视频流(与第一路音频流的编码);没有视频流 → None。
+    """从 ffprobe 的 JSON 里取第一路视频流(与第一路音频流的编码)。
 
+    结构不对(不是带 streams 列表的对象)→ None,算探测失败;结构合法但没有视频流(只有音频 /
+    数据流)→ 各视频字段为 None 的对象,与探测失败区分开(L219),_with_probe 据此提示。
     只取需要的字段:format.filename 里有带凭据的地址,整段 JSON 不得外传。"""
     if not isinstance(data, dict) or not isinstance(data.get("streams"), list):
         return None
     streams = [s for s in data["streams"] if isinstance(s, dict)]
     video = next((s for s in streams if s.get("codec_type") == "video"), None)
-    if video is None:
-        return None
     audio = next((s for s in streams if s.get("codec_type") == "audio"), None)
+    if video is None:
+        return {
+            "video_codec": None,
+            "width": None,
+            "height": None,
+            "fps": None,
+            "bitrate_kbps": None,
+            "audio_codec": _codec(audio),
+        }
     fmt = data.get("format")
     bps = _int(video.get("bit_rate"))
     if bps is None and isinstance(fmt, dict):  # 流级没有码率就取容器级的
@@ -183,11 +193,14 @@ def _with_probe(result: dict, info: dict | None, transcode: bool) -> dict:
     if info is None:
         return result
     codec = info["video_codec"]
-    probe = {
-        **info,
-        "browser_playable": browser_playable(codec, transcode),
-        "hint": probe_hint(codec, transcode),
-    }
+    if codec is None:  # 读到了流信息但没有视频流:转码也救不了,说清楚
+        probe = {**info, "browser_playable": False, "hint": HINT_NO_VIDEO}
+    else:
+        probe = {
+            **info,
+            "browser_playable": browser_playable(codec, transcode),
+            "hint": probe_hint(codec, transcode),
+        }
     return {**result, "probe": probe}
 
 

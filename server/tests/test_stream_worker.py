@@ -95,6 +95,10 @@ if "badjson" in url:
     sys.exit(0)
 if "slowprobe" in url:
     time.sleep(30)
+if "audioonly" in url:  # 合法 JSON、只有音频流
+    print(json.dumps({{"streams": [{{"codec_type": "audio", "codec_name": "aac"}}],
+                       "format": {{"filename": url, "bit_rate": "64000"}}}}))
+    sys.exit(0)
 if "hevc" in url:
     video = {{"codec_type": "video", "codec_name": "hevc", "width": 2560, "height": 1440,
              "r_frame_rate": "20/1"}}
@@ -957,6 +961,38 @@ def test_probe_h264_no_hint(db, redis_url, fake_ffmpeg, fake_ffprobe):
         assert "mpeg4" in r["probe"]["hint"]
 
     run_async(redis_url, body)
+
+
+NO_VIDEO_PROBE = {
+    "video_codec": None,
+    "width": None,
+    "height": None,
+    "fps": None,
+    "bitrate_kbps": None,
+    "audio_codec": "aac",
+    "browser_playable": False,
+    "hint": "没有探测到视频流",
+}
+
+
+def test_probe_without_video_stream_is_an_object(db, redis_url, fake_ffmpeg, fake_ffprobe):
+    """L219:ffprobe 输出合法但没有视频流 → probe 是对象(不可播 + 提示),与"探测失败"(null)分开。"""
+    cam = make_camera(db, "rtsp://10.0.0.5/audioonly")
+
+    async def body(redis):
+        r, raw = await _ask(redis, db, cam, fake_ffmpeg)
+        assert r["probe"] == NO_VIDEO_PROBE
+        assert PASSWORD not in raw and USER not in raw
+
+    run_async(redis_url, body)
+    audio = {"codec_type": "audio", "codec_name": "aac"}
+    assert probe.parse_ffprobe({"streams": [audio], "format": {"bit_rate": "64000"}}) == {
+        k: v for k, v in NO_VIDEO_PROBE.items() if k not in ("browser_playable", "hint")
+    }
+    assert probe.parse_ffprobe({"streams": []})["video_codec"] is None
+    # 结构不对才是 None(探测失败)
+    assert probe.parse_ffprobe({}) is None and probe.parse_ffprobe("x") is None
+    assert probe.parse_ffprobe({"streams": "nope"}) is None
 
 
 @pytest.mark.parametrize("path", ["brokenprobe", "badjson", "slowprobe", "noprobe"])
