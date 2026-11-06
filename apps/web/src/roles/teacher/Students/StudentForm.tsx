@@ -171,6 +171,8 @@ export default function StudentForm({
   const id = (k: string) => `${uid}-${k}`
   const editing = !!record
   const nameRef = useRef<HTMLInputElement>(null)
+  // 每行联系人的"姓名"框:校验出错时焦点落到第一个出错的那行(L14)
+  const contactNameRefs = useRef<(HTMLInputElement | null)[]>([])
   const [f, setF] = useState(() =>
     initialState(record, roster, wantsAutoSeat(cls, roster, !!record)),
   )
@@ -185,7 +187,8 @@ export default function StudentForm({
     name?: string
     studentNo?: string
     seat?: string
-    contact?: string
+    /** 出错的联系人行号(0 起)与提示 */
+    contact?: { at: number; text: string }
     form?: string
   }>({})
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -245,20 +248,23 @@ export default function StudentForm({
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     const name = f.name.trim()
-    const contacts = f.contacts
-      .map((c) => ({
-        name: c.name.trim(),
-        relation: c.relation.trim(),
-        phone: c.phone.trim(),
-        job: c.job.trim(),
-      }))
-      .filter((c) => c.name || c.relation || c.phone || c.job)
+    const trimmed = f.contacts.map((c) => ({
+      name: c.name.trim(),
+      relation: c.relation.trim(),
+      phone: c.phone.trim(),
+      job: c.job.trim(),
+    }))
+    const filled = (c: Contact) => !!(c.name || c.relation || c.phone || c.job)
+    const contacts = trimmed.filter(filled)
     const next: typeof errors = {}
     if (!name) next.name = '请填写姓名'
-    if (contacts.some((c) => !c.name && !c.phone)) next.contact = '联系人姓名和电话至少填一项'
+    const badContact = trimmed.findIndex((c) => filled(c) && !c.name && !c.phone)
+    if (badContact >= 0) next.contact = { at: badContact, text: '联系人姓名和电话至少填一项' }
     setErrors(next)
     if (Object.keys(next).length > 0) {
+      // 焦点移到表单里最靠前的出错字段
       if (next.name) nameRef.current?.focus()
+      else if (next.contact) contactNameRefs.current[next.contact.at]?.focus()
       return
     }
 
@@ -476,40 +482,56 @@ export default function StudentForm({
               <option key={r} value={r} />
             ))}
           </datalist>
-          {f.contacts.map((c, i) => (
-            <div key={i} className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <Input
-                aria-label={`联系人${i + 1}姓名`}
-                placeholder="姓名"
-                maxLength={20}
-                value={c.name}
-                onChange={(e) => setContact(i, { name: e.target.value })}
-              />
-              <Input
-                aria-label={`联系人${i + 1}关系`}
-                placeholder="关系"
-                list={id('relations')}
-                maxLength={10}
-                value={c.relation}
-                onChange={(e) => setContact(i, { relation: e.target.value })}
-              />
-              <Input
-                aria-label={`联系人${i + 1}电话`}
-                placeholder="电话"
-                maxLength={20}
-                value={c.phone}
-                onChange={(e) => setContact(i, { phone: e.target.value })}
-              />
-              <Input
-                aria-label={`联系人${i + 1}职业`}
-                placeholder="职业"
-                maxLength={20}
-                value={c.job}
-                onChange={(e) => setContact(i, { job: e.target.value })}
-              />
-            </div>
-          ))}
-          {errors.contact && <p className="text-sm text-destructive">{errors.contact}</p>}
+          {f.contacts.map((c, i) => {
+            // 出错的那行:姓名与电话(二选一的两个字段)标 aria-invalid 并关联提示
+            const bad = errors.contact?.at === i
+            const invalid = bad
+              ? { 'aria-invalid': true, 'aria-describedby': id('contact-error') }
+              : {}
+            return (
+              <div key={i} className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <Input
+                  ref={(el) => {
+                    contactNameRefs.current[i] = el
+                  }}
+                  aria-label={`联系人${i + 1}姓名`}
+                  placeholder="姓名"
+                  maxLength={20}
+                  value={c.name}
+                  onChange={(e) => setContact(i, { name: e.target.value })}
+                  {...invalid}
+                />
+                <Input
+                  aria-label={`联系人${i + 1}关系`}
+                  placeholder="关系"
+                  list={id('relations')}
+                  maxLength={10}
+                  value={c.relation}
+                  onChange={(e) => setContact(i, { relation: e.target.value })}
+                />
+                <Input
+                  aria-label={`联系人${i + 1}电话`}
+                  placeholder="电话"
+                  maxLength={20}
+                  value={c.phone}
+                  onChange={(e) => setContact(i, { phone: e.target.value })}
+                  {...invalid}
+                />
+                <Input
+                  aria-label={`联系人${i + 1}职业`}
+                  placeholder="职业"
+                  maxLength={20}
+                  value={c.job}
+                  onChange={(e) => setContact(i, { job: e.target.value })}
+                />
+              </div>
+            )
+          })}
+          {errors.contact && (
+            <p id={id('contact-error')} className="text-sm text-destructive">
+              {errors.contact.text}
+            </p>
+          )}
         </div>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

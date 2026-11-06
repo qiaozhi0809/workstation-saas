@@ -171,6 +171,25 @@ it('requires a name and a contact name or phone', async () => {
   expect(studentsApi.create).not.toHaveBeenCalled()
 })
 
+// L14:联系人校验出错时焦点要落到第一个出错的联系人上,而不是停在保存按钮
+it('focuses the first contact that fails validation and links the error to it', async () => {
+  renderForm()
+  fireEvent.change(screen.getByLabelText('姓名'), { target: { value: '赵六' } })
+  fireEvent.change(screen.getByLabelText('联系人1姓名'), { target: { value: '赵母' } })
+  fireEvent.change(screen.getByLabelText('联系人2关系'), { target: { value: '父亲' } })
+  fireEvent.click(screen.getByRole('button', { name: '保存' }))
+  const name2 = await screen.findByLabelText('联系人2姓名')
+  await waitFor(() => expect(name2).toHaveFocus())
+  expect(name2).toHaveAttribute('aria-invalid', 'true')
+  expect(name2).toHaveAccessibleDescription('联系人姓名和电话至少填一项')
+  expect(screen.getByLabelText('联系人2电话')).toHaveAttribute('aria-invalid', 'true')
+  expect(screen.getByLabelText('联系人1姓名')).not.toHaveAttribute('aria-invalid')
+  // 名字也空着时,焦点先去更靠前的姓名
+  fireEvent.change(screen.getByLabelText('姓名'), { target: { value: '' } })
+  fireEvent.click(screen.getByRole('button', { name: '保存' }))
+  await waitFor(() => expect(screen.getByLabelText('姓名')).toHaveFocus())
+})
+
 it('marks occupied and locked seats in the seat select', () => {
   renderForm()
   const seat = screen.getByLabelText('座位')

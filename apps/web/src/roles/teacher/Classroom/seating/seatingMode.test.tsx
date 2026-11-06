@@ -658,6 +658,18 @@ it('disables mentor seating without exam scores', async () => {
   expect(btn).toHaveAttribute('title', '还没有考试成绩')
 })
 
+// L14:不可用原因不能只放在 title 里(触屏与读屏都看不到):按钮旁可见文字 + aria-describedby
+it('shows why mentor seating is unavailable next to the button and describes it for screen readers', () => {
+  const { rerender } = render(<SeatingBar {...barProps({ canMentor: false })} />)
+  const btn = screen.getByRole('button', { name: '优带弱' })
+  expect(btn).toBeDisabled()
+  expect(btn).toHaveAccessibleDescription('还没有考试成绩')
+  expect(screen.getByText('还没有考试成绩')).toBeVisible()
+  rerender(<SeatingBar {...barProps({ canMentor: true })} />)
+  expect(screen.queryByText('还没有考试成绩')).toBeNull()
+  expect(screen.getByRole('button', { name: '优带弱' })).not.toHaveAttribute('aria-describedby')
+})
+
 it('runs mentor seating from the bar', async () => {
   vi.mocked(examsApi.gradebook).mockResolvedValue({
     exams: [
