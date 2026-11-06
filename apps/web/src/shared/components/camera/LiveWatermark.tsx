@@ -30,8 +30,8 @@ export function LiveWatermark({
     return () => clearInterval(id)
   }, [timeZone])
   return (
-    <div className="pointer-events-none absolute right-2 top-2 z-10 flex max-w-[calc(100%-1rem)] items-center gap-1.5 rounded bg-black/70 px-2 py-1 text-xs text-white">
-      <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full bg-red-500" />
+    <div className="pointer-events-none absolute right-2 top-2 z-10 flex max-w-[calc(100%-1rem)] items-center gap-1.5 rounded bg-background/80 px-2 py-1 text-xs text-foreground">
+      <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full bg-destructive" />
       <span className="truncate">{`正在直播 · ${schoolName} · ${now} · ${viewerName}`}</span>
     </div>
   )

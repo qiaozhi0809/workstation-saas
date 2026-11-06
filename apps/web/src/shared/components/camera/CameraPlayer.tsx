@@ -217,7 +217,7 @@ export function CameraPlayer({
 
   const msg = MESSAGES[state]
   return (
-    <div className="relative h-full w-full overflow-hidden bg-black">
+    <div className="relative h-full w-full overflow-hidden bg-muted">
       <video
         ref={videoRef}
         muted
@@ -233,7 +233,7 @@ export function CameraPlayer({
       {msg && (
         <div
           role={msg.role}
-          className="absolute inset-0 flex items-center justify-center bg-black/60 px-3 text-center text-sm text-white"
+          className="absolute inset-0 flex items-center justify-center bg-background/80 px-3 text-center text-sm text-foreground"
         >
           {msg.text}
         </div>
