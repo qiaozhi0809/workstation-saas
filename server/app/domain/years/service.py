@@ -521,6 +521,7 @@ def apply(
     }
     new_enrollment_ids: list[UUID] = []
     new_enrollment_roles: dict[str, str | None] = {}
+    new_enrollment_classes: dict[str, str] = {}  # 新注册 → 升级时放进的新班(回滚检查 L51)
     insert_enr = text(
         "INSERT INTO enrollments (student_id, class_id, academic_year_id, seat_row, seat_col,"
         " seat_locked, class_role, entered_at, status)"
@@ -565,6 +566,7 @@ def apply(
             ).scalar_one()
             new_enrollment_ids.append(new_id)
             new_enrollment_roles[str(new_id)] = role
+            new_enrollment_classes[str(new_id)] = str(target)
     for status, ids in status_of.items():
         if ids:
             db.execute(
@@ -747,6 +749,7 @@ def apply(
         "new_class_ids": s(new_class_ids),
         "new_enrollment_ids": s(new_enrollment_ids),
         "new_enrollment_roles": new_enrollment_roles,
+        "new_enrollment_classes": new_enrollment_classes,
         "old_enrollment_ids": s([r.id for r in old_rows]),
         "old_class_ids": s(old_class_ids),
         "new_assignment_ids": s(new_assignment_ids),
@@ -815,8 +818,8 @@ def latest_rollbackable(db: Session, school_id: UUID, *, lock: bool = False) -> 
 def _edits_since_upgrade(
     db: Session, up: YearUpgrade, new_classes: list[UUID], new_enrollments: list[UUID]
 ) -> dict[str, int]:
-    """升级之后,新学年里被人动过的东西:看板、座位、班干部、转出、手动新建的年级 / 班级 / 任职 /
-    管理岗绑定、年级联考。非零才返回。"""
+    """升级之后,新学年里被人动过的东西:看板、座位、班干部、转出、换到另一个新班、手动新建的
+    年级 / 班级 / 任职 / 管理岗绑定、年级联考。非零才返回。"""
     sm = up.summary
     found: dict[str, int] = {}
     cs = {"cs": new_classes}
@@ -836,17 +839,25 @@ def _edits_since_upgrade(
     if seats:
         found["seats"] = seats
     recorded: dict[str, str | None] | None = sm.get("new_enrollment_roles")
-    if recorded is not None:  # 没有这个键的旧升级记录跳过
-        changed = sum(
-            1
-            for r in db.execute(
-                text("SELECT id, class_role FROM enrollments WHERE id = ANY(cast(:es as uuid[]))"),
-                {"es": new_enrollments},
-            )
-            if recorded.get(str(r.id)) != r.class_role
-        )
+    # 升级时放进的班(L51):新注册被改到另一个新班时 status 仍是 active,只能对着记录比
+    placed: dict[str, str] | None = sm.get("new_enrollment_classes")
+    if recorded is not None or placed is not None:  # 没有这些键的旧升级记录跳过对应检查
+        changed = moved = 0
+        for r in db.execute(
+            text(
+                "SELECT id, class_role, class_id FROM enrollments"
+                " WHERE id = ANY(cast(:es as uuid[]))"
+            ),
+            {"es": new_enrollments},
+        ):
+            if recorded is not None and recorded.get(str(r.id)) != r.class_role:
+                changed += 1
+            if placed is not None and placed.get(str(r.id)) != str(r.class_id):
+                moved += 1
         if changed:
             found["class_roles"] = changed
+        if moved:
+            found["class_changes"] = moved
     transfers = db.execute(
         text(
             "SELECT count(*) FROM enrollments"
