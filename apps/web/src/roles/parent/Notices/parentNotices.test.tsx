@@ -184,6 +184,15 @@ it('lists notices of all children, bold when unread, with the children named', a
   expect(read.className).toMatch(/min-h-\[44px\]/)
 })
 
+it('shows 系统 for system notices', async () => {
+  vi.mocked(noticesApi.inbox).mockResolvedValue(
+    inbox([item({ from_name: null, title: '账号安全提醒' })]),
+  )
+  renderAt()
+  const btn = (await screen.findByText('账号安全提醒')).closest('button')!
+  expect(within(btn).getByText(/^系统 · /)).toBeInTheDocument()
+})
+
 it('shows the empty state', async () => {
   renderAt()
   expect(await screen.findByText('还没有通知')).toBeInTheDocument()

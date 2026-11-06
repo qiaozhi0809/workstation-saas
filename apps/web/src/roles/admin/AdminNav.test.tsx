@@ -130,6 +130,7 @@ describe('grouped nav (≥ 768)', () => {
       ['审计日志', '/admin/audit'],
       ['AI 使用', '/admin/ai/usage'],
       ['AI 配置', '/admin/ai/config'],
+      ['登录日志', '/admin/login-logs'],
     ])
   })
 
@@ -264,6 +265,7 @@ describe('narrow nav (< 768)', () => {
       '/admin/audit',
       '/admin/ai/usage',
       '/admin/ai/config',
+      '/admin/login-logs',
       '/admin/notices',
       '/admin/upgrade',
       '/admin/history',
@@ -277,7 +279,7 @@ describe('narrow nav (< 768)', () => {
     expect(within(nav()).getAllByRole('button')).toHaveLength(3)
     vp.resize(600)
     expect(within(nav()).queryAllByRole('button')).toHaveLength(0)
-    expect(within(nav()).getAllByRole('link')).toHaveLength(14)
+    expect(within(nav()).getAllByRole('link')).toHaveLength(15)
     vp.resize(900)
     expect(within(nav()).getAllByRole('button')).toHaveLength(3)
     unmount()

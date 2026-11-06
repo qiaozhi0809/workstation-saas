@@ -122,6 +122,8 @@ export interface Account {
   must_change_password: boolean
   last_login_at: string | null
   roles: RoleTag[]
+  /** 后端新增字段;缺省按未开启处理 */
+  totp_enabled?: boolean
 }
 export interface AccountInput {
   display_name: string
@@ -598,4 +600,24 @@ export interface SecuritySettings {
   /** 8..32 */
   password_min_length: number
   password_max_age_days: 0 | 90 | 180 | 365
+}
+
+export type LoginResult =
+  'success' | 'bad_password' | 'unknown_user' | 'inactive' | 'locked' | 'totp_failed'
+export type LoginSuspicion = 'night' | 'new_network'
+export interface LoginLog {
+  id: string
+  at: string
+  login_name: string
+  user: { id: string; display_name: string } | null
+  result: LoginResult
+  ip: string | null
+  user_agent: string | null
+  suspicious: LoginSuspicion[]
+}
+export interface LoginLogPage {
+  items: LoginLog[]
+  total: number
+  page: number
+  page_size: number
 }
