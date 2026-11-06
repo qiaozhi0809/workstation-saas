@@ -1,3 +1,4 @@
+import base64
 import json
 import socket
 import threading
@@ -22,6 +23,7 @@ DEAN = "55555555-5555-5555-5555-555555555544"
 PARENT = "55555555-5555-5555-5555-555555555561"
 URL = "/api/v1/admin/cameras"
 PW = "campass-test"
+JPEG_B64 = base64.b64encode(b"\xff\xd8\xff\xe0fake-jpeg").decode()
 USER = "camuser"
 
 
@@ -349,12 +351,12 @@ def test_camera_test_with_fake_worker(client, settings, db, on, redis_client):
     cid = _create(client, settings, username=USER, password=PW)["id"]
     seen: list = []
     t = _fake_worker(
-        redis_client, {"ok": True, "message": "连接成功", "preview_jpeg_base64": "QUJD"}, seen
+        redis_client, {"ok": True, "message": "连接成功", "preview_jpeg_base64": JPEG_B64}, seen
     )
     res = client.post(f"{URL}/{cid}/test", headers=h)
     t.join(5)
     assert res.status_code == 200, res.text
-    assert res.json() == {"ok": True, "message": "连接成功", "preview_jpeg_base64": "QUJD"}
+    assert res.json() == {"ok": True, "message": "连接成功", "preview_jpeg_base64": JPEG_B64}
     assert seen[0]["id"] == cid
     assert seen[0]["reply_key"].startswith("ws:cam:probe:reply:")
     assert PW not in json.dumps(seen[0]) and USER not in json.dumps(seen[0])
@@ -389,3 +391,69 @@ def test_service_test_camera_timeout_injectable(db, redis_client):
     assert out.ok is False and out.message == "转流服务没有响应"
     assert time.monotonic() - started < 3
     redis_client.delete("ws:cam:probe")
+
+
+def _reply_via_worker(client, settings, redis_client, cid, reply):
+    seen: list = []
+
+    def run():
+        item = redis_client.blpop("ws:cam:probe", timeout=5)
+        if item is None:
+            return
+        task = json.loads(item[1])
+        redis_client.set(task["reply_key"], reply, ex=30)
+
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    res = client.post(f"{URL}/{cid}/test", headers=auth(settings, IT_ADMIN))
+    t.join(5)
+    assert seen == []
+    return res
+
+
+@pytest.mark.parametrize(
+    "preview",
+    [
+        "not base64!!",
+        base64.b64encode(b"plain text, not a jpeg").decode(),
+        base64.b64encode(b"\xff\xd8\xff" + b"0" * 1_000_001).decode(),
+    ],
+)
+def test_probe_preview_rejected(client, settings, on, redis_client, preview):
+    cid = _create(client, settings)["id"]
+    reply = json.dumps({"ok": True, "message": "连接成功", "preview_jpeg_base64": preview})
+    res = _reply_via_worker(client, settings, redis_client, cid, reply)
+    assert res.status_code == 200
+    assert res.json() == {"ok": False, "message": "预览数据异常", "preview_jpeg_base64": None}
+
+
+def test_probe_garbage_reply(client, settings, on, redis_client):
+    cid = _create(client, settings)["id"]
+    res = _reply_via_worker(client, settings, redis_client, cid, "\x00garbage{")
+    assert res.status_code == 200
+    body_ = res.json()
+    assert body_["ok"] is False and body_["preview_jpeg_base64"] is None
+
+
+def test_unauthorised_with_switch_off_is_403(client, settings, db, redis_client):
+    assert get_switches(db, UUID(SCHOOL_ID)).monitor is False
+    for user in (DEAN, TEACHER_USER_ID, PARENT):
+        h = auth(settings, user)
+        assert client.get(URL, headers=h).status_code == 403
+        assert client.get(f"{URL}/health", headers=h).status_code == 403
+        assert client.post(URL, headers=h, json=body()).status_code == 403
+
+
+@pytest.mark.parametrize(
+    "bad", ["rtsp://10.0.0.21/a\nb", "rtsp://10.0.0.21/a\tb", "rtsp://10.0.0.21/a b"]
+)
+def test_url_with_whitespace_rejected(client, settings, on, bad):
+    res = client.post(URL, headers=auth(settings, IT_ADMIN), json=body(rtsp_url=bad))
+    assert res.status_code == 400 and res.json()["error"]["code"] == "RTSP_URL_INVALID"
+
+
+def test_userinfo_trick_is_credentials_error(client, settings, on):
+    res = client.post(
+        URL, headers=auth(settings, IT_ADMIN), json=body(rtsp_url="rtsp://10.0.0.1@8.8.8.8/x")
+    )
+    assert res.status_code == 400 and res.json()["error"]["code"] == "RTSP_URL_HAS_CREDENTIALS"

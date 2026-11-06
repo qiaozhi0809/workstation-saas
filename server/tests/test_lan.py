@@ -129,3 +129,74 @@ def test_mask_url():
     assert "t1" not in out and "p2" not in out and "p3" not in out
     assert "k=v" in out
     assert "campass-test" not in lan.mask_url("rtsp://camuser:campass-test@10.0.0.2:554/")
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "rtsp://10.0.0.2/a\nb",
+        "rtsp://10.0.0.2/a\tb",
+        "rtsp://10.0.0.2/a b",
+        "rtsp://10.0.0.2/a\rb",
+        "rtsp://10.0.0.2/a\x00b",
+        "rtsp://10.0.0.2/a\x7fb",
+    ],
+)
+def test_rtsp_url_whitespace_or_control_rejected(bad):
+    assert _code(bad) == "RTSP_URL_INVALID"
+
+
+def test_stored_url_equals_validated(monkeypatch):
+    _fake_dns(monkeypatch, ["10.0.0.2"])
+    out = lan.validate_rtsp_url("rtsp://10.0.0.2:554/a/b?x=1&y=2#f")
+    assert out == "rtsp://10.0.0.2:554/a/b?x=1&y=2#f"
+    assert lan.urlsplit(out).hostname == "10.0.0.2"
+
+
+def test_userinfo_trick_rejected_before_resolution(monkeypatch):
+    _fake_dns(monkeypatch, ["8.8.8.8"])
+    assert _code("rtsp://10.0.0.1@8.8.8.8/x") == "RTSP_URL_HAS_CREDENTIALS"
+
+
+def test_decimal_ip_loopback_not_lan_outside_dev(monkeypatch):
+    _fake_dns(monkeypatch, ["127.0.0.1"])  # getaddrinfo 把 2130706433 解析成 127.0.0.1
+    assert _code("rtsp://2130706433/x", allow_loopback=False) == "RTSP_URL_NOT_LAN"
+
+
+def test_trailing_dot_host_still_judged(monkeypatch):
+    _fake_dns(monkeypatch, ["203.0.113.5"])
+    assert _code("rtsp://pub.example.test./x") == "RTSP_URL_NOT_LAN"
+    _fake_dns(monkeypatch, ["10.0.0.2"])
+    assert lan.validate_rtsp_url("rtsp://cam.example.test./x") == "rtsp://cam.example.test./x"
+
+
+def test_mask_url_password_with_at_sign():
+    out = lan.mask_url("rtsp://camuser:camp@ss@w0rd@10.0.0.2:554/x")
+    assert out == "rtsp://***@10.0.0.2:554/x"
+    out = lan.mask_url("连接失败 rtsp://camuser:camp@ss@10.0.0.2/x?a=1 超时")
+    assert "camp" not in out and "ss@" not in out and "a=1" in out
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "key",
+        "secret",
+        "auth",
+        "token",
+        "password",
+        "passwd",
+        "pwd",
+        "api_key",
+        "PassWord",
+        "Api_Key",
+    ],
+)
+def test_mask_url_secret_query_keys(key):
+    out = lan.mask_url(f"rtsp://10.0.0.2/x?a=1&{key}=s3cr3t&b=2")
+    assert "s3cr3t" not in out and "a=1" in out and "b=2" in out
+    assert f"{key}=***" in out
+
+
+def test_mask_url_keeps_unrelated_keys():
+    assert lan.mask_url("rtsp://10.0.0.2/x?monkey=1&k=v") == "rtsp://10.0.0.2/x?monkey=1&k=v"

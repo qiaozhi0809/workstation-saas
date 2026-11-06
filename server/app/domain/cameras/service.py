@@ -1,3 +1,5 @@
+import base64
+import binascii
 import json
 import time
 import uuid
@@ -22,6 +24,9 @@ from app.models.cameras import Camera
 PROBE_TIMEOUT = 10.0  # R9:同步等待,占一个线程池线程;可注入
 PROBE_INTERVAL = 0.2
 NO_REPLY = "转流服务没有响应"
+BAD_PREVIEW = "预览数据异常"
+MAX_PREVIEW_BYTES = 1_000_000
+JPEG_MAGIC = b"\xff\xd8\xff"
 
 STATE_KEY = "ws:cam:state:{}"
 PROBE_QUEUE = "ws:cam:probe"
@@ -242,6 +247,23 @@ def delete_camera(
     redis.publish(RELOAD_CHANNEL, str(camera_id))
 
 
+def _checked(result: CameraTestResult) -> CameraTestResult:
+    """Redis 里的预览不可信:限大小、必须是 JPEG,否则丢弃。"""
+    b64 = result.preview_jpeg_base64
+    if b64 is None:
+        return result
+    bad = CameraTestResult(ok=False, message=BAD_PREVIEW, preview_jpeg_base64=None)
+    if len(b64) > MAX_PREVIEW_BYTES * 4 // 3 + 4:
+        return bad
+    try:
+        data = base64.b64decode(b64, validate=True)
+    except (binascii.Error, ValueError):
+        return bad
+    if len(data) > MAX_PREVIEW_BYTES or not data.startswith(JPEG_MAGIC):
+        return bad
+    return result
+
+
 def test_camera(
     db: Session,
     redis: Redis,
@@ -259,7 +281,7 @@ def test_camera(
         if raw is not None:
             redis.delete(reply_key)
             try:
-                return CameraTestResult.model_validate_json(raw)
+                return _checked(CameraTestResult.model_validate_json(raw))
             except ValidationError:
                 return CameraTestResult(ok=False, message="转流服务返回了无法识别的结果")
         remaining = deadline - time.monotonic()

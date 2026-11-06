@@ -1,7 +1,7 @@
 import ipaddress
 import re
 import socket
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 from app.errors import ApiError
 
@@ -18,8 +18,10 @@ LAN_NETWORKS = (
 )
 _LOOPBACK = (ipaddress.ip_network("127.0.0.0/8"), ipaddress.ip_network("::1/128"))
 
-_USERINFO = re.compile(r"(://)[^/@\s?#]*@")
-_SECRET_QUERY = re.compile(r"(?i)((?:password|token|passwd|pwd)=)[^&#\s]*")
+_USERINFO = re.compile(r"(://)[^/\s?#]*@")  # 贪婪:口令里有 @ 时打码到最后一个 @
+_SECRET_QUERY = re.compile(
+    r"(?i)(?<![A-Za-z0-9])((?:api_key|key|secret|auth|token|password|passwd|pwd)=)[^&#\s]*"
+)
 
 
 def _parse(ip: object) -> IPAddress | None:
@@ -59,6 +61,9 @@ def resolve_is_lan(host: str, *, allow_loopback: bool = False) -> bool:
 
 def validate_rtsp_url(url: str, *, allow_loopback: bool = False) -> str:
     raw = url.strip()
+    # urlsplit 会悄悄去掉 \t\r\n,校验的主机就和存下的字符串不一致,所以直接拒绝
+    if any(ch.isspace() or ord(ch) < 32 or ord(ch) == 127 for ch in raw):
+        raise ApiError(400, "RTSP_URL_INVALID", "摄像头地址含有空白或控制字符")
     if not raw[:7].lower() == "rtsp://":
         raise ApiError(400, "RTSP_URL_INVALID", "地址必须以 rtsp:// 开头")
     try:
@@ -73,7 +78,8 @@ def validate_rtsp_url(url: str, *, allow_loopback: bool = False) -> str:
         raise ApiError(400, "RTSP_URL_INVALID", "摄像头地址缺少主机")
     if not resolve_is_lan(host, allow_loopback=allow_loopback):
         raise ApiError(400, "RTSP_URL_NOT_LAN", "摄像头地址必须在学校内网")
-    return "rtsp://" + raw[7:]
+    # 用解析结果重建,存下的就是校验过的
+    return urlunsplit(("rtsp", parts.netloc, parts.path, parts.query, parts.fragment))
 
 
 def mask_url(text: str) -> str:
