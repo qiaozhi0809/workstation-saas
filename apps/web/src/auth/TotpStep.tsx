@@ -9,7 +9,7 @@ import { Label } from '@/shared/components/ui/label'
 import type { LoginResponse } from '@/shared/types/api'
 
 const MESSAGES: Record<string, string> = {
-  TOTP_INVALID: '验证码不正确',
+  TOTP_INVALID: '验证码不正确或已过期,请检查手机时间',
   ACCOUNT_LOCKED: '失败次数过多,请 15 分钟后再试',
 }
 const FALLBACK = '验证失败,请稍后再试'

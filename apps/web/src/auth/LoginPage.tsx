@@ -75,6 +75,7 @@ export default function LoginPage() {
       const res = await authApi.login(loginName.trim(), password)
       if (isMfaChallenge(res)) {
         setMfaToken(res.mfa_token)
+        setPassword('') // 验证码步骤期间不在状态里保留密码;重新开始需重新输入
         setPending(false)
         return
       }

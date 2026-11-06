@@ -421,8 +421,14 @@ it('clears code on TOTP_INVALID', async () => {
   vi.mocked(authApi.loginTotp).mockRejectedValue(new ApiError(401, 'TOTP_INVALID', 'bad'))
   const input = (await renderTotp()) as HTMLInputElement
   fireEvent.change(input, { target: { value: '123456' } })
-  expect(await screen.findByRole('alert')).toHaveTextContent('验证码不正确')
+  expect(await screen.findByRole('alert')).toHaveTextContent('验证码不正确或已过期,请检查手机时间')
   await waitFor(() => expect(input.value).toBe(''))
   expect(input).toHaveFocus()
   expect(useAuthStore.getState().accessToken).toBeNull()
+})
+
+it('returns to an empty password field from the code step', async () => {
+  await renderTotp()
+  fireEvent.click(screen.getByRole('button', { name: '返回重新登录' }))
+  expect(await screen.findByLabelText('密码')).toHaveValue('')
 })

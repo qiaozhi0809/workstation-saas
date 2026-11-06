@@ -52,6 +52,7 @@ export default function SecurityCard() {
     try {
       const next = await adminApi.saveSecuritySettings(value)
       qc.setQueryData(['admin', 'security-settings'], next)
+      void qc.invalidateQueries({ queryKey: ['auth', 'password-policy'] })
       setDraft(null)
       toast('已保存')
     } catch (err) {

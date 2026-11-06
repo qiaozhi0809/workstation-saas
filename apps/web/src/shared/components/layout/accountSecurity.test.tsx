@@ -88,7 +88,7 @@ it('disable requires password', async () => {
     enabled_at: '2026-11-01T08:00:00+08:00',
   })
   vi.mocked(authApi.totpDisable)
-    .mockRejectedValueOnce(new ApiError(401, 'INVALID_CREDENTIALS', '密码不正确'))
+    .mockRejectedValueOnce(new ApiError(400, 'WRONG_PASSWORD', '密码不正确'))
     .mockResolvedValueOnce({ enabled: false })
   const dlg = await open()
   fireEvent.click(await within(dlg).findByRole('button', { name: '关闭两步验证' }))

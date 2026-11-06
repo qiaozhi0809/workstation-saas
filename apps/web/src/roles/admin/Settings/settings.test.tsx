@@ -393,6 +393,7 @@ it('saves security settings', async () => {
     password_max_age_days: 90,
   })
   await renderPage()
+  const invSpy = vi.spyOn(client, 'invalidateQueries')
   const card = await screen.findByRole('group', { name: '账号安全' })
   expect(within(card).queryByText('已有密码不受影响,下次修改时生效')).toBeNull()
   fireEvent.click(within(card).getByRole('switch', { name: '允许账号开启两步验证' }))
@@ -408,6 +409,7 @@ it('saves security settings', async () => {
     }),
   )
   expect(toast).toHaveBeenCalledWith('已保存')
+  expect(invSpy).toHaveBeenCalledWith({ queryKey: ['auth', 'password-policy'] })
   expect(client.getQueryData(['admin', 'security-settings'])).toEqual({
     totp_allowed: true,
     password_min_length: 12,

@@ -172,3 +172,37 @@ it('lets a parent account into a parent-context route and sends others to their 
   mk(['teacher'])
   expect(screen.getByText('teacher home')).toBeInTheDocument()
 })
+
+it('redirects to /change-password once must_change_password is set mid-session', () => {
+  const user = {
+    id: 'u',
+    display_name: 't',
+    contexts: ['teacher' as const],
+    admin_perms: [],
+    must_change_password: false,
+    password_change_reason: null,
+  }
+  useAuthStore.getState().setTokens('a', 'r', user)
+  render(
+    <MemoryRouter initialEntries={['/private']}>
+      <Routes>
+        <Route path="/change-password" element={<div>change page</div>} />
+        <Route
+          path="/private"
+          element={
+            <ProtectedRoute>
+              <div>secret</div>
+            </ProtectedRoute>
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  )
+  expect(screen.getByText('secret')).toBeInTheDocument()
+  act(() =>
+    useAuthStore
+      .getState()
+      .setUser({ ...user, must_change_password: true, password_change_reason: 'expired' }),
+  )
+  expect(screen.getByText('change page')).toBeInTheDocument()
+})

@@ -288,3 +288,80 @@ it('keeps the session when the refresh hits a network error or 503; the request 
     expect(useAuthStore.getState().user).not.toBeNull()
   }
 })
+
+const err = (code: string, status: number) => json({ error: { code, message: 'x' } }, status)
+
+it.each([
+  ['/auth/totp/disable', 'INVALID_CREDENTIALS'],
+  ['/auth/totp/disable', 'WRONG_PASSWORD'],
+  ['/auth/totp/enable', 'TOTP_INVALID'],
+  ['/auth/totp/enable', 'MFA_EXPIRED'],
+])('401 %s %s does not refresh or log out', async (path, code) => {
+  const fetchMock = vi.fn().mockResolvedValue(err(code, 401))
+  vi.stubGlobal('fetch', fetchMock)
+  await expect(api('POST', path, {})).rejects.toMatchObject({ status: 401, code })
+  expect(fetchMock).toHaveBeenCalledTimes(1)
+  expect(useAuthStore.getState().accessToken).toBe('old')
+  expect(useAuthStore.getState().user).not.toBeNull()
+})
+
+it('401 with a non-JSON body still refreshes once', async () => {
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(new Response('oops', { status: 401 }))
+    .mockResolvedValueOnce(json({ access_token: 'new' }))
+    .mockResolvedValueOnce(json({ ok: 1 }))
+  vi.stubGlobal('fetch', fetchMock)
+  await api('GET', '/x')
+  expect(fetchMock).toHaveBeenCalledTimes(3)
+})
+
+it('403 PASSWORD_CHANGE_REQUIRED marks user and routes to /change-password', async () => {
+  const fresh = {
+    id: 'u',
+    display_name: 't',
+    contexts: ['teacher'],
+    admin_perms: [],
+    must_change_password: true,
+    password_change_reason: 'expired',
+  }
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(err('PASSWORD_CHANGE_REQUIRED', 403))
+    .mockResolvedValueOnce(json(fresh))
+    .mockResolvedValueOnce(err('PASSWORD_CHANGE_REQUIRED', 403))
+  vi.stubGlobal('fetch', fetchMock)
+  await expect(api('GET', '/classes')).rejects.toMatchObject({ code: 'PASSWORD_CHANGE_REQUIRED' })
+  expect(useAuthStore.getState().user).toMatchObject({
+    must_change_password: true,
+    password_change_reason: 'expired',
+  })
+  expect(fetchMock.mock.calls[1][0]).toBe('/api/v1/auth/me')
+  // 已标记后再次 403 不再请求 /auth/me
+  await expect(api('GET', '/classes')).rejects.toMatchObject({ code: 'PASSWORD_CHANGE_REQUIRED' })
+  expect(fetchMock).toHaveBeenCalledTimes(3)
+})
+
+it('403 PASSWORD_CHANGE_REQUIRED falls back to local flag when /auth/me fails', async () => {
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(err('PASSWORD_CHANGE_REQUIRED', 403))
+    .mockRejectedValueOnce(new TypeError('net'))
+  vi.stubGlobal('fetch', fetchMock)
+  await expect(api('GET', '/classes')).rejects.toMatchObject({ code: 'PASSWORD_CHANGE_REQUIRED' })
+  expect(useAuthStore.getState().user).toMatchObject({
+    must_change_password: true,
+    password_change_reason: 'expired',
+  })
+})
+
+it('400 WRONG_PASSWORD on /auth/totp/disable surfaces the error without refresh or logout', async () => {
+  const fetchMock = vi.fn().mockResolvedValue(err('WRONG_PASSWORD', 400))
+  vi.stubGlobal('fetch', fetchMock)
+  await expect(api('POST', '/auth/totp/disable', {})).rejects.toMatchObject({
+    status: 400,
+    code: 'WRONG_PASSWORD',
+  })
+  expect(fetchMock).toHaveBeenCalledTimes(1)
+  expect(useAuthStore.getState().accessToken).toBe('old')
+})

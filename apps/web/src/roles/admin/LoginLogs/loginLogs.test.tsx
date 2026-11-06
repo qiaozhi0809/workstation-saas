@@ -149,8 +149,10 @@ const navFor = (admin_perms: AdminPerm[]) => {
 }
 
 it('hidden without audit.read', () => {
-  navFor(['account.manage', 'settings.manage'])
-  expect(screen.queryByText('登录日志')).toBeNull()
+  navFor(['ai.usage', 'settings.manage'])
+  fireEvent.click(screen.getByRole('button', { name: '系统' }))
+  expect(screen.getByRole('menuitem', { name: 'AI 配置' })).toBeInTheDocument()
+  expect(screen.queryByRole('menuitem', { name: '登录日志' })).toBeNull()
   expect(ADMIN_PAGES.find((p) => p.path === 'login-logs')).toMatchObject({
     perm: 'audit.read',
     group: 'system',
