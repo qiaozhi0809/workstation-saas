@@ -322,6 +322,21 @@ def test_ack_block_reason(client, db, settings, monkeypatch):
     assert item["can_ack"] is True and item["ack_block_reason"] is None
 
 
+def test_secondary_parent_cannot_ack(client, db, settings):
+    """A2 遗留(submit_ack):家长对象的通知只有在用的主家长绑定能回执,
+    与收件箱 ack_block_reason = not_primary 的口径一致。"""
+    p = parent_notice(client, settings, CONFIRM)
+    set_link(db, "13800000061", "S0001", is_primary=False)
+    assert _item(client, settings, LI, p)["ack_block_reason"] == "not_primary"
+    res = post_ack(client, settings, LI, p)
+    assert res.status_code == 403 and code(res) == "ACK_NOT_ALLOWED"
+    assert row_of(db, p, LI).acked_at is None
+    failed = [r for r in ack_audits(db, p) if not r.success]
+    assert len(failed) == 1 and failed[0].user_id == UUID(LI)
+    set_link(db, "13800000061", "S0001", is_primary=True)
+    assert post_ack(client, settings, LI, p).status_code == 204
+
+
 def test_snapshot_survives_upgrade(client, db, settings):
     """L87:发送后学年升级,统计、导出与收件箱里的班名仍是发送时的班。"""
     n = parent_notice(client, settings, CHOICE)
