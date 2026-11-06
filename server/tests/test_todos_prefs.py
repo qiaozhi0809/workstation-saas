@@ -1,3 +1,6 @@
+import pytest
+from sqlalchemy import text
+
 from tests.helpers import auth
 from tests.seed_ids import ASSISTANT_USER_ID, TEACHER_USER_ID
 
@@ -6,6 +9,14 @@ PREFS = "/api/v1/me/preferences"
 T04 = "55555555-5555-5555-5555-555555555541"  # teacher04:既是三年一班班主任,又是 S0002 的主家长
 LI = "55555555-5555-5555-5555-555555555561"  # 李家长:纯家长账号
 PRINCIPAL = "55555555-5555-5555-5555-555555555543"
+
+
+@pytest.fixture(autouse=True)
+def _fresh_preferences(db):
+    """种子把所有账号的首次引导记为已看过(免得 E2E 第一次登录被欢迎页挡住);
+    本文件测的是"没有偏好行"的默认值与按语境写入,所以先把种子的偏好行清掉(随测试事务回滚)。"""
+    db.execute(text("DELETE FROM user_preferences"))
+    db.flush()
 
 
 def test_todo_crud_and_order(client, settings):
