@@ -32,7 +32,7 @@ async function saveSwitches(page: Page) {
   const saved = page.waitForResponse(
     (r) => r.url().includes('/admin/settings/switches') && r.request().method() === 'PUT',
   )
-  await page.getByRole('button', { name: '保存' }).last().click()
+  await page.getByRole('button', { name: '保存开关', exact: true }).click()
   expect((await saved).ok()).toBeTruthy()
 }
 
