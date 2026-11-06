@@ -354,8 +354,16 @@ def test_export_only_visible_classes(client, db, settings, ge):
 def test_export_csv_unit():
     from app.domain.exams.schemas import SubjectFull
     from app.domain.reports.schemas import ScoreStudentRow
-    from app.domain.reports.scores import export_csv
+    from app.domain.reports.scores import _num, export_csv
 
+    # CSV 数字与 JSON 同口径:一位小数、半数向上(round1),整数不带 .0,不截断有效数字
+    assert (_num(0.25), _num(170.0), _num(3), _num(123456.7), _num(None)) == (
+        "0.3",
+        "170",
+        "3",
+        "123456.7",
+        "",
+    )
     row = ScoreStudentRow(
         student_id=UUID("00000000-0000-0000-0000-000000000001"),
         name="@x",
