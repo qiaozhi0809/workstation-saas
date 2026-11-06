@@ -450,10 +450,11 @@ describe('AiThreadPage final-review fixes', () => {
       }),
     )
     const before = vi.mocked(aiApi.getChat).mock.calls.length
-    await act(async () => {
-      await client.invalidateQueries({ queryKey: ['ai-chat', 't1'] })
-      await new Promise((r) => setTimeout(r, 30))
-    })
+    await act(() => client.invalidateQueries({ queryKey: ['ai-chat', 't1'] }))
+    // 等重取真的落地:服务端那条 m4 流式占位进了列表
+    await waitFor(() =>
+      expect(client.getQueryData<AiChat>(['ai-chat', 't1'])!.messages).toHaveLength(4),
+    )
     expect(vi.mocked(aiApi.getChat).mock.calls.length).toBeGreaterThan(before)
     expect(screen.getAllByText('追问内容')).toHaveLength(1)
     // 2 条历史 + 老师追问 + 1 个流式气泡
@@ -592,10 +593,10 @@ describe('AiThreadPage L17', () => {
         ],
       }),
     )
-    await act(async () => {
-      await client.invalidateQueries({ queryKey: ['ai-chat', 't1'] })
-      await new Promise((r) => setTimeout(r, 30))
-    })
+    await act(() => client.invalidateQueries({ queryKey: ['ai-chat', 't1'] }))
+    await waitFor(() =>
+      expect(client.getQueryData<AiChat>(['ai-chat', 't1'])!.messages).toHaveLength(4),
+    )
     // 旧错误上的"重试"此时会被拒(上一次生成还没结束):被拒的请求不能改变页面上显示哪些消息,
     // 流继续刷新(重新渲染)后也不能
     fireEvent.click(screen.getByRole('button', { name: '重试' }))
@@ -636,7 +637,7 @@ describe('AiThreadPage L17', () => {
     fireEvent.keyDown(box, { key: 'Enter' })
     await waitFor(() => expect(calls).toHaveLength(2))
     // 第一次重取这时才落地,带着第一组问答:它们应当立刻可见,而不是等第二次生成结束
-    await act(async () => {
+    act(() =>
       release(
         chatFixture({
           messages: [
@@ -646,10 +647,9 @@ describe('AiThreadPage L17', () => {
             msg({ id: 'm4', role: 'assistant', content: '第一答' }),
           ],
         }),
-      )
-      await new Promise((r) => setTimeout(r, 30))
-    })
-    expect(screen.getByText('第一问')).toBeInTheDocument()
+      ),
+    )
+    expect(await screen.findByText('第一问')).toBeInTheDocument()
     expect(screen.getByText('第一答')).toBeInTheDocument()
     expect(screen.getAllByText('第二问')).toHaveLength(1)
   })
@@ -675,13 +675,10 @@ describe('AiThreadPage L17', () => {
         }),
     )
     thread()
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 30))
-    })
+    // 门在等班级列表:列表请求已发出、还没回来的这一刻,不能出现"找不到"
+    await waitFor(() => expect(classesApi.mine).toHaveBeenCalled())
     expect(screen.queryByText('找不到这个对话')).not.toBeInTheDocument()
-    await act(async () => {
-      release({ items: [classFixture, { ...classFixture, id: 'c2', name: '四年一班' }] })
-    })
+    act(() => release({ items: [classFixture, { ...classFixture, id: 'c2', name: '四年一班' }] }))
     expect(await screen.findByText('这个对话属于其他班级')).toBeInTheDocument()
     expect(screen.queryByText('找不到这个对话')).not.toBeInTheDocument()
   })
