@@ -117,9 +117,16 @@ def test_seed_growth_and_comment(db):
     ).all()
     assert {(r.name, r.n) for r in growth} == {("王小一", 2), ("陈小五", 1)}
     comments = db.execute(
-        text("SELECT s.name, c.semester FROM comments c JOIN students s ON s.id = c.student_id")
+        text(
+            "SELECT s.name, c.semester, c.generated_by_ai, c.parent_visible FROM comments c"
+            " JOIN students s ON s.id = c.student_id ORDER BY s.mk"
+        )
     ).all()
-    assert [(r.name, r.semester) for r in comments] == [("李小二", "2026-2027 第一学期")]
+    # 王小一的那条是 M5d 补的手写评语(L80):家长端评语页在种子上就有数据
+    assert [tuple(r) for r in comments] == [
+        ("王小一", "2026-2027 第一学期", False, True),
+        ("李小二", "2026-2027 第一学期", False, True),
+    ]
 
 
 def test_session_scope_reuses_test_session(client, db):

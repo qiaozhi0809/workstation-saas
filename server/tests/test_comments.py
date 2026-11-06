@@ -13,6 +13,7 @@ from tests.seed_ids import (
     ASSISTANT_USER_ID,
     CLASS_ID,
     COMMENT_IDS,
+    S0001_COMMENT_IDS,
     SCHOOL_ID,
     STUDENT_IDS,
     SUBJECT_USER_ID,
@@ -24,14 +25,16 @@ S1 = STUDENT_IDS[1]  # 李小二
 URL = f"/api/v1/students/{S1}/comments"
 BULK = f"/api/v1/classes/{CLASS_ID}/comments/bulk"
 BODY = {"content": "  本学期进步明显  ", "generated_by_ai": True}
+SEED_COMMENT_IDS = [UUID(i) for i in (*COMMENT_IDS, *S0001_COMMENT_IDS)]  # 种子里的两条手写评语
 
 
 def _audits(db, action):
     return list(db.scalars(select(AuditLog).where(AuditLog.action == action)).all())
 
 
-def _count(db):
-    return db.scalar(select(func.count()).select_from(Comment))
+def _added(db):
+    """测试里新增的评语条数(扣掉种子)。"""
+    return db.scalar(select(func.count()).select_from(Comment)) - len(SEED_COMMENT_IDS)
 
 
 @pytest.mark.parametrize(
@@ -121,7 +124,7 @@ def test_only_homeroom_writes(client, settings, db):
         item = {"items": [{"student_id": S1, "content": "好"}], "generated_by_ai": False}
         assert client.post(BULK, json=item, headers=h).status_code == 403
         assert client.delete(f"/api/v1/comments/{COMMENT_IDS[0]}", headers=h).status_code == 403
-    assert _count(db) == 1
+    assert _added(db) == 0
     assert [a.success for a in _audits(db, "comment.read")] == [False] * 2
     assert [a.success for a in _audits(db, "comment.write")] == [False] * 6
 
@@ -140,15 +143,15 @@ def test_bulk_all_or_nothing(client, settings, db):
     err = res.json()["error"]
     assert err["code"] == "AI_FIELD_INVALID"
     assert err["details"] == {"field": "items"}
-    assert _count(db) == 1
+    assert _added(db) == 0
     assert _audits(db, "comment.create") == []
 
     del items[1]
     res = client.post(BULK, json={"items": items, "generated_by_ai": True}, headers=h)
     assert res.status_code == 201
     assert res.json() == {"created": 2}
-    assert _count(db) == 3
-    rows = db.scalars(select(Comment).where(Comment.id != UUID(COMMENT_IDS[0]))).all()
+    assert _added(db) == 2
+    rows = db.scalars(select(Comment).where(Comment.id.notin_(SEED_COMMENT_IDS))).all()
     assert {r.content for r in rows} == {"认真好学", "乐于助人"}
     assert all(r.generated_by_ai and r.semester == "2026-2027 第一学期" for r in rows)
     assert all(r.class_id == UUID(CLASS_ID) for r in rows)
@@ -177,7 +180,7 @@ def test_bulk_rejects_bad_shape_and_unenrolled(client, settings, db):
     res = client.post(BULK, json={"items": [ok], "generated_by_ai": False}, headers=h)
     assert res.status_code == 400
     assert res.json()["error"]["code"] == "AI_FIELD_INVALID"
-    assert _count(db) == 1
+    assert _added(db) == 0
 
 
 def _past_comment(db, *, visible: bool = True) -> Comment:
@@ -366,7 +369,7 @@ def test_bulk_resend_skips_existing_comments(client, settings, db):
     res = _bulk(client, settings, items)
     assert res.status_code == 201
     assert res.json() == {"created": 0}
-    assert _count(db) == 3
+    assert _added(db) == 2
     counts = [a.extra["count"] for a in _audits(db, "comment.create")]
     assert counts == [2, 0]
 
@@ -378,7 +381,7 @@ def test_bulk_duplicates_inside_one_batch_save_once(client, settings, db):
         (STUDENT_IDS[1], "认真好学"),
     ]
     assert _bulk(client, settings, items).json() == {"created": 2}
-    assert _count(db) == 3
+    assert _added(db) == 2
 
 
 def test_bulk_changed_content_is_new_and_other_semester_is_not_a_duplicate(client, settings, db):
@@ -389,7 +392,7 @@ def test_bulk_changed_content_is_new_and_other_semester_is_not_a_duplicate(clien
     row.semester = "2025-2026 第二学期"
     db.flush()
     assert _bulk(client, settings, [(STUDENT_IDS[0], "认真好学")]).json() == {"created": 1}
-    assert _count(db) == 4
+    assert _added(db) == 3
 
 
 def test_single_create_duplicate_returns_existing(client, settings, db):
@@ -399,7 +402,7 @@ def test_single_create_duplicate_returns_existing(client, settings, db):
     again = client.post(URL, json=BODY, headers=h)
     assert again.status_code == 200
     assert again.json()["id"] == first.json()["id"]
-    assert _count(db) == 2
+    assert _added(db) == 1
 
 
 def test_bulk_concurrent_duplicates_store_once(engine):

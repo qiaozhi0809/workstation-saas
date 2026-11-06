@@ -441,6 +441,15 @@ def test_reviews_cursor_paging(client, settings, db):
     assert res.status_code == 400 and res.json()["error"]["code"] == "BAD_REQUEST"
 
 
+def test_seed_comment_visible_to_parent(client, settings, db):
+    """种子里 S0001 有一条手写评语且家长可见(L80):李家长不建数据就能看到评语页有内容。"""
+    s1 = sid(db, "S0001")
+    items = get(client, settings, f"/children/{s1}/comments").json()["items"]
+    assert len(items) == 1
+    assert items[0]["semester"] == "2026-2027 第一学期" and items[0]["content"]
+    assert set(items[0]) == {"id", "semester", "content", "created_at"}
+
+
 def test_growth_records_content(client, settings, db):
     s1 = sid(db, "S0001")
     items = get(client, settings, f"/children/{s1}/growth-records").json()["items"]
