@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { adminApi } from '@/shared/api/admin'
+import { ApiError } from '@/shared/api/client'
 import Modal from '@/shared/components/overlay/Modal'
 import { toast } from '@/shared/components/Toast'
 import { Button } from '@/shared/components/ui/button'
@@ -73,7 +74,17 @@ export default function StaffEditor({ cls }: { cls: ClassAdmin }) {
       done()
       close()
     },
-    onError: (e) => setError(errMsg(e)),
+    onError: (e) => {
+      // 任职刚被别的操作(换班主任 / 删班)结束(L52):这条任职已经不在了,留在确认框里再点也没用,
+      // 提示后端文案、关框并重取,让页面显示现状
+      if (e instanceof ApiError && e.code === 'STAFF_CHANGED') {
+        toast(e.message)
+        done()
+        close()
+        return
+      }
+      setError(errMsg(e))
+    },
   })
 
   const submit = () => {

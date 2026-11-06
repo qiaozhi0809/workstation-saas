@@ -1,4 +1,4 @@
-import type { Attention } from '@/shared/lib/grades'
+import { BIG_MOVE, type Attention } from '@/shared/lib/grades'
 
 function Group({
   title,
@@ -61,7 +61,7 @@ export function AttentionPanel({
         items={attention.risers.map((r) => ({ id: r.id, label: `↑${r.change}` }))}
       />
       <Group
-        title="退步 5 名以上"
+        title={`退步 ${BIG_MOVE} 名及以上`}
         names={names}
         onOpen={onOpen}
         items={attention.fallers.map((r) => ({ id: r.id, label: `↓${-r.change}` }))}

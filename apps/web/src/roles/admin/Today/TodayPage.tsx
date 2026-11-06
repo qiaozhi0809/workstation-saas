@@ -9,6 +9,7 @@ import { AbsenteeList } from './AbsenteeList'
 import { GradeExamCard } from './GradeExamCard'
 import { KpiRow } from './KpiRow'
 import { NoticeCard } from './NoticeCard'
+import { SetupChecklist } from './SetupChecklist'
 import { UnconfirmedList } from './UnconfirmedList'
 import { WeekReviews } from './WeekReviews'
 
@@ -43,6 +44,8 @@ export default function TodayPage() {
         <h1 className="text-xl font-semibold">{`今日关注 · ${d.scope_label}`}</h1>
         <p className="text-sm text-muted-foreground">{`${d.date} ${weekdayCN(d.date)}`}</p>
       </header>
+      {/* 开学准备清单:只有 org.manage / settings.manage 看得到,全部完成后折叠成一行 */}
+      <SetupChecklist />
       <KpiRow totals={d.totals} />
       {(d.grade_exam || (d.my_notices?.length ?? 0) > 0) && (
         <div className="grid gap-4 md:grid-cols-2">

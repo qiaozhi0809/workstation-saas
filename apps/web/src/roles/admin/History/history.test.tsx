@@ -111,11 +111,11 @@ const scores = (e: HistoryExam): HistoryScores => ({
   ],
 })
 
-function setup(entry = '/admin/history') {
+const makeClient = () => new QueryClient({ defaultOptions: { queries: { retry: false } } })
+
+function setup(entry = '/admin/history', client = makeClient()) {
   return render(
-    <QueryClientProvider
-      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
-    >
+    <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[entry]}>
         <Routes>
           <Route path="/admin/history" element={<HistoryPage />} />
@@ -270,11 +270,45 @@ describe('往年单班页', () => {
     )
   })
 
-  it('缺少 year 参数时标题退化为往年班级且不请求学年数据', async () => {
-    setup('/admin/history/classes/c1')
-    expect(await screen.findByRole('heading', { level: 1, name: '往年班级' })).toBeInTheDocument()
+  it('缺少 year 参数时逐个往年找这个班,标题与返回链接都用找到的学年(L58)', async () => {
+    setup('/admin/history/classes/c9')
+    expect(
+      await screen.findByRole('heading', { level: 1, name: '2024-2025 学年 初三1班' }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '← 往年班级' })).toHaveAttribute(
+      'href',
+      '/admin/history?year=y24',
+    )
+    // 从最近的往年开始找,找到为止
+    expect(vi.mocked(adminApi.historyClasses).mock.calls.map((c) => c[0])).toEqual(['y25', 'y24'])
     expect(await screen.findByText('张小三')).toBeInTheDocument()
-    expect(adminApi.historyClasses).not.toHaveBeenCalled()
+  })
+
+  it('缺少 year 参数且最近的往年就有这个班时不再请求更早的学年', async () => {
+    setup('/admin/history/classes/c1')
+    expect(
+      await screen.findByRole('heading', { level: 1, name: '2025-2026 学年 高一1班' }),
+    ).toBeInTheDocument()
+    expect(vi.mocked(adminApi.historyClasses).mock.calls.map((c) => c[0])).toEqual(['y25'])
+  })
+
+  it('缺少 year 参数且哪个往年都没有这个班时标题退化为往年班级', async () => {
+    const client = makeClient()
+    setup('/admin/history/classes/nobody', client)
+    await screen.findByText('张小三')
+    // 等逐年查找真正结束(两个往年各问一次、查找结果落定为"没找到"),再断言,免得在中途就通过
+    await waitFor(() =>
+      expect(client.getQueryState(['history', 'class-year', 'nobody'])).toMatchObject({
+        status: 'success',
+        data: null,
+      }),
+    )
+    expect(vi.mocked(adminApi.historyClasses).mock.calls.map((c) => c[0])).toEqual(['y25', 'y24'])
+    expect(screen.getByRole('heading', { level: 1, name: '往年班级' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '← 往年班级' })).toHaveAttribute(
+      'href',
+      '/admin/history',
+    )
   })
 
   it('year 查不到时标题退化为往年班级', async () => {

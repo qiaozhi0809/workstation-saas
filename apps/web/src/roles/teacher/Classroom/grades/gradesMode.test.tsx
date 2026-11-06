@@ -80,7 +80,8 @@ const tops = (c: HTMLElement) =>
 
 it('shows the grades tab only with exam.read', async () => {
   setup({ perms: ['attendance.read'] })
-  await screen.findByRole('tab', { name: '日常' })
+  // 「日常」在概况(权限)到达前就有;等到按权限才出现的「考勤」再断言,否定断言才不会提前通过(L98)
+  await screen.findByRole('tab', { name: '考勤' })
   expect(screen.queryByRole('tab', { name: '成绩' })).toBeNull()
 })
 
