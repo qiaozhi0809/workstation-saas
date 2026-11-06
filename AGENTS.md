@@ -48,6 +48,7 @@
 - **不写不必要的错误处理**。只在系统边界(用户输入、外部 API)validate。
 - **commits** 用 Conventional Commits 格式:`feat:` / `fix:` / `chore:` / `test:` / `docs:` / `refactor:`
 - **分支**:`main` 为主分支;功能开发在 feature 分支(可选)。首次实现可直接推 main。
+- **多段并行的收尾纪律**(M5d 教训,台账 L322):同一波里"契约消费方"的 PR 合并前先 `merge origin/main` 跑一次 CI;一个遗留只派一个段;测试卡住只杀自己的 PID,禁止 `pkill -f vitest` 之类按名字杀进程。
 - **迁移预检**:新迁移里每个 `CHECK` / 唯一约束 / `NOT NULL`(对已有表加的)必须在 `server/app/deploy/precheck.py` 的 `CHECKS` 登记预检,否则升级旧库时会在迁移中途失败;`tests/test_precheck.py` 会扫描迁移 SQL 核对。新迁移还必须加入 `server/app/deploy/precheck.py` 的 `REVIEWED_REVISIONS` 签收集合(M5d 起,段 A2 落地;台账 L113)——扫描器对 FK / `ADD COLUMN` / `DO` 块有盲区,签收表示人工核对过。
 
 ### 安全
@@ -166,12 +167,12 @@ Step N+(1-k): Commit          → git add && git commit
 |---|---|---|
 | 后端单元/集成 | pytest + testcontainers(真 Postgres / 真 Redis) | `cd server && uv run pytest` |
 | 前端单元 | Vitest + Testing Library | `cd apps/web && npm run test`;只跑一部分并限制并发时写 `npx vitest run <目录> --maxWorkers=2 --minWorkers=1`(本机 vitest 2.1.9 只给 `--maxWorkers` 会报 minThreads 冲突) |
-| 前端 E2E | Playwright(project 链 mutating → … → admin → m3b → m4a → m4b → m5b → m5c → readonly;`m5c` 用系统 Chrome(`channel: 'chrome'`,Playwright 自带的 Chromium 不解 H.264),需先起下一行的假摄像头与 `python -m app.stream`) | `cd apps/web && npm run e2e` |
+| 前端 E2E | Playwright(project 链 mutating → … → admin → m3b → m4a → m4b → m5b → m5c → readonly → walkthrough(只读走查截图,产物 `walkthrough-<sha>`);`m5c` 用系统 Chrome(`channel: 'chrome'`,Playwright 自带的 Chromium 不解 H.264),需先起下一行的假摄像头与 `python -m app.stream`) | `cd apps/web && npm run e2e` |
 | 假摄像头 / 真流测试 | mediamtx + ffmpeg 推流(`cam1` H.264、`cam2` H.265)+ pytest `ffmpeg` / `perf` 标记 | `docker compose -f deploy/docker-compose.dev.yml --profile camera up -d` → `cd server && uv run pytest -m "ffmpeg and not perf" -q`(本机需装 ffmpeg / ffprobe,缺了或假摄像头连不上时自动 skip);性能冒烟 `uv run pytest -m perf -q -s`(3 路 copy + 1 路转码 30 秒,只在 CI e2e job 单独一步跑,结果上传 `stream-perf` 产物) |
 | 后端 Lint | ruff | `uv run ruff check . && uv run ruff format --check .` |
 | 前端 Lint | ESLint + Prettier | `npm run lint` |
 | 部署镜像 | Docker | `make image VERSION=<标签>`(构建 `workstation-app`、`workstation-web`、`workstation-stream` 三个镜像;`workstation-stream` 基于同标签的 `workstation-app` 加 ffmpeg) |
-| 部署脚本测试 | bash + Docker | `bash deploy/tests/compose_smoke.sh`、`install_fresh.sh`、`install_twice.sh`、`upgrade_same.sh`、`upgrade_precheck_fail.sh`、`backup_restore.sh`、`restore_rejects.sh`(都在 `deploy/tests/`) |
+| 部署脚本测试 | bash + Docker | `bash deploy/tests/compose_smoke.sh`、`install_fresh.sh`、`install_twice.sh`、`upgrade_same.sh`、`upgrade_precheck_fail.sh`、`backup_restore.sh`、`restore_rejects.sh`(都在 `deploy/tests/`,CI `deploy` job 逐个跑);升级路径两个较慢的脚本放单独的 CI `deploy-upgrade-path` job:`upgrade_rollback.sh`(升级失败后 `rollback.sh` 回退、`kill -9` 中断后的提示与回退)、`upgrade_from_previous.sh`(用上一个发布 tag 打出的旧离线包装一套再用本提交的包升级,需 `WS_PREVIOUS_DEPLOY_SRC` / `WS_PREVIOUS_VERSION`,tag 不存在时只告警) |
 | 部署脚本 Lint | shellcheck | `docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.9.0 -S warning -x deploy/prod/scripts/*.sh deploy/tests/*.sh deploy/release/*.sh`(该镜像的入口已是 shellcheck,不要再写一次 `shellcheck`;CI 用 runner 自带的 shellcheck,版本未钉,见台账 L123) |
 
 部署测试脚本须以**非 root** 用户运行,且该用户在 `docker` 组里;**逐个跑**,不要并行(它们共用 compose 项目名 `ws-m5a-b`、端口 18080 / 18443 与固定子网 `172.30.0.0/24`,可用 `WS_TEST_PROJECT`(`compose_smoke.sh` 另兼容旧名 `WS_SMOKE_PROJECT`)、`WS_HTTP_PORT`、`WS_HTTPS_PORT`、`WS_TEST_VERSION`(旧名 `WS_VERSION` 仍有效)、`WS_TEST_DEPLOY_SRC`(被测部署目录,默认 `deploy/prod`)覆盖);镜像须先用 `make image VERSION=0.0.0-seg-b`(或 `WS_VERSION` 指定的标签)构建好。
@@ -199,6 +200,8 @@ Step N+(1-k): Commit          → git add && git commit
 | 永久脱敏编号 `s.mk` | AI 对话里稳定对应 | reference-html PRD §1 |
 
 完整决策历史见 spec 附录 A(13 条)。
+
+**锁顺序(台账 L323,D1 复审教训)**:任何先取学年行 `KEY SHARE` 的写路径必须先按 id 升序锁住所涉班级行(`merge_subjects` 会隐式锁班级行,调用方要在它之前自己锁),否则会与学年回滚的 `FOR UPDATE` 互等死锁;做法见 `grade_exams/service.py::_lock_classes`。
 
 ---
 

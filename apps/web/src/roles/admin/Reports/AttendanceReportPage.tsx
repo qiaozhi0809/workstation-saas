@@ -8,10 +8,10 @@ import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { toast } from '@/shared/components/Toast'
 import { Button } from '@/shared/components/ui/button'
 import { NativeSelect } from '@/shared/components/ui/native-select'
+import { monthIn, useSchoolTz } from '@/shared/hooks/useSchoolTz'
 import { downloadBlob } from '@/shared/lib/download'
 import AttendanceClassTable from './AttendanceClassTable'
 import { NO_PERM_ATTENDANCE, isForbidden } from './forbidden'
-import { monthIn, useSchoolTz } from './useSchoolTz'
 
 const pad = (n: number) => String(n).padStart(2, '0')
 const shiftMonth = (m: string, delta: number) => {

@@ -5,13 +5,13 @@ import { EmptyState } from '@/shared/components/feedback/EmptyState'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { Button } from '@/shared/components/ui/button'
+import { useSchoolTz } from '@/shared/hooks/useSchoolTz'
 import { formatInTz } from '@/shared/lib/date'
 import { cn } from '@/shared/lib/utils'
-import { useSchoolTz } from '../useMeta'
 
 /** 点评历史:游标分页;日期按学校时区(/meta,L79)取,不用 UTC 前 10 位 */
 export default function ReviewHistory({ sid }: { sid: string }) {
-  const tz = useSchoolTz()
+  const { tz } = useSchoolTz()
   const q = useInfiniteQuery({
     queryKey: ['parent', sid, 'reviews'],
     queryFn: ({ pageParam }) => parentApi.reviews(sid, pageParam),

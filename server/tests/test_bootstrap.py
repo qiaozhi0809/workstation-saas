@@ -318,6 +318,42 @@ def test_admin_can_create_grade_right_after_install(db, new_settings, new_client
     assert r.status_code == 201, r.text
 
 
+def test_fresh_install_admin_builds_grade_and_class_via_api(db, new_settings, new_client):
+    """L127:从 `init-school` 空库起步走完整链路——首次登录改密码、建年级、建班、列出。
+    G-1 时 init-school 没建学年,建年级直接 409 NO_ACTIVE_YEAR,只在验收时暴露;这条把它钉进 CI。"""
+    code, out = _run_cli(
+        db, ["--name", "测试学校", "--admin-login", "admin01", "--admin-password-stdin"], PW + "\n"
+    )
+    assert code == 0, out
+    first = _login(new_client).json()
+    assert first["user"]["must_change_password"] is True
+    new_pw = "Changed-Pass-456y"
+    r = new_client.post(
+        "/api/v1/auth/password",
+        headers={"Authorization": f"Bearer {first['access_token']}"},
+        json={"old_password": PW, "new_password": new_pw, "refresh_token": first["refresh_token"]},
+    )
+    assert r.status_code == 200, r.text
+    # R6:改密前签发的 access 令牌可能因同一秒被拒,用保留的刷新令牌换新令牌后再调管理接口
+    token = new_client.post(
+        "/api/v1/auth/refresh", json={"refresh_token": first["refresh_token"]}
+    ).json()["access_token"]
+    h = {"Authorization": f"Bearer {token}"}
+    grade = new_client.post(
+        "/api/v1/admin/grades", json={"name": "一年级", "display_order": 1}, headers=h
+    )
+    assert grade.status_code == 201, grade.text
+    cls = new_client.post(
+        "/api/v1/admin/classes",
+        json={"grade_id": grade.json()["id"], "name": "一年一班", "room": "教学楼 101"},
+        headers=h,
+    )
+    assert cls.status_code == 201, cls.text
+    listed = new_client.get("/api/v1/admin/classes", headers=h)
+    assert listed.status_code == 200, listed.text
+    assert [(c["grade_name"], c["name"]) for c in listed.json()] == [("一年级", "一年一班")]
+
+
 def test_init_school_again_keeps_single_year(db, new_settings):
     _init(db, new_settings)
     (before,) = _years(db, new_settings)

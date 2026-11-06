@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.domain.classes.sort import class_sort_key
 from app.errors import ApiError
 from app.models import Grade, SchoolClass
 from app.rbac.bindings import Binding, Scope
@@ -48,7 +49,15 @@ def list_my_classes(db: Session, bindings: Sequence[Binding], year_id: UUID) -> 
         .join(Grade, SchoolClass.grade_id == Grade.id)
         .where(SchoolClass.id.in_(best))
     ).all()
-    rows.sort(key=lambda r: (r.Grade.display_order, r.SchoolClass.name))
+    # 年级按 display_order,同年级班名按数值排(L40:三年二班 < 三年三班 < 三年十班),id 收尾保证稳定
+    rows.sort(
+        key=lambda r: (
+            r.Grade.display_order,
+            class_sort_key(r.Grade.name),
+            class_sort_key(r.SchoolClass.name),
+            str(r.SchoolClass.id),
+        )
+    )
     return [
         ClassView(
             id=cls.id,
