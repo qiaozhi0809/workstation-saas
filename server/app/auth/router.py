@@ -45,6 +45,7 @@ class LoginTotpRequest(BaseModel):  # M5b 段 A
 
 
 class TotpEnableRequest(BaseModel):  # M5b 段 A
+    password: str = Field(min_length=1, max_length=256)
     code: str = Field(min_length=1, max_length=16)
     refresh_token: str = Field(min_length=1, max_length=256)
 
@@ -204,7 +205,9 @@ def totp_enable(
     settings: SettingsDep,
     request: Request,
 ) -> TotpEnabledResponse:  # M5b 段 A
-    service.totp_enable(db, redis, settings, user, body.code, body.refresh_token, request)
+    service.totp_enable(
+        db, redis, settings, user, body.password, body.code, body.refresh_token, request
+    )
     return TotpEnabledResponse(enabled=True)
 
 

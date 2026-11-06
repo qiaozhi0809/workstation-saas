@@ -254,10 +254,16 @@ def totp_enable(
     redis: Redis,
     settings: Settings,
     user: User,
+    password: str,
     code: str,
     keep_token: str,
     request: Request | None = None,
 ) -> None:
+    # 顺序固定:先查失败上限,再验密码(错则计数),最后验验证码;密码不能代替验证码
+    fail_key = _check_not_locked(redis, settings, user.login_name, "尝试次数过多,请稍后再试")
+    if not verify_password(password, user.password_hash):
+        _record_failure(redis, settings, fail_key)
+        raise ApiError(400, "WRONG_PASSWORD", "密码不正确")
     _require_allowed(db, settings)
     if user.totp_enabled_at is not None:
         raise ApiError(409, "TOTP_ALREADY_ENABLED", "已开启两步验证")
@@ -278,6 +284,7 @@ def totp_enable(
         request=request,
     )
     db.commit()
+    redis.delete(fail_key)
     redis.delete(_pending_key(user.id))
     sessions.revoke_all(redis, user.id, keep=keep_token)
 

@@ -301,7 +301,11 @@ def _setup_and_enable(client, headers, refresh_token):
     res = client.post(
         f"{API}/auth/totp/enable",
         headers=headers,
-        json={"code": pyotp.TOTP(secret).now(), "refresh_token": refresh_token},
+        json={
+            "code": pyotp.TOTP(secret).now(),
+            "password": "dev123",
+            "refresh_token": refresh_token,
+        },
     )
     return setup.json(), res
 
@@ -329,14 +333,18 @@ def test_enable_wrong_code_or_without_setup(client, db, settings):
     res = client.post(
         f"{API}/auth/totp/enable",
         headers=h,
-        json={"code": "123456", "refresh_token": login["refresh_token"]},
+        json={"code": "123456", "password": "dev123", "refresh_token": login["refresh_token"]},
     )
     assert (res.status_code, res.json()["error"]["code"]) == (409, "TOTP_SETUP_EXPIRED")
     secret = client.post(f"{API}/auth/totp/setup", headers=h).json()["secret"]
     res = client.post(
         f"{API}/auth/totp/enable",
         headers=h,
-        json={"code": _wrong_code(secret), "refresh_token": login["refresh_token"]},
+        json={
+            "code": _wrong_code(secret),
+            "password": "dev123",
+            "refresh_token": login["refresh_token"],
+        },
     )
     assert (res.status_code, res.json()["error"]["code"]) == (400, "TOTP_INVALID")
     db.expire_all()
@@ -457,7 +465,11 @@ def test_enable_rejected_when_switched_off_after_setup(client, db, settings):
     res = client.post(
         f"{API}/auth/totp/enable",
         headers=h,
-        json={"code": pyotp.TOTP(secret).now(), "refresh_token": s["refresh_token"]},
+        json={
+            "code": pyotp.TOTP(secret).now(),
+            "password": "dev123",
+            "refresh_token": s["refresh_token"],
+        },
     )
     assert (res.status_code, res.json()["error"]["code"]) == (409, "TOTP_NOT_ALLOWED")
 
@@ -465,7 +477,10 @@ def test_enable_rejected_when_switched_off_after_setup(client, db, settings):
 def test_self_endpoints_require_login(client):
     assert client.get(f"{API}/auth/totp").status_code == 401
     assert client.post(f"{API}/auth/totp/setup").status_code == 401
-    enable = client.post(f"{API}/auth/totp/enable", json={"code": "123456", "refresh_token": "x"})
+    enable = client.post(
+        f"{API}/auth/totp/enable",
+        json={"code": "123456", "password": "dev123", "refresh_token": "x"},
+    )
     assert enable.status_code == 401
     assert client.post(f"{API}/auth/totp/disable", json={"password": "x"}).status_code == 401
 
@@ -537,3 +552,144 @@ def test_no_secret_or_code_in_audit(client, db, settings):
         default=str,
     )
     assert body["secret"] not in dump
+
+
+# ---------- K1/K2:开启需要密码,错误码钉死 ----------
+
+
+def _enable(client, h, refresh, code, password="dev123"):
+    return client.post(
+        f"{API}/auth/totp/enable",
+        headers=h,
+        json={"code": code, "password": password, "refresh_token": refresh},
+    )
+
+
+def _err(res):
+    return res.status_code, res.json()["error"]["code"]
+
+
+def _fail_key():
+    return f"ws:login_fail:{SCHOOL_ID}:teacher01"
+
+
+def _pending_session(client, db):
+    _allow(db)
+    s = _login(client).json()
+    h = _bearer(s["access_token"])
+    secret = client.post(f"{API}/auth/totp/setup", headers=h).json()["secret"]
+    return s, h, secret
+
+
+def test_enable_requires_password(client, db, settings, redis_client):
+    s, h, secret = _pending_session(client, db)
+    other = _login(client).json()
+    res = _enable(client, h, s["refresh_token"], pyotp.TOTP(secret).now(), password="wrong")
+    assert _err(res) == (400, "WRONG_PASSWORD")
+    db.expire_all()
+    assert db.get(User, UUID(TEACHER_USER_ID)).totp_enabled_at is None
+    r = client.post(f"{API}/auth/refresh", json={"refresh_token": other["refresh_token"]})
+    assert r.status_code == 200
+    assert int(redis_client.get(_fail_key())) == 1
+
+
+def test_enable_wrong_password_counts_failures(client, db, settings, redis_client):
+    s, h, secret = _pending_session(client, db)
+    code = pyotp.TOTP(secret).now()
+    for _ in range(settings.login_max_failures - 1):
+        res = _enable(client, h, s["refresh_token"], code, password="wrong")
+        assert _err(res) == (400, "WRONG_PASSWORD")
+    res = _enable(client, h, s["refresh_token"], code, password="wrong")
+    assert _err(res) == (400, "WRONG_PASSWORD")
+    assert int(redis_client.get(_fail_key())) == settings.login_max_failures
+    res = _enable(client, h, s["refresh_token"], code, password="wrong")
+    assert _err(res) == (429, "ACCOUNT_LOCKED") and "Retry-After" in res.headers
+    res = _enable(client, h, s["refresh_token"], code)
+    assert _err(res) == (429, "ACCOUNT_LOCKED") and "Retry-After" in res.headers
+    db.expire_all()
+    assert db.get(User, UUID(TEACHER_USER_ID)).totp_enabled_at is None
+
+
+def test_enable_right_password_wrong_code(client, db, settings, redis_client):
+    s, h, secret = _pending_session(client, db)
+    res = _enable(client, h, s["refresh_token"], _wrong_code(secret))
+    assert _err(res) == (400, "TOTP_INVALID")
+    db.expire_all()
+    assert db.get(User, UUID(TEACHER_USER_ID)).totp_enabled_at is None
+    assert redis_client.get(_fail_key()) is None  # 码错不计入密码失败次数
+
+
+def test_enable_locked_checks_neither_password_nor_code(client, db, settings, redis_client):
+    s, h, secret = _pending_session(client, db)
+    redis_client.set(_fail_key(), settings.login_max_failures, ex=60)
+    for pw, code in (("dev123", pyotp.TOTP(secret).now()), ("wrong", "000000")):
+        res = _enable(client, h, s["refresh_token"], code, password=pw)
+        assert _err(res) == (429, "ACCOUNT_LOCKED") and "Retry-After" in res.headers
+    # 被锁时没有再计数,待确认的 secret 也没被消耗
+    assert int(redis_client.get(_fail_key())) == settings.login_max_failures
+    assert redis_client.get(f"ws:totp:pending:{TEACHER_USER_ID}") == secret
+
+
+def test_enable_success_clears_failures(client, db, settings, redis_client):
+    s, h, secret = _pending_session(client, db)
+    _enable(client, h, s["refresh_token"], pyotp.TOTP(secret).now(), password="wrong")
+    assert redis_client.get(_fail_key()) is not None
+    res = _enable(client, h, s["refresh_token"], pyotp.TOTP(secret).now())
+    assert res.status_code == 200
+    assert redis_client.get(_fail_key()) is None
+
+
+@pytest.mark.parametrize("bad", ["", "12345", "1234567", "abcdef"])
+def test_password_cannot_replace_code(client, db, settings, bad):
+    s, h, secret = _pending_session(client, db)
+    res = _enable(client, h, s["refresh_token"], bad)
+    assert res.status_code == 400
+    assert res.json()["error"]["code"] in ("BAD_REQUEST", "TOTP_INVALID")
+    db.expire_all()
+    assert db.get(User, UUID(TEACHER_USER_ID)).totp_enabled_at is None
+
+
+def test_enable_missing_password_field_rejected(client, db, settings):
+    s, h, secret = _pending_session(client, db)
+    res = client.post(
+        f"{API}/auth/totp/enable",
+        headers=h,
+        json={"code": pyotp.TOTP(secret).now(), "refresh_token": s["refresh_token"]},
+    )
+    assert res.status_code == 400
+    db.expire_all()
+    assert db.get(User, UUID(TEACHER_USER_ID)).totp_enabled_at is None
+
+
+def test_enable_setup_expired_409(client, db, settings, redis_client):
+    s, h, secret = _pending_session(client, db)
+    redis_client.delete(f"ws:totp:pending:{TEACHER_USER_ID}")
+    res = _enable(client, h, s["refresh_token"], pyotp.TOTP(secret).now())
+    assert _err(res) == (409, "TOTP_SETUP_EXPIRED")
+
+
+def test_enable_not_allowed_409(client, db, settings):
+    s, h, secret = _pending_session(client, db)
+    _allow(db, False)
+    res = _enable(client, h, s["refresh_token"], pyotp.TOTP(secret).now())
+    assert _err(res) == (409, "TOTP_NOT_ALLOWED")
+
+
+def test_logged_in_errors_never_401(client, db, settings, redis_client):
+    """已登录接口的业务错误不得是 401,否则前端会刷新重发导致错误被计两次。"""
+    s, h, secret = _pending_session(client, db)
+    wrong_pw = _enable(client, h, s["refresh_token"], pyotp.TOTP(secret).now(), password="wrong")
+    wrong_code = _enable(client, h, s["refresh_token"], _wrong_code(secret))
+    assert (wrong_pw.status_code, wrong_code.status_code) == (400, 400)
+    dis = client.post(f"{API}/auth/totp/disable", headers=h, json={"password": "wrong"})
+    assert _err(dis) == (400, "WRONG_PASSWORD")
+    assert int(redis_client.get(_fail_key())) == 2  # 密码错各计一次,没有重复计数
+
+
+def test_enable_then_disable_lock_shared(client, db, settings, redis_client):
+    """enable 与 disable 共用同一个失败计数,disable 达上限同样 429。"""
+    s, h, secret = _pending_session(client, db)
+    for _ in range(settings.login_max_failures):
+        _enable(client, h, s["refresh_token"], pyotp.TOTP(secret).now(), password="wrong")
+    res = client.post(f"{API}/auth/totp/disable", headers=h, json={"password": "dev123"})
+    assert _err(res) == (429, "ACCOUNT_LOCKED") and "Retry-After" in res.headers
