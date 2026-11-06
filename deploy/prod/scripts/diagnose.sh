@@ -74,7 +74,7 @@ main() {
   capture df.txt df -h
   capture free.txt free -m
   capture uname.txt uname -a
-  for svc in postgres redis app scheduler web; do
+  for svc in postgres redis app scheduler stream-worker web; do
     log_info "收集 $svc 最近 24 小时日志……"
     capture "logs-$svc.txt" docker compose -p "${WS_COMPOSE_PROJECT:-workstation}" --project-directory "$DEPLOY_DIR" logs --since 24h --no-color "$svc"
   done

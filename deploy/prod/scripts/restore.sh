@@ -9,7 +9,7 @@
 # 恢复顺序与理由:
 #   1) 先把备份里的库恢复进一个临时库 ws_restore_tmp(此时 app 仍在运行,正式库完全没动);
 #      备份文件读不出来、版本不兼容等问题在这里暴露,系统原样可用。
-#   2) 停 app、scheduler;换库采用"先改名、最后再删":终止正式库上的连接 → 正式库改名 ws_restore_old →
+#   2) 停 app、scheduler、stream-worker;换库采用"先改名、最后再删":终止正式库上的连接 → 正式库改名 ws_restore_old →
 #      临时库改名为正式库名 → 两次改名都成功后才 DROP ws_restore_old。任何一步失败,按真实状态(查 pg_database)
 #      把旧库改回来;状态确认不了(查询失败、改回失败)时绝不删临时库、不重启服务,提示"状态不确定、备份完好、重跑命令"。
 #   3) .env 的取舍(与计划里"默认用备份的 .env"不同,有意为之):备份的 .env 只用来取"与数据绑定"的值:
@@ -313,7 +313,7 @@ print("KNOWN=" + ("1" if sys.argv[1] in {r.revision for r in s.walk_revisions()}
   # ---- 4. 停服务、换库(先改名、最后再删) ----
   log_info "停止应用与定时任务……"
   STOPPED=1
-  compose stop app scheduler 2>&1 | redact >/dev/null || die "停止服务失败"
+  compose stop app scheduler stream-worker 2>&1 | redact >/dev/null || die "停止服务失败"
   log_info "替换数据库……"
   SWAP=1
   pgsql "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = :'db' AND pid <> pg_backend_pid();" >"$WORK/swap.log" \

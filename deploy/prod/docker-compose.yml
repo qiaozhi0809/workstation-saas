@@ -41,6 +41,8 @@ services:
       TZ: ${TZ:-Asia/Shanghai}
     volumes:
       - ./data/logs:/var/log/workstation
+      # stream-worker 写、app 只读:播放接口从这里发 HLS 片段
+      - ws-hls:/run/ws-hls:ro
     # 只覆盖启动宽限期,其余(检查命令、间隔、重试次数)沿用镜像的 HEALTHCHECK:
     # app 启动时会自动做数据库迁移,数据量大时可能超过镜像里默认的 60 秒宽限期,
     # 过早判成 unhealthy 会让依赖它的 scheduler 起不来、安装 / 升级 / 恢复误报失败
@@ -71,6 +73,24 @@ services:
         condition: service_healthy
     networks: [ws-net]
 
+  # 摄像头转流:RTSP -> HLS。只和 Redis、数据库、ws-hls 卷打交道;视频不出校,不需要外网
+  stream-worker:
+    image: workstation-stream:${WS_VERSION}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      WS_LOG_DIR: /var/log/workstation
+      WS_HLS_ROOT: /run/ws-hls
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - ./data/logs:/var/log/workstation
+      - ws-hls:/run/ws-hls
+    # 等 app 健康(迁移已完成,cameras 表已存在)再起
+    depends_on:
+      app:
+        condition: service_healthy
+    networks: [ws-net]
+
   web:
     image: workstation-web:${WS_VERSION}
     restart: unless-stopped
@@ -93,6 +113,15 @@ services:
       retries: 30
     # 不依赖 app:app 异常时,备份/恢复仍要能经 web 容器取到 data/ 的 tar
     networks: [ws-net]
+
+volumes:
+  # 内存盘:片段写盘不磨损硬盘,容器重启即清空;uid 与应用镜像的 ws 用户一致
+  ws-hls:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "size=512m,uid=10001,gid=10001,mode=0755"
 
 networks:
   ws-net:

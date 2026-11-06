@@ -175,6 +175,7 @@ main() {
   fi
   docker image inspect "workstation-app:$new_version" >/dev/null 2>&1 || die "缺少镜像 workstation-app:$new_version"
   docker image inspect "workstation-web:$new_version" >/dev/null 2>&1 || die "缺少镜像 workstation-web:$new_version"
+  docker image inspect "workstation-stream:$new_version" >/dev/null 2>&1 || die "缺少镜像 workstation-stream:$new_version"
 
   # 4. 用新镜像对现有库做迁移预检;此时还没覆盖任何文件、没动任何服务
   # WS_VERSION 由 shell 环境传入(优先于 .env),只影响本次 run 用哪个镜像

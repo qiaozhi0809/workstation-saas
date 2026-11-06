@@ -74,7 +74,7 @@ fi
 pass "镜像已就绪"
 
 echo "== 2/6 检查镜像内容"
-for img in "workstation-app:$VERSION" "workstation-web:$VERSION"; do
+for img in "workstation-app:$VERSION" "workstation-web:$VERSION" "workstation-stream:$VERSION"; do
   found="$(docker run --rm --entrypoint sh "$img" -c \
     'find / -xdev \( -name node_modules -o -name .venv \) -prune -print 2>/dev/null' || true)"
   if [ -n "$found" ]; then
@@ -196,13 +196,13 @@ pass "/api/v1/no-such-route 返回 404 且不是前端首页"
 uid="$(compose exec -T app id -u | tr -d '\r\n')"
 [ "$uid" = "10001" ] || fail "app 容器 uid 应为 10001,实际为 $uid"
 pass "app 容器以 uid 10001 运行"
-for svc in postgres redis app; do
+for svc in postgres redis app stream-worker; do
   ports="$(docker inspect -f '{{json .NetworkSettings.Ports}}' "$(compose ps -q "$svc")")"
   if grep -q 'HostPort' <<<"$ports"; then
     fail "$svc 不应对宿主机发布端口,实际:$ports"
   fi
 done
-pass "postgres / redis / app 没有 HostPort"
+pass "postgres / redis / app / stream-worker 没有 HostPort"
 web_ports="$(docker inspect -f '{{json .NetworkSettings.Ports}}' "$(compose ps -q web)")"
 grep -q "\"80/tcp\":\[{[^]]*\"HostPort\":\"$HTTP_PORT\"" <<<"$web_ports" || fail "web 缺少 80 的 HostPort:$web_ports"
 grep -q "\"443/tcp\":\[{[^]]*\"HostPort\":\"$HTTPS_PORT\"" <<<"$web_ports" || fail "web 缺少 443 的 HostPort:$web_ports"
@@ -218,6 +218,18 @@ pass "网络子网为 172.30.0.0/24"
 sched_state="$(docker inspect -f '{{.State.Running}} {{.RestartCount}}' "$(compose ps -q scheduler)")"
 [ "$sched_state" = "true 0" ] || fail "scheduler 应在运行且重启次数为 0,实际:$sched_state"
 pass "scheduler 在运行且未重启"
+stream_state="$(docker inspect -f '{{.State.Running}} {{.RestartCount}} {{if .State.Health}}{{.State.Health.Status}}{{else}}nohealth{{end}}' "$(compose ps -q stream-worker)")"
+[ "$stream_state" = "true 0 healthy" ] || fail "stream-worker 应在运行、未重启且 healthy,实际:$stream_state"
+pass "stream-worker 在运行、未重启且 healthy"
+# ws-hls(tmpfs 卷)在 stream-worker 与 app 之间共享:worker 写的文件 app 读得到,app 侧是只读挂载
+compose exec -T stream-worker sh -c 'echo shared-ok >/run/ws-hls/.smoke' || fail "stream-worker 写不进 /run/ws-hls"
+seen="$(compose exec -T app cat /run/ws-hls/.smoke | tr -d '\r\n')" || fail "app 读不到 stream-worker 写进 ws-hls 的文件"
+[ "$seen" = "shared-ok" ] || fail "app 读到的内容不对:$seen"
+if compose exec -T app sh -c 'echo x >/run/ws-hls/.smoke-app' 2>/dev/null; then
+  fail "app 对 /run/ws-hls 应是只读挂载"
+fi
+compose exec -T stream-worker rm -f /run/ws-hls/.smoke || fail "清理 /run/ws-hls/.smoke 失败"
+pass "ws-hls 卷在 stream-worker 与 app 之间共享,app 侧只读"
 hc_start="$(docker inspect -f '{{.Config.Healthcheck.StartPeriod}}' "$(compose ps -q app)")"
 [ "$hc_start" = "5m0s" ] || fail "app 的健康检查启动宽限期应为 5m0s(300s,compose 覆盖),实际:$hc_start"
 pass "app 健康检查启动宽限期为 300s(只覆盖 start_period,其余沿用镜像)"
