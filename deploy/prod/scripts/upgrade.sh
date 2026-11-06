@@ -254,7 +254,8 @@ main() {
   # 上次升级中断的处置优先于版本比较:此时 VERSION 文件已是中断那次的新版本,拿它比较会给出误导的"降级"提示
   check_interrupted "$new_version"
   if [ -n "$RESUME_OLD" ]; then OLD_VERSION="$RESUME_OLD"; fi
-  # 大版本不同一律拒绝,唯一例外是 0.x → 1.x:1.0.0 是本系统的首个正式版,0.7.x 试用版升上来是计划内路径(README 第 9 节)
+  # 大版本不同一律拒绝,唯一例外、也仅放行这一次是 0.x → 1.x:1.0.0 是本系统的首个正式版,0.7.x 试用版升上来是计划内路径
+  # (README 第 9 节「从 0.7.2 升级到 1.0.0」)。以后 1.x → 2.x 等不得照此放行,需随新版本另给迁移说明。
   if [ "$(major_of "$new_version")" != "$(major_of "$OLD_VERSION")" ] \
     && ! { [ "$(major_of "$OLD_VERSION")" = "0" ] && [ "$(major_of "$new_version")" = "1" ]; }; then
     die "当前版本 $OLD_VERSION,离线包版本 $new_version:大版本升级需要专门的迁移说明,本脚本拒绝执行"

@@ -387,15 +387,15 @@ jobs:
           path: ${{ runner.temp }}/service-logs/
           if-no-files-found: ignore
 
-  # 升级路径(段 O,L117 / L179 / L190):两个较慢的部署测试,独立于 deploy job,只在 main / tag 上跑
+  # 升级路径(段 O,L117 / L179 / L190):两个较慢的部署测试,独立于 deploy job,在 main / tag / PR 上跑
   #   upgrade_rollback.sh      升级失败后 rollback.sh 回退、kill -9 中断后的提示与回退
   #   upgrade_from_previous.sh 从上一个发布 tag 构建旧离线包装一套,再用本提交的包升级(真实跨版本迁移)
-  # 版本号用 1.0.0-ci:旧包是 0.7.2-ci,upgrade.sh 只放行 0.x → 1.x 这一种大版本跳跃;tag 不存在时跨版本测试以 ::warning 跳过。
-  # 验证本 PR 时临时加了 head_ref 条件,合并前去掉。
+  # 版本号用 1.0.0-ci:旧包是 0.7.2-ci,upgrade.sh 只放行 0.x → 1.x 这一种大版本跳跃。
+  # tag 不存在时跨版本测试打 ::warning 并以 0 退出,job 仍为绿;打完 tag 后重跑即跑全。
   deploy-upgrade-path:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || github.head_ref == 'm5d-seg-o'
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'pull_request'
     defaults:
       run:
         shell: bash
@@ -406,6 +406,8 @@ jobs:
       WS_HTTPS_PORT: 18443
       WS_PREVIOUS_TAG: v0.7.2-m5c-cameras
       WS_PREVIOUS_VERSION: 0.7.2-ci
+      # 升级后 alembic_version 必须停在这一版(A2 的 0013);以后 main 上新增迁移时同步改
+      WS_EXPECTED_MIGRATION: "0013"
     steps:
       # 需要 tag 与完整历史:旧包从 tag 的 worktree 构建
       - uses: actions/checkout@v7
