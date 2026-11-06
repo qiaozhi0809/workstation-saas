@@ -482,11 +482,56 @@ render_systemd_unit() {
   printf '%s\n' "${content//@TZ@/$tz}"
 }
 
-# backup_timezone:定时备份用的时区 = .env 的 TZ(容器也用它),不合法或为空时 Asia/Shanghai
+# backup_timezone:定时备份用的时区 = .env 的 TZ(容器也用它),不合法或为空时 Asia/Shanghai。
+# 形状合法还不够:systemd 的 OnCalendar 只认 tzdata 里有的名字,写错(如 Asia/Shangai)定时器会整个加载失败;
+# 本机有 tzdata 时顺带核对,没有该文件就退回默认值并告警。
 backup_timezone() {
   local tz
   tz="$(read_env TZ)"
-  if str_grep "$tz" -Eq '^[A-Za-z][A-Za-z0-9_+/-]*$'; then printf '%s\n' "$tz"; else printf 'Asia/Shanghai\n'; fi
+  if ! str_grep "$tz" -Eq '^[A-Za-z][A-Za-z0-9_+/-]*$'; then printf 'Asia/Shanghai\n'; return 0; fi
+  if [ -d /usr/share/zoneinfo ] && [ ! -f "/usr/share/zoneinfo/$tz" ]; then
+    log_warn ".env 里的 TZ=$tz 在本机 tzdata(/usr/share/zoneinfo)里不存在,定时备份按 Asia/Shanghai 计;请核对 TZ 的拼写"
+    printf 'Asia/Shanghai\n'
+    return 0
+  fi
+  printf '%s\n' "$tz"
+}
+
+# ---- systemd 定时备份单元(install.sh 首装写入,upgrade.sh 成功后重写,L184 / I-1)----
+SYSTEMD_UNIT_DIR="/etc/systemd/system"
+# systemd_available:本机由 systemd 管理且有 systemctl
+systemd_available() { command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; }
+# backup_timer_installed_here:系统里已有 workstation-backup 定时器单元,且它指向的就是本部署目录
+#(同一台机器上另一个部署的单元不算;非 root 安装从来不写单元,所以普通用户执行时通常为假)
+backup_timer_installed_here() {
+  local svc="$SYSTEMD_UNIT_DIR/workstation-backup.service"
+  [ -f "$svc" ] && [ -f "$SYSTEMD_UNIT_DIR/workstation-backup.timer" ] || return 1
+  grep -qF -- "$DEPLOY_DIR/scripts/backup.sh" "$svc" 2>/dev/null
+}
+# write_backup_timer_units:把 systemd/ 下两份模板按本部署目录与 .env 的 TZ 渲染后写入系统目录,daemon-reload 并启用。
+# 任何一步失败返回非 0(调用者决定降级还是只告警)。需要 root。
+write_backup_timer_units() {
+  local unit tz
+  tz="$(backup_timezone)"
+  for unit in workstation-backup.service workstation-backup.timer; do
+    [ -f "$DEPLOY_DIR/systemd/$unit" ] || { log_warn "没有找到 systemd 单元文件 systemd/$unit"; return 1; }
+  done
+  for unit in workstation-backup.service workstation-backup.timer; do
+    render_systemd_unit "$DEPLOY_DIR/systemd/$unit" "$DEPLOY_DIR" "$tz" >"$SYSTEMD_UNIT_DIR/$unit" || return 1
+  done
+  systemctl daemon-reload || return 1
+  systemctl enable --now workstation-backup.timer || return 1
+}
+# refresh_backup_timer_if_installed:升级成功后调用。root + systemd + 本部署的单元已存在 → 用新模板与当前 TZ 重写
+#(1.0.0 之前写入的单元没有时区,02:30 按服务器的 UTC 计;单元模板本身也可能随版本变)。其他情况什么都不做。
+refresh_backup_timer_if_installed() {
+  [ "$(id -u)" -eq 0 ] && systemd_available && backup_timer_installed_here || return 0
+  if write_backup_timer_units; then
+    log_info "已按新版本的模板与 .env 的 TZ($(backup_timezone))重写 systemd 定时备份单元 workstation-backup.timer"
+  else
+    log_warn "systemd 定时备份单元重写失败(上面是原因)。请稍后执行 sudo ./scripts/install.sh 重新写入,否则定时器仍按旧单元运行"
+  fi
+  return 0
 }
 
 # 到另一个文件的原子替换:先写同目录临时文件再 mv,这样正在运行的脚本(自己被升级覆盖时)仍读旧 inode

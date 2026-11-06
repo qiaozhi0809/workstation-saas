@@ -96,6 +96,58 @@ docker image inspect "workstation-app:$VERSION" >/dev/null 2>&1 || fail "升级�
 [ -n "$(find "$DEPLOY/backups" -maxdepth 1 -name "pre-upgrade-$VERSION-*" -type d)" ] || fail "没有生成升级前快照 backups/pre-upgrade-$VERSION-*"
 [ ! -e "$DEPLOY/backups/.ws-upgrade-state" ] || fail "升级成功后状态文件应被清除"
 pass "输出含旧镜像清理命令且旧镜像仍在;升级前快照已保存,状态文件已清除"
+
+echo "== 3b I-1 / L184:root 安装的 systemd 定时器在升级成功后被按新模板与 TZ 重写(需要 systemd 与免密 sudo,没有则跳过)"
+# 部署测试不以 root 运行,上面那次升级走的是"非 root 不碰 systemd"分支(/etc/systemd/system 里也不该出现任何东西)。
+# 这里分两步证明:(1) upgrade.sh 确实在启动确认(start_and_verify)之后调用 refresh_backup_timer_if_installed;
+# (2) 用 sudo 以 root 身份、对同一个部署目录执行该函数:预先放一份"1.0.0 之前写入"的单元(指向本部署目录、OnCalendar 不带时区),
+#     执行后单元应被重写为带时区的 02:30 并处于 enabled;指向别的部署目录的单元不被碰。
+awk '/start_and_verify "\$HEALTH_TIMEOUT"/ { seen = 1 } seen && /^ *refresh_backup_timer_if_installed/ { found = 1 } END { exit !found }' "$DEPLOY/scripts/upgrade.sh" \
+  || fail "upgrade.sh 没有在 start_and_verify 之后调用 refresh_backup_timer_if_installed"
+UNIT_DIR=/etc/systemd/system
+# 本机已有真实安装的单元时不碰它(开发机上跑测试的情形),只做上面的静态检查
+if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ] && sudo -n true 2>/dev/null \
+  && [ ! -e "$UNIT_DIR/workstation-backup.timer" ] && [ ! -e "$UNIT_DIR/workstation-backup.service" ]; then
+  expect_tz="$(env_value TZ 2>/dev/null || true)"; [ -n "$expect_tz" ] || expect_tz="Asia/Shanghai"
+  write_old_units() {  # $1=单元里指向的部署目录
+    printf '[Unit]\nDescription=old\n[Service]\nType=oneshot\nWorkingDirectory=%s\nExecStart="%s/scripts/backup.sh"\n' "$1" "$1" \
+      | sudo -n tee "$UNIT_DIR/workstation-backup.service" >/dev/null
+    printf '[Unit]\nDescription=old timer\n[Timer]\nOnCalendar=*-*-* 02:30:00\nPersistent=true\nUnit=workstation-backup.service\n[Install]\nWantedBy=timers.target\n' \
+      | sudo -n tee "$UNIT_DIR/workstation-backup.timer" >/dev/null
+  }
+  remove_units() {
+    sudo -n systemctl disable --now workstation-backup.timer >/dev/null 2>&1 || true
+    sudo -n rm -f "$UNIT_DIR/workstation-backup.service" "$UNIT_DIR/workstation-backup.timer"
+    sudo -n systemctl daemon-reload >/dev/null 2>&1 || true
+  }
+  run_refresh() {  # 以 root 在部署目录里 source lib.sh 并调用升级成功后那一步;输出到 $1(日志文件是测试用户的,重定向就该在 sudo 外面)
+    # shellcheck disable=SC2024
+    sudo -n env WS_COMPOSE_PROJECT="$PROJECT" bash -c 'cd "$1" && . scripts/lib.sh && refresh_backup_timer_if_installed' _ "$DEPLOY" >"$1" 2>&1
+  }
+  err=""
+  # (a) 指向别的部署目录的单元:不动
+  write_old_units "/opt/some-other-deploy"
+  other_sha="$(sudo -n cat "$UNIT_DIR/workstation-backup.timer" | { if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi; })"
+  run_refresh "$TMP/timer-refresh-other.log" || err="别的部署的单元存在时函数应静默返回 0"
+  [ "$(sudo -n cat "$UNIT_DIR/workstation-backup.timer" | { if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi; })" = "$other_sha" ] \
+    || err="${err:-指向别的部署目录的单元不应被重写}"
+  # (b) 指向本部署目录、不带时区的旧单元:重写为带时区并启用
+  if [ -z "$err" ]; then
+    write_old_units "$DEPLOY"
+    rc=0; run_refresh "$TMP/timer-refresh.log" || rc=$?
+    [ "$rc" -eq 0 ] || err="refresh_backup_timer_if_installed 退出码 $rc"
+    [ -n "$err" ] || grep -q '重写 systemd 定时备份单元' "$TMP/timer-refresh.log" || err="输出里没有「重写 systemd 定时备份单元」"
+    [ -n "$err" ] || sudo -n grep -q "^OnCalendar=\*-\*-\* 02:30:00 $expect_tz\$" "$UNIT_DIR/workstation-backup.timer" \
+      || err="重写后的 timer 应含 OnCalendar=*-*-* 02:30:00 $expect_tz,实际:$(sudo -n grep OnCalendar "$UNIT_DIR/workstation-backup.timer" || true)"
+    [ -n "$err" ] || sudo -n grep -q "^WorkingDirectory=$DEPLOY\$" "$UNIT_DIR/workstation-backup.service" || err="重写后的 service 应指向本部署目录"
+    [ -n "$err" ] || [ "$(systemctl is-enabled workstation-backup.timer 2>/dev/null || true)" = "enabled" ] || err="重写后 workstation-backup.timer 应为 enabled"
+  fi
+  remove_units
+  [ -z "$err" ] || { cat "$TMP/timer-refresh.log" "$TMP/timer-refresh-other.log" 2>/dev/null | tail -n 10 >&2; fail "$err"; }
+  pass "root 下升级成功后的定时器重写:本部署的旧单元被改为 OnCalendar 带 $expect_tz 并 enabled;别的部署的单元未动"
+else
+  echo "  跳过:本机没有 systemd / 免密 sudo,或已有真实的 workstation-backup 单元;只验证了 upgrade.sh 的调用位置"
+fi
 dump_logs "$TMP/compose.log"
 assert_no_secrets "升级输出" "$TMP/upgrade.log"
 assert_no_secrets "容器日志" "$TMP/compose.log"

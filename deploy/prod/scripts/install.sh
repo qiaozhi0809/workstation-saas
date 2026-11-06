@@ -425,26 +425,13 @@ init_school() {
   esac
 }
 
-# 写单元文件并启用定时器;任何一步失败返回非 0(调用者降级为 crontab 提示)。
-# 单元模板里的 @DEPLOY_DIR@ 替换为本部署目录,@TZ@ 替换为 .env 的 TZ(L184:定时器按学校时区,不按服务器的 UTC)
-enable_backup_timer() {
-  local unit tz
-  tz="$(backup_timezone)"
-  for unit in workstation-backup.service workstation-backup.timer; do
-    [ -f "$DEPLOY_DIR/systemd/$unit" ] || { log_warn "没有找到 systemd 单元文件 systemd/$unit"; return 1; }
-  done
-  for unit in workstation-backup.service workstation-backup.timer; do
-    render_systemd_unit "$DEPLOY_DIR/systemd/$unit" "$DEPLOY_DIR" "$tz" >"/etc/systemd/system/$unit" || return 1
-  done
-  systemctl daemon-reload || return 1
-  systemctl enable --now workstation-backup.timer || return 1
-}
-
+# 写单元文件并启用定时器(lib.sh 的 write_backup_timer_units:模板里的 @DEPLOY_DIR@ 换成本部署目录,@TZ@ 换成 .env 的 TZ,
+# L184:定时器按学校时区,不按服务器的 UTC);失败降级为 crontab 提示。升级成功后由 upgrade.sh 用同一函数重写(I-1)。
 install_backup_timer() {
   local tz
   tz="$(backup_timezone)"
-  if [ "$(id -u)" -eq 0 ] && command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
-    if enable_backup_timer; then
+  if [ "$(id -u)" -eq 0 ] && systemd_available; then
+    if write_backup_timer_units; then
       log_info "已启用每日 02:30($tz)自动备份(systemd 定时器 workstation-backup.timer)"
       return 0
     fi
@@ -518,6 +505,12 @@ main() {
   check_docker
 
   if [ -f "$ENV_FILE" ]; then
+    # I-2:上次升级在覆盖文件之后中断(断电 / kill -9)时状态文件还在。本脚本若照常"确保服务已启动",会用新 compose 与新
+    # WS_VERSION 把新版起来、应用自动迁移数据库,而状态文件仍留着——下次升级会让人去 rollback.sh,届时数据库已被迁移、
+    # 只剩丢数据的恢复一条路。所以这里停下,把处置交给 upgrade.sh / rollback.sh(README 第 9 节「升级中断」)。
+    if [ -f "$DEPLOY_DIR/backups/.ws-upgrade-state" ]; then
+      die "上次升级($(read_env OLD_VERSION "$DEPLOY_DIR/backups/.ws-upgrade-state") → $(read_env NEW_VERSION "$DEPLOY_DIR/backups/.ws-upgrade-state"))在覆盖程序文件之后中断,还没有确认完成;本脚本不会在这种状态下启动服务。请先二选一:./scripts/rollback.sh 回到旧版本,或重新运行同一个离线包的 ./scripts/upgrade.sh。如果已确认新版本在正常运行(docker compose ps 全部 Up、能登录),可删除 backups/.ws-upgrade-state 后重试"
+    fi
     # R9:.env 存在即视为已安装,绝不重新生成密钥
     log_info "检测到 .env:系统已安装,不会重新生成密钥,只确保服务已启动"
     HTTP_PORT="$(read_env WS_HTTP_PORT)"; HTTPS_PORT="$(read_env WS_HTTPS_PORT)"

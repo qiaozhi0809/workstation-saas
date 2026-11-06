@@ -351,6 +351,9 @@ main() {
   OVERWRITE_STARTED=0
   rm -f "$STATE_FILE"
   log_info "升级完成:当前版本 $new_version。升级前备份:$BACKUP_FILE;升级前快照:$SNAPSHOT"
+  # I-1:systemd 定时备份单元是 install.sh 渲染后写进 /etc/systemd/system 的,升级覆盖的只是 systemd/ 里的模板;
+  # root + systemd + 本部署的单元已存在时按新模板与 .env 的 TZ 重写(1.0.0 之前写入的单元没有时区)。非 root / crontab 用户不受影响。
+  refresh_backup_timer_if_installed
   # L199:旧镜像不自动删(回退要用),只给出整理命令
   if [ "$OLD_VERSION" != "$new_version" ]; then
     printf '  旧版本 %s 的镜像已保留(回退要用)。确认新版本运行稳定后,可执行下面这条释放磁盘(约 1 GB):\n' "$OLD_VERSION"

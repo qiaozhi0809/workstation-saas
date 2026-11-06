@@ -217,7 +217,7 @@ WS_INSTALL_TLS=1 \
 
 ### 每日自动备份
 
-- **root 安装**且系统有 systemd:`install.sh` 自动写入 `/etc/systemd/system/workstation-backup.service` 与 `.timer` 并启用,每天 **02:30(按 `.env` 里 `TZ` 的时区,默认 Asia/Shanghai)** 备份——服务器系统时区常是 UTC,定时器里写明时区才不会变成上午上课时备份;关机错过的那次开机后补跑(`Persistent=true`)。查看:`systemctl list-timers workstation-backup.timer`(`NEXT` 一列应是凌晨 02:30 本地时间);手动触发:`sudo systemctl start workstation-backup.service`;日志:`journalctl -u workstation-backup.service`。
+- **root 安装**且系统有 systemd:`install.sh` 自动写入 `/etc/systemd/system/workstation-backup.service` 与 `.timer` 并启用,每天 **02:30(按 `.env` 里 `TZ` 的时区,默认 Asia/Shanghai)** 备份——服务器系统时区常是 UTC,定时器里写明时区才不会变成上午上课时备份;关机错过的那次开机后补跑(`Persistent=true`)。查看:`systemctl list-timers workstation-backup.timer`(`NEXT` 一列应是凌晨 02:30 本地时间);手动触发:`sudo systemctl start workstation-backup.service`;日志:`journalctl -u workstation-backup.service`。单元文件是安装时按当时的 `TZ` 渲染写入的;1.0.0 的 `upgrade.sh` 升级成功后会按新模板与 `.env` 里当前的 `TZ` 自动重写它(屏幕上有"已……重写 systemd 定时备份单元"一行;0.7.2 写入的单元没有时区,按第 9 节的做法用 1.0.0 的脚本升级时同样会被重写);平时改了 `.env` 的 `TZ`,重跑一次 `sudo ./scripts/install.sh` 即可重写。
 - **非 root 安装**:`install.sh` 会打印 crontab 行,用 `crontab -e` 添加(路径换成你的部署目录)。日志交给 `logger`,由系统的 syslog / journal 轮转,不会无限增长;`CRON_TZ` 让 02:30 按学校时区计(服务器系统时区就是 Asia/Shanghai 时可省略):
 
   ```
@@ -320,12 +320,13 @@ tar -xOzf backups/ws-backup-<时间>-v<版本>.tar.gz env > .env && chmod 600 .e
 
 ### 升级中断(断电、强制结束)后怎么办(1.0.0 起)
 
-升级在覆盖文件之后被断电、`kill -9` 打断时,脚本来不及打印任何提示,但 `backups/.ws-upgrade-state` 会留下来。之后不管运行 `upgrade.sh` 还是 `rollback.sh`,都会先说明"上次升级(旧版 → 新版,开始时间)没有确认成功",然后二选一:
+升级在覆盖文件之后被断电、`kill -9` 打断时,脚本来不及打印任何提示,但 `backups/.ws-upgrade-state` 会留下来。之后不管运行 `upgrade.sh`、`rollback.sh` 还是 `install.sh`,都会先说明"上次升级(旧版 → 新版,开始时间)没有确认成功"(`install.sh` 在这种状态下拒绝启动服务,避免悄悄把新版起来),然后三选一:
 
 - `./scripts/rollback.sh`(不带参数)回到旧版本;或
-- 重新运行**同一个**离线包的 `./scripts/upgrade.sh`,脚本按重跑处理(回退时仍以中断那次的快照为准),完成后状态文件清除。
+- 重新运行**同一个**离线包的 `./scripts/upgrade.sh`,脚本按重跑处理(回退时仍以中断那次的快照、升级前的那份备份为准;重跑时再做的备份只作记录),完成后状态文件清除;或
+- 服务器重启后新版本其实已经在正常运行(`docker compose ps` 全部 `Up`、能登录、功能正常)时,直接删除 `backups/.ws-upgrade-state` 即可,不需要回退也不需要重跑。
 
-换一个版本不同的离线包升级会被拒绝,直到按上面两种办法之一处理完。中断留下的解包临时目录(`.ws-upgrade.*`)由下一次运行的脚本自动清理。
+换一个版本不同的离线包升级会被拒绝,直到按上面办法之一处理完。中断留下的解包临时目录(`.ws-upgrade.*`)由下一次运行的脚本自动清理。
 
 ### 升级后的磁盘整理
 
@@ -346,7 +347,7 @@ tar -xzf <新包>/workstation-deploy-1.0.0.tar.gz -C . --strip-components=1 work
 ./scripts/upgrade.sh <新包>/workstation-deploy-1.0.0.tar.gz
 ```
 
-之后就是 1.0.0 的脚本在执行:会保存快照、写状态文件,失败与中断的处置按上面几小节来(回退用 `./scripts/rollback.sh`,它会把 0.7.2 的 `docker-compose.yml` 与 `VERSION` 复制回来并起 0.7.2 的镜像;`scripts/` 保持 1.0.0 的,它们同样能管理 0.7.2 的部署,也能恢复 0.7.2 的备份)。`.env` 会多出 `WS_SUBNET`(取自当前网络的子网 `172.30.0.0/24`)。
+之后就是 1.0.0 的脚本在执行:会保存快照、写状态文件,失败与中断的处置按上面几小节来(回退用 `./scripts/rollback.sh`,它会把 0.7.2 的 `docker-compose.yml` 与 `VERSION` 复制回来并起 0.7.2 的镜像;`scripts/` 保持 1.0.0 的,它们同样能管理 0.7.2 的部署,也能恢复 0.7.2 的备份)。`.env` 会多出 `WS_SUBNET`(取自当前网络的子网 `172.30.0.0/24`)。root 安装且用 systemd 定时备份的,升级成功后定时器单元会被自动重写成带时区的 02:30(第 7 节);用 crontab 的请自己照第 7 节加上 `CRON_TZ` 一行。
 
 如果没有做这一步、直接用 0.7.2 的脚本升级,它会报"大版本升级需要专门的迁移说明"而停下,系统仍在 0.7.2,没有任何改动。
 

@@ -210,6 +210,26 @@ rm -rf "$DEPLOY/backups/.lock"
 [ "$(sha256_of "$DEPLOY/.env")" = "$env_sha" ] || fail "被锁拒绝时不应改动 .env"
 pass "持锁时 install.sh 被拒绝(提示「正在进行」),锁与 .env 未动"
 
+echo "== 4e I-2:上次升级中断的状态文件在时 install.sh 拒绝启动服务(否则会用新版 compose 起新版并迁移数据库)"
+app_cid_before="$(dc ps -q app)"
+# 模拟 kill -9 留下的现场:状态文件 + 被遗弃的锁(upgrade.sh 的 EXIT trap 没有执行)
+(umask 077; printf 'OLD_VERSION=%s\nNEW_VERSION=%s-next\nSNAPSHOT=%s/backups/pre-upgrade-%s-19700101-000000\nBACKUP=\nSTARTED_AT=1970-01-01T00:00:00Z\n' \
+  "$VERSION" "$VERSION" "$DEPLOY" "$VERSION" >"$DEPLOY/backups/.ws-upgrade-state")
+true & dead_pid=$!; wait "$dead_pid" 2>/dev/null || true   # 一个已经退出的 pid
+mkdir "$DEPLOY/backups/.lock"; printf '%s\n' "$dead_pid" >"$DEPLOY/backups/.lock/pid"
+rc=0; run_install "$TMP/install-interrupted.log" || rc=$?
+[ "$rc" -ne 0 ] || fail "状态文件在时 install.sh 应拒绝"
+grep -q '上次升级' "$TMP/install-interrupted.log" || { tail -n 5 "$TMP/install-interrupted.log" >&2; fail "拒绝提示里没有「上次升级」"; }
+grep -q 'rollback.sh' "$TMP/install-interrupted.log" && grep -q 'upgrade.sh' "$TMP/install-interrupted.log" || fail "拒绝提示应同时给出 rollback.sh 与重跑 upgrade.sh 两条出路"
+grep -q '\.ws-upgrade-state' "$TMP/install-interrupted.log" || fail "拒绝提示应说明确认新版正常后可删除 backups/.ws-upgrade-state"
+[ -f "$DEPLOY/backups/.ws-upgrade-state" ] || fail "install.sh 不应删除状态文件"
+[ ! -d "$DEPLOY/backups/.lock" ] || fail "install.sh 接管的废弃锁应在退出时释放"
+[ "$(dc ps -q app)" = "$app_cid_before" ] || fail "被拒绝的 install.sh 不应重建 app 容器"
+[ "$(sha256_of "$DEPLOY/.env")" = "$env_sha" ] || fail "被拒绝时不应改动 .env"
+assert_no_secrets "状态文件在时的安装输出" "$TMP/install-interrupted.log"
+rm -f "$DEPLOY/backups/.ws-upgrade-state"
+pass "状态文件在时 install.sh 拒绝(提示 rollback.sh / 重跑 upgrade.sh / 确认后删状态文件),容器与 .env 未动,锁已释放"
+
 echo "== 5/6 故意配错 WS_MASTER_KEY:安装输出不得泄露密钥"
 bad_key="not-a-valid-key-$(openssl rand -hex 16)"
 awk -F= -v k="$bad_key" '$1=="WS_MASTER_KEY" {print "WS_MASTER_KEY=" k; next} {print}' "$TMP/env.good" >"$DEPLOY/.env"
