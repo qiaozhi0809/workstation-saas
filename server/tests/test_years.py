@@ -16,6 +16,7 @@ from tests.factories import make_class, make_student, make_teacher_account
 from tests.helpers import auth
 from tests.seed_ids import (
     CLASS_ID,
+    GRADE_ID,
     SCHOOL_ID,
     STUDENT_IDS,
     SUBJECT_USER_ID,
@@ -131,6 +132,14 @@ def test_suggest_for_seed(db):
     assert c.from_name == "三年二班" and c.teacher_name == "张老师"
     assert plan.students == [] and plan.new_classes == []
     assert plan.grade_heads == []  # 无组长:空数组(显式),不是 None
+
+
+def test_suggest_classes_sorted_by_class_sort_key(db):
+    """升级向导的班级表按班名数值排(三年二班 < 三年三班 < 三年十班),不是码点序(L40)。"""
+    make_class(db, "三年十班", grade_id=UUID(GRADE_ID), year_id=UUID(YEAR_ID))
+    make_class(db, "三年三班", grade_id=UUID(GRADE_ID), year_id=UUID(YEAR_ID))
+    plan = _plan(db)
+    assert [c.from_name for c in plan.classes] == ["三年二班", "三年三班", "三年十班"]
 
 
 def test_plan_model_rules():
@@ -1444,6 +1453,39 @@ def test_rollback_blocked_by_board_seat_role_transfer(db, kind):
             text("UPDATE enrollments SET status = 'transferred' WHERE id = :e"), {"e": new_enr[9]}
         )
     _rollback_blocked(db, **{kind: 1})
+
+
+def test_rollback_blocked_by_enrollment_moved_to_another_new_class(db):
+    """L51:升级记录里的新注册被改到另一个新班(仍是 active、仍在记录里)也算新学年的改动。"""
+    up = apply(db, SCHOOL, _seed_plan(db, repeat=STUDENT_IDS[8]), now=datetime.now(UTC))
+    classes = {c.name: c.id for c in _active_classes(db)}
+    assert set(classes) == {"四年二班", "三年一班"}
+    moved = next(
+        UUID(k)
+        for k, v in up.summary["new_enrollment_classes"].items()
+        if v == str(classes["四年二班"])
+    )
+    db.execute(
+        text("UPDATE enrollments SET class_id = :c WHERE id = :e"),
+        {"c": classes["三年一班"], "e": moved},
+    )
+    _rollback_blocked(db, class_changes=1)
+
+
+def test_rollback_skips_class_changes_for_old_upgrade_records(db):
+    up = apply(db, SCHOOL, _seed_plan(db, repeat=STUDENT_IDS[8]), now=datetime.now(UTC))
+    summary = dict(up.summary)
+    summary.pop("new_enrollment_classes")
+    up.summary = summary
+    db.flush()
+    classes = {c.name: c.id for c in _active_classes(db)}
+    new_enr = [UUID(x) for x in up.summary["new_enrollment_ids"]]
+    db.execute(
+        text("UPDATE enrollments SET class_id = :c WHERE id = :e AND class_id <> :c"),
+        {"c": classes["三年一班"], "e": new_enr[0]},
+    )
+    rollback(db, SCHOOL, now=NOW)  # 旧升级记录没有这个键:跳过 class_changes,不拦
+    assert _active_year(db).name == "2026-2027"
 
 
 def test_rollback_class_role_cleared_counts_as_change(db):

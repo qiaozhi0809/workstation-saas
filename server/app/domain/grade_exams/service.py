@@ -3,12 +3,12 @@ from datetime import datetime
 from uuid import UUID
 
 from fastapi import Request
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.orm import Session
 
 from app.audit.service import record
+from app.domain.classes.sort import class_sort_key
 from app.domain.exams.schemas import SubjectFull
-from app.domain.exams.service import subject_full_below_scores
 from app.domain.exams.subjects import catalog_subjects, grade_stage, merge_subjects
 from app.domain.grade_exams.schemas import (
     GradeExamClass,
@@ -61,20 +61,47 @@ def get_grade_exam(
     return ge
 
 
-def _grade_classes(db: Session, ge: GradeExam) -> list[SchoolClass]:
-    """Active classes of the grade in the grade exam's year, by name."""
-    return list(
-        db.scalars(
-            select(SchoolClass)
-            .where(
-                SchoolClass.school_id == ge.school_id,
-                SchoolClass.academic_year_id == ge.academic_year_id,
-                SchoolClass.grade_id == ge.grade_id,
-                SchoolClass.active.is_(True),
-            )
-            .order_by(SchoolClass.name, SchoolClass.id)
+def _class_order(name: str, class_id: UUID) -> tuple:
+    """班名按数值排(三年二班 < 三年三班 < 三年十班,L40),同名再按 id。"""
+    return (class_sort_key(name), str(class_id))
+
+
+def _grade_classes(
+    db: Session, school_id: UUID, year_id: UUID, grade_id: UUID
+) -> list[SchoolClass]:
+    """Active classes of the grade in that year, by name."""
+    classes = db.scalars(
+        select(SchoolClass).where(
+            SchoolClass.school_id == school_id,
+            SchoolClass.academic_year_id == year_id,
+            SchoolClass.grade_id == grade_id,
+            SchoolClass.active.is_(True),
+        )
+    ).all()
+    return sorted(classes, key=lambda c: _class_order(c.name, c.id))
+
+
+def _lock_classes(db: Session, classes: Sequence[SchoolClass]) -> None:
+    """先按 id 升序锁住联考涉及的班级行(与学年升级、课表导入同序,防死锁),再碰学年行(L56):
+    create / sync / update 都是"先这里、后 _ensure_year_live";名册 / 任职写入也是"先班级、
+    后学年(外键 KEY SHARE)",与回滚"先班级、后学年 FOR UPDATE"同序。"""
+    if classes:
+        db.execute(
+            select(SchoolClass.id)
+            .where(SchoolClass.id.in_([c.id for c in classes]))
+            .order_by(SchoolClass.id)
+            .with_for_update()
         ).all()
-    )
+
+
+def _ensure_year_live(db: Session, year_id: UUID) -> None:
+    """对学年行取 KEY SHARE(与回滚持有的 FOR UPDATE 互斥):回滚进行中就等它结束;等到时学年
+    已被回滚删掉或已被升级停用 → 409,而不是写进一个马上被级联删掉 / 已成往年的学年(L56)。"""
+    row = db.execute(
+        text("SELECT is_active FROM academic_years WHERE id = :y FOR KEY SHARE"), {"y": year_id}
+    ).first()
+    if row is None or not row[0]:
+        raise ApiError(409, "NO_ACTIVE_YEAR", "学年刚被升级或回滚,请刷新后重试")
 
 
 def _new_exam(ge: GradeExam, cls: SchoolClass, user_id: UUID, now: datetime) -> Exam:
@@ -92,69 +119,114 @@ def _new_exam(ge: GradeExam, cls: SchoolClass, user_id: UUID, now: datetime) -> 
     )
 
 
-def progress(db: Session, ge: GradeExam) -> list[GradeExamClass]:
-    """One row per class that has the exam; entered cells / expected cells in three queries."""
+ExamRow = tuple[UUID, UUID, UUID, str]  # (grade_exam_id, exam_id, class_id, class_name)
+
+
+def _exam_rows(db: Session, ges: Sequence[GradeExam]) -> list[ExamRow]:
+    """各联考已建考试的班,按班名数值序。"""
     rows = db.execute(
-        select(Exam.id, SchoolClass.id, SchoolClass.name)
+        select(Exam.grade_exam_id, Exam.id, SchoolClass.id, SchoolClass.name)
         .join(SchoolClass, SchoolClass.id == Exam.class_id)
-        .where(Exam.grade_exam_id == ge.id)
-        .order_by(SchoolClass.name, SchoolClass.id)
+        .where(Exam.grade_exam_id.in_([ge.id for ge in ges]))
     ).all()
+    return sorted(((r[0], r[1], r[2], r[3]) for r in rows), key=lambda r: _class_order(r[3], r[2]))
+
+
+def _progress_rows(
+    db: Session, ges: Sequence[GradeExam], rows: Sequence[ExamRow]
+) -> dict[UUID, list[GradeExamClass]]:
+    """每场联考每个已建考试的班一行:已录格数 / 应录格数。整批两条聚合查询,与联考数无关(L38)。"""
+    out: dict[UUID, list[GradeExamClass]] = {ge.id: [] for ge in ges}
     if not rows:
-        return []
-    names = [s["name"] for s in ge.subjects]
-    entered = dict(
-        db.execute(
-            select(Score.exam_id, func.count())
-            .join(Enrollment, Enrollment.id == Score.enrollment_id)
-            .where(
-                Score.exam_id.in_([r[0] for r in rows]),
-                Score.subject.in_(names),
-                Enrollment.status == "active",
-            )
-            .group_by(Score.exam_id)
-        ).all()
-    )
+        return out
+    entered: dict[tuple[UUID, str], int] = {}
+    for exam_id, subject, n in db.execute(
+        select(Score.exam_id, Score.subject, func.count())
+        .join(Enrollment, Enrollment.id == Score.enrollment_id)
+        .where(Score.exam_id.in_([r[1] for r in rows]), Enrollment.status == "active")
+        .group_by(Score.exam_id, Score.subject)
+    ):
+        entered[(exam_id, subject)] = n
     students = dict(
         db.execute(
             select(Enrollment.class_id, func.count())
-            .where(Enrollment.class_id.in_([r[1] for r in rows]), Enrollment.status == "active")
+            .where(Enrollment.class_id.in_({r[2] for r in rows}), Enrollment.status == "active")
             .group_by(Enrollment.class_id)
         ).all()
     )
-    return [
-        GradeExamClass(
-            class_id=class_id,
-            class_name=class_name,
-            exam_id=exam_id,
-            entered=entered.get(exam_id, 0),
-            expected=students.get(class_id, 0) * len(names),
+    names = {ge.id: [s["name"] for s in ge.subjects] for ge in ges}
+    for ge_id, exam_id, class_id, class_name in rows:
+        subs = names[ge_id]  # 只数联考现有科目的格子(考试表里可能留有已去掉科目的分)
+        out[ge_id].append(
+            GradeExamClass(
+                class_id=class_id,
+                class_name=class_name,
+                exam_id=exam_id,
+                entered=sum(entered.get((exam_id, s), 0) for s in subs),
+                expected=students.get(class_id, 0) * len(subs),
+            )
         )
-        for exam_id, class_id, class_name in rows
-    ]
+    return out
+
+
+def progress(db: Session, ge: GradeExam) -> list[GradeExamClass]:
+    """One row per class that has the exam; entered cells / expected cells."""
+    return _progress_rows(db, [ge], _exam_rows(db, [ge]))[ge.id]
 
 
 def _missing_classes(db: Session, ge: GradeExam) -> list[SchoolClass]:
     have = set(db.scalars(select(Exam.class_id).where(Exam.grade_exam_id == ge.id)).all())
-    return [c for c in _grade_classes(db, ge) if c.id not in have]
+    classes = _grade_classes(db, ge.school_id, ge.academic_year_id, ge.grade_id)
+    return [c for c in classes if c.id not in have]
+
+
+def grade_exam_outs(db: Session, ges: Sequence[GradeExam]) -> list[GradeExamOut]:
+    """整批序列化:考试班、已录格数、在读人数、年级名、年级在读班各一条查询,查询数不随联考数增长(L38)。"""
+    if not ges:
+        return []
+    rows = _exam_rows(db, ges)
+    progress_of = _progress_rows(db, ges, rows)
+    grades = {
+        g.id: g for g in db.scalars(select(Grade).where(Grade.id.in_({ge.grade_id for ge in ges})))
+    }
+    grade_classes: dict[tuple[UUID, UUID], list[SchoolClass]] = {}
+    for cls in db.scalars(
+        select(SchoolClass).where(
+            SchoolClass.school_id.in_({ge.school_id for ge in ges}),
+            SchoolClass.academic_year_id.in_({ge.academic_year_id for ge in ges}),
+            SchoolClass.grade_id.in_(list(grades)),
+            SchoolClass.active.is_(True),
+        )
+    ):
+        grade_classes.setdefault((cls.academic_year_id, cls.grade_id), []).append(cls)
+    have: dict[UUID, set[UUID]] = {ge.id: set() for ge in ges}
+    for ge_id, _exam_id, class_id, _name in rows:
+        have[ge_id].add(class_id)
+    return [
+        GradeExamOut(
+            id=ge.id,
+            grade_id=ge.grade_id,
+            grade_name=grades[ge.grade_id].name,
+            name=ge.name,
+            exam_type=ge.exam_type,
+            date=ge.date,
+            subjects=[SubjectFull(**s) for s in ge.subjects],
+            classes=progress_of[ge.id],
+            missing_classes=[
+                MissingClass(class_id=c.id, class_name=c.name)
+                for c in sorted(
+                    grade_classes.get((ge.academic_year_id, ge.grade_id), []),
+                    key=lambda c: _class_order(c.name, c.id),
+                )
+                if c.id not in have[ge.id]
+            ],
+        )
+        for ge in ges
+    ]
 
 
 def grade_exam_out(db: Session, ge: GradeExam) -> GradeExamOut:
-    grade = db.get(Grade, ge.grade_id)
-    assert grade is not None
-    return GradeExamOut(
-        id=ge.id,
-        grade_id=ge.grade_id,
-        grade_name=grade.name,
-        name=ge.name,
-        exam_type=ge.exam_type,
-        date=ge.date,
-        subjects=[SubjectFull(**s) for s in ge.subjects],
-        classes=progress(db, ge),
-        missing_classes=[
-            MissingClass(class_id=c.id, class_name=c.name) for c in _missing_classes(db, ge)
-        ],
-    )
+    return grade_exam_outs(db, [ge])[0]
 
 
 def _visible_grade_ids(bindings: Sequence[Binding], year: AcademicYear) -> set[UUID] | None:
@@ -178,7 +250,7 @@ def list_grade_exams(
         stmt = stmt.where(GradeExam.grade_id.in_(visible))
     if grade_id is not None:
         stmt = stmt.where(GradeExam.grade_id == grade_id)
-    return [grade_exam_out(db, ge) for ge in db.scalars(stmt).all()]
+    return grade_exam_outs(db, db.scalars(stmt).all())
 
 
 def _lock_class_exams(db: Session, ge: GradeExam) -> list[Exam]:
@@ -206,6 +278,23 @@ def _scored_subjects(db: Session, exam_ids: Sequence[UUID], names: Sequence[str]
     )
 
 
+def _max_scores(db: Session, exam_ids: Sequence[UUID], names: Sequence[str]) -> dict[str, float]:
+    """各科在读学生已录的最高分,整场联考一次聚合查出(L38);没有分数的科目不在结果里。"""
+    if not exam_ids or not names:
+        return {}
+    rows = db.execute(
+        select(Score.subject, func.max(Score.value))
+        .join(Enrollment, Enrollment.id == Score.enrollment_id)
+        .where(
+            Score.exam_id.in_(exam_ids),
+            Score.subject.in_(names),
+            Enrollment.status == "active",
+        )
+        .group_by(Score.subject)
+    ).all()
+    return {subject: top for subject, top in rows if top is not None}
+
+
 def _ensure_unscored(db: Session, exams: Sequence[Exam]) -> None:
     if db.scalar(select(Score.id).where(Score.exam_id.in_([e.id for e in exams])).limit(1)):
         raise ApiError(409, "EXAM_HAS_SCORES", "已有班级录入了成绩,不能删除")
@@ -224,6 +313,10 @@ def create(
     if grade.academic_year_id != year.id:
         raise ApiError(400, "BAD_REQUEST", "只能给当前学年的年级建联考")
     _ensure_in_catalog(db, grade, body.subjects, set())
+    # 先锁班级、再确认学年仍进行中,之后才插联考行(锁序见 _lock_classes / _ensure_year_live)
+    classes = _grade_classes(db, user.school_id, year.id, grade.id)
+    _lock_classes(db, classes)
+    _ensure_year_live(db, year.id)
     ge = GradeExam(
         school_id=user.school_id,
         academic_year_id=year.id,
@@ -238,11 +331,9 @@ def create(
     )
     db.add(ge)
     db.flush()
-    classes = _grade_classes(db, ge)
-    # merge_subjects 会锁班级行:按班级 id 升序加锁防死锁(与学年升级、课表导入一致)
     for cls in sorted(classes, key=lambda c: c.id):
         db.add(_new_exam(ge, cls, user.id, now))
-        merge_subjects(db, cls, body.subjects)
+        merge_subjects(db, cls, body.subjects)  # 班级行已锁,这里只是追加科目
     record(
         db,
         user_id=user.id,
@@ -274,37 +365,44 @@ def update(
     assert grade is not None
     _ensure_in_catalog(db, grade, body.subjects, {s["name"] for s in ge.subjects})
     exams = _lock_class_exams(db, ge)
-    kept = {s.name for s in body.subjects}
-    removed = [s["name"] for s in ge.subjects if s["name"] not in kept]
-    scored = _scored_subjects(db, [e.id for e in exams], removed)
-    for name in removed:  # 按联考原有科目顺序,报第一个
-        if name in scored:
-            raise ApiError(
-                409, "EXAM_HAS_SCORES", f"「{name}」已有成绩,不能去掉", {"subject": name}
-            )
-    for e in exams:
-        below = subject_full_below_scores(db, e, body.subjects)
-        if below is not None:
-            raise ApiError(
-                409,
-                "SCORE_ABOVE_FULL",
-                f"「{below}」的满分不能低于已录入的最高分",
-                {"subject": below},
-            )
-    subjects = [s.model_dump() for s in body.subjects]
-    ge.name, ge.exam_type, ge.date, ge.subjects = body.name, body.exam_type, body.date, subjects
-    ge.updated_at = now
+    # 与新建/补齐/回滚同序:先锁班级行、再碰学年行(L56)。merge_subjects 里也会锁班级行,但那在
+    # _ensure_year_live 之后——若不先锁,编辑持学年 KEY SHARE 去等回滚持有的班级锁,回滚又等
+    # 学年 FOR UPDATE,就死锁;而排在 apply 后面的编辑会在这里等到 apply 提交,再发现学年已停用。
     classes = {
         c.id: c
         for c in db.scalars(
             select(SchoolClass).where(SchoolClass.id.in_([e.class_id for e in exams]))
         )
     }
-    for e in sorted(exams, key=lambda e: e.class_id):  # 班级行锁按 id 升序,防死锁
+    _lock_classes(db, list(classes.values()))
+    _ensure_year_live(db, ge.academic_year_id)
+    exam_ids = [e.id for e in exams]
+    kept = {s.name for s in body.subjects}
+    removed = [s["name"] for s in ge.subjects if s["name"] not in kept]
+    scored = _scored_subjects(db, exam_ids, removed)
+    for name in removed:  # 按联考原有科目顺序,报第一个
+        if name in scored:
+            raise ApiError(
+                409, "EXAM_HAS_SCORES", f"「{name}」已有成绩,不能去掉", {"subject": name}
+            )
+    # 去科目与降满分被拒同一个码 409 EXAM_HAS_SCORES(契约;L38),details 指出科目
+    top = _max_scores(db, exam_ids, [s.name for s in body.subjects])
+    for s in body.subjects:
+        if s.name in top and s.full < top[s.name]:
+            raise ApiError(
+                409,
+                "EXAM_HAS_SCORES",
+                f"「{s.name}」已有成绩,满分不能低于已录入的最高分",
+                {"subject": s.name},
+            )
+    subjects = [s.model_dump() for s in body.subjects]
+    ge.name, ge.exam_type, ge.date, ge.subjects = body.name, body.exam_type, body.date, subjects
+    ge.updated_at = now
+    for e in sorted(exams, key=lambda e: e.class_id):
         e.name, e.exam_type, e.date = body.name, body.exam_type, body.date
         e.subjects = [dict(s) for s in subjects]
         e.updated_at = now
-        merge_subjects(db, classes[e.class_id], body.subjects)
+        merge_subjects(db, classes[e.class_id], body.subjects)  # 班级行锁上面已持有,这里只是重取
     record(
         db,
         user_id=user.id,
@@ -322,6 +420,7 @@ def delete_grade_exam(
     db: Session, user: User, ge: GradeExam, *, request: Request | None = None
 ) -> None:
     exams = _lock_class_exams(db, ge)
+    _ensure_year_live(db, ge.academic_year_id)  # 同 update:锁后复核学年仍进行中(L56)
     if exams:
         _ensure_unscored(db, exams)
     grade_exam_id = str(ge.id)
@@ -349,7 +448,9 @@ def sync(
     request: Request | None = None,
 ) -> GradeExamOut:
     missing = _missing_classes(db, ge)
-    for cls in sorted(missing, key=lambda c: c.id):  # 班级行锁按 id 升序,防死锁
+    _lock_classes(db, missing)  # 先锁班级,再确认学年,再插考试行(同 create)
+    _ensure_year_live(db, ge.academic_year_id)
+    for cls in sorted(missing, key=lambda c: c.id):
         db.add(_new_exam(ge, cls, user.id, now))
         merge_subjects(db, cls, [SubjectFull(**s) for s in ge.subjects])
     record(

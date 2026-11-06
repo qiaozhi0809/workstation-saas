@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.domain.classes.sort import class_sort_key
 from app.domain.years.plan import ClassPlan, GradeHeadPlan, NewYear, UpgradePlan
 from app.domain.years.service import UpgradeError
 
@@ -77,6 +78,16 @@ def suggest(db: Session, school_id: UUID, name: str, start: date, end: date) -> 
         ),
         {"y": year.id},
     ).all()
+    # 班名按数值排(三年二班 < 三年三班 < 三年十班,L40);SQL 的 ORDER BY 只是码点序
+    rows = sorted(
+        rows,
+        key=lambda r: (
+            r.display_order,
+            class_sort_key(r.grade_name),
+            class_sort_key(r.name),
+            str(r.id),
+        ),
+    )
     classes: list[ClassPlan] = []
     votes: dict[UUID, dict[str, int]] = {}  # 旧年级 → {新年级名: 升级班数}
     orders: dict[str, int] = {}

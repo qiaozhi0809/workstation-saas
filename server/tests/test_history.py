@@ -10,7 +10,7 @@ from app.domain.years.service import apply
 from app.domain.years.suggest import suggest
 from app.models import AcademicYear, Enrollment, Exam, Grade, SchoolClass, Score
 from app.models.audit import AuditLog
-from tests.factories import make_student
+from tests.factories import make_class, make_student
 from tests.helpers import auth
 from tests.seed_ids import CLASS_ID, EXAM_IDS, SCHOOL_ID, YEAR_ID
 
@@ -146,6 +146,21 @@ def test_principal_sees_past_classes(client, settings, db, past):
     assert get(client, settings, "/classes", user=DEAN, year_id=YEAR_ID).json() == classes
     # 没有任何班的往年:空列表
     assert get(client, settings, "/classes", year_id=str(older.id)).json() == []
+
+
+def test_past_classes_sorted_by_class_sort_key(client, settings, db):
+    """L40:往年班级同年级内按班名数值排,年级按 display_order。"""
+    for name in ("三年十班", "三年三班"):
+        make_class(db, name)
+    upgrade(db)
+    classes = get(client, settings, "/classes", year_id=YEAR_ID).json()
+    assert [(c["grade_name"], c["class_name"]) for c in classes] == [
+        ("三年级", "三年一班"),
+        ("三年级", "三年二班"),
+        ("三年级", "三年三班"),
+        ("三年级", "三年十班"),
+        ("四年级", "四年一班"),
+    ]
 
 
 def test_roster_and_scores_readonly(client, settings, db, past):
@@ -322,6 +337,57 @@ def test_current_year_class_forbidden(client, settings, db, past):
     ghost_exam = uuid4()
     assert get(client, settings, f"/exams/{ghost_exam}/scores").status_code == 403
     assert failed_audits(db, PRINCIPAL, ghost_exam) == 1
+
+
+def test_no_active_year_past_views_still_readable(client, settings, db, past):
+    """L36:本校没有进行中的学年时(异常数据),往年班级各接口照常 200,不再 403 / 409。"""
+    db.execute(
+        text("UPDATE academic_years SET is_active = false WHERE school_id = :s"), {"s": SCHOOL}
+    )
+    db.flush()
+    years = get(client, settings, "/years")
+    assert years.status_code == 200
+    assert sorted(y["name"] for y in years.json()) == ["2026-2027", "2027-2028"]
+    classes = get(client, settings, "/classes", year_id=YEAR_ID)
+    assert classes.status_code == 200
+    assert [c["class_name"] for c in classes.json()] == ["三年一班", "三年二班", "四年一班"]
+    assert get(client, settings, f"/classes/{CLASS_ID}/students").status_code == 200
+    assert get(client, settings, f"/classes/{CLASS_ID}/exams").status_code == 200
+    assert get(client, settings, f"/exams/{EXAM_IDS[0]}/scores").status_code == 200
+    assert failed_audits(db, PRINCIPAL, CLASS_ID) == 0
+    # 没有任何班的学年:200 + 空列表
+    empty = AcademicYear(
+        school_id=SCHOOL,
+        name="2025-2026",
+        start_date=date(2025, 9, 1),
+        end_date=date(2026, 7, 15),
+        is_active=False,
+    )
+    db.add(empty)
+    db.flush()
+    r = get(client, settings, "/classes", year_id=str(empty.id))
+    assert r.status_code == 200 and r.json() == []
+
+
+def test_exam_scores_ignore_subjects_not_in_exam(client, settings, db, past):
+    """L36:scores 里有考试科目表之外的科目(考试后来去掉了该科)时,不进 scores 也不计入总分。"""
+    transferred = db.scalars(
+        select(Enrollment.id).where(Enrollment.student_id == past["extra"]["transferred"])
+    ).one()
+    db.execute(
+        text(
+            "INSERT INTO scores (exam_id, enrollment_id, subject, value)"
+            " VALUES (:x, :e, '体育', 100)"
+        ),
+        {"x": EXAM_IDS[0], "e": transferred},
+    )
+    db.flush()
+    body = get(client, settings, f"/exams/{EXAM_IDS[0]}/scores").json()
+    assert [s["name"] for s in body["exam"]["subjects"]] == ["语文", "数学", "英语"]
+    top = body["students"][0]
+    assert top["name"] == "转出生" and top["total"] == 300 and top["class_rank"] == 1
+    assert set(top["scores"]) == {"语文", "数学", "英语"}
+    assert all(set(s["scores"]) == {"语文", "数学", "英语"} for s in body["students"])
 
 
 def test_other_school_isolated(client, settings, db, past):
