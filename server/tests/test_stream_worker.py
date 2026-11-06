@@ -229,6 +229,11 @@ def test_build_args_copy_and_transcode(tmp_path):
     assert tc[tc.index("-c:v") + 1] == "libx264"
     assert "scale=-2:720" in tc
     assert tc[tc.index("-g") + 1] == "50"
+    # 资源围栏与兼容性:编码线程封顶、强制 yuv420p(浏览器不解 4:2:2 / 10bit);copy 模式不带
+    assert tc[tc.index("-threads") + 1] == "2"
+    assert tc[tc.index("-pix_fmt") + 1] == "yuv420p"
+    assert tc.index("-i") < tc.index("-threads") < tc.index("-f")  # 作为输出选项,作用于编码器
+    assert "-threads" not in args and "-pix_fmt" not in args
 
 
 def test_credentials_url_encodes_and_mask_hides():

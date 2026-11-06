@@ -20,9 +20,12 @@ def build_args(url: str, out_dir: Path, *, transcode: bool) -> list[str]:
     args += ["-protocol_whitelist", PROTOCOL_WHITELIST]
     args += ["-rtsp_transport", "tcp", "-timeout", RTSP_IO_TIMEOUT_US, "-i", url, "-an"]
     if transcode:
+        # -threads 2:编码线程封顶,多路转码时不互相抢满整机;-pix_fmt yuv420p:摄像头常见的
+        # 4:2:2 / 10bit 源转成浏览器都能解的 8bit 4:2:0
         args += [
             *("-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency"),
             *("-vf", "scale=-2:720", "-g", "50"),
+            *("-threads", "2", "-pix_fmt", "yuv420p"),
         ]
     else:
         args += ["-c:v", "copy"]
