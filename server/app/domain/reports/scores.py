@@ -280,8 +280,8 @@ def _cell(value: object) -> str:
 
 
 def _num(value: float | int | None) -> str:
-    """一位小数,整数不带 .0;不再按 6 位有效数字截断(L39)。"""
-    return "" if value is None else f"{round(value, 1):.1f}".removesuffix(".0")
+    """一位小数(round1,半数向上,与 JSON 侧同口径),整数不带 .0;不再按 6 位有效数字截断(L39)。"""
+    return "" if value is None else f"{round1(value):.1f}".removesuffix(".0")
 
 
 def export_csv(rows: Sequence[ScoreStudentRow], subjects: Sequence[SubjectFull]) -> str:

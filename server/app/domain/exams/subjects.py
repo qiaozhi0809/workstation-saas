@@ -4,6 +4,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.domain.exams.schemas import SubjectFull
+from app.errors import ApiError
 from app.models import Grade, SchoolClass
 
 Stage = Literal["primary", "junior", "senior"]
@@ -68,7 +69,8 @@ def merge_subjects(db: Session, cls: SchoolClass, subjects: list[SubjectFull]) -
     已有科目的满分不动。不 commit;行锁持续到调用方事务结束,两个并发写入者会一前一后
     在最新列表上追加,不会互相覆盖(L11)。
     """
-    db.get(SchoolClass, cls.id, with_for_update=True, populate_existing=True)
+    if db.get(SchoolClass, cls.id, with_for_update=True, populate_existing=True) is None:
+        raise ApiError(404, "NOT_FOUND", "班级不存在")  # 等锁期间被并发删掉,同 org lock_class
     merged = class_subjects(db, cls)
     known = {s.name for s in merged}
     for s in subjects:

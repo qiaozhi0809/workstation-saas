@@ -18,9 +18,11 @@ from app.domain.classes.sort import class_sort_key
 from app.domain.exams.schemas import SubjectFull
 from app.domain.exams.subjects import PRESETS, merge_subjects
 from app.domain.school_settings.service import DEFAULT_GRADING, get_catalog, get_grading
+from app.errors import ApiError
 from app.models import Exam, Grade, GradeExam, SchoolClass, Score
 from app.models.audit import AuditLog
 from app.rbac.bindings import load_bindings
+from tests.factories import make_class
 from tests.helpers import auth, enrollment_of
 from tests.seed_ids import (
     ASSISTANT_USER_ID,
@@ -370,6 +372,61 @@ def test_merge_subjects_concurrent(engine):
             cleanup.commit()
 
 
+def test_merge_subjects_on_deleted_class_is_404(db):
+    cid = make_class(db, "待删班")
+    cls = db.get(SchoolClass, cid)
+    db.execute(delete(SchoolClass).where(SchoolClass.id == cid))
+    with pytest.raises(ApiError) as err:
+        merge_subjects(db, cls, [SubjectFull(name="书法", full=20)])
+    assert (err.value.status, err.value.code) == (404, "NOT_FOUND")
+
+
+def _class_with_id(db, class_id: str, name: str) -> UUID:
+    cls = SchoolClass(
+        id=UUID(class_id),
+        school_id=UUID(SCHOOL_ID),
+        academic_year_id=UUID(YEAR_ID),
+        grade_id=UUID(GRADE_ID),
+        name=name,
+    )
+    db.add(cls)
+    db.flush()
+    return cls.id
+
+
+def test_grade_exam_locks_classes_in_id_order(client, settings, db, monkeypatch):
+    """建 / 改 / 同步联考会锁同年级多个班的行:三条路径都按班级 id 升序(同学年升级、课表导入)。"""
+    import app.domain.grade_exams.service as ge_service
+
+    seen: list[UUID] = []
+    real = ge_service.merge_subjects
+
+    def spy(db_, cls, subjects):
+        seen.append(cls.id)
+        return real(db_, cls, subjects)
+
+    monkeypatch.setattr(ge_service, "merge_subjects", spy)
+    h = auth(settings, DEAN)
+    # 班名序与 id 序相反:〇 < 一 < 二,但 id 最大
+    top = _class_with_id(db, "ffffffff-ffff-ffff-ffff-ffffffffffff", "三年〇班")
+    r = client.post(GE_API, json=_ge_body([{"name": "语文", "full": 100}]), headers=h)
+    assert r.status_code == 201, r.text
+    assert [c["class_name"] for c in r.json()["classes"]] == ["三年〇班", "三年一班", "三年二班"]
+    assert seen == sorted(seen) and seen[-1] == top and len(seen) == 3
+    seen.clear()
+    ge_id = r.json()["id"]
+    r = client.put(f"{GE_API}/{ge_id}", json=_ge_body([{"name": "语文", "full": 120}]), headers=h)
+    assert r.status_code == 200, r.text
+    assert seen == sorted(seen) and len(seen) == 3
+    seen.clear()
+    # 同步:两个新班,名字序(丁 < 戊)与 id 序相反
+    first = _class_with_id(db, "00000000-0000-0000-0000-000000000001", "三年戊班")
+    _class_with_id(db, "00000000-0000-0000-0000-000000000002", "三年丁班")
+    r = client.post(f"{GE_API}/{ge_id}/sync", headers=h)
+    assert r.status_code == 200, r.text
+    assert seen == sorted(seen) and seen[0] == first and len(seen) == 2
+
+
 def test_grade_exam_subject_must_be_in_catalog(client, settings, db):
     h = auth(settings, DEAN)
     typo = _ge_body([{"name": "语文", "full": 100}, {"name": "数字", "full": 100}])
@@ -432,11 +489,21 @@ def test_parent_can_read_grading(client, settings):
         # 没有数字的按原文(码位序)
         (["实验班", "国际部"], ["国际部", "实验班"]),
         (["实验班", "三年二班", "三年一班"], ["三年一班", "三年二班", "实验班"]),
+        # 全角数字当数字;带圈 / 上标数字 int() 不认,当文字,但绝不能抛异常
+        (["３班", "一班", "2班"], ["一班", "2班", "３班"]),
+        (["三年②班", "三年①班", "三年一班"], ["三年一班", "三年①班", "三年②班"]),
     ],
 )
 def test_class_sort_key(names, expected):
     assert sorted(names, key=class_sort_key) == expected
     assert sorted(reversed(names), key=class_sort_key) == expected
+
+
+@pytest.mark.parametrize("name", ["三年①班", "二年级²班", "⑩班", "¹²班", "三年３班", "Ⅲ班"])
+def test_class_sort_key_never_raises(name):
+    key = class_sort_key(name)
+    assert key[-1] == (-1, name)
+    assert sorted([name, "一班", "实验班"], key=class_sort_key)
 
 
 def test_class_sort_key_is_total_and_stable():

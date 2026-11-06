@@ -51,9 +51,9 @@ def class_sort_key(name: str) -> SortKey:
     i = 0
     while i < len(name):
         ch = name[i]
-        if ch.isdigit():
+        if ch.isdecimal():  # int() 只认 decimal 字符:全角 ３ 算数字,带圈 ①、上标 ² 当文字
             j = i
-            while j < len(name) and name[j].isdigit():
+            while j < len(name) and name[j].isdecimal():
                 j += 1
             parts.append((0, int(name[i:j])))
         elif _is_cn_number(ch):
@@ -63,7 +63,7 @@ def class_sort_key(name: str) -> SortKey:
             parts.append((0, _cn_value(name[i:j])))
         else:
             j = i
-            while j < len(name) and not (name[j].isdigit() or _is_cn_number(name[j])):
+            while j < len(name) and not (name[j].isdecimal() or _is_cn_number(name[j])):
                 j += 1
             parts.append((1, name[i:j]))
         i = j

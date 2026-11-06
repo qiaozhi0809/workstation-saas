@@ -239,7 +239,8 @@ def create(
     db.add(ge)
     db.flush()
     classes = _grade_classes(db, ge)
-    for cls in classes:
+    # merge_subjects 会锁班级行:按班级 id 升序加锁防死锁(与学年升级、课表导入一致)
+    for cls in sorted(classes, key=lambda c: c.id):
         db.add(_new_exam(ge, cls, user.id, now))
         merge_subjects(db, cls, body.subjects)
     record(
@@ -299,7 +300,7 @@ def update(
             select(SchoolClass).where(SchoolClass.id.in_([e.class_id for e in exams]))
         )
     }
-    for e in exams:
+    for e in sorted(exams, key=lambda e: e.class_id):  # 班级行锁按 id 升序,防死锁
         e.name, e.exam_type, e.date = body.name, body.exam_type, body.date
         e.subjects = [dict(s) for s in subjects]
         e.updated_at = now
@@ -348,7 +349,7 @@ def sync(
     request: Request | None = None,
 ) -> GradeExamOut:
     missing = _missing_classes(db, ge)
-    for cls in missing:
+    for cls in sorted(missing, key=lambda c: c.id):  # 班级行锁按 id 升序,防死锁
         db.add(_new_exam(ge, cls, user.id, now))
         merge_subjects(db, cls, [SubjectFull(**s) for s in ge.subjects])
     record(
