@@ -30,18 +30,24 @@ def _bad_header() -> ApiError:
 
 def _decode(raw: bytes) -> str:
     try:
-        return raw.decode("utf-8-sig")
+        text_ = raw.decode("utf-8-sig")
     except UnicodeDecodeError:
-        pass
-    try:
-        return raw.decode("gbk")
-    except UnicodeDecodeError:
-        raise ApiError(400, "BAD_REQUEST", "文件编码无法识别,请使用 UTF-8 或 GBK") from None
+        try:
+            text_ = raw.decode("gbk")
+        except UnicodeDecodeError:
+            raise ApiError(400, "BAD_REQUEST", "文件编码无法识别,请使用 UTF-8 或 GBK") from None
+    if "\x00" in text_:
+        raise ApiError(400, "BAD_REQUEST", "文件含有非法字符(NUL),请重新导出 CSV")
+    return text_
+
+
+def _ascii_digits(value: str) -> bool:
+    return value.isascii() and value.isdecimal()
 
 
 def _weekday(value: str) -> int:
     value = value.strip()
-    if value.isdigit() and 1 <= int(value) <= 7:
+    if _ascii_digits(value) and 1 <= int(value) <= 7:
         return int(value)
     for prefix in ("星期", "周"):
         if value.startswith(prefix) and value[len(prefix) :] in _WEEKDAYS:
@@ -51,7 +57,7 @@ def _weekday(value: str) -> int:
 
 def _period(value: str) -> int:
     value = value.strip()
-    return int(value) if value.isdigit() and int(value) < 10_000 else 0
+    return int(value) if _ascii_digits(value) and int(value) < 10_000 else 0
 
 
 def parse_csv(raw: bytes) -> list[TimetableImportRow]:
@@ -176,19 +182,23 @@ def import_rows(
         return TimetableImportResult(ok=False, written=0, errors=errors)
 
     written = 0
-    for class_id in sorted(plan):
-        cls = service.lock_class(db, class_id)
-        service.replace_entries(db, cls, year, plan[class_id])
-        written += len(plan[class_id])
-    record(
-        db,
-        user_id=actor,
-        action="timetable.import",
-        success=True,
-        object_type="school",
-        object_id=str(school_id),
-        request=request,
-        extra={"classes": len(plan), "cells": written},
-    )
-    db.commit()
+    try:
+        for class_id in sorted(plan):
+            cls = service.lock_class(db, class_id)
+            service.replace_entries(db, cls, year, plan[class_id])
+            written += len(plan[class_id])
+        record(
+            db,
+            user_id=actor,
+            action="timetable.import",
+            success=True,
+            object_type="school",
+            object_id=str(school_id),
+            request=request,
+            extra={"classes": len(plan), "cells": written},
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     return TimetableImportResult(ok=True, written=written, errors=[])

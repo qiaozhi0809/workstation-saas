@@ -321,7 +321,8 @@ def teaches_now(
     active = db.scalar(
         text(
             "SELECT 1 FROM teacher_assignments WHERE teacher_id = :t AND class_id = :c"
-            " AND academic_year_id = :y AND ended_at IS NULL LIMIT 1"
+            " AND academic_year_id = :y AND ended_at IS NULL"
+            " AND identity IN ('homeroom', 'subject') LIMIT 1"
         ),
         {"t": teacher_id, "c": class_id, "y": year_id},
     )

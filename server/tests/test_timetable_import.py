@@ -121,3 +121,54 @@ def test_parse_csv_decodes_and_marks_bad_cells():
         (2, 3, 2, None),
         (3, 0, 0, "T1"),
     ]
+
+
+def test_import_non_ascii_digits_are_line_errors(client, settings, db):
+    _periods(db)
+    text = "\n".join(
+        [
+            HEADER,
+            "三年二班,²,1,数学,",
+            "三年二班,周一,²,数学,",
+            "三年二班,周二,１,数学,",
+        ]
+    )
+    res = _post(client, settings, text.encode())
+    assert res.status_code == 200
+    body = res.json()
+    assert body["ok"] is False
+    assert [e["line"] for e in body["errors"]] == [2, 3, 4]
+    assert _count(db) == 0
+
+
+def test_import_later_class_failure_rolls_back(client, settings, db, monkeypatch):
+    from app.domain.timetable import service as svc
+    from tests.factories import make_class
+
+    _periods(db)
+    make_class(db, "三年三班")
+    real = svc.replace_entries
+    calls = []
+
+    def boom(db_, cls, year, rows):
+        if calls:
+            raise RuntimeError("boom")
+        calls.append(cls.id)
+        real(db_, cls, year, rows)
+
+    monkeypatch.setattr(svc, "replace_entries", boom)
+    raw = f"{HEADER}\n三年二班,周一,1,数学,T003\n三年三班,周一,1,语文,".encode()
+    from fastapi.testclient import TestClient
+
+    c = TestClient(client.app, raise_server_exceptions=False)
+    res = c.post(URL, headers={**auth(settings, IT_ADMIN), "Content-Type": "text/csv"}, content=raw)
+    assert res.status_code == 500
+    assert calls and _count(db) == 0
+
+
+def test_import_nul_byte_rejected(client, settings, db):
+    _periods(db)
+    raw = f"{HEADER}\n三年二班,周一,1,数学,T0\x0003".encode()
+    res = _post(client, settings, raw)
+    assert res.status_code == 400 and res.json()["error"]["code"] == "BAD_REQUEST"
+    assert _count(db) == 0

@@ -64,6 +64,8 @@ def get_timetable(
     class_id: UUID, request: Request, user: Auth, bindings: Bind, db: Db
 ) -> ClassTimetable:
     cls = get_class_or_404(db, class_id)
+    if cls.school_id != user.school_id:
+        raise ApiError(404, "NOT_FOUND", "班级不存在")  # 别校的班一律当不存在
     perms = admin_perms(bindings)
     if not (
         can(bindings, Perm.CLASS_READ, class_scope_of(cls))

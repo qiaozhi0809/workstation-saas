@@ -12,6 +12,7 @@ from tests.seed_ids import CLASS_ID, SCHOOL_ID, TEACHER_IDS, TEACHER_USER_ID, YE
 
 IT_ADMIN = "55555555-5555-5555-5555-555555555546"
 PRINCIPAL = "55555555-5555-5555-5555-555555555543"
+GRADE_HEAD = "55555555-5555-5555-5555-555555555545"  # school.view 无 org.manage
 PARENT = "55555555-5555-5555-5555-555555555561"
 T_MATH = TEACHER_IDS["teacher03"]
 T_HOME = TEACHER_IDS["teacher01"]
@@ -271,3 +272,53 @@ def test_teaches_now_requires_active_year(db):
     assert service.teaches_now(db, UUID(T_MATH), UUID(CLASS_ID), UUID(YEAR_ID), now) is None
     assert service.current_slot(db, SCHOOL, now) is None
     assert db.get(SchoolClass, UUID(CLASS_ID)) is not None
+
+
+def test_current_slot_boundary_0755(db):
+    _seed_periods(db)
+    _cell(db, 1, 1, "数学", T_MATH)
+    assert service.current_slot(db, SCHOOL, datetime(2026, 11, 8, 23, 55, tzinfo=UTC))[:2] == (1, 1)
+    assert service.current_slot(db, SCHOOL, datetime(2026, 11, 8, 23, 54, tzinfo=UTC)) is None
+
+
+def _foreign_class(db) -> UUID:
+    from app.models import School
+
+    other = School(name="外校")
+    db.add(other)
+    db.flush()
+    cid = make_class(db, "外校一班")
+    db.execute(text("UPDATE classes SET school_id = :s WHERE id = :c"), {"s": other.id, "c": cid})
+    db.flush()
+    return cid
+
+
+def test_cross_school_class_is_404(client, settings, db):
+    cid = _foreign_class(db)
+    for user in (IT_ADMIN, PRINCIPAL):
+        res = client.get(f"/api/v1/classes/{cid}/timetable", headers=auth(settings, user))
+        assert res.status_code == 404
+    cell = [{"weekday": 1, "period_no": 1, "subject": "语文"}]
+    assert _put_tt(client, settings, cell, class_id=cid).status_code == 404
+
+
+def test_school_view_without_org_manage_cannot_write(client, settings, db):
+    _seed_periods(db)
+    cell = [{"weekday": 1, "period_no": 1, "subject": "语文"}]
+    assert _put_periods(client, settings, user=GRADE_HEAD).status_code == 403
+    assert _put_tt(client, settings, cell, user=GRADE_HEAD).status_code == 403
+    res = client.post(
+        "/api/v1/admin/timetable/import",
+        headers={**auth(settings, GRADE_HEAD), "Content-Type": "text/csv"},
+        content="班级,星期,节次,科目,工号\n三年二班,周一,1,语文,".encode(),
+    )
+    assert res.status_code == 403
+    assert db.scalar(select(func.count()).select_from(TimetableEntry)) == 0
+
+
+def test_teaches_now_ignores_assistant_assignment(db):
+    _seed_periods(db)
+    t_assist = TEACHER_IDS["teacher02"]  # 副班主任,assistant 指派
+    _cell(db, 1, 1, "英语", t_assist)
+    now = datetime(2026, 11, 9, 0, 10, tzinfo=UTC)
+    assert service.teaches_now(db, UUID(t_assist), UUID(CLASS_ID), UUID(YEAR_ID), now) is None
