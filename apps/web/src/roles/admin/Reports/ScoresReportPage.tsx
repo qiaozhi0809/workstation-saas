@@ -9,6 +9,7 @@ import { toast } from '@/shared/components/Toast'
 import { Button } from '@/shared/components/ui/button'
 import { NativeSelect } from '@/shared/components/ui/native-select'
 import { SegmentedTabs } from '@/shared/components/ui/segmented-tabs'
+import { downloadBlob } from '@/shared/lib/download'
 import { NO_PERM_SCORES, isForbidden } from './forbidden'
 import ScoreClassTable, { type ScoreView } from './ScoreClassTable'
 import ScoreStudentTable from './ScoreStudentTable'
@@ -18,19 +19,6 @@ const VIEWS: readonly { value: ScoreView; label: string }[] = [
   { value: 'pass', label: '及格率' },
   { value: 'good', label: '优秀率' },
 ]
-
-/** 服务端文件名拿不到(接口只返回 Blob),由页面自己起名并触发下载 */
-function saveBlob(filename: string, blob: Blob): void {
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  // 等浏览器开始处理下载再释放
-  setTimeout(() => URL.revokeObjectURL(url), 0)
-}
 
 function StudentSection({
   examId,
@@ -91,7 +79,8 @@ export default function ScoresReportPage() {
     if (!examId || !current) return
     setExporting(true)
     try {
-      saveBlob(`${current.name}-成绩汇总.csv`, await adminApi.exportScoreReport(examId))
+      // 服务端文件名拿不到(接口只返回 Blob),由页面自己起名
+      downloadBlob(await adminApi.exportScoreReport(examId), `${current.name}-成绩汇总.csv`)
     } catch {
       toast('导出失败,请重试')
     } finally {

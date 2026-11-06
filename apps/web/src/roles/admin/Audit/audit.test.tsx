@@ -2,12 +2,17 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { adminApi } from '@/shared/api/admin'
+import { schoolApi } from '@/shared/api/school'
 import type { Account, AuditActions, AuditRow } from '@/shared/types/admin'
+import type { Meta } from '@/shared/types/school'
 import AuditPage from './AuditPage'
 
 vi.mock('@/shared/api/admin', () => ({
   adminApi: { audit: vi.fn(), auditActions: vi.fn(), accounts: vi.fn() },
 }))
+vi.mock('@/shared/api/school', () => ({ schoolApi: { meta: vi.fn() } }))
+
+const META: Meta = { version: '1.0.0', school_name: '示例小学', school_tz: 'Asia/Shanghai' }
 
 const ACTIONS: AuditActions = {
   groups: [
@@ -65,7 +70,9 @@ const lastFilters = () => vi.mocked(adminApi.audit).mock.calls.at(-1)?.[0]
 beforeEach(() => {
   vi.resetAllMocks()
   vi.useFakeTimers({ toFake: ['Date'] })
-  vi.setSystemTime(new Date(2026, 10, 4, 10, 0, 0))
+  // 2026-11-04 16:30 UTC:学校(上海)已经是 11-05 00:30,UTC−12 … UTC+7 的浏览器还在 11-04
+  vi.setSystemTime(new Date('2026-11-04T16:30:00Z'))
+  vi.mocked(schoolApi.meta).mockResolvedValue(META)
   vi.mocked(adminApi.auditActions).mockResolvedValue(ACTIONS)
   vi.mocked(adminApi.audit).mockResolvedValue({ items: [row()], total: 1 })
   vi.mocked(adminApi.accounts).mockResolvedValue({ items: [account({})], total: 1 })
@@ -76,12 +83,22 @@ afterEach(() => {
 })
 
 describe('审计日志', () => {
-  it('默认查最近 7 天(本地日期),从第 1 页开始', async () => {
+  it('默认查最近 7 天,结束日是学校时区里的今天(L43),从第 1 页开始', async () => {
     setup()
     expect(await screen.findByText('修改学生档案')).toBeInTheDocument()
-    expect(lastFilters()).toEqual({ from: '2026-10-29', to: '2026-11-04', page: 1 })
-    expect(screen.getByLabelText('开始日期')).toHaveValue('2026-10-29')
-    expect(screen.getByLabelText('结束日期')).toHaveValue('2026-11-04')
+    expect(lastFilters()).toEqual({ from: '2026-10-30', to: '2026-11-05', page: 1 })
+    expect(screen.getByLabelText('开始日期')).toHaveValue('2026-10-30')
+    expect(screen.getByLabelText('结束日期')).toHaveValue('2026-11-05')
+    // 只请求过一次:不是先按浏览器日期查一遍再改
+    expect(adminApi.audit).toHaveBeenCalledTimes(1)
+  })
+
+  it('取不到学校时区时退回浏览器日期,页面照常可用', async () => {
+    vi.mocked(schoolApi.meta).mockRejectedValue(new Error('offline'))
+    setup()
+    expect(await screen.findByText('修改学生档案')).toBeInTheDocument()
+    const local = new Date().toLocaleDateString('sv-SE')
+    expect(lastFilters()).toMatchObject({ to: local, page: 1 })
   })
 
   it('筛选改变时请求参数正确,并且页码回到 1', async () => {
@@ -94,8 +111,8 @@ describe('审计日志', () => {
     fireEvent.change(screen.getByLabelText('分组'), { target: { value: 'grade' } })
     await waitFor(() =>
       expect(lastFilters()).toEqual({
-        from: '2026-10-29',
-        to: '2026-11-04',
+        from: '2026-10-30',
+        to: '2026-11-05',
         group: 'grade',
         page: 1,
       }),
@@ -106,8 +123,8 @@ describe('审计日志', () => {
     fireEvent.click(screen.getByLabelText('只看被拒'))
     await waitFor(() =>
       expect(lastFilters()).toEqual({
-        from: '2026-10-29',
-        to: '2026-11-04',
+        from: '2026-10-30',
+        to: '2026-11-05',
         group: 'grade',
         success: false,
         page: 1,

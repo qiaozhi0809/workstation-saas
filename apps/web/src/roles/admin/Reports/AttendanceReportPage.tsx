@@ -8,14 +8,12 @@ import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { toast } from '@/shared/components/Toast'
 import { Button } from '@/shared/components/ui/button'
 import { NativeSelect } from '@/shared/components/ui/native-select'
+import { downloadBlob } from '@/shared/lib/download'
 import AttendanceClassTable from './AttendanceClassTable'
 import { NO_PERM_ATTENDANCE, isForbidden } from './forbidden'
+import { monthIn, useSchoolTz } from './useSchoolTz'
 
 const pad = (n: number) => String(n).padStart(2, '0')
-const thisMonth = () => {
-  const d = new Date()
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`
-}
 const shiftMonth = (m: string, delta: number) => {
   const [y, mo] = m.split('-').map(Number)
   const d = new Date(y, mo - 1 + delta, 1)
@@ -37,8 +35,15 @@ const PRINT_CSS = `
 }
 `
 
+/** 默认月份要按学校时区算(后端按学校时区算日界,L43),所以等拿到时区再初始化状态 */
 export default function AttendanceReportPage() {
-  const [month, setMonth] = useState(thisMonth)
+  const school = useSchoolTz()
+  if (!school.ready) return <LoadingState />
+  return <AttendanceReport tz={school.tz} />
+}
+
+function AttendanceReport({ tz }: { tz: string }) {
+  const [month, setMonth] = useState(() => monthIn(tz))
   const [gradeId, setGradeId] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
 
@@ -56,15 +61,7 @@ export default function AttendanceReportPage() {
   const exportCsv = async () => {
     setExporting(true)
     try {
-      const blob = await adminApi.exportAttendance(month, gradeId)
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `考勤报告-${month}.csv`
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      URL.revokeObjectURL(url)
+      downloadBlob(await adminApi.exportAttendance(month, gradeId), `考勤报告-${month}.csv`)
     } catch {
       toast('导出失败,请稍后重试')
     } finally {
@@ -72,7 +69,7 @@ export default function AttendanceReportPage() {
     }
   }
 
-  const isCurrent = month >= thisMonth()
+  const isCurrent = month >= monthIn(tz)
   const grades = boardQ.data?.grades ?? []
 
   return (

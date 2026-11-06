@@ -4,9 +4,11 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { adminApi } from '@/shared/api/admin'
 import { ApiError } from '@/shared/api/client'
+import { schoolApi } from '@/shared/api/school'
 import { toast } from '@/shared/components/Toast'
 import { useAuthStore } from '@/shared/stores/auth'
 import type { AiConfigView, AiUsage } from '@/shared/types/admin'
+import type { Meta } from '@/shared/types/school'
 import AdminNav from '../AdminNav'
 import AiConfigPage from './AiConfigPage'
 import AiUsagePage from './AiUsagePage'
@@ -20,7 +22,10 @@ vi.mock('@/shared/api/admin', () => ({
     testAiConfig: vi.fn(),
   },
 }))
+vi.mock('@/shared/api/school', () => ({ schoolApi: { meta: vi.fn() } }))
 vi.mock('@/shared/components/Toast', () => ({ toast: vi.fn() }))
+
+const META: Meta = { version: '1.0.0', school_name: '示例小学', school_tz: 'Asia/Shanghai' }
 
 const PROVIDERS: AiConfigView['providers'] = [
   {
@@ -92,15 +97,20 @@ describe('AI 使用', () => {
 
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ['Date'] })
-    vi.setSystemTime(new Date(2026, 10, 4, 10, 0, 0))
+    // 2026-10-31 16:30 UTC:学校(上海)已进入 11 月,UTC−12 … UTC+7 的浏览器还在 10 月
+    vi.setSystemTime(new Date('2026-10-31T16:30:00Z'))
+    vi.mocked(schoolApi.meta).mockResolvedValue(META)
     vi.mocked(adminApi.aiUsage).mockResolvedValue(USAGE)
   })
   afterEach(() => vi.useRealTimers())
 
-  it('默认请求本月(YYYY-MM),列出各列与合计行', async () => {
+  it('默认请求学校时区里的本月(YYYY-MM,L43),列出各列与合计行', async () => {
     wrap(<AiUsagePage />)
     expect(await screen.findByText('李老师')).toBeInTheDocument()
     expect(adminApi.aiUsage).toHaveBeenCalledWith('2026-11')
+    expect(adminApi.aiUsage).toHaveBeenCalledTimes(1)
+    expect(screen.getByText('2026年11月')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '下一月' })).toBeDisabled()
     expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toEqual([
       '老师',
       '调用次数',

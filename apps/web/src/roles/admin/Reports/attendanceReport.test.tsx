@@ -4,7 +4,10 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { adminApi } from '@/shared/api/admin'
 import { ApiError } from '@/shared/api/client'
+import { schoolApi } from '@/shared/api/school'
+import { downloadBlob } from '@/shared/lib/download'
 import type { AttendanceClassDetail, AttendanceReport } from '@/shared/types/admin'
+import type { Meta } from '@/shared/types/school'
 import { boardView } from '../Board/boardFixtures'
 import AttendanceReportPage from './AttendanceReportPage'
 
@@ -16,6 +19,10 @@ vi.mock('@/shared/api/admin', () => ({
     exportAttendance: vi.fn(),
   },
 }))
+vi.mock('@/shared/api/school', () => ({ schoolApi: { meta: vi.fn() } }))
+vi.mock('@/shared/lib/download', () => ({ downloadBlob: vi.fn() }))
+
+const META: Meta = { version: '1.0.0', school_name: '示例小学', school_tz: 'Asia/Shanghai' }
 
 const report = (month: string): AttendanceReport => ({
   month,
@@ -75,7 +82,9 @@ function setup() {
 beforeEach(() => {
   vi.resetAllMocks()
   vi.useFakeTimers({ toFake: ['Date'] })
-  vi.setSystemTime(new Date(2026, 9, 15, 10, 0, 0))
+  // 2026-10-31 16:30 UTC:学校(上海)已进入 11 月,UTC−12 … UTC+7 的浏览器还在 10 月
+  vi.setSystemTime(new Date('2026-10-31T16:30:00Z'))
+  vi.mocked(schoolApi.meta).mockResolvedValue(META)
   vi.mocked(adminApi.board).mockResolvedValue(boardView())
   vi.mocked(adminApi.attendanceReport).mockImplementation(async (m) => report(m))
   vi.mocked(adminApi.attendanceClass).mockResolvedValue(detail)
@@ -87,25 +96,29 @@ afterEach(() => {
 })
 
 describe('月度考勤报告', () => {
-  it('默认本月,左右箭头与年级筛选改变请求参数', async () => {
+  it('默认学校时区里的本月(L43),左右箭头与年级筛选改变请求参数', async () => {
     setup()
     expect(await screen.findByRole('heading', { name: '月度考勤报告' })).toBeInTheDocument()
     expect(screen.getByText('只统计班主任确认过考勤的日子;迟到算出勤')).toBeInTheDocument()
-    await waitFor(() => expect(adminApi.attendanceReport).toHaveBeenLastCalledWith('2026-10', null))
-    expect(screen.getByText('2026年10月')).toBeInTheDocument()
+    await waitFor(() => expect(adminApi.attendanceReport).toHaveBeenLastCalledWith('2026-11', null))
+    expect(screen.getByText('2026年11月')).toBeInTheDocument()
+    // 只请求过一次:不是先按浏览器月份查一遍再改
+    expect(adminApi.attendanceReport).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button', { name: '下一月' })).toBeDisabled()
 
     fireEvent.click(screen.getByRole('button', { name: '上一月' }))
-    await waitFor(() => expect(adminApi.attendanceReport).toHaveBeenLastCalledWith('2026-09', null))
-    expect(screen.getByText('2026年9月')).toBeInTheDocument()
+    await waitFor(() => expect(adminApi.attendanceReport).toHaveBeenLastCalledWith('2026-10', null))
+    expect(screen.getByText('2026年10月')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '下一月' })).toBeEnabled()
 
     fireEvent.click(screen.getByRole('button', { name: '下一月' }))
-    await waitFor(() => expect(adminApi.attendanceReport).toHaveBeenLastCalledWith('2026-10', null))
+    await waitFor(() => expect(adminApi.attendanceReport).toHaveBeenLastCalledWith('2026-11', null))
     expect(screen.getByRole('button', { name: '下一月' })).toBeDisabled()
 
     const select = await screen.findByRole('combobox', { name: '年级' })
     await screen.findByRole('option', { name: '四年级' })
     fireEvent.change(select, { target: { value: 'g4' } })
-    await waitFor(() => expect(adminApi.attendanceReport).toHaveBeenLastCalledWith('2026-10', 'g4'))
+    await waitFor(() => expect(adminApi.attendanceReport).toHaveBeenLastCalledWith('2026-11', 'g4'))
   })
 
   it('出勤率保留一位小数,null 显示破折号,有合计行', async () => {
@@ -127,31 +140,21 @@ describe('月度考勤报告', () => {
     fireEvent.click(screen.getByRole('button', { name: /三年一班/ }))
     expect(await screen.findByText('王小一')).toBeInTheDocument()
     expect(screen.getByText('李小二')).toBeInTheDocument()
-    expect(adminApi.attendanceClass).toHaveBeenCalledWith('2026-10', 'c1')
+    expect(adminApi.attendanceClass).toHaveBeenCalledWith('2026-11', 'c1')
     fireEvent.click(screen.getByRole('button', { name: /三年一班/ }))
     expect(screen.queryByText('王小一')).toBeNull()
   })
 
-  it('导出 CSV 以 考勤报告-月份.csv 触发下载并释放对象地址', async () => {
+  it('导出 CSV 走公共的 downloadBlob,文件名 考勤报告-月份.csv(L43)', async () => {
     const blob = new Blob(['x'], { type: 'text/csv' })
     vi.mocked(adminApi.exportAttendance).mockResolvedValue(blob)
-    const create = vi.fn(() => 'blob:test-1')
-    const revoke = vi.fn()
-    Object.assign(URL, { createObjectURL: create, revokeObjectURL: revoke })
-    const clicked: { download: string; href: string }[] = []
-    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
-      this: HTMLAnchorElement,
-    ) {
-      clicked.push({ download: this.download, href: this.href })
-    })
     setup()
     await screen.findByText('三年一班')
     fireEvent.click(screen.getByRole('button', { name: '导出 CSV' }))
-    await waitFor(() => expect(clicked).toHaveLength(1))
-    expect(adminApi.exportAttendance).toHaveBeenCalledWith('2026-10', null)
-    expect(create).toHaveBeenCalledWith(blob)
-    expect(clicked[0]).toEqual({ download: '考勤报告-2026-10.csv', href: 'blob:test-1' })
-    expect(revoke).toHaveBeenCalledWith('blob:test-1')
+    await waitFor(() => expect(downloadBlob).toHaveBeenCalledTimes(1))
+    expect(adminApi.exportAttendance).toHaveBeenCalledWith('2026-11', null)
+    expect(downloadBlob).toHaveBeenCalledWith(blob, '考勤报告-2026-11.csv')
+    // 页面自己不再造 <a download>
     expect(document.querySelector('a[download]')).toBeNull()
   })
 

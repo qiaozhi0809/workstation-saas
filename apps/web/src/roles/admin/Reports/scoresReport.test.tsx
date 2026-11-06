@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { adminApi } from '@/shared/api/admin'
 import { ApiError } from '@/shared/api/client'
 import { toast } from '@/shared/components/Toast'
+import { downloadBlob } from '@/shared/lib/download'
 import type { GradeExam, ScoreStudentRow, ScoreSummary, SubjectStat } from '@/shared/types/admin'
 import { ADMIN_PAGES } from '../pages'
 import ScoresReportPage from './ScoresReportPage'
@@ -18,6 +19,7 @@ vi.mock('@/shared/api/admin', () => ({
   },
 }))
 vi.mock('@/shared/components/Toast', () => ({ toast: vi.fn() }))
+vi.mock('@/shared/lib/download', () => ({ downloadBlob: vi.fn() }))
 
 const ge = (id: string, name: string, date: string): GradeExam => ({
   id,
@@ -115,14 +117,9 @@ beforeEach(() => {
   vi.mocked(adminApi.scoreReport).mockResolvedValue(SUMMARY)
   vi.mocked(adminApi.scoreStudents).mockResolvedValue({ students: STUDENTS })
 })
-const saved: [string, PropertyDescriptor | undefined][] = []
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
-  for (const [k, d] of saved.splice(0)) {
-    if (d) Object.defineProperty(URL, k, d)
-    else delete (URL as unknown as Record<string, unknown>)[k]
-  }
 })
 
 const renderPage = async (url = '/admin/reports/scores') => {
@@ -292,32 +289,16 @@ it('expands a class into its student table with ranks and sorts by column', asyn
   expect(screen.queryByRole('table', { name: '三年一班 学生成绩' })).toBeNull()
 })
 
-it('exports the csv with the grade exam name as file name', async () => {
-  vi.mocked(adminApi.exportScoreReport).mockResolvedValue(new Blob(['x'], { type: 'text/csv' }))
-  const create = vi.fn(() => 'blob:fake')
-  const revoke = vi.fn()
-  // jsdom 没有这两个方法:先备份再定义,afterEach 还原
-  for (const [k, fn] of [
-    ['createObjectURL', create],
-    ['revokeObjectURL', revoke],
-  ] as const) {
-    saved.push([k, Object.getOwnPropertyDescriptor(URL, k)])
-    Object.defineProperty(URL, k, { configurable: true, writable: true, value: fn })
-  }
-  const names: string[] = []
-  const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
-    this: HTMLAnchorElement,
-  ) {
-    names.push(this.download)
-  })
+it('exports the csv through the shared downloadBlob with the grade exam name as file name (L43)', async () => {
+  const blob = new Blob(['x'], { type: 'text/csv' })
+  vi.mocked(adminApi.exportScoreReport).mockResolvedValue(blob)
   await renderPage()
   fireEvent.click(screen.getByRole('button', { name: '导出 CSV' }))
   await waitFor(() => expect(adminApi.exportScoreReport).toHaveBeenCalledWith('ge2'))
-  await waitFor(() => expect(click).toHaveBeenCalledTimes(1))
-  expect(names).toEqual(['十一月联考-成绩汇总.csv'])
-  expect(create).toHaveBeenCalledTimes(1)
-  // 释放被延后到下一轮事件循环
-  await waitFor(() => expect(revoke).toHaveBeenCalledWith('blob:fake'))
+  await waitFor(() => expect(downloadBlob).toHaveBeenCalledTimes(1))
+  expect(downloadBlob).toHaveBeenCalledWith(blob, '十一月联考-成绩汇总.csv')
+  // 页面自己不再造 <a download>
+  expect(document.querySelector('a[download]')).toBeNull()
 })
 
 it('tells the user when the export fails', async () => {
