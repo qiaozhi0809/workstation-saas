@@ -68,6 +68,11 @@ vi.mock('@/shared/api/seating')
 vi.mock('@/shared/api/todos')
 vi.mock('@/shared/api/preferences')
 vi.mock('@/shared/api/exams')
+// 及格 / 优秀比例固定为默认值,不依赖 /school/grading 的真实请求失败后回退
+vi.mock('@/shared/hooks/useGrading', async () => {
+  const { DEFAULT_GRADING } = await import('@/shared/lib/grades')
+  return { useGrading: () => DEFAULT_GRADING }
+})
 
 const WIDTH = window.innerWidth
 const REQUEST_FULLSCREEN = Element.prototype.requestFullscreen

@@ -102,12 +102,15 @@ function HandoffPlayer({
     prev: null,
   })
   // 渲染期间按 props 调整状态:当前路变了,原来的当前路成为"旧的";
-  // 切回还没来得及卸载的"旧的"(A→B→A)时它已经出过画面,直接只留它,不等交接
+  // 切回还没来得及卸载的"旧的"(A→B→A)时它已经出过画面,直接只留它,不等交接;
+  // 同一路 id 换了对象(60 秒刷新后名字 / 状态变了)只换对象,播放器按 id 做 key 不重挂
   const view =
     shown.cur.id === camera.id
-      ? shown
+      ? shown.cur === camera
+        ? shown
+        : { ...shown, cur: camera }
       : shown.prev?.id === camera.id
-        ? { cur: shown.prev, prev: null }
+        ? { cur: camera, prev: null }
         : { cur: camera, prev: shown.cur }
   if (view !== shown) setShown(view)
   const prevId = view.prev?.id
@@ -218,8 +221,11 @@ export default function CameraWallMini({ gradeId }: { gradeId: string | null }) 
     setCamIndex(Math.max(firstWatchable(g), 0))
     setTimerEpoch((n) => n + 1)
   }
+  // 轮播定时器读最新的班列表与选中项:提交后再写 ref,不在渲染期间写(并发渲染可能被丢弃)
   const latest = useRef({ groups, selectedKey })
-  latest.current = { groups, selectedKey }
+  useEffect(() => {
+    latest.current = { groups, selectedKey }
+  })
   const advance = useCallback(() => {
     const rotatable = latest.current.groups.filter((g) => firstWatchable(g) >= 0)
     if (rotatable.length === 0) return

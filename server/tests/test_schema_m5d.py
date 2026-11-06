@@ -88,6 +88,24 @@ def test_orm_defaults(db):
     assert db.get(User, user.id).token_floor_at is None
 
 
+def test_seed_accounts_are_onboarded_in_every_context(db):
+    """种子账号都是在用的老账号:三种语境的首次引导一律已看过,E2E 第一次登录不会被欢迎页挡住。"""
+    missing = (
+        db.execute(
+            text(
+                "SELECT u.login_name FROM users u "
+                "LEFT JOIN user_preferences p ON p.user_id = u.id "
+                "WHERE u.school_id = :sid "
+                "AND NOT (COALESCE(p.onboarded, '{}'::jsonb) ?& array['teacher','parent','admin'])"
+            ),
+            {"sid": str(SCHOOL_ID)},
+        )
+        .scalars()
+        .all()
+    )
+    assert missing == []
+
+
 @pytest.fixture
 def scratch_cfg(pg_url):
     admin = create_engine(pg_url, isolation_level="AUTOCOMMIT")
