@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { adminApi, type LoginLogFilters } from '@/shared/api/admin'
 import { ApiError } from '@/shared/api/client'
-import { schoolApi } from '@/shared/api/school'
 import { EmptyState } from '@/shared/components/feedback/EmptyState'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
@@ -10,9 +9,9 @@ import { toast } from '@/shared/components/Toast'
 import { Badge } from '@/shared/components/ui/badge'
 import { Button } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
+import { todayIn, useSchoolTz } from '@/shared/hooks/useSchoolTz'
 import { addDays, formatInTz } from '@/shared/lib/date'
 import { downloadBlob } from '@/shared/lib/download'
-import { localTz } from '@/shared/lib/time'
 import type { LoginResult, LoginSuspicion } from '@/shared/types/admin'
 import { browserSummary } from './browserSummary'
 
@@ -41,14 +40,14 @@ interface Range {
 
 /** 最近 7 天:学校时区的今天往前 6 天到今天(后端也按学校时区算日界,L134) */
 function defaultRange(tz: string): Range {
-  const to = formatInTz(new Date().toISOString(), tz).slice(0, 10)
+  const to = todayIn(tz)
   return { from: addDays(to, -6), to }
 }
 
 export default function LoginLogsPage() {
-  // 学校时区来自 /meta,部署后不会变;取不到时退回浏览器时区,页面照常可用
-  const meta = useQuery({ queryKey: ['meta'], queryFn: schoolApi.meta, staleTime: Infinity })
-  const tz = meta.data?.school_tz ?? (meta.isError ? localTz() : null)
+  // 学校时区来自 /meta,部署后不会变;取不到时退回浏览器时区,页面照常可用。ready 之前 tz 为 null:区间还算不出来
+  const school = useSchoolTz()
+  const tz = school.ready ? school.tz : null
   // 用户改过的区间;null = 用默认的近 7 天(时区未知前先不算,免得按浏览器时区发一次再改)
   const [picked, setPicked] = useState<Range | null>(null)
   const range = picked ?? (tz ? defaultRange(tz) : null)
@@ -204,9 +203,7 @@ export default function LoginLogsPage() {
             <tbody>
               {list.data.items.map((r) => (
                 <tr key={r.id} className="border-t align-middle">
-                  <td className="whitespace-nowrap px-3 py-2">
-                    {formatInTz(r.at, tz ?? localTz())}
-                  </td>
+                  <td className="whitespace-nowrap px-3 py-2">{formatInTz(r.at, school.tz)}</td>
                   <td className="whitespace-nowrap px-3 py-2">{r.login_name}</td>
                   <td className="whitespace-nowrap px-3 py-2">{r.user?.display_name ?? '—'}</td>
                   <td className="whitespace-nowrap px-3 py-2">

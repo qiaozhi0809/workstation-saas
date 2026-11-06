@@ -1,7 +1,7 @@
+import { useSchoolTz } from '@/shared/hooks/useSchoolTz'
 import { formatInTz } from '@/shared/lib/date'
 import { cn } from '@/shared/lib/utils'
 import type { ParentReview } from '@/shared/types/parent'
-import { useSchoolTz } from '../useMeta'
 
 /** 今日点评:时间按学校时区(/meta,L79),与点评历史同一口径 */
 export default function ReviewList({
@@ -11,7 +11,7 @@ export default function ReviewList({
   reviews: ParentReview[] | null
   weekPoints: number | null
 }) {
-  const tz = useSchoolTz()
+  const { tz } = useSchoolTz()
   const items = reviews ?? []
   return (
     <section aria-label="今日点评" className="rounded-xl border bg-card p-4 text-card-foreground">

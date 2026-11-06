@@ -1,10 +1,10 @@
+import { useSchoolTz } from '@/shared/hooks/useSchoolTz'
 import { formatInTz } from '@/shared/lib/date'
 import type { ParentComment } from '@/shared/types/parent'
-import { useSchoolTz } from '../useMeta'
 
 /** 按学期分组,保持接口给出的先后顺序;日期按学校时区(/meta,L79) */
 export default function CommentList({ comments }: { comments: ParentComment[] }) {
-  const tz = useSchoolTz()
+  const { tz } = useSchoolTz()
   const groups: { semester: string; items: ParentComment[] }[] = []
   for (const c of comments) {
     const g = groups.find((x) => x.semester === c.semester)

@@ -7,7 +7,7 @@ import { EmptyState } from '@/shared/components/feedback/EmptyState'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { Button } from '@/shared/components/ui/button'
-import { monthIn, useSchoolTz } from '../Reports/useSchoolTz'
+import { monthIn, useSchoolTz } from '@/shared/hooks/useSchoolTz'
 
 const pad = (n: number) => String(n).padStart(2, '0')
 const shiftMonth = (m: string, delta: number) => {
