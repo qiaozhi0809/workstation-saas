@@ -101,6 +101,13 @@ function drop() {
   }
 }
 
+// 登出 / 换号即清草稿(L54):订阅登录态而不是在 logout() 的调用处加钩子,
+// 令牌失效、被踢下线、另一标签登出等每条登出路径都会经过这里;同一用户刷新令牌不算
+useAuthStore.subscribe((state, prev) => {
+  const was = prev.user?.id
+  if (was && state.user?.id !== was) drop()
+})
+
 /** 升级方案草稿:每次改动写入 localStorage(读写都容错),执行成功或放弃后清除 */
 export function useUpgradeDraft() {
   const owner = useAuthStore((s) => s.user?.id ?? null)
