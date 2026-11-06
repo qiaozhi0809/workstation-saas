@@ -25,6 +25,8 @@ const h = vi.hoisted(() => {
       MANIFEST_INCOMPATIBLE_CODECS_ERROR: 'manifestIncompatibleCodecsError',
     }
     handlers = new Map<string, Handler[]>()
+    /** 不带数据的 hlsFragLoaded 自动带递增的 frag.sn(真 hls.js 每个片段都有序列号) */
+    nextSn = 1
     config: { xhrSetup?: (xhr: XMLHttpRequest, url: string) => void }
     loadSource = vi.fn()
     attachMedia = vi.fn()
@@ -41,6 +43,7 @@ const h = vi.hoisted(() => {
     }
     off() {}
     emit(event: string, data?: unknown) {
+      if (event === 'hlsFragLoaded' && data === undefined) data = { frag: { sn: this.nextSn++ } }
       for (const cb of this.handlers.get(event) ?? []) cb(event, data)
     }
   }
@@ -71,7 +74,9 @@ const segmentError = (code: number, body = '') => ({
   networkDetails: { responseText: body },
 })
 const mediaError = (details = 'bufferAppendError') => ({ type: 'mediaError', details, fatal: true })
+const frag = (sn: number) => ({ frag: { sn } })
 const video = (title = 't') => screen.getByLabelText(title) as HTMLVideoElement
+const starting = () => manifestError(503, errBody('STREAM_STARTING'))
 
 beforeEach(() => {
   FakeHls.instances = []
@@ -196,6 +201,9 @@ describe('CameraPlayer', () => {
     render(<CameraPlayer cameraId="c1" title="t" />)
     act(() => hls().emit('hlsManifestParsed'))
     act(() => hls().emit('hlsFragLoaded'))
+    // 非致命的片段 403(hls.js 还在自己处理)不归我们管
+    act(() => hls().emit('hlsError', { ...segmentError(403), fatal: false }))
+    expect(hls().loadSource).toHaveBeenCalledTimes(1)
     act(() => hls().emit('hlsError', segmentError(403)))
     expect(hls().loadSource).toHaveBeenCalledTimes(2)
     expect(hls().loadSource).toHaveBeenLastCalledWith('/api/v1/cameras/c1/stream.m3u8')
@@ -293,6 +301,65 @@ describe('CameraPlayer', () => {
     // 重试 = 重建 hls 实例
     act(() => void screen.getByRole('button', { name: '重试' }).click())
     expect(h0.destroy).toHaveBeenCalledTimes(1)
+    expect(FakeHls.instances).toHaveLength(2)
+    expect(hls().loadSource).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('status')).toHaveTextContent('加载中')
+    expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+  })
+
+  it('segments replayed after a stall reload are not progress: the second beat is stalled', () => {
+    // L182 主场景:ffmpeg 活着却不出片。真 hls.js 对 loadSource(同 URL) 会重建 MediaSource、把旧播放列表
+    // 尾部的片段再下一遍并回放几秒——这些 sn 不比以前大,不能当作恢复,否则"画面已停止"永远到不了
+    vi.useFakeTimers()
+    render(<CameraPlayer cameraId="c1" title="t" />)
+    const h0 = hls()
+    act(() => h0.emit('hlsFragLoaded', frag(10)))
+    act(() => h0.emit('hlsFragLoaded', frag(11)))
+    act(() => void vi.advanceTimersByTime(20000))
+    expect(h0.loadSource).toHaveBeenCalledTimes(2)
+    // 重取后只回放旧片段 10、11,播放位置也走了 6 秒
+    act(() => h0.emit('hlsFragLoaded', frag(10)))
+    act(() => h0.emit('hlsFragLoaded', frag(11)))
+    for (let i = 0; i < 6; i++) {
+      act(() => void vi.advanceTimersByTime(1000))
+      act(() => void video().dispatchEvent(new Event('timeupdate')))
+    }
+    expect(screen.queryByRole('alert')).toBeNull()
+    // 回放完又停:timeupdate 只让看门狗从头计,预算没复位 → 第二拍就是提示 + 重试
+    act(() => void vi.advanceTimersByTime(19999))
+    expect(screen.queryByRole('alert')).toBeNull()
+    act(() => void vi.advanceTimersByTime(1))
+    expect(screen.getByRole('alert')).toHaveTextContent('画面已停止,正在重连…')
+    expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
+    expect(h0.loadSource).toHaveBeenCalledTimes(3)
+    // 提示期间回放旧片段也撤不掉提示;真正的新片段(sn 更大)才算恢复
+    act(() => h0.emit('hlsFragLoaded', frag(11)))
+    act(() => void video().dispatchEvent(new Event('playing')))
+    expect(screen.getByRole('alert')).toHaveTextContent('画面已停止,正在重连…')
+    act(() => h0.emit('hlsFragLoaded', frag(12)))
+    expect(screen.queryByRole('alert')).toBeNull()
+    // 恢复后再停:又是先悄悄重取一次
+    act(() => void vi.advanceTimersByTime(20000))
+    expect(h0.loadSource).toHaveBeenCalledTimes(4)
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('offline after a stall reload hits STREAM_STARTING keeps the retry button', () => {
+    // 停滞重取撞上后端正在重启 ffmpeg:4 次 STREAM_STARTING 预算用尽 → 连不上,但"重试"不能跟着消失
+    vi.useFakeTimers()
+    render(<CameraPlayer cameraId="c1" title="t" />)
+    const h0 = hls()
+    act(() => h0.emit('hlsFragLoaded'))
+    act(() => void vi.advanceTimersByTime(40000))
+    expect(screen.getByRole('alert')).toHaveTextContent('画面已停止,正在重连…')
+    for (let i = 0; i < 4; i++) {
+      act(() => h0.emit('hlsError', starting()))
+      act(() => void vi.advanceTimersByTime(2000))
+    }
+    act(() => h0.emit('hlsError', starting()))
+    expect(screen.getByRole('alert')).toHaveTextContent('摄像头连不上')
+    expect(h0.destroy).toHaveBeenCalledTimes(1)
+    act(() => void screen.getByRole('button', { name: '重试' }).click())
     expect(FakeHls.instances).toHaveLength(2)
     expect(hls().loadSource).toHaveBeenCalledTimes(1)
     expect(screen.getByRole('status')).toHaveTextContent('加载中')
@@ -571,14 +638,21 @@ describe('CameraPlayer', () => {
     expect(hls().startLoad).toHaveBeenCalledTimes(1)
   })
 
-  it('destroys on unmount', () => {
+  it('destroys on unmount while stalled: no timers, no video listeners left', () => {
     vi.useFakeTimers()
     const { unmount } = render(<CameraPlayer cameraId="c1" title="t" />)
     const h0 = hls()
-    const spy = vi.spyOn(document, 'removeEventListener')
+    act(() => h0.emit('hlsFragLoaded'))
+    act(() => void vi.advanceTimersByTime(40000))
+    expect(screen.getByRole('alert')).toHaveTextContent('画面已停止,正在重连…')
+    expect(vi.getTimerCount()).toBeGreaterThan(0)
+    const docSpy = vi.spyOn(document, 'removeEventListener')
+    const videoSpy = vi.spyOn(video(), 'removeEventListener')
     unmount()
     expect(h0.destroy).toHaveBeenCalledTimes(1)
-    expect(spy).toHaveBeenCalledWith('visibilitychange', expect.any(Function))
+    expect(docSpy).toHaveBeenCalledWith('visibilitychange', expect.any(Function))
+    expect(videoSpy).toHaveBeenCalledWith('timeupdate', expect.any(Function))
+    expect(videoSpy).toHaveBeenCalledWith('playing', expect.any(Function))
     expect(vi.getTimerCount()).toBe(0)
   })
 

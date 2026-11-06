@@ -108,6 +108,11 @@ export function CameraPlayer({
     let segmentReloaded = false
     let mediaRecovered = false
     let stallReloaded = false
+    // 已见的最大片段序列号:只有比它大的片段才算"新进展"。自己 loadSource(同一 URL)之后 hls.js 会重建
+    // MediaSource、把旧播放列表尾部的片段再下一遍并回放几秒——那些 sn 不比以前大,不能复位停滞预算,
+    // 否则 ffmpeg 活着却不出片时就成了每 ~26 秒静默重取 + 回放旧画面,"画面已停止"永远到不了。
+    // 后端重启 ffmpeg 时 start_number 取 epoch 秒(stream/supervisor.py),新一轮的序列号照样更大
+    let maxSn = -1
     let hls: Hls | null = new Hls({
       manifestLoadPolicy: PLAYLIST_POLICY,
       playlistLoadPolicy: PLAYLIST_POLICY,
@@ -173,14 +178,7 @@ export function CameraPlayer({
       reload()
       armStallTimer()
     }
-    // 有新片段 / 播放位置在走:看门狗从头计,各项"重取一次"的预算也恢复
-    const markProgress = () => {
-      if (terminal || !gotPicture) return
-      segmentReloaded = false
-      stallReloaded = false
-      setState('playing')
-      if (!document.hidden) armStallTimer()
-    }
+    // 出画面(片段到了 / 视频 playing):8 秒计时取消,401 再刷新与 STREAM_STARTING 的预算恢复,看门狗从头计
     const markPlaying = () => {
       if (terminal) return
       refreshed = false // 真的出过画面:之后再 401 允许再刷新一次
@@ -188,8 +186,27 @@ export function CameraPlayer({
       const first = !gotPicture
       gotPicture = true
       clearTimeout(noPictureTimer)
-      markProgress()
+      if (!document.hidden) armStallTimer()
       if (first) onPlayingRef.current?.()
+    }
+    // 片段下载到了:只有序列号比已见最大值大的才是新进展——"重取一次"的预算恢复、停滞提示撤下
+    const onFragLoaded = (data: { frag?: { sn?: number | string } } | undefined) => {
+      if (terminal) return
+      const sn = data?.frag?.sn
+      if (sn === 'initSegment') return // fMP4 的初始化段不是画面
+      if (typeof sn === 'number') {
+        if (sn <= maxSn) return // 重取 / recoverMediaError 之后回放的旧片段
+        maxSn = sn
+      }
+      segmentReloaded = false
+      stallReloaded = false
+      setState('playing')
+      markPlaying()
+    }
+    // 播放位置在走(也可能只是在回放重取回来的旧片段):只让看门狗从头计,预算与提示都不动
+    const onTimeUpdate = () => {
+      if (terminal || !gotPicture || document.hidden) return
+      armStallTimer()
     }
     // 视频真的播起来了(不只是下到片段):媒体错误允许再恢复一次
     const onVideoPlaying = () => {
@@ -208,7 +225,11 @@ export function CameraPlayer({
       // 片段 403(签名过期:隐藏超过 60 秒再回来 / 换班)或 404(转流重启后旧片段已删):hls.js 对 4xx 不重试,
       // 单码率层无处可切,到这里已是 fatal 且已 stopLoad——重新取一次播放列表拿新地址;再失败才算连不上。
       // 播放列表本身 403 走上面的 ended / lan
-      if (data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR && (status === 403 || status === 404)) {
+      if (
+        data.fatal &&
+        data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR &&
+        (status === 403 || status === 404)
+      ) {
         if (segmentReloaded) return finish('offline')
         segmentReloaded = true
         return reload()
@@ -254,11 +275,11 @@ export function CameraPlayer({
     }
 
     hls.on(Hls.Events.MANIFEST_PARSED, markFirstSign)
-    hls.on(Hls.Events.FRAG_LOADED, markPlaying)
+    hls.on(Hls.Events.FRAG_LOADED, (_e, data) => onFragLoaded(data))
     hls.on(Hls.Events.ERROR, (_e, data) => handleError(data as unknown as HlsErrorData))
     if (video) {
       video.addEventListener('playing', onVideoPlaying)
-      video.addEventListener('timeupdate', markProgress)
+      video.addEventListener('timeupdate', onTimeUpdate)
       hls.attachMedia(video)
     }
     reload()
@@ -288,7 +309,7 @@ export function CameraPlayer({
       clearTimers()
       document.removeEventListener('visibilitychange', onVisibility)
       video?.removeEventListener('playing', onVideoPlaying)
-      video?.removeEventListener('timeupdate', markProgress)
+      video?.removeEventListener('timeupdate', onTimeUpdate)
       hls?.destroy()
       hls = null
     }
@@ -315,7 +336,8 @@ export function CameraPlayer({
           className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-background/80 px-3 text-center text-sm text-foreground"
         >
           {msg.text}
-          {state === 'stalled' && (
+          {/* 停滞提示与"连不上"(含停滞重取撞上转流重启、预算用尽)都给重试:重建 hls 实例 */}
+          {(state === 'stalled' || state === 'offline') && (
             <Button
               type="button"
               variant="outline"
