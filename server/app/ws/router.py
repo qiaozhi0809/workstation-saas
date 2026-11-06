@@ -83,7 +83,7 @@ async def ws_endpoint(
     hub = websocket.app.state.hub
     hub.register(user_id, websocket, expires_at=expires_at)
     try:
-        # L28:鉴权与 register 之间账号可能被冻结 / 归档(那条 revoked 事件当时无人接收),注册后再查一次
+        # L28:鉴权与 register 之间账号可能已被冻结 / 归档(revoked 事件无人接收),再查一次
         if not await run_in_threadpool(_still_active, scope, user_id):
             await websocket.close(code=CLOSE_REVOKED)
             return
