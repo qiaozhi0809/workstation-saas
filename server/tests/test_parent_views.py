@@ -546,8 +546,64 @@ def test_removed_child_exam_cutoff(client, settings, db):
 def test_removed_child_exam_detail_ranked(client, settings, db):
     s2 = _remove(db, "S0002")
     body = get(client, settings, f"/children/{s2}/exams/{EXAM_IDS[1]}", user=T04).json()
-    # 班级名单口径排除 removed(9 人),孩子自己补一行,所以 ranked 仍是 10
-    assert body["ranked"] == 10 and body["total"] == 270
+    # 名单只算在读注册(9 人),被移出的孩子不再补进名次(L76):自己的分数照给,名次与段位不给
+    assert body["ranked"] == 9 and body["total"] == 270
+    assert body["class_rank"] is None and body["band"] is None
+    assert [s["score"] for s in body["subjects"]] == [90, 88, 92]
+
+
+def _teacher_table(client, settings, exam_id: str):
+    """教师端成绩表(在读注册)的 ranked / 各科平均 / 各科最高,与前端 grades.ts 同一算法。"""
+    from app.ai.stats import round1
+
+    sheet = client.get(
+        f"/api/v1/classes/{CLASS_ID}/exams/{exam_id}/scores", headers=auth(settings, T01)
+    ).json()
+    totals = [
+        sum(v for v in it["scores"].values() if isinstance(v, int | float))
+        for it in sheet["items"]
+        if any(isinstance(v, int | float) for v in it["scores"].values())
+    ]
+    stats = {}
+    for s in sheet["exam"]["subjects"]:
+        vals = [
+            it["scores"][s["name"]]
+            for it in sheet["items"]
+            if isinstance(it["scores"].get(s["name"]), int | float)
+        ]
+        stats[s["name"]] = (round1(sum(vals) / len(vals)), max(vals))
+    return len(totals), stats
+
+
+def test_exam_detail_matches_teacher_roster(client, settings, db):
+    """被移出 / 转出的注册不进家长端的名次与平均(L76):同一场考试,家长端的 ranked、
+    各科平均与最高和教师端成绩表完全一致;在读孩子的名次按同一份名单算。"""
+    _remove(db, "S0002")
+    db.execute(
+        text(
+            "UPDATE enrollments SET status = 'transferred', left_at = now() WHERE student_id = :s"
+        ),
+        {"s": sid(db, "S0003")},
+    )
+    db.flush()
+    ranked, stats = _teacher_table(client, settings, EXAM_IDS[1])
+    assert ranked == 8  # 10 人减去移出与转出的两人
+    s1 = sid(db, "S0001")
+    set_switches(db, parent_rank=True)
+    body = get(client, settings, f"/children/{s1}/exams/{EXAM_IDS[1]}").json()
+    assert body["ranked"] == ranked
+    for sub in body["subjects"]:
+        assert (sub["class_avg"], sub["class_max"]) == stats[sub["name"]], sub["name"]
+    # S0001 总分 278,只有 S0008(289)在前:名次按 8 人的名单算,仍是第 2
+    assert body["class_rank"] == 2
+    # 被移出的孩子:家长仍看到自己的分数和同一份班级统计,但没有名次 / 段位
+    s2 = sid(db, "S0002")
+    mine = get(client, settings, f"/children/{s2}/exams/{EXAM_IDS[1]}", user=T04).json()
+    assert mine["total"] == 270 and mine["ranked"] == ranked
+    assert mine["class_rank"] is None and mine["band"] is None
+    assert [(s["class_avg"], s["class_max"]) for s in mine["subjects"]] == [
+        (s["class_avg"], s["class_max"]) for s in body["subjects"]
+    ]
 
 
 def test_revoked_review_excluded(client, settings, db):
