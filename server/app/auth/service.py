@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 from uuid import UUID
 
@@ -24,7 +24,7 @@ from app.models import Notice, NoticeRecipient, RoleBinding, School, User
 from app.rbac.admin import admin_perms
 from app.rbac.bindings import Binding, load_bindings
 from app.rbac.roles import ADMIN_ROLES, PARENT_ROLES, TEACHER_ROLES, Role
-from app.ws.hub import publish
+from app.ws.hub import STALE, publish
 
 log = structlog.get_logger()
 
@@ -48,6 +48,22 @@ def password_change_reason(
     if max_age > 0 and now - user.password_changed_at > timedelta(days=max_age):
         return "expired"
     return None
+
+
+def _whole_seconds(moment: datetime) -> int:
+    """库里是 timestamptz(带时区),clock.utc_now() 也带时区;统一成 UTC 的整秒再比较。"""
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=UTC)
+    return int(moment.timestamp())
+
+
+def token_is_current(user: User, iat: int) -> bool:
+    """令牌签发于密码修改 / 开启两步验证之前则为过期(取整到秒:同一秒内签发的放行)。
+    HTTP 依赖与 WebSocket 鉴权共用这一个判定。"""
+    changed = [user.password_changed_at]
+    if user.totp_enabled_at is not None:
+        changed.append(user.totp_enabled_at)
+    return iat >= max(_whole_seconds(m) for m in changed)
 
 
 def can_use_api(db: Session, user: User, now: datetime) -> bool:
@@ -513,4 +529,4 @@ def change_password(
     db.commit()
     redis.delete(fail_key)
     sessions.revoke_all(redis, user.id, keep=keep_token)
-    publish(redis, [user.id], {"type": "session.stale"})  # 尽力而为,失败不影响改密码
+    publish(redis, [user.id], {"type": STALE})  # 尽力而为,失败不影响改密码

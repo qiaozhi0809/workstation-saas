@@ -27,7 +27,7 @@ def issue_access_token(user_id: UUID, settings: Settings) -> tuple[str, datetime
 
 
 def decode_access_claims(token: str, settings: Settings) -> dict:
-    """校验签名与过期,返回 {"sub": UUID, "iat": int};其余声明不外露。"""
+    """校验签名与过期,返回 {"sub": UUID, "iat": int, "exp": int};其余声明不外露。"""
     try:
         payload = jwt.decode(
             token,
@@ -38,7 +38,10 @@ def decode_access_claims(token: str, settings: Settings) -> dict:
         iat = payload["iat"]
         if isinstance(iat, bool) or not isinstance(iat, int):
             raise TokenInvalid
-        return {"sub": UUID(payload["sub"]), "iat": iat}
+        exp = payload["exp"]
+        if isinstance(exp, bool) or not isinstance(exp, int):
+            raise TokenInvalid
+        return {"sub": UUID(payload["sub"]), "iat": iat, "exp": exp}
     except jwt.ExpiredSignatureError as exc:
         raise TokenExpired from exc
     except (jwt.PyJWTError, ValueError, TypeError) as exc:

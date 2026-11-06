@@ -4,14 +4,14 @@ from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
 
-import jwt
 from fastapi import APIRouter, Depends, WebSocket
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import sessionmaker
 from starlette.websockets import WebSocketDisconnect
 
-from app.auth.service import get_user
-from app.auth.tokens import TokenExpired, TokenInvalid, decode_access_token
+from app import clock
+from app.auth.service import can_use_api, get_user, token_is_current
+from app.auth.tokens import TokenExpired, TokenInvalid, decode_access_claims
 from app.config import Settings
 from app.db import SessionScope
 from app.ws.hub import CLOSE_REVOKED
@@ -32,30 +32,39 @@ def ws_session_scope(websocket: WebSocket) -> SessionScope:
     return scope
 
 
+def _auth_failure(db, user, iat: int) -> int | None:
+    """与 HTTP 同一套判定;返回应关闭的码,None 表示放行。
+    冻结 / 归档 -> 4403(不可重连);令牌过期(改密 / 重置 / 开 2FA)或需改密码 -> 4401(刷新后重连)。"""
+    if user is None or user.status != "active":
+        return CLOSE_REVOKED
+    if not token_is_current(user, iat) or not can_use_api(db, user, clock.utc_now()):
+        return CLOSE_UNAUTHORIZED
+    return None
+
+
 def _authenticate(
     scope: SessionScope, settings: Settings, token: str
-) -> tuple[UUID, datetime] | None:
+) -> tuple[UUID, datetime, int] | None:
     try:
-        user_id = decode_access_token(token, settings)
-        # 签名与过期已由上一行校验;这里只取 exp 作为 socket 的存活期限
-        exp = jwt.decode(token, options={"verify_signature": False})["exp"]
-        expires_at = datetime.fromtimestamp(exp, UTC)
-    except (TokenExpired, TokenInvalid, jwt.PyJWTError, KeyError, TypeError, ValueError, OSError):
+        claims = decode_access_claims(token, settings)
+        expires_at = datetime.fromtimestamp(claims["exp"], UTC)
+    except (TokenExpired, TokenInvalid, ValueError, OSError, OverflowError):
         return None
+    user_id, iat = claims["sub"], claims["iat"]
     with scope() as db:
-        user = get_user(db, user_id)
-        if user is None or user.status != "active" or user.must_change_password:
+        if _auth_failure(db, get_user(db, user_id), iat) is not None:
             return None
-    return user_id, expires_at
+    return user_id, expires_at, iat
 
 
-def _still_active(scope: SessionScope, user_id: UUID) -> bool:
+def _recheck(scope: SessionScope, user_id: UUID, iat: int) -> int | None:
     with scope() as db:
-        user = get_user(db, user_id)
-        return user is not None and user.status == "active"
+        return _auth_failure(db, get_user(db, user_id), iat)
 
 
-async def _handshake(websocket: WebSocket, scope: SessionScope) -> tuple[UUID, datetime] | None:
+async def _handshake(
+    websocket: WebSocket, scope: SessionScope
+) -> tuple[UUID, datetime, int] | None:
     try:
         first = await asyncio.wait_for(
             websocket.receive_json(), websocket.app.state.ws_auth_timeout
@@ -79,13 +88,15 @@ async def ws_endpoint(
     if authed is None:
         await websocket.close(code=CLOSE_UNAUTHORIZED)
         return
-    user_id, expires_at = authed
+    user_id, expires_at, iat = authed
     hub = websocket.app.state.hub
     hub.register(user_id, websocket, expires_at=expires_at)
     try:
-        # L28:鉴权与 register 之间账号可能已被冻结 / 归档(revoked 事件无人接收),再查一次
-        if not await run_in_threadpool(_still_active, scope, user_id):
-            await websocket.close(code=CLOSE_REVOKED)
+        # L28 / B-3:鉴权与 register 之间账号可能已被冻结 / 归档,或密码已被改 / 重置
+        # (revoked / stale 事件无人接收),按同一套判定再查一次
+        failure = await run_in_threadpool(_recheck, scope, user_id, iat)
+        if failure is not None:
+            await websocket.close(code=failure)
             return
         await websocket.send_json({"type": "ready"})
         while True:

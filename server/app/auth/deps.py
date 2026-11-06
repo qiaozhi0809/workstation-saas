@@ -1,4 +1,3 @@
-from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import Depends
@@ -6,7 +5,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app import clock
-from app.auth.service import can_use_api, get_user
+from app.auth.service import can_use_api, get_user, token_is_current
 from app.auth.tokens import TokenExpired, TokenInvalid, decode_access_claims
 from app.config import Settings, settings_dep
 from app.db import get_db
@@ -14,21 +13,6 @@ from app.errors import ApiError
 from app.models import User
 
 _bearer = HTTPBearer(auto_error=False)
-
-
-def _whole_seconds(moment: datetime) -> int:
-    """库里是 timestamptz(带时区),clock.utc_now() 也带时区;统一成 UTC 的整秒再比较。"""
-    if moment.tzinfo is None:
-        moment = moment.replace(tzinfo=UTC)
-    return int(moment.timestamp())
-
-
-def _issued_before_credential_change(user: User, iat: int) -> bool:
-    """令牌签发于密码修改 / 开启两步验证之前(取整到秒:同一秒内签发的放行)。"""
-    changed = [user.password_changed_at]
-    if user.totp_enabled_at is not None:
-        changed.append(user.totp_enabled_at)
-    return iat < max(_whole_seconds(m) for m in changed)
 
 
 def get_current_user_pending(
@@ -47,7 +31,7 @@ def get_current_user_pending(
     user = get_user(db, claims["sub"])
     if user is None or user.status != "active":
         raise ApiError(401, "UNAUTHORIZED", "登录凭证无效")
-    if _issued_before_credential_change(user, claims["iat"]):
+    if not token_is_current(user, claims["iat"]):
         raise ApiError(401, "TOKEN_EXPIRED", "登录已过期")
     return user
 
