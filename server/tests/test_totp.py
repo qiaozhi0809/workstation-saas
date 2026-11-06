@@ -631,6 +631,19 @@ def test_token_floor_after_totp_reset(client, db, settings):
     assert "access_token" in fresh and _me(client, fresh["access_token"]).status_code == 200
 
 
+def test_totp_reset_on_user_without_totp_does_not_set_floor(client, db, settings):
+    """审查第 1 轮:对从未开启两步验证的人重置,不该写 token_floor_at(不踢他的会话)。"""
+    plain = make_user(db, "no_totp_x", "无两步")
+    assert plain.totp_enabled_at is None and plain.token_floor_at is None
+    assert _reset(client, settings, IT_ADMIN, plain.id).status_code == 200
+    db.expire_all()
+    plain = db.get(User, plain.id)
+    assert plain.totp_secret is None and plain.totp_enabled_at is None
+    assert plain.token_floor_at is None
+    # 审计照记,只是不动令牌下限
+    assert [r.action for r in audit_rows(db, plain.id)] == ["account.totp_reset"]
+
+
 def test_totp_reset_works_for_parent_only_account(client, db, settings):
     parent = make_user(db, "parent_only_x", "家长")
     parent.totp_enabled_at = clock.utc_now()

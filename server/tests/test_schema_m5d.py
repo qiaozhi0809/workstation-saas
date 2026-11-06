@@ -156,15 +156,38 @@ class _OldDb:
             {"s": self.school},
         ).scalar()
         self._n = 0
+        # 每个班记下所属学年:注册行要带 academic_year_id(同学年一人只能有一条 active)
+        self._class_year: dict[object, object] = {}
 
-    def klass(self, name: str):
-        return self.conn.execute(
+    def another_year(self, name: str, start: str, end: str):
+        """再建一个(非当前)学年及其一个年级,返回 (year_id, grade_id)。"""
+        year = self.conn.execute(
+            text(
+                "INSERT INTO academic_years (school_id, name, start_date, end_date, is_active)"
+                " VALUES (:s, :n, :a, :b, false) RETURNING id"
+            ),
+            {"s": self.school, "n": name, "a": start, "b": end},
+        ).scalar()
+        grade = self.conn.execute(
+            text(
+                "INSERT INTO grades (school_id, academic_year_id, name)"
+                " VALUES (:s, :y, '三年级') RETURNING id"
+            ),
+            {"s": self.school, "y": year},
+        ).scalar()
+        return year, grade
+
+    def klass(self, name: str, year_grade: tuple[object, object] | None = None):
+        year, grade = year_grade or (self.year, self.grade)
+        cid = self.conn.execute(
             text(
                 "INSERT INTO classes (school_id, academic_year_id, grade_id, name)"
                 " VALUES (:s, :y, :g, :n) RETURNING id"
             ),
-            {"s": self.school, "y": self.year, "g": self.grade, "n": name},
+            {"s": self.school, "y": year, "g": grade, "n": name},
         ).scalar()
+        self._class_year[cid] = year
+        return cid
 
     def student(self, *enrollments: tuple[object, str, str]):
         """enrollments: (class_id, status, entered_at);同时写进通知的 notice_students。"""
@@ -181,7 +204,13 @@ class _OldDb:
                     "INSERT INTO enrollments (student_id, class_id, academic_year_id, status,"
                     " entered_at) VALUES (:sid, :c, :y, :st, :at)"
                 ),
-                {"sid": sid, "c": class_id, "y": self.year, "st": status, "at": entered_at},
+                {
+                    "sid": sid,
+                    "c": class_id,
+                    "y": self._class_year[class_id],
+                    "st": status,
+                    "at": entered_at,
+                },
             )
         self.conn.execute(
             text(
@@ -195,13 +224,22 @@ class _OldDb:
 
 def test_backfill_class_snapshot(scratch_cfg):
     """迁移前的家长通知:回填取迁移时刻的在读班;已毕业(没有在读注册)取最后一个班;
-    从未注册的留 NULL;只用仍存在的班。"""
+    从未注册的留 NULL;只用仍存在的班;跨学年两条都在读(升学没收尾的脏数据)取最近一条。"""
     cfg, eng = scratch_cfg
     command.upgrade(cfg, "0012")
     with eng.begin() as conn:
         old = _OldDb(conn)
         a, b = old.klass("三年一班"), old.klass("三年二班")
         gone = old.klass("已删班")
+        last_year = old.klass(
+            "去年二年一班", old.another_year("2025-2026", "2025-09-01", "2026-07-01")
+        )
+        # 同一学生在两个学年各有一条 active(同学年唯一索引拦不住跨学年):按 entered_at 取最新
+        two_active = old.student((last_year, "active", "2025-09-01"), (a, "active", "2026-09-01"))
+        # 顺序反过来写入也一样,不靠插入顺序
+        two_active_rev = old.student(
+            (b, "active", "2026-09-01"), (last_year, "active", "2025-09-01")
+        )
         in_a = old.student((a, "active", "2026-09-01"))
         graduated = old.student((a, "graduated", "2026-09-01"))
         promoted = old.student((a, "promoted", "2025-09-01"), (b, "active", "2026-09-01"))
@@ -227,6 +265,8 @@ def test_backfill_class_snapshot(scratch_cfg):
     assert got[two_old] == (b, "三年二班")
     assert got[never] == (None, None)
     assert got[was_in_gone] == (None, None)
+    assert got[two_active] == (a, "三年一班")
+    assert got[two_active_rev] == (b, "三年二班")
     with eng.connect() as conn:
         assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0013"
         onboarded = conn.execute(text("SELECT onboarded FROM user_preferences")).all()

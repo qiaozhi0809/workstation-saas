@@ -99,6 +99,9 @@ def test_onboarded_per_context(client, settings):
     # 不认识的键也是 400
     assert _put(client, settings, T04, {"student": T3}).status_code == 400
     assert _put(client, settings, T04, {"teacher": "昨天"}).status_code == 400
+    # 不带时区的时间也是 400(审查第 1 轮:AwareDatetime,不让裸时间原样落进 JSONB)
+    assert _put(client, settings, T04, {"teacher": "2026-11-06T01:00:00"}).status_code == 400
+    assert _get(client, settings, T04) == {"teacher": T1, "parent": T2}
 
     # 不带 onboarded(或 null):其他偏好照存,onboarded 不动
     res = _put(client, settings, T04, teacher_figure="male")
