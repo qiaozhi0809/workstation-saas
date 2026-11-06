@@ -235,6 +235,8 @@ WS_INSTALL_TLS=1 \
 
 顺序不能反:恢复脚本用 `.env` 里的 `WS_VERSION` 对应的镜像来检查与启动。
 
+**从 0.7.1 升到 0.7.2 失败时例外**:按第 12 节「手动回退到 0.7.1」操作,不要只做上面两步(0.7.2 的 `restore.sh` 会因找不到 `workstation-stream:0.7.1` 镜像在启动一步失败)。若已照两步法做了并卡在"数据库已替换、服务没起来",补做第 12 节第 1 步(取回 0.7.1 的 compose 与 `scripts/`)后重跑 `./scripts/restore.sh --yes backups/<升级前备份>.tar.gz`。
+
 ## 10. 诊断包
 
 遇到问题需要技术支持时,有两种诊断包,**都不含业务数据与 `.env`**:
@@ -303,7 +305,7 @@ WS_INSTALL_TLS=1 \
 | `WS_HLS_SIZE` | `1g` | 直播片段内存盘(tmpfs 卷 `ws-hls`)的上限,只按实际用量占内存;10 路主码流约 1 GB |
 
 - 四个键都在 `.env.example` 末尾;从 0.7.1 升级上来时 `upgrade.sh` 会按默认值补进 `.env`。内存盘与容器上限占的都是服务器内存,做预算时要一起算。
-- 改前三个键后执行 `docker compose up -d`:会重建 `stream-worker` 容器,正在看的人中断几秒。
+- 改前三个键后执行 `docker compose up -d`:`.env` 变了会重建 `app`、`scheduler`、`stream-worker` 三个服务,所有人中断约半分钟,请在课后做。
 - 改 `WS_HLS_SIZE` 要重建内存盘,全部服务会停几十秒,请在课后做:
 
   ```bash
@@ -323,10 +325,10 @@ WS_INSTALL_TLS=1 \
 
 播放接口只接受来自校园内网的请求。来源靠两件事判断:反向代理(web 容器)转来的 `X-Forwarded-For`,以及 `.env` 里的 `WS_TRUSTED_PROXIES`(第 5 节)。0.7.2 起规则收紧,**配错时失败即关**:
 
-- 生产环境 `WS_TRUSTED_PROXIES` **必填**,且必须等于 compose 网络 `ws-net` 的子网(`docker-compose.yml` 里的 `172.30.0.0/24`)。为空时 `app` 拒绝启动;网段过宽(IPv4 比 `/16` 还宽,如 `0.0.0.0/0`、`10.0.0.0/8`)也拒绝启动。两种情况 `docker compose logs app` 里都有一行中文说明。
-- 请求带 `X-Forwarded-For`、而直连地址不在可信网段 → 403"只能在学校内网观看";解析出的来源落在可信网段(说明是代理自己)→ 同样拒绝。
-- **配错的表现**:所有人(包括校长)都看不了摄像头,播放器显示"只能在学校内网观看";管理端登录日志 / 审计日志里的来源 IP 变成 `172.30.0.x`(web 容器地址)。看到这两个现象,就核对 `.env` 的 `WS_TRUSTED_PROXIES` 与 `docker-compose.yml` 里 `ws-net` 的 `subnet` 是否一致,改好后 `docker compose up -d`。
-- 校外客户端不能"看起来像内网":**不要把本系统的端口映射到公网**。路由器端口转发带 SNAT、Docker 的 userland proxy 都会把校外客户端的来源改写成内网地址,"只接受内网来源"就失效了。学校前面另有自己的代理(第 5 节)时,只把代理的具体地址加进 `WS_TRUSTED_PROXIES`,不要写覆盖所有客户端的宽网段。
+- 生产环境 `WS_TRUSTED_PROXIES` **必填**,且必须包含 compose 网络 `ws-net` 的子网 `172.30.0.0/24`(`docker-compose.yml` 里;通常就只有它)。前面另有反向代理时再加它的具体地址,每段不得宽于 `/16`。为空时 `app` 拒绝启动;某段过宽(IPv4 比 `/16` 还宽,如 `0.0.0.0/0`、`10.0.0.0/8`)也拒绝启动。两种情况 `docker compose logs app` 里都有一行中文说明。
+- 请求带 `X-Forwarded-For`、而直连地址不在可信网段 → 403(播放器显示"只能在校园网内观看");解析出的来源落在可信网段(说明是代理自己)→ 同样拒绝。
+- **配错的表现**:所有人(包括校长)都看不了摄像头,播放器显示"只能在校园网内观看";管理端登录日志 / 审计日志里的来源 IP 变成 `172.30.0.x`(web 容器地址)。看到这两个现象,就核对 `.env` 的 `WS_TRUSTED_PROXIES` 是否包含 `docker-compose.yml` 里 `ws-net` 的 `subnet`,改好后 `docker compose up -d`。
+- 校外客户端不能"看起来像内网":**不要把本系统的端口映射到公网**。路由器端口转发带 SNAT 会把校外客户端的来源改写成内网地址,"只接受内网来源"就失效了(Docker 自己的 userland proxy 改写出的源址 `172.30.0.1` 落在可信网段,会被当成代理自己而拒绝,不会放行,但同样不该依赖它)。学校前面另有自己的代理(第 5 节)时,只把代理的具体地址加进 `WS_TRUSTED_PROXIES`,不要写覆盖所有客户端的宽网段。
 - 副作用(知悉即可):不经 web 容器、直连后端端口的内网客户端若带了任何 `X-Forwarded-For`(公司代理、浏览器插件)也会被拒;compose 部署的后端不对外暴露端口,正常使用不受影响。
 
 ### "测试连接"与编码提示
@@ -345,9 +347,9 @@ WS_INSTALL_TLS=1 \
 | 画面定格不动 | 转流进程还活着但没出新片段(摄像头短暂断网、时间戳跳变)。转流容器有停更看门狗:播放列表超过 `min(120, max(30, 3 × 片段时长))` 秒没更新就自动重启这一路并退避重试,一般几十秒内自己恢复,老师刷新页面即可。频繁发生就检查摄像头网络与"智能编码"设置。 |
 | "同时观看的摄像头太多,请稍后再试" | 同时转流的路数到了 `WS_STREAM_MAX`。先看是不是九宫格开得多;确有需要就调大 `WS_STREAM_MAX`,并按上文核对 CPU 与内存盘够不够。 |
 | "这路摄像头的视频编码浏览器不支持(多为 H.265)" | 摄像头输出 H.265。改登记 H.264 子码流,或在摄像头编辑页勾选"转码"。 |
-| "摄像头连不上" | 服务器到摄像头的网络、地址、凭据或 RTSP over TCP 有问题。在「摄像头」页"测试连接"看具体报错;`docker compose logs stream-worker` 里有 ffmpeg 的最后一行错误(地址里的口令已打码)。 |
-| 多路同时连不上,`docker compose logs stream-worker` 里出现 `No space left on device` | 内存盘满了:路数多或主码流码率高。调大 `WS_HLS_SIZE`(见上文,要重建内存盘)或把摄像头改成子码流。 |
-| 「摄像头」页顶部红色告警"以下摄像头地址不在校园内网" | 转流容器启动自检时发现这些地址解析到公网,不会拉流。改地址或改内网 DNS,然后 `docker compose restart stream-worker`。 |
+| "摄像头连不上" | 服务器到摄像头的网络、地址、凭据或 RTSP over TCP 有问题。在「摄像头」页"测试连接"看具体报错;该路状态显示"异常"时,状态下方的红字就是 ffmpeg 的最后一行错误(地址里的口令已打码)。`docker compose logs stream-worker` 默认只记录启停与告警,不含 ffmpeg 原文;要看原文需在 `.env` 加 `WS_LOG_LEVEL=DEBUG` 后 `docker compose up -d`(会重建 app、scheduler、stream-worker 三个服务,课后做),看完改回。 |
+| 多路同时连不上,「摄像头」页多路状态"异常"、红字含 `No space left on device` | 内存盘满了:路数多或主码流码率高。`docker compose exec stream-worker df -h /run/ws-hls` 可确认用量。调大 `WS_HLS_SIZE`(见上文,要重建内存盘)或把摄像头改成子码流。 |
+| 「摄像头」页顶部红色告警"以下摄像头地址不在校园内网" | 转流容器启动自检时发现这些地址解析到公网,不会拉流。在「摄像头」页改地址并保存即生效,不用重启;若只改了内网 DNS、没动登记,才需要 `docker compose restart stream-worker`(会打断所有在播的画面)。 |
 | 所有人都看不了,登录日志 IP 变成 `172.30.0.x` | `WS_TRUSTED_PROXIES` 配错,见上文"内网拓扑"。 |
 | 播放器显示"请在电脑或安卓浏览器上观看" | iPhone / iPad 的 Safari 不支持本系统带登录态的播放方式,v1 不支持;改用电脑或安卓浏览器。 |
 | 老师反映"本节课已结束,看不到了" | 不是故障:任课老师只在课表上自己这节课的时间段(提前 5 分钟到下课)内能看。核对「作息与课表」。 |
@@ -362,7 +364,7 @@ docker compose logs --tail 50 stream-worker    # 不应反复报错
 ```
 
 - `.env` 会被补上 `WS_STREAM_MAX`、`WS_STREAM_CPUS`、`WS_STREAM_MEMORY`、`WS_HLS_SIZE` 四个键(默认值),脚本会提示;按上文核对。
-- 0.7.2 的 `app` 要求 `.env` 里有 `WS_ENV=prod` 与 `WS_TRUSTED_PROXIES`。0.7.1 的 `install.sh` 生成的 `.env` 本来就有这两键;若曾手工删改导致缺失,`app` 会拒绝启动并在 `docker compose logs app` 里说明,照 `.env.example` 补上再 `docker compose up -d`。
+- 0.7.2 的 `app` 要求 `.env` 里 `WS_TRUSTED_PROXIES` 非空、`WS_ENV`(若写了)只能是 `prod` 或 `dev`;`WS_ENV` 缺失按 `prod` 处理,不拒绝。0.7.1 的 `install.sh` 生成的 `.env` 本来就有这两键;若曾手工删掉 `WS_TRUSTED_PROXIES` 或把 `WS_ENV` 写错,`app` 会拒绝启动并在 `docker compose logs app` 里说明,照 `.env.example` 改好再 `docker compose up -d`。
 - 之后按本节开头的"上线顺序"打开开关、登记摄像头。
 
 **手动回退到 0.7.1**(升级失败或要退回时):第 9 节的常规回退步骤对这一跳**不够用**——升级已把 0.7.2 的 `docker-compose.yml` 与 `scripts/` 覆盖进部署目录,新 compose 引用的 `workstation-stream:0.7.1` 镜像并不存在,新脚本又会去停 `stream-worker`,直接跑 `restore.sh` 会失败。按下面的顺序,在部署目录里执行:
