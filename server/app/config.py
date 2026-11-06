@@ -3,7 +3,7 @@ import binascii
 import ipaddress
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import Request
@@ -26,7 +26,9 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    env: str = "dev"
+    # 失败即关(L167):漏写 WS_ENV 按生产处理(拒绝默认密钥、不放行回环);拼错直接启动失败。
+    # 本地开发在 server/.env 写 WS_ENV=dev;测试套件由 tests/conftest.py 声明。
+    env: Literal["dev", "prod"] = "prod"
     database_url: str = "postgresql+psycopg://workstation:workstation@localhost:5432/workstation"
     redis_url: str = "redis://localhost:6379/0"
     school_id: UUID = UUID("11111111-1111-1111-1111-111111111111")

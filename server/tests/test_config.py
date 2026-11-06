@@ -75,6 +75,41 @@ def test_trusted_proxies_parse(monkeypatch):
             Settings(_env_file=None)
 
 
+# ---- L167:WS_ENV 失败即关(conftest 给测试进程设了 WS_ENV=dev,测默认值要先去掉)----
+
+
+def _prod_env_kw():
+    return {
+        "jwt_secret": "a" * 32,
+        "master_key": _OK_MASTER_KEY,
+        "trusted_proxies": ["172.30.0.0/24"],
+    }
+
+
+def test_env_defaults_to_prod(monkeypatch):
+    monkeypatch.delenv("WS_ENV", raising=False)
+    assert Settings(_env_file=None, **_prod_env_kw()).env == "prod"
+    # 默认 prod + 默认密钥:启动失败,而不是悄悄按 dev 放行
+    with pytest.raises(ValidationError, match="WS_JWT_SECRET"):
+        Settings(_env_file=None)
+
+
+@pytest.mark.parametrize("bad", ["staging", "production", "Dev", ""])
+def test_env_only_accepts_dev_or_prod(monkeypatch, bad):
+    with pytest.raises(ValidationError, match="env"):
+        Settings(_env_file=None, env=bad, **_prod_env_kw())
+    monkeypatch.setenv("WS_ENV", bad)
+    with pytest.raises(ValidationError, match="env"):
+        Settings(_env_file=None, **_prod_env_kw())
+
+
+def test_env_from_environment(monkeypatch):
+    monkeypatch.setenv("WS_ENV", "prod")
+    assert Settings(_env_file=None, **_prod_env_kw()).env == "prod"
+    monkeypatch.setenv("WS_ENV", "dev")
+    assert Settings(_env_file=None).env == "dev"
+
+
 # ---- L177:生产环境的可信代理网段失败即关 ----
 
 

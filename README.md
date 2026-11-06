@@ -65,7 +65,7 @@ cd apps/web && npm ci && npx playwright install chromium
 
 ### 启动顺序
 
-在仓库根目录依次执行:
+先 `cp server/.env.example server/.env`:本地开发必须 `WS_ENV=dev`(不设时默认按生产处理,会拒绝默认密钥,`make migrate` / `make backend` 起不来)。然后在仓库根目录依次执行:
 
 ```bash
 make dev        # 启动 Postgres 16(5432)和 Redis 7(6379)
