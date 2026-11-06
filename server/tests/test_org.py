@@ -6,7 +6,7 @@ from sqlalchemy import select, text
 from app.domain.comments.service import semester_of
 from app.models import AcademicYear, ClassBoard, RoleBinding, SchoolClass, SeatArrangement
 from tests.helpers import audit_rows, auth
-from tests.seed_ids import CLASS_ID, GRADE_ID, SCHOOL_ID, TEACHER_USER_ID, YEAR_ID
+from tests.seed_ids import CLASS_ID, GRADE_ID, SCHOOL_ID, TEACHER_IDS, TEACHER_USER_ID, YEAR_ID
 
 PRINCIPAL = "55555555-5555-5555-5555-555555555543"
 DEAN = "55555555-5555-5555-5555-555555555544"
@@ -157,9 +157,15 @@ def test_list_and_get_classes(client, settings):
     one = client.get(f"{API}/classes/{CLASS_ID}", headers=h).json()
     assert one["student_count"] == 10
     assert one["homeroom"]["display_name"] == "张老师"
+    # L55 / L209:任职简要带 teachers.id(课表格子按 teacher_id 选在任老师)
+    assert set(one["homeroom"]) == {"assignment_id", "user_id", "teacher_id", "display_name"}
+    assert one["homeroom"]["user_id"] == TEACHER_USER_ID
+    assert one["homeroom"]["teacher_id"] == TEACHER_IDS["teacher01"]
     assert [a["display_name"] for a in one["assistants"]] == ["王老师"]
+    assert one["assistants"][0]["teacher_id"] == TEACHER_IDS["teacher02"]
     assert one["subjects"][0]["subject"] == "数学"
     assert one["subjects"][0]["teachers"][0]["display_name"] == "赵老师"
+    assert one["subjects"][0]["teachers"][0]["teacher_id"] == TEACHER_IDS["teacher03"]
 
 
 def test_classes_sorted_by_class_sort_key(client, settings):

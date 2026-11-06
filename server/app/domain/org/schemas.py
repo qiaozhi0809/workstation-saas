@@ -48,6 +48,7 @@ class GradeInput(BaseModel):
 class StaffBrief(BaseModel):
     assignment_id: UUID
     user_id: UUID
+    teacher_id: UUID  # teachers.id:课表格子与升级向导按它比对在任老师(L55 / L209)
     display_name: str
 
 
@@ -103,6 +104,7 @@ class AdminRoleInput(BaseModel):
 
 class PersonBrief(BaseModel):
     user_id: UUID
+    teacher_id: UUID  # 升级向导方案里的班主任是 teachers.id(L55)
     name: str
     login_name: str
     subjects: list[str]
