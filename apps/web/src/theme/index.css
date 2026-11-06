@@ -112,7 +112,8 @@
 
 /* 触屏(没有精确指针)下把教师端常用小控件的点击区放大到 ≥ 44 × 44 px(台账 L82);鼠标下尺寸不变。
    规则只写在这一处:组件挂 .touch-target(单个控件:顶栏导航、表格行按钮)或 .touch-tabs(档案抽屉页签条);
-   对话框 / 抽屉右上角的关闭按钮是 shadcn dialog / sheet 里的 Close,按它的结构选中。 */
+   对话框 / 抽屉右上角的关闭按钮是 shadcn dialog / sheet 里的 Close,按它的结构选中;
+   Modal / SidePanel 的标题区挂 .touch-dialog-header,右侧让出放大后的关闭按钮。 */
 @media (pointer: coarse) {
   .touch-target {
     min-height: 44px;
@@ -136,5 +137,9 @@
     height: 44px;
     right: 2px;
     top: 2px;
+  }
+  /* 关闭按钮放大后占到距右边 46px;标题区原 pr-6(1.5rem)会被压住最后约 22px,改让出 3rem */
+  .touch-dialog-header {
+    padding-right: 3rem;
   }
 }
