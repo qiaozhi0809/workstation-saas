@@ -71,6 +71,7 @@ const DATA_LABELS: Record<string, string> = {
   new_classes: '手动新建的班级 {} 个',
   new_assignments: '手动添加的任职 {} 条',
   new_bindings: '手动添加的管理岗任命 {} 条',
+  class_changes: '学生换班 {} 人',
 }
 
 export function dataLines(details: unknown): string[] {

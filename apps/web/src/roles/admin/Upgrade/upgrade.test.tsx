@@ -709,6 +709,7 @@ describe('latest upgrade and rollback', () => {
         new_classes: 2,
         new_assignments: 3,
         new_bindings: 4,
+        class_changes: 2,
         mystery: 7,
       }),
     )
@@ -731,6 +732,7 @@ describe('latest upgrade and rollback', () => {
       '手动新建的班级 2 个',
       '手动添加的任职 3 条',
       '手动添加的管理岗任命 4 条',
+      '学生换班 2 人',
       'mystery: 7',
     ])
       expect(screen.getByText(t)).toBeInTheDocument()
