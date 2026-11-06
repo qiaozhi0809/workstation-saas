@@ -7,7 +7,7 @@ import { classroomApi } from '@/shared/api/classroom'
 import { examsApi } from '@/shared/api/exams'
 import { schoolApi } from '@/shared/api/school'
 import { studentsApi } from '@/shared/api/students'
-import { DEFAULT_GRADING } from '@/shared/lib/grades'
+import { BIG_MOVE, DEFAULT_GRADING } from '@/shared/lib/grades'
 import { useTeacherStore } from '@/shared/stores/teacher'
 import type { GradebookExam } from '@/shared/types/grades'
 import type { StudentSeat } from '@/shared/types/student'
@@ -177,7 +177,7 @@ describe('AttentionPanel', () => {
     const riser = await groupOf('进步之星')
     expect(riser.getByRole('button', { name: /周小七/ })).toBeInTheDocument()
     expect(riser.getByText(/↑6/)).toBeInTheDocument()
-    const faller = await groupOf('退步 5 名以上')
+    const faller = await groupOf(`退步 ${BIG_MOVE} 名及以上`)
     expect(faller.getByRole('button', { name: /王小一/ })).toBeInTheDocument()
     expect(faller.getByText(/↓6/)).toBeInTheDocument()
     const failing = await groupOf('两科及以上不及格')
@@ -194,7 +194,7 @@ describe('AttentionPanel', () => {
     setup([prev7, cur7], '/teacher/analysis?exam=p2&cmp=none', roster7)
     const riser = await groupOf('进步之星')
     expect(riser.getByText('暂无')).toBeInTheDocument()
-    expect((await groupOf('退步 5 名以上')).getByText('暂无')).toBeInTheDocument()
+    expect((await groupOf(`退步 ${BIG_MOVE} 名及以上`)).getByText('暂无')).toBeInTheDocument()
   })
 
   it('drops the two-subject group for a single visible subject', async () => {

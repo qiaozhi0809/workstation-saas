@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import type { GradebookExam, ScoreValue } from '../types/grades'
 import type { Grading } from '../types/school'
 import {
+  BIG_MOVE,
   DEFAULT_GRADING,
+  RANK_CHANGE_BASIS,
   attention,
   cellState,
   examStats,
@@ -17,6 +19,7 @@ import {
   studentTrend,
   subjectStats,
   trendDomain,
+  type Band,
   type Row,
 } from './grades'
 
@@ -97,6 +100,11 @@ describe('parseScore / cellState', () => {
     expect(parseScore('－５')).toBe(-5)
     expect(parseScore('-5')).toBe(-5)
     expect(parseScore('1.2.3')).toBe('invalid')
+  })
+  it('treats full-width Ｘ ｘ ／ as absent like their half-width forms (L15)', () => {
+    for (const t of ['Ｘ', 'ｘ', '／', ' ／ ']) expect(parseScore(t)).toBe('absent')
+    // 其他全角标点照旧不是分数
+    expect(parseScore('＋５')).toBe('invalid')
   })
   it('classifies cells against the full mark', () => {
     const D = DEFAULT_GRADING
@@ -312,8 +320,9 @@ describe('examStats', () => {
 })
 
 describe('scoreBands / trendDomain / rankTint', () => {
+  const D = DEFAULT_GRADING
   it('builds ten bands from the first non-empty one', () => {
-    expect(scoreBands([55, 65, 95, 100], 100).map((b) => [b.lo, b.count, b.tone])).toEqual([
+    expect(scoreBands([55, 65, 95, 100], 100, D).map((b) => [b.lo, b.count, b.tone])).toEqual([
       [50, 1, 'low'],
       [60, 1, 'mid'],
       [70, 0, 'mid'],
@@ -322,34 +331,69 @@ describe('scoreBands / trendDomain / rankTint', () => {
     ])
   })
   it('scales bands to the full mark and handles no data', () => {
-    const b = scoreBands([0, 300], 300)
+    const b = scoreBands([0, 300], 300, D)
     expect(b).toHaveLength(10)
     expect(b[0]).toMatchObject({ lo: 0, hi: 30, count: 1, tone: 'low' })
     expect(b[9]).toMatchObject({ lo: 270, hi: 300, count: 1, tone: 'good' })
-    expect(scoreBands([], 100)).toEqual([])
+    expect(scoreBands([], 100, D)).toEqual([])
   })
   it('bins non-round full marks exactly (full=112, total 67.2 is 60% => mid band)', () => {
-    const b = scoreBands([67.2], 112)
+    const b = scoreBands([67.2], 112, D)
     expect(b).toHaveLength(4)
     expect(b[0]).toMatchObject({ lo: 67.2, hi: 78.4, count: 1, tone: 'mid' })
   })
   it('bins full=93 total 55.8 into the 60% band', () => {
-    const b = scoreBands([55.8], 93)
+    const b = scoreBands([55.8], 93, D)
     expect(b[0]).toMatchObject({ lo: 55.8, count: 1 })
   })
   it('keeps lo/hi to at most one decimal', () => {
     for (const full of [93, 112, 120, 150, 7, 33]) {
-      for (const band of scoreBands([0, full / 3, full], full)) {
+      for (const band of scoreBands([0, full / 3, full], full, D)) {
         for (const v of [band.lo, band.hi]) expect(Math.round(v * 10) / 10).toBe(v)
       }
     }
   })
   it('returns no bands for a non-positive full mark', () => {
-    expect(scoreBands([5], 0)).toEqual([])
+    expect(scoreBands([5], 0, D)).toEqual([])
+  })
+  it('tones bands by the school ratios: low only when wholly below the pass line, good only when wholly at or above the good line', () => {
+    const tones = (r: Grading) => scoreBands([5, 95], 100, r).map((b) => b.tone)
+    const low = (n: number) => Array<Band['tone']>(n).fill('low')
+    // 默认 60% / 85%:0–60 低分,60–90 中间,90–100 优秀
+    expect(tones(D)).toEqual([...low(6), 'mid', 'mid', 'mid', 'good'])
+    // 70% / 80%:60–70 档整体在及格线下 → 低分;80–90 档整体在优秀线上 → 优秀
+    expect(tones({ pass_ratio: 0.7, good_ratio: 0.8 })).toEqual([...low(7), 'mid', 'good', 'good'])
+    // 65% / 95%:60–70 档跨及格线、90–100 档跨优秀线,都算中间
+    expect(tones({ pass_ratio: 0.65, good_ratio: 0.95 })).toEqual([
+      ...low(6),
+      'mid',
+      'mid',
+      'mid',
+      'mid',
+    ])
+    // 满分不是整十也按比例:93 分的 65% 线落在 60.45,55.8–65.1 档跨线 → 中间
+    expect(scoreBands([55.8], 93, { pass_ratio: 0.65, good_ratio: 0.9 })[0].tone).toBe('mid')
   })
   it('pads and rounds the trend domain to fives within 0–100', () => {
     expect(trendDomain([62, 91])).toEqual([55, 95])
     expect(trendDomain([2, 99])).toEqual([0, 100])
+  })
+  it('widens the span to a multiple of 20 so five ticks land on fives (L16)', () => {
+    // 55–90 跨 35 → 往上补到 55–95;顶到 100 时往下补
+    expect(trendDomain([62, 84])).toEqual([55, 95])
+    expect(trendDomain([70, 72])).toEqual([65, 85])
+    expect(trendDomain([93, 98])).toEqual([80, 100])
+    expect(trendDomain([0, 3])).toEqual([0, 20])
+    expect(trendDomain([])).toEqual([0, 100])
+    for (const [lo, hi] of [trendDomain([62, 84]), trendDomain([93, 98]), trendDomain([40, 41])])
+      expect((hi - lo) % 20).toBe(0)
+  })
+
+  it('falls back to 0–100 instead of looping forever when a value is not finite', () => {
+    // NaN / Infinity 会让 (hi - lo) % 20 永远不是 0
+    expect(trendDomain([NaN])).toEqual([0, 100])
+    expect(trendDomain([70, Number.POSITIVE_INFINITY])).toEqual([0, 100])
+    expect(trendDomain([Number.NEGATIVE_INFINITY, 70])).toEqual([0, 100])
   })
   it('tints ranks in fifths', () => {
     expect([1, 2, 10].map((r) => rankTint(r, 10))).toEqual([1, 1, 5])
@@ -372,6 +416,28 @@ describe('exam navigation', () => {
     expect(previousExam(book, 's1')).toBeNull()
     expect(previousExam(book, 'blank')?.id).toBe('s1')
     expect(previousExam(book, 'missing')).toBeNull()
+  })
+  it('states the comparison basis next to the computation and ignores exam type (L16)', () => {
+    expect(RANK_CHANGE_BASIS).toBe('与上一场有分数的考试比')
+    // 期中之前最近一场有分数的是月考:口径不按考试类型挑
+    const monthly: GradebookExam = { ...s1, exam_type: '月考' }
+    const mid: GradebookExam = { ...s2, exam_type: '期中' }
+    expect(previousExam([monthly, blank, mid], 's2')?.id).toBe('s1')
+  })
+  it('exposes the big-move threshold used by attention()', () => {
+    expect(BIG_MOVE).toBe(5)
+    const ex = exam2('t', {}, ['甲'])
+    const cur: Row[] = [
+      { id: 'a', total: 90, rank: 1, subs: { 甲: 90 } },
+      { id: 'b', total: 80, rank: 2, subs: { 甲: 80 } },
+    ]
+    const changes = new Map([
+      ['a', -BIG_MOVE],
+      ['b', -(BIG_MOVE - 1)],
+    ])
+    expect(attention(ex, cur, changes, DEFAULT_GRADING).fallers).toEqual([
+      { id: 'a', change: -BIG_MOVE },
+    ])
   })
   it('finds the latest exam that has a score', () => {
     expect(latestExam([s1, s2, blank, noRec])?.id).toBe('s2')

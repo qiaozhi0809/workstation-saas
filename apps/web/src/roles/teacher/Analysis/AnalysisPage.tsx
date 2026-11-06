@@ -12,6 +12,7 @@ import { useGrading } from '@/shared/hooks/useGrading'
 import { aiLink } from '@/shared/lib/aiLink'
 import type { ClassPerm } from '@/shared/types/classroom'
 import {
+  RANK_CHANGE_BASIS,
   attention,
   examStats,
   examTable,
@@ -63,11 +64,18 @@ function AnalysisBody({
     () => new Map((roster.data?.items ?? []).map((s) => [s.enrollment_id, s.student_id])),
     [roster.data],
   )
-  // 只保留名单内学生有分数的考试
+  // 只保留名单内学生有分数的考试(成绩册按旧→新)
   const scored = useMemo(
     () => (book.data?.exams ?? []).filter((e) => examStats(e, ids, grading) !== null),
     [book.data, ids, grading],
   )
+  // 下拉按新→旧,与成绩页的考试列表同序
+  const options = useMemo(() => [...scored].reverse(), [scored])
+  // 地址里指到一场还没有分数的考试(如从成绩页"看分析"跳来):回退到最近一场时要说明
+  const unscoredPick =
+    examParam && !scored.some((e) => e.id === examParam)
+      ? book.data?.exams.find((e) => e.id === examParam)
+      : undefined
 
   // 当前考试、对比考试及其派生数据只在输入变化时算一次
   const view = useMemo(() => {
@@ -142,6 +150,11 @@ function AnalysisBody({
 
   return (
     <div className="flex flex-col gap-4 p-4">
+      {unscoredPick && (
+        <p role="status" className="text-sm text-muted-foreground">
+          「{unscoredPick.name}」这场考试还没有分数,先显示最近一场有分数的考试
+        </p>
+      )}
       <div className="flex flex-wrap gap-4">
         <label className="flex items-center gap-2 text-sm">
           考试
@@ -154,7 +167,7 @@ function AnalysisBody({
               })
             }
           >
-            {scored.map((e) => (
+            {options.map((e) => (
               <option key={e.id} value={e.id}>
                 {e.name}
               </option>
@@ -168,7 +181,7 @@ function AnalysisBody({
             onChange={(e) => update((p) => p.set('cmp', e.target.value))}
           >
             <option value="none">不对比</option>
-            {scored
+            {options
               .filter((e) => e.id !== current.id || cmpExam?.id === e.id)
               .map((e) => (
                 <option key={e.id} value={e.id}>
@@ -177,6 +190,10 @@ function AnalysisBody({
               ))}
           </NativeSelect>
         </label>
+        {/* 没手动选对比时说明默认口径;文案与 previousExam 的计算同出一处(放在 label 外,不混进它的名字) */}
+        {cmpParam === null && cmpExam && (
+          <span className="self-center text-xs text-muted-foreground">默认{RANK_CHANGE_BASIS}</span>
+        )}
         {/* AI 快捷入口:跟随选择器换行;不对比时链接不带对比考试 */}
         <div className="ml-auto flex flex-wrap gap-2">
           {perms.includes('ai.use') && (
@@ -207,8 +224,8 @@ function AnalysisBody({
       </div>
       <KpiRow cur={cur} cmp={cmp} cmpName={cmpExam?.name ?? ''} names={names} />
       <div className="grid gap-4 lg:grid-cols-2">
-        <SubjectRateChart stats={cur} width={chartWidth} />
-        <BandChart stats={cur} width={chartWidth} />
+        <SubjectRateChart stats={cur} width={chartWidth} ratios={grading} />
+        <BandChart stats={cur} width={chartWidth} ratios={grading} />
       </div>
       <TrendGrid book={scored} ids={ids} width={chartWidth} ratios={grading} />
       <div className="grid items-start gap-4 lg:grid-cols-[2fr_1fr]">

@@ -156,6 +156,61 @@ it('reads a csv file into the textarea, stripping the BOM', async () => {
   )
 })
 
+// "姓名,语文\n王小一,90" 的 GBK 字节(Excel 另存的 CSV 常见编码);按 UTF-8 读会出现替换字符
+const GBK_CSV = new Uint8Array([
+  0xd0, 0xd5, 0xc3, 0xfb, 0x2c, 0xd3, 0xef, 0xce, 0xc4, 0x0a, 0xcd, 0xf5, 0xd0, 0xa1, 0xd2, 0xbb,
+  0x2c, 0x39, 0x30,
+])
+const pickFile = (bytes: BlobPart) =>
+  fireEvent.change(screen.getByLabelText('选择 CSV 文件'), {
+    target: { files: [new File([bytes], 'a.csv', { type: 'text/csv' })] },
+  })
+
+it('re-reads a csv file as GBK when it is not valid UTF-8 (L15)', async () => {
+  renderImport()
+  pickFile(GBK_CSV)
+  await waitFor(() =>
+    expect(screen.getByText('识别到 1 行,匹配 1 人;科目:语文')).toBeInTheDocument(),
+  )
+  expect(screen.getByRole('textbox')).toHaveValue('姓名,语文\n王小一,90')
+})
+
+it('keeps the UTF-8 reading and explains when the browser cannot decode GBK (L15)', async () => {
+  const Real = globalThis.TextDecoder
+  vi.stubGlobal(
+    'TextDecoder',
+    class extends Real {
+      constructor(label?: string, options?: TextDecoderOptions) {
+        if (label === 'gbk') throw new RangeError('unsupported encoding')
+        super(label, options)
+      }
+    },
+  )
+  try {
+    renderImport()
+    pickFile(GBK_CSV)
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '文件不是 UTF-8 编码,这个浏览器不能按 GBK 读取,请在 Excel 里另存为 UTF-8 的 CSV 后再试',
+    )
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toContain('\uFFFD')
+  } finally {
+    vi.unstubAllGlobals()
+  }
+})
+
+it('points at the row and subject the server rejected (L15)', async () => {
+  vi.mocked(examsApi.saveScores).mockRejectedValue(
+    new ApiError(400, 'SCORE_INVALID', '分数不合法', { enrollment_id: 'e2', subject: '数学' }),
+  )
+  renderImport()
+  // 中间的空行不计数,所以文案说明行号不含表头与空行
+  paste('姓名,语文,数学\n王小一,90,80\n\n李小二,88,77')
+  fireEvent.click(importBtn())
+  expect(await screen.findByRole('alert')).toHaveTextContent(
+    '第 2 行(不含表头与空行)· 数学(李小二):分数不合法',
+  )
+})
+
 it('keeps the modal open and shows the error when saving fails', async () => {
   vi.mocked(examsApi.saveScores).mockRejectedValue(
     new ApiError(403, 'FORBIDDEN', '没有这个科目的录入权限'),
