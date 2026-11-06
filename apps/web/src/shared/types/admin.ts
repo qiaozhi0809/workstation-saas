@@ -122,8 +122,7 @@ export interface Account {
   must_change_password: boolean
   last_login_at: string | null
   roles: RoleTag[]
-  /** 后端新增字段;缺省按未开启处理 */
-  totp_enabled?: boolean
+  totp_enabled: boolean
 }
 export interface AccountInput {
   display_name: string

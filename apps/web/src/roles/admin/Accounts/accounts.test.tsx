@@ -34,6 +34,7 @@ const acc = (over: Partial<Account> = {}): Account => ({
   must_change_password: false,
   last_login_at: null,
   roles: [{ role: 'homeroom_teacher', label: '三年二班 班主任' }],
+  totp_enabled: false,
   ...over,
 })
 const me = acc({

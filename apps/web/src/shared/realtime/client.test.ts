@@ -166,13 +166,40 @@ it('4401:刷新成功后立即再连', async () => {
   expect(FakeWS.instances).toHaveLength(2)
 })
 
-it('4401:刷新失败则停止', async () => {
+it('4401:刷新被拒绝则停止并发 session.expired(G-1)', async () => {
   vi.mocked(tryRefreshAccessToken).mockResolvedValue('rejected')
-  const { c } = mkClient()
+  const { c, events } = mkClient()
   c.start()
   last().drop(4401)
   await vi.advanceTimersByTimeAsync(60_000)
   expect(FakeWS.instances).toHaveLength(1)
+  expect(events).toEqual([{ type: 'session.expired' }])
+})
+
+it('4401:刷新遇网络问题不下线,退避后重连', async () => {
+  vi.mocked(tryRefreshAccessToken).mockResolvedValue('network')
+  const { c, events } = mkClient()
+  c.start()
+  last().open()
+  last().drop(4401)
+  await vi.advanceTimersByTimeAsync(999)
+  expect(FakeWS.instances).toHaveLength(1) // 按退避表等待,不是立即重连
+  await vi.advanceTimersByTimeAsync(1)
+  expect(events).toEqual([])
+  expect(FakeWS.instances).toHaveLength(2)
+})
+
+it('4401:刷新成功则重连并 ready,不发下线事件', async () => {
+  vi.mocked(tryRefreshAccessToken).mockResolvedValue('ok')
+  const { c, events } = mkClient()
+  c.start()
+  last().open()
+  last().drop(4401)
+  await vi.advanceTimersByTimeAsync(0)
+  expect(FakeWS.instances).toHaveLength(2)
+  last().open()
+  last().msg({ type: 'ready' })
+  expect(events).toEqual([{ type: 'reconnected' }])
 })
 
 it('4403:停止并发 session.revoked', () => {
@@ -222,9 +249,9 @@ it('断线等待重连期间 stop 清掉定时器', () => {
   expect(FakeWS.instances).toHaveLength(1)
 })
 
-it('4401 刷新成功后再连又 4401(期间无 ready):不再刷新、不再连', async () => {
+it('4401 刷新成功后再连又 4401(期间无 ready):不再刷新、不再连、不登出', async () => {
   vi.mocked(tryRefreshAccessToken).mockResolvedValue('ok')
-  const { c } = mkClient()
+  const { c, events } = mkClient()
   c.start()
   last().open()
   last().drop(4401)
@@ -234,6 +261,7 @@ it('4401 刷新成功后再连又 4401(期间无 ready):不再刷新、不再连
   await vi.advanceTimersByTimeAsync(60_000)
   expect(tryRefreshAccessToken).toHaveBeenCalledTimes(1)
   expect(FakeWS.instances).toHaveLength(2)
+  expect(events).toEqual([]) // 需要改密码的用户不该被踢出
 })
 
 it('ready 后清零 4401 标志:之后再遇 4401 可再刷新', async () => {

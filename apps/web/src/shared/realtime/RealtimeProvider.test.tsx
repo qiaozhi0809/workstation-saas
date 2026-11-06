@@ -104,6 +104,15 @@ it('session.revoked:登出并跳登录页', () => {
   expect(peekLoginFlash()).toBe('你的账号已被停用')
 })
 
+it('session.expired:登出并跳登录页,提示登录已失效(G-1)', () => {
+  render(wrap(<div />))
+  act(() => h.made[0].opts.onEvent({ type: 'session.expired' }))
+  expect(useAuthStore.getState().accessToken).toBeNull()
+  expect(screen.getByText('login-page')).toBeInTheDocument()
+  expect(h.made[0].stop).toHaveBeenCalled()
+  expect(peekLoginFlash()).toBe('登录已失效,请重新登录')
+})
+
 it('一个订阅者抛错不影响其余订阅者', () => {
   const ok = vi.fn()
   const bad = () => {

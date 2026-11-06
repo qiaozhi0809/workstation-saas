@@ -1,7 +1,7 @@
 import { defineConfig } from '@playwright/test'
 
-// classroom / grades / students / ai / profile / desks / admin / m3b / m4a / m4b 十个 spec 会改共享种子数据(考勤、点评、座位、考试成绩、学生名单、AI 对话、评语、成长记录、桌椅排列、账号 / 任职 / 学校设置开关、家长绑定、学年升级、通知与家长账号),
-// 其余 spec 在同一个班级上只读断言。改数据的 project 串成一条链(mutating → grades → students → ai → profile → desks → admin → m3b → m4a → m4b),
+// classroom / grades / students / ai / profile / desks / admin / m3b / m4a / m4b / m5b 十一个 spec 会改共享种子数据(考勤、点评、座位、考试成绩、学生名单、AI 对话、评语、成长记录、桌椅排列、账号 / 任职 / 学校设置开关、家长绑定、学年升级、通知与家长账号、账号安全设置),
+// 其余 spec 在同一个班级上只读断言。改数据的 project 串成一条链(mutating → grades → students → ai → profile → desks → admin → m3b → m4a → m4b → m5b),
 // 各自单独跑完、互不交叠(都改座位、名单,并行会互相踩);只读 project 最后再并行,避免读到改到一半的数据。
 // 上游 project 失败会让下游 project 全部跳过(不会显示为失败),排查时先看最早失败的 project。
 // 不用 retries:干扰要靠隔离消除,不是靠重跑掩盖。
@@ -15,6 +15,7 @@ const ADMIN = 'admin.spec.ts'
 const M3B = 'm3b.spec.ts'
 const M4A = 'm4a.spec.ts'
 const M4B = 'm4b.spec.ts'
+const M5B = 'm5b.spec.ts'
 
 export default defineConfig({
   testDir: './e2e',
@@ -37,10 +38,12 @@ export default defineConfig({
     { name: 'm4a', testMatch: M4A, dependencies: ['m3b'] },
     // m4b 发班级公告 / 年级家长 / 全校老师通知(结束时全部撤回)、建家长账号(结束时解绑,账号归档留库),不改其他共享数据
     { name: 'm4b', testMatch: M4B, dependencies: ['m4a'] },
+    // m5b 建虚构老师账号(结束时冻结留库),临时改学校安全设置(每个用例前后还原为默认),不改种子账号
+    { name: 'm5b', testMatch: M5B, dependencies: ['m4b'] },
     {
       name: 'readonly',
-      testIgnore: [MUTATING, GRADES, STUDENTS, AI, PROFILE, DESKS, ADMIN, M3B, M4A, M4B],
-      dependencies: ['m4b'],
+      testIgnore: [MUTATING, GRADES, STUDENTS, AI, PROFILE, DESKS, ADMIN, M3B, M4A, M4B, M5B],
+      dependencies: ['m5b'],
     },
   ],
 })
