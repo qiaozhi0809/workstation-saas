@@ -230,17 +230,21 @@ def save_class_timetable(
     lock_school(db, cls.school_id)  # 先 School 再班级(与 save_periods 同一把锁,L156)
     cls = lock_class(db, cls.id)
     periods = defined_period_nos(db, cls.school_id)
-    subjects = {s.name for s in class_subjects(db, cls)}
+    assignments = _assignments(db, cls.id, year.id)
+    # 可排的科目 = 本班科目(考试科目表 / 目录)∪ 本班在任老师登记的任教科目(L210):
+    # 组织架构里有"信息技术"老师、考试科目表没有这门课,也该能排进课表
+    subjects = {s.name for s in class_subjects(db, cls)} | {
+        subj for _, _, subj in assignments if subj
+    }
     seen: set[tuple[int, int]] = set()
     for c in cells:
         if c.period_no not in periods:
             raise ApiError(400, "BAD_REQUEST", f"第 {c.period_no} 节尚未在作息时间中设置")
         if c.subject not in subjects:
-            raise ApiError(400, "BAD_REQUEST", f"「{c.subject}」不是本班科目")
+            raise ApiError(400, "BAD_REQUEST", f"「{c.subject}」不是本班科目,也没有在任老师任教它")
         if (c.weekday, c.period_no) in seen:
             raise ApiError(400, "BAD_REQUEST", "同一星期同一节次不能重复安排")
         seen.add((c.weekday, c.period_no))
-    assignments = _assignments(db, cls.id, year.id)
     resolved = [(c, resolve_cell_teacher(assignments, c)) for c in cells]
     replace_entries(db, cls, year, resolved)
     record(
