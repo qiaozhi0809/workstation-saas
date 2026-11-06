@@ -239,6 +239,15 @@ describe('CameraPlayer', () => {
     expect(hls().destroy).toHaveBeenCalled()
   })
 
+  it('shows lan only on CAMERA_LAN_ONLY', () => {
+    const onEnded = vi.fn()
+    render(<CameraPlayer cameraId="c1" title="t" onEnded={onEnded} />)
+    act(() => hls().emit('hlsError', manifestError(403, errBody('CAMERA_LAN_ONLY'))))
+    expect(screen.getByRole('alert')).toHaveTextContent('只能在校园网内观看')
+    expect(onEnded).not.toHaveBeenCalled()
+    expect(hls().destroy).toHaveBeenCalled()
+  })
+
   it('refreshes token once on playlist 401 then retries', async () => {
     const refresh = vi.spyOn(client, 'tryRefreshAccessToken').mockResolvedValue('ok')
     render(<CameraPlayer cameraId="c1" title="t" />)

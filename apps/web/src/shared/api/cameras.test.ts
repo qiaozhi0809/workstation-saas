@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore } from '@/shared/stores/auth'
 import type { CameraInput } from '@/shared/types/camera'
-import * as client from './client'
 import { camerasApi } from './cameras'
 import { timetableApi } from './timetable'
 
@@ -91,48 +90,61 @@ describe('timetable csv 401 handling', () => {
     new Response(JSON.stringify({ error: { code: 'TOKEN_EXPIRED', message: 'x' } }), {
       status: 401,
     })
+  const refreshOk = () => new Response(JSON.stringify({ access_token: 'new' }), { status: 200 })
   const file = () => new File(['x'], 't.csv')
 
   it('refreshes and resends once with the new token', async () => {
     fetchMock
       .mockResolvedValueOnce(res401())
+      .mockResolvedValueOnce(refreshOk())
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ ok: true, written: 1, errors: [] }), { status: 200 }),
       )
-    vi.spyOn(client, 'tryRefreshAccessToken').mockImplementation(async () => {
-      useAuthStore.setState({ accessToken: 'new' })
-      return 'ok'
-    })
     const r = await timetableApi.importCsv(file())
     expect(r.written).toBe(1)
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
     expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe('Bearer a')
-    expect(fetchMock.mock.calls[1][1].headers.Authorization).toBe('Bearer new')
+    expect(fetchMock.mock.calls[2][1].headers.Authorization).toBe('Bearer new')
+    expect(fetchMock.mock.calls[2][1].headers['Content-Type']).toBe('text/csv')
+    expect(fetchMock.mock.calls[2][1].body).toBeInstanceOf(File)
   })
 
   it('logs out and throws when refresh is rejected', async () => {
-    fetchMock.mockResolvedValueOnce(res401())
-    vi.spyOn(client, 'tryRefreshAccessToken').mockResolvedValue('rejected')
+    fetchMock
+      .mockResolvedValueOnce(res401())
+      .mockResolvedValueOnce(new Response('{}', { status: 401 }))
     await expect(timetableApi.importCsv(file())).rejects.toMatchObject({ status: 401 })
     expect(useAuthStore.getState().accessToken).toBeNull()
   })
 
   it('keeps the session and throws the original 401 on network failure', async () => {
-    fetchMock.mockResolvedValueOnce(res401())
-    vi.spyOn(client, 'tryRefreshAccessToken').mockResolvedValue('network')
+    fetchMock.mockResolvedValueOnce(res401()).mockRejectedValueOnce(new TypeError('offline'))
     await expect(timetableApi.importCsv(file())).rejects.toMatchObject({
       status: 401,
       code: 'TOKEN_EXPIRED',
     })
     expect(useAuthStore.getState().accessToken).toBe('a')
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
   it('logs out when the resend is 401 again', async () => {
-    fetchMock.mockResolvedValueOnce(res401()).mockResolvedValueOnce(res401())
-    vi.spyOn(client, 'tryRefreshAccessToken').mockResolvedValue('ok')
+    fetchMock
+      .mockResolvedValueOnce(res401())
+      .mockResolvedValueOnce(refreshOk())
+      .mockResolvedValueOnce(res401())
     await expect(timetableApi.importCsv(file())).rejects.toMatchObject({ status: 401 })
     expect(useAuthStore.getState().accessToken).toBeNull()
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  it('does not refresh on a business 401', async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: { code: 'TOTP_INVALID', message: 'x' } }), {
+        status: 401,
+      }),
+    )
+    await expect(timetableApi.importCsv(file())).rejects.toMatchObject({ code: 'TOTP_INVALID' })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(useAuthStore.getState().accessToken).toBe('a')
   })
 })

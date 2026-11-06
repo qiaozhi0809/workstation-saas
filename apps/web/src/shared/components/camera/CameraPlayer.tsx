@@ -4,7 +4,7 @@ import { camerasApi } from '@/shared/api/cameras'
 import { tryRefreshAccessToken } from '@/shared/api/client'
 import { useAuthStore } from '@/shared/stores/auth'
 
-type PlayState = 'loading' | 'playing' | 'ended' | 'busy' | 'offline' | 'unsupported'
+type PlayState = 'loading' | 'playing' | 'ended' | 'lan' | 'busy' | 'offline' | 'unsupported'
 
 const NO_PICTURE_MS = 8000
 const STARTING_RETRY_MS = 2000
@@ -51,6 +51,7 @@ function isPlaylistUrl(url: string): boolean {
 const MESSAGES: Partial<Record<PlayState, { role: 'status' | 'alert'; text: string }>> = {
   loading: { role: 'status', text: '加载中' },
   ended: { role: 'status', text: '本节课已结束,看不到了' },
+  lan: { role: 'alert', text: '只能在校园网内观看' },
   busy: { role: 'alert', text: '同时观看的摄像头太多,请稍后再试' },
   offline: { role: 'alert', text: '摄像头连不上' },
   unsupported: { role: 'alert', text: '请在电脑或安卓浏览器上观看' },
@@ -150,7 +151,8 @@ export function CameraPlayer({
         data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR ||
         data.details === Hls.ErrorDetails.LEVEL_LOAD_ERROR
       const status = data.response?.code
-      if (playlistFailed && status === 403) return finish('ended')
+      if (playlistFailed && status === 403)
+        return finish(errorCodeOf(data) === 'CAMERA_LAN_ONLY' ? 'lan' : 'ended')
       if (playlistFailed && status === 401) {
         if (refreshed) return finish('offline')
         refreshed = true

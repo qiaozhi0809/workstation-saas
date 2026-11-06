@@ -58,20 +58,30 @@ export async function refreshAccessToken(): Promise<boolean> {
   return (await tryRefreshAccessToken()) === 'ok'
 }
 
+/** 原样发送的请求体(不做 JSON 序列化),Content-Type 由调用方在 headers 里给。只收可重发的类型(Blob/File/FormData/string),不收流。 */
+export type RawBody = Blob | File | FormData | string
+export interface RawOpts {
+  raw?: RawBody
+  headers?: Record<string, string>
+}
+
 function send(
   method: string,
   path: string,
   body?: unknown,
   signal?: AbortSignal,
+  rawOpts?: RawOpts,
 ): Promise<Response> {
   const headers: Record<string, string> = {}
   const { accessToken } = useAuthStore.getState()
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`
-  if (body !== undefined) headers['Content-Type'] = 'application/json'
+  const raw = rawOpts?.raw
+  if (raw === undefined && body !== undefined) headers['Content-Type'] = 'application/json'
+  Object.assign(headers, rawOpts?.headers)
   return fetch(`${BASE}${path}`, {
     method,
     headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body: raw !== undefined ? raw : body === undefined ? undefined : JSON.stringify(body),
     signal,
   })
 }
@@ -112,11 +122,11 @@ function sessionExpired(): ApiError {
 export async function authedFetch(
   method: string,
   path: string,
-  opts?: { body?: unknown; signal?: AbortSignal },
+  opts?: { body?: unknown; signal?: AbortSignal } & RawOpts,
 ): Promise<Response> {
   const body = opts?.body
   const signal = opts?.signal
-  let res = await send(method, path, body, signal)
+  let res = await send(method, path, body, signal, opts)
   if (res.status === 401 && !NO_REFRESH_PATHS.includes(path)) {
     const code = await errorCodeOf(res)
     if (code && BUSINESS_401_CODES.includes(code)) return res
@@ -125,14 +135,19 @@ export async function authedFetch(
     const refreshed = await refreshOnce(refreshToken)
     if (refreshed === 'network') return res // 弱网 / 服务端暂不可用:保留登录态,这次请求按原 401 失败,下次请求再试刷新
     if (refreshed !== 'ok') throw sessionExpired()
-    res = await send(method, path, body, signal)
+    res = await send(method, path, body, signal, opts)
     if (res.status === 401) throw sessionExpired()
   }
   return res
 }
 
-export async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await authedFetch(method, path, { body })
+export async function api<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+  rawOpts?: RawOpts,
+): Promise<T> {
+  const res = await authedFetch(method, path, { body, ...rawOpts })
   if (!res.ok) {
     const apiErr = await toApiError(res)
     if (res.status === 403 && apiErr.code === 'PASSWORD_CHANGE_REQUIRED')
