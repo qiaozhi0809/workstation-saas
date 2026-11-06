@@ -161,17 +161,22 @@ it('toasts the backend message when sync fails (L41)', async () => {
   expect(within(row()).getByRole('button', { name: '补建' })).toBeEnabled()
 })
 
-// 老师端的考试列表 / 成绩册 / 班级科目表查询键(与 roles/teacher 下的 useQuery 写法一致)
+// 老师端的考试列表 / 成绩册 / 班级科目表查询键(与 roles/teacher 下的 useQuery 写法一致);
+// 成绩单键 ['score-sheet', classId, examId] 还带该班对应考试的 id
 const TEACHER_KEYS = ['exams', 'gradebook', 'class-subjects']
 const expectTeacherCachesInvalidated = (
   spy: MockInstance<QueryClient['invalidateQueries']>,
-  classIds: string[],
+  classes: Record<string, string>, // classId → examId
   untouched: string[] = [],
 ) => {
-  for (const cid of classIds)
+  for (const [cid, eid] of Object.entries(classes)) {
     for (const k of TEACHER_KEYS) expect(spy).toHaveBeenCalledWith({ queryKey: [k, cid] })
-  for (const cid of untouched)
+    expect(spy).toHaveBeenCalledWith({ queryKey: ['score-sheet', cid, eid] })
+  }
+  for (const cid of untouched) {
     for (const k of TEACHER_KEYS) expect(spy).not.toHaveBeenCalledWith({ queryKey: [k, cid] })
+    expect(spy).not.toHaveBeenCalledWith({ queryKey: expect.arrayContaining(['score-sheet', cid]) })
+  }
 }
 
 it('invalidates the teacher caches of every class that got the exam after creating (L41)', async () => {
@@ -183,7 +188,7 @@ it('invalidates the teacher caches of every class that got the exam after creati
   await within(dlg).findByRole('checkbox', { name: '语文' })
   fireEvent.click(within(dlg).getByRole('button', { name: '保存' }))
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-  expectTeacherCachesInvalidated(spy, ['c1', 'c2'], ['c3'])
+  expectTeacherCachesInvalidated(spy, { c1: 'e1', c2: 'e2' }, ['c3'])
   expect(spy).toHaveBeenCalledWith({ queryKey: ['grade-exams'] })
 })
 
@@ -204,7 +209,8 @@ it('invalidates the teacher caches of the classes before and after an edit (L41)
   await within(dlg).findByRole('checkbox', { name: '语文' })
   fireEvent.click(within(dlg).getByRole('button', { name: '保存' }))
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-  expectTeacherCachesInvalidated(spy, ['c1', 'c2', 'c3'])
+  // 编辑前的 c2/e2 与编辑后的 c3/e3 都要失效
+  expectTeacherCachesInvalidated(spy, { c1: 'e1', c2: 'e2', c3: 'e3' })
 })
 
 it('invalidates the teacher caches of the deleted exam classes (L41)', async () => {
@@ -214,7 +220,7 @@ it('invalidates the teacher caches of the deleted exam classes (L41)', async () 
   fireEvent.click(within(row()).getByRole('button', { name: '删除' }))
   fireEvent.click(await screen.findByRole('button', { name: '确认删除' }))
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-  expectTeacherCachesInvalidated(spy, ['c1', 'c2'], ['c3'])
+  expectTeacherCachesInvalidated(spy, { c1: 'e1', c2: 'e2' }, ['c3'])
 })
 
 it('invalidates the teacher caches of the classes returned by sync (L41)', async () => {
@@ -233,7 +239,7 @@ it('invalidates the teacher caches of the classes returned by sync (L41)', async
   const spy = vi.spyOn(client, 'invalidateQueries')
   fireEvent.click(within(row()).getByRole('button', { name: '补建' }))
   await waitFor(() => expect(toast).toHaveBeenCalledWith('已补建'))
-  expectTeacherCachesInvalidated(spy, ['c1', 'c2', 'c3'])
+  expectTeacherCachesInvalidated(spy, { c1: 'e1', c2: 'e2', c3: 'e3' })
 })
 
 it('defaults the date of a new exam to today in the school time zone (L41 / L43)', async () => {

@@ -17,9 +17,6 @@ import GradeExamForm from './GradeExamForm'
 import { invalidateTeacherExamCaches } from './teacherCache'
 
 type Dialog = { kind: 'form'; exam?: GradeExam } | { kind: 'delete'; exam: GradeExam }
-
-const classIdsOf = (exam: GradeExam) => exam.classes.map((c) => c.class_id)
-
 function Progress({ c }: { c: GradeExam['classes'][number] }) {
   const pct = c.expected > 0 ? Math.min(100, Math.round((c.entered / c.expected) * 100)) : 0
   return (
@@ -55,7 +52,7 @@ function ExamRow({
       toast('已补建')
       void qc.invalidateQueries({ queryKey: ['grade-exams'] })
       void qc.invalidateQueries({ queryKey: ['report', 'scores'] })
-      invalidateTeacherExamCaches(qc, classIdsOf(saved))
+      invalidateTeacherExamCaches(qc, saved.classes)
     },
     onError: (e) => toast(errMsg(e)),
   })
@@ -132,7 +129,7 @@ export default function GradeExamsPage() {
       close()
       void qc.invalidateQueries({ queryKey: ['grade-exams'] })
       void qc.invalidateQueries({ queryKey: ['report', 'scores'] })
-      invalidateTeacherExamCaches(qc, classIdsOf(exam))
+      invalidateTeacherExamCaches(qc, exam.classes)
     },
     onError: (e) => setDelError(errMsg(e)),
   })

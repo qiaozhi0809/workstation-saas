@@ -83,10 +83,7 @@ export default function GradeExamForm({
       void qc.invalidateQueries({ queryKey: ['grade-exams'] })
       void qc.invalidateQueries({ queryKey: ['report', 'scores'] })
       // 编辑前后的班都算受影响(保存时可能顺带补建了班)
-      invalidateTeacherExamCaches(
-        qc,
-        [...(exam?.classes ?? []), ...saved.classes].map((c) => c.class_id),
-      )
+      invalidateTeacherExamCaches(qc, [...(exam?.classes ?? []), ...saved.classes])
       onSaved()
     },
     onError: (e) => setError(errMsg(e)),
