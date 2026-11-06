@@ -65,6 +65,16 @@ it('shows the school name from /meta in the top bar, before the child', async ()
   expect(schoolApi.meta).toHaveBeenCalledTimes(1)
   const switcher = within(banner).getByRole('combobox', { name: '切换孩子' })
   expect(school.compareDocumentPosition(switcher) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  // 多个孩子时窄屏放不下校名 + 下拉 + 档案:校名只在 ≥ sm 显示,孩子切换器优先
+  expect(school).toHaveClass('hidden', 'sm:inline')
+})
+
+it('keeps the school name visible on phones when there is a single child', async () => {
+  vi.mocked(parentApi.children).mockResolvedValue([child()])
+  renderParent('/parent/today?child=s1')
+  const school = await within(screen.getByRole('banner')).findByText('示例小学')
+  expect(school).not.toHaveClass('hidden')
+  expect(school).toHaveClass('truncate')
 })
 
 it('still renders the shell when /meta fails', async () => {
