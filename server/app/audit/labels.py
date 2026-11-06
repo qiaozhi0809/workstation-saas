@@ -101,6 +101,8 @@ ACTION_LABELS: dict[str, str] = {
     "settings.tag_pool": "修改标签池",
     "settings.switches": "修改功能开关",
     "settings.security_update": "修改账号安全设置",
+    "settings.grading_update": "修改及格线",
+    "settings.subject_catalog_update": "修改科目目录",
     # 学年
     "year.upgrade": "学年升级",
     "year.rollback": "回滚学年升级",

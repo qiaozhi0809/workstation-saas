@@ -10,7 +10,7 @@ from fastapi import Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.ai.stats import ExamStats, _round1, exam_stats, exam_table
+from app.ai.stats import ExamStats, exam_stats, exam_table, round1
 from app.audit.service import deny, record
 from app.domain.classes.service import class_scope_of
 from app.domain.exams.schemas import SubjectFull
@@ -24,6 +24,8 @@ from app.domain.reports.schemas import (
     SubjectStat,
     TotalStat,
 )
+from app.domain.school_settings.schemas import Grading
+from app.domain.school_settings.service import get_grading
 from app.models import Enrollment, Exam, Grade, GradeExam, SchoolClass, Score, Student, User
 from app.rbac.bindings import Binding, Scope, can
 from app.rbac.roles import LEADER_ROLES, Perm
@@ -45,6 +47,7 @@ class _Report:
     visible: list[SchoolClass]  # 其中调用者有 exam.read 的
     roster: dict[UUID, list[tuple[Enrollment, Student]]]  # class_id -> 在读学生(全部关联班)
     scores: Scores  # enrollment_id -> subject -> value
+    ratios: Grading  # 学校的及格 / 优秀比例
 
 
 def _load(
@@ -106,6 +109,7 @@ def _load(
         visible=visible,
         roster=roster,
         scores=scores,
+        ratios=get_grading(db, ge.school_id),
     )
 
 
@@ -117,7 +121,7 @@ def _total_stat(report: _Report, stats: ExamStats | None) -> TotalStat:
     full = sum(s.full for s in report.subjects)
     if stats is None:
         return TotalStat(full=full, count=0, avg=None, max=None, min=None)
-    return TotalStat(full=full, count=stats.n, avg=_round1(stats.avg), max=stats.max, min=stats.min)
+    return TotalStat(full=full, count=stats.n, avg=round1(stats.avg), max=stats.max, min=stats.min)
 
 
 def _subject_stats(report: _Report, stats: ExamStats | None, students: int) -> list[SubjectStat]:
@@ -146,7 +150,7 @@ def _subject_stats(report: _Report, stats: ExamStats | None, students: int) -> l
                 full=sub.full,
                 count=st.n,
                 missing=students - st.n,
-                avg=_round1(st.avg),
+                avg=round1(st.avg),
                 max=st.max,
                 min=st.min,
                 pass_rate=st.pass_rate,
@@ -168,7 +172,7 @@ def score_summary(
     classes: list[ClassScoreStat] = []
     for cls in report.visible:
         ids = _ids(report, [cls])
-        stats = exam_stats(report.subjects, report.scores, ids)
+        stats = exam_stats(report.subjects, report.scores, ids, ratios=report.ratios)
         classes.append(
             ClassScoreStat(
                 class_id=cls.id,
@@ -178,7 +182,7 @@ def score_summary(
             )
         )
     ids = _ids(report, report.visible)
-    stats = exam_stats(report.subjects, report.scores, ids)
+    stats = exam_stats(report.subjects, report.scores, ids, ratios=report.ratios)
     return ScoreSummary(
         grade_exam=GradeExamBrief(
             id=report.ge.id,
@@ -276,7 +280,8 @@ def _cell(value: object) -> str:
 
 
 def _num(value: float | int | None) -> str:
-    return "" if value is None else format(value, "g")
+    """一位小数(round1,半数向上,与 JSON 侧同口径),整数不带 .0;不再按 6 位有效数字截断(L39)。"""
+    return "" if value is None else f"{round1(value):.1f}".removesuffix(".0")
 
 
 def export_csv(rows: Sequence[ScoreStudentRow], subjects: Sequence[SubjectFull]) -> str:
