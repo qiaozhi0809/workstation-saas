@@ -248,10 +248,26 @@ jobs:
           }
           wait_rtsp_stream cam2 || echo "::warning::H.265 假摄像头 cam2 不可用(镜像可能没有 libx265),m5c 的 HEVC 用例会跳过"
 
-      # R7:真 ffmpeg 组需要 ffmpeg + 假摄像头,只有这里具备(backend job 里 skip)
+      # R7:真 ffmpeg 组需要 ffmpeg + 假摄像头,只有这里具备(backend job 里 skip);性能冒烟另起一步
       - name: Pytest ffmpeg group
         working-directory: server
-        run: uv run pytest -m ffmpeg -q
+        run: uv run pytest -m "ffmpeg and not perf" -q
+
+      # L176:3 路 copy + 1 路转码跑 30 秒,PERF 一行进 perf.txt 作为 artifact;只给数字、不拦截 job。
+      # 显式 bash 带 pipefail,pytest 的退出码不会被 tee 吞掉(失败在这一步显示为告警)
+      - name: Stream perf smoke
+        working-directory: server
+        shell: bash
+        continue-on-error: true
+        run: uv run pytest -m perf -q -s | tee "$RUNNER_TEMP/perf.txt"
+
+      - name: Upload stream perf result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stream-perf
+          path: ${{ runner.temp }}/perf.txt
+          if-no-files-found: ignore
 
       - name: Playwright e2e
         working-directory: apps/web
