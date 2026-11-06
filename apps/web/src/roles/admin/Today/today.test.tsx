@@ -205,7 +205,7 @@ describe('今日关注页', () => {
       const kpi = screen.getByText('在读').closest('[data-kpi]') as HTMLElement
       expect(header.compareDocumentPosition(region) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
       expect(region.compareDocumentPosition(kpi) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-      expect(within(region).getByRole('link', { name: '年级与学段' })).toHaveAttribute(
+      expect(await within(region).findByRole('link', { name: '年级与学段' })).toHaveAttribute(
         'href',
         '/admin/org',
       )

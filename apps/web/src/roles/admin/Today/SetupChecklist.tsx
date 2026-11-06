@@ -4,6 +4,7 @@ import { CheckCircle2, ChevronDown, Circle } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { api } from '@/shared/api/client'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
+import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { Button } from '@/shared/components/ui/button'
 import { cn } from '@/shared/lib/utils'
 import { useAuthStore } from '@/shared/stores/auth'
@@ -33,6 +34,8 @@ const SETUP_LABELS: Record<SetupKey, string> = {
 
 const fetchChecklist = () => api<SetupItem[]>('GET', '/admin/setup-checklist')
 
+const CARD = 'flex flex-col gap-3 rounded-lg border bg-card p-4'
+
 const canSee = (perms: readonly string[] | undefined) =>
   perms?.some((p) => p === 'org.manage' || p === 'settings.manage') ?? false
 
@@ -50,16 +53,22 @@ export function SetupChecklist() {
   const [expanded, setExpanded] = useState(false)
 
   if (!allowed) return null
-  if (q.isError)
+  // 加载中 / 失败也占着同一张卡的位置,数据到了下面的 KPI 行不会跳
+  if (!q.data)
     return (
-      <ErrorState
-        title="开学准备清单加载失败"
-        onRetry={() => void q.refetch()}
-        retrying={q.isFetching}
-        className="py-2"
-      />
+      <section aria-label="开学准备" className={CARD}>
+        {q.isError ? (
+          <ErrorState
+            title="开学准备清单加载失败"
+            onRetry={() => void q.refetch()}
+            retrying={q.isFetching}
+            className="py-2"
+          />
+        ) : (
+          <LoadingState label="开学准备清单加载中…" className="justify-start py-2" />
+        )}
+      </section>
     )
-  if (!q.data) return null
 
   const items = q.data
   const done = items.filter((i) => i.done).length
@@ -67,7 +76,7 @@ export function SetupChecklist() {
   const pct = items.length > 0 ? Math.round((done / items.length) * 100) : 0
 
   return (
-    <section aria-label="开学准备" className="flex flex-col gap-3 rounded-lg border bg-card p-4">
+    <section aria-label="开学准备" className={CARD}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-base font-semibold">{allDone ? '开学准备已完成' : '开学准备'}</h2>
         {allDone ? (

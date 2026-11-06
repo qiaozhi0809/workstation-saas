@@ -66,7 +66,7 @@ describe('开学准备清单', () => {
     setPerms(['settings.manage', 'account.manage'])
     setup(ALL_DONE)
     const region = await screen.findByRole('region', { name: '开学准备' })
-    expect(within(region).getByText('开学准备已完成')).toBeInTheDocument()
+    expect(await within(region).findByText('开学准备已完成')).toBeInTheDocument()
     // 折叠成一行:逐项与进度都不显示
     expect(within(region).queryByRole('list')).toBeNull()
     expect(within(region).queryByRole('progressbar')).toBeNull()
@@ -95,7 +95,7 @@ describe('开学准备清单', () => {
     )
     const region = await screen.findByRole('region', { name: '开学准备' })
     expect(api).toHaveBeenCalledWith('GET', '/admin/setup-checklist')
-    expect(within(region).getByText('已完成 5 / 8')).toBeInTheDocument()
+    expect(await within(region).findByText('已完成 5 / 8')).toBeInTheDocument()
     expect(within(region).getByRole('progressbar', { name: '开学准备进度' })).toHaveAttribute(
       'aria-valuenow',
       '63',
@@ -124,6 +124,21 @@ describe('开学准备清单', () => {
     const { container } = setup(ALL_DONE)
     await waitFor(() => expect(container).toBeEmptyDOMElement())
     expect(api).not.toHaveBeenCalled()
+  })
+
+  it('keeps the card in place while loading', () => {
+    setPerms(['settings.manage'])
+    vi.mocked(api).mockReturnValue(new Promise(() => {}))
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
+          <SetupChecklist />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+    const region = screen.getByRole('region', { name: '开学准备' })
+    expect(within(region).getByRole('status')).toHaveTextContent('开学准备清单加载中…')
+    expect(within(region).queryByRole('list')).toBeNull()
   })
 
   it('shows a retry when the checklist fails to load', async () => {

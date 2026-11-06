@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { schoolApi } from '@/shared/api/school'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
+import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import Modal from '@/shared/components/overlay/Modal'
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -36,6 +37,7 @@ export default function AboutDialog({ open, onClose }: { open: boolean; onClose(
             </>
           )}
         </dl>
+        {meta.isPending && <LoadingState className="justify-start py-2" />}
         {meta.isError && (
           <ErrorState
             title="没有取到版本信息"

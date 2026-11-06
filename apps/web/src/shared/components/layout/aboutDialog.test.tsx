@@ -77,6 +77,20 @@ it('reads the version from the shared meta cache key', async () => {
   expect(schoolApi.meta).not.toHaveBeenCalled()
 })
 
+it('shows a loading line until meta arrives', async () => {
+  vi.mocked(schoolApi.meta).mockReturnValue(new Promise(() => {}))
+  render(
+    <Wrap>
+      <AboutDialog open onClose={() => {}} />
+    </Wrap>,
+  )
+  const dialog = await screen.findByRole('dialog', { name: '关于' })
+  expect(within(dialog).getByText('班级工作台')).toBeInTheDocument()
+  expect(within(dialog).getByRole('status')).toHaveTextContent('加载中…')
+  expect(within(dialog).queryByText('版本')).toBeNull()
+  expect(within(dialog).getByText('数据只存在学校自己的服务器上。')).toBeInTheDocument()
+})
+
 it('shows a retry when meta fails to load', async () => {
   vi.mocked(schoolApi.meta).mockRejectedValueOnce(new Error('net'))
   render(
