@@ -18,14 +18,23 @@ export function parseScore(text: string): Parsed {
   return Number(s)
 }
 
+/**
+ * 及格 / 优秀线 = 满分 × 比例,保留两位小数;与后端 app/ai/stats.py::score_line 同规则。
+ * 满分是整数、比例两位小数,乘积在数学上最多两位小数;取整只是抹掉浮点误差
+ * (100 × 0.55 = 55.00000000000001,不取整时 55 分会被判不及格)。所有"是否过线"的比较都走它。
+ */
+export function scoreLine(full: number, ratio: number): number {
+  return Math.round(full * ratio * 100) / 100
+}
+
 export type CellState = 'empty' | 'absent' | 'over' | 'low' | 'ok'
 
-/** ratios:学校的及格 / 优秀比例(useGrading());低于满分 × 及格比例为 low */
+/** ratios:学校的及格 / 优秀比例(useGrading());低于及格线(scoreLine)为 low */
 export function cellState(v: ScoreValue | undefined, full: number, ratios: Grading): CellState {
   if (v === undefined) return 'empty'
   if (v === null) return 'absent'
   if (v < 0 || v > full) return 'over'
-  if (v < full * ratios.pass_ratio) return 'low'
+  if (v < scoreLine(full, ratios.pass_ratio)) return 'low'
   return 'ok'
 }
 
@@ -107,8 +116,8 @@ export function subjectStats(
   const n = vals.length
   if (n === 0) return null
   const avg = vals.reduce((a, b) => a + b, 0) / n
-  const pass = sub.full * ratios.pass_ratio
-  const good = sub.full * ratios.good_ratio
+  const pass = scoreLine(sub.full, ratios.pass_ratio)
+  const good = scoreLine(sub.full, ratios.good_ratio)
   return {
     name: sub.name,
     full: sub.full,
@@ -152,8 +161,8 @@ export function examStats(exam: GradebookExam, ids: string[], ratios: Grading): 
   const full = examFull(exam)
   const avg = totals.reduce((a, b) => a + b, 0) / n
   const max = Math.max(...totals)
-  const pass = full * ratios.pass_ratio
-  const good = full * ratios.good_ratio
+  const pass = scoreLine(full, ratios.pass_ratio)
+  const good = scoreLine(full, ratios.good_ratio)
   const subjects = exam.subjects.flatMap((s) => {
     const st = subjectStats(exam, s.name, ids, ratios)
     return st ? [st] : []
@@ -268,7 +277,7 @@ export function attention(
       id: r.id,
       count: exam.subjects.filter((s) => {
         const v = r.subs[s.name]
-        return typeof v === 'number' && v < s.full * ratios.pass_ratio
+        return typeof v === 'number' && v < scoreLine(s.full, ratios.pass_ratio)
       }).length,
     }))
     .filter((f) => f.count >= 2)

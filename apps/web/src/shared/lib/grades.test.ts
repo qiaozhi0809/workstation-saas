@@ -13,6 +13,7 @@ import {
   rankChanges,
   rankTint,
   scoreBands,
+  scoreLine,
   studentTrend,
   subjectStats,
   trendDomain,
@@ -143,6 +144,54 @@ describe('uses given ratios', () => {
   })
   it('exposes the default ratios for placeholders', () => {
     expect(DEFAULT_GRADING).toEqual({ pass_ratio: 0.6, good_ratio: 0.85 })
+  })
+})
+
+describe('scoreLine rounds like the backend round(full * ratio, 2)', () => {
+  it('computes the line to two decimals', () => {
+    expect(scoreLine(70, 0.6)).toBe(42)
+    expect(scoreLine(100, 0.57)).toBe(57) // 100 × 0.57 = 56.99999999999999
+    expect(scoreLine(100, 0.55)).toBe(55) // 100 × 0.55 = 55.00000000000001
+    expect(scoreLine(75, 0.56)).toBe(42) // 75 × 0.56 = 42.00000000000001
+    expect(scoreLine(70, 0.85)).toBe(59.5)
+    expect(scoreLine(150, 0.33)).toBe(49.5)
+  })
+  it('a score exactly on the line passes: 42 / 70 / 0.6', () => {
+    const R: Grading = { pass_ratio: 0.6, good_ratio: 0.85 }
+    expect(cellState(42, 70, R)).toBe('ok')
+    expect(cellState(41.9, 70, R)).toBe('low')
+  })
+  it('upward float noise never pushes an on-the-line score below it', () => {
+    // 100 × 0.55 与 75 × 0.56 裸乘都略大于整数线,未取整时 55 分 / 42 分会被判不及格
+    const R: Grading = { pass_ratio: 0.55, good_ratio: 0.56 }
+    expect(cellState(55, 100, R)).toBe('ok')
+    expect(cellState(54.9, 100, R)).toBe('low')
+    const ex: GradebookExam = {
+      ...exam2('line', { a: { 甲: 42, 乙: 56 }, b: { 甲: 41.9, 乙: 55 } }, ['甲', '乙']),
+      subjects: [
+        { name: '甲', full: 75 },
+        { name: '乙', full: 100 },
+      ],
+    }
+    // 甲:及格线 75 × 0.55 = 41.25、优秀线 75 × 0.56 = 42;乙:及格线 55、优秀线 56
+    const jia = subjectStats(ex, '甲', ['a', 'b'], R)!
+    expect(jia.passRate).toBe(1)
+    expect(jia.goodRate).toBe(0.5)
+    expect(jia.low).toBe(0)
+    const yi = subjectStats(ex, '乙', ['a', 'b'], R)!
+    expect(yi.passRate).toBe(1)
+    expect(yi.goodRate).toBe(0.5)
+    // 总分满分 175:175 × 0.56 = 98.00000000000001 → 优秀线 98;a 总分 98 恰好优秀
+    const st = examStats(ex, ['a', 'b'], R)!
+    expect(st.goodRate).toBe(0.5)
+    const cur: Row[] = [
+      { id: 'a', total: 98, rank: 1, subs: { 甲: 42, 乙: 56 } },
+      { id: 'b', total: 96.9, rank: 2, subs: { 甲: 41.9, 乙: 55 } },
+    ]
+    // 0.56:甲线 42、乙线 56;a 两科都恰在线上不算不及格,b 两科都低于线
+    expect(attention(ex, cur, new Map(), { pass_ratio: 0.56, good_ratio: 0.9 }).failing).toEqual([
+      { id: 'b', count: 2 },
+    ])
   })
 })
 
