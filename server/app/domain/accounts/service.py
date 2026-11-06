@@ -4,6 +4,7 @@ from uuid import UUID
 
 from fastapi import Request
 from redis import Redis
+from redis.exceptions import RedisError
 from sqlalchemy import and_, exists, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -290,6 +291,16 @@ def update_account(
     return account_view(db, user, year_id)
 
 
+def revoke_all_or_503(db: Session, redis: Redis, user_ids: Sequence[UUID]) -> None:
+    """提交之前先作废刷新令牌;Redis 不可用 → 回滚、503,不改库(L71)。"""
+    try:
+        for uid in user_ids:
+            sessions.revoke_all(redis, uid)
+    except RedisError:
+        db.rollback()
+        raise ApiError(503, "SERVICE_UNAVAILABLE", "暂时无法完成,请稍后重试") from None
+
+
 def reset_password(
     db: Session,
     redis: Redis,
@@ -312,8 +323,8 @@ def reset_password(
         object_id=str(user.id),
         request=request,
     )
+    revoke_all_or_503(db, redis, [user.id])
     db.commit()
-    sessions.revoke_all(redis, user.id)
     redis.delete(_fail_key(settings, user.login_name))
     publish(redis, [user.id], {"type": "session.stale"})  # 已打开的页面立即用刷新令牌重连(L29)
     return temp
@@ -361,8 +372,8 @@ def freeze(
         object_id=str(user.id),
         request=request,
     )
+    revoke_all_or_503(db, redis, [user.id])
     db.commit()
-    sessions.revoke_all(redis, user.id)
     publish(redis, [user.id], {"type": "session.revoked"})
     return account_view(db, user, year_id)
 

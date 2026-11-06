@@ -696,3 +696,30 @@ def test_parent_reset_kicks_socket(client, settings, db, redis_client):
     assert res.status_code == 200
     assert _drain(pubsub) == [{"user_ids": [p["user_id"]], "event": {"type": "session.stale"}}]
     pubsub.close()
+
+
+def test_parent_reset_and_unlink_redis_error_change_nothing(client, settings, db, monkeypatch):
+    from redis.exceptions import RedisError
+
+    from app.auth import sessions
+
+    created = _add(client, settings, S3, "13800000057").json()
+    link = created["parent"]["link_id"]
+    before = _user(db, "13800000057").password_hash
+
+    def boom(*args, **kwargs):
+        raise RedisError("down")
+
+    monkeypatch.setattr(sessions, "revoke_all", boom)
+    res = client.post(f"/api/v1/parent-links/{link}/reset-password", headers=auth(settings))
+    assert res.status_code == 503 and res.json()["error"]["code"] == "SERVICE_UNAVAILABLE"
+    assert "temp_password" not in res.text
+    assert _user(db, "13800000057").password_hash == before
+    # 解绑会归档孤立账号:吊销失败 → 整体回滚,绑定与账号都不变
+    res = client.delete(f"/api/v1/parent-links/{link}", headers=auth(settings))
+    assert res.status_code == 503 and res.json()["error"]["code"] == "SERVICE_UNAVAILABLE"
+    db.expire_all()
+    assert _user(db, "13800000057").status == "active"
+    assert db.get(ParentLink, UUID(link)).status == "active"
+    monkeypatch.undo()
+    assert _login(client, "13800000057", created["temp_password"]).status_code == 200

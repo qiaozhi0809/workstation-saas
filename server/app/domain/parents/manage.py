@@ -17,10 +17,10 @@ from sqlalchemy.orm import Session
 
 from app import clock
 from app.audit.service import deny, record
-from app.auth import sessions
 from app.auth.passwords import generate_temp_password, hash_password
 from app.auth.service import _fail_key
 from app.config import Settings
+from app.domain.accounts.service import revoke_all_or_503
 from app.domain.classes.service import class_scope_of
 from app.domain.parents.lifecycle import archive_orphan_accounts
 from app.domain.parents.schemas import ParentCreated, ParentInput, ParentOfStudent
@@ -469,9 +469,8 @@ def unlink(
             request=request,
             extra={"via": "unlink"},
         )
+    revoke_all_or_503(db, redis, archived)
     db.commit()
-    for uid in archived:
-        sessions.revoke_all(redis, uid)
     if archived:
         publish(redis, archived, {"type": "session.revoked"})
 
@@ -527,8 +526,8 @@ def reset_parent_password(
         request=request,
         extra={"student_id": str(student.id), "link_id": str(link.id)},
     )
+    revoke_all_or_503(db, redis, [user.id])
     db.commit()
-    sessions.revoke_all(redis, user.id)
     redis.delete(_fail_key(settings, user.login_name))
     publish(redis, [user.id], {"type": "session.stale"})  # 已打开的页面立即用刷新令牌重连(L29)
     return temp

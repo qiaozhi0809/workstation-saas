@@ -449,3 +449,39 @@ def test_admin_reset_kicks_socket(client, settings, db, redis_client):
             seen.append(json.loads(msg["data"]))
     pubsub.close()
     assert seen == [{"user_ids": [str(uid)], "event": {"type": "session.stale"}}]
+
+
+def _revoke_boom(monkeypatch):
+    from redis.exceptions import RedisError
+
+    from app.auth import sessions
+
+    def boom(*args, **kwargs):
+        raise RedisError("down")
+
+    monkeypatch.setattr(sessions, "revoke_all", boom)
+
+
+def test_reset_redis_error_leaves_password_unchanged(client, settings, db, monkeypatch):
+    uid = _user_id(db, "teacher02")
+    before = db.get(User, uid).password_hash
+    _revoke_boom(monkeypatch)
+    res = client.post(f"{ACCOUNTS}/{uid}/reset-password", headers=_admin(settings))
+    assert res.status_code == 503
+    assert res.json()["error"]["code"] == "SERVICE_UNAVAILABLE"
+    assert "temp_password" not in res.text
+    db.expire_all()
+    assert db.get(User, uid).password_hash == before
+    assert db.get(User, uid).must_change_password is False
+    assert audit_rows(db, uid) == []
+    monkeypatch.undo()
+    assert _login(client, "teacher02").status_code == 200
+
+
+def test_freeze_redis_error_leaves_account_active(client, settings, db, monkeypatch):
+    uid = _user_id(db, "teacher02")
+    _revoke_boom(monkeypatch)
+    res = client.post(f"{ACCOUNTS}/{uid}/freeze", headers=_admin(settings))
+    assert res.status_code == 503 and res.json()["error"]["code"] == "SERVICE_UNAVAILABLE"
+    db.expire_all()
+    assert db.get(User, uid).status == "active"
