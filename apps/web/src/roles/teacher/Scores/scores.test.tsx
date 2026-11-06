@@ -6,7 +6,9 @@ import { classesApi } from '@/shared/api/classes'
 import { classroomApi } from '@/shared/api/classroom'
 import { ApiError } from '@/shared/api/client'
 import { examsApi } from '@/shared/api/exams'
+import { schoolApi } from '@/shared/api/school'
 import { studentsApi } from '@/shared/api/students'
+import { DEFAULT_GRADING } from '@/shared/lib/grades'
 import { useTeacherStore } from '@/shared/stores/teacher'
 import type { ClassView } from '@/shared/types/class'
 import type { ClassPerm } from '@/shared/types/classroom'
@@ -18,6 +20,7 @@ import ScoresPage from './ScoresPage'
 vi.mock('@/shared/api/classes', () => ({ classesApi: { mine: vi.fn() } }))
 vi.mock('@/shared/api/classroom', () => ({ classroomApi: { summary: vi.fn() } }))
 vi.mock('@/shared/api/exams')
+vi.mock('@/shared/api/school', () => ({ schoolApi: { grading: vi.fn() } }))
 vi.mock('@/shared/api/students', () => ({ studentsApi: { listInClass: vi.fn() } }))
 
 const SUBJECTS = ['语文', '数学', '英语', '道法', '科学'].map((name) => ({ name, full: 100 }))
@@ -90,6 +93,7 @@ const fillName = async (v: string) =>
 
 beforeEach(() => {
   vi.resetAllMocks()
+  vi.mocked(schoolApi.grading).mockResolvedValue(DEFAULT_GRADING)
   useTeacherStore.setState({ classId: 'c1' })
 })
 

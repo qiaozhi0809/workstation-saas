@@ -8,8 +8,10 @@ import { attendanceApi } from '@/shared/api/attendance'
 import { examsApi } from '@/shared/api/exams'
 import { growthApi } from '@/shared/api/growth'
 import { reviewsApi } from '@/shared/api/reviews'
+import { schoolApi } from '@/shared/api/school'
 import { studentsApi } from '@/shared/api/students'
 import { Toaster } from '@/shared/components/Toast'
+import { DEFAULT_GRADING } from '@/shared/lib/grades'
 import type { Gradebook } from '@/shared/types/grades'
 import type { ClassPerm } from '@/shared/types/classroom'
 import type { StudentProfile } from '@/shared/types/student'
@@ -18,6 +20,7 @@ import OverviewTab, { CLASS_ROLE_PRESETS } from './OverviewTab'
 vi.mock('@/shared/api/classroom', () => ({ classroomApi: { summary: vi.fn() } }))
 vi.mock('@/shared/api/students', () => ({ studentsApi: { setClassRole: vi.fn() } }))
 vi.mock('@/shared/api/exams', () => ({ examsApi: { gradebook: vi.fn() } }))
+vi.mock('@/shared/api/school', () => ({ schoolApi: { grading: vi.fn() } }))
 vi.mock('@/shared/api/reviews', () => ({ reviewsApi: { summary: vi.fn() } }))
 vi.mock('@/shared/api/attendance', () => ({ attendanceApi: { month: vi.fn() } }))
 vi.mock('@/shared/api/growth', () => ({
@@ -111,6 +114,7 @@ beforeEach(() => {
   vi.resetAllMocks()
   vi.mocked(studentsApi.setClassRole).mockResolvedValue({ enrollment_id: 'e1', class_role: null })
   vi.mocked(examsApi.gradebook).mockResolvedValue({ exams: [] })
+  vi.mocked(schoolApi.grading).mockResolvedValue(DEFAULT_GRADING)
   vi.mocked(reviewsApi.summary).mockResolvedValue({ week_start: '2026-10-26', items: [] })
   vi.mocked(attendanceApi.month).mockResolvedValue({ month: '2026-11', items: [] })
   vi.mocked(growthApi.list).mockResolvedValue({ items: [] })

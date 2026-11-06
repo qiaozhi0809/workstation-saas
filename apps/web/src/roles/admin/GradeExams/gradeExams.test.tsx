@@ -324,6 +324,43 @@ it('edits an exam: keeps its grade and full marks, lists legacy subjects, shows 
   expect(await within(dlg).findByRole('alert')).toHaveTextContent('「数学」已有成绩,不能去掉')
 })
 
+it('edits an exam: keeps the exam subject order and appends newly picked subjects', async () => {
+  const existing = exam({
+    subjects: [
+      { name: '数学', full: 100 },
+      { name: '语文', full: 90 },
+    ],
+  })
+  vi.mocked(adminApi.gradeExams).mockResolvedValue([existing])
+  vi.mocked(adminApi.updateGradeExam).mockResolvedValue(existing)
+  await renderPage()
+  fireEvent.click(within(row()).getByRole('button', { name: '编辑' }))
+  const dlg = await screen.findByRole('dialog')
+  // 复选框仍按目录序展示
+  await within(dlg).findByRole('checkbox', { name: '语文' })
+  expect(subjectBoxes(dlg).map((b) => b.getAttribute('aria-label'))).toEqual([
+    '语文',
+    '数学',
+    '英语',
+    '科学',
+  ])
+  fireEvent.click(within(dlg).getByRole('checkbox', { name: '英语' }))
+  fireEvent.click(within(dlg).getByRole('button', { name: '保存' }))
+  await waitFor(() =>
+    expect(adminApi.updateGradeExam).toHaveBeenCalledWith('ge1', {
+      grade_id: 'g3',
+      name: '十月联考',
+      exam_type: '月考',
+      date: '2026-10-20',
+      subjects: [
+        { name: '数学', full: 100 },
+        { name: '语文', full: 90 },
+        { name: '英语', full: 100 },
+      ],
+    }),
+  )
+})
+
 it('tells when the catalog cannot be loaded instead of offering free text', async () => {
   vi.mocked(schoolApi.subjectCatalog).mockRejectedValue(new ApiError(500, 'X', '失败'))
   await renderPage()

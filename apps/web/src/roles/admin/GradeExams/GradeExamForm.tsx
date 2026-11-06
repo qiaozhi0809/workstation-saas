@@ -107,7 +107,15 @@ export default function GradeExamForm({
       setError('请选择日期')
       return
     }
-    const subjects = (options ?? [])
+    // 编辑时保持考试原有的科目顺序,新勾上的按目录序追加在后;新建时就是目录序
+    const all = options ?? []
+    const ordered = exam
+      ? [
+          ...exam.subjects.flatMap((s) => all.filter((o) => o.name === s.name)),
+          ...all.filter((o) => !exam.subjects.some((s) => s.name === o.name)),
+        ]
+      : all
+    const subjects = ordered
       .filter((o) => selected.has(o.name))
       .map((o) => ({ name: o.name, full: o.full }))
     if (subjects.length === 0) {

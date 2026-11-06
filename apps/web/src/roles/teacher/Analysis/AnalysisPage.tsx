@@ -227,7 +227,7 @@ function AnalysisBody({
           onOpen={openStudent}
         />
       </div>
-      <SubjectTable stats={subjectNow} prev={subjectPrev} />
+      <SubjectTable stats={subjectNow} prev={subjectPrev} ratios={grading} />
     </div>
   )
 }

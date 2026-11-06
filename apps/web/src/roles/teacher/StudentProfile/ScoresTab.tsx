@@ -83,7 +83,9 @@ export default function ScoresTab({ profile }: { profile: StudentProfile }) {
             ))}
           </tbody>
         </table>
-        <p className="mt-2 text-xs text-muted-foreground">红色为不及格(低于满分的 60%)</p>
+        <p className="mt-2 text-xs text-muted-foreground">
+          红色为不及格(低于满分的 {Math.round(grading.pass_ratio * 100)}%)
+        </p>
       </div>
       <section>
         <h3 className="mb-1 text-sm font-medium">排名变化</h3>

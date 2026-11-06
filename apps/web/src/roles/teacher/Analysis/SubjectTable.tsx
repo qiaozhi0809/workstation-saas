@@ -1,5 +1,6 @@
 import type { SubjectStats } from '@/shared/lib/grades'
 import { cn } from '@/shared/lib/utils'
+import type { Grading } from '@/shared/types/school'
 import { round1 } from './round1'
 
 function RateChange({ cur, prev }: { cur: SubjectStats; prev: SubjectStats | undefined }) {
@@ -14,13 +15,15 @@ function RateChange({ cur, prev }: { cur: SubjectStats; prev: SubjectStats | und
   )
 }
 
-/** prev 为 null 表示没有对比,不显示得分率变化列 */
+/** prev 为 null 表示没有对比,不显示得分率变化列;ratios 只用来写脚注,与算出 stats 的比例保持同一份 */
 export function SubjectTable({
   stats,
   prev,
+  ratios,
 }: {
   stats: SubjectStats[]
   prev: SubjectStats[] | null
+  ratios: Grading
 }) {
   const heads = [
     '科目',
@@ -70,7 +73,10 @@ export function SubjectTable({
           </tbody>
         </table>
       </div>
-      <p className="px-3 pb-3 text-xs text-muted-foreground">及格 = 满分 60%,优秀 = 满分 85%</p>
+      <p className="px-3 pb-3 text-xs text-muted-foreground">
+        及格 = 满分 {Math.round(ratios.pass_ratio * 100)}%,优秀 = 满分{' '}
+        {Math.round(ratios.good_ratio * 100)}%
+      </p>
     </section>
   )
 }
