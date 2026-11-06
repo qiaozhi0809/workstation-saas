@@ -78,6 +78,44 @@ def test_op_id_reused_by_other_user_is_409(client, db, settings):
     assert (res.status_code, res.json()["error"]["code"]) == (409, "OP_ID_CONFLICT")
 
 
+def test_concurrent_same_op_id_rolls_back_and_replays(client, db, settings, monkeypatch):
+    """两个同 op_id 的请求赛跑:查重时还没有,插入时已被先到者写入 → 撞唯一键后回滚,
+    改为返回先到者的行(200),库里不留第二套、也不留半套(L19)。"""
+    from app.domain.reviews import service as reviews
+
+    e = enrollment_of(db, STUDENT_IDS[0])
+    payload = individual([e])
+    real = reviews._existing
+    calls = {"n": 0}
+
+    def racing_existing(db_, cls, user_id, op_id):
+        found = real(db_, cls, user_id, op_id)
+        calls["n"] += 1
+        if calls["n"] == 1:
+            # 查重之后、插入之前,另一个同 op_id 的请求已经提交了同样的行
+            db.add(
+                Review(
+                    op_id=op_id,
+                    enrollment_id=e,
+                    class_id=UUID(CLASS_ID),
+                    category="individual",
+                    reason_text="积极发言",
+                    score_delta=1,
+                    given_by_user_id=UUID(TEACHER_USER_ID),
+                )
+            )
+            db.commit()
+        return found
+
+    monkeypatch.setattr(reviews, "_existing", racing_existing)
+    res = client.post(BASE, json=payload, headers=auth(settings))
+    assert res.status_code == 200, res.text
+    assert [(i["enrollment_id"], i["given_by_me"]) for i in res.json()["items"]] == [(str(e), True)]
+    assert calls["n"] == 2 and review_count(db) == 1
+    # 会话已从失败的插入里恢复,后续请求照常
+    assert client.get(BASE, headers=auth(settings)).status_code == 200
+
+
 def test_whole_class_skips_leave_and_absent(client, db, settings, monkeypatch):
     freeze(monkeypatch, NOW)
     mark(db, STUDENT_IDS[0], "leave")
