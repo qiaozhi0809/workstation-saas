@@ -239,6 +239,8 @@ NEW_PERMS = (
     Perm.NOTICE_SEND,
     Perm.GRADE_EXAM_WRITE,
     Perm.YEAR_UPGRADE,
+    Perm.CAMERA_MANAGE,
+    Perm.CAMERA_VIEW,
 )
 # 范围清单"权限矩阵(M3 新增)":每个角色 × 每个新权限点
 NEW_PERM_MATRIX = {
@@ -249,9 +251,16 @@ NEW_PERM_MATRIX = {
         Perm.NOTICE_SEND,
         Perm.GRADE_EXAM_WRITE,
         Perm.YEAR_UPGRADE,
+        Perm.CAMERA_VIEW,
     },
-    Role.grade_head: {Perm.NOTICE_SEND, Perm.GRADE_EXAM_WRITE},
-    Role.it_admin: {Perm.ORG_MANAGE, Perm.ACCOUNT_MANAGE, Perm.SETTINGS_MANAGE, Perm.AUDIT_READ},
+    Role.grade_head: {Perm.NOTICE_SEND, Perm.GRADE_EXAM_WRITE, Perm.CAMERA_VIEW},
+    Role.it_admin: {
+        Perm.ORG_MANAGE,
+        Perm.ACCOUNT_MANAGE,
+        Perm.SETTINGS_MANAGE,
+        Perm.AUDIT_READ,
+        Perm.CAMERA_MANAGE,
+    },
 }
 
 
@@ -271,6 +280,8 @@ def test_new_perm_values_and_role_sets():
         "notice.send",
         "exam.grade_write",
         "year.upgrade",
+        "camera.manage",
+        "camera.view",
     ]
     assert ADMIN_ROLES == {Role.principal, Role.dean, Role.grade_head, Role.it_admin}
     assert LEADER_ROLES == {Role.principal, Role.dean, Role.grade_head}
@@ -280,19 +291,24 @@ def test_admin_perms_order_and_school_view():
     s = uuid4()
     assert ADMIN_PERM_ORDER[0] == "school.view"
     assert admin_perms([b(Role.principal, school_id=s)]) == list(ADMIN_PERM_ORDER)
-    assert len(ADMIN_PERM_ORDER) == 9
+    assert len(ADMIN_PERM_ORDER) == 11
+    assert ADMIN_PERM_ORDER[-2:] == ("camera.manage", "camera.view")
+    assert Perm.CAMERA_MANAGE not in CLASSROOM_PERMS and Perm.CAMERA_VIEW not in CLASSROOM_PERMS
     assert admin_perms([b(Role.it_admin, school_id=s)]) == [
         "org.manage",
         "account.manage",
         "settings.manage",
         "audit.read",
+        "camera.manage",
     ]
     assert admin_perms([b(Role.homeroom_teacher, class_id=uuid4())]) == []
     assert admin_perms([b(Role.grade_head, grade_id=uuid4())]) == [
         "school.view",
         "notice.send",
         "exam.grade_write",
+        "camera.view",
     ]
+    assert admin_perms([b(Role.dean, school_id=s)])[-1] == "camera.view"
 
 
 def test_grade_head_scope(db):

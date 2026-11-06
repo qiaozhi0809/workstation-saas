@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     log_dir: Path | None = None
     log_retention_days: int = 14
     login_log_days: int = 180
+    hls_root: Path = Path("/run/ws-hls")
+    stream_max: int = 10
     # 逗号分隔的 IP / CIDR;直连地址在其中时才采信 X-Forwarded-For
     trusted_proxies: Annotated[list[str], NoDecode] = []
     _trusted_networks: list[IPNetwork] = PrivateAttr(default_factory=list)
