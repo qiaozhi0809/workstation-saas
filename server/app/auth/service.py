@@ -445,6 +445,9 @@ def totp_enable(
     redis.delete(fail_key)
     redis.delete(_pending_key(user.id))
     sessions.revoke_all(redis, user.id, keep=keep_token)
+    publish(
+        redis, [user.id], {"type": STALE}
+    )  # 尽力而为,失败不影响开启;其他会话的实时连接随之重连并被拒(L149)
 
 
 def totp_disable(

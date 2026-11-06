@@ -373,6 +373,42 @@ def test_enable_totp_revokes_other_sessions(client, db, settings, redis_client):
     assert _login(client).json()["mfa_required"] is True
 
 
+def test_enable_totp_publishes_stale(client, db, settings, redis_client):
+    _allow(db)
+    s = _login(client).json()
+    pubsub = redis_client.pubsub()
+    pubsub.subscribe("ws:events")
+    assert pubsub.get_message(timeout=2)["type"] == "subscribe"
+    _, res = _setup_and_enable(client, _bearer(s["access_token"]), s["refresh_token"])
+    assert res.status_code == 200
+    got = []
+    while (msg := pubsub.get_message(timeout=0.5)) is not None:
+        if msg["type"] == "message":
+            got.append(json.loads(msg["data"]))
+    pubsub.close()
+    assert got == [{"user_ids": [TEACHER_USER_ID], "event": {"type": "session.stale"}}]
+
+
+def test_enable_wrong_password_publishes_nothing(client, db, settings, redis_client):
+    _allow(db)
+    s = _login(client).json()
+    h = _bearer(s["access_token"])
+    assert client.post(f"{API}/auth/totp/setup", headers=h).status_code == 200
+    pubsub = redis_client.pubsub()
+    pubsub.subscribe("ws:events")
+    assert pubsub.get_message(timeout=2)["type"] == "subscribe"
+    res = client.post(
+        f"{API}/auth/totp/enable",
+        headers=h,
+        json={"code": "000000", "password": "wrong-pass-1", "refresh_token": s["refresh_token"]},
+    )
+    assert res.status_code == 400
+    assert [
+        m for m in iter(lambda: pubsub.get_message(timeout=0.5), None) if m["type"] == "message"
+    ] == []
+    pubsub.close()
+
+
 def test_secret_stored_encrypted(client, db, settings):
     _allow(db)
     s = _login(client).json()
