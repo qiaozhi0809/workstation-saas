@@ -1,7 +1,8 @@
 import { screen, within } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { parentApi } from '@/shared/api/parent'
-import { child, mockWidth, renderParent, setParentUser, today } from '../testkit'
+import { schoolApi } from '@/shared/api/school'
+import { child, meta, mockWidth, renderParent, setParentUser, today } from '../testkit'
 
 vi.mock('@/shared/api/parent', () => ({
   parentApi: { children: vi.fn(), today: vi.fn(), profile: vi.fn(), saveContacts: vi.fn() },
@@ -84,6 +85,28 @@ it('lists today reviews with signs and says so when there are none', async () =>
   vi.mocked(parentApi.today).mockResolvedValue(today({ reviews: [] }))
   open()
   expect(await screen.findByText('今天还没有点评')).toBeInTheDocument()
+})
+
+it('shows review times in the school time zone from /meta (L79)', async () => {
+  vi.mocked(schoolApi.meta).mockResolvedValue(meta({ school_tz: 'America/New_York' }))
+  vi.mocked(parentApi.today).mockResolvedValue(
+    today({
+      reviews: [
+        {
+          id: 'r1',
+          reason_text: '积极发言',
+          score_delta: 2,
+          subject: '数学',
+          given_at: '2026-11-04T01:00:00Z',
+          given_by_name: '李老师',
+        },
+      ],
+    }),
+  )
+  open()
+  const list = await screen.findByRole('region', { name: '今日点评' })
+  // 01:00Z 在纽约(冬令时)是前一天 20:00;写死 Asia/Shanghai 时会显示 09:00
+  expect(await within(list).findByText('20:00 · 数学 · 李老师')).toBeInTheDocument()
 })
 
 it('draws the mini classroom with only the own child named', async () => {
