@@ -536,6 +536,18 @@ def test_forced_mask_applies_to_chat_created_unmasked(client, settings, db):
     assert got["messages"][-1]["content"] == "王小一很棒"
 
 
+def test_chat_mask_reflects_forced_mask_now(client, settings, db):
+    """对话详情里的 mask 是当前生效的值(建对话后学校开了强制脱敏也要体现),
+    不是建对话时存下的值(L18)。"""
+    configure_ai(db, settings)
+    chat = create(client, settings, parent_body(mask=False))
+    assert chat["mask"] is False
+    _force_mask(db, settings)
+    assert get_chat(client, settings, chat["id"]).json()["mask"] is True
+    # 新建的对话同样按当前生效值返回
+    assert create(client, settings, parent_body(mask=False))["mask"] is True
+
+
 def _state_at_final_event(client, settings, db, redis_client, chat_id, events_fn, ctx, final):
     """逐个读事件;收到 done / error 的当下立刻查库与锁。"""
     seen: dict = {}

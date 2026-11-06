@@ -38,7 +38,7 @@ from app.ai.requests import (
     field_defaults,
     resolve,
 )
-from app.ai.settings import is_ready, load_ai_config
+from app.ai.settings import AIConfig, is_ready, load_ai_config
 from app.ai.templates import CATEGORIES, PERM_ORDER, TEMPLATES
 from app.audit.service import _client_ip, record
 from app.auth.deps import get_current_user
@@ -84,7 +84,7 @@ def ai_status(db: DbDep, _user: UserDep, settings: SettingsDep) -> AiStatus:
     return AiStatus(
         configured=configured,
         provider_label=provider_label(cfg.provider, cfg.model) if configured and cfg else None,
-        mask_forced=cfg.mask_forced if cfg else False,
+        mask_forced=_mask_forced(cfg),
     )
 
 
@@ -93,6 +93,10 @@ _REASONS = {
     Perm.COMMENT_WRITE: "仅班主任可用",
     Perm.EXAM_READ: "需要查看成绩的权限",
 }
+
+
+def _mask_forced(cfg: AIConfig | None) -> bool:
+    return cfg.mask_forced if cfg else False
 
 
 @router.get("/templates", response_model=AiTemplates, response_model_exclude_unset=True)
@@ -195,7 +199,7 @@ def create_ai_chat(
     today = school_today(db, cls.school_id)
     r = resolve(db, user, bindings, cls, body, cfg, today, request=request)
     chat = create_chat(db, user, cls, r)
-    return chat_out(db, chat, clock.utc_now())
+    return chat_out(db, chat, clock.utc_now(), mask_forced=_mask_forced(cfg))
 
 
 @router.get("/chats", response_model=AiChatList)
@@ -212,9 +216,10 @@ def list_ai_chats(
 
 
 @router.get("/chats/{chat_id}", response_model=AiChatOut)
-def get_ai_chat(chat_id: UUID, db: DbDep, user: UserDep) -> AiChatOut:
+def get_ai_chat(chat_id: UUID, db: DbDep, user: UserDep, settings: SettingsDep) -> AiChatOut:
     chat = get_own_chat(db, user.id, chat_id)
-    return chat_out(db, chat, clock.utc_now())
+    cfg = load_ai_config(db, settings.school_id, settings.master_key_bytes)
+    return chat_out(db, chat, clock.utc_now(), mask_forced=_mask_forced(cfg))
 
 
 @router.delete("/chats/{chat_id}", status_code=204)
@@ -241,7 +246,7 @@ def ai_chat_prompt(
     cls = get_class_or_404(db, chat.class_id)
     _check_perms(db, request, user, bindings, cls, _chat_needs(chat))
     cfg = load_ai_config(db, settings.school_id, settings.master_key_bytes)  # 可为 None
-    effective = chat.mask or (cfg.mask_forced if cfg else False)
+    effective = chat.mask or _mask_forced(cfg)
     masker = masker_for_school(db, cls.school_id, cls.id)
     system = scrub(system_prompt(db, user, bindings, cls))
     template = TEMPLATES.get(chat.template_id) if chat.template_id else None

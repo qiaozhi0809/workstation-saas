@@ -95,7 +95,9 @@ def item_status(item: AiBatchItem, now: datetime) -> str:
     return "wait" if item.status == "run" and _stale(item.updated_at, now) else item.status
 
 
-def chat_out(db: Session, chat: AiChat, now: datetime) -> AiChatOut:
+def chat_out(db: Session, chat: AiChat, now: datetime, *, mask_forced: bool = False) -> AiChatOut:
+    """``mask_forced``:学校当前是否强制脱敏;返回的 ``mask`` 是实际生效的值
+    (``chat.mask or mask_forced``,与追问 / 批量 / 复制提示词同一口径),不是建对话时存的值。"""
     messages = []
     for m in ordered_messages(db, chat.id):
         status, error = m.status, m.error
@@ -134,7 +136,7 @@ def chat_out(db: Session, chat: AiChat, now: datetime) -> AiChatOut:
         class_id=chat.class_id,
         student_id=chat.student_id,
         save_as=chat.save_as,  # type: ignore[arg-type]
-        mask=chat.mask,
+        mask=chat.mask or mask_forced,
         batch_only=chat.batch_only,
         messages=messages,
         items=items,
