@@ -7,6 +7,7 @@ import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import Modal from '@/shared/components/overlay/Modal'
 import { Button } from '@/shared/components/ui/button'
 import { SegmentedTabs } from '@/shared/components/ui/segmented-tabs'
+import { downloadBlob } from '@/shared/lib/download'
 import type { AckRow, AckStats } from '@/shared/types/admin'
 
 type Tab = 'acked' | 'unacked' | 'unread'
@@ -19,17 +20,6 @@ const PICK: Record<Tab, (r: AckRow) => boolean> = {
   acked: (r) => r.acked_at !== null,
   unacked: (r) => r.acked_at === null,
   unread: (r) => r.read_at === null,
-}
-
-function saveBlob(filename: string, blob: Blob): void {
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 
 function ackText(data: AckStats, r: AckRow): string {
@@ -57,7 +47,7 @@ export default function AckStatsDialog({
   })
   const exp = useMutation({
     mutationFn: () => noticesApi.exportAcks(noticeId),
-    onSuccess: (blob) => saveBlob(`回执名单-${noticeId}.csv`, blob),
+    onSuccess: (blob) => downloadBlob(blob, `回执名单-${noticeId}.csv`),
   })
   const data = q.data
 
