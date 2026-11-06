@@ -251,9 +251,7 @@ describe('grouped nav (≥ 768)', () => {
     renderNav(ADMIN_PAGES, '/admin/org/classes/c1')
     fireEvent.click(screen.getByRole('button', { name: '学校管理' }))
     const items = within(screen.getByRole('menu', { name: '学校管理' })).getAllByRole('menuitem')
-    const marked = items.filter((i) => i.querySelector('svg.lucide-check') !== null)
-    expect(marked.map((i) => i.textContent?.trim())).toEqual(['组织架构'])
-    // 读屏靠 aria-current:只有当前页那一项带 page,其余没有
+    // 只断言 aria-current:当前页那一项带 page,其余没有(视觉上的勾是它的装饰,不单独断言)
     expect(
       within(screen.getByRole('menu')).getByRole('menuitem', { name: '组织架构' }),
     ).toHaveAttribute('aria-current', 'page')

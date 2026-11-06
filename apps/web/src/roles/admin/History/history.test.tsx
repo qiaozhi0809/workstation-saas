@@ -111,11 +111,11 @@ const scores = (e: HistoryExam): HistoryScores => ({
   ],
 })
 
-function setup(entry = '/admin/history') {
+const makeClient = () => new QueryClient({ defaultOptions: { queries: { retry: false } } })
+
+function setup(entry = '/admin/history', client = makeClient()) {
   return render(
-    <QueryClientProvider
-      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
-    >
+    <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[entry]}>
         <Routes>
           <Route path="/admin/history" element={<HistoryPage />} />
@@ -293,9 +293,17 @@ describe('往年单班页', () => {
   })
 
   it('缺少 year 参数且哪个往年都没有这个班时标题退化为往年班级', async () => {
-    setup('/admin/history/classes/nobody')
+    const client = makeClient()
+    setup('/admin/history/classes/nobody', client)
     await screen.findByText('张小三')
-    await waitFor(() => expect(adminApi.historyClasses).toHaveBeenCalledWith('y24'))
+    // 等逐年查找真正结束(两个往年各问一次、查找结果落定为"没找到"),再断言,免得在中途就通过
+    await waitFor(() =>
+      expect(client.getQueryState(['history', 'class-year', 'nobody'])).toMatchObject({
+        status: 'success',
+        data: null,
+      }),
+    )
+    expect(vi.mocked(adminApi.historyClasses).mock.calls.map((c) => c[0])).toEqual(['y25', 'y24'])
     expect(screen.getByRole('heading', { level: 1, name: '往年班级' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '← 往年班级' })).toHaveAttribute(
       'href',
