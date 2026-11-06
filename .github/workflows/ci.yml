@@ -84,10 +84,12 @@ jobs:
         run: npm run test
 
   # Playwright e2e 冒烟:真实 Postgres/Redis + 后端 + Vite dev server(/api 代理到 8080)
+  # + 假摄像头(mediamtx + H.264 / H.265 推流)+ stream worker:m5c 的监控用例与 pytest 真 ffmpeg 组在这里跑
   e2e:
     needs: [backend, frontend]
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # 比只跑 Playwright 时多了装 ffmpeg、拉假摄像头镜像、两次 testcontainers 的 pytest 与真流用例
+    timeout-minutes: 30
     services:
       postgres:
         image: postgres:16-alpine
@@ -117,6 +119,8 @@ jobs:
       # 与 deploy/docker-compose.dev.yml 和 server/app/config.py 的开发默认值一致
       WS_DATABASE_URL: postgresql+psycopg://workstation:workstation@localhost:5432/workstation
       WS_REDIS_URL: redis://localhost:6379/0
+      # 假摄像头(mediamtx)映射到 runner 的 RTSP 端口:后端、stream worker、pytest 真 ffmpeg 组、Playwright 都用它
+      WS_RTSP_PORT: "8554"
     steps:
       - uses: actions/checkout@v7
 
@@ -132,6 +136,21 @@ jobs:
           node-version: 20
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
+
+      # stream worker 与 pytest 真 ffmpeg 组要 ffmpeg / ffprobe;假摄像头只起 camera profile 的三个服务——
+      # dev compose 里的 postgres / redis 与上面的 GitHub services 用同样的端口,不能一起起。先起容器,后面的步骤给它时间推流
+      - name: Install ffmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+
+      - name: Start fake cameras
+        run: docker compose -f deploy/docker-compose.dev.yml --profile camera up -d mediamtx fake-camera fake-camera-hevc
+
+      # 后端(发片段)与 stream worker(写片段)都跑在 runner 上,HLS 目录必须是同一个;
+      # job 级 env 里用不了 runner 上下文,写进 GITHUB_ENV 给后面每一步
+      - name: Prepare HLS directory
+        run: |
+          mkdir -p "$RUNNER_TEMP/ws-hls"
+          echo "WS_HLS_ROOT=$RUNNER_TEMP/ws-hls" >> "$GITHUB_ENV"
 
       - name: Install backend dependencies
         working-directory: server
@@ -152,6 +171,12 @@ jobs:
         working-directory: server
         run: |
           nohup uv run uvicorn --factory app.main:create_app --port 8080 > "$RUNNER_TEMP/backend.log" 2>&1 &
+
+      # 转流 worker:扫 ws:cam:want:* 起 ffmpeg 写 HLS、回答"测试连接";WS_ENV=dev 才放行回环地址的摄像头
+      - name: Start stream worker
+        working-directory: server
+        run: |
+          nohup uv run python -m app.stream > "$RUNNER_TEMP/stream.log" 2>&1 &
 
       - name: Install frontend dependencies
         working-directory: apps/web
@@ -182,10 +207,47 @@ jobs:
             echo "--- fakellm.log ---"; cat "$RUNNER_TEMP/fakellm.log" || true
             return 1
           }
+          # mediamtx 没有 HTTP 健康接口:先等 RTSP 端口可连,再用 ffprobe 确认推流到位(最多各 60 秒)
+          wait_rtsp_port() {
+            for _ in $(seq 1 30); do
+              if (echo > "/dev/tcp/127.0.0.1/$WS_RTSP_PORT") 2>/dev/null; then
+                echo "rtsp port $WS_RTSP_PORT is open"
+                return 0
+              fi
+              sleep 2
+            done
+            echo "Timed out waiting for rtsp port $WS_RTSP_PORT"
+            return 1
+          }
+          wait_rtsp_stream() {
+            for _ in $(seq 1 30); do
+              if timeout 15 ffprobe -v error -rtsp_transport tcp -i "rtsp://127.0.0.1:$WS_RTSP_PORT/$1" -show_streams > /dev/null 2>&1; then
+                echo "rtsp stream $1 is up"
+                return 0
+              fi
+              sleep 2
+            done
+            echo "Timed out waiting for rtsp stream $1"
+            return 1
+          }
           wait_for http://127.0.0.1:18089/last
           wait_for http://localhost:8080/api/v1/healthz
           wait_for http://localhost:5173/
           wait_for http://localhost:5173/api/v1/healthz
+          wait_rtsp_port
+          # cam1(H.264)是所有真流用例的前提,起不来就中止;cam2(H.265)的推流镜像可能没有 libx265,
+          # 起不来只告警——m5c.spec 的 HEVC 用例会据此 skip,由后续段决定是否换镜像
+          wait_rtsp_stream cam1 || {
+            echo "::error::假摄像头 cam1 没有推流"
+            docker compose -f deploy/docker-compose.dev.yml --profile camera logs --tail 50 || true
+            exit 1
+          }
+          wait_rtsp_stream cam2 || echo "::warning::H.265 假摄像头 cam2 不可用(镜像可能没有 libx265),m5c 的 HEVC 用例会跳过"
+
+      # R7:真 ffmpeg 组需要 ffmpeg + 假摄像头,只有这里具备(backend job 里 skip)
+      - name: Pytest ffmpeg group
+        working-directory: server
+        run: uv run pytest -m ffmpeg -q
 
       - name: Playwright e2e
         working-directory: apps/web
@@ -197,6 +259,8 @@ jobs:
           echo "--- backend.log ---"; cat "$RUNNER_TEMP/backend.log" || true
           echo "--- frontend.log ---"; cat "$RUNNER_TEMP/frontend.log" || true
           echo "--- fakellm.log ---"; cat "$RUNNER_TEMP/fakellm.log" || true
+          echo "--- stream.log ---"; cat "$RUNNER_TEMP/stream.log" || true
+          echo "--- fake cameras ---"; docker compose -f deploy/docker-compose.dev.yml --profile camera logs --tail 50 || true
 
       - name: Upload Playwright artifacts
         if: failure()
