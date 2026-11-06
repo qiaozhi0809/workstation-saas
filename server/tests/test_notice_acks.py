@@ -2,14 +2,17 @@
 
 import csv
 import io
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import select, text
 
+from app.domain.years.service import apply
+from app.domain.years.suggest import suggest
 from app.models import Notice, NoticeRecipient
 from app.models.audit import AuditLog
-from tests.helpers import auth
+from tests.helpers import auth, freeze
+from tests.seed_ids import SCHOOL_ID
 from tests.test_notices import (
     C32,
     G4,
@@ -21,8 +24,10 @@ from tests.test_notices import (
     T04,
     TARGET_SCHOOL,
     ZHOU,
+    inbox,
     make_readonly,
     send,
+    set_link,
 )
 
 CHOICE = {"kind": "choice", "options": ["参加", "不参加"], "allow_note": True}
@@ -208,6 +213,145 @@ def test_export_escapes_formula_prefixes(client, db, settings):
         row_li.ack_content = raw
         db.flush()
         assert exported()["李家长"] == expect, raw
+
+
+def _item(client, settings, who, nid) -> dict:
+    return {i["id"]: i for i in inbox(client, settings, who)["items"]}[nid]
+
+
+def _snapshot_rows(db, nid) -> set[tuple[str, str | None, str | None]]:
+    return {
+        (mk, str(cid) if cid else None, name)
+        for mk, cid, name in db.execute(
+            text(
+                "SELECT s.mk, ns.class_id, ns.class_name FROM notice_students ns"
+                " JOIN students s ON s.id = ns.student_id WHERE ns.notice_id = :n"
+            ),
+            {"n": nid},
+        )
+    }
+
+
+def test_students_detail(client, db, settings):
+    """L87:两处写入点都记下发送时刻的班;收件箱给 students_detail(students 不变)。"""
+    n = parent_notice(client, settings, CONFIRM)
+    assert _snapshot_rows(db, n) == {("S0001", C32, "三年二班"), ("S0002", C32, "三年二班")}
+    item = _item(client, settings, LI, n)
+    assert item["students"] == ["王小一"]
+    assert item["students_detail"] == [{"name": "王小一", "class_name": "三年二班"}]
+
+    wide = send(client, settings, PRINCIPAL, TARGET_SCHOOL, audience="parents").json()["id"]
+    item = _item(client, settings, LI, wide)
+    assert item["students"] == ["魏小七", "王小一"]
+    assert item["students_detail"] == [
+        {"name": "魏小七", "class_name": "四年一班"},
+        {"name": "王小一", "class_name": "三年二班"},
+    ]
+
+    # 班主任的班级公告(第二个写入点)
+    res = client.post(
+        f"/api/v1/classes/{C32}/notices",
+        json={"title": "家长会", "content": "周五开会", "ack": CONFIRM},
+        headers=auth(settings, T01),
+    )
+    assert res.status_code == 201, res.text
+    assert _snapshot_rows(db, res.json()["id"]) == {
+        ("S0001", C32, "三年二班"),
+        ("S0002", C32, "三年二班"),
+    }
+    assert _item(client, settings, T04, res.json()["id"])["students_detail"] == [
+        {"name": "李小二", "class_name": "三年二班"}
+    ]
+
+    # 老师对象:两个列表都空
+    t = send(client, settings, PRINCIPAL, TARGET_C32, ack=CONFIRM).json()["id"]
+    item = _item(client, settings, T01, t)
+    assert item["students"] == [] and item["students_detail"] == []
+
+
+def test_ack_block_reason(client, db, settings, monkeypatch):
+    """L88:不能回执的原因由后端给;can_ack 为假时有原因,为真时 null;截止按服务器时间判。"""
+    freeze(monkeypatch, "2026-10-14T02:00:00+00:00")
+    # 可回执
+    n = parent_notice(client, settings, CONFIRM, ack_deadline="2026-10-14T03:00:00+00:00")
+    item = _item(client, settings, LI, n)
+    assert item["can_ack"] is True and item["ack_block_reason"] is None
+    # 已过截止(服务器时间)
+    freeze(monkeypatch, "2026-10-14T03:00:00+00:00")
+    item = _item(client, settings, LI, n)
+    assert item["can_ack"] is False and item["ack_block_reason"] == "closed"
+    # 撤回优先于截止
+    client.post(f"/api/v1/admin/notices/{n}/recall", headers=auth(settings, PRINCIPAL))
+    item = _item(client, settings, LI, n)
+    assert item["can_ack"] is False and item["ack_block_reason"] == "recalled"
+
+    # 不需要回执:can_ack 为假但没有"不能回执的原因"
+    plain = send(client, settings, PRINCIPAL, TARGET_C32, audience="parents").json()["id"]
+    item = _item(client, settings, LI, plain)
+    assert item["can_ack"] is False and item["ack_block_reason"] is None
+
+    # 不是主家长:绑定仍在用但 is_primary 为假
+    p = parent_notice(client, settings, CONFIRM)
+    set_link(db, "13800000061", "S0001", is_primary=False)
+    item = _item(client, settings, LI, p)
+    assert item["can_ack"] is False and item["ack_block_reason"] == "not_primary"
+    # 绑定只读
+    set_link(db, "13800000061", "S0001", is_primary=True)
+    make_readonly(db, "13800000061", "S0001")
+    item = _item(client, settings, LI, p)
+    assert item["can_ack"] is False and item["ack_block_reason"] == "readonly"
+    # 另一位家长(teacher04)不受影响
+    item = _item(client, settings, T04, p)
+    assert item["can_ack"] is True and item["ack_block_reason"] is None
+
+    # 一人多个孩子:任一孩子仍是在用的主家长绑定就能回执;否则"不是主家长"先于"只读"
+    wide = send(client, settings, PRINCIPAL, TARGET_SCHOOL, audience="parents", ack=CONFIRM).json()[
+        "id"
+    ]
+    assert _item(client, settings, LI, wide)["ack_block_reason"] is None  # S0017 仍在用
+    set_link(db, "13800000061", "S0017", is_primary=False)
+    assert _item(client, settings, LI, wide)["ack_block_reason"] == "not_primary"
+    set_link(db, "13800000061", "S0017", is_primary=True)
+    make_readonly(db, "13800000061", "S0017")
+    assert _item(client, settings, LI, wide)["ack_block_reason"] == "readonly"
+
+    # 老师对象的通知不看绑定(T04 的孩子绑定上面已改成只读,仍能回执老师对象的全校通知)
+    t = send(client, settings, PRINCIPAL, TARGET_SCHOOL, ack=CONFIRM).json()["id"]
+    make_readonly(db, "teacher04", "S0002")
+    item = _item(client, settings, T04, t)
+    assert item["can_ack"] is True and item["ack_block_reason"] is None
+
+
+def test_snapshot_survives_upgrade(client, db, settings):
+    """L87:发送后学年升级,统计、导出与收件箱里的班名仍是发送时的班。"""
+    n = parent_notice(client, settings, CHOICE)
+    post_ack(client, settings, LI, n, choice=0)
+    plan = suggest(db, UUID(SCHOOL_ID), "2027-2028", date(2027, 9, 1), date(2028, 7, 15))
+    apply(db, UUID(SCHOOL_ID), plan, now=datetime(2027, 8, 20, tzinfo=UTC))
+    now_class = db.execute(
+        text(
+            "SELECT c.name FROM enrollments e JOIN classes c ON c.id = e.class_id"
+            " JOIN students s ON s.id = e.student_id WHERE s.mk = 'S0001' AND e.status = 'active'"
+        )
+    ).scalar_one()
+    assert now_class == "四年二班"
+
+    h = auth(settings, PRINCIPAL)
+    stats = client.get(f"{INBOX}/{n}/acks", headers=h).json()
+    assert [(r["student_name"], r["class_name"]) for r in stats["rows"]] == [
+        ("王小一", "三年二班"),
+        ("李小二", "三年二班"),
+    ]
+    text_ = client.get(f"{INBOX}/{n}/acks/export", headers=h).content.decode("utf-8")
+    rows = list(csv.reader(io.StringIO(text_.removeprefix(BOM))))
+    assert [r[0] for r in rows[1:]] == ["三年二班", "三年二班"]
+    item = _item(client, settings, LI, n)
+    assert item["students_detail"] == [{"name": "王小一", "class_name": "三年二班"}]
+    # 班级删除后快照仍在(class_id 置空、班名还在);发送人对已删班的统计按 L86 隐藏,收件箱照常
+    db.execute(text("DELETE FROM classes WHERE id = :c"), {"c": C32})
+    assert _snapshot_rows(db, n) == {("S0001", None, "三年二班"), ("S0002", None, "三年二班")}
+    item = _item(client, settings, LI, n)
+    assert item["students_detail"] == [{"name": "王小一", "class_name": "三年二班"}]
 
 
 def test_ack_stats_teacher_audience(client, db, settings):
