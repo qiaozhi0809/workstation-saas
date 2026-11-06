@@ -23,6 +23,8 @@ ADMIN_PERM_ORDER: tuple[str, ...] = (
     Perm.NOTICE_SEND.value,
     Perm.GRADE_EXAM_WRITE.value,
     Perm.YEAR_UPGRADE.value,
+    Perm.CAMERA_MANAGE.value,
+    Perm.CAMERA_VIEW.value,
 )
 
 

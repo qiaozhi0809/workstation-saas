@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS cameras;
+DROP TABLE IF EXISTS timetable_entries;
+DROP TABLE IF EXISTS periods;

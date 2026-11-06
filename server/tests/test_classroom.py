@@ -192,3 +192,36 @@ def test_class_role_body_requires_key(client, db, settings):
 def test_summary_switches_default_all_on(client, settings):
     body = client.get(SUMMARY, headers=auth(settings)).json()
     assert body["switches"] == {"star_of_week": True, "birthdays": True}
+
+
+def test_summary_camera_counts(client, db, settings, monkeypatch):
+    from uuid import UUID
+
+    from app.domain.school_settings.service import get_switches, save_switches
+    from app.models.cameras import Camera
+    from tests.seed_ids import SCHOOL_ID
+
+    school = UUID(SCHOOL_ID)
+    db.add_all(
+        [
+            Camera(
+                school_id=school,
+                name=name,
+                class_id=UUID(CLASS_ID),
+                location="教室",
+                rtsp_url="rtsp://10.0.0.21/live/1",
+                enabled=enabled,
+            )
+            for name, enabled in (("前", True), ("后", False))
+        ]
+    )
+    db.flush()
+    # 开关默认关:0
+    assert client.get(SUMMARY, headers=auth(settings)).json()["cameras"] == 0
+    sw = get_switches(db, school)
+    save_switches(db, school, UUID(SUBJECT_USER_ID), sw.model_copy(update={"monitor": True}))
+    assert client.get(SUMMARY, headers=auth(settings)).json()["cameras"] == 1  # 班主任
+    assert client.get(SUMMARY, headers=auth(settings, ASSISTANT_USER_ID)).json()["cameras"] == 0
+    assert client.get(SUMMARY, headers=auth(settings, SUBJECT_USER_ID)).json()["cameras"] == 0
+    save_switches(db, school, UUID(SUBJECT_USER_ID), sw.model_copy(update={"monitor": False}))
+    assert client.get(SUMMARY, headers=auth(settings)).json()["cameras"] == 0
