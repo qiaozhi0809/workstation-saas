@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import getpass
 import sys
 import time
 from collections.abc import Callable
@@ -8,7 +9,7 @@ from dataclasses import replace
 from datetime import date
 from pathlib import Path
 from typing import NoReturn, TextIO
-from urllib.parse import urlparse
+from urllib.parse import urlsplit
 from uuid import UUID
 
 import httpx
@@ -30,6 +31,7 @@ from app.ai.settings import (
 from app.audit.service import record
 from app.clock import utc_now
 from app.config import get_settings
+from app.domain.ai_admin.service import KEY_CHANGED_HINT, _origin
 
 SEED_SCHOOL_ID = "11111111-1111-1111-1111-111111111111"
 SEED_SQL = Path(__file__).parent / "seed" / "dev_seed.sql"
@@ -76,7 +78,25 @@ def _usage_error(msg: str) -> int:
     return 2
 
 
+def _valid_base_url(value: str) -> bool:
+    if not value.startswith(("http://", "https://")):
+        return False
+    try:
+        _ = urlsplit(value).port  # 触发对坏端口、未闭合 IPv6 的校验
+        return bool(httpx.URL(value).host)
+    except (httpx.InvalidURL, ValueError):
+        return False
+
+
+def _read_key(stdin: TextIO) -> str:
+    if stdin.isatty():
+        return getpass.getpass("API Key(输入不回显):").strip()
+    return stdin.readline().strip()
+
+
 def _set(ns: argparse.Namespace, db: Session, key: bytes, school_id) -> int:
+    if ns.base_url is not None and not _valid_base_url(ns.base_url):
+        return _usage_error("--base-url 必须是 http:// 或 https:// 开头的有效地址")
     old = load_ai_config(db, school_id, key)
     provider = ns.provider or (old.provider if old else None)
     if provider is None:
@@ -103,10 +123,11 @@ def _set(ns: argparse.Namespace, db: Session, key: bytes, school_id) -> int:
     if ns.api_key_stdin:
         cfg = replace(cfg, api_key=ns.stdin_key or None)
     elif old is not None and cfg.api_key:
-        host = urlparse(cfg.base_url).hostname
-        if provider != old.provider or host != urlparse(old.base_url).hostname:
-            cfg = replace(cfg, api_key=None)  # 不把旧 Key 发给新服务商/新地址
+        if provider != old.provider:
+            cfg = replace(cfg, api_key=None)  # 不把旧 Key 发给新服务商
             dropped = True
+        elif _origin(cfg.base_url) != _origin(old.base_url):
+            return _usage_error(f"{KEY_CHANGED_HINT},请加 --api-key-stdin 重新提供")
     if provider == "custom" and not (cfg.base_url and cfg.model):
         return _usage_error("自定义服务商必须同时提供 --base-url 和 --model")
     save_ai_config(db, school_id, key, cfg)
@@ -152,7 +173,7 @@ def ai_config(
     settings = get_settings()
     school_id, key = settings.school_id, settings.master_key_bytes
     if ns.action == "set" and ns.api_key_stdin:
-        ns.stdin_key = stdin.readline().strip()
+        ns.stdin_key = _read_key(stdin)
     with db_factory() as db:
         if ns.action == "set":
             return _set(ns, db, key, school_id)

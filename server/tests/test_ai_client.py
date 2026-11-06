@@ -165,7 +165,7 @@ def test_save_and_load_config_encrypts_key(db):
     save_ai_config(db, SID, KEY, cfg)
     raw = db.scalar(select(SchoolSetting.value).where(SchoolSetting.key == "ai"))
     assert "sk-test-0000" not in json.dumps(raw)
-    assert raw["api_key_enc"]
+    assert raw["api_key_enc"].startswith("v2:")
     assert load_ai_config(db, SID, KEY) == cfg
     # overwrite (upsert) and no-key variant
     save_ai_config(db, SID, KEY, AIConfig("custom", "http://127.0.0.1:1/v1", "m", 0.2, None, True))
@@ -173,6 +173,29 @@ def test_save_and_load_config_encrypts_key(db):
     assert got.api_key is None and got.mask_forced is True and got.provider == "custom"
     clear_ai_config(db, SID)
     assert load_ai_config(db, SID, KEY) is None
+
+
+def test_legacy_key_readable_and_rewritten_on_save(db):
+    import base64
+    import os
+
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    cfg = AIConfig(
+        "deepseek", "https://api.deepseek.com", "deepseek-flash", 0.7, "sk-test-0000", False
+    )
+    save_ai_config(db, SID, KEY, cfg)
+    nonce = os.urandom(12)
+    legacy = base64.b64encode(nonce + AESGCM(KEY).encrypt(nonce, b"sk-test-0000", None)).decode()
+    row = db.scalar(select(SchoolSetting).where(SchoolSetting.key == "ai"))
+    row.value = {**row.value, "api_key_enc": legacy}
+    db.flush()
+    assert load_ai_config(db, SID, KEY) == cfg  # 读旧格式可用
+    assert row.value["api_key_enc"] == legacy  # 读路径不写库
+    save_ai_config(db, SID, KEY, cfg)
+    raw = db.scalar(select(SchoolSetting.value).where(SchoolSetting.key == "ai"))
+    assert raw["api_key_enc"].startswith("v2:")
+    assert load_ai_config(db, SID, KEY) == cfg
 
 
 def test_is_ready():

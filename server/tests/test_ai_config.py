@@ -114,10 +114,59 @@ def test_provider_switch_with_new_key_keeps_new_key(db):
     assert "API Key:已设置(…1111)" in out.text and "已更换" not in out.text
 
 
-def test_base_url_host_change_drops_key(db):
+def test_ai_config_origin_change_requires_key(db, capsys):
     _set_deepseek(db)
     out = run_cli(db, ["ai-config", "set", "--base-url", "https://evil.example.test/v1"])
-    assert "API Key:未设置" in out.text and "原 API Key 已清除" in out.text
+    assert out.code == 2
+    assert "重新填写 API Key" in capsys.readouterr().err
+    assert "地址:https://api.deepseek.com" in run_cli(db, ["ai-config", "show"]).text
+    # 端口变化也算换来源
+    assert (
+        run_cli(db, ["ai-config", "set", "--base-url", "https://api.deepseek.com:8443"]).code == 2
+    )
+    # 只改路径、大小写、默认端口不算
+    ok = run_cli(db, ["ai-config", "set", "--base-url", "https://API.deepseek.com:443/v2"])
+    assert ok.code == 0 and "API Key:已设置(…0000)" in ok.text
+    # 给了新 Key 就可以换
+    moved = run_cli(
+        db,
+        ["ai-config", "set", "--base-url", "https://other.example.test/v1", "--api-key-stdin"],
+        stdin="sk-test-3333\n",
+    )
+    assert moved.code == 0 and "API Key:已设置(…3333)" in moved.text
+
+
+@pytest.mark.parametrize(
+    "bad", ["ftp://example.test/v1", "example.test/v1", "", "http://", "https://[bad"]
+)
+def test_ai_config_rejects_bad_base_url(db, capsys, bad):
+    out = run_cli(
+        db, ["ai-config", "set", "--provider", "custom", "--base-url", bad, "--model", "m"]
+    )
+    assert out.code == 2
+    assert "--base-url" in capsys.readouterr().err
+    assert run_cli(db, ["ai-config", "show"]).text.strip() == "尚未配置 AI 服务"
+
+
+def test_ai_config_saves_v2_and_rewraps_legacy(db, settings):
+    import os
+
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    from app.models import SchoolSetting
+
+    _set_deepseek(db)
+    row = db.scalar(select(SchoolSetting).where(SchoolSetting.key == "ai"))
+    assert row.value["api_key_enc"].startswith("v2:")
+    nonce = os.urandom(12)
+    key = settings.master_key_bytes
+    legacy = base64.b64encode(nonce + AESGCM(key).encrypt(nonce, b"sk-test-0000", None)).decode()
+    row.value = {**row.value, "api_key_enc": legacy}
+    db.flush()
+    assert "API Key:已设置(…0000)" in run_cli(db, ["ai-config", "show"]).text
+    run_cli(db, ["ai-config", "set", "--model", "m2"])
+    db.refresh(row)
+    assert row.value["api_key_enc"].startswith("v2:")
 
 
 def test_model_only_change_keeps_key(db):
