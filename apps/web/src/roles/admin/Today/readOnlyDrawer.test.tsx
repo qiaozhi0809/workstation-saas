@@ -61,6 +61,7 @@ beforeEach(() => {
     timezone: 'Asia/Shanghai',
     week_no: 6,
     school_name: '示例小学',
+    cameras: 0,
     week_start: '2026-10-12',
     year: { id: 'y', name: '2026-2027', start_date: '2026-09-01', end_date: '2027-07-15' },
     seat_version: 1,
