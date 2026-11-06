@@ -35,7 +35,7 @@ from app.domain.notices.schemas import (
     UnreadRecipient,
     UsersTarget,
 )
-from app.domain.schools.service import require_active_year
+from app.domain.schools.service import active_academic_year, require_active_year
 from app.errors import ApiError
 from app.models import (
     AcademicYear,
@@ -51,7 +51,7 @@ from app.models import (
     Student,
     User,
 )
-from app.rbac.bindings import Binding, Scope, can
+from app.rbac.bindings import Binding, Scope, can, load_bindings
 from app.rbac.guard import ensure
 from app.rbac.roles import ADMIN_ROLES, ROLE_PERMS, TEACHER_ROLES, Perm, Role
 from app.ws.hub import publish
@@ -744,9 +744,40 @@ def _audit_target(body: NoticeInput) -> dict:
     return body.target.model_dump(mode="json", exclude={"user_ids"})
 
 
+def _still_entitled(db: Session, sender: User, notice: Notice) -> bool:
+    """发送人现在仍有权限发这条通知(L86):班级公告 = 仍持有该班的 class.notice(班主任);
+    管理端通知 = 持有 notice.send 且作用域仍覆盖原对象(学校 / 年级 / 班;点名只要仍有发件权)。"""
+    year = active_academic_year(db, sender.school_id)
+    bindings = load_bindings(db, sender.id, year.id if year else None)
+    school_id = notice.school_id
+    if notice.class_id is not None:
+        cls = db.get(SchoolClass, notice.class_id)
+        if cls is None:
+            return False
+        scope = Scope(school_id=school_id, grade_id=cls.grade_id, class_id=cls.id)
+        return can(bindings, Perm.CLASS_NOTICE, scope)
+    kind = notice.target.get("kind")
+    if kind == "school":
+        return can(bindings, Perm.NOTICE_SEND, Scope(school_id=school_id))
+    if kind == "grade":
+        grade_id = UUID(notice.target["grade_id"])
+        return can(bindings, Perm.NOTICE_SEND, Scope(school_id=school_id, grade_id=grade_id))
+    if kind == "class":
+        cls = db.get(SchoolClass, UUID(notice.target["class_id"]))
+        if cls is None:
+            return False
+        scope = Scope(school_id=school_id, grade_id=cls.grade_id, class_id=cls.id)
+        return can(bindings, Perm.NOTICE_SEND, scope)
+    return _holds_send(bindings)
+
+
 def _own_notice(db: Session, sender: User, notice_id: UUID) -> Notice:
     notice = db.get(Notice, notice_id)
-    if notice is None or notice.from_user_id != sender.id:
+    if (
+        notice is None
+        or notice.from_user_id != sender.id
+        or not _still_entitled(db, sender, notice)
+    ):
         raise ApiError(404, "NOT_FOUND", "通知不存在")
     return notice
 

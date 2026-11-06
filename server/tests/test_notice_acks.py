@@ -5,13 +5,15 @@ import io
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.models import Notice, NoticeRecipient
 from app.models.audit import AuditLog
 from tests.helpers import auth
 from tests.test_notices import (
     C32,
+    G4,
+    GRADE_HEAD3,
     INBOX,
     LI,
     PRINCIPAL,
@@ -231,3 +233,70 @@ def test_ack_stats_no_ack_notice(client, db, settings):
     n = send(client, settings, PRINCIPAL, TARGET_SCHOOL).json()["id"]
     stats = client.get(f"{INBOX}/{n}/acks", headers=auth(settings, PRINCIPAL)).json()
     assert stats["ack"] == {"kind": "none"} and stats["acked"] == 0
+
+
+def _all_views_hidden(client, settings, who, nid, admin_status):
+    n = f"{INBOX}/{nid}"
+    h = auth(settings, who)
+    assert client.get(f"{n}/acks", headers=h).status_code == 404
+    assert client.get(f"{n}/acks/export", headers=h).status_code == 404
+    # 管理端入口:完全失去发件权限的人先被 403 拦下,仍有发件权但不覆盖原对象的人得 404
+    assert (
+        client.get(f"/api/v1/admin/notices/{nid}/recipients", headers=h).status_code == admin_status
+    )
+    assert client.post(f"/api/v1/admin/notices/{nid}/recall", headers=h).status_code == admin_status
+
+
+def test_former_sender_cannot_view_acks(client, db, settings):
+    # 管理端通知:校长发全校,之后失去校长岗位
+    nid = parent_notice(client, settings, CHOICE)
+    assert client.get(f"{INBOX}/{nid}/acks", headers=auth(settings, PRINCIPAL)).status_code == 200
+    db.execute(
+        text(
+            "UPDATE role_bindings SET ended_at = now()"
+            " WHERE user_id = :u AND role_type = 'principal'"
+        ),
+        {"u": PRINCIPAL},
+    )
+    _all_views_hidden(client, settings, PRINCIPAL, nid, 403)
+    assert db.get(Notice, UUID(nid)).recalled_at is None
+
+    # 年级组长发本年级班,之后调去别的年级:作用域不再覆盖原对象
+    gh = send(client, settings, GRADE_HEAD3, TARGET_C32, audience="parents", ack=CHOICE)
+    assert gh.status_code == 201, gh.text
+    gid = gh.json()["id"]
+    assert client.get(f"{INBOX}/{gid}/acks", headers=auth(settings, GRADE_HEAD3)).status_code == 200
+    db.execute(
+        text(
+            "UPDATE role_bindings SET scope = jsonb_build_object('grade_id', CAST(:g AS text))"
+            " WHERE user_id = :u AND role_type = 'grade_head'"
+        ),
+        {"u": GRADE_HEAD3, "g": G4},
+    )
+    _all_views_hidden(client, settings, GRADE_HEAD3, gid, 404)
+
+
+def test_former_homeroom_cannot_view_class_notice_acks(client, db, settings):
+    res = client.post(
+        f"/api/v1/classes/{C32}/notices",
+        json={"title": "家长会", "content": "周五开会", "ack": CHOICE},
+        headers=auth(settings, T01),
+    )
+    assert res.status_code == 201, res.text
+    nid = res.json()["id"]
+    assert client.get(f"{INBOX}/{nid}/acks", headers=auth(settings, T01)).status_code == 200
+    db.execute(
+        text(
+            "UPDATE role_bindings SET ended_at = now()"
+            " WHERE user_id = :u AND role_type = 'homeroom_teacher'"
+        ),
+        {"u": T01},
+    )
+    h = auth(settings, T01)
+    assert client.get(f"{INBOX}/{nid}/acks", headers=h).status_code == 404
+    assert client.get(f"{INBOX}/{nid}/acks/export", headers=h).status_code == 404
+    assert client.post(f"/api/v1/classes/{C32}/notices/{nid}/recall", headers=h).status_code in (
+        403,
+        404,
+    )
+    assert db.get(Notice, UUID(nid)).recalled_at is None
