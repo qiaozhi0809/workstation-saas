@@ -193,6 +193,28 @@ it('shows the latest total, rank change, rate curve and subject radar in the ove
   expect(radar.series[1].values).toEqual([72, 78])
 })
 
+// 进退步口径与班级视图一致:和"上一场有分数的考试"比(不看类型、不看该生是否参加);
+// 该生缺考了上一场,就没有可比的名次,不显示箭头,而不是跳到更早一场去比
+it('compares the rank with the previous scored exam of the class, not of the student', async () => {
+  const skipped: Gradebook = {
+    exams: [
+      book.exams[0],
+      {
+        ...book.exams[1],
+        id: 'x1b',
+        name: '期中考试',
+        date: '2026-10-10',
+        scores: { e2: { 语文: 70, 数学: 80 }, e3: { 语文: 90, 数学: 70 } },
+      },
+      book.exams[1],
+    ],
+  }
+  vi.mocked(examsApi.gradebook).mockResolvedValue(skipped)
+  renderTab({ perms: ['exam.read'], student: profile })
+  expect(await screen.findByText('第 3 名')).toBeInTheDocument()
+  expect(screen.queryByText(/^[↑↓]\d+$/)).toBeNull()
+})
+
 it('drops radar axes the student has no score for and shows ↑ for a climb', async () => {
   const climbed: Gradebook = {
     exams: [

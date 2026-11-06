@@ -147,6 +147,26 @@ it('renders a class switcher when the teacher has two classes', async () => {
   expect(useTeacherStore.getState().classId).toBe('a')
 })
 
+// L40:切换班级的下拉按班名自然排序(三年二班 < 三年三班 < 三年十班),年级保持后端给的顺序,默认班是排在最前的那个
+it('orders the class switcher by natural class name within each grade', async () => {
+  vi.mocked(classesApi.mine).mockResolvedValue({
+    items: [
+      cls('ten', '三年十班', 'subject_teacher'),
+      cls('two', '三年二班', 'subject_teacher'),
+      { ...cls('four-one', '四年一班', 'subject_teacher'), grade_name: '四年级' },
+      cls('three', '三年三班', 'homeroom_teacher'),
+    ],
+  })
+  renderLayout()
+  const select = await screen.findByRole('combobox', { name: '切换班级' })
+  expect(
+    within(select)
+      .getAllByRole('option')
+      .map((o) => o.textContent),
+  ).toEqual(['三年二班', '三年三班', '三年十班', '四年一班'])
+  expect(useTeacherStore.getState().classId).toBe('two')
+})
+
 it('renders plain text when the teacher has one class', async () => {
   vi.mocked(classesApi.mine).mockResolvedValue({
     items: [cls('a', '三年二班', 'homeroom_teacher')],

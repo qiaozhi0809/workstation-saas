@@ -202,6 +202,20 @@ it('paginates the sent list', async () => {
   await waitFor(() => expect(classNoticesApi.list).toHaveBeenCalledWith('c1', 2))
 })
 
+// L91:班级列表已加载、当前 classId 不在里面(班级被移除 / 旧地址):明确说出来并给返回链接,而不是一直转圈
+it('says the class is not in my list and links back instead of loading forever', async () => {
+  useTeacherStore.setState({ classId: 'gone' })
+  renderPage()
+  expect(await screen.findByText('这个班不在你的班级列表里')).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: '← 返回教室' })).toHaveAttribute(
+    'href',
+    '/teacher/classroom',
+  )
+  expect(screen.queryByText('加载中…')).toBeNull()
+  expect(classroomApi.summary).not.toHaveBeenCalled()
+  expect(classNoticesApi.list).not.toHaveBeenCalled()
+})
+
 it('shows an empty state without class.notice and makes no class-notice requests', async () => {
   vi.mocked(classroomApi.summary).mockResolvedValue(summaryFixture({ my_perms: [] }))
   renderPage()

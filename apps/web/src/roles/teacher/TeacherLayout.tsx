@@ -9,6 +9,7 @@ import AccountMenu from '@/shared/components/layout/AccountMenu'
 import AppShell from '@/shared/components/layout/AppShell'
 import NoticeBell from '@/shared/components/layout/NoticeBell'
 import { NativeSelect } from '@/shared/components/ui/native-select'
+import { compareClassName } from '@/shared/lib/sort'
 import { RealtimeProvider } from '@/shared/realtime/RealtimeProvider'
 import { switchTargets } from '@/shared/components/layout/switchTargets'
 import { useAuthStore } from '@/shared/stores/auth'
@@ -26,7 +27,16 @@ export default function TeacherLayout() {
   const classId = useTeacherStore((s) => s.classId)
   const setClass = useTeacherStore((s) => s.setClass)
   const { data, isError } = useQuery({ queryKey: ['my-classes'], queryFn: classesApi.mine })
-  const classes = useMemo(() => data?.items ?? [], [data])
+  // 年级保持后端给的顺序(管理端设的 display_order),同一年级内按班名自然排序:三年二班 < 三年三班 < 三年十班(L40)
+  const classes = useMemo(() => {
+    const items = data?.items ?? []
+    const grades = [...new Set(items.map((c) => c.grade_name))]
+    return [...items].sort(
+      (a, b) =>
+        grades.indexOf(a.grade_name) - grades.indexOf(b.grade_name) ||
+        compareClassName(a.name, b.name),
+    )
+  }, [data])
   const cls = classes.find((c) => c.id === classId)
   // 与教室页同一个 key,共用缓存;这里不轮询
   const summary = useQuery({

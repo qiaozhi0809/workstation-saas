@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import { Undo2 } from 'lucide-react'
 import { MenuItem } from '@/shared/components/overlay/Menu'
 import Modal from '@/shared/components/overlay/Modal'
@@ -78,8 +79,11 @@ export function SeatingMenuItems(
   )
 }
 
+const NO_SCORES = '还没有考试成绩'
+
 /** 排座操作条:常用操作直接可见,放弃修改 / 固定 / 打印在操作台的"更多操作"里(SeatingMenuItems)。 */
 export default function SeatingBar(p: SeatingBarProps) {
+  const mentorHintId = useId()
   return (
     <div className="flex flex-wrap items-center gap-1.5 text-sm">
       <Button type="button" variant="outline" disabled={p.busy} onClick={p.onShuffle}>
@@ -91,15 +95,24 @@ export default function SeatingBar(p: SeatingBarProps) {
         </Button>
       )}
       {p.deskSize !== 1 && (
-        <Button
-          type="button"
-          variant="outline"
-          disabled={p.busy || !p.canMentor}
-          title={p.canMentor ? undefined : '还没有考试成绩'}
-          onClick={p.onMentor}
-        >
-          优带弱
-        </Button>
+        <>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={p.busy || !p.canMentor}
+            title={p.canMentor ? undefined : NO_SCORES}
+            aria-describedby={p.canMentor ? undefined : mentorHintId}
+            onClick={p.onMentor}
+          >
+            优带弱
+          </Button>
+          {/* 不可用原因:title 在触屏和读屏上都看不到,所以按钮旁再写一遍并用 aria-describedby 关联(L14) */}
+          {!p.canMentor && (
+            <span id={mentorHintId} className="text-xs text-muted-foreground">
+              {NO_SCORES}
+            </span>
+          )}
+        </>
       )}
       <Button
         type="button"

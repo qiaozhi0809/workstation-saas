@@ -539,6 +539,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
               groupOf={mapGroup}
               seat={pick.state === 'picked' ? pickedSeat : null}
               presenting={presenting}
+              alone={pool.length === 1}
               canReward={perms.includes('review.write')}
               rewarding={pickReward.pending}
               onReward={() => pick.pickedId && pickReward.reward(pick.pickedId)}

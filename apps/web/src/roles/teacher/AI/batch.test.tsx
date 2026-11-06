@@ -278,6 +278,46 @@ describe('BatchView', () => {
     }
   })
 
+  it('L17: a single save and save-all block each other while one is in flight', async () => {
+    setServer([
+      item(1, { status: 'done', content: '甲' }),
+      item(2, { status: 'done', content: '乙' }),
+    ])
+    let finishSingle!: () => void
+    vi.mocked(commentsApi.create).mockReturnValue(
+      new Promise((r) => {
+        finishSingle = () => r({} as never)
+      }),
+    )
+    let finishBulk!: () => void
+    vi.mocked(commentsApi.bulk).mockReturnValue(
+      new Promise((r) => {
+        finishBulk = () => r({ created: 1 })
+      }),
+    )
+    page()
+    const card1 = (await screen.findByText('学生1')).closest('li') as HTMLElement
+    const card2 = screen.getByText('学生2').closest('li') as HTMLElement
+    // 单条保存进行中:全部保存和别的单条都不能点
+    fireEvent.click(within(card1).getByRole('button', { name: '保存到档案' }))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '全部保存到档案' })).toBeDisabled(),
+    )
+    expect(within(card2).getByRole('button', { name: '保存到档案' })).toBeDisabled()
+    await act(async () => finishSingle())
+    await within(card1).findByRole('button', { name: '已保存' })
+    expect(within(card2).getByRole('button', { name: '保存到档案' })).toBeEnabled()
+    // 全部保存进行中:单条也不能点
+    fireEvent.click(screen.getByRole('button', { name: '保存其余 1 条' }))
+    await waitFor(() =>
+      expect(within(card2).getByRole('button', { name: '保存到档案' })).toBeDisabled(),
+    )
+    await act(async () => finishBulk())
+    expect(await within(card2).findByRole('button', { name: '已保存' })).toBeDisabled()
+    expect(commentsApi.create).toHaveBeenCalledTimes(1)
+    expect(commentsApi.bulk).toHaveBeenCalledTimes(1)
+  })
+
   it('F1: a single saved item is disabled afterwards and excluded from save-all', async () => {
     setServer([
       item(1, { status: 'done', content: '甲' }),

@@ -147,6 +147,22 @@ describe('AiHomePage', () => {
     expect(onPick).toHaveBeenCalledWith(templatesFixture.items[0])
   })
 
+  // L17:某个分类下没有可显示的模板(全被隐藏 / 后端没下发)时要说一句,而不是一片空白
+  it('says so when a category has no visible templates', async () => {
+    const onlyTeach = {
+      ...templatesFixture,
+      items: templatesFixture.items.filter((t) => t.cat === 'teach' && !t.rec),
+    }
+    setupAi({ element: <TemplateGrid templates={onlyTeach} onPick={vi.fn()} /> })
+    // 默认的"推荐"分类下没有 rec 模板
+    expect(await screen.findByText('这个分类下还没有可用的模板')).toBeInTheDocument()
+    click(screen.getByRole('tab', { name: '教学' }))
+    expect(screen.getByRole('button', { name: /作业设计/ })).toBeInTheDocument()
+    expect(screen.queryByText('这个分类下还没有可用的模板')).not.toBeInTheDocument()
+    click(screen.getByRole('tab', { name: '家校沟通' }))
+    expect(screen.getByText('这个分类下还没有可用的模板')).toBeInTheDocument()
+  })
+
   it('lists and deletes recent chats', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     home()

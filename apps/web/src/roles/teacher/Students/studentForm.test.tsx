@@ -171,6 +171,25 @@ it('requires a name and a contact name or phone', async () => {
   expect(studentsApi.create).not.toHaveBeenCalled()
 })
 
+// L14:联系人校验出错时焦点要落到第一个出错的联系人上,而不是停在保存按钮
+it('focuses the first contact that fails validation and links the error to it', async () => {
+  renderForm()
+  fireEvent.change(screen.getByLabelText('姓名'), { target: { value: '赵六' } })
+  fireEvent.change(screen.getByLabelText('联系人1姓名'), { target: { value: '赵母' } })
+  fireEvent.change(screen.getByLabelText('联系人2关系'), { target: { value: '父亲' } })
+  fireEvent.click(screen.getByRole('button', { name: '保存' }))
+  const name2 = await screen.findByLabelText('联系人2姓名')
+  await waitFor(() => expect(name2).toHaveFocus())
+  expect(name2).toHaveAttribute('aria-invalid', 'true')
+  expect(name2).toHaveAccessibleDescription('联系人姓名和电话至少填一项')
+  expect(screen.getByLabelText('联系人2电话')).toHaveAttribute('aria-invalid', 'true')
+  expect(screen.getByLabelText('联系人1姓名')).not.toHaveAttribute('aria-invalid')
+  // 名字也空着时,焦点先去更靠前的姓名
+  fireEvent.change(screen.getByLabelText('姓名'), { target: { value: '' } })
+  fireEvent.click(screen.getByRole('button', { name: '保存' }))
+  await waitFor(() => expect(screen.getByLabelText('姓名')).toHaveFocus())
+})
+
 it('marks occupied and locked seats in the seat select', () => {
   renderForm()
   const seat = screen.getByLabelText('座位')
@@ -253,6 +272,58 @@ it('ignores the post-composition Enter that Safari reports with keyCode 229', ()
   fireEvent.change(input, { target: { value: '爱读书' } })
   fireEvent.keyDown(input, { key: 'Enter', keyCode: 229 })
   expect(screen.queryByRole('button', { name: '爱读书' })).toBeNull()
+})
+
+// L15:标签满 12 个时要说出来,而不是点了没反应
+it('tells the teacher when the 12-tag limit is hit instead of silently ignoring the click', async () => {
+  vi.mocked(schoolApi.tagPool).mockResolvedValue({ tags: [...DEFAULT_TAG_POOL, '爱画画'] })
+  renderForm()
+  await screen.findByRole('button', { name: '爱画画' })
+  for (const t of DEFAULT_TAG_POOL) fireEvent.click(screen.getByRole('button', { name: t }))
+  expect(screen.queryByRole('status')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '爱画画' }))
+  expect(screen.getByRole('button', { name: '爱画画' })).toHaveAttribute('aria-pressed', 'false')
+  expect(screen.getByRole('status')).toHaveTextContent('最多选 12 个标签')
+  // 自定义标签也一样:提示并保留输入,不悄悄丢掉
+  const input = screen.getByLabelText('自定义标签')
+  fireEvent.change(input, { target: { value: '爱读书' } })
+  fireEvent.keyDown(input, { key: 'Enter' })
+  expect(screen.queryByRole('button', { name: '爱读书' })).toBeNull()
+  expect(input).toHaveValue('爱读书')
+  // 取消一个后提示消失,又能选了
+  fireEvent.click(screen.getByRole('button', { name: '近视' }))
+  expect(screen.queryByRole('status')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '爱画画' }))
+  expect(screen.getByRole('button', { name: '爱画画' })).toHaveAttribute('aria-pressed', 'true')
+})
+
+// 住校勾选框也受 12 个上限约束:满了只提示、不勾上;通过它取消住校也会清掉提示
+it('applies the 12-tag limit to the 住校 checkbox and resets the hint when unchecking it', async () => {
+  vi.mocked(schoolApi.tagPool).mockResolvedValue({ tags: [...DEFAULT_TAG_POOL, '爱画画'] })
+  renderForm()
+  await screen.findByRole('button', { name: '爱画画' })
+  const boarding = screen.getByLabelText('住校')
+  for (const t of DEFAULT_TAG_POOL.filter((t) => t !== '住校')) {
+    fireEvent.click(screen.getByRole('button', { name: t }))
+  }
+  fireEvent.click(screen.getByRole('button', { name: '爱画画' }))
+  expect(screen.queryByRole('status')).toBeNull()
+  // 第 13 个:勾选框不勾上、标签不加
+  fireEvent.click(boarding)
+  expect(boarding).not.toBeChecked()
+  expect(screen.getByRole('button', { name: '住校' })).toHaveAttribute('aria-pressed', 'false')
+  expect(screen.getByRole('status')).toHaveTextContent('最多选 12 个标签')
+  // 取消一个后能勾上;再满时用勾选框取消住校也会清掉提示
+  fireEvent.click(screen.getByRole('button', { name: '爱画画' }))
+  fireEvent.click(boarding)
+  expect(boarding).toBeChecked()
+  expect(screen.queryByRole('status')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '爱画画' }))
+  expect(screen.getByRole('status')).toBeInTheDocument()
+  fireEvent.click(boarding)
+  expect(boarding).not.toBeChecked()
+  expect(screen.getByRole('button', { name: '住校' })).toHaveAttribute('aria-pressed', 'false')
+  expect(screen.queryByRole('status')).toBeNull()
 })
 
 it('keeps boarding and the 住校 tag in sync', () => {

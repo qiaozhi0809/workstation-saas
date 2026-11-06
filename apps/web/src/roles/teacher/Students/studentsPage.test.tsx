@@ -276,6 +276,15 @@ it('hides add, import and edit without student.manage', async () => {
     expect(screen.queryByRole('button', { name: n })).toBeNull()
 })
 
+// L82:表格行里的按钮(姓名、编辑)挂 .touch-target,触屏下由 theme/index.css 放大到 44 × 44
+it('marks the row buttons as touch targets', async () => {
+  setup(MANAGE)
+  renderPage()
+  const row = (await screen.findByText('张三')).closest('tr')!
+  expect(within(row).getByRole('button', { name: '张三' })).toHaveClass('touch-target')
+  expect(within(row).getByRole('button', { name: '编辑' })).toHaveClass('touch-target')
+})
+
 it('opens the edit form from a row without opening the drawer', async () => {
   setup(MANAGE)
   renderPage()
