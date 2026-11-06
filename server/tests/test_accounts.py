@@ -5,7 +5,7 @@ from sqlalchemy import func, select
 from app import clock
 from app.models import User
 from app.models.audit import AuditLog
-from tests.helpers import audit_rows, auth
+from tests.helpers import audit_rows, auth, freeze
 
 ACCOUNTS = "/api/v1/admin/accounts"
 IT_ADMIN = "55555555-5555-5555-5555-555555555546"
@@ -511,6 +511,20 @@ def test_admin_reset_sets_password_changed_at(client, settings, db):
     db.expire_all()
     after = db.scalar(select(User.password_changed_at).where(User.id == uid))
     assert after is not None and after > before
+
+
+def test_admin_reset_rejects_old_access_token(client, settings, db, monkeypatch):
+    uid = _user_id(db, "teacher02")
+    old = auth(settings, uid)  # 重置前签发的 access 令牌
+    assert client.get("/api/v1/auth/me", headers=old).status_code == 200
+    # 把重置时刻拨到之后,令牌 iat 必然早于 password_changed_at(不依赖整秒抖动)
+    with monkeypatch.context() as m:
+        freeze(m, (clock.utc_now() + timedelta(seconds=5)).isoformat())
+        res = client.post(f"{ACCOUNTS}/{uid}/reset-password", headers=_admin(settings))
+        assert res.status_code == 200
+    res = client.get("/api/v1/auth/me", headers=old)
+    assert res.status_code == 401
+    assert res.json()["error"]["code"] == "TOKEN_EXPIRED"
 
 
 def test_account_list_includes_totp_enabled(client, settings, db):

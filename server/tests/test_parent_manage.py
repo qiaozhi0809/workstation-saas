@@ -5,11 +5,12 @@ from uuid import UUID
 import pytest
 from sqlalchemy import func, select
 
+from app import clock
 from app.models import RoleBinding, User
 from app.models.audit import AuditLog
 from app.models.parents import Parent, ParentLink
 from tests.factories import make_user
-from tests.helpers import auth, refreshed_headers
+from tests.helpers import auth, freeze, refreshed_headers
 from tests.seed_ids import STUDENT_IDS, SUBJECT_USER_ID
 
 S3, S4 = STUDENT_IDS[2], STUDENT_IDS[3]
@@ -812,6 +813,20 @@ def test_parent_reset_sets_password_changed_at(client, settings, db):
     db.expire_all()
     after = _user(db, "13800000077").password_changed_at
     assert after is not None and after > before
+
+
+def test_parent_reset_rejects_old_access_token(client, settings, db, monkeypatch):
+    created = _add(client, settings, S3, "13800000078").json()
+    link = created["parent"]["link_id"]
+    old = auth(settings, _user(db, "13800000078").id)
+    assert client.get("/api/v1/auth/me", headers=old).status_code == 200
+    with monkeypatch.context() as m:
+        freeze(m, (clock.utc_now() + timedelta(seconds=5)).isoformat())
+        res = client.post(f"/api/v1/parent-links/{link}/reset-password", headers=auth(settings))
+        assert res.status_code == 200
+    res = client.get("/api/v1/auth/me", headers=old)
+    assert res.status_code == 401
+    assert res.json()["error"]["code"] == "TOKEN_EXPIRED"
 
 
 def test_reset_parent_without_active_link_in_my_class_rejected(client, settings, db):
