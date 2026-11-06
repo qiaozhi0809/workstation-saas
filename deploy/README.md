@@ -56,7 +56,16 @@
 
 依次询问:学校名称(1-50 字)、管理员登录名(默认 `admin`)、管理员密码(输入不显示,至少 8 位,字母、数字、其他字符至少含两类)、访问地址(域名或 IP)、证书方式(1/2/3,见第 4 节)。脚本会载入镜像、生成密钥、启动服务、初始化学校与管理员,最后打印访问地址。管理员**首次登录必须修改密码**。首个学年已自动创建(按安装当天推算),可在管理端「组织架构」→「学年」里修改名称和日期。
 
-用 root 运行时会自动启用每日 02:30 的 systemd 备份定时器;非 root 或没有 systemd 时,脚本会打印一行 crontab,请按第 7 节添加。
+用 root 运行时会自动启用每日 02:30(学校时区)的 systemd 备份定时器;非 root 或没有 systemd 时,脚本会打印 crontab 行,请按第 7 节添加。
+
+### 用哪个用户执行脚本(sudo 还是不 sudo,装好后不要换)
+
+安装用的用户决定了 `.env`、`backups/` 等文件的属主;**之后的备份、恢复、升级、回退都必须用同一个用户**,否则会撞上另一个用户的 600 文件与锁目录。两种做法选一种:
+
+- **推荐:全程 root**——`sudo ./scripts/install.sh`,以后所有脚本也都加 `sudo`(systemd 定时备份只有这种方式会自动启用)。
+- **全程同一个普通用户**——该用户在 `docker` 组里,所有脚本都不加 `sudo`,自动备份走 crontab(第 7 节)。
+
+`install.sh` 结尾会把该用哪个用户再提示一遍;用错用户时各脚本会直接报"该部署由 root 安装,请用 sudo 执行"或"该部署由用户 X 安装,请切换到该用户",而不是难懂的"另一个备份正在进行"(L183)。
 
 ### 非交互安装
 
@@ -147,10 +156,11 @@ WS_INSTALL_TLS=1 \
 
 | 文件 | 内容 |
 |---|---|
-| `db.dump` | 数据库完整导出(`pg_dump -Fc`) |
+| `db.dump` | 数据库完整导出(`pg_dump -Fc`;导出后用 `pg_restore -l` 核对能读,读不出就不算备份成功) |
 | `env` | `.env` 原样(**含主密钥**) |
-| `caddy.tar` | Caddy 数据(证书、内部 CA 私钥),经 web 容器打出 |
-| `manifest.json` | 版本、迁移版本、创建时间与各文件的 sha256 |
+| `caddy.tar` | Caddy 数据(证书、内部 CA 私钥),经 web 容器打出。web 没在运行时备份照做,只是没有这个文件,`manifest.json` 里记 `"caddy": "skipped"`,屏幕上会提示 |
+| `config.tar` | 1.0.0 起:生效的 `Caddyfile`、`docker-compose.yml`、`VERSION` 与 `certs/` 下全部文件(**自备证书的私钥 `site.key` 在这里**) |
+| `manifest.json` | 版本、迁移版本、创建时间、有没有 Caddy 数据,以及各文件的 sha256 |
 
 **备份里含主密钥,必须放在学校自己的安全位置**(NAS、移动硬盘、保险柜里的存储),不要上传外网。建议把 `backups/` 里的文件定期复制到另一台设备,否则服务器硬盘坏了备份也一起丢。
 
@@ -163,14 +173,31 @@ WS_INSTALL_TLS=1 \
 
 成功后还会更新 `data/logs/backup-last.json`,管理端设置页的"上次备份"读的就是它。备份、恢复、升级互斥(`backups/.lock`),同一时刻只能有一个在跑。
 
+备份开始前检查磁盘:备份目录所在盘的可用空间要不少于**上次备份大小的 2 倍、且至少 1 GB**,否则直接拒绝(不会写到一半把盘撑满)。数据库容器还没就绪时(比如开机后定时器补跑)最多等 120 秒再开始,不会直接失败。
+
 ### 每日自动备份
 
-- **root 安装**且系统有 systemd:`install.sh` 自动写入 `/etc/systemd/system/workstation-backup.service` 与 `.timer` 并启用,每天 02:30 备份。查看:`systemctl list-timers workstation-backup.timer`;手动触发:`sudo systemctl start workstation-backup.service`;日志:`journalctl -u workstation-backup.service`。
-- **非 root 安装**:`install.sh` 会打印一行 crontab,用 `crontab -e` 添加(路径换成你的部署目录):
+- **root 安装**且系统有 systemd:`install.sh` 自动写入 `/etc/systemd/system/workstation-backup.service` 与 `.timer` 并启用,每天 **02:30(按 `.env` 里 `TZ` 的时区,默认 Asia/Shanghai)** 备份——服务器系统时区常是 UTC,定时器里写明时区才不会变成上午上课时备份;关机错过的那次开机后补跑(`Persistent=true`)。查看:`systemctl list-timers workstation-backup.timer`(`NEXT` 一列应是凌晨 02:30 本地时间);手动触发:`sudo systemctl start workstation-backup.service`;日志:`journalctl -u workstation-backup.service`。
+- **非 root 安装**:`install.sh` 会打印 crontab 行,用 `crontab -e` 添加(路径换成你的部署目录)。日志交给 `logger`,由系统的 syslog / journal 轮转,不会无限增长;`CRON_TZ` 让 02:30 按学校时区计(服务器系统时区就是 Asia/Shanghai 时可省略):
 
   ```
-  30 2 * * * cd /opt/workstation && ./scripts/backup.sh >> data/logs/backup.log 2>&1
+  CRON_TZ=Asia/Shanghai
+  30 2 * * * cd /opt/workstation && ./scripts/backup.sh 2>&1 | logger -t workstation-backup
   ```
+
+  查看日志:`journalctl -t workstation-backup`(或 `grep workstation-backup /var/log/syslog`)。如果你一定要写到文件,请配 logrotate,例如 `/etc/logrotate.d/workstation-backup`:
+
+  ```
+  /opt/workstation/data/logs/backup.log {
+      weekly
+      rotate 8
+      compress
+      missingok
+      notifempty
+  }
+  ```
+
+- 不管哪种方式,请隔几天看一眼管理端设置页的"上次备份"时间,确认定时备份真的在跑。
 
 ### 统一用同一个用户执行备份
 
@@ -189,12 +216,22 @@ WS_INSTALL_TLS=1 \
 
 ### 流程
 
-1. 先校验(不动数据库):归档完整、`manifest.json` 格式、各文件 sha256、`env` 含必需键、大版本一致、备份的迁移版本不比当前镜像新、磁盘空间够(恢复期间新旧两个库同时存在,要求可用空间不小于"当前数据库大小"与"备份里 db.dump 大小的 6 倍"中较大者的 1.2 倍)。任何一项不过都直接拒绝。
+1. 先校验(不动数据库):归档完整、`manifest.json` 格式(1.0.0 之前的旧格式也认)、各文件 sha256、`env` 含必需键、大版本一致(0.7.x 的备份可以恢复进 1.x,应用启动时自动迁移)、备份的迁移版本不比当前镜像新、`db.dump` 能被 `pg_restore` 读出目录、磁盘空间够(恢复期间新旧两个库同时存在,要求可用空间不小于"当前数据库大小"与"备份里 db.dump 大小的 6 倍"中较大者的 1.2 倍)。任何一项不过都直接拒绝。
 2. 先把备份恢复进临时库(此时系统仍在服务,正式库不受影响)。
 3. 停止 app 与 scheduler,把正式库改名、临时库改名为正式库;成功后才删旧库。中途失败会自动还原,或明确提示"状态不确定、备份完好、重跑命令"。
-4. 处理 `.env`、写回 Caddy 数据、重启 web、清空 Redis(所有人需要重新登录)、启动服务并等应用就绪。
+4. 处理 `.env`、写回 Caddy 数据(备份里没有 Caddy 数据时跳过,保留当前机器的证书与内部 CA)、重启 web、清空 Redis(所有人需要重新登录)、启动服务并等应用就绪。
 
-恢复会丢失备份之后产生的数据。
+恢复会丢失备份之后产生的数据。备份里的 `config.tar`(Caddyfile、compose、VERSION、`certs/`)**不会自动应用**——它属于备份时那个版本的部署;需要时手动取:`tar -xOzf <备份>.tar.gz config.tar | tar -t`(看清单),`tar -xOzf <备份>.tar.gz config.tar | tar -x certs/site.key`(取自备证书私钥)。
+
+### `.env` 丢了怎么办
+
+`.env` 里的主密钥不可再生(第 6 节),丢了只能从备份里取回:
+
+```bash
+tar -xOzf backups/ws-backup-<时间>-v<版本>.tar.gz env > .env && chmod 600 .env
+```
+
+然后 `./scripts/install.sh` 让服务按它启动(`.env` 存在就不会重新生成密钥)。注意取回的是**备份时刻**的 `.env`:之后改过的站点地址、端口、`WS_STREAM_*` 等要重新核对。没有任何一份备份时,数据库里用主密钥加密的字段(AI Key、摄像头密码)无法解开,只能重新填写;令牌密钥、学校 ID 可以从头生成(删掉 `data/pg` 重装等于全新系统,所有数据丢失)——这就是为什么备份必须离机保存。
 
 ### 与当前 `.env` 的取舍
 
@@ -206,7 +243,7 @@ WS_INSTALL_TLS=1 \
 
 1. 新机器按第 1 节准备好 Ubuntu 与 Docker,解开**与备份同大版本**的离线包(版本最好与备份的版本一致)。
 2. 把备份文件复制到新机器(例如放进部署目录的 `backups/`)。
-3. 执行 `./scripts/install.sh`(交互或非交互)装出一套全新系统,学校名、管理员随意填(之后会被备份覆盖)。**站点地址、端口、证书方式用新机器要用的值**——它们不会从备份恢复。
+3. 执行 `./scripts/install.sh`(交互或非交互)装出一套全新系统,学校名、管理员随意填(之后会被备份覆盖)。**站点地址、端口、证书方式用新机器要用的值**——它们不会从备份恢复。自备证书方式的证书与私钥可以从备份的 `config.tar` 里取(上文),安装时用 `WS_INSTALL_CERT` / `WS_INSTALL_KEY` 指向它们。
 4. 执行 `./scripts/restore.sh <备份文件> --yes`。
 5. 内部证书方式:Caddy 数据(含内部 CA 的根证书与私钥)已随备份恢复,新机器用的还是旧机器的根证书。即使新机器的访问地址变了,新地址的证书也由**同一个根证书**签发,所以各终端**不需要重新安装根证书**(第 4 节方式 1 第 4 点)。
 6. 用管理员账号(备份里的,不是第 3 步填的)登录,检查数据。

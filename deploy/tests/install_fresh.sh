@@ -95,7 +95,27 @@ openssl x509 -noout -in "$DEPLOY/certs/ws-root-ca.crt" 2>/dev/null || fail "ws-r
 pass "已导出 Caddy 根证书"
 grep -q 'crontab' "$LOG" || fail "输出里没有 crontab 提示(测试以非 root 运行,应打印手动 crontab 行)"
 grep -q 'backup.sh' "$LOG" || fail "crontab 提示里没有 backup.sh"
-pass "输出了手动 crontab 提示"
+grep -q 'logger -t workstation-backup' "$LOG" || fail "crontab 提示应把日志交给 logger(L201),而不是无限追加到文件"
+grep -q 'CRON_TZ=Asia/Shanghai' "$LOG" || fail "crontab 提示里没有 CRON_TZ(L184)"
+grep -q '以后的备份、恢复、升级、回退请都用' "$LOG" || fail "安装结尾没有「以后所有脚本用同一用户」的提示(L183)"
+pass "输出了手动 crontab 提示(logger + CRON_TZ)与同一用户提示"
+# L184:systemd 定时器模板带时区占位,渲染后 OnCalendar 含学校时区;测试非 root,只验渲染函数(真机 systemd 行为见台账 L125)
+grep -q '^OnCalendar=\*-\*-\* 02:30:00 @TZ@$' "$DEPLOY/systemd/workstation-backup.timer" || fail "timer 模板里应有 OnCalendar=*-*-* 02:30:00 @TZ@"
+# shellcheck source=/dev/null
+rendered="$( . "$DEPLOY/scripts/lib.sh"; render_systemd_unit "$DEPLOY/systemd/workstation-backup.timer" "$DEPLOY" "$(backup_timezone)" )"
+grep -q '^OnCalendar=\*-\*-\* 02:30:00 Asia/Shanghai$' <<<"$rendered" || fail "渲染后的 timer 应含 OnCalendar=*-*-* 02:30:00 Asia/Shanghai,实际:$(grep OnCalendar <<<"$rendered")"
+grep -q '@TZ@' <<<"$rendered" && fail "渲染后的 timer 不应残留 @TZ@"
+# shellcheck source=/dev/null
+rendered="$( . "$DEPLOY/scripts/lib.sh"; render_systemd_unit "$DEPLOY/systemd/workstation-backup.service" "$DEPLOY" "Asia/Shanghai" )"
+grep -q "^WorkingDirectory=$DEPLOY$" <<<"$rendered" || fail "渲染后的 service 应含 WorkingDirectory=$DEPLOY"
+grep -q '@DEPLOY_DIR@' <<<"$rendered" && fail "渲染后的 service 不应残留 @DEPLOY_DIR@"
+pass "systemd 定时器渲染:OnCalendar 带时区 Asia/Shanghai,WorkingDirectory 为部署目录"
+# L187:每个容器的 stdout 日志都有大小上限
+for svc in postgres redis app scheduler stream-worker web; do
+  lc="$(docker inspect -f '{{.HostConfig.LogConfig.Type}} {{index .HostConfig.LogConfig.Config "max-size"}} {{index .HostConfig.LogConfig.Config "max-file"}}' "$(dc ps -q "$svc")")"
+  [ "$lc" = "json-file 10m 5" ] || fail "$svc 的日志配置应为 json-file max-size=10m max-file=5,实际:$lc"
+done
+pass "六个容器的 stdout 日志都限制为 10m × 5"
 
 echo "== 5/5 密钥出口扫描(规则 15)"
 selftest_scanner

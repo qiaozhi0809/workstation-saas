@@ -184,17 +184,24 @@ clean_stale_tmp() {
   return 0
 }
 
-# manifest_valid <文件>:manifest.json 必须是备份脚本写出的格式(逐行严格匹配);通过返回 0。
-# files 里键集合必须恰好是 db.dump、env、caddy.tar 各一次,值是 64 位十六进制,除最后一项外每项行尾有逗号。
+# manifest_valid <文件>:manifest.json 必须是备份脚本写出的格式(逐行严格匹配);通过返回 0。两种格式都认:
+#   * 1.0.0 之前:没有 caddy 行,files 恰好是 db.dump、env、caddy.tar 各一次;
+#   * 1.0.0 起:created_at 之后一行 "caddy": "included" 或 "skipped",files 为 db.dump、env、[caddy.tar]、config.tar,
+#     included 时必须有 caddy.tar,skipped 时必须没有。
+# 值是 64 位十六进制,除最后一项外每项行尾有逗号。
 manifest_valid() {
   awk '
-    BEGIN { st = 0; nf = 0; hex = ""; for (i = 0; i < 64; i++) hex = hex "[0-9a-f]"
-            re = "^    \"(db\\.dump|env|caddy\\.tar)\": \"" hex "\",?$" }
+    BEGIN { st = 0; nf = 0; caddy = ""; hex = ""; for (i = 0; i < 64; i++) hex = hex "[0-9a-f]"
+            re = "^    \"(db\\.dump|env|caddy\\.tar|config\\.tar)\": \"" hex "\",?$" }
     st == 0 { if ($0 == "{") { st = 1; next } else bad = 1 }
     st == 1 { if ($0 ~ /^  "version": "[A-Za-z0-9._-]+",$/) { st = 2; next } else bad = 1 }
     st == 2 { if ($0 ~ /^  "migration": "[0-9A-Za-z_]+",$/) { st = 3; next } else bad = 1 }
     st == 3 { if ($0 ~ /^  "created_at": "[0-9T:Z-]+",$/) { st = 4; next } else bad = 1 }
-    st == 4 { if ($0 == "  \"files\": {") { st = 5; next } else bad = 1 }
+    st == 4 {
+      if ($0 ~ /^  "caddy": "(included|skipped)",$/ && caddy == "") {
+        caddy = $0; sub(/^  "caddy": "/, "", caddy); sub(/",$/, "", caddy); next
+      } else if ($0 == "  \"files\": {") { st = 5; next } else bad = 1
+    }
     st == 5 {
       if ($0 ~ re) {
         nf++
@@ -208,11 +215,25 @@ manifest_valid() {
     st == 6 { if ($0 == "}") { st = 7; next } else bad = 1 }
     st == 7 { bad = 1 }
     END {
-      if (nf != 3) bad = 1
+      if (!seen["db.dump"] || !seen["env"]) bad = 1
+      if (caddy == "") {
+        if (nf != 3 || !seen["caddy.tar"] || seen["config.tar"]) bad = 1
+      } else {
+        if (!seen["config.tar"]) bad = 1
+        if (caddy == "included" && (nf != 4 || !seen["caddy.tar"])) bad = 1
+        if (caddy == "skipped" && (nf != 3 || seen["caddy.tar"])) bad = 1
+      }
       for (i = 1; i <= nf; i++) { if (i < nf && !comma[i]) bad = 1; if (i == nf && comma[i]) bad = 1 }
       exit (bad || st != 7) ? 1 : 0
     }
   ' "$1"
+}
+
+# manifest_caddy <文件>:输出 manifest 里的 caddy 字段(included / skipped);旧格式没有该字段时输出 included
+manifest_caddy() {
+  local v
+  v="$(sed -n -E 's/^  "caddy": "(included|skipped)",$/\1/p' "$1" | head -n 1)"
+  printf '%s\n' "${v:-included}"
 }
 
 # mask_shapes:标准输入 → 标准输出。按形状打码(不依赖已知密钥值):JWT、Bearer / Token 授权头、
@@ -446,6 +467,26 @@ rand_secret() {
     out="$(printf '%s' "$out" | tr '+/' '-_')"
   fi
   printf '%s' "$out"
+}
+
+# render_systemd_unit <模板文件> <部署目录> <时区>:把模板里的 @DEPLOY_DIR@、@TZ@ 替换后输出到标准输出(L184)。
+# systemd 里 % 与 $ 有特殊含义,部署目录写进单元前转义(install 已拒绝含这些字符的目录,这里是双保险);
+# bash 5.2 的替换串里 & 也有特殊含义,先关掉 patsub_replacement。
+render_systemd_unit() {
+  local tpl="$1" dir="$2" tz="$3" content pct='%' dollar='$'
+  shopt -u patsub_replacement 2>/dev/null || true
+  dir="${dir//$pct/$pct$pct}"
+  dir="${dir//$dollar/$dollar$dollar}"
+  content="$(<"$tpl")"
+  content="${content//@DEPLOY_DIR@/$dir}"
+  printf '%s\n' "${content//@TZ@/$tz}"
+}
+
+# backup_timezone:定时备份用的时区 = .env 的 TZ(容器也用它),不合法或为空时 Asia/Shanghai
+backup_timezone() {
+  local tz
+  tz="$(read_env TZ)"
+  if str_grep "$tz" -Eq '^[A-Za-z][A-Za-z0-9_+/-]*$'; then printf '%s\n' "$tz"; else printf 'Asia/Shanghai\n'; fi
 }
 
 # 到另一个文件的原子替换:先写同目录临时文件再 mv,这样正在运行的脚本(自己被升级覆盖时)仍读旧 inode

@@ -203,6 +203,7 @@ main() {
   [ -f "$DEPLOY_DIR/VERSION" ] || die "部署目录里缺少 VERSION 文件"
   require_cmd docker "请先安装 Docker Engine"
   require_compose_version
+  require_same_user
   cd "$DEPLOY_DIR"
   # 与备份 / 恢复互斥;升级里会调用 backup.sh,经环境变量告诉它"锁已由本进程持有"
   acquire_lock

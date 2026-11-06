@@ -236,6 +236,12 @@ pass "app 健康检查启动宽限期为 300s(只覆盖 start_period,其余沿�
 web_health="$(docker inspect -f '{{.State.Health.Status}}' "$(compose ps -q web)")"
 [ "$web_health" = "healthy" ] || fail "web 应为 healthy,实际:$web_health"
 pass "web 为 healthy"
+# L187:每个容器的 stdout 日志都有大小上限(Ubuntu 的 Docker 默认不轮转)
+for svc in postgres redis app scheduler stream-worker web; do
+  lc="$(docker inspect -f '{{.HostConfig.LogConfig.Type}} {{index .HostConfig.LogConfig.Config "max-size"}} {{index .HostConfig.LogConfig.Config "max-file"}}' "$(compose ps -q "$svc")")"
+  [ "$lc" = "json-file 10m 5" ] || fail "$svc 的日志配置应为 json-file max-size=10m max-file=5,实际:$lc"
+done
+pass "六个容器的 stdout 日志都限制为 10m × 5"
 perm="$(ls -l "$TMP/.env" | cut -c1-10)"
 [ "$perm" = "-rw-------" ] || fail ".env 权限应为 600,实际:$perm"
 pass ".env 权限为 600"

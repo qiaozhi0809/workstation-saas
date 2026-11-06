@@ -153,6 +153,24 @@ rc=0; run_install "$TMP/install4d.log" || rc=$?
 assert_healthz
 pass "可信网段含更宽的 /16 时放行;.env 恢复后服务健康"
 
+echo "== 4c L183:另一个用户(nobody)执行 backup.sh → 明确提示该部署的属主与该用哪个用户,而不是「另一个备份正在进行」"
+if sudo -n true 2>/dev/null && id nobody >/dev/null 2>&1; then
+  chmod 711 "$TMP"   # 让 nobody 能走到部署目录(.env 仍是 600,它读不了,只需要能 stat 到属主)
+  rc=0
+  # 日志文件有意由测试用户(不是 nobody)创建与持有
+  # shellcheck disable=SC2024
+  sudo -n -u nobody "$DEPLOY/scripts/backup.sh" >"$TMP/other-user.log" 2>&1 || rc=$?
+  chmod 700 "$TMP"
+  [ "$rc" -ne 0 ] || fail "另一个用户执行 backup.sh 应被拒绝"
+  grep -q '该部署由用户' "$TMP/other-user.log" || { cat "$TMP/other-user.log" >&2; fail "提示里没有「该部署由用户 … 安装」"; }
+  grep -qF -- "$(id -un)" "$TMP/other-user.log" || fail "提示里应写出安装用户名 $(id -un)"
+  grep -q '正在进行' "$TMP/other-user.log" && fail "不应报成「另一个备份正在进行」"
+  [ ! -e "$DEPLOY/backups/.lock" ] || fail "另一个用户的尝试不应留下锁目录"
+  pass "nobody 执行 backup.sh:提示由用户 $(id -un) 安装、请切换用户,不是锁冲突"
+else
+  echo "  跳过:本机没有免密 sudo 或 nobody 用户(CI 的 runner 有)"
+fi
+
 echo "== 5/6 故意配错 WS_MASTER_KEY:安装输出不得泄露密钥"
 bad_key="not-a-valid-key-$(openssl rand -hex 16)"
 awk -F= -v k="$bad_key" '$1=="WS_MASTER_KEY" {print "WS_MASTER_KEY=" k; next} {print}' "$TMP/env.good" >"$DEPLOY/.env"

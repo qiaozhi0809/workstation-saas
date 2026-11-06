@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # 恢复:在部署目录里执行 ./scripts/restore.sh <备份文件> [--yes]
 #
-# 所有校验都在动数据库之前完成:文件存在可读、归档完整且只含 4 个普通文件(拒绝路径穿越、链接)、
-# manifest.json 严格符合本系统格式、sha256 全部对得上、env 含必需键且值非空、caddy.tar 可完整读出且不含绝对路径 / .. /
-# 链接 / 设备文件、大版本一致、备份的迁移版本不比当前镜像的 head 新、磁盘空间够(max(当前库大小, db.dump 大小的 6 倍)的 1.2 倍,见"3. 先恢复进临时库"处的说明)。
+# 所有校验都在动数据库之前完成:文件存在可读、归档完整且只含 manifest 列出的几个普通文件(db.dump、env、caddy.tar(备份时 web
+# 没在运行则没有)、config.tar(1.0.0 起)、manifest.json;拒绝路径穿越、链接)、manifest.json 严格符合本系统格式(新旧两种都认)、
+# sha256 全部对得上、env 含必需键且值非空、caddy.tar / config.tar 可完整读出且不含绝对路径 / .. / 链接 / 设备文件、
+# 大版本一致(0.x 的备份可恢复进 1.x)、备份的迁移版本不比当前镜像的 head 新、db.dump 能被 pg_restore 读出目录、
+# 磁盘空间够(max(当前库大小, db.dump 大小的 6 倍)的 1.2 倍,见"3. 先恢复进临时库"处的说明)。
+# config.tar(Caddyfile、compose、VERSION、certs/)只校验不应用:它属于备份时那个版本的部署,换机灾备时按手册手动取用。
 # 取镜像 head 的办法:用当前 app 镜像执行 python 读 alembic 的 ScriptDirectory(不连库、不改库)。
 #
 # 恢复顺序与理由:
@@ -136,7 +139,8 @@ trap 'exit 143' TERM
 
 major_of() { printf '%s' "${1%%.*}"; }
 
-# 解包前检查归档:只允许 db.dump、env、caddy.tar、manifest.json 四个普通文件
+# 解包前检查归档:只允许 db.dump、env、caddy.tar、config.tar、manifest.json 这几个普通文件(caddy.tar 与 config.tar 是否必须
+# 由 manifest 决定,解包后再核对:备份时 web 没在运行则没有 caddy.tar;1.0.0 之前的备份没有 config.tar)
 check_archive() {
   local pkg="$1" list vlist names dup
   # gzip -t 读完整个压缩流并校验 CRC(bsdtar 的 -t 不一定会读完,不能只靠 tar)
@@ -153,36 +157,40 @@ check_archive() {
     die "备份文件里含有链接、目录或特殊文件,已拒绝,数据库未改动"
   fi
   names="$(printf '%s\n' "$list" | sed 's#^\./##')"
-  if grep -Evxq 'db\.dump|env|caddy\.tar|manifest\.json' <<<"$names"; then
+  if grep -Evxq 'db\.dump|env|caddy\.tar|config\.tar|manifest\.json' <<<"$names"; then
     die "备份文件里有不认识的条目,已拒绝,数据库未改动"
   fi
   dup="$(printf '%s\n' "$names" | sort | uniq -d)"
   [ -z "$dup" ] || die "备份文件里有重复条目,已拒绝,数据库未改动"
   grep -qx 'manifest\.json' <<<"$names" || die "备份文件里没有 manifest.json,已拒绝,数据库未改动"
   local f
-  for f in db.dump env caddy.tar; do
+  for f in db.dump env; do
     grep -qx "$f" <<<"$names" || die "备份文件不完整,缺少 $f,已拒绝,数据库未改动"
   done
 }
 
-# caddy.tar(会在 web 容器里以 root 解开,必须先在宿主机上验清楚):能完整读出,不含绝对路径、..、链接、设备文件
-check_caddy_tar() {
-  local f="$1" list vlist
-  list="$(tar -tf "$f" 2>/dev/null)" || die "备份里的 caddy.tar 不是有效的归档(读不出来),已拒绝,数据库未改动"
-  vlist="$(tar -tvf "$f" 2>/dev/null)" || die "备份里的 caddy.tar 不是有效的归档(读不出来),已拒绝,数据库未改动"
-  [ -n "$list" ] || die "备份里的 caddy.tar 是空的,已拒绝,数据库未改动"
+# 备份里的内层归档(caddy.tar 会在 web 容器里以 root 解开,必须先在宿主机上验清楚;config.tar 同样检查):
+# 能完整读出,不含绝对路径、..、链接、设备文件。<名称> 只用于报错
+check_inner_tar() {
+  local f="$1" name="$2" list vlist
+  list="$(tar -tf "$f" 2>/dev/null)" || die "备份里的 $name 不是有效的归档(读不出来),已拒绝,数据库未改动"
+  vlist="$(tar -tvf "$f" 2>/dev/null)" || die "备份里的 $name 不是有效的归档(读不出来),已拒绝,数据库未改动"
+  [ -n "$list" ] || die "备份里的 $name 是空的,已拒绝,数据库未改动"
   if grep -Eq '(^/|(^|/)\.\.(/|$))' <<<"$list"; then
-    die "备份里的 caddy.tar 含有不安全的路径(绝对路径或 ..),已拒绝,数据库未改动"
+    die "备份里的 $name 含有不安全的路径(绝对路径或 ..),已拒绝,数据库未改动"
   fi
   if grep -Evq '^[-d]' <<<"$vlist" || grep -Eq ' -> | link to ' <<<"$vlist"; then
-    die "备份里的 caddy.tar 含有链接或设备文件,已拒绝,数据库未改动"
+    die "备份里的 $name 含有链接或设备文件,已拒绝,数据库未改动"
   fi
 }
 
 manifest_field() { sed -n "s/^  \"$1\": \"\\([^\"]*\\)\",\$/\\1/p" "$2" | head -n 1; }
+# manifest 的 files 里的键,每行一个
+manifest_files() { sed -n 's/^    "\([^"]*\)": "[0-9a-f]*",\{0,1\}$/\1/p' "$1"; }
 
 main() {
   local arg yes=0 pkg_arg="" bver cur_version bmig created out rc head known name want got ans ts newenv m o need_kb avail_kb line dump_bytes cur_bytes est_bytes
+  local bcaddy mfiles have
   for arg in "$@"; do
     case "$arg" in
       --yes) yes=1 ;;
@@ -200,6 +208,7 @@ main() {
   [ -f "$DEPLOY_DIR/VERSION" ] || die "部署目录里缺少 VERSION 文件"
   require_cmd docker "请先安装 Docker Engine"
   require_compose_version
+  require_same_user
   cd "$DEPLOY_DIR"
   acquire_lock
   clean_stale_tmp
@@ -215,29 +224,46 @@ main() {
   bver="$(manifest_field version "$WORK/manifest.json")"
   bmig="$(manifest_field migration "$WORK/manifest.json")"
   created="$(manifest_field created_at "$WORK/manifest.json")"
-  for name in db.dump env caddy.tar; do
+  bcaddy="$(manifest_caddy "$WORK/manifest.json")"
+  # manifest 列出的文件与备份里实际的文件必须一一对应(manifest_valid 已保证键只会是 db.dump / env / caddy.tar / config.tar)
+  mfiles="$(manifest_files "$WORK/manifest.json" | LC_ALL=C sort)"
+  have="$(cd "$WORK" && find . -maxdepth 1 -type f ! -name manifest.json | sed 's#^\./##' | LC_ALL=C sort)"
+  [ "$mfiles" = "$have" ] || die "manifest.json 的文件清单与备份内容不一致,已拒绝,数据库未改动"
+  while IFS= read -r name; do
     want="$(sed -n "s/^    \"$name\": \"\\([0-9a-f]*\\)\",\\{0,1\\}\$/\\1/p" "$WORK/manifest.json" | head -n 1)"
     [ -n "$want" ] || die "manifest.json 里没有 $name 的校验和,已拒绝,数据库未改动"
     got="$(sha256_of "$WORK/$name")"
     [ "$want" = "$got" ] || die "备份里的 $name 校验和不符(文件已损坏或被改动),已拒绝,数据库未改动"
-  done
-  if [ "$(grep -c '^    "' "$WORK/manifest.json")" -ne 3 ]; then
-    die "manifest.json 的文件清单与备份内容不一致,已拒绝,数据库未改动"
-  fi
+  done <<<"$mfiles"
   if [ ! -s "$WORK/env" ]; then die "备份里的 env 是空的,已拒绝,数据库未改动"; fi
   for name in WS_MASTER_KEY WS_JWT_SECRET POSTGRES_PASSWORD WS_DATABASE_URL; do
     [ -n "$(read_env "$name" "$WORK/env")" ] || die "备份里的 env 缺少 $name 或它的值为空,已拒绝,数据库未改动"
   done
-  check_caddy_tar "$WORK/caddy.tar"
+  if [ "$bcaddy" = "included" ]; then check_inner_tar "$WORK/caddy.tar" caddy.tar; fi
+  if [ -f "$WORK/config.tar" ]; then check_inner_tar "$WORK/config.tar" config.tar; fi
   cur_version="$(tr -d '[:space:]' <"$DEPLOY_DIR/VERSION")"
-  if [ "$(major_of "$bver")" != "$(major_of "$cur_version")" ]; then
+  if [ "$(major_of "$bver")" != "$(major_of "$cur_version")" ] \
+    && ! { [ "$(major_of "$bver")" = "0" ] && [ "$(major_of "$cur_version")" = "1" ]; }; then
     die "备份来自版本 $bver,当前版本 $cur_version:大版本不同,本脚本拒绝恢复,数据库未改动。请用对应大版本的离线包恢复"
   fi
-  log_info "备份校验通过:版本 $bver,迁移 $bmig,创建于 $created"
+  log_info "备份校验通过:版本 $bver,迁移 $bmig,创建于 $created,Caddy 数据:$bcaddy"
+  if [ "$bcaddy" = "skipped" ]; then
+    log_warn "这份备份不含 Caddy 数据(备份时 web 没在运行):恢复后保留当前机器的证书与内部 CA,不写回"
+  fi
+  if [ -f "$WORK/config.tar" ]; then
+    log_info "备份内含 config.tar(Caddyfile、docker-compose.yml、VERSION、certs/):不自动应用,换机灾备时按手册第 8 节取用"
+  fi
 
   service_running postgres || die "数据库服务没有在运行,无法恢复。请先执行:docker compose -p ${WS_COMPOSE_PROJECT:-workstation} --project-directory '$DEPLOY_DIR' up -d postgres"
-  service_running web || die "web 服务没有在运行,无法写回 Caddy 数据。请先执行:docker compose -p ${WS_COMPOSE_PROJECT:-workstation} --project-directory '$DEPLOY_DIR' up -d web"
+  if [ "$bcaddy" = "included" ]; then
+    service_running web || die "web 服务没有在运行,无法写回 Caddy 数据。请先执行:docker compose -p ${WS_COMPOSE_PROJECT:-workstation} --project-directory '$DEPLOY_DIR' up -d web"
+  fi
   service_running redis || die "redis 服务没有在运行,无法清除会话。请先执行:docker compose -p ${WS_COMPOSE_PROJECT:-workstation} --project-directory '$DEPLOY_DIR' up -d redis"
+  # L188:备份里的数据库文件必须能被 pg_restore 读出目录(不是 pg_dump 归档、已损坏或被截断的在这里就拒绝,不建临时库)
+  if ! compose exec -T postgres pg_restore -l <"$WORK/db.dump" >/dev/null 2>"$WORK/pgl.log"; then
+    { tail -n 5 "$WORK/pgl.log" || true; } | redact | mask_shapes >&2
+    die "pg_restore 读不出备份里的数据库文件(不是 pg_dump 归档、已损坏或被截断),已拒绝,数据库未改动"
+  fi
 
   # 当前镜像的迁移 head(不连库);备份的迁移必须是 head 或其祖先
   rc=0
@@ -362,11 +388,15 @@ print("KNOWN=" + ("1" if sys.argv[1] in {r.revision for r in s.walk_revisions()}
     log_warn ".env 里与数据绑定的值(主密钥、令牌密钥、学校 ID)已换成备份里的,数据库密码、站点与端口等保留当前机器的;恢复前的 .env 另存为 $ENV_SAVED"
   fi
 
-  # ---- 6. Caddy 数据(经 web 容器写回),再重启 web ----
-  log_info "写回 Caddy 数据……"
-  compose exec -T web tar -C /data --no-same-owner -xf - <"$WORK/caddy.tar" 2>&1 | redact >"$WORK/caddy.log" \
-    || { tail -n 8 "$WORK/caddy.log" >&2; die "写回 Caddy 数据失败"; }
-  compose restart web 2>&1 | redact >/dev/null || die "重启 web 失败"
+  # ---- 6. Caddy 数据(经 web 容器写回),再重启 web;备份里没有 Caddy 数据时保留当前机器的 ----
+  if [ "$bcaddy" = "included" ]; then
+    log_info "写回 Caddy 数据……"
+    compose exec -T web tar -C /data --no-same-owner -xf - <"$WORK/caddy.tar" 2>&1 | redact >"$WORK/caddy.log" \
+      || { tail -n 8 "$WORK/caddy.log" >&2; die "写回 Caddy 数据失败"; }
+    compose restart web 2>&1 | redact >/dev/null || die "重启 web 失败"
+  else
+    log_warn "备份不含 Caddy 数据,证书与内部 CA 保持当前机器的"
+  fi
 
   # ---- 7. 清会话、启动、等健康 ----
   log_info "清除登录会话(所有人需要重新登录)……"

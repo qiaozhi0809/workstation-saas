@@ -416,36 +416,36 @@ init_school() {
   esac
 }
 
-# 写单元文件并启用定时器;任何一步失败返回非 0(调用者降级为 crontab 提示)
+# 写单元文件并启用定时器;任何一步失败返回非 0(调用者降级为 crontab 提示)。
+# 单元模板里的 @DEPLOY_DIR@ 替换为本部署目录,@TZ@ 替换为 .env 的 TZ(L184:定时器按学校时区,不按服务器的 UTC)
 enable_backup_timer() {
-  local unit content unit_dir pct='%' dollar='$'
-  shopt -u patsub_replacement 2>/dev/null || true
-  unit_dir="${DEPLOY_DIR//$pct/$pct$pct}"
-  unit_dir="${unit_dir//$dollar/$dollar$dollar}"
+  local unit tz
+  tz="$(backup_timezone)"
   for unit in workstation-backup.service workstation-backup.timer; do
     [ -f "$DEPLOY_DIR/systemd/$unit" ] || { log_warn "没有找到 systemd 单元文件 systemd/$unit"; return 1; }
   done
   for unit in workstation-backup.service workstation-backup.timer; do
-    # 单元模板里的 @DEPLOY_DIR@ 替换为本部署目录
-    # systemd 里 % 与 $ 有特殊含义,写进单元前转义;bash 5.2 的替换串里 & 也有特殊含义,先关掉(install 已拒绝含这些字符的目录,这里是双保险)
-    content="$(<"$DEPLOY_DIR/systemd/$unit")"
-    printf '%s\n' "${content//@DEPLOY_DIR@/$unit_dir}" >"/etc/systemd/system/$unit" || return 1
+    render_systemd_unit "$DEPLOY_DIR/systemd/$unit" "$DEPLOY_DIR" "$tz" >"/etc/systemd/system/$unit" || return 1
   done
   systemctl daemon-reload || return 1
   systemctl enable --now workstation-backup.timer || return 1
 }
 
 install_backup_timer() {
+  local tz
+  tz="$(backup_timezone)"
   if [ "$(id -u)" -eq 0 ] && command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
     if enable_backup_timer; then
-      log_info "已启用每日 02:30 自动备份(systemd 定时器 workstation-backup.timer)"
+      log_info "已启用每日 02:30($tz)自动备份(systemd 定时器 workstation-backup.timer)"
       return 0
     fi
     log_warn "systemd 定时器没有装好(上面是原因),改用 crontab:"
   else
-    log_warn "未安装自动备份定时器(非 root 或没有 systemd)。请手动添加 crontab(crontab -e):"
+    log_warn "未安装自动备份定时器(非 root 或没有 systemd)。请手动添加 crontab(crontab -e),日志交给 syslog / journal 轮转(L201):"
   fi
-  printf '    30 2 * * * cd %q && ./scripts/backup.sh >> data/logs/backup.log 2>&1\n' "$DEPLOY_DIR"
+  printf '    CRON_TZ=%s\n' "$tz"
+  printf '    30 2 * * * cd %q && ./scripts/backup.sh 2>&1 | logger -t workstation-backup\n' "$DEPLOY_DIR"
+  printf '  (CRON_TZ 让 02:30 按学校时区计;服务器系统时区就是 %s 时可省略。查看日志:journalctl -t workstation-backup)\n' "$tz"
 }
 
 export_root_ca() {
@@ -479,6 +479,12 @@ print_summary() {
   fi
   printf '  备份目录:%s/backups\n' "$DEPLOY_DIR"
   printf '  注意:%s 里有主密钥,请连同备份一起妥善保管,不要上传到外网\n' ".env"
+  # L183:sudo / 非 sudo 混用会让另一个用户撞上锁目录与 600 文件;以后所有脚本都用现在这个用户
+  if [ "$(id -u)" -eq 0 ]; then
+    printf '  以后的备份、恢复、升级、回退请都用 root 执行(sudo ./scripts/…):本次安装是 root 做的,文件属主都是 root\n'
+  else
+    printf '  以后的备份、恢复、升级、回退请都用当前用户 %s 执行,不要加 sudo:文件属主都是这个用户\n' "$(id -un)"
+  fi
 }
 
 main() {
@@ -501,6 +507,7 @@ main() {
   if [ -f "$ENV_FILE" ]; then
     # R9:.env 存在即视为已安装,绝不重新生成密钥
     log_info "检测到 .env:系统已安装,不会重新生成密钥,只确保服务已启动"
+    require_same_user
     HTTP_PORT="$(read_env WS_HTTP_PORT)"; HTTPS_PORT="$(read_env WS_HTTPS_PORT)"
     check_env_complete
     check_disk
