@@ -187,6 +187,53 @@ it('disable shows the lockout message on 429 ACCOUNT_LOCKED', async () => {
   expect(await within(dlg).findByRole('alert')).toHaveTextContent('尝试次数过多,请稍后再试')
 })
 
+it('setup failure shows the error with a retry button that calls setup again', async () => {
+  vi.mocked(authApi.totpStatus).mockResolvedValue({
+    allowed: true,
+    enabled: false,
+    enabled_at: null,
+  })
+  vi.mocked(authApi.totpSetup)
+    .mockRejectedValueOnce(new ApiError(503, 'HTTP_ERROR', 'Service Unavailable'))
+    .mockResolvedValueOnce(SETUP)
+  const dlg = await open()
+  fireEvent.click(await within(dlg).findByRole('button', { name: '开启' }))
+  expect(await within(dlg).findByRole('alert')).toHaveTextContent('Service Unavailable')
+  expect(within(dlg).queryByRole('img', { name: '两步验证二维码' })).toBeNull()
+  const retry = within(dlg).getByRole('button', { name: '重试' })
+  expect(within(dlg).getByRole('button', { name: '取消' })).toBeInTheDocument()
+  fireEvent.click(retry)
+  await waitFor(() => expect(authApi.totpSetup).toHaveBeenCalledTimes(2))
+  await within(dlg).findByRole('img', { name: '两步验证二维码' })
+  expect(within(dlg).queryByRole('alert')).toBeNull()
+  expect(within(dlg).queryByRole('button', { name: '重试' })).toBeNull()
+})
+
+it('disable confirm shows a spinner and stays disabled while submitting', async () => {
+  vi.mocked(authApi.totpStatus).mockResolvedValue({
+    allowed: true,
+    enabled: true,
+    enabled_at: '2026-11-01T08:00:00+08:00',
+  })
+  let resolveDisable!: (v: { enabled: false }) => void
+  vi.mocked(authApi.totpDisable).mockReturnValue(
+    new Promise<{ enabled: false }>((r) => {
+      resolveDisable = r
+    }),
+  )
+  const dlg = await open()
+  fireEvent.click(await within(dlg).findByRole('button', { name: '关闭两步验证' }))
+  fireEvent.change(within(dlg).getByLabelText('当前密码'), { target: { value: 'pw' } })
+  const confirm = within(dlg).getByRole('button', { name: '确认关闭' })
+  expect(confirm.querySelector('svg')).toBeNull()
+  fireEvent.click(confirm)
+  await waitFor(() => expect(confirm).toHaveAttribute('aria-busy', 'true'))
+  expect(confirm).toBeDisabled()
+  expect(confirm.querySelector('svg.motion-safe\\:animate-spin')).not.toBeNull()
+  resolveDisable({ enabled: false })
+  await waitFor(() => expect(toast).toHaveBeenCalledWith('已关闭两步验证'))
+})
+
 it('reopening the dialog shows no qr or secret until setup is called again', async () => {
   const dlg = await startEnable()
   expect(within(dlg).getByRole('img', { name: '两步验证二维码' })).toBeInTheDocument()

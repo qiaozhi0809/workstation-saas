@@ -5,7 +5,19 @@ import { LiveWatermark } from './LiveWatermark'
 afterEach(() => {
   cleanup()
   vi.useRealTimers()
+  vi.restoreAllMocks()
 })
+
+const browserZoneFormat = (d: Date) =>
+  new Intl.DateTimeFormat('zh-CN', {
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).format(d)
 
 describe('LiveWatermark', () => {
   it('watermark shows viewer name and ticks', () => {
@@ -30,5 +42,25 @@ describe('LiveWatermark', () => {
     sh.unmount()
     const ny = render(<LiveWatermark schoolName="s" viewerName="v" timeZone="America/New_York" />)
     expect(ny.container).toHaveTextContent('20:00:00')
+  })
+
+  it('falls back to the browser time zone on an invalid timeZone and warns once', () => {
+    vi.useFakeTimers()
+    const at = new Date('2026-11-02T01:00:00Z')
+    vi.setSystemTime(at)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const bad = 'Mars/Olympus_Mons'
+    const a = render(<LiveWatermark schoolName="s" viewerName="v" timeZone={bad} />)
+    expect(a.container).toHaveTextContent(browserZoneFormat(at))
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(warn.mock.calls[0].join(' ')).toContain(bad)
+    // 同一个坏时区再挂几块(九宫格)也只警告这一次;秒针照走
+    render(<LiveWatermark schoolName="s" viewerName="v" timeZone={bad} />)
+    act(() => void vi.advanceTimersByTime(1000))
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(a.container).toHaveTextContent(browserZoneFormat(new Date(at.getTime() + 1000)))
+    // 换成合法时区即恢复
+    a.rerender(<LiveWatermark schoolName="s" viewerName="v" timeZone="Asia/Shanghai" />)
+    expect(a.container).toHaveTextContent('09:00:01')
   })
 })

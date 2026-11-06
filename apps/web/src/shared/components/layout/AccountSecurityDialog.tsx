@@ -95,10 +95,21 @@ function EnableFlow({ onDone, onCancel }: { onDone(): void; onCancel(): void }) 
       <div className="space-y-3">
         <ErrorLine message={error} />
         {starting && <LoadingState />}
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-2">
           <Button type="button" variant="outline" onClick={onCancel}>
             取消
           </Button>
+          {!starting && error && (
+            <Button
+              type="button"
+              onClick={() => {
+                setError(null)
+                begin()
+              }}
+            >
+              重试
+            </Button>
+          )}
         </div>
       </div>
     )
@@ -192,6 +203,7 @@ function DisableFlow({ onDone, onCancel }: { onDone(): void; onCancel(): void })
           取消
         </Button>
         <Button type="submit" variant="destructive" disabled={busy || !password} aria-busy={busy}>
+          {busy && <Loader2 className="h-4 w-4 motion-safe:animate-spin" aria-hidden="true" />}
           确认关闭
         </Button>
       </div>

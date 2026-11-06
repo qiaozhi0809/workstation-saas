@@ -2,7 +2,8 @@ import type { CameraBrief } from '@/shared/types/camera'
 import { CameraPlayer } from './CameraPlayer'
 import { LiveWatermark } from './LiveWatermark'
 
-const COLS = { 1: 'grid-cols-1', 4: 'grid-cols-2', 9: 'grid-cols-3' } as const
+/** 九宫格在窄屏(< 640)两列:375 宽每格约 180 px,三列只有 100 px 看不清 */
+const COLS = { 1: 'grid-cols-1', 4: 'grid-cols-2', 9: 'grid-cols-2 sm:grid-cols-3' } as const
 
 /** 等分宫格。每个格子的状态都在自己的 CameraPlayer 里,一路出错/占满不影响其他路。 */
 export function CameraGrid({
