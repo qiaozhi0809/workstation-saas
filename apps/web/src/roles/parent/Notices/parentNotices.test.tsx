@@ -172,18 +172,43 @@ it('notice.recalled and reconnected refetch the inbox', async () => {
 it('lists notices of all children, bold when unread, with the children named', async () => {
   vi.mocked(noticesApi.inbox).mockResolvedValue(
     inbox([
-      item({ students: ['王小一'] }),
-      item({ id: 'n2', title: '班会', read_at: '2026-11-04T03:00:00Z', students: ['王小二'] }),
+      item(),
+      item({
+        id: 'n2',
+        title: '班会',
+        read_at: '2026-11-04T03:00:00Z',
+        students: ['王小二'],
+        students_detail: [{ name: '王小二', class_name: '五年一班' }],
+      }),
     ]),
   )
   renderAt('/parent/notices?child=s1')
   const unread = (await screen.findByText('周五春游')).closest('button')!
   expect(unread.className).toMatch(/font-semibold/)
-  expect(within(unread).getByText(/王小一/)).toBeInTheDocument()
+  expect(within(unread).getByText(/王小一\(三年二班\)/)).toBeInTheDocument()
   const read = screen.getByText('班会').closest('button')!
   expect(read.className).not.toMatch(/font-semibold/)
-  expect(within(read).getByText(/王小二/)).toBeInTheDocument()
+  expect(within(read).getByText(/王小二\(五年一班\)/)).toBeInTheDocument()
   expect(read.className).toMatch(/min-h-\[44px\]/)
+})
+
+it('names the children with the class snapshot taken when the notice was sent (L87)', async () => {
+  vi.mocked(noticesApi.inbox).mockResolvedValue(
+    inbox([
+      // 发送时孩子在二年二班(升学后现在是三年二班):显示快照,不显示现在的班
+      item({
+        students: ['王小一', '王小二'],
+        students_detail: [
+          { name: '王小一', class_name: '二年二班' },
+          { name: '王小二', class_name: null },
+        ],
+      }),
+    ]),
+  )
+  renderAt('/parent/notices?child=s1')
+  const row = (await screen.findByText('周五春游')).closest('button')!
+  expect(within(row).getByText(/涉及:王小一\(二年二班\)、王小二$/)).toBeInTheDocument()
+  expect(within(row).queryByText(/三年二班/)).toBeNull()
 })
 
 it('shows 系统 for system notices', async () => {

@@ -5,6 +5,15 @@ import { localTz } from '@/shared/lib/time'
 import { cn } from '@/shared/lib/utils'
 import type { InboxItem } from '@/shared/types/admin'
 
+/** 涉及的孩子:姓名 + 发送时所在班的快照(L87),学年升级 / 转班后不变;没有班名快照的只写姓名 */
+function studentsLine(item: InboxItem): string | null {
+  if (item.students_detail.length === 0) return null
+  const names = item.students_detail.map((s) =>
+    s.class_name ? `${s.name}(${s.class_name})` : s.name,
+  )
+  return `涉及:${names.join('、')}`
+}
+
 /** 家长通知页的一条:标题行可点开;未读加粗;需要回执且未回执的带"待回执" */
 export default function ParentNoticeItem({
   item,
@@ -20,7 +29,7 @@ export default function ParentNoticeItem({
   const meta = [
     item.from_name ?? '系统',
     formatInTz(item.created_at, localTz()),
-    item.students.length > 0 ? `涉及:${item.students.join('、')}` : null,
+    studentsLine(item),
   ]
     .filter(Boolean)
     .join(' · ')
