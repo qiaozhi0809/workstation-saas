@@ -434,6 +434,11 @@ def _pending_key(user_id: UUID) -> str:
     return f"ws:totp:pending:{user_id}"
 
 
+def _pending_aad(user_id: UUID) -> str:
+    # 与正式 secret 的 aad 不同:待确认的密文不能被挪去冒充已开启的 secret
+    return f"totp-pending:{user_id}"
+
+
 _PENDING_TTL = 600
 
 
@@ -447,7 +452,12 @@ def totp_setup(db: Session, redis: Redis, settings: Settings, user: User) -> tup
     if user.totp_enabled_at is not None:
         raise ApiError(409, "TOTP_ALREADY_ENABLED", "已开启两步验证")
     secret = totp.new_secret()
-    redis.set(_pending_key(user.id), secret, ex=_PENDING_TTL)
+    # Redis 里只放密文(L143):Redis 转储 / 监控里看不到 base32 原文
+    redis.set(
+        _pending_key(user.id),
+        encrypt(secret, settings.master_key_bytes, aad=_pending_aad(user.id)),
+        ex=_PENDING_TTL,
+    )
     school = db.get(School, settings.school_id)
     uri, svg = totp.provisioning(
         secret, issuer=school.name if school is not None else "workstation", account=user.login_name
@@ -473,9 +483,14 @@ def totp_enable(
     _require_allowed(db, settings)
     if user.totp_enabled_at is not None:
         raise ApiError(409, "TOTP_ALREADY_ENABLED", "已开启两步验证")
-    secret = redis.get(_pending_key(user.id))
-    if secret is None:
+    pending = redis.get(_pending_key(user.id))
+    if pending is None:
         raise ApiError(409, "TOTP_SETUP_EXPIRED", "设置已过期,请重新开始")
+    try:
+        secret = decrypt(pending, settings.master_key_bytes, aad=_pending_aad(user.id))
+    except CryptoError:  # 主密钥换过 / 值被改:当作过期,重新 setup 即可
+        redis.delete(_pending_key(user.id))
+        raise ApiError(409, "TOTP_SETUP_EXPIRED", "设置已过期,请重新开始") from None
     if not totp.verify(redis, user.id, secret, code, clock.utc_now()):
         raise ApiError(400, "TOTP_INVALID", "验证码不正确或已过期,请检查手机时间")
     user.totp_secret = encrypt(secret, settings.master_key_bytes, aad=_aad(user.id))

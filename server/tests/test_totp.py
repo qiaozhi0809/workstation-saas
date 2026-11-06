@@ -767,7 +767,35 @@ def test_enable_locked_checks_neither_password_nor_code(client, db, settings, re
         assert _err(res) == (429, "ACCOUNT_LOCKED") and "Retry-After" in res.headers
     # 被锁时没有再计数,待确认的 secret 也没被消耗
     assert int(redis_client.get(_fail_key())) == settings.login_max_failures
-    assert redis_client.get(f"ws:totp:pending:{TEACHER_USER_ID}") == secret
+    raw = redis_client.get(f"ws:totp:pending:{TEACHER_USER_ID}")
+    assert decrypt(raw, settings.master_key_bytes, aad=f"totp-pending:{TEACHER_USER_ID}") == secret
+
+
+def test_pending_secret_encrypted_in_redis(client, db, settings, redis_client):
+    """L143:待确认的 secret 在 Redis 里是绑定用户的密文,原文里没有 base32 secret。"""
+    s, h, secret = _pending_session(client, db)
+    raw = redis_client.get(f"ws:totp:pending:{TEACHER_USER_ID}")
+    assert raw.startswith("v2:") and secret not in raw
+    assert 0 < redis_client.ttl(f"ws:totp:pending:{TEACHER_USER_ID}") <= 600
+    key = settings.master_key_bytes
+    assert decrypt(raw, key, aad=f"totp-pending:{TEACHER_USER_ID}") == secret
+    with pytest.raises(CryptoError):  # 不能被挪去冒充正式 secret 的密文
+        decrypt(raw, key, aad=f"totp:{TEACHER_USER_ID}")
+    res = _enable(client, h, s["refresh_token"], pyotp.TOTP(secret).now())
+    assert res.status_code == 200
+    db.expire_all()
+    stored = db.get(User, UUID(TEACHER_USER_ID)).totp_secret
+    assert decrypt(stored, key, aad=f"totp:{TEACHER_USER_ID}") == secret
+
+
+def test_pending_secret_unreadable_is_setup_expired(client, db, settings, redis_client):
+    """待确认值解不开(主密钥换过 / 被篡改)→ 409 设置已过期,重新开始即可;不开启、不 500。"""
+    s, h, secret = _pending_session(client, db)
+    redis_client.set(f"ws:totp:pending:{TEACHER_USER_ID}", "v2:bm90LXJlYWwtY2lwaGVydGV4dA==", ex=60)
+    res = _enable(client, h, s["refresh_token"], pyotp.TOTP(secret).now())
+    assert _err(res) == (409, "TOTP_SETUP_EXPIRED")
+    db.expire_all()
+    assert db.get(User, UUID(TEACHER_USER_ID)).totp_enabled_at is None
 
 
 def test_enable_success_clears_failures(client, db, settings, redis_client):
