@@ -1,6 +1,7 @@
 from fastapi import Request
 from sqlalchemy.orm import Session
 
+from app import clock
 from app.audit.service import record
 from app.errors import ApiError
 from app.models import User
@@ -12,6 +13,7 @@ def reset_totp(db: Session, actor: User, user: User, request: Request | None) ->
         raise ApiError(409, "CANNOT_RESET_SELF", "不能重置自己的两步验证,请用关闭两步验证")
     user.totp_secret = None
     user.totp_enabled_at = None
+    user.token_floor_at = clock.utc_now()  # L144:开启前签发的旧令牌不随 totp_enabled_at 清空而复活
     record(
         db,
         user_id=actor.id,

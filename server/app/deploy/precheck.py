@@ -289,6 +289,34 @@ EXEMPT_CONSTRAINTS: dict[tuple[str, str], str] = {
     ("0011", "users_totp_pair_ck"): ("两列均为本迁移新增的可空列,旧行全为 NULL,必然满足"),
 }
 
+# 人工签收(L113)。tests/test_precheck.py 的扫描器只认已有表上的命名 CHECK / UNIQUE、唯一索引、
+# SET NOT NULL;ALTER TYPE、DO 块、ADD COLUMN NOT NULL DEFAULT、FK 列回填都在它的盲区里。
+# 所以每个 revision 的 up.sql 都要有人逐项核对过这些盲区,再把编号签到这里;
+# 新迁移不签收,tests/test_precheck.py::test_every_revision_is_reviewed 就红。
+# 0013 签收备注:
+#   - notice_students ADD class_id(可空,FK → classes ON DELETE SET NULL)、class_name(可空);
+#     回填 DISTINCT ON (student_id) 只 JOIN 仍存在的班,没有注册的学生留 NULL,不 SET NOT NULL;
+#   - user_preferences ADD onboarded jsonb NOT NULL DEFAULT '{}'::jsonb:常量默认值,PG16 不重写表;
+#   - users ADD token_floor_at timestamptz 可空;
+#   - 无 CHECK、无唯一约束、无 ALTER TYPE、无 DO 块。
+REVIEWED_REVISIONS: frozenset[str] = frozenset(
+    {
+        "0001",
+        "0002",
+        "0003",
+        "0004",
+        "0005",
+        "0006",
+        "0007",
+        "0008",
+        "0009",
+        "0010",
+        "0011",
+        "0012",
+        "0013",
+    }
+)
+
 SIZE_NOTICES: tuple[SizeNotice, ...] = (
     SizeNotice(
         revision="0008",

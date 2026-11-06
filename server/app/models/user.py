@@ -27,5 +27,7 @@ class User(Base):
     password_changed_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
     totp_secret: Mapped[str | None] = mapped_column(Text)
     totp_enabled_at: Mapped[datetime | None]
+    # 令牌签发下限:关闭 / 重置两步验证时写 now(),早于它签发的令牌失效(L144,0013)
+    token_floor_at: Mapped[datetime | None]
     created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
     updated_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
