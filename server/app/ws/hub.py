@@ -19,6 +19,8 @@ REVOKED = "session.revoked"
 CLOSE_REVOKED = 4403
 STALE = "session.stale"
 CLOSE_STALE = 4401  # 与 router.CLOSE_UNAUTHORIZED 同值:客户端走"刷新后重连"
+CLOSE_TOO_MANY = 4429  # 每用户连接数超限;前端按"非令牌原因的断线"退避重连
+MAX_SOCKETS_PER_USER = 10
 SEND_TIMEOUT = 5.0  # 单个 socket 发送超时,慢客户端不能拖住别人
 
 
@@ -42,6 +44,9 @@ class Hub:
         self._sockets.setdefault(user_id, set()).add(websocket)
         self._expires[websocket] = expires_at
 
+    def socket_count(self, user_id: UUID) -> int:
+        return len(self._sockets.get(user_id, ()))
+
     def unregister(self, user_id: UUID, websocket: WebSocket) -> None:
         self._expires.pop(websocket, None)
         sockets = self._sockets.get(user_id)
@@ -61,26 +66,32 @@ class Hub:
             log.warning("ws close failed: %s", type(exc).__name__)
         self.unregister(user_id, ws)
 
+    async def _deliver_one(
+        self, user_id: UUID, ws: WebSocket, event: dict, kind: str | None
+    ) -> None:
+        if kind == STALE:  # 只关闭,不把事件本身推给客户端
+            await self._close(user_id, ws, CLOSE_STALE)
+            return
+        try:
+            await asyncio.wait_for(ws.send_json(event), SEND_TIMEOUT)
+        except Exception as exc:
+            log.warning("ws send failed: %s", type(exc).__name__)
+            # 慢 / 死连接:冻结事件仍用 4403,其余让客户端重连
+            await self._close(user_id, ws, CLOSE_REVOKED if kind == REVOKED else CLOSE_STALE)
+            return
+        if kind == REVOKED:
+            await self._close(user_id, ws, CLOSE_REVOKED)
+
     async def deliver(self, message: dict) -> None:
+        """同一条消息的各 socket 并发投递(各自 5 秒超时),消息之间仍由调用方按顺序等待。"""
         event = message["event"]
         kind = event.get("type")
-        for raw in message["user_ids"]:
-            user_id = UUID(raw)
-            for ws in list(self._sockets.get(user_id, ())):
-                if kind == STALE:  # 只关闭,不把事件本身推给客户端
-                    await self._close(user_id, ws, CLOSE_STALE)
-                    continue
-                try:
-                    await asyncio.wait_for(ws.send_json(event), SEND_TIMEOUT)
-                except Exception as exc:
-                    log.warning("ws send failed: %s", type(exc).__name__)
-                    # 慢 / 死连接:冻结事件仍用 4403,其余让客户端重连
-                    await self._close(
-                        user_id, ws, CLOSE_REVOKED if kind == REVOKED else CLOSE_STALE
-                    )
-                    continue
-                if kind == REVOKED:
-                    await self._close(user_id, ws, CLOSE_REVOKED)
+        jobs = [
+            self._deliver_one(UUID(raw), ws, event, kind)
+            for raw in message["user_ids"]
+            for ws in list(self._sockets.get(UUID(raw), ()))
+        ]
+        await asyncio.gather(*jobs)
 
     async def _subscribe_and_dispatch(self, redis_url: str) -> None:
         client = AsyncRedis.from_url(redis_url, decode_responses=True, client_name=self.client_name)
