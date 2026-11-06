@@ -135,6 +135,28 @@ it('keeps the mini map bare and the overview map read-only', () => {
   expect(screen.queryByRole('button', { name: /^王小一，/ })).toBeNull()
 })
 
+// L22:本周之星关掉时,前墙连牌子(标题)一起不画;寿星牌不受影响
+it('drops the whole stars board when hideStars is set, keeping the birthdays board', () => {
+  const board = {
+    leftTitle: '今日课程',
+    leftLines: [],
+    rightTitle: '今日事项',
+    rightLines: [],
+    screenTitle: '三年二班',
+    countdown: null,
+    stars: [],
+    birthdays: [],
+  }
+  const { rerender } = render(<ClassroomMap rows={1} cols={2} seats={[seat({})]} board={board} />)
+  expect(screen.getByText('本周之星')).toBeInTheDocument()
+  expect(screen.getByText('本月寿星')).toBeInTheDocument()
+  rerender(
+    <ClassroomMap rows={1} cols={2} seats={[seat({})]} board={{ ...board, hideStars: true }} />,
+  )
+  expect(screen.queryByText('本周之星')).toBeNull()
+  expect(screen.getByText('本月寿星')).toBeInTheDocument()
+})
+
 it('truncates long names', () => {
   expect(fitName('欧阳纳兰容若')).toBe('欧阳纳兰容…')
   expect(fitName('王小一')).toBe('王小一')

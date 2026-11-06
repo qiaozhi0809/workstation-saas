@@ -83,14 +83,16 @@ export default memo(function FrontWall({
       )}
       {s.smw > 0 && (
         <>
-          <g transform={`translate(${s.star} ${PIN_Y})`}>
-            <PinBoard
-              w={s.smw}
-              title="本周之星"
-              accent={ROOM.gold}
-              rows={board?.stars.map((r) => ({ name: r.name, value: `★${r.points}` })) ?? []}
-            />
-          </g>
+          {!board?.hideStars && (
+            <g transform={`translate(${s.star} ${PIN_Y})`}>
+              <PinBoard
+                w={s.smw}
+                title="本周之星"
+                accent={ROOM.gold}
+                rows={board?.stars.map((r) => ({ name: r.name, value: `★${r.points}` })) ?? []}
+              />
+            </g>
+          )}
           <g transform={`translate(${s.bday} ${PIN_Y})`}>
             <PinBoard
               w={s.smw}
