@@ -561,3 +561,30 @@ def test_unlink_binding_and_link_share_ended_at(client, settings, db, monkeypatc
         )
     )
     assert link_end == binding_end == datetime(2026, 11, 5, 8, tzinfo=UTC)
+
+
+def test_authorize_ignores_other_year_enrollment(client, settings, db):
+    from datetime import date
+
+    from app.models import AcademicYear, Enrollment
+    from tests.seed_ids import SCHOOL_ID
+
+    old = AcademicYear(
+        school_id=UUID(SCHOOL_ID),
+        name="2024-2025",
+        start_date=date(2024, 9, 1),
+        end_date=date(2025, 7, 15),
+        is_active=False,
+    )
+    db.add(old)
+    db.flush()
+    db.execute(
+        Enrollment.__table__.update()
+        .where(Enrollment.student_id == UUID(S3))
+        .values(academic_year_id=old.id)
+    )
+    res = _add(client, settings, S3, "13800000052")
+    assert res.status_code == 403
+    assert client.get(_url(S3), headers=auth(settings)).status_code == 403
+    assert _user(db, "13800000052") is None
+    assert len([a for a in _audits(db, "parent.manage") if not a.success]) == 2

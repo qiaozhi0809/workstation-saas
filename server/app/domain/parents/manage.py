@@ -25,7 +25,7 @@ from app.domain.classes.service import class_scope_of
 from app.domain.parents.lifecycle import archive_orphan_accounts
 from app.domain.parents.schemas import ParentCreated, ParentInput, ParentOfStudent
 from app.errors import ApiError
-from app.models import Enrollment, RoleBinding, SchoolClass, Student, User
+from app.models import AcademicYear, Enrollment, RoleBinding, SchoolClass, Student, User
 from app.models.parents import Parent, ParentLink
 from app.rbac.bindings import Binding, can
 from app.rbac.roles import PARENT_ROLES, Perm, Role
@@ -53,6 +53,22 @@ def lock_student(db: Session, school_id: UUID, student_id: UUID) -> Student:
     return get_student(db, school_id, student_id, lock=True)
 
 
+def _current_class(db: Session, student_id: UUID) -> SchoolClass | None:
+    """学生在当前学年的在读注册所在班;其他学年的在读注册不算(L66)。"""
+    return db.scalar(
+        select(SchoolClass)
+        .join(Enrollment, Enrollment.class_id == SchoolClass.id)
+        .join(
+            AcademicYear,
+            (AcademicYear.id == Enrollment.academic_year_id)
+            & (AcademicYear.school_id == SchoolClass.school_id)
+            & AcademicYear.is_active.is_(True),
+        )
+        .where(Enrollment.student_id == student_id, Enrollment.status == "active")
+        .limit(1)
+    )
+
+
 def authorize(
     db: Session,
     request: Request | None,
@@ -61,12 +77,7 @@ def authorize(
     student: Student,
 ) -> None:
     """学生当前在读注册所在班的 parent.manage;没有在读注册 → 403 + 审计。"""
-    cls = db.scalar(
-        select(SchoolClass)
-        .join(Enrollment, Enrollment.class_id == SchoolClass.id)
-        .where(Enrollment.student_id == student.id, Enrollment.status == "active")
-        .limit(1)
-    )
+    cls = _current_class(db, student.id)
     if cls is None or not can(bindings, Perm.PARENT_MANAGE, class_scope_of(cls)):
         deny(
             db,
@@ -79,12 +90,7 @@ def authorize(
 
 
 def _can_manage_student(db: Session, bindings: Sequence[Binding], student_id: UUID) -> bool:
-    cls = db.scalar(
-        select(SchoolClass)
-        .join(Enrollment, Enrollment.class_id == SchoolClass.id)
-        .where(Enrollment.student_id == student_id, Enrollment.status == "active")
-        .limit(1)
-    )
+    cls = _current_class(db, student_id)
     return cls is not None and can(bindings, Perm.PARENT_MANAGE, class_scope_of(cls))
 
 
