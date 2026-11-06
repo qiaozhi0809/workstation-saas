@@ -211,16 +211,11 @@ export default function StudentForm({
       return { ...s, tags, boarding: tag === BOARDING_TAG ? on : s.boarding }
     })
   }
-  const toggleBoarding = (on: boolean) =>
-    setF((s) => ({
-      ...s,
-      boarding: on,
-      tags: on
-        ? s.tags.includes(BOARDING_TAG)
-          ? s.tags
-          : [...s.tags, BOARDING_TAG]
-        : s.tags.filter((t) => t !== BOARDING_TAG),
-    }))
+  // 住校勾选框与"住校"标签同步:走 toggleTag,满 12 个时同样只提示、不加第 13 个;取消时同样清掉提示
+  const toggleBoarding = (on: boolean) => {
+    if (on === f.tags.includes(BOARDING_TAG)) set('boarding', on)
+    else toggleTag(BOARDING_TAG)
+  }
   const addCustomTag = () => {
     const tag = customDraft.trim()
     if (!tag) return

@@ -297,6 +297,35 @@ it('tells the teacher when the 12-tag limit is hit instead of silently ignoring 
   expect(screen.getByRole('button', { name: '爱画画' })).toHaveAttribute('aria-pressed', 'true')
 })
 
+// 住校勾选框也受 12 个上限约束:满了只提示、不勾上;通过它取消住校也会清掉提示
+it('applies the 12-tag limit to the 住校 checkbox and resets the hint when unchecking it', async () => {
+  vi.mocked(schoolApi.tagPool).mockResolvedValue({ tags: [...DEFAULT_TAG_POOL, '爱画画'] })
+  renderForm()
+  await screen.findByRole('button', { name: '爱画画' })
+  const boarding = screen.getByLabelText('住校')
+  for (const t of DEFAULT_TAG_POOL.filter((t) => t !== '住校')) {
+    fireEvent.click(screen.getByRole('button', { name: t }))
+  }
+  fireEvent.click(screen.getByRole('button', { name: '爱画画' }))
+  expect(screen.queryByRole('status')).toBeNull()
+  // 第 13 个:勾选框不勾上、标签不加
+  fireEvent.click(boarding)
+  expect(boarding).not.toBeChecked()
+  expect(screen.getByRole('button', { name: '住校' })).toHaveAttribute('aria-pressed', 'false')
+  expect(screen.getByRole('status')).toHaveTextContent('最多选 12 个标签')
+  // 取消一个后能勾上;再满时用勾选框取消住校也会清掉提示
+  fireEvent.click(screen.getByRole('button', { name: '爱画画' }))
+  fireEvent.click(boarding)
+  expect(boarding).toBeChecked()
+  expect(screen.queryByRole('status')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '爱画画' }))
+  expect(screen.getByRole('status')).toBeInTheDocument()
+  fireEvent.click(boarding)
+  expect(boarding).not.toBeChecked()
+  expect(screen.getByRole('button', { name: '住校' })).toHaveAttribute('aria-pressed', 'false')
+  expect(screen.queryByRole('status')).toBeNull()
+})
+
 it('keeps boarding and the 住校 tag in sync', () => {
   renderForm()
   const boarding = screen.getByLabelText('住校')
