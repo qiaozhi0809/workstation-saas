@@ -1,11 +1,14 @@
 import json
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from fastapi.testclient import TestClient
 from sqlalchemy import delete, select
 
 from app import clock
+from app.auth import login_log
+from app.auth import service as auth_service
+from app.domain.schools.service import school_tz
 from app.models import LoginLog, Notice, NoticeRecipient, RoleBinding, School, SchoolSetting, User
 from app.rbac.roles import Role
 from app.ws.hub import CHANNEL
@@ -186,3 +189,102 @@ def test_inbox_shows_system_notice_with_null_sender(client, db, settings, monkey
     assert res.status_code == 200
     items = [i for i in res.json()["items"] if i["title"] == TITLE]
     assert len(items) == 1 and items[0]["from_name"] is None
+
+
+def test_alert_failure_does_not_block_login(client, db, monkeypatch):
+    freeze(monkeypatch, NIGHT)
+
+    def boom(*_a, **_k):
+        raise RuntimeError("redis down")
+
+    monkeypatch.setattr(auth_service, "alert", boom)
+    res = _login(client)
+    assert res.status_code == 200
+    assert res.json()["access_token"] and res.json()["refresh_token"]
+
+
+def test_parent_night_login_notice_in_inbox(client, db, settings, monkeypatch):
+    freeze(monkeypatch, NIGHT)
+    res = _login(client, name="13800000061")
+    assert res.status_code == 200
+    parent_id = db.scalars(select(User.id).where(User.login_name == "13800000061")).one()
+    assert len(_alerts(db, parent_id)) == 1
+    # 令牌按真实时钟签发(登录时钟被冻结在过去,响应里的令牌已过期)
+    inbox = client.get(f"{API}/notices", headers=auth(settings, parent_id))
+    assert inbox.status_code == 200
+    items = [i for i in inbox.json()["items"] if i["title"] == TITLE]
+    assert len(items) == 1 and items[0]["from_name"] is None
+
+
+# ---------- suspicious_reasons 边界 ----------
+
+
+def _reasons(db, ip, now, user_id=TEACHER_USER_ID):
+    user = db.get(User, UUID(user_id))
+    return login_log.suspicious_reasons(db, user, ip, now, school_tz(db, user.school_id))
+
+
+def _utc(h, m=0, day=5):
+    return datetime(2026, 11, day, h, m, tzinfo=UTC)
+
+
+def test_night_window_boundaries(db):
+    # 上海 UTC+8:本地 00:00 = 前一日 UTC 16:00
+    assert "night" in _reasons(db, None, _utc(16, 0, day=4))  # 00:00
+    assert "night" in _reasons(db, None, _utc(20, 59, day=4))  # 04:59
+    assert "night" not in _reasons(db, None, _utc(21, 0, day=4))  # 05:00
+    assert "night" not in _reasons(db, None, _utc(15, 59, day=5))  # 23:59
+
+
+def test_new_network_ipv6_uses_slash_64(db):
+    now = _utc(4)
+    _history(db, TEACHER_USER_ID, "2001:db8:1:2::1", 3, now)
+    assert _reasons(db, "2001:db8:1:2:ffff::9", now) == []
+    assert _reasons(db, "2001:db8:1:3::1", now) == ["new_network"]
+
+
+def test_new_network_ignores_history_without_ip(db):
+    now = _utc(4)
+    _history(db, TEACHER_USER_ID, None, 3, now)
+    assert _reasons(db, "192.0.2.50", now) == []  # 无 IP 的成功记录不计入历史
+
+
+def test_new_network_null_ip_never_flagged(db):
+    now = _utc(4)
+    _history(db, TEACHER_USER_ID, "198.51.100.7", 3, now)
+    assert _reasons(db, None, now) == []
+
+
+def test_new_network_ipv4_mapped_ipv6_normalised(db):
+    now = _utc(4)
+    _history(db, TEACHER_USER_ID, "198.51.100.7", 3, now)
+    assert _reasons(db, "::ffff:198.51.100.9", now) == []
+    assert _reasons(db, "::ffff:192.0.2.9", now) == ["new_network"]
+    assert login_log.network_of("::ffff:198.51.100.9") == "198.51.100.0/24"
+
+
+def _history_at(db, ip, at):
+    for _ in range(3):
+        db.add(
+            LoginLog(
+                school_id=UUID(SCHOOL_ID),
+                user_id=UUID(TEACHER_USER_ID),
+                login_name="teacher01",
+                result="success",
+                ip=ip,
+                created_at=at,
+            )
+        )
+    db.flush()
+
+
+def test_new_network_history_window_is_inclusive_at_90_days(db):
+    now = _utc(4)
+    _history_at(db, "198.51.100.7", now - timedelta(days=90))  # created_at >= now-90d:计入
+    assert _reasons(db, "192.0.2.50", now) == ["new_network"]
+
+
+def test_new_network_history_just_outside_90_days_ignored(db):
+    now = _utc(4)
+    _history_at(db, "198.51.100.7", now - timedelta(days=90, seconds=1))
+    assert _reasons(db, "192.0.2.50", now) == []

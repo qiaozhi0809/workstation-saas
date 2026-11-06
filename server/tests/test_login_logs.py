@@ -9,8 +9,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy import delete, func, select
 
 from app import clock
+from app.auth import login_log
 from app.crypto import encrypt
 from app.deploy import scheduler as sch
+from app.domain.login_logs import service as ll_service
 from app.models import LoginLog, School, User
 from app.models.audit import AuditLog
 from tests.factories import make_teacher_account
@@ -135,6 +137,57 @@ def test_no_password_in_log(client, db):
     assert "Sup3r-secret-pw" not in dump
 
 
+def test_failed_login_log_is_committed(client, db, monkeypatch):
+    """失败登录的日志必须真的提交(测试会话里 commit 只放开 savepoint,所以数提交次数)。"""
+    commits: list[int] = []
+    real_commit = db.commit
+
+    def counting():
+        commits.append(1)
+        real_commit()
+
+    monkeypatch.setattr(db, "commit", counting)
+    assert _login(client, pw="wrong").status_code == 401
+    assert len(commits) >= 1
+    assert [r.result for r in _rows(db)] == ["bad_password"]
+
+
+def _boom(*_a, **_k):
+    raise RuntimeError("log store down")
+
+
+def test_log_write_failure_wrong_password_still_401(client, db, monkeypatch):
+    monkeypatch.setattr(login_log, "write", _boom)
+    res = _login(client, pw="wrong")
+    assert res.status_code == 401 and res.json()["error"]["code"] == "INVALID_CREDENTIALS"
+    assert _login(client, name="nobody", pw="x").status_code == 401
+
+
+def test_log_write_failure_success_still_200(client, db, monkeypatch):
+    monkeypatch.setattr(login_log, "write", _boom)
+    res = _login(client)
+    assert res.status_code == 200
+    body = res.json()
+    assert body["access_token"] and body["refresh_token"]
+
+
+def test_log_write_failure_lock_still_429(client, db, settings, monkeypatch):
+    monkeypatch.setattr(login_log, "write", _boom)
+    for _ in range(settings.login_max_failures):
+        assert _login(client, pw="wrong").status_code == 401
+    res = _login(client)
+    assert res.status_code == 429 and res.json()["error"]["code"] == "ACCOUNT_LOCKED"
+    assert int(res.headers["Retry-After"]) > 0
+
+
+def test_log_write_failure_totp_invalid_still_401(client, db, settings, monkeypatch):
+    _turn_on(db, settings)
+    token = _login(client).json()["mfa_token"]
+    monkeypatch.setattr(login_log, "write", _boom)
+    res = client.post(f"{API}/auth/login/totp", json={"mfa_token": token, "code": "000000"})
+    assert res.status_code == 401 and res.json()["error"]["code"] == "TOTP_INVALID"
+
+
 # ---------- 查询与权限 ----------
 
 
@@ -164,14 +217,34 @@ def test_login_logs_scope(client, db, settings):
 def test_login_logs_permissions(client, db, settings):
     assert client.get(LOGS).status_code == 401
     assert client.get(f"{LOGS}.csv").status_code == 401
+    # 排除"必须先改密码"造成的别种 403
+    assert not db.get(User, UUID(TEACHER_USER_ID)).must_change_password
+    assert not db.get(User, UUID(DEAN)).must_change_password
     for who in (TEACHER_USER_ID, DEAN):
-        assert _get(client, settings, who).status_code == 403
-        assert client.get(f"{LOGS}.csv", headers=auth(settings, who)).status_code == 403
-    parent = _login(client, name="13800000061").json()["access_token"]
-    h = {"Authorization": f"Bearer {parent}"}
-    assert client.get(LOGS, headers=h).status_code == 403
-    assert client.get(f"{LOGS}.csv", headers=h).status_code == 403
+        for res in (
+            _get(client, settings, who),
+            client.get(f"{LOGS}.csv", headers=auth(settings, who)),
+        ):
+            assert res.status_code == 403 and res.json()["error"]["code"] == "FORBIDDEN"
+    parent_res = _login(client, name="13800000061")
+    assert parent_res.status_code == 200
+    h = {"Authorization": f"Bearer {parent_res.json()['access_token']}"}
+    for res in (client.get(LOGS, headers=h), client.get(f"{LOGS}.csv", headers=h)):
+        assert res.status_code == 403 and res.json()["error"]["code"] == "FORBIDDEN"
     assert _get(client, settings, PRINCIPAL).status_code == 200
+
+
+def test_cross_school_user_id_is_not_exposed(client, db, settings):
+    other = School(name="别校")
+    db.add(other)
+    db.flush()
+    stranger = make_teacher_account(db, other.id)
+    _add(db, user=stranger.id, name="local-name")
+    body = _get(client, settings).json()
+    assert body["total"] == 1 and body["items"][0]["user"] is None
+    assert _get(client, settings, q=stranger.display_name).json()["total"] == 0
+    csv_res = client.get(f"{LOGS}.csv", headers=auth(settings, IT_ADMIN))
+    assert stranger.display_name not in csv_res.content.decode("utf-8-sig")
 
 
 def test_empty_school_returns_empty_page(client, db, settings):
@@ -211,6 +284,9 @@ def test_filters(client, db, settings):
 def test_date_range_validation(client, db, settings):
     assert _get(client, settings, **{"from": "2026-01-01", "to": "2026-04-30"}).status_code == 400
     assert _get(client, settings, **{"from": "2026-01-01", "to": "2026-04-02"}).status_code == 200
+    assert (
+        _get(client, settings, **{"from": "2026-01-01", "to": "2026-04-03"}).status_code == 400
+    )  # 93 天
     assert _get(client, settings, **{"from": "2026-02-01", "to": "2026-01-01"}).status_code == 400
     assert _get(client, settings, **{"from": "bad"}).status_code == 400
     assert _get(client, settings, **{"from": "1900-01-01", "to": "1900-01-02"}).status_code == 400
@@ -227,6 +303,16 @@ def test_csv_export_bom_audit_and_formula(client, db, settings):
     assert "'=cmd|calc" in rows[1] and "192.0.2.5" in rows[1]
     audit = db.scalars(select(AuditLog).where(AuditLog.action == "account.login_logs_export")).all()
     assert len(audit) == 1 and str(audit[0].user_id) == IT_ADMIN and audit[0].success
+
+
+def test_csv_row_cap(client, db, settings, monkeypatch):
+    monkeypatch.setattr(ll_service, "CSV_MAX_ROWS", 3)
+    for i in range(5):
+        _add(db, name=f"user{i}", result="unknown_user")
+    res = client.get(f"{LOGS}.csv", headers=auth(settings, IT_ADMIN))
+    assert res.status_code == 200
+    rows = list(csv.reader(io.StringIO(res.content.decode("utf-8-sig"))))
+    assert len(rows) == 1 + 3
 
 
 def test_csv_bad_params_400(client, db, settings):
@@ -255,3 +341,17 @@ def test_purge_job(db, settings, redis_client):
     ids = set(db.scalars(select(LoginLog.id)))
     assert old.id not in ids and keep.id in ids and foreign.id in ids
     assert db.scalar(select(func.count()).select_from(LoginLog)) == 2
+
+
+def test_purge_keeps_exactly_180_days(db, settings, redis_client):
+    now = clock.utc_now()
+    db.execute(delete(LoginLog))
+    edge = _add(db, at=now - timedelta(days=180))
+    older = _add(db, at=now - timedelta(days=180, seconds=1))
+    token = sch._school.set(UUID(SCHOOL_ID))
+    try:
+        assert sch._purge_login_logs(db, redis_client, now) == "删除 1 条"
+    finally:
+        sch._school.reset(token)
+    ids = set(db.scalars(select(LoginLog.id)))
+    assert edge.id in ids and older.id not in ids

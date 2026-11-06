@@ -29,9 +29,16 @@ NEW_NETWORK_DAYS = 90
 NEW_NETWORK_MIN_HISTORY = 3
 
 
-def network_of(ip: str) -> str:
-    """IPv4 取 /24,IPv6 取 /64。"""
+def _normalize(ip: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address:
     addr = ipaddress.ip_address(ip)
+    if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
+        return addr.ipv4_mapped  # ::ffff:a.b.c.d 与 a.b.c.d 是同一个对端
+    return addr
+
+
+def network_of(ip: str) -> str:
+    """IPv4 取 /24,IPv6 取 /64;IPv4-mapped IPv6 先还原成 IPv4。"""
+    addr = _normalize(ip)
     return str(ipaddress.ip_network(f"{addr}/{24 if addr.version == 4 else 64}", strict=False))
 
 
@@ -47,10 +54,13 @@ def suspicious_reasons(
         total, same = db.execute(
             select(
                 func.count(),
-                func.count().filter(LoginLog.ip.op("<<=")(cast(net, CIDR))),
+                func.count().filter(
+                    LoginLog.ip.is_not(None), LoginLog.ip.op("<<=")(cast(net, CIDR))
+                ),
             ).where(
                 LoginLog.user_id == user.id,
                 LoginLog.result == "success",
+                LoginLog.ip.is_not(None),
                 LoginLog.created_at >= since,
             )
         ).one()
@@ -71,6 +81,8 @@ def write(
 ) -> LoginLog:
     """在自己的 SAVEPOINT 里插入并提交,失败的登录也能留下记录。"""
     ip = _client_ip(request)
+    if ip is not None:
+        ip = str(_normalize(ip))  # 入库前还原 IPv4-mapped,历史与新记录才能按网段比
     ua = request.headers.get("user-agent") if request is not None else None
     reasons: list[str] = []
     if result == "success" and user is not None:

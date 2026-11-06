@@ -145,16 +145,26 @@ def _log(
     login_name: str,
     result: login_log.LoginOutcome,
     request: Request | None,
-) -> login_log.LoginLog:
-    return login_log.write(
-        db,
-        settings,
-        user=user,
-        login_name=login_name,
-        result=result,
-        request=request,
-        now=clock.utc_now(),
-    )
+) -> login_log.LoginLog | None:
+    """写登录日志是尽力而为:出错只告警,不能让登录 / 失败响应变成 500。
+
+    调用点要么已提交(成功路径先 commit 再写日志),要么没有未提交改动(失败路径),
+    所以这里 rollback 不会丢状态;失败计数在 Redis,不受影响。
+    """
+    try:
+        return login_log.write(
+            db,
+            settings,
+            user=user,
+            login_name=login_name,
+            result=result,
+            request=request,
+            now=clock.utc_now(),
+        )
+    except Exception as exc:
+        db.rollback()
+        log.warning("login.log_failed", error=type(exc).__name__)
+        return None
 
 
 _REASON_TEXT = {"night": "凌晨时段", "new_network": "新的网络环境"}
@@ -170,6 +180,7 @@ def alert(db: Session, redis: Redis, user: User, entry: login_log.LoginLog) -> N
     ip = None if entry.ip is None else str(entry.ip)
     net = "unknown" if ip is None else login_log.network_of(ip)
     key = f"ws:alert:{user.id}:{net}:{local.date().isoformat()}"
+    # 去重键先于落库设置:之后 DB 写失败时本次提醒会被去重键吞掉,可接受(尽力而为)
     if not redis.set(key, "1", nx=True, ex=_ALERT_TTL):
         return
     reasons = "、".join(_REASON_TEXT.get(r, r) for r in entry.suspicious)
@@ -233,7 +244,8 @@ def _finish_login(
     db.commit()
     entry = _log(db, settings, user, user.login_name, "success", request)
     try:
-        alert(db, redis, user, entry)
+        if entry is not None:
+            alert(db, redis, user, entry)
     except Exception as exc:  # 提醒是尽力而为,不能挡住登录
         db.rollback()
         log.warning("login.alert_failed", error=type(exc).__name__)
