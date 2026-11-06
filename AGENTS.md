@@ -171,7 +171,7 @@ Step N+(1-k): Commit          → git add && git commit
 | 后端 Lint | ruff | `uv run ruff check . && uv run ruff format --check .` |
 | 前端 Lint | ESLint + Prettier | `npm run lint` |
 | 部署镜像 | Docker | `make image VERSION=<标签>`(构建 `workstation-app`、`workstation-web`、`workstation-stream` 三个镜像;`workstation-stream` 基于同标签的 `workstation-app` 加 ffmpeg) |
-| 部署脚本测试 | bash + Docker | `bash deploy/tests/compose_smoke.sh`、`install_fresh.sh`、`install_twice.sh`、`upgrade_same.sh`、`upgrade_precheck_fail.sh`、`backup_restore.sh`、`restore_rejects.sh`(都在 `deploy/tests/`) |
+| 部署脚本测试 | bash + Docker | `bash deploy/tests/compose_smoke.sh`、`install_fresh.sh`、`install_twice.sh`、`upgrade_same.sh`、`upgrade_precheck_fail.sh`、`backup_restore.sh`、`restore_rejects.sh`(都在 `deploy/tests/`,CI `deploy` job 逐个跑);升级路径两个较慢的脚本放单独的 CI `deploy-upgrade-path` job:`upgrade_rollback.sh`(升级失败后 `rollback.sh` 回退、`kill -9` 中断后的提示与回退)、`upgrade_from_previous.sh`(用上一个发布 tag 打出的旧离线包装一套再用本提交的包升级,需 `WS_PREVIOUS_DEPLOY_SRC` / `WS_PREVIOUS_VERSION`,tag 不存在时只告警) |
 | 部署脚本 Lint | shellcheck | `docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.9.0 -S warning -x deploy/prod/scripts/*.sh deploy/tests/*.sh deploy/release/*.sh`(该镜像的入口已是 shellcheck,不要再写一次 `shellcheck`;CI 用 runner 自带的 shellcheck,版本未钉,见台账 L123) |
 
 部署测试脚本须以**非 root** 用户运行,且该用户在 `docker` 组里;**逐个跑**,不要并行(它们共用 compose 项目名 `ws-m5a-b`、端口 18080 / 18443 与固定子网 `172.30.0.0/24`,可用 `WS_TEST_PROJECT`(`compose_smoke.sh` 另兼容旧名 `WS_SMOKE_PROJECT`)、`WS_HTTP_PORT`、`WS_HTTPS_PORT`、`WS_TEST_VERSION`(旧名 `WS_VERSION` 仍有效)、`WS_TEST_DEPLOY_SRC`(被测部署目录,默认 `deploy/prod`)覆盖);镜像须先用 `make image VERSION=0.0.0-seg-b`(或 `WS_VERSION` 指定的标签)构建好。
