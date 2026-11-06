@@ -777,6 +777,9 @@ def test_reset_parent_with_active_child_elsewhere_rejected(client, settings, db)
         SUBJECT_USER_ID,  # 非班主任教师
         "other-class-homeroom",
         "parent-self",
+        PRINCIPAL,  # 校长
+        "55555555-5555-5555-5555-555555555546",  # 信息中心(兜底走 /admin/accounts,不走这里)
+        "staff-parent",  # 别班班主任,同时是本班孩子的家长:家长绑定不进 bindings
     ],
 )
 def test_reset_parent_forbidden_for_everyone_else(client, settings, db, who):
@@ -784,6 +787,9 @@ def test_reset_parent_forbidden_for_everyone_else(client, settings, db, who):
     mine = _add(client, settings, S3, "13800000060").json()["parent"]
     if who == "other-class-homeroom":
         who = t2
+    elif who == "staff-parent":
+        assert _add(client, settings, S3, "13800000004").status_code == 201
+        who = TEACHER04
     elif who == "parent-self":
         who = mine["user_id"]
         _user(db, "13800000060").must_change_password = False  # 否则先被改密码要求拦下
@@ -807,3 +813,90 @@ def test_parent_reset_sets_password_changed_at(client, settings, db):
     db.expire_all()
     after = _user(db, "13800000077").password_changed_at
     assert after is not None and after > before
+
+
+def test_reset_parent_without_active_link_in_my_class_rejected(client, settings, db):
+    # 本班这条绑定是只读(异常数据):零条在用绑定 → 拒绝;只剩别班在读绑定 → 也拒绝
+    s_other, t2 = _other_class(db)
+    lone = _add(client, settings, S3, "13800000061").json()["parent"]
+    _make_readonly(db, lone)
+    mixed = _add(client, settings, S4, "13800000062").json()["parent"]
+    assert _add(client, settings, s_other, "13800000062", user=t2).status_code == 201
+    _make_readonly(db, mixed)
+    for link, login in ((lone["link_id"], "13800000061"), (mixed["link_id"], "13800000062")):
+        before = _user(db, login).password_hash
+        res = _reset(client, settings, link)
+        assert res.status_code == 409, res.text
+        assert res.json()["error"]["code"] == "PARENT_OTHER_CLASS"
+        assert "temp_password" not in res.text
+        assert _user(db, login).password_hash == before
+
+
+class _NullRedis:
+    def smembers(self, _key):
+        return set()
+
+    def delete(self, *_keys):
+        return 0
+
+    def publish(self, *_args):
+        return 0
+
+
+def test_reset_waits_for_concurrent_link_to_other_class(cengine):
+    """别班老师正给同一账号绑别班孩子(已锁用户行、未提交)时,本班重置必须等它提交后再判定。"""
+    import threading
+
+    from sqlalchemy import text as sql
+    from sqlalchemy.orm import Session
+
+    from app.config import Settings
+    from app.domain.parents import manage
+    from app.domain.parents.schemas import ParentInput
+    from app.errors import ApiError
+    from app.rbac.bindings import load_bindings
+    from tests.factories import make_class, make_student
+    from tests.seed_ids import TEACHER_USER_ID, YEAR_ID
+
+    with Session(cengine) as db:
+        actor = db.get(User, UUID(TEACHER_USER_ID))
+        bindings = load_bindings(db, actor.id, UUID(YEAR_ID))
+        body = ParentInput(phone="13800000063", name="虚构家长", relation="母亲")
+        link_id = manage.add_parent(db, None, actor, bindings, UUID(S3), body).parent.link_id
+        cls2 = make_class(db, "虚构并发班")
+        s_other = make_student(db, cls2, "虚构学生", "mk-c-race")
+        db.commit()
+        uid = db.scalar(select(User.id).where(User.login_name == "13800000063"))
+        parent_id = db.scalar(select(Parent.id).where(Parent.user_id == uid))
+
+    holder = Session(cengine)
+    holder.execute(sql("SELECT 1 FROM users WHERE id = :u FOR UPDATE"), {"u": uid})
+    holder.execute(
+        sql(
+            "INSERT INTO parent_links (parent_id, student_id, relation, is_primary, status)"
+            " VALUES (:p, :s, '母亲', true, 'active')"
+        ),
+        {"p": parent_id, "s": s_other},
+    )
+    result: dict[str, object] = {}
+
+    def run() -> None:
+        try:
+            with Session(cengine) as db:
+                actor = db.get(User, UUID(TEACHER_USER_ID))
+                bindings = load_bindings(db, actor.id, UUID(YEAR_ID))
+                result["v"] = manage.reset_parent_password(
+                    db, _NullRedis(), Settings(_env_file=None), None, actor, bindings, link_id
+                )
+        except BaseException as exc:  # noqa: BLE001 - 带回主线程断言
+            result["v"] = exc
+
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    t.join(1.5)
+    assert t.is_alive(), result  # 被用户行锁挡住
+    holder.commit()
+    holder.close()
+    t.join(30)
+    err = result["v"]
+    assert isinstance(err, ApiError) and err.code == "PARENT_OTHER_CLASS", err

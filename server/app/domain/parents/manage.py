@@ -485,7 +485,9 @@ def reset_parent_password(
     link_id: UUID,
 ) -> str:
     link, student = open_link(db, request, actor, bindings, link_id)
-    user = db.get(User, _user_of(db, link))
+    # 先锁用户行再判定(锁序:学生行 → 用户行,同 add_parent / unlink):别班正给这个账号
+    # 绑孩子时 add_parent 持有用户行锁,这里等它提交后再读绑定,避免重置别班家长(C-2)
+    user = _lock_user(db, _user_of(db, link))
     assert user is not None
     if user.id in _shared_user_ids(db, [user.id]):
         raise ApiError(409, "PARENT_ACCOUNT_SHARED", "该账号也是教职工账号,请联系信息中心重置")
