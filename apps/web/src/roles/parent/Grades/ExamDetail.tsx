@@ -19,40 +19,57 @@ export default function ExamDetail({ sid, examId }: { sid: string; examId: strin
 
   return (
     <div className="space-y-3 text-sm">
-      <div
-        className="overflow-x-auto rounded-lg border"
-        tabIndex={0}
-        role="region"
-        aria-label="各科成绩"
-      >
-        <table className="w-full min-w-[26rem] text-left">
-          <thead className="bg-muted text-xs text-muted-foreground">
-            <tr>
-              <th scope="col" className="px-3 py-2 font-medium">
+      {/*
+       * 同一张表两种排法(L83):≥ sm 是四列表格;窄屏(375)每科是一张两行卡片——
+       * 第一行 科目 + 分数 / 满分,第二行 班级平均 + 班级最高,不再横向滚动。
+       * 表头在窄屏收起,改由单元格里的行内标签说明;显式 role 让 display 改变后仍是一张表。
+       */}
+      <div className="rounded-lg border" role="region" aria-label="各科成绩">
+        <table role="table" className="block w-full text-left sm:table">
+          <thead
+            role="rowgroup"
+            className="hidden bg-muted text-xs text-muted-foreground sm:table-header-group"
+          >
+            <tr role="row">
+              <th role="columnheader" scope="col" className="px-3 py-2 font-medium">
                 科目
               </th>
-              <th scope="col" className="px-3 py-2 font-medium">
+              <th role="columnheader" scope="col" className="px-3 py-2 font-medium">
                 分数 / 满分
               </th>
-              <th scope="col" className="px-3 py-2 font-medium">
+              <th role="columnheader" scope="col" className="px-3 py-2 font-medium">
                 班级平均
               </th>
-              <th scope="col" className="px-3 py-2 font-medium">
+              <th role="columnheader" scope="col" className="px-3 py-2 font-medium">
                 班级最高
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y">
+          <tbody role="rowgroup" className="block divide-y sm:table-row-group">
             {d.subjects.map((s) => (
-              <tr key={s.name}>
-                <th scope="row" className="whitespace-nowrap px-3 py-2 font-medium">
+              <tr
+                key={s.name}
+                role="row"
+                className="grid grid-cols-2 gap-x-3 gap-y-1 px-3 py-2 sm:table-row sm:p-0"
+              >
+                <th
+                  role="rowheader"
+                  scope="row"
+                  className="block whitespace-nowrap font-medium sm:table-cell sm:px-3 sm:py-2"
+                >
                   {s.name}
                 </th>
-                <td className="whitespace-nowrap px-3 py-2 tabular-nums">
+                <td className="block whitespace-nowrap text-right tabular-nums sm:table-cell sm:px-3 sm:py-2 sm:text-left">
                   {s.score == null ? '—' : `${s.score} / ${s.full}`}
                 </td>
-                <td className="px-3 py-2 tabular-nums">{num(s.class_avg)}</td>
-                <td className="px-3 py-2 tabular-nums">{num(s.class_max)}</td>
+                <td className="block text-xs text-muted-foreground tabular-nums sm:table-cell sm:px-3 sm:py-2 sm:text-sm sm:text-foreground">
+                  <span className="sm:hidden">班级平均 </span>
+                  <span>{num(s.class_avg)}</span>
+                </td>
+                <td className="block text-right text-xs text-muted-foreground tabular-nums sm:table-cell sm:px-3 sm:py-2 sm:text-left sm:text-sm sm:text-foreground">
+                  <span className="sm:hidden">班级最高 </span>
+                  <span>{num(s.class_max)}</span>
+                </td>
               </tr>
             ))}
           </tbody>

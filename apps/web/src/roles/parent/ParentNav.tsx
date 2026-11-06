@@ -1,7 +1,6 @@
-import { useQuery } from '@tanstack/react-query'
 import { Bell, CalendarDays, ClipboardList, Sprout, type LucideIcon } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
-import { noticesApi } from '@/shared/api/notices'
+import { inboxUnread, useInbox } from '@/shared/components/notices/useInbox'
 import { cn } from '@/shared/lib/utils'
 
 const TABS: { path: string; label: string; icon: LucideIcon }[] = [
@@ -20,9 +19,8 @@ export default function ParentNav({
   childId: string
 }) {
   const bottom = placement === 'bottom'
-  // 与铃铛、通知页同一个 key;事件失效在 ParentLayout
-  const inbox = useQuery({ queryKey: ['notices', 'inbox'], queryFn: () => noticesApi.inbox(1) })
-  const unread = inbox.data?.unread ?? 0
+  // 与通知页同一份收件箱缓存;未读徽标按全量(每页响应都带);事件失效在 ParentLayout
+  const unread = inboxUnread(useInbox().data)
   const search = `?child=${encodeURIComponent(childId)}`
   return (
     <nav

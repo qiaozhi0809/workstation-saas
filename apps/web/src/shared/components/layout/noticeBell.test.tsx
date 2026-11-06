@@ -256,6 +256,28 @@ describe('通知铃铛', () => {
     )
   })
 
+  it('loads older notices page by page from 加载更多 while the badge keeps the full unread count (L90)', async () => {
+    server = {
+      items: Array.from({ length: 25 }, (_, i) => item(String(i + 1))),
+      total: 25,
+      unread: 25,
+    }
+    vi.mocked(noticesApi.inbox).mockImplementation(async (page) => ({
+      ...structuredClone(server),
+      items: structuredClone(server.items.slice((page - 1) * 20, page * 20)),
+    }))
+    renderBell()
+    fireEvent.click(await screen.findByRole('button', { name: '通知,25 条未读' }))
+    const list = await screen.findByRole('dialog', { name: '通知' })
+    expect(within(list).getByRole('button', { name: /通知20/ })).toBeInTheDocument()
+    expect(within(list).queryByRole('button', { name: /通知21/ })).toBeNull()
+    fireEvent.click(within(list).getByRole('button', { name: '加载更多' }))
+    expect(await within(list).findByRole('button', { name: /通知25/ })).toBeInTheDocument()
+    expect(noticesApi.inbox).toHaveBeenLastCalledWith(2)
+    await waitFor(() => expect(within(list).queryByRole('button', { name: '加载更多' })).toBeNull())
+    expect(screen.getByRole('button', { name: '通知,25 条未读' })).toBeInTheDocument()
+  })
+
   it("keeps each notice's ack state separate (key by id)", async () => {
     server = {
       items: [

@@ -75,6 +75,8 @@ class ParentChild(BaseModel):
     status: Literal["active", "readonly"]
     left_on: date | None
     archive_on: date | None
+    # 只读时的原因(L77):最后一条注册是毕业 → graduated;移出 / 转出 → left;在读为 null
+    left_reason: Literal["graduated", "left"] | None
 
 
 class Seat(BaseModel):
@@ -235,6 +237,15 @@ def _status(link: ParentLink, now: datetime) -> Literal["active", "readonly"]:
     return status
 
 
+def _left_reason(
+    status: Literal["active", "readonly"], shown: Row | None
+) -> Literal["graduated", "left"] | None:
+    """只读的原因(L77):看最后一条注册——毕业是 graduated,其余(移出 / 转出)都是离校。"""
+    if status != "readonly":
+        return None
+    return "graduated" if shown is not None and shown[0].status == "graduated" else "left"
+
+
 def _student(db: Session, student_id: UUID) -> Student:
     student = db.get(Student, student_id)
     if student is None:  # 绑定存在而学生不存在:外键保证不会发生
@@ -289,6 +300,7 @@ def children(db: Session, user: User, now: datetime) -> list[ParentChild]:
                 status=status,
                 left_on=left_on,
                 archive_on=archive_on,
+                left_reason=_left_reason(status, shown),
             )
         )
     out.sort(key=lambda c: (c.status != "active", c.name))
@@ -604,6 +616,23 @@ def exams(
     ]
 
 
+def _exam_roster(db: Session, school_id: UUID, exam: Exam) -> list[UUID]:
+    """这场考试参与名次 / 平均 / 最高的注册,与教师端同一口径(L76):当前学年的班只算在读注册
+    (score_sheet / gradebook 的 active_enrollments),往年的班算全部未删除的注册
+    (history.exam_scores)。被移出 / 转出的注册都不算;按 Student.mk 排序让同分并列顺序确定。"""
+    year = active_academic_year(db, school_id)
+    current = year is not None and exam.academic_year_id == year.id
+    enrolled = Enrollment.status == "active" if current else Enrollment.status != "removed"
+    return list(
+        db.scalars(
+            select(Enrollment.id)
+            .join(Student, Student.id == Enrollment.student_id)
+            .where(Enrollment.class_id == exam.class_id, enrolled)
+            .order_by(Student.mk)
+        )
+    )
+
+
 def _band(rank: int | None, ranked: int) -> Literal["前 10%", "前 30%"] | None:
     if rank is None or ranked < 10:
         return None
@@ -651,17 +680,7 @@ def exam_detail(
     ).one()
     class_name = db.scalars(select(SchoolClass.name).where(SchoolClass.id == exam.class_id)).one()
 
-    # 与 M3b 往年班级成绩同一口径:班里全部未删除的注册;孩子自己被移出时也要有一行
-    ids = list(
-        db.scalars(
-            select(Enrollment.id)
-            .join(Student, Student.id == Enrollment.student_id)
-            .where(Enrollment.class_id == exam.class_id, Enrollment.status != "removed")
-            .order_by(Student.mk)
-        )
-    )
-    if my_enrollment not in ids:
-        ids.append(my_enrollment)
+    ids = _exam_roster(db, user.school_id, exam)
     scores: dict[UUID, dict[str, float | None]] = {}
     for eid, subject, value in db.execute(
         select(Score.enrollment_id, Score.subject, Score.value).where(Score.exam_id == exam.id)
@@ -669,8 +688,15 @@ def exam_detail(
         scores.setdefault(eid, {})[subject] = value
     subjects = [SubjectFull(**s) for s in exam.subjects]
     table = exam_table(subjects, scores, ids)
-    me = next(r for r in table if r.enrollment_id == my_enrollment)
+    # 孩子已不在名单里(被移出 / 转出):自己的分数照给,但不补进名单,也就没有名次与段位(L76)
+    on_roster = my_enrollment in ids
+    me = (
+        next(r for r in table if r.enrollment_id == my_enrollment)
+        if on_roster
+        else exam_table(subjects, scores, [my_enrollment])[0]
+    )
     ranked = sum(1 for r in table if r.total is not None)
+    rank = me.rank if on_roster else None
 
     detail: list[ExamSubjectScore] = []
     for s in subjects:
@@ -690,6 +716,6 @@ def exam_detail(
         total=me.total,
         total_full=sum(s.full for s in subjects),
         ranked=ranked,
-        class_rank=me.rank if switches.parent_rank else None,
-        band=None if switches.parent_rank else _band(me.rank, ranked),
+        class_rank=rank if switches.parent_rank else None,
+        band=None if switches.parent_rank else _band(rank, ranked),
     )

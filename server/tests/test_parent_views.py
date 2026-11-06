@@ -77,6 +77,29 @@ def test_children_list(client, settings, db):
     assert names == {"三年二班", "四年一班"}
     assert all(c["status"] == "active" and c["is_primary"] for c in items)
     assert all(c["left_on"] is None and c["archive_on"] is None for c in items)
+    assert all(c["left_reason"] is None for c in items)
+
+
+def test_left_reason_graduated_vs_left(client, settings, db):
+    """只读的孩子区分毕业与中途离校(L77):毕业注册 → graduated,移出 / 转出 → left。"""
+    s17 = sid(db, "S0017")
+    db.execute(
+        text("UPDATE enrollments SET status = 'graduated', left_at = now() WHERE student_id = :s"),
+        {"s": s17},
+    )
+    close_links_for(db, [s17], datetime.now(UTC))
+    s2 = _remove(db, "S0002")
+    by_name = {c["name"]: c for c in get(client, settings, "/children").json()}
+    assert by_name["王小一"]["status"] == "active" and by_name["王小一"]["left_reason"] is None
+    assert by_name["魏小七"]["status"] == "readonly"
+    assert by_name["魏小七"]["left_reason"] == "graduated"
+    removed = get(client, settings, "/children", user=T04).json()
+    assert [(c["status"], c["left_reason"]) for c in removed] == [("readonly", "left")]
+    db.execute(
+        text("UPDATE enrollments SET status = 'transferred' WHERE student_id = :s"), {"s": s2}
+    )
+    db.flush()
+    assert get(client, settings, "/children", user=T04).json()[0]["left_reason"] == "left"
 
 
 def test_other_child_forbidden(client, settings, db):
@@ -418,6 +441,15 @@ def test_reviews_cursor_paging(client, settings, db):
     assert res.status_code == 400 and res.json()["error"]["code"] == "BAD_REQUEST"
 
 
+def test_seed_comment_visible_to_parent(client, settings, db):
+    """种子里 S0001 有一条手写评语且家长可见(L80):李家长不建数据就能看到评语页有内容。"""
+    s1 = sid(db, "S0001")
+    items = get(client, settings, f"/children/{s1}/comments").json()["items"]
+    assert len(items) == 1
+    assert items[0]["semester"] == "2026-2027 第一学期" and items[0]["content"]
+    assert set(items[0]) == {"id", "semester", "content", "created_at"}
+
+
 def test_growth_records_content(client, settings, db):
     s1 = sid(db, "S0001")
     items = get(client, settings, f"/children/{s1}/growth-records").json()["items"]
@@ -546,8 +578,64 @@ def test_removed_child_exam_cutoff(client, settings, db):
 def test_removed_child_exam_detail_ranked(client, settings, db):
     s2 = _remove(db, "S0002")
     body = get(client, settings, f"/children/{s2}/exams/{EXAM_IDS[1]}", user=T04).json()
-    # 班级名单口径排除 removed(9 人),孩子自己补一行,所以 ranked 仍是 10
-    assert body["ranked"] == 10 and body["total"] == 270
+    # 名单只算在读注册(9 人),被移出的孩子不再补进名次(L76):自己的分数照给,名次与段位不给
+    assert body["ranked"] == 9 and body["total"] == 270
+    assert body["class_rank"] is None and body["band"] is None
+    assert [s["score"] for s in body["subjects"]] == [90, 88, 92]
+
+
+def _teacher_table(client, settings, exam_id: str):
+    """教师端成绩表(在读注册)的 ranked / 各科平均 / 各科最高,与前端 grades.ts 同一算法。"""
+    from app.ai.stats import round1
+
+    sheet = client.get(
+        f"/api/v1/classes/{CLASS_ID}/exams/{exam_id}/scores", headers=auth(settings, T01)
+    ).json()
+    totals = [
+        sum(v for v in it["scores"].values() if isinstance(v, int | float))
+        for it in sheet["items"]
+        if any(isinstance(v, int | float) for v in it["scores"].values())
+    ]
+    stats = {}
+    for s in sheet["exam"]["subjects"]:
+        vals = [
+            it["scores"][s["name"]]
+            for it in sheet["items"]
+            if isinstance(it["scores"].get(s["name"]), int | float)
+        ]
+        stats[s["name"]] = (round1(sum(vals) / len(vals)), max(vals))
+    return len(totals), stats
+
+
+def test_exam_detail_matches_teacher_roster(client, settings, db):
+    """被移出 / 转出的注册不进家长端的名次与平均(L76):同一场考试,家长端的 ranked、
+    各科平均与最高和教师端成绩表完全一致;在读孩子的名次按同一份名单算。"""
+    _remove(db, "S0002")
+    db.execute(
+        text(
+            "UPDATE enrollments SET status = 'transferred', left_at = now() WHERE student_id = :s"
+        ),
+        {"s": sid(db, "S0003")},
+    )
+    db.flush()
+    ranked, stats = _teacher_table(client, settings, EXAM_IDS[1])
+    assert ranked == 8  # 10 人减去移出与转出的两人
+    s1 = sid(db, "S0001")
+    set_switches(db, parent_rank=True)
+    body = get(client, settings, f"/children/{s1}/exams/{EXAM_IDS[1]}").json()
+    assert body["ranked"] == ranked
+    for sub in body["subjects"]:
+        assert (sub["class_avg"], sub["class_max"]) == stats[sub["name"]], sub["name"]
+    # S0001 总分 278,只有 S0008(289)在前:名次按 8 人的名单算,仍是第 2
+    assert body["class_rank"] == 2
+    # 被移出的孩子:家长仍看到自己的分数和同一份班级统计,但没有名次 / 段位
+    s2 = sid(db, "S0002")
+    mine = get(client, settings, f"/children/{s2}/exams/{EXAM_IDS[1]}", user=T04).json()
+    assert mine["total"] == 270 and mine["ranked"] == ranked
+    assert mine["class_rank"] is None and mine["band"] is None
+    assert [(s["class_avg"], s["class_max"]) for s in mine["subjects"]] == [
+        (s["class_avg"], s["class_max"]) for s in body["subjects"]
+    ]
 
 
 def test_revoked_review_excluded(client, settings, db):

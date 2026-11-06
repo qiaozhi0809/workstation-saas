@@ -10,6 +10,7 @@ import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import AccountMenu from '@/shared/components/layout/AccountMenu'
 import AppShell from '@/shared/components/layout/AppShell'
 import { switchTargets } from '@/shared/components/layout/switchTargets'
+import { cn } from '@/shared/lib/utils'
 import { RealtimeProvider } from '@/shared/realtime/RealtimeProvider'
 import { useRealtimeEvent } from '@/shared/realtime/useRealtimeEvent'
 import { useAuthStore } from '@/shared/stores/auth'
@@ -18,6 +19,7 @@ import ChildSwitcher from './ChildSwitcher'
 import FirstVisit from './FirstVisit'
 import ParentNav from './ParentNav'
 import { ChildContext, useChild, useChildState } from './useChild'
+import { useMeta } from './useMeta'
 
 const QUERY = '(min-width: 768px)'
 
@@ -55,6 +57,7 @@ function ParentShell() {
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
   const wide = useWide()
+  const meta = useMeta()
   const state = useChildState()
   const { list, children, child, select } = state
 
@@ -93,6 +96,18 @@ function ParentShell() {
       context={
         child && (
           <>
+            {/* 校名来自 /meta(L74)。窄屏放不下"校名 + 孩子下拉 + 档案"三样:多个孩子时校名只在 ≥ sm 显示,
+                孩子切换器优先;一个孩子只有一行姓名,校名限宽截断后放得下 */}
+            {meta.data && (
+              <span
+                className={cn(
+                  'max-w-[28vw] truncate text-sm text-muted-foreground sm:max-w-none',
+                  children.length > 1 && 'hidden sm:inline',
+                )}
+              >
+                {meta.data.school_name}
+              </span>
+            )}
             <ChildSwitcher items={children} current={child} onSelect={select} />
             <Link
               to={{

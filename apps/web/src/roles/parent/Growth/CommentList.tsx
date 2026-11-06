@@ -1,10 +1,10 @@
 import { formatInTz } from '@/shared/lib/date'
 import type { ParentComment } from '@/shared/types/parent'
+import { useSchoolTz } from '../useMeta'
 
-const SCHOOL_TZ = 'Asia/Shanghai'
-
-/** 按学期分组,保持接口给出的先后顺序 */
+/** 按学期分组,保持接口给出的先后顺序;日期按学校时区(/meta,L79) */
 export default function CommentList({ comments }: { comments: ParentComment[] }) {
+  const tz = useSchoolTz()
   const groups: { semester: string; items: ParentComment[] }[] = []
   for (const c of comments) {
     const g = groups.find((x) => x.semester === c.semester)
@@ -21,7 +21,7 @@ export default function CommentList({ comments }: { comments: ParentComment[] })
               <li key={c.id} className="rounded-xl border bg-card p-3 text-sm text-card-foreground">
                 <p className="break-words whitespace-pre-wrap">{c.content}</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  {formatInTz(c.created_at, SCHOOL_TZ).slice(0, 10)}
+                  {formatInTz(c.created_at, tz).slice(0, 10)}
                 </p>
               </li>
             ))}

@@ -248,8 +248,24 @@ it('hints that unconfirmed AI comments are hidden from parents', async () => {
   expect(screen.getAllByText('AI 生成,需确认后才给家长看')).toHaveLength(1)
 })
 
-it('disables the toggle without comment.write', async () => {
-  vi.mocked(commentsApi.list).mockResolvedValue({ items: [cm({})] })
-  setup(<CommentsTab profile={profile} />, ['comment.read'])
-  expect(await screen.findByRole('switch', { name: '给家长看' })).toBeDisabled()
+it('disables share toggle when not allowed', async () => {
+  // can_share 由后端按"学生当前在读班的班主任"给出(L69 / L70):为假时开关禁用并说明原因
+  vi.mocked(commentsApi.list).mockResolvedValue({
+    items: [
+      cm({ id: 'past', content: '去年的评语', current_year: false, can_delete: false }),
+      cm({ id: 'now', content: '今年的评语', can_share: false }),
+    ],
+  })
+  setup(<CommentsTab profile={profile} />, ['comment.read', 'comment.write'])
+  const items = await screen.findAllByRole('listitem')
+  // 往年评语:现任班主任能切(can_share 为真),哪怕不能删
+  const past = within(items[0]).getByRole('switch', { name: '给家长看' })
+  expect(past).toBeEnabled()
+  expect(within(items[0]).queryByText('只有孩子现在的班主任能改')).toBeNull()
+  const now = within(items[1]).getByRole('switch', { name: '给家长看' })
+  expect(now).toBeDisabled()
+  expect(within(items[1]).getByText('只有孩子现在的班主任能改')).toBeInTheDocument()
+  fireEvent.click(now)
+  await act(async () => {})
+  expect(commentsApi.setParentVisible).not.toHaveBeenCalled()
 })

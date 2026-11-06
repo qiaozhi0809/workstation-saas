@@ -3,6 +3,7 @@ import { parentApi } from '@/shared/api/parent'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { formatMonthDay, weekdayCN } from '@/shared/lib/date'
+import { leftReasonText } from '../leftReason'
 import { useChild } from '../useChild'
 import AttendanceCard from './AttendanceCard'
 import MiniClassroom from './MiniClassroom'
@@ -29,10 +30,11 @@ export default function TodayPage() {
   const t = q.data
 
   if (t.status === 'readonly' || child.status === 'readonly') {
+    const left = leftReasonText(child.left_reason)
     return (
       <div className="mx-auto max-w-2xl space-y-3 p-4">
         <section className="rounded-xl border bg-card p-4 text-sm text-card-foreground">
-          {child.left_on ? `孩子已于 ${child.left_on} 毕业 / 离校` : '孩子已毕业 / 离校'}
+          {child.left_on ? `孩子已于 ${child.left_on} ${left}` : `孩子已${left}`}
           ,可以继续查看在校期间的成长与成绩
           {child.archive_on ? `,账号将于 ${child.archive_on} 归档` : ''}
         </section>

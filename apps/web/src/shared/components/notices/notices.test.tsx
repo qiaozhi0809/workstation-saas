@@ -106,6 +106,27 @@ describe('AckSettings', () => {
     expect(screen.queryByText('至少要 2 个选项')).toBeNull()
   })
 
+  it('刚添加、还没动过的空选项不立刻报"选项不能为空";动过后清空或夹在中间才报,文案与 ackSpecError 一致(L89)', () => {
+    render(<Harness initial={{ kind: 'choice', options: ['去', '不去'], allow_note: false }} />)
+    expect(screen.queryByRole('alert')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '添加选项' }))
+    expect(screen.getByLabelText('选项 3')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).toBeNull()
+    typeOpt(3, '待定')
+    expect(screen.queryByRole('alert')).toBeNull()
+    typeOpt(3, '')
+    expect(screen.getByText('选项不能为空')).toBeInTheDocument()
+    typeOpt(3, '待定')
+    // 再添两个空的,只填后一个:前一个空的夹在中间,要报
+    fireEvent.click(screen.getByRole('button', { name: '添加选项' }))
+    fireEvent.click(screen.getByRole('button', { name: '添加选项' }))
+    expect(screen.queryByRole('alert')).toBeNull()
+    typeOpt(5, '再议')
+    expect(screen.getByText('选项不能为空')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '删除选项 4' }))
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
   it('截止时间早于现在报错,晚于现在无错;清空回 null', () => {
     const onDeadline = vi.fn()
     render(<Harness initial={{ kind: 'confirm' }} onDeadline={onDeadline} />)
@@ -274,33 +295,34 @@ describe('AckForm', () => {
     expect(screen.getByRole('button', { name: '修改' })).toBeInTheDocument()
   })
 
-  it('can_ack=false:已撤回', () => {
-    renderForm(item({ can_ack: false, recalled: true, students: ['小明'] }))
-    expect(screen.getByText('已撤回')).toBeInTheDocument()
-    expect(screen.queryByText('已截止')).toBeNull()
-    expect(screen.queryByText('孩子已毕业,不能回执')).toBeNull()
+  // 不能回执的原因由后端给(ack_block_reason,L88),前端不再按时间 / 学生列表推断
+  const REASONS = ['已撤回', '已截止', '孩子已毕业或离校,不能回执', '由主家长回执']
+  const blocked: [NonNullable<InboxItem['ack_block_reason']>, string, Partial<InboxItem>][] = [
+    ['recalled', '已撤回', { recalled: true }],
+    ['closed', '已截止', { ack_deadline: FUTURE }], // 浏览器时钟偏慢:截止在"未来"也听后端的
+    ['readonly', '孩子已毕业或离校,不能回执', { ack_deadline: FUTURE, students: ['小明'] }],
+    ['not_primary', '由主家长回执', { students: ['小明'] }],
+  ]
+  it.each(blocked)('can_ack=false:%s → %s', (reason, text, over) => {
+    renderForm(item({ can_ack: false, ack_block_reason: reason, ...over }))
+    expect(screen.getByText(text)).toBeInTheDocument()
+    for (const other of REASONS.filter((r) => r !== text)) {
+      expect(screen.queryByText(other)).toBeNull()
+    }
     expect(screen.queryByRole('button', { name: '已知晓' })).toBeNull()
   })
 
-  it('can_ack=false:已截止', () => {
-    renderForm(item({ can_ack: false, ack_deadline: PAST, students: ['小明'] }))
-    expect(screen.getByText('已截止')).toBeInTheDocument()
-    expect(screen.queryByText('已撤回')).toBeNull()
-    expect(screen.queryByText('孩子已毕业,不能回执')).toBeNull()
+  it('can_ack=false 但后端没给原因时不编造文案;过期的截止时间也不再推断"已截止"', () => {
+    renderForm(item({ can_ack: false, ack_block_reason: null, ack_deadline: PAST }))
+    for (const r of REASONS) expect(screen.queryByText(r)).toBeNull()
     expect(screen.queryByRole('button', { name: '已知晓' })).toBeNull()
-  })
-
-  it('can_ack=false:孩子已毕业', () => {
-    renderForm(item({ can_ack: false, ack_deadline: FUTURE, students: ['小明'] }))
-    expect(screen.getByText('孩子已毕业,不能回执')).toBeInTheDocument()
-    expect(screen.queryByText('已撤回')).toBeNull()
-    expect(screen.queryByText('已截止')).toBeNull()
   })
 
   it('已回执但不能再改:显示回执,不显示修改', () => {
     renderForm(
       item({
         can_ack: false,
+        ack_block_reason: 'closed',
         ack_deadline: PAST,
         my_ack: { choice: null, note: null, acked_at: '2026-11-04T03:00:00Z' },
       }),

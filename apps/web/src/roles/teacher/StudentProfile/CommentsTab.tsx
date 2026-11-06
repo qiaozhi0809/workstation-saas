@@ -74,15 +74,7 @@ function AddForm({ profile, canUseAi }: { profile: StudentProfile; canUseAi: boo
   )
 }
 
-function CommentList({
-  profile,
-  timezone,
-  canWrite,
-}: {
-  profile: StudentProfile
-  timezone: string
-  canWrite: boolean
-}) {
+function CommentList({ profile, timezone }: { profile: StudentProfile; timezone: string }) {
   const queryClient = useQueryClient()
   const { data, error, refetch, isFetching } = useQuery({
     queryKey: ['comments', profile.id],
@@ -145,12 +137,13 @@ function CommentList({
             </div>
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            {/* 能否切由后端按"学生当前在读班的班主任"给出(can_share,L69 / L70),往年评语也照此 */}
             <button
               type="button"
               role="switch"
               aria-checked={c.parent_visible}
               aria-label="给家长看"
-              disabled={!canWrite || share.isPending}
+              disabled={!c.can_share || share.isPending}
               onClick={() => share.mutate({ id: c.id, visible: !c.parent_visible })}
               className={`relative h-5 w-9 shrink-0 rounded-full transition-colors disabled:opacity-50 ${c.parent_visible ? 'bg-primary' : 'bg-muted-foreground/40'}`}
             >
@@ -159,6 +152,7 @@ function CommentList({
               />
             </button>
             <span aria-hidden="true">给家长看</span>
+            {!c.can_share && <span>只有孩子现在的班主任能改</span>}
             {c.generated_by_ai && !c.parent_visible && (
               <span className="text-warning">AI 生成,需确认后才给家长看</span>
             )}
@@ -194,11 +188,7 @@ export default function CommentsTab({ profile }: { profile: StudentProfile }) {
       {perms.includes('comment.write') && (
         <AddForm profile={profile} canUseAi={perms.includes('ai.class')} />
       )}
-      <CommentList
-        profile={profile}
-        timezone={summary.data.timezone}
-        canWrite={perms.includes('comment.write')}
-      />
+      <CommentList profile={profile} timezone={summary.data.timezone} />
     </section>
   )
 }

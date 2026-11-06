@@ -3,10 +3,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { parentApi } from '@/shared/api/parent'
+import { schoolApi } from '@/shared/api/school'
 import ProtectedRoute from '@/shared/components/ProtectedRoute'
 import type { ParentGrowthRecord, ParentReview } from '@/shared/types/parent'
 import ParentLayout from '../ParentLayout'
-import { child, mockWidth, setParentUser } from '../testkit'
+import { child, meta, mockWidth, setParentUser } from '../testkit'
 import GrowthPage from './GrowthPage'
 
 vi.mock('@/shared/api/parent', () => ({
@@ -263,6 +264,30 @@ it('shows dates in school time, not the UTC date', async () => {
   expect(await screen.findByText('2026-01-11')).toBeInTheDocument()
   await goTab('点评')
   expect(await screen.findByText(/2026-10-02/)).toBeInTheDocument()
+})
+
+it('takes the school time zone from /meta instead of a hard-coded one (L79)', async () => {
+  vi.mocked(schoolApi.meta).mockResolvedValue(meta({ school_tz: 'America/New_York' }))
+  vi.mocked(parentApi.reviews).mockResolvedValue({
+    items: [rev('1', { given_at: '2026-10-01T20:00:00Z' })],
+    next_cursor: null,
+  })
+  vi.mocked(parentApi.comments).mockResolvedValue({
+    items: [
+      {
+        id: 'm1',
+        semester: '2025-2026 第一学期',
+        content: '好',
+        created_at: '2026-01-10T20:00:00Z',
+      },
+    ],
+  })
+  open()
+  await goTab('评语')
+  // 纽约 20:00Z 还是当天;写死 Asia/Shanghai 时会显示次日
+  expect(await screen.findByText('2026-01-10')).toBeInTheDocument()
+  await goTab('点评')
+  expect(await screen.findByText(/2026-10-01 · 李老师/)).toBeInTheDocument()
 })
 
 it('goes back to the growth tab when the child changes', async () => {
