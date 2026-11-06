@@ -104,8 +104,8 @@ def test_migrate_check_only(fresh_engine):  # noqa: F811
 def test_migrate_upgrades_empty_db_then_is_idempotent(fresh_engine):  # noqa: F811
     code, out = _migrate(fresh_engine)
     assert code == 0
-    assert "已迁移到 0010" in out
-    assert current_version(fresh_engine) == "0010"
+    assert "已迁移到 0011" in out
+    assert current_version(fresh_engine) == "0011"
     code, out = _migrate(fresh_engine)
     assert code == 0
     assert "已是最新" in out

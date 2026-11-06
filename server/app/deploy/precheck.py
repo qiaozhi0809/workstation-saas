@@ -286,6 +286,7 @@ EXEMPT_CONSTRAINTS: dict[tuple[str, str], str] = {
     ("0010", "notices_ack_options_ck"): (
         "涉及本迁移新增列 ack_kind(默认 none)与 ack_options(NULL),旧行必然满足"
     ),
+    ("0011", "users_totp_pair_ck"): ("两列均为本迁移新增的可空列,旧行全为 NULL,必然满足"),
 }
 
 SIZE_NOTICES: tuple[SizeNotice, ...] = (
