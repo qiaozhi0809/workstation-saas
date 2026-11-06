@@ -12,6 +12,8 @@ import TodayPage from './Today/TodayPage'
 import { Building2 } from 'lucide-react'
 import ClassInfoPage from './Org/ClassInfoPage'
 import OrgPage from './Org/OrgPage'
+import { CalendarClock } from 'lucide-react'
+import TimetablePage from './Timetable/TimetablePage'
 // ── 段 D(组织架构):import 追加在此行之上 ──
 
 import { Settings, Users } from 'lucide-react'
@@ -100,6 +102,14 @@ export const ADMIN_PAGES: AdminPage[] = [
     perm: 'org.manage',
     element: <ClassInfoPage />,
     hidden: true,
+    group: 'manage',
+  },
+  {
+    path: 'timetable',
+    label: '作息与课表',
+    icon: CalendarClock,
+    perm: 'org.manage',
+    element: <TimetablePage />,
     group: 'manage',
   },
   // ── org:追加在此行之上 ──

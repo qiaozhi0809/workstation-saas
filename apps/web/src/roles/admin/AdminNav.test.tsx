@@ -120,6 +120,7 @@ describe('grouped nav (≥ 768)', () => {
     fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
     expect(open('学校管理')).toEqual([
       ['组织架构', '/admin/org'],
+      ['作息与课表', '/admin/timetable'],
       ['账号', '/admin/accounts'],
       ['学校设置', '/admin/settings'],
       ['学年升级', '/admin/upgrade'],
@@ -257,6 +258,7 @@ describe('narrow nav (< 768)', () => {
       '/admin/today',
       '/admin/board',
       '/admin/org',
+      '/admin/timetable',
       '/admin/accounts',
       '/admin/settings',
       '/admin/grade-exams',
@@ -279,7 +281,7 @@ describe('narrow nav (< 768)', () => {
     expect(within(nav()).getAllByRole('button')).toHaveLength(3)
     vp.resize(600)
     expect(within(nav()).queryAllByRole('button')).toHaveLength(0)
-    expect(within(nav()).getAllByRole('link')).toHaveLength(15)
+    expect(within(nav()).getAllByRole('link')).toHaveLength(16)
     vp.resize(900)
     expect(within(nav()).getAllByRole('button')).toHaveLength(3)
     unmount()
