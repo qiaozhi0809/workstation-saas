@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { adminApi } from '@/shared/api/admin'
@@ -190,7 +190,7 @@ it('hidden without audit.read', () => {
     group: 'system',
     label: '登录日志',
   })
-  useAuthStore.getState().logout()
+  act(() => useAuthStore.getState().logout())
 })
 
 it('is in the system menu with audit.read', () => {
@@ -200,5 +200,5 @@ it('is in the system menu with audit.read', () => {
     'href',
     '/admin/login-logs',
   )
-  useAuthStore.getState().logout()
+  act(() => useAuthStore.getState().logout())
 })

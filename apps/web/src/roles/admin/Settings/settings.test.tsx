@@ -66,7 +66,11 @@ beforeEach(() => {
   vi.mocked(schoolApi.grading).mockResolvedValue({ pass_ratio: 0.6, good_ratio: 0.85 })
   vi.mocked(schoolApi.subjectCatalog).mockResolvedValue(CATALOG)
 })
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  // asAdmin 写进 store 的权限不能漏到下一个用例:否则系统卡在没 mock systemInfo 的用例里也会去请求
+  useAuthStore.setState({ user: null })
+})
 
 let client: QueryClient
 const renderPage = async () => {
