@@ -53,7 +53,7 @@ const cls: ClassAdmin = {
   grade_name: '三年级',
   room: '301',
   student_count: 40,
-  homeroom: { assignment_id: 'a1', user_id: 'u1', display_name: '李老师' },
+  homeroom: { assignment_id: 'a1', user_id: 'u1', teacher_id: 't1', display_name: '李老师' },
   assistants: [],
   subjects: [],
   desk_size: 2,

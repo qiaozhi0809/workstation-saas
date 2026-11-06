@@ -66,6 +66,8 @@ export interface GradeInput {
 export interface StaffBrief {
   assignment_id: string
   user_id: string
+  /** 后端 StaffBrief 一直带 teacher_id,前端类型补齐,选人高亮按它比对(L55) */
+  teacher_id: string
   display_name: string
 }
 export interface ClassAdmin {
