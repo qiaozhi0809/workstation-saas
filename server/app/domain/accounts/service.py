@@ -30,7 +30,7 @@ from app.errors import ApiError
 from app.models import Grade, RoleBinding, SchoolClass, User
 from app.rbac.admin import account_admin_count
 from app.rbac.roles import PARENT_ROLES, TEACHER_ROLES, Role
-from app.ws.hub import publish
+from app.ws.hub import STALE, publish
 
 log = logging.getLogger(__name__)
 
@@ -340,7 +340,7 @@ def reset_password(
     revoke_all_or_503(db, redis, [user.id])
     db.commit()
     clear_fail_counter(redis, settings, user.login_name)
-    publish(redis, [user.id], {"type": "session.stale"})  # 已打开的页面立即用刷新令牌重连(L29)
+    publish(redis, [user.id], {"type": STALE})  # 已打开的页面立即用刷新令牌重连(L29)
     return temp
 
 

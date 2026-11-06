@@ -28,7 +28,7 @@ from app.models import AcademicYear, Enrollment, RoleBinding, SchoolClass, Stude
 from app.models.parents import Parent, ParentLink
 from app.rbac.bindings import Binding, can
 from app.rbac.roles import PARENT_ROLES, Perm, Role
-from app.ws.hub import publish
+from app.ws.hub import STALE, publish
 
 MAX_PARENTS = 4
 _PHONE_RE = re.compile(r"^1[3-9][0-9]{9}$")
@@ -534,5 +534,5 @@ def reset_parent_password(
     revoke_all_or_503(db, redis, [user.id])
     db.commit()
     clear_fail_counter(redis, settings, user.login_name)
-    publish(redis, [user.id], {"type": "session.stale"})  # 已打开的页面立即用刷新令牌重连(L29)
+    publish(redis, [user.id], {"type": STALE})  # 已打开的页面立即用刷新令牌重连(L29)
     return temp
