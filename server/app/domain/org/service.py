@@ -420,6 +420,7 @@ def update_class(
     user_id: UUID,
     request: Request | None,
 ) -> ClassAdmin:
+    lock_class(db, cls)  # 与删班 / 任命 / 学年升级串行;已被并发删除或停用的班 404(L52)
     grade = get_grade(db, school_id, body.grade_id)
     if grade.academic_year_id != cls.academic_year_id:
         raise ApiError(400, "BAD_REQUEST", "只能换到当前学年的年级")
