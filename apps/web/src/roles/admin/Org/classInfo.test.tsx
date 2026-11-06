@@ -3,6 +3,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { adminApi } from '@/shared/api/admin'
+import { ApiError } from '@/shared/api/client'
+import { toast } from '@/shared/components/Toast'
 import { orgApi, type OrgPerson } from './orgApi'
 import type { ClassAdmin } from '@/shared/types/admin'
 import ClassInfoPage from './ClassInfoPage'
@@ -17,6 +19,7 @@ vi.mock('@/shared/api/admin', () => ({
   },
 }))
 vi.mock('./orgApi', () => ({ orgApi: { people: vi.fn() } }))
+vi.mock('@/shared/components/Toast', () => ({ toast: vi.fn() }))
 const api = vi.mocked(adminApi)
 const org = vi.mocked(orgApi)
 
@@ -132,6 +135,32 @@ it('ends the homeroom teacher after confirmation', async () => {
   fireEvent.click(await screen.findByRole('button', { name: '卸任 李老师(班主任)' }))
   fireEvent.click(screen.getByRole('button', { name: '确认卸任' }))
   await waitFor(() => expect(api.endStaff).toHaveBeenCalledWith('a1'))
+})
+
+// L52(段 D1):卸任排在换班主任 / 删班后面时后端给 409 STAFF_CHANGED,任职已经不在了,
+// 不能把错误留在确认框里让人再点一次,要提示后端文案、关框并重取班级
+it('closes the dialog, toasts the backend message and refreshes on 409 STAFF_CHANGED', async () => {
+  api.endStaff.mockRejectedValue(
+    new ApiError(409, 'STAFF_CHANGED', '该任职刚被其他操作结束,请刷新后重试'),
+  )
+  renderPage()
+  fireEvent.click(await screen.findByRole('button', { name: '卸任 李老师(班主任)' }))
+  expect(api.class).toHaveBeenCalledTimes(1)
+  fireEvent.click(screen.getByRole('button', { name: '确认卸任' }))
+  await waitFor(() => expect(toast).toHaveBeenCalledWith('该任职刚被其他操作结束,请刷新后重试'))
+  expect(screen.queryByRole('button', { name: '确认卸任' })).toBeNull()
+  expect(screen.queryByRole('alert')).toBeNull()
+  await waitFor(() => expect(api.class).toHaveBeenCalledTimes(2))
+})
+
+it('keeps other end-staff errors inside the confirm dialog', async () => {
+  api.endStaff.mockRejectedValue(new ApiError(404, 'NOT_FOUND', '任职不存在'))
+  renderPage()
+  fireEvent.click(await screen.findByRole('button', { name: '卸任 李老师(班主任)' }))
+  fireEvent.click(screen.getByRole('button', { name: '确认卸任' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('任职不存在')
+  expect(screen.getByRole('button', { name: '确认卸任' })).toBeInTheDocument()
+  expect(toast).not.toHaveBeenCalled()
 })
 
 it('titles the page with the class name only and shows the grade as subtitle', async () => {
