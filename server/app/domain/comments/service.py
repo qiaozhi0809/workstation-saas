@@ -32,7 +32,15 @@ def can_delete_comment(
     return comment.academic_year_id == current_year_id and can(bindings, Perm.COMMENT_WRITE, scope)
 
 
-def _out(comment: Comment, author: str | None, current_year_id: UUID, can_del: bool) -> CommentOut:
+def can_share_comment(bindings: Sequence[Binding], current_scope: Scope) -> bool:
+    """评语的"给家长看"由学生**当前**在读班的班主任切换(L69):与评语写在哪个班、哪一年无关,
+    往年评语也能由现任班主任放给家长看。current_scope 是学生当前在读注册所在班的范围。"""
+    return can(bindings, Perm.COMMENT_WRITE, current_scope)
+
+
+def _out(
+    comment: Comment, author: str | None, current_year_id: UUID, can_del: bool, can_share: bool
+) -> CommentOut:
     return CommentOut(
         id=comment.id,
         semester=comment.semester,
@@ -43,6 +51,7 @@ def _out(comment: Comment, author: str | None, current_year_id: UUID, can_del: b
         can_delete=can_del,
         created_at=comment.created_at,
         parent_visible=comment.parent_visible,
+        can_share=can_share,
     )
 
 
@@ -53,6 +62,7 @@ def list_comments(
     bindings: Sequence[Binding],
     scope: Scope,
 ) -> list[CommentOut]:
+    """scope 是学生当前在读班的范围:can_share 按它算;can_delete 按每条评语自己所在的班算。"""
     rows = db.execute(
         select(Comment, User.display_name)
         .outerjoin(User, User.id == Comment.created_by_user_id)
@@ -64,12 +74,14 @@ def list_comments(
         if c.class_id not in scopes:
             cls = db.get(SchoolClass, c.class_id)
             scopes[c.class_id] = class_scope_of(cls) if cls is not None else scope
+    can_share = can_share_comment(bindings, scope)
     return [
         _out(
             c,
             a,
             current_year_id,
             can_delete_comment(c, current_year_id, bindings, scopes[c.class_id]),
+            can_share,
         )
         for c, a in rows
     ]
@@ -90,8 +102,10 @@ def set_parent_visible(
     bindings: Sequence[Binding],
     current_year_id: UUID,
     scope: Scope,
+    current_scope: Scope,
 ) -> CommentOut:
-    """调用方已校验该评语所在班的 comment.write;不提交。"""
+    """调用方已按学生当前在读班(current_scope)校验 comment.write;scope 是评语所在班,只用于算
+    can_delete。不提交。"""
     comment.parent_visible = visible
     record(
         db,
@@ -111,6 +125,7 @@ def set_parent_visible(
         name,
         current_year_id,
         can_delete_comment(comment, current_year_id, bindings, scope),
+        can_share_comment(bindings, current_scope),
     )
 
 
@@ -170,11 +185,13 @@ def create_comment(
 def comment_out(
     comment: Comment, user: User, current_year_id: UUID, bindings: Sequence[Binding], scope: Scope
 ) -> CommentOut:
+    """新建评语的响应:评语写在学生当前在读班,scope 既是评语所在班也是当前班。"""
     return _out(
         comment,
         user.display_name,
         current_year_id,
         can_delete_comment(comment, current_year_id, bindings, scope),
+        can_share_comment(bindings, scope),
     )
 
 

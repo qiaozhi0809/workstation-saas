@@ -4,7 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.orm import Session
 
-from app.audit.service import record
+from app.audit.service import deny, record
 from app.auth.deps import get_current_user
 from app.db import get_db
 from app.domain.classes.service import class_scope_of, get_class_or_404
@@ -155,8 +155,21 @@ def set_parent_visible(
         raise ApiError(404, "NOT_FOUND", "评语不存在")
     cls = get_class_or_404(db, comment.class_id)
     scope = class_scope_of(cls)
+    # "给家长看"由学生**当前**在读班的班主任切换(L69 / L70):往年的班在当前学年没有任何绑定,
+    # 年内转班也跟着学生走;学生没有在读班时谁也不能切(审计记 comment.write 被拒)
+    found = find_enrolled_student(db, comment.student_id, year.id)
+    if found is None:
+        deny(
+            db,
+            user_id=user.id,
+            action=Perm.COMMENT_WRITE.value,
+            object_type="comment",
+            object_id=str(comment_id),
+            request=request,
+        )
+    _, current_scope, _ = found
     ensure(
-        db, request, user.id, bindings, Perm.COMMENT_WRITE, scope,
+        db, request, user.id, bindings, Perm.COMMENT_WRITE, current_scope,
         object_id=str(comment_id), object_type="comment",
     )  # fmt: skip
     out = service.set_parent_visible(
@@ -168,6 +181,7 @@ def set_parent_visible(
         bindings=bindings,
         current_year_id=year.id,
         scope=scope,
+        current_scope=current_scope,
     )
     db.commit()
     return out

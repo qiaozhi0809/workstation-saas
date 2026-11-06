@@ -36,6 +36,8 @@ class CommentOut(BaseModel):
     can_delete: bool
     created_at: datetime
     parent_visible: bool
+    # 调用者能否切换"给家长看":只有学生当前在读班的班主任能切,往年评语也一样(L69 / L70)
+    can_share: bool
 
 
 class ParentVisibleInput(BaseModel):
