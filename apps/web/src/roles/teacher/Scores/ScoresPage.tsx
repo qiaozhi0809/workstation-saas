@@ -142,6 +142,7 @@ function ExamSection({
     queryFn: () => studentsApi.listInClass(cls.id),
   })
   const [importing, setImporting] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const save = useScoreAutosave({ classId: cls.id, examId: exam.id })
 
   const writable = perms.includes('score.write')
@@ -153,13 +154,19 @@ function ExamSection({
   const canImport = writable === null || writable.length > 0
   const canExport = perms.includes('score.export')
 
-  // 先把防抖中的改动发出去,导出的表才含刚改的格子;没保存成功就不导,免得导出一份少格子的表
+  // 先把防抖中的改动发出去,导出的表才含刚改的格子;没保存成功就不导,免得导出一份少格子的表。
+  // 等待期间按钮禁用,连点不会下载两份
   const exportNow = async () => {
-    if (!(await save.flush())) {
-      toast('还有成绩没保存成功,请先重试保存再导出')
-      return
+    setExporting(true)
+    try {
+      if (!(await save.flush())) {
+        toast('还有成绩没保存成功,请先重试保存再导出')
+        return
+      }
+      await exportScores(cls.id, cls.name, exam, roster.data?.items ?? [])
+    } finally {
+      setExporting(false)
     }
-    await exportScores(cls.id, cls.name, exam, roster.data?.items ?? [])
   }
 
   let body
@@ -216,7 +223,7 @@ function ExamSection({
             <Button
               variant="outline"
               size="sm"
-              disabled={!roster.data}
+              disabled={!roster.data || exporting}
               onClick={() => void exportNow()}
             >
               导出

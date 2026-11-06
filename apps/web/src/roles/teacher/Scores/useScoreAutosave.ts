@@ -48,7 +48,8 @@ export function useScoreAutosave({ classId, examId }: { classId: string; examId:
     timer.current = undefined
     if (inflight.current) return inflight.current
     if (pending.current.size === 0) {
-      setStatus('idle')
+      // 没东西可发:刚保存完的「已保存」要留着,不能被一次空 flush 抹成 idle
+      setStatus((s) => (s === 'saved' ? s : 'idle'))
       setDirty(false)
       return Promise.resolve(true)
     }
@@ -56,8 +57,11 @@ export function useScoreAutosave({ classId, examId }: { classId: string; examId:
     const run = (async () => {
       setStatus('saving')
       try {
-        // 发送期间又有新改动:同一轮里接着发
+        // 发送期间又有新改动:同一轮里接着发;queue() 为它们定的防抖定时器也一并取消,
+        // 否则这一轮发完置「已保存」后,那个定时器晚到再 flush 一次空队列会把状态抹掉
         while (pending.current.size > 0) {
+          clearTimeout(timer.current)
+          timer.current = undefined
           const all = [...pending.current.values()]
           for (let i = 0; i < all.length; i += BATCH) {
             const chunk = all.slice(i, i + BATCH)

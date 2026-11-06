@@ -363,6 +363,61 @@ it('does not stay stuck on failed when the only in-flight cell was discarded', a
   expect(screen.queryByText('保存失败')).toBeNull()
 })
 
+it('keeps showing 已保存 when a cell is typed while the previous request is in flight', async () => {
+  setup()
+  let finish: (v: { updated: number }) => void = () => {}
+  vi.mocked(examsApi.saveScores).mockImplementationOnce(
+    () =>
+      new Promise((res) => {
+        finish = res
+      }),
+  )
+  type(await cell('王小一', '语文'), '91')
+  await ms(700)
+  expect(sent()).toHaveLength(1)
+  // 第一轮请求还没回来又改了一格:它会随同一轮接着发,但不能留下一个晚到的防抖定时器
+  type(await cell('李小二', '语文'), '92')
+  await act(async () => {
+    finish({ updated: 1 })
+  })
+  await waitFor(() => expect(sent()).toHaveLength(2))
+  expect(await screen.findByText('已保存')).toBeInTheDocument()
+  await ms(700)
+  expect(screen.getByText('已保存')).toBeInTheDocument()
+})
+
+it('keeps 已保存 when export is clicked with nothing left to save', async () => {
+  setup({ extraPerms: ['score.export'] })
+  vi.mocked(examsApi.exportSheet).mockResolvedValue(SHEET)
+  type(await cell('王小一', '语文'), '91')
+  await ms(700)
+  expect(await screen.findByText('已保存')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '导出' }))
+  await waitFor(() => expect(examsApi.exportSheet).toHaveBeenCalled())
+  expect(screen.getByText('已保存')).toBeInTheDocument()
+})
+
+it('disables the export button while the export is running', async () => {
+  setup({ extraPerms: ['score.export'] })
+  let finish: (v: ScoreSheet) => void = () => {}
+  vi.mocked(examsApi.exportSheet).mockImplementationOnce(
+    () =>
+      new Promise((res) => {
+        finish = res
+      }),
+  )
+  await cell('王小一', '语文')
+  const btn = screen.getByRole('button', { name: '导出' })
+  fireEvent.click(btn)
+  await waitFor(() => expect(btn).toBeDisabled())
+  fireEvent.click(btn)
+  expect(examsApi.exportSheet).toHaveBeenCalledTimes(1)
+  await act(async () => {
+    finish(SHEET)
+  })
+  await waitFor(() => expect(btn).not.toBeDisabled())
+})
+
 it('saves the edits still waiting in the debounce before exporting (L15)', async () => {
   setup({ extraPerms: ['score.export'] })
   vi.mocked(examsApi.exportSheet).mockResolvedValue(SHEET)
