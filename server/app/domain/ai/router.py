@@ -20,6 +20,7 @@ from app.ai.chats import (
 from app.ai.context import system_prompt
 from app.ai.gateway import (
     GenContext,
+    GenerationResponse,
     acquire_lock,
     build_item_job,
     lock_key,
@@ -360,11 +361,7 @@ def ai_chat_reply(
             ip=_client_ip(request),
             user_agent=request.headers.get("user-agent"),
         )
-        return StreamingResponse(
-            reply_events(ctx, body),
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-        )
+        return GenerationResponse(ctx, reply_events(ctx, body))
     except BaseException:
         release_lock(redis, lock_key(chat.id), token)
         raise
@@ -418,11 +415,7 @@ def ai_chat_run_item(
         db.refresh(item)  # 拿到锁后重查:并发的另一次点击可能已经生成完了
         _check_item_runnable(item)
         ctx = _gen_context(request, user, cls, chat, cfg, scope, redis, token)
-        return StreamingResponse(
-            run_item_events(ctx, item.id),
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-        )
+        return GenerationResponse(ctx, run_item_events(ctx, item.id))
     except BaseException:
         release_lock(redis, lock_key(chat.id), token)
         raise

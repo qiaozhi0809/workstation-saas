@@ -12,7 +12,7 @@ import contextlib
 import json
 import re
 import secrets
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from dataclasses import dataclass
 from functools import partial
 from typing import Any
@@ -26,6 +26,8 @@ from redis import Redis
 from redis.exceptions import RedisError
 from sqlalchemy import func, update
 from sqlalchemy.orm import Session
+from starlette.responses import StreamingResponse
+from starlette.types import Receive, Scope, Send
 
 from app.ai.chats import chat_items, ordered_messages
 from app.ai.client import AIUpstreamError, ChatMessage, Delta, Usage
@@ -244,7 +246,7 @@ async def generation_events(
     ctx: GenContext,
     prepare: Callable[[Session], Prepared],
     save: Callable[[Session, Prepared, GenState], None],
-) -> AsyncIterator[bytes]:
+) -> AsyncGenerator[bytes]:
     state = GenState()
     prep: Prepared | None = None
     finalized = False
@@ -273,6 +275,47 @@ async def generation_events(
     finally:
         if not finalized:
             await _finalize_and_unlock(ctx, prep, state, save)
+
+
+# ---------------------------------------------------------------- SSE 响应
+
+
+class _Started:
+    __slots__ = ("value",)
+
+    def __init__(self) -> None:
+        self.value = False
+
+
+async def _guarded(events: AsyncGenerator[bytes], started: _Started) -> AsyncIterator[bytes]:
+    started.value = True
+    async with contextlib.aclosing(events):
+        async for chunk in events:
+            yield chunk
+
+
+class GenerationResponse(StreamingResponse):
+    """生成用的 SSE 响应。正常收尾、中途停止 / 断开都由 ``generation_events`` 自己落库放锁;
+    这里只兜"生成器一次都没开始迭代"的情况——响应头发不出去(ASGI 2.4 服务器 send 抛
+    OSError)或在取第一口之前就被取消——那时生成器的 finally 根本不会跑,锁要等 LOCK_TTL
+    才过期,新一次生成会一直撞 AI_BUSY。"""
+
+    def __init__(self, ctx: GenContext, events: AsyncGenerator[bytes]) -> None:
+        self._ctx = ctx
+        self._started = _Started()
+        super().__init__(
+            _guarded(events, self._started),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            if not self._started.value:
+                with anyio.CancelScope(shield=True):
+                    await _unlock(self._ctx)
 
 
 # ---------------------------------------------------------------- reply
@@ -369,7 +412,7 @@ def save_reply(s: Session, prep: Prepared, state: GenState) -> None:
     msg.completion_tokens = state.completion_tokens
 
 
-def reply_events(ctx: GenContext, body: AiReplyIn) -> AsyncIterator[bytes]:
+def reply_events(ctx: GenContext, body: AiReplyIn) -> AsyncGenerator[bytes]:
     return generation_events(ctx, partial(prepare_reply, ctx=ctx, body=body), save_reply)
 
 
@@ -452,13 +495,14 @@ def save_item(s: Session, prep: Prepared, state: GenState) -> None:
         item.status, item.content, item.error = "wait", "", None
 
 
-def run_item_events(ctx: GenContext, item_id: UUID) -> AsyncIterator[bytes]:
+def run_item_events(ctx: GenContext, item_id: UUID) -> AsyncGenerator[bytes]:
     return generation_events(ctx, partial(prepare_item, ctx=ctx, item_id=item_id), save_item)
 
 
 __all__ = [
     "GenContext",
     "GenState",
+    "GenerationResponse",
     "Prepared",
     "acquire_lock",
     "generation_events",

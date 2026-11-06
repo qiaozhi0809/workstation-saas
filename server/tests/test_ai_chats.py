@@ -6,8 +6,10 @@ from uuid import UUID
 
 import anyio
 import httpx
+import pytest
 from redis import exceptions as redis_exceptions
 from sqlalchemy import select, text
+from starlette.requests import ClientDisconnect
 
 from app.ai.gateway import GenContext, acquire_lock, lock_key, reply_events
 from app.ai.settings import AIConfig, load_ai_config, save_ai_config
@@ -589,6 +591,78 @@ def test_chat_mask_reflects_forced_mask_now(client, settings, db):
     assert get_chat(client, settings, chat["id"]).json()["mask"] is True
     # 新建的对话同样按当前生效值返回
     assert create(client, settings, parent_body(mask=False))["mask"] is True
+
+
+def _asgi_scope(path: str, headers: dict[str, str], body: bytes, spec_version: str) -> dict:
+    raw = [(k.lower().encode(), v.encode()) for k, v in headers.items()]
+    raw += [
+        (b"host", b"testserver"),
+        (b"content-type", b"application/json"),
+        (b"content-length", str(len(body)).encode()),
+    ]
+    return {
+        "type": "http",
+        "asgi": {"version": "3.0", "spec_version": spec_version},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": path,
+        "raw_path": path.encode(),
+        "query_string": b"",
+        "root_path": "",
+        "headers": raw,
+        "client": ("127.0.0.1", 40000),
+        "server": ("testserver", 80),
+        "state": {},
+    }
+
+
+def test_ai_generate_disconnect_before_start_releases_lock(client, settings, db, redis_client):
+    """整条路由走 ASGI 2.3(uvicorn):请求到了、锁也拿到了,客户端在取响应体第一口之前就
+    断开 → 一口响应体都没发,锁立刻释放,不等 300 秒 TTL(L94)。
+    (这条路径 anyio 会让生成器先起来再送达取消,收尾由 generation_events 自己做;
+    真正"一次都没开始迭代"的是下一条 2.4 路径。)"""
+    configure_ai(db, settings)
+    set_transport(client, ["第一段"])
+    chat = create(client, settings, lesson_body())
+    body = b"{}"
+    scope = _asgi_scope(f"{CHATS}/{chat['id']}/reply", auth(settings), body, "2.3")
+    pending = [{"type": "http.request", "body": body, "more_body": False}]
+    sent: list[str] = []
+
+    async def receive():
+        return pending.pop(0) if pending else {"type": "http.disconnect"}
+
+    async def send(message):
+        sent.append(message["type"])
+
+    anyio.run(client.app, scope, receive, send)
+    assert "http.response.body" not in sent
+    assert redis_client.exists(f"ai:chat:{chat['id']}") == 0
+
+
+def test_ai_generate_releases_lock_when_never_iterated(client, settings, db, redis_client):
+    """ASGI 2.4 路径:响应头都发不出去(send 抛 OSError → ClientDisconnect),生成器一次都
+    没开始迭代,finally 根本不会跑——响应对象自己兜底放锁;没有助手消息、没有审计(L94)。"""
+    import app.ai.gateway as gw
+
+    configure_ai(db, settings)
+    chat = create(client, settings, lesson_body())
+    ctx = _ctx(client, settings, db, redis_client, chat["id"], ["第一段"])
+    resp = gw.GenerationResponse(ctx, reply_events(ctx, AiReplyIn()))
+
+    async def receive():
+        return {"type": "http.disconnect"}
+
+    async def broken_send(message):
+        raise OSError("connection reset by peer")
+
+    scope = {"type": "http", "asgi": {"version": "3.0", "spec_version": "2.4"}}
+    with pytest.raises(ClientDisconnect):
+        anyio.run(resp, scope, receive, broken_send)
+    assert redis_client.exists(f"ai:chat:{chat['id']}") == 0
+    assert len(get_chat(client, settings, chat["id"]).json()["messages"]) == 1
+    assert generate_audits(db, chat["id"]) == []
 
 
 def _drain(agen) -> list[tuple[str, dict]]:
