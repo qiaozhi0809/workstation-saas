@@ -109,6 +109,16 @@ it('blocks a term-2 date earlier than the start date', async () => {
   expect(screen.getByText('开学日期决定教室顶栏的第几周')).toBeInTheDocument()
 })
 
+it('shows an empty state, not a spinner, when there is no academic year at all (L126)', async () => {
+  api.years.mockResolvedValue([])
+  renderPage()
+  const empty = await screen.findByText('还没有学年记录')
+  const card = empty.closest('.rounded-xl') as HTMLElement
+  expect(within(card).getByText('学年')).toBeInTheDocument()
+  expect(within(card).queryByRole('status')).toBeNull()
+  expect(screen.queryByLabelText('学年名称')).toBeNull()
+})
+
 it('refreshes the grade list after creating a grade', async () => {
   api.createGrade.mockImplementation(async (b) => {
     grades = [...grades, { ...grade('g4', b.name, b.display_order, 0) }]
