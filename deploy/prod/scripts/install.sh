@@ -294,6 +294,11 @@ check_env_complete() {
     [ -n "$(read_env "$k")" ] \
       || die ".env 里的 $k 为空,.env 可能被损坏。不会重新生成密钥(会让已加密的数据永远无法解开);请从最近一次备份恢复 .env(备份包里的 env 文件)"
   done
+  # 失败即关(L167 / L177):WS_ENV 必须显式写 prod,WS_TRUSTED_PROXIES 为空时应用拒绝启动;它们不是密钥,照 .env.example 补上即可
+  for k in WS_ENV WS_TRUSTED_PROXIES; do
+    [ -n "$(read_env "$k")" ] \
+      || die ".env 里的 $k 为空;请参照 .env.example 补上(WS_ENV=prod;WS_TRUSTED_PROXIES 必须等于 docker-compose.yml 里 ws-net 的子网,例如 172.30.0.0/24)"
+  done
   case "$(read_env WS_DATABASE_URL)" in
     *workstation:@*|"") die ".env 里的 WS_DATABASE_URL 缺少数据库密码,.env 可能被损坏;请从最近一次备份恢复 .env" ;;
   esac

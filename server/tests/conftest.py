@@ -1,6 +1,13 @@
+import os
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+
+# Settings.env 默认已改为 prod(L167 失败即关):测试套件自己声明 dev 环境,
+# 让经 get_settings() 的测试(create_app() 无参、years_cli.run、scheduler、parent_archive 等)
+# 和本地没有 server/.env 时的 `uv run pytest` 都能跑。必须放在任何 `from app…` 导入之前
+# (get_settings 是 lru_cache,Settings() 读环境变量)。测"默认 prod"的用例自己 delenv。
+os.environ.setdefault("WS_ENV", "dev")
 
 import pytest
 from alembic import command
@@ -75,7 +82,11 @@ def db(engine: Engine) -> Iterator[Session]:
 @pytest.fixture
 def settings(pg_url: str, redis_url: str) -> Settings:
     return Settings(
-        _env_file=None, database_url=pg_url, redis_url=redis_url, jwt_secret=TEST_JWT_SECRET
+        _env_file=None,
+        env="dev",
+        database_url=pg_url,
+        redis_url=redis_url,
+        jwt_secret=TEST_JWT_SECRET,
     )
 
 

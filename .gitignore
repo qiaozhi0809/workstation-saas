@@ -41,9 +41,20 @@ logs/
 *.pem
 *.key
 .secrets/
+# 任何目录下的 .env / .env.*(install.sh 在部署目录生成真实密钥文件);示例文件仍跟踪
+.env
+.env.*
+!.env.example
+# 部署目录生成的备份包、证书与数据卷(deploy/prod/backups、deploy/prod/certs、deploy/prod/data)
+**/backups/
+**/certs/
+deploy/prod/data/
 
 # ---- Brainstorm mockups (local only) ----
 .superpowers/
+
+# ---- 并行段的 git worktree ----
+.worktrees/
 
 # 离线包构建产物(deploy/release/build-bundle.sh)
 /dist/
