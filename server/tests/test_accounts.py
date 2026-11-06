@@ -432,3 +432,20 @@ def test_role_tags_ignore_yearless_teacher_binding(client, settings, db):
     # 管理岗学年为空照旧显示
     p = client.get(ACCOUNTS, headers=_admin(settings), params={"q": "principal01"}).json()["items"]
     assert p[0]["roles"] == [{"role": "principal", "label": "校长"}]
+
+
+def test_admin_reset_kicks_socket(client, settings, db, redis_client):
+    import json
+
+    pubsub = redis_client.pubsub()
+    pubsub.subscribe("ws:events")
+    assert pubsub.get_message(timeout=2)["type"] == "subscribe"
+    uid = _user_id(db, "teacher02")
+    res = client.post(f"{ACCOUNTS}/{uid}/reset-password", headers=_admin(settings))
+    assert res.status_code == 200
+    seen = []
+    while (msg := pubsub.get_message(timeout=0.5)) is not None:
+        if msg["type"] == "message":
+            seen.append(json.loads(msg["data"]))
+    pubsub.close()
+    assert seen == [{"user_ids": [str(uid)], "event": {"type": "session.stale"}}]

@@ -685,3 +685,14 @@ def test_relink_archived_staff_account_not_reactivated(client, settings, db):
     res = _add(client, settings, S3, "13800000055")
     assert res.status_code == 409 and res.json()["error"]["code"] == "PHONE_TAKEN_INACTIVE"
     assert _user(db, "13800000055").status == "archived"
+
+
+def test_parent_reset_kicks_socket(client, settings, db, redis_client):
+    p = _add(client, settings, S3, "13800000056").json()["parent"]
+    pubsub = redis_client.pubsub()
+    pubsub.subscribe("ws:events")
+    assert pubsub.get_message(timeout=2)["type"] == "subscribe"
+    res = client.post(f"/api/v1/parent-links/{p['link_id']}/reset-password", headers=auth(settings))
+    assert res.status_code == 200
+    assert _drain(pubsub) == [{"user_ids": [p["user_id"]], "event": {"type": "session.stale"}}]
+    pubsub.close()

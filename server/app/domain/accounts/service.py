@@ -315,6 +315,7 @@ def reset_password(
     db.commit()
     sessions.revoke_all(redis, user.id)
     redis.delete(_fail_key(settings, user.login_name))
+    publish(redis, [user.id], {"type": "session.stale"})  # 已打开的页面立即用刷新令牌重连(L29)
     return temp
 
 
