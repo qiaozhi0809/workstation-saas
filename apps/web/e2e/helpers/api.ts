@@ -539,3 +539,166 @@ export async function deleteE2eGradeExams(
     expect(del.ok(), await del.text()).toBeTruthy()
   }
 }
+
+// ---------- M5c:作息 / 课表 / 摄像头(契约见 docs/superpowers/plans/2026-11-05-M5c-监控与课表.md) ----------
+
+/** 学校时区与学校"今天"(来自教室概况):E2E 据此算"现在"落在哪一节。 */
+export async function schoolClock(
+  request: APIRequestContext,
+  token: string,
+  classId: string,
+): Promise<{ today: string; timezone: string }> {
+  return adminGet<{ today: string; timezone: string }>(
+    request,
+    token,
+    `/classes/${classId}/classroom`,
+  )
+}
+
+export interface PeriodInput {
+  no: number
+  starts_at: string
+  ends_at: string
+}
+
+/** 整体替换学校作息(org.manage);被课表引用的节次不能删(409),先清课表。 */
+export async function putPeriods(
+  request: APIRequestContext,
+  token: string,
+  periods: PeriodInput[],
+): Promise<PeriodInput[]> {
+  const res = await request.put(`${API}/admin/periods`, {
+    headers: authHeaders(token),
+    data: { periods },
+  })
+  expect(res.ok(), await res.text()).toBeTruthy()
+  return (await res.json()) as PeriodInput[]
+}
+
+export interface TimetableCellInput {
+  weekday: number
+  period_no: number
+  subject: string
+  /** 省略 / null:后端按该班该科在任的任课老师自动匹配(唯一时) */
+  teacher_id?: string | null
+}
+export interface TimetableCellOut {
+  weekday: number
+  period_no: number
+  subject: string
+  teacher: { id: string; name: string } | null
+}
+export interface ClassTimetableOut {
+  class_id: string
+  class_name: string
+  cells: TimetableCellOut[]
+}
+
+/** 整班替换课表(org.manage),返回保存后的课表。 */
+export async function putTimetable(
+  request: APIRequestContext,
+  token: string,
+  classId: string,
+  cells: TimetableCellInput[],
+): Promise<ClassTimetableOut> {
+  const res = await request.put(`${API}/admin/classes/${classId}/timetable`, {
+    headers: authHeaders(token),
+    data: { cells },
+  })
+  expect(res.ok(), await res.text()).toBeTruthy()
+  return (await res.json()) as ClassTimetableOut
+}
+
+/** 课表格子原样带回成保存请求体(还原快照用)。 */
+export function timetableCellsToInput(cells: TimetableCellOut[]): TimetableCellInput[] {
+  return cells.map((c) => ({
+    weekday: c.weekday,
+    period_no: c.period_no,
+    subject: c.subject,
+    teacher_id: c.teacher?.id ?? null,
+  }))
+}
+
+export interface CameraInputBody {
+  name: string
+  class_id: string | null
+  location: '教室' | '走廊' | '操场' | '食堂' | '其他'
+  rtsp_url: string
+  enabled: boolean
+  transcode: boolean
+}
+export interface CameraRecord {
+  id: string
+  name: string
+  class_id: string | null
+  class_name: string | null
+  enabled: boolean
+  transcode: boolean
+  status: 'idle' | 'streaming' | 'error'
+  last_error: string | null
+}
+export interface CameraTestOutcome {
+  ok: boolean
+  message: string
+  preview_jpeg_base64: string | null
+  probe: {
+    video_codec: string | null
+    width: number | null
+    height: number | null
+    fps: number | null
+    bitrate_kbps: number | null
+    audio_codec: string | null
+    browser_playable: boolean
+    hint: string | null
+  } | null
+}
+
+/** 信息中心 / 校长登记一路摄像头(camera.manage;学校"监控"开关要先打开,否则 404)。 */
+export async function createCamera(
+  request: APIRequestContext,
+  token: string,
+  body: CameraInputBody,
+): Promise<CameraRecord> {
+  const res = await request.post(`${API}/admin/cameras`, {
+    headers: authHeaders(token),
+    data: body,
+  })
+  expect(res.status(), await res.text()).toBe(201)
+  return (await res.json()) as CameraRecord
+}
+
+/** 测试连接:后端把任务交给 stream worker,最多等 10 秒。 */
+export async function testCamera(
+  request: APIRequestContext,
+  token: string,
+  cameraId: string,
+): Promise<CameraTestOutcome> {
+  const res = await request.post(`${API}/admin/cameras/${cameraId}/test`, {
+    headers: authHeaders(token),
+    timeout: 30_000,
+  })
+  expect(res.ok(), await res.text()).toBeTruthy()
+  return (await res.json()) as CameraTestOutcome
+}
+
+export async function deleteCamera(
+  request: APIRequestContext,
+  token: string,
+  cameraId: string,
+): Promise<void> {
+  const res = await request.delete(`${API}/admin/cameras/${cameraId}`, {
+    headers: authHeaders(token),
+  })
+  expect([204, 404]).toContain(res.status())
+}
+
+/** 删除名字以 E2E 开头的摄像头(用例自建数据的兜底清理);开关关着时列表 404,当作没有可删的。 */
+export async function deleteE2eCameras(request: APIRequestContext, token: string): Promise<void> {
+  const res = await request.get(`${API}/admin/cameras`, { headers: authHeaders(token) })
+  if (res.status() === 404) return
+  expect(res.ok(), await res.text()).toBeTruthy()
+  const items = (await res.json()) as CameraRecord[]
+  for (const c of items.filter((x) => x.name.startsWith('E2E'))) {
+    await deleteCamera(request, token, c.id)
+  }
+}
