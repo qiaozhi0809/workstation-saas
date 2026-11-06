@@ -32,7 +32,7 @@ from app.ai.providers import provider_label
 from app.ai.requests import (
     Job,
     Resolved,
-    _check_perms,
+    check_perms,
     combined_prompt,
     effective_default,
     field_defaults,
@@ -244,7 +244,7 @@ def ai_chat_prompt(
 ) -> AiPrompt:
     chat = get_own_chat(db, user.id, chat_id)
     cls = get_class_or_404(db, chat.class_id)
-    _check_perms(db, request, user, bindings, cls, _chat_needs(chat))
+    check_perms(db, request, user, bindings, cls, _chat_needs(chat))
     cfg = load_ai_config(db, settings.school_id, settings.master_key_bytes)  # 可为 None
     effective = chat.mask or _mask_forced(cfg)
     masker = masker_for_school(db, cls.school_id, cls.id)
@@ -327,7 +327,7 @@ def ai_chat_reply(
 ) -> StreamingResponse:
     chat = get_own_chat(db, user.id, chat_id)
     cls = get_class_or_404(db, chat.class_id)
-    _check_perms(db, request, user, bindings, cls, _chat_needs(chat))
+    check_perms(db, request, user, bindings, cls, _chat_needs(chat))
     cfg = load_ai_config(db, settings.school_id, settings.master_key_bytes)
     if cfg is None or not is_ready(cfg):
         raise ApiError(409, "AI_NOT_CONFIGURED", "学校还没有配置 AI 服务")
@@ -398,7 +398,7 @@ def ai_chat_run_item(
     if item is None or item.chat_id != chat.id:
         raise ApiError(404, "NOT_FOUND", "条目不存在")
     cls = get_class_or_404(db, chat.class_id)
-    _check_perms(db, request, user, bindings, cls, _chat_needs(chat))
+    check_perms(db, request, user, bindings, cls, _chat_needs(chat))
     cfg = load_ai_config(db, settings.school_id, settings.master_key_bytes)
     if cfg is None or not is_ready(cfg):
         raise ApiError(409, "AI_NOT_CONFIGURED", "学校还没有配置 AI 服务")

@@ -52,7 +52,7 @@ from app.rbac.bindings import (
 )
 from app.rbac.roles import Perm, Role
 
-_STAGE_LABEL: dict[Stage, str] = {"primary": "小学", "junior": "初中", "senior": "高中"}
+STAGE_LABEL: dict[Stage, str] = {"primary": "小学", "junior": "初中", "senior": "高中"}
 # 本班最高身份:班主任 > 副班主任 > 任课老师
 _ROLE_LABEL = (
     (Role.homeroom_teacher, "班主任"),
@@ -116,7 +116,7 @@ def system_prompt(db: Session, user: User, bindings: Sequence[Binding], cls: Sch
     role = next((label for r, label in _ROLE_LABEL if has_role_in_class(bindings, cls.id, {r})), "")
     subjects = "、".join(subjects_in_class(bindings, cls.id))
     teaching = f"，任教{subjects}" if subjects else ""
-    stage = _STAGE_LABEL[stage_of(grade.name if grade else "")]
+    stage = STAGE_LABEL[stage_of(grade.name if grade else "")]
     school_name = school.name if school else ""
     return (
         f"{_SYSTEM_HEAD}当前老师：{user.display_name}，{school_name}{cls.name}{role}{teaching}"
@@ -127,7 +127,7 @@ def system_prompt(db: Session, user: User, bindings: Sequence[Binding], cls: Sch
 # ---------------------------------------------------------------- 取数
 
 
-def _visible_exams(db: Session, cls: SchoolClass, access: Access) -> list[Exam]:
+def visible_exams(db: Session, cls: SchoolClass, access: Access) -> list[Exam]:
     """本班调用者可见的考试,旧 → 新。"""
     exams = list(
         db.scalars(
@@ -201,7 +201,7 @@ def class_context(db: Session, cls: SchoolClass, access: Access, today: date) ->
     lines = [
         "【班级概况】",
         f"学校：{school.name if school else ''}；班级：{grade_name} {cls.name}；"
-        f"学段：{_STAGE_LABEL[stage_of(grade_name)]}；学年：{year.name if year else ''}{week}",
+        f"学段：{STAGE_LABEL[stage_of(grade_name)]}；学年：{year.name if year else ''}{week}",
         f"人数：{len(roster)}（男 {boys}，女 {girls}）",
     ]
     cadres = [f"{s.name}（{e.class_role}）" for e, s in roster if e.class_role]
@@ -222,7 +222,7 @@ def class_context(db: Session, cls: SchoolClass, access: Access, today: date) ->
 
 def _latest_exam_line(db: Session, cls: SchoolClass, access: Access) -> str:
     ids = [e.id for e in active_enrollments(db, cls.id)]
-    exams = _visible_exams(db, cls, access)
+    exams = visible_exams(db, cls, access)
     scores = _scores_of(db, exams, ids, access)
     ratios = get_grading(db, cls.school_id)
     for exam in reversed(exams):
@@ -336,7 +336,7 @@ def _student_exam_lines(db: Session, enrollment: Enrollment, access: Access) -> 
     ids = [e.id for e in active_enrollments(db, cls.id)]
     if enrollment.id not in ids:
         ids.append(enrollment.id)
-    exams = _visible_exams(db, cls, access)
+    exams = visible_exams(db, cls, access)
     scores = _scores_of(db, exams, ids, access)
     history: list[str] = []
     latest: tuple[Exam, list[SubjectFull]] | None = None
