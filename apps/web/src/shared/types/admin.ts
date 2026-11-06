@@ -533,7 +533,8 @@ export interface UpgradePlan {
 }
 export interface ClassPreview {
   from_name: string
-  action: 'promote' | 'graduate' | 'new' | string
+  /** 升级班沿用方案里的 promote / graduate,新建班是 new;后端只会给这三个值(L53) */
+  action: 'promote' | 'graduate' | 'new'
   to_label: string
   teacher_name: string | null
   follow: number

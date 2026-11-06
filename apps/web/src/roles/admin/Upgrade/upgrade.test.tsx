@@ -586,7 +586,7 @@ describe('errors from the backend', () => {
 })
 
 describe('preview (B-4)', () => {
-  it('renders each known action and falls back for an unknown one', async () => {
+  it('renders each of the three actions (the type admits no other, L53)', async () => {
     api.upgradePreview.mockResolvedValue(
       preview([
         cp({}),
@@ -607,7 +607,6 @@ describe('preview (B-4)', () => {
           leave: 0,
           repeat_in: 2,
         }),
-        cp({ from_name: '怪班', action: 'weird', to_label: '神秘去向' }),
       ]),
     )
     renderPage()
@@ -618,7 +617,6 @@ describe('preview (B-4)', () => {
     ).toBeInTheDocument()
     expect(screen.getByText(/六年一班 毕业.*毕业 40 人/)).toBeInTheDocument()
     expect(screen.getByText(/新建班 一年级 二班/)).toBeInTheDocument()
-    expect(screen.getByText(/神秘去向.*weird/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '执行升级' })).toBeInTheDocument()
   })
 
