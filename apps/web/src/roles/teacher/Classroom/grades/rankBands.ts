@@ -13,5 +13,5 @@ export const RANK_BANDS: readonly { tint: RankTint; label: string }[] = [
 
 /** 座位的读屏补充说明,如"名次档:前 20%"(名次档不进可访问名称,只进可访问描述) */
 export function rankBandDescription(tint: RankTint): string {
-  return `名次档：${RANK_BANDS[tint - 1].label}`
+  return `名次档：${RANK_BANDS.find((b) => b.tint === tint)!.label}`
 }
