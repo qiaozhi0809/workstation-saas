@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import delete, select
 
 from app import clock
-from app.auth import mfa, totp
+from app.auth import mfa, service, totp
 from app.crypto import CryptoError, decrypt, encrypt
 from app.domain.school_settings.schemas import SecuritySettings
 from app.domain.school_settings.service import SECURITY_KEY, save_security
@@ -233,7 +233,7 @@ def test_totp_failure_counted_before_verify(client, db, settings, redis_client, 
     """L142:先原子 INCR 再验证——校验验证码时计数已含本次;达到上限的请求不再验证,
     并发多个 mfa_token 也放大不了单个锁定窗口里的猜码次数。"""
     secret = _turn_on(db, settings)
-    key = f"ws:login_fail:{SCHOOL_ID}:teacher01"
+    key = service._fail_key(settings, "teacher01")
     seen: list[int] = []
     real_verify = totp.verify
 
@@ -272,7 +272,7 @@ def test_token_dies_after_five_tries_even_below_lock(client, db, settings, redis
 def test_password_step_does_not_reset_failure_counter(client, db, settings, redis_client):
     """防止"每次试 4 个码再用密码重置计数"的绕过。"""
     secret = _turn_on(db, settings)
-    key = f"ws:login_fail:{SCHOOL_ID}:teacher01"
+    key = service._fail_key(settings, "teacher01")
     token = _login(client).json()["mfa_token"]
     for _ in range(2):
         _second_step(client, token, _wrong_code(secret))
@@ -471,7 +471,7 @@ def test_disable_requires_password(client, db, settings, redis_client):
     h = _bearer(s["access_token"])
     bad = client.post(f"{API}/auth/totp/disable", headers=h, json={"password": "wrong"})
     assert (bad.status_code, bad.json()["error"]["code"]) == (400, "WRONG_PASSWORD")
-    assert int(redis_client.get(f"ws:login_fail:{SCHOOL_ID}:teacher01")) == 1
+    assert int(redis_client.get(service._fail_key(settings, "teacher01"))) == 1
     db.expire_all()
     assert db.get(User, UUID(TEACHER_USER_ID)).totp_enabled_at is not None
     ok = client.post(f"{API}/auth/totp/disable", headers=h, json={"password": "dev123"})
@@ -709,8 +709,8 @@ def _err(res):
     return res.status_code, res.json()["error"]["code"]
 
 
-def _fail_key():
-    return f"ws:login_fail:{SCHOOL_ID}:teacher01"
+def _fail_key(settings):
+    return service._fail_key(settings, "teacher01")
 
 
 def _pending_session(client, db):
@@ -730,7 +730,7 @@ def test_enable_requires_password(client, db, settings, redis_client):
     assert db.get(User, UUID(TEACHER_USER_ID)).totp_enabled_at is None
     r = client.post(f"{API}/auth/refresh", json={"refresh_token": other["refresh_token"]})
     assert r.status_code == 200
-    assert int(redis_client.get(_fail_key())) == 1
+    assert int(redis_client.get(_fail_key(settings))) == 1
 
 
 def test_enable_wrong_password_counts_failures(client, db, settings, redis_client):
@@ -741,7 +741,7 @@ def test_enable_wrong_password_counts_failures(client, db, settings, redis_clien
         assert _err(res) == (400, "WRONG_PASSWORD")
     res = _enable(client, h, s["refresh_token"], code, password="wrong")
     assert _err(res) == (400, "WRONG_PASSWORD")
-    assert int(redis_client.get(_fail_key())) == settings.login_max_failures
+    assert int(redis_client.get(_fail_key(settings))) == settings.login_max_failures
     res = _enable(client, h, s["refresh_token"], code, password="wrong")
     assert _err(res) == (429, "ACCOUNT_LOCKED") and "Retry-After" in res.headers
     res = _enable(client, h, s["refresh_token"], code)
@@ -756,17 +756,17 @@ def test_enable_right_password_wrong_code(client, db, settings, redis_client):
     assert _err(res) == (400, "TOTP_INVALID")
     db.expire_all()
     assert db.get(User, UUID(TEACHER_USER_ID)).totp_enabled_at is None
-    assert redis_client.get(_fail_key()) is None  # 码错不计入密码失败次数
+    assert redis_client.get(_fail_key(settings)) is None  # 码错不计入密码失败次数
 
 
 def test_enable_locked_checks_neither_password_nor_code(client, db, settings, redis_client):
     s, h, secret = _pending_session(client, db)
-    redis_client.set(_fail_key(), settings.login_max_failures, ex=60)
+    redis_client.set(_fail_key(settings), settings.login_max_failures, ex=60)
     for pw, code in (("dev123", pyotp.TOTP(secret).now()), ("wrong", "000000")):
         res = _enable(client, h, s["refresh_token"], code, password=pw)
         assert _err(res) == (429, "ACCOUNT_LOCKED") and "Retry-After" in res.headers
     # 被锁时没有再计数,待确认的 secret 也没被消耗
-    assert int(redis_client.get(_fail_key())) == settings.login_max_failures
+    assert int(redis_client.get(_fail_key(settings))) == settings.login_max_failures
     raw = redis_client.get(f"ws:totp:pending:{TEACHER_USER_ID}")
     assert decrypt(raw, settings.master_key_bytes, aad=f"totp-pending:{TEACHER_USER_ID}") == secret
 
@@ -801,10 +801,10 @@ def test_pending_secret_unreadable_is_setup_expired(client, db, settings, redis_
 def test_enable_success_clears_failures(client, db, settings, redis_client):
     s, h, secret = _pending_session(client, db)
     _enable(client, h, s["refresh_token"], pyotp.TOTP(secret).now(), password="wrong")
-    assert redis_client.get(_fail_key()) is not None
+    assert redis_client.get(_fail_key(settings)) is not None
     res = _enable(client, h, s["refresh_token"], pyotp.TOTP(secret).now())
     assert res.status_code == 200
-    assert redis_client.get(_fail_key()) is None
+    assert redis_client.get(_fail_key(settings)) is None
 
 
 @pytest.mark.parametrize("bad", ["", "12345", "1234567", "abcdef"])
@@ -851,7 +851,7 @@ def test_logged_in_errors_never_401(client, db, settings, redis_client):
     assert (wrong_pw.status_code, wrong_code.status_code) == (400, 400)
     dis = client.post(f"{API}/auth/totp/disable", headers=h, json={"password": "wrong"})
     assert _err(dis) == (400, "WRONG_PASSWORD")
-    assert int(redis_client.get(_fail_key())) == 2  # 密码错各计一次,没有重复计数
+    assert int(redis_client.get(_fail_key(settings))) == 2  # 密码错各计一次,没有重复计数
 
 
 def test_enable_then_disable_lock_shared(client, db, settings, redis_client):

@@ -120,6 +120,22 @@ def test_unknown_user_rows_capped_per_public_ip(client, db, redis_client, monkey
     assert [r.login_name for r in _rows(db)][-2:] == ["ghost99", "teacher01"]
 
 
+def test_unknown_user_ipv6_bucketed_by_64(client, db, redis_client):
+    """L145 修订:IPv6 一个用户常握有整个 /64,按单地址计数等于不限;
+    同 /64 共用额度,不同 /64 各算各的。"""
+    a, b = "2001:db8:1:2::10", "2001:db8:1:2:ffff::1"  # 同一 /64
+    for i in range(service.UNKNOWN_LOG_LIMIT):
+        assert _login(client, name=f"ghost{i:02d}", pw="x", ip=a).status_code == 401
+    assert _login(client, name="ghost99", pw="x", ip=b).status_code == 401
+    assert [r.login_name for r in _rows(db)][-1] == "ghost19"  # b 用光了 a 的额度
+    assert redis_client.keys("ws:login_unknown:*") == ["ws:login_unknown:2001:db8:1:2::/64"]
+    assert _login(client, name="ghost98", pw="x", ip="2001:db8:1:3::10").status_code == 401
+    assert [r.login_name for r in _rows(db)][-1] == "ghost98"  # 另一个 /64 有自己的额度
+    # IPv4 仍按单个地址
+    assert _login(client, name="ghost97", pw="x", ip="203.0.113.9").status_code == 401
+    assert redis_client.get("ws:login_unknown:203.0.113.9") == "1"
+
+
 def test_unknown_user_rows_not_capped_on_lan(client, db, redis_client):
     for i in range(service.UNKNOWN_LOG_LIMIT + 2):
         assert _login(client, name=f"ghost{i:02d}", pw="x", ip="192.168.1.20").status_code == 401

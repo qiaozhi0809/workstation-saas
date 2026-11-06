@@ -1,5 +1,6 @@
 import base64
 import binascii
+import hashlib
 import ipaddress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -128,7 +129,9 @@ class MfaChallengeResult:
 
 
 def _fail_key(settings: Settings, login_name: str) -> str:
-    return f"ws:login_fail:{settings.school_id}:{login_name}"
+    # 用户名框里误填的口令也会走到这里,键名只放摘要,原文不在 Redis 里躺 login_lock_seconds
+    digest = hashlib.sha256(login_name.encode()).hexdigest()[:32]
+    return f"ws:login_fail:{settings.school_id}:{digest}"
 
 
 # 用户不存在 / 已冻结时也跑一次同成本的 bcrypt 校验,抹平响应时间差
@@ -204,13 +207,16 @@ def _unknown_name(login_name: str) -> str:
 
 def _unknown_log_allowed(redis: Redis, settings: Settings, request: Request | None) -> bool:
     ip = _client_ip(request)
+    bucket = "unknown"  # 来源不明(非法对端地址)也按失败即关计入
     if ip is not None:
         addr = ipaddress.ip_address(ip)
         if is_lan_ip(ip, allow_loopback=settings.env == "dev") or any(
             addr in net for net in settings.trusted_networks
         ):
             return True
-    key = f"ws:login_unknown:{ip or 'unknown'}"  # 来源不明(非法对端地址)也按失败即关计入
+        # IPv6 一个用户常握有整个 /64,按单地址计数形同不限;IPv4 仍按单个地址
+        bucket = str(ipaddress.ip_network(f"{ip}/64", strict=False)) if addr.version == 6 else ip
+    key = f"ws:login_unknown:{bucket}"
     pipe = redis.pipeline(transaction=True)
     pipe.incr(key)
     pipe.expire(key, UNKNOWN_LOG_WINDOW, nx=True)
