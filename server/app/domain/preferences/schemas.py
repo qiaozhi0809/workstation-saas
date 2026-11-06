@@ -1,6 +1,10 @@
+from datetime import datetime
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+# 身份语境,与 auth/service.py::contexts_of 的取值一致
+Context = Literal["teacher", "parent", "admin"]
 
 
 class ReviewReason(BaseModel):
@@ -21,3 +25,6 @@ class Preferences(BaseModel):
     teacher_figure: Literal["female", "male"]
     idle_animation: bool
     review_reasons: Annotated[list[ReviewReason], Field(min_length=1, max_length=20)]
+    # 各语境首次引导完成的时间(R7)。GET 总是给完整对象(没看过的语境没有键);
+    # PUT 里不带 / null = 不动,给了就按键合并进去,键只能是调用者自己拥有的语境
+    onboarded: dict[Context, datetime] | None = None
