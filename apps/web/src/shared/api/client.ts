@@ -189,7 +189,7 @@ async function doMarkPasswordChangeRequired(): Promise<void> {
           .setUser(
             me.must_change_password
               ? me
-              : { ...me, must_change_password: true, password_change_reason: 'expired' },
+              : { ...me, must_change_password: true, password_change_reason: 'required' },
           )
         return
       }
@@ -201,5 +201,5 @@ async function doMarkPasswordChangeRequired(): Promise<void> {
   if (latest)
     useAuthStore
       .getState()
-      .setUser({ ...latest, must_change_password: true, password_change_reason: 'expired' })
+      .setUser({ ...latest, must_change_password: true, password_change_reason: 'required' })
 }

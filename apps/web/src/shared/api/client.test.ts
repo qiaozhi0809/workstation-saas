@@ -397,7 +397,8 @@ it('403 PASSWORD_CHANGE_REQUIRED marks user and routes to /change-password', asy
   expect(fetchMock).toHaveBeenCalledTimes(3)
 })
 
-it('403 PASSWORD_CHANGE_REQUIRED falls back to local flag when /auth/me fails', async () => {
+it('403 PASSWORD_CHANGE_REQUIRED falls back to a local flag with reason "required" when /auth/me fails', async () => {
+  // 取不到服务端的原因就不冒充"已过期":改密页对 'required' 显示中性文案
   const fetchMock = vi
     .fn()
     .mockResolvedValueOnce(err('PASSWORD_CHANGE_REQUIRED', 403))
@@ -406,7 +407,30 @@ it('403 PASSWORD_CHANGE_REQUIRED falls back to local flag when /auth/me fails', 
   await expect(api('GET', '/classes')).rejects.toMatchObject({ code: 'PASSWORD_CHANGE_REQUIRED' })
   expect(useAuthStore.getState().user).toMatchObject({
     must_change_password: true,
-    password_change_reason: 'expired',
+    password_change_reason: 'required',
+  })
+})
+
+it('403 PASSWORD_CHANGE_REQUIRED when /auth/me still says no change needed: flag locally as "required"', async () => {
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(err('PASSWORD_CHANGE_REQUIRED', 403))
+    .mockResolvedValueOnce(
+      json({
+        id: 'u',
+        display_name: 't2',
+        contexts: ['teacher'],
+        admin_perms: [],
+        must_change_password: false,
+        password_change_reason: null,
+      }),
+    )
+  vi.stubGlobal('fetch', fetchMock)
+  await expect(api('GET', '/classes')).rejects.toMatchObject({ code: 'PASSWORD_CHANGE_REQUIRED' })
+  expect(useAuthStore.getState().user).toMatchObject({
+    display_name: 't2',
+    must_change_password: true,
+    password_change_reason: 'required',
   })
 })
 
