@@ -19,6 +19,7 @@ import {
   studentTrend,
   subjectStats,
   trendDomain,
+  type Band,
   type Row,
 } from './grades'
 
@@ -319,8 +320,9 @@ describe('examStats', () => {
 })
 
 describe('scoreBands / trendDomain / rankTint', () => {
+  const D = DEFAULT_GRADING
   it('builds ten bands from the first non-empty one', () => {
-    expect(scoreBands([55, 65, 95, 100], 100).map((b) => [b.lo, b.count, b.tone])).toEqual([
+    expect(scoreBands([55, 65, 95, 100], 100, D).map((b) => [b.lo, b.count, b.tone])).toEqual([
       [50, 1, 'low'],
       [60, 1, 'mid'],
       [70, 0, 'mid'],
@@ -329,30 +331,48 @@ describe('scoreBands / trendDomain / rankTint', () => {
     ])
   })
   it('scales bands to the full mark and handles no data', () => {
-    const b = scoreBands([0, 300], 300)
+    const b = scoreBands([0, 300], 300, D)
     expect(b).toHaveLength(10)
     expect(b[0]).toMatchObject({ lo: 0, hi: 30, count: 1, tone: 'low' })
     expect(b[9]).toMatchObject({ lo: 270, hi: 300, count: 1, tone: 'good' })
-    expect(scoreBands([], 100)).toEqual([])
+    expect(scoreBands([], 100, D)).toEqual([])
   })
   it('bins non-round full marks exactly (full=112, total 67.2 is 60% => mid band)', () => {
-    const b = scoreBands([67.2], 112)
+    const b = scoreBands([67.2], 112, D)
     expect(b).toHaveLength(4)
     expect(b[0]).toMatchObject({ lo: 67.2, hi: 78.4, count: 1, tone: 'mid' })
   })
   it('bins full=93 total 55.8 into the 60% band', () => {
-    const b = scoreBands([55.8], 93)
+    const b = scoreBands([55.8], 93, D)
     expect(b[0]).toMatchObject({ lo: 55.8, count: 1 })
   })
   it('keeps lo/hi to at most one decimal', () => {
     for (const full of [93, 112, 120, 150, 7, 33]) {
-      for (const band of scoreBands([0, full / 3, full], full)) {
+      for (const band of scoreBands([0, full / 3, full], full, D)) {
         for (const v of [band.lo, band.hi]) expect(Math.round(v * 10) / 10).toBe(v)
       }
     }
   })
   it('returns no bands for a non-positive full mark', () => {
-    expect(scoreBands([5], 0)).toEqual([])
+    expect(scoreBands([5], 0, D)).toEqual([])
+  })
+  it('tones bands by the school ratios: low only when wholly below the pass line, good only when wholly at or above the good line', () => {
+    const tones = (r: Grading) => scoreBands([5, 95], 100, r).map((b) => b.tone)
+    const low = (n: number) => Array<Band['tone']>(n).fill('low')
+    // 默认 60% / 85%:0–60 低分,60–90 中间,90–100 优秀
+    expect(tones(D)).toEqual([...low(6), 'mid', 'mid', 'mid', 'good'])
+    // 70% / 80%:60–70 档整体在及格线下 → 低分;80–90 档整体在优秀线上 → 优秀
+    expect(tones({ pass_ratio: 0.7, good_ratio: 0.8 })).toEqual([...low(7), 'mid', 'good', 'good'])
+    // 65% / 95%:60–70 档跨及格线、90–100 档跨优秀线,都算中间
+    expect(tones({ pass_ratio: 0.65, good_ratio: 0.95 })).toEqual([
+      ...low(6),
+      'mid',
+      'mid',
+      'mid',
+      'mid',
+    ])
+    // 满分不是整十也按比例:93 分的 65% 线落在 60.45,55.8–65.1 档跨线 → 中间
+    expect(scoreBands([55.8], 93, { pass_ratio: 0.65, good_ratio: 0.9 })[0].tone).toBe('mid')
   })
   it('pads and rounds the trend domain to fives within 0–100', () => {
     expect(trendDomain([62, 91])).toEqual([55, 95])

@@ -190,7 +190,11 @@ export interface Band {
   tone: 'low' | 'mid' | 'good'
 }
 
-export function scoreBands(totals: number[], full: number): Band[] {
+/**
+ * 总分按满分十等分分档;ratios 是学校的及格 / 优秀比例(useGrading()):
+ * 一档整体低于及格线(上界 ≤ 及格比例)为 low,整体不低于优秀线(下界 ≥ 优秀比例)为 good,跨线的档为 mid。
+ */
+export function scoreBands(totals: number[], full: number, ratios: Grading): Band[] {
   if (!(full > 0)) return []
   const r1 = (x: number) => Math.round(x * 10) / 10
   const fullTenths = Math.round(full * 10)
@@ -200,14 +204,18 @@ export function scoreBands(totals: number[], full: number): Band[] {
     counts[Math.min(9, Math.max(0, Math.floor((Math.round(t * 10) * 10) / fullTenths)))] += 1
   const first = counts.findIndex((c) => c > 0)
   if (first < 0) return []
+  // 比例按整数百分比比较(比例本身只有两位小数),与档的 10% 边界同一尺度
+  const passPct = Math.round(ratios.pass_ratio * 100)
+  const goodPct = Math.round(ratios.good_ratio * 100)
   const bands: Band[] = []
   for (let i = first; i < 10; i++) {
-    // 十等分:lo = i/10 满分;< 60% 为 low,>= 85%(即最后一档)为 good
+    const loPct = i * 10
+    const hiPct = (i + 1) * 10
     bands.push({
       lo: r1((i * full) / 10),
       hi: r1(((i + 1) * full) / 10),
       count: counts[i],
-      tone: i < 6 ? 'low' : i >= 9 ? 'good' : 'mid',
+      tone: hiPct <= passPct ? 'low' : loPct >= goodPct ? 'good' : 'mid',
     })
   }
   return bands

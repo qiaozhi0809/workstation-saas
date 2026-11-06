@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { classesApi } from '@/shared/api/classes'
@@ -228,6 +228,35 @@ describe('AnalysisPage', () => {
     const rank = screen.getByRole('region', { name: '成绩排名' })
     const row = within(rank).getByRole('button', { name: '李小二' }).closest('tr') as HTMLElement
     expect(within(row).getAllByText('60')[0]).toHaveClass('text-destructive')
+  })
+
+  it('colours the total-score bands by the school ratios, not a fixed 60% / 90%', async () => {
+    // 总分 100 / 130 / 170(满分 200):落在 50–60%、60–70%、80–90% 三档(空档不画柱子)
+    const banded = exam('b1', '分段测验', '2026-10-01', {
+      e1: { 语文: 50, 数学: 50 },
+      e2: { 语文: 65, 数学: 65 },
+      e3: { 语文: 85, 数学: 85 },
+    })
+    const bandFills = () => {
+      const section = screen.getByText('总分分数段').closest('section') as HTMLElement
+      return Array.from(section.querySelectorAll('path.recharts-rectangle')).map((p) =>
+        p.getAttribute('fill'),
+      )
+    }
+    const LOW = 'hsl(var(--chart-4))'
+    const MID = 'hsl(var(--chart-1))'
+    const GOOD = 'hsl(var(--chart-3))'
+    const a = setup([banded])
+    await avgCard()
+    // 默认 60% / 85%:50–60% 不及格段;60–70% 及格段;80–90% 跨 85% 的优秀线,仍是及格段
+    expect(bandFills()).toEqual([LOW, MID, MID])
+    a.unmount()
+
+    vi.mocked(schoolApi.grading).mockResolvedValue({ pass_ratio: 0.7, good_ratio: 0.8 })
+    setup([banded])
+    await avgCard()
+    // 70% / 80%:60–70% 整档在及格线下 → 不及格段;80–90% 整档在优秀线上 → 优秀段
+    await waitFor(() => expect(bandFills()).toEqual([LOW, LOW, GOOD]))
   })
 })
 
