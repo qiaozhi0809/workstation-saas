@@ -61,6 +61,7 @@ main() {
   outdir="$(cd "$outdir" && pwd)"
   [ -f "$ENV_FILE" ] || die "当前目录没有 .env,看起来还没安装"
   require_cmd docker "请先安装 Docker Engine"
+  require_same_user
   cd "$DEPLOY_DIR"
 
   WORK="$(mktemp -d "${TMPDIR:-/tmp}/.ws-diag.XXXXXX")"

@@ -5,6 +5,11 @@
 # 即使调用者的环境里带了 xtrace 开关,也在这里关掉:xtrace 会把 .env 里的密钥打到终端或日志。
 set +x
 unset BASH_XTRACEFD
+# 镜像版本只认 .env 里的 WS_VERSION(L117):调用者 shell 里若碰巧导出了 WS_VERSION,compose 会优先用它,
+# 升级 / 恢复就可能起错版本的镜像。这里一进来就清掉;需要临时指定版本的地方(升级预检)按命令单独传。
+# WS_SUBNET 同理(compose 文件里 ${WS_SUBNET:-…} 也会先看环境变量):只认 .env;install.sh 首装时允许用它指定子网,
+# 它在 source 本文件之前已把值收进自己的变量。
+unset WS_VERSION WS_SUBNET
 
 # 部署目录 = 本文件所在目录(scripts/)的上一级
 DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -35,9 +40,15 @@ str_grep() {
   ( set +o pipefail; printf '%s\n' "$s" | grep "$@" )
 }
 
-# compose 项目名:默认 workstation;测试用 WS_COMPOSE_PROJECT 覆盖
+# compose 项目名:默认 workstation;测试用 WS_COMPOSE_PROJECT 覆盖。
+# 变量文件显式指定为部署目录的 .env(L117):不依赖 compose 按当前目录找 .env 的默认行为;.env 还没生成时(首次安装
+# 的前半段)不带该参数。调用者环境里按命令单独传的变量(如升级预检的 WS_VERSION)仍优先于 .env。
 compose() {
-  docker compose -p "${WS_COMPOSE_PROJECT:-workstation}" --project-directory "$DEPLOY_DIR" "$@"
+  if [ -f "$ENV_FILE" ]; then
+    docker compose -p "${WS_COMPOSE_PROJECT:-workstation}" --project-directory "$DEPLOY_DIR" --env-file "$ENV_FILE" "$@"
+  else
+    docker compose -p "${WS_COMPOSE_PROJECT:-workstation}" --project-directory "$DEPLOY_DIR" "$@"
+  fi
 }
 
 # sha256_of <文件>:优先 sha256sum,缺失时回退 shasum -a 256(macOS 本机测试用)
@@ -79,6 +90,23 @@ read_env() {
     \'*\') v="${v#\'}"; v="${v%\'}" ;;
   esac
   printf '%s\n' "$v"
+}
+
+# require_same_user(L183):备份 / 恢复 / 升级 / 回退 / 再次安装必须由"安装这套系统的用户"执行(以 .env 的属主为准)。
+# root(sudo)安装后普通用户再跑,会撞上 root 的锁目录与 600 文件,报出来的是"另一个备份正在进行"、".env 可能被损坏"
+# 这类让人摸不着头脑的错误;普通用户安装后用 sudo 跑,又会把新文件写成 root 的,下次普通用户写不了。这里直接说清楚。
+# 还没有 .env(首次安装)时不检查。
+require_same_user() {
+  local owner me name
+  [ -f "$ENV_FILE" ] || return 0
+  owner="$(stat -c %u "$ENV_FILE" 2>/dev/null || stat -f %u "$ENV_FILE" 2>/dev/null || true)"
+  me="$(id -u)"
+  [ -n "$owner" ] && [ "$owner" != "$me" ] || return 0
+  if [ "$owner" = "0" ]; then
+    die "该部署由 root 安装(.env 的属主是 root),请用 sudo 执行同一条命令(例如 sudo ./scripts/backup.sh)。备份、恢复、升级、回退都必须用同一个用户执行"
+  fi
+  name="$(id -un "$owner" 2>/dev/null || true)"
+  die "该部署由用户 ${name:-uid $owner} 安装(.env 的属主),请切换到该用户执行,不要用 sudo。备份、恢复、升级、回退都必须用同一个用户执行"
 }
 
 # 临时文件登记:脚本退出(含 Ctrl-C、被 kill)时由 lib_cleanup 统一删除,不留半成品。
@@ -150,24 +178,32 @@ release_lock() {
   return 0
 }
 
-# clean_stale_tmp:清理超过 1 天的备份 / 恢复 / 升级临时残留(被强行中断时留下的)
+# clean_stale_tmp:清理超过 1 天的备份 / 恢复 / 升级临时残留(被强行中断时留下的)。
+# 不碰 backups/.ws-upgrade-state(升级中断的记录,由 rollback.sh 或下一次成功升级清除,L190)与 backups/pre-upgrade-*(升级前快照)。
 clean_stale_tmp() {
   find "$DEPLOY_DIR/backups" -maxdepth 1 \( -name '.stage.*' -o -name '.ws-backup.*.partial' -o -name '.lock.stale.*' \) -mtime +1 -exec rm -rf {} + 2>/dev/null || true
   find "$DEPLOY_DIR" -maxdepth 1 \( -name '.ws-restore.*' -o -name '.ws-upgrade.*' \) -mtime +1 -exec rm -rf {} + 2>/dev/null || true
   return 0
 }
 
-# manifest_valid <文件>:manifest.json 必须是备份脚本写出的格式(逐行严格匹配);通过返回 0。
-# files 里键集合必须恰好是 db.dump、env、caddy.tar 各一次,值是 64 位十六进制,除最后一项外每项行尾有逗号。
+# manifest_valid <文件>:manifest.json 必须是备份脚本写出的格式(逐行严格匹配);通过返回 0。两种格式都认:
+#   * 1.0.0 之前:没有 caddy 行,files 恰好是 db.dump、env、caddy.tar 各一次;
+#   * 1.0.0 起:created_at 之后一行 "caddy": "included" 或 "skipped",files 为 db.dump、env、[caddy.tar]、config.tar,
+#     included 时必须有 caddy.tar,skipped 时必须没有。
+# 值是 64 位十六进制,除最后一项外每项行尾有逗号。
 manifest_valid() {
   awk '
-    BEGIN { st = 0; nf = 0; hex = ""; for (i = 0; i < 64; i++) hex = hex "[0-9a-f]"
-            re = "^    \"(db\\.dump|env|caddy\\.tar)\": \"" hex "\",?$" }
+    BEGIN { st = 0; nf = 0; caddy = ""; hex = ""; for (i = 0; i < 64; i++) hex = hex "[0-9a-f]"
+            re = "^    \"(db\\.dump|env|caddy\\.tar|config\\.tar)\": \"" hex "\",?$" }
     st == 0 { if ($0 == "{") { st = 1; next } else bad = 1 }
     st == 1 { if ($0 ~ /^  "version": "[A-Za-z0-9._-]+",$/) { st = 2; next } else bad = 1 }
     st == 2 { if ($0 ~ /^  "migration": "[0-9A-Za-z_]+",$/) { st = 3; next } else bad = 1 }
     st == 3 { if ($0 ~ /^  "created_at": "[0-9T:Z-]+",$/) { st = 4; next } else bad = 1 }
-    st == 4 { if ($0 == "  \"files\": {") { st = 5; next } else bad = 1 }
+    st == 4 {
+      if ($0 ~ /^  "caddy": "(included|skipped)",$/ && caddy == "") {
+        caddy = $0; sub(/^  "caddy": "/, "", caddy); sub(/",$/, "", caddy); next
+      } else if ($0 == "  \"files\": {") { st = 5; next } else bad = 1
+    }
     st == 5 {
       if ($0 ~ re) {
         nf++
@@ -181,11 +217,25 @@ manifest_valid() {
     st == 6 { if ($0 == "}") { st = 7; next } else bad = 1 }
     st == 7 { bad = 1 }
     END {
-      if (nf != 3) bad = 1
+      if (!seen["db.dump"] || !seen["env"]) bad = 1
+      if (caddy == "") {
+        if (nf != 3 || !seen["caddy.tar"] || seen["config.tar"]) bad = 1
+      } else {
+        if (!seen["config.tar"]) bad = 1
+        if (caddy == "included" && (nf != 4 || !seen["caddy.tar"])) bad = 1
+        if (caddy == "skipped" && (nf != 3 || seen["caddy.tar"])) bad = 1
+      }
       for (i = 1; i <= nf; i++) { if (i < nf && !comma[i]) bad = 1; if (i == nf && comma[i]) bad = 1 }
       exit (bad || st != 7) ? 1 : 0
     }
   ' "$1"
+}
+
+# manifest_caddy <文件>:输出 manifest 里的 caddy 字段(included / skipped);旧格式没有该字段时输出 included
+manifest_caddy() {
+  local v
+  v="$(sed -n -E 's/^  "caddy": "(included|skipped)",$/\1/p' "$1" | head -n 1)"
+  printf '%s\n' "${v:-included}"
 }
 
 # mask_shapes:标准输入 → 标准输出。按形状打码(不依赖已知密钥值):JWT、Bearer / Token 授权头、
@@ -204,14 +254,124 @@ mask_shapes() {
     -e 's/(^|[^0-9])(\+?86[- ]?)?1[3-9][0-9][- ]?[0-9]{4}[- ]?[0-9]{4}([^0-9]|$)/\11**********\3/g'
 }
 
-# check_disk:部署目录所在磁盘可用空间门槛(默认 20 GB;WS_INSTALL_MIN_DISK_GB 只在测试里下调)
+# disk_avail_kb <路径>:该路径所在文件系统的可用空间(KB)
+disk_avail_kb() { df -Pk "$1" | awk 'NR==2 {print $4}'; }
+
+# check_disk:安装 / 升级的磁盘门槛(默认 20 GB;WS_INSTALL_MIN_DISK_GB 只在测试里下调)。
+# 同时看两块盘(L199):部署目录所在盘(备份、数据)与 Docker 数据目录所在盘(镜像、容器日志,通常是 /var/lib/docker);
+# 两者在同一块盘时只查一次。docker 不可用时跳过后者。
 check_disk() {
-  local min_gb avail_kb
+  local min_gb avail_kb droot
   min_gb="${WS_INSTALL_MIN_DISK_GB:-20}"
-  avail_kb="$(df -Pk "$DEPLOY_DIR" | awk 'NR==2 {print $4}')"
+  avail_kb="$(disk_avail_kb "$DEPLOY_DIR")"
   if [ "$avail_kb" -lt $((min_gb * 1024 * 1024)) ]; then
     die "部署目录所在磁盘可用空间不足 ${min_gb} GB(当前约 $((avail_kb / 1024 / 1024)) GB)"
   fi
+  droot="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
+  if [ -n "$droot" ] && [ -d "$droot" ] && [ "$(df -Pk "$droot" | awk 'NR==2 {print $1}')" != "$(df -Pk "$DEPLOY_DIR" | awk 'NR==2 {print $1}')" ]; then
+    avail_kb="$(disk_avail_kb "$droot")"
+    if [ "$avail_kb" -lt $((min_gb * 1024 * 1024)) ]; then
+      die "Docker 数据目录 $droot 所在磁盘可用空间不足 ${min_gb} GB(当前约 $((avail_kb / 1024 / 1024)) GB):镜像与容器日志都放在这里。请删除不再需要的旧版本镜像(docker image rm workstation-app:<旧版本> workstation-web:<旧版本> workstation-stream:<旧版本>)或扩容"
+    fi
+  fi
+}
+
+# ---- IPv4 网段(L186 / L207):compose 子网的选择与 WS_TRUSTED_PROXIES 的比对。只处理 IPv4,非法输入返回 1 ----
+
+# ip4_to_int <a.b.c.d>:点分十进制 → 整数;不是合法 IPv4 返回 1
+ip4_to_int() {
+  local a b c d rest o
+  IFS=. read -r a b c d rest <<<"$1"
+  [ -z "$rest" ] || return 1
+  for o in "$a" "$b" "$c" "$d"; do
+    case "$o" in ''|*[!0-9]*) return 1 ;; esac
+    [ "${#o}" -le 3 ] && [ "$((10#$o))" -le 255 ] || return 1
+  done
+  printf '%s\n' $(( (10#$a << 24) + (10#$b << 16) + (10#$c << 8) + 10#$d ))
+}
+
+# cidr_range <网段或 IP>:输出 "起始 结束"(整数)。a.b.c.d/n(n 为 0-32);不带 /n 的单个地址按 /32;非法返回 1
+cidr_range() {
+  local ip bits n mask start
+  ip="${1%%/*}"
+  if [ "$ip" = "$1" ]; then bits=32; else bits="${1#*/}"; fi
+  case "$bits" in ''|*[!0-9]*) return 1 ;; esac
+  [ "${#bits}" -le 2 ] && [ "$((10#$bits))" -le 32 ] || return 1
+  bits=$((10#$bits))
+  n="$(ip4_to_int "$ip")" || return 1
+  if [ "$bits" -eq 0 ]; then mask=0; else mask=$(( (0xFFFFFFFF << (32 - bits)) & 0xFFFFFFFF )); fi
+  start=$(( n & mask ))
+  printf '%s %s\n' "$start" $(( start | (~mask & 0xFFFFFFFF) ))
+}
+
+# cidr_valid <网段>:形如 a.b.c.d/n,且是网络地址(主机位全 0),如 172.30.0.0/24
+cidr_valid() {
+  local r ip
+  case "$1" in */*) ;; *) return 1 ;; esac
+  r="$(cidr_range "$1")" || return 1
+  ip="$(ip4_to_int "${1%%/*}")" || return 1
+  [ "$ip" -eq "${r%% *}" ]
+}
+
+# cidr_overlap <A> <B>:两个网段(或地址)有交集返回 0;任一非法返回 1
+cidr_overlap() {
+  local ra rb
+  ra="$(cidr_range "$1")" || return 1
+  rb="$(cidr_range "$2")" || return 1
+  [ "${ra%% *}" -le "${rb##* }" ] && [ "${rb%% *}" -le "${ra##* }" ]
+}
+
+# cidr_contains <外> <内>:外网段完全包含内网段返回 0;任一非法返回 1
+cidr_contains() {
+  local ra rb
+  ra="$(cidr_range "$1")" || return 1
+  rb="$(cidr_range "$2")" || return 1
+  [ "${ra%% *}" -le "${rb%% *}" ] && [ "${rb##* }" -le "${ra##* }" ]
+}
+
+# host_routes:本机 IPv4 路由表里的目标网段(每行一个;default 等关键字跳过)。没有 ip 命令(非 Linux)时无输出
+host_routes() {
+  command -v ip >/dev/null 2>&1 || return 0
+  ip -4 route show 2>/dev/null | awk '$1 ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(\/[0-9]+)?$/ { print $1 }' | sort -u
+  return 0
+}
+
+# docker_subnets:本机全部 docker 网络的 IPv4 子网(每行一个);docker 不可用时无输出
+docker_subnets() {
+  local ids
+  ids="$(docker network ls -q 2>/dev/null | tr '\n' ' ')" || return 0
+  [ -n "${ids// /}" ] || return 0
+  # shellcheck disable=SC2086  # ids 是空格分隔的网络 id 列表,需要拆开
+  docker network inspect -f '{{range .IPAM.Config}}{{.Subnet}}{{"\n"}}{{end}}' $ids 2>/dev/null | grep -E '^[0-9]+\.' | sort -u
+  return 0
+}
+
+# compose_network_subnet:本项目 compose 网络(<项目名>_ws-net)当前的子网;网络不存在时输出空
+compose_network_subnet() {
+  docker network inspect -f '{{range .IPAM.Config}}{{.Subnet}}{{end}}' "${WS_COMPOSE_PROJECT:-workstation}_ws-net" 2>/dev/null || true
+}
+
+# first_overlap <子网> <网段列表(每行一个)>:输出列表里第一个与子网重叠的网段,没有则无输出
+first_overlap() {
+  local r
+  while IFS= read -r r; do
+    [ -n "$r" ] || continue
+    if cidr_overlap "$1" "$r"; then printf '%s\n' "$r"; return 0; fi
+  done <<<"$2"
+  return 0
+}
+
+# trusted_proxies_cover <逗号分隔的网段列表> <子网>:列表里有某一项完全包含该子网返回 0
+trusted_proxies_cover() {
+  local list="$1" subnet="$2" e
+  local -a entries=()
+  IFS=, read -ra entries <<<"$list"
+  for e in ${entries[@]+"${entries[@]}"}; do
+    e="${e//[[:space:]]/}"
+    [ -n "$e" ] || continue
+    if cidr_contains "$e" "$subnet"; then return 0; fi
+  done
+  return 1
 }
 
 # set_env <键> <值> [文件]:原地改 .env(键不存在则追加;默认改 $ENV_FILE),不打印值。
@@ -309,6 +469,71 @@ rand_secret() {
     out="$(printf '%s' "$out" | tr '+/' '-_')"
   fi
   printf '%s' "$out"
+}
+
+# render_systemd_unit <模板文件> <部署目录> <时区>:把模板里的 @DEPLOY_DIR@、@TZ@ 替换后输出到标准输出(L184)。
+# systemd 里 % 与 $ 有特殊含义,部署目录写进单元前转义(install 已拒绝含这些字符的目录,这里是双保险);
+# bash 5.2 的替换串里 & 也有特殊含义,先关掉 patsub_replacement。
+render_systemd_unit() {
+  local tpl="$1" dir="$2" tz="$3" content pct='%' dollar='$'
+  shopt -u patsub_replacement 2>/dev/null || true
+  dir="${dir//$pct/$pct$pct}"
+  dir="${dir//$dollar/$dollar$dollar}"
+  content="$(<"$tpl")"
+  content="${content//@DEPLOY_DIR@/$dir}"
+  printf '%s\n' "${content//@TZ@/$tz}"
+}
+
+# backup_timezone:定时备份用的时区 = .env 的 TZ(容器也用它),不合法或为空时 Asia/Shanghai。
+# 形状合法还不够:systemd 的 OnCalendar 只认 tzdata 里有的名字,写错(如 Asia/Shangai)定时器会整个加载失败;
+# 本机有 tzdata 时顺带核对,没有该文件就退回默认值并告警。
+backup_timezone() {
+  local tz
+  tz="$(read_env TZ)"
+  if ! str_grep "$tz" -Eq '^[A-Za-z][A-Za-z0-9_+/-]*$'; then printf 'Asia/Shanghai\n'; return 0; fi
+  if [ -d /usr/share/zoneinfo ] && [ ! -f "/usr/share/zoneinfo/$tz" ]; then
+    log_warn ".env 里的 TZ=$tz 在本机 tzdata(/usr/share/zoneinfo)里不存在,定时备份按 Asia/Shanghai 计;请核对 TZ 的拼写"
+    printf 'Asia/Shanghai\n'
+    return 0
+  fi
+  printf '%s\n' "$tz"
+}
+
+# ---- systemd 定时备份单元(install.sh 首装写入,upgrade.sh 成功后重写,L184 / I-1)----
+SYSTEMD_UNIT_DIR="/etc/systemd/system"
+# systemd_available:本机由 systemd 管理且有 systemctl
+systemd_available() { command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; }
+# backup_timer_installed_here:系统里已有 workstation-backup 定时器单元,且它指向的就是本部署目录
+#(同一台机器上另一个部署的单元不算;非 root 安装从来不写单元,所以普通用户执行时通常为假)
+backup_timer_installed_here() {
+  local svc="$SYSTEMD_UNIT_DIR/workstation-backup.service"
+  [ -f "$svc" ] && [ -f "$SYSTEMD_UNIT_DIR/workstation-backup.timer" ] || return 1
+  grep -qF -- "$DEPLOY_DIR/scripts/backup.sh" "$svc" 2>/dev/null
+}
+# write_backup_timer_units:把 systemd/ 下两份模板按本部署目录与 .env 的 TZ 渲染后写入系统目录,daemon-reload 并启用。
+# 任何一步失败返回非 0(调用者决定降级还是只告警)。需要 root。
+write_backup_timer_units() {
+  local unit tz
+  tz="$(backup_timezone)"
+  for unit in workstation-backup.service workstation-backup.timer; do
+    [ -f "$DEPLOY_DIR/systemd/$unit" ] || { log_warn "没有找到 systemd 单元文件 systemd/$unit"; return 1; }
+  done
+  for unit in workstation-backup.service workstation-backup.timer; do
+    render_systemd_unit "$DEPLOY_DIR/systemd/$unit" "$DEPLOY_DIR" "$tz" >"$SYSTEMD_UNIT_DIR/$unit" || return 1
+  done
+  systemctl daemon-reload || return 1
+  systemctl enable --now workstation-backup.timer || return 1
+}
+# refresh_backup_timer_if_installed:升级成功后调用。root + systemd + 本部署的单元已存在 → 用新模板与当前 TZ 重写
+#(1.0.0 之前写入的单元没有时区,02:30 按服务器的 UTC 计;单元模板本身也可能随版本变)。其他情况什么都不做。
+refresh_backup_timer_if_installed() {
+  [ "$(id -u)" -eq 0 ] && systemd_available && backup_timer_installed_here || return 0
+  if write_backup_timer_units; then
+    log_info "已按新版本的模板与 .env 的 TZ($(backup_timezone))重写 systemd 定时备份单元 workstation-backup.timer"
+  else
+    log_warn "systemd 定时备份单元重写失败(上面是原因)。请稍后执行 sudo ./scripts/install.sh 重新写入,否则定时器仍按旧单元运行"
+  fi
+  return 0
 }
 
 # 到另一个文件的原子替换:先写同目录临时文件再 mv,这样正在运行的脚本(自己被升级覆盖时)仍读旧 inode

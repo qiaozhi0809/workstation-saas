@@ -1,8 +1,9 @@
 [Unit]
-Description=教学工作台每日备份定时器(每天 02:30)
+Description=教学工作台每日备份定时器(每天 02:30,学校时区)
 
 [Timer]
-OnCalendar=*-*-* 02:30:00
+# 时区由 install.sh 按 .env 的 TZ 填入(默认 Asia/Shanghai):服务器系统时区常是 UTC,不带时区会变成上午上课时备份
+OnCalendar=*-*-* 02:30:00 @TZ@
 Persistent=true
 Unit=workstation-backup.service
 

@@ -5,10 +5,13 @@ set -euo pipefail
 # shellcheck source=_common.sh
 . "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
-echo "== 1/5 准备部署目录并安装(管理员密码经 WS_INSTALL_ADMIN_PASSWORD_FILE 传入)"
+echo "== 1/5 准备部署目录并安装(管理员密码经 WS_INSTALL_ADMIN_PASSWORD_FILE 传入;指定非默认子网 WS_SUBNET)"
 prepare_deploy_dir
 start_ps_sampler
 INSTALL_PW_MODE="file"
+# L186:用环境变量指定 compose 子网,安装后网络、.env 的 WS_SUBNET 与 WS_TRUSTED_PROXIES 都应是它(其他测试用默认的 172.30.0.0/24)
+TEST_SUBNET="10.250.0.0/24"
+export WS_SUBNET="$TEST_SUBNET"
 LOG="$TMP/install.log"
 rc=0
 run_install "$LOG" || rc=$?
@@ -50,6 +53,13 @@ cmp -s "$DEPLOY/Caddyfile" "$DEPLOY/Caddyfile.internal" || fail "Caddyfile 应�
 logs_mode="$(ls -ld "$DEPLOY/data/logs" | cut -c1-10)"
 [ "$logs_mode" = "drwxrwxrwt" ] || fail "data/logs 应为 1777(粘滞位),实际:$logs_mode"
 pass "目录齐全,Caddyfile 正确,data/logs 为 1777"
+# L186:子网落到 .env 两个键与真实网络上,且安装输出说明了用的是指定值
+[ "$(env_value WS_SUBNET)" = "$TEST_SUBNET" ] || fail ".env 的 WS_SUBNET 应为 $TEST_SUBNET,实际 $(env_value WS_SUBNET)"
+[ "$(env_value WS_TRUSTED_PROXIES)" = "$TEST_SUBNET" ] || fail ".env 的 WS_TRUSTED_PROXIES 应等于子网 $TEST_SUBNET,实际 $(env_value WS_TRUSTED_PROXIES)"
+subnets="$(docker network inspect "${PROJECT}_ws-net" -f '{{range .IPAM.Config}}{{.Subnet}} {{end}}')"
+case "$subnets" in *"$TEST_SUBNET"*) ;; *) fail "compose 网络子网应为 $TEST_SUBNET,实际:$subnets" ;; esac
+grep -q "WS_SUBNET.*$TEST_SUBNET" "$LOG" || fail "安装输出里没有说明子网来自 WS_SUBNET=$TEST_SUBNET"
+pass "WS_SUBNET=$TEST_SUBNET 生效:.env 两键一致、docker 网络子网一致"
 
 echo "== 3/5 服务与登录"
 assert_healthz
@@ -85,7 +95,34 @@ openssl x509 -noout -in "$DEPLOY/certs/ws-root-ca.crt" 2>/dev/null || fail "ws-r
 pass "已导出 Caddy 根证书"
 grep -q 'crontab' "$LOG" || fail "输出里没有 crontab 提示(测试以非 root 运行,应打印手动 crontab 行)"
 grep -q 'backup.sh' "$LOG" || fail "crontab 提示里没有 backup.sh"
-pass "输出了手动 crontab 提示"
+grep -q 'logger -t workstation-backup' "$LOG" || fail "crontab 提示应把日志交给 logger(L201),而不是无限追加到文件"
+grep -q 'CRON_TZ=Asia/Shanghai' "$LOG" || fail "crontab 提示里没有 CRON_TZ(L184)"
+grep -q '以后的备份、恢复、升级、回退请都用' "$LOG" || fail "安装结尾没有「以后所有脚本用同一用户」的提示(L183)"
+pass "输出了手动 crontab 提示(logger + CRON_TZ)与同一用户提示"
+# L184:systemd 定时器模板带时区占位,渲染后 OnCalendar 含学校时区;测试非 root,只验渲染函数(真机 systemd 行为见台账 L125)
+grep -q '^OnCalendar=\*-\*-\* 02:30:00 @TZ@$' "$DEPLOY/systemd/workstation-backup.timer" || fail "timer 模板里应有 OnCalendar=*-*-* 02:30:00 @TZ@"
+# shellcheck source=/dev/null
+rendered="$( . "$DEPLOY/scripts/lib.sh"; render_systemd_unit "$DEPLOY/systemd/workstation-backup.timer" "$DEPLOY" "$(backup_timezone)" )"
+grep -q '^OnCalendar=\*-\*-\* 02:30:00 Asia/Shanghai$' <<<"$rendered" || fail "渲染后的 timer 应含 OnCalendar=*-*-* 02:30:00 Asia/Shanghai,实际:$(grep OnCalendar <<<"$rendered")"
+grep -q '@TZ@' <<<"$rendered" && fail "渲染后的 timer 不应残留 @TZ@"
+# shellcheck source=/dev/null
+rendered="$( . "$DEPLOY/scripts/lib.sh"; render_systemd_unit "$DEPLOY/systemd/workstation-backup.service" "$DEPLOY" "Asia/Shanghai" )"
+grep -q "^WorkingDirectory=$DEPLOY$" <<<"$rendered" || fail "渲染后的 service 应含 WorkingDirectory=$DEPLOY"
+grep -q '@DEPLOY_DIR@' <<<"$rendered" && fail "渲染后的 service 不应残留 @DEPLOY_DIR@"
+pass "systemd 定时器渲染:OnCalendar 带时区 Asia/Shanghai,WorkingDirectory 为部署目录"
+# L187:每个容器的 stdout 日志都有大小上限
+for svc in postgres redis app scheduler stream-worker web; do
+  lc="$(docker inspect -f '{{.HostConfig.LogConfig.Type}} {{index .HostConfig.LogConfig.Config "max-size"}} {{index .HostConfig.LogConfig.Config "max-file"}}' "$(dc ps -q "$svc")")"
+  [ "$lc" = "json-file 10m 5" ] || fail "$svc 的日志配置应为 json-file max-size=10m max-file=5,实际:$lc"
+done
+pass "六个容器的 stdout 日志都限制为 10m × 5"
+# L157:/api/* 的请求体超过 4 MB 在 Caddy 就被 413 拒绝(不到应用);正常大小的请求不受影响(上面登录已证明)
+head -c 5242880 /dev/zero >"$TMP/big.bin"
+code="$(curl -ksS --max-time 30 -o /dev/null -w '%{http_code}' -X POST "https://localhost:$HTTPS_PORT/api/v1/auth/login" \
+  -H 'Content-Type: application/json' --data-binary @"$TMP/big.bin")" || fail "发送 5 MB 请求失败"
+rm -f "$TMP/big.bin"
+[ "$code" = "413" ] || fail "5 MB 请求体应被 Caddy 以 413 拒绝,实际 $code"
+pass "5 MB 请求体被 Caddy 以 413 拒绝"
 
 echo "== 5/5 密钥出口扫描(规则 15)"
 selftest_scanner

@@ -9,8 +9,14 @@ from typing import TextIO
 
 import structlog
 
+from app.deploy.diagnostics import mask_url
+
 FILE_LOGGER_NAME = "app.logfile"
 LOG_FILE_NAME = "app.jsonl"
+# uvicorn 自己用 dictConfig 给这几个 logger 装了 handler 且 propagate=False;
+# 接管后它们走 root → 本模块的 JSON 链
+_STDLIB_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access")
+_STDLIB_HANDLER_MARK = "_ws_stdlib_handler"
 
 
 class _Tee:
@@ -114,6 +120,54 @@ def _file_logger(log_dir: Path, retention_days: int, file_name: str) -> logging.
     return logger
 
 
+def _mask_stdlib_event(_logger: object, _name: str, event_dict: dict) -> dict:
+    """stdlib 记录(主要是 uvicorn 访问日志)落盘前对 URL 打码(L158):连接串里的密码,以及查询串里的
+    u= / sig= / token= 等值。只处理文本字段,其余保持原样。"""
+    for key in ("event", "exception"):
+        value = event_dict.get(key)
+        if isinstance(value, str):
+            event_dict[key] = mask_url(value)
+    return event_dict
+
+
+def _attach_stdlib(tee: _Tee, log_level: int) -> None:
+    """把 stdlib 的 root 与 uvicorn.* logger 接进同一条 JSON 链(L111)。
+
+    每条记录一行 JSON,带 logger 名、级别、UTC 时间戳,写到 stdout 与 app.jsonl(经同一个 _Tee)。
+    只替换本模块上次装的 handler,不碰别人的(如 pytest 的)。
+    app.logfile 这个 logger 不向 root 传播,文件 handler 不会把自己的输出再喂回来。
+    """
+    formatter = structlog.stdlib.ProcessorFormatter(
+        processors=[
+            structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+            structlog.processors.JSONRenderer(),
+        ],
+        foreign_pre_chain=[
+            structlog.stdlib.add_logger_name,
+            structlog.stdlib.add_log_level,
+            structlog.processors.TimeStamper(fmt="iso", utc=True),
+            structlog.processors.format_exc_info,
+            _mask_stdlib_event,
+        ],
+    )
+    handler = logging.StreamHandler(tee)
+    handler.setFormatter(formatter)
+    setattr(handler, _STDLIB_HANDLER_MARK, True)
+    root = logging.getLogger()
+    for h in list(root.handlers):
+        if getattr(h, _STDLIB_HANDLER_MARK, False):
+            root.removeHandler(h)
+            h.close()
+    root.addHandler(handler)
+    root.setLevel(log_level)
+    for name in _STDLIB_LOGGERS:
+        lg = logging.getLogger(name)
+        for h in list(lg.handlers):
+            lg.removeHandler(h)
+        lg.propagate = True
+        lg.setLevel(logging.NOTSET)
+
+
 def configure_logging(
     level: str,
     log_dir: Path | None = None,
@@ -122,7 +176,8 @@ def configure_logging(
 ) -> None:
     """Configure structlog to emit JSON lines to stdout (and app.jsonl if log_dir is given).
 
-    Safe to call repeatedly.
+    stdlib root 与 uvicorn.* 的记录也走同一条链(L111),uvicorn 访问日志里的查询串经 mask_url
+    打码(L158)。Safe to call repeatedly.
     """
     log_level = logging.getLevelNamesMapping().get(level.upper(), logging.INFO)
     file_logger: logging.Logger | None = None
@@ -132,6 +187,7 @@ def configure_logging(
     else:
         file_logger = _file_logger(log_dir, retention_days, file_name)
         file_failed = file_logger is None
+    tee = _Tee(sys.stdout, file_logger)
     structlog.configure(
         processors=[
             structlog.contextvars.merge_contextvars,
@@ -141,9 +197,10 @@ def configure_logging(
             structlog.processors.JSONRenderer(),
         ],
         wrapper_class=structlog.make_filtering_bound_logger(log_level),
-        logger_factory=structlog.PrintLoggerFactory(file=_Tee(sys.stdout, file_logger)),
+        logger_factory=structlog.PrintLoggerFactory(file=tee),
         cache_logger_on_first_use=False,
     )
+    _attach_stdlib(tee, log_level)
     if file_failed:
         structlog.get_logger().warning("log_dir_unavailable", log_dir=str(log_dir))
 

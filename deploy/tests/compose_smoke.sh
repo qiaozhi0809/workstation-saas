@@ -193,6 +193,12 @@ if grep -q '<div id="root">' "$TMP/404.body"; then
   fail "/api/* 的未知路径不应回落到前端首页"
 fi
 pass "/api/v1/no-such-route 返回 404 且不是前端首页"
+# L157:/api/* 请求体超过 4 MB 在 Caddy 就被 413 拒绝
+head -c 5242880 /dev/zero >"$TMP/big.bin"
+code="$(curl -ksS --max-time 30 -o /dev/null -w '%{http_code}' -X POST "$base/api/v1/auth/login" -H 'Content-Type: application/json' --data-binary @"$TMP/big.bin")" || fail "发送 5 MB 请求失败"
+rm -f "$TMP/big.bin"
+[ "$code" = "413" ] || fail "5 MB 请求体应被 Caddy 以 413 拒绝,实际 $code"
+pass "5 MB 请求体被 Caddy 以 413 拒绝"
 uid="$(compose exec -T app id -u | tr -d '\r\n')"
 [ "$uid" = "10001" ] || fail "app 容器 uid 应为 10001,实际为 $uid"
 pass "app 容器以 uid 10001 运行"
@@ -236,6 +242,12 @@ pass "app 健康检查启动宽限期为 300s(只覆盖 start_period,其余沿�
 web_health="$(docker inspect -f '{{.State.Health.Status}}' "$(compose ps -q web)")"
 [ "$web_health" = "healthy" ] || fail "web 应为 healthy,实际:$web_health"
 pass "web 为 healthy"
+# L187:每个容器的 stdout 日志都有大小上限(Ubuntu 的 Docker 默认不轮转)
+for svc in postgres redis app scheduler stream-worker web; do
+  lc="$(docker inspect -f '{{.HostConfig.LogConfig.Type}} {{index .HostConfig.LogConfig.Config "max-size"}} {{index .HostConfig.LogConfig.Config "max-file"}}' "$(compose ps -q "$svc")")"
+  [ "$lc" = "json-file 10m 5" ] || fail "$svc 的日志配置应为 json-file max-size=10m max-file=5,实际:$lc"
+done
+pass "六个容器的 stdout 日志都限制为 10m × 5"
 perm="$(ls -l "$TMP/.env" | cut -c1-10)"
 [ "$perm" = "-rw-------" ] || fail ".env 权限应为 600,实际:$perm"
 pass ".env 权限为 600"

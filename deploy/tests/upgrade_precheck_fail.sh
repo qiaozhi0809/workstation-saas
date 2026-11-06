@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # 升级预检不通过(Review Focus 2 / R11):必须退出 2、停在旧版本、旧服务继续可用、不覆盖任何文件。
-# 同时覆盖几类"在动任何东西之前就被拒绝"的离线包(路径穿越、符号链接、大版本、备份失败),
+# 同时覆盖几类"在动任何东西之前就被拒绝"的离线包(路径穿越、符号链接、大版本 0→2、备份失败),
+# 以及 0.x → 1.x 这唯一放行的大版本跳跃确实能通过版本检查(守卫 upgrade.sh 的放行逻辑),
 # 并用带不同版本号的包验证 WS_VERSION 覆盖确实让预检跑在新镜像上。
 set -euo pipefail
 # shellcheck source-path=SCRIPTDIR
@@ -92,8 +93,26 @@ expect_rejected "绝对路径包" "$TMP/evil-absolute.tar.gz" '不安全的路�
 [ ! -e /tmp/ws-evil-abs-marker ] || { rm -f /tmp/ws-evil-abs-marker; fail "绝对路径包写出了文件"; }
 build_evil_pkg "$TMP/evil-symlink.tar.gz" symlink
 expect_rejected "含符号链接的包" "$TMP/evil-symlink.tar.gz" '链接或特殊文件'
-build_pkg "$TMP/major.tar.gz" "1.0.0"
-expect_rejected "大版本升级包" "$TMP/major.tar.gz" '大版本升级'
+# 大版本跳跃:当前版本是 0.x($VERSION),0.x → 1.x 是 upgrade.sh 唯一放行的一跳(README 第 9 节),所以"被拒"要用 0 → 2
+build_pkg "$TMP/major.tar.gz" "2.0.0"
+expect_rejected "大版本升级包(0 → 2)" "$TMP/major.tar.gz" '大版本升级'
+# 0 → 1 放行的守卫:同样不带镜像的 1.0.0 包必须通过大版本检查、走到强制备份,再停在"缺少镜像"(WS_INSTALL_SKIP_LOAD=1 不 docker load)。
+# 没有这条,放行逻辑被误改回"一律拒绝"时 CI 不会发现,0.7.2 用户将无法升到 1.0.0。
+# 它不能复用 expect_rejected:版本检查之后、镜像检查之前有一次强制备份,backups/ 会多一个文件(整树哈希不含 backups/,仍应不变)。
+build_pkg "$TMP/major-ok.tar.gz" "1.0.0"
+rc=0
+( cd "$DEPLOY" && ./scripts/upgrade.sh "$TMP/major-ok.tar.gz" ) >"$TMP/reject.log" 2>&1 || rc=$?
+[ "$rc" -ne 0 ] && [ "$rc" -ne 2 ] || fail "0 → 1 包(无镜像):应在镜像检查处以非 0(非 2)停下,实际退出码 $rc"
+if grep -q '大版本升级' "$TMP/reject.log"; then tail -n 8 "$TMP/reject.log" >&2; fail "0 → 1 包被大版本检查拒绝了:upgrade.sh 应放行 0.x → 1.x"; fi
+grep -q '缺少镜像 workstation-app:1.0.0' "$TMP/reject.log" || { tail -n 8 "$TMP/reject.log" >&2; fail "0 → 1 包:输出里没有「缺少镜像 workstation-app:1.0.0」"; }
+grep -q '备份完成' "$TMP/reject.log" || fail "0 → 1 包:没有走到强制备份(版本检查之后的步骤没执行?)"
+[ "$(backups_n)" = "$((backups_before + 1))" ] || fail "0 → 1 包:强制备份应恰好多出一个备份文件,实际 $(backups_n)(之前 $backups_before)"
+[ "$(tree_hash)" = "$tree_before" ] || fail "0 → 1 包:部署目录被改动了(镜像检查失败不应覆盖任何文件)"
+[ "$(psql_scalar "SELECT version_num FROM alembic_version")" = "0001" ] || fail "0 → 1 包:数据库被动过"
+assert_no_residue
+assert_no_secrets "0 → 1 包的输出" "$TMP/reject.log"
+backups_before="$(backups_n)"   # 后续"拒绝前不做备份"的断言以此为基准
+pass "0 → 1 包(无镜像):通过大版本检查、完成强制备份、停在「缺少镜像」(退出码 $rc),部署目录整树哈希不变"
 # 备份失败即停:临时换成一个退出 1 的 backup.sh,测完换回
 cp -p "$DEPLOY/scripts/backup.sh" "$TMP/backup.sh.orig"
 printf '#!/usr/bin/env bash\nexit 1\n' >"$DEPLOY/scripts/backup.sh"
