@@ -17,6 +17,8 @@ export function useInbox() {
     queryFn: ({ pageParam }) => noticesApi.inbox(pageParam),
     initialPageParam: 1,
     getNextPageParam: (last, pages) => {
+      // 这里数的是"已翻过的位置数",故意不去重:取后页期间来了新通知,后页会把前页末尾的那条再给一次,
+      // 位置数仍与 total 对得上;若按去重后的条数比,会少 1 而多去拿一页空页。新来的那条靠刷新收件箱拿到。
       const loaded = pages.reduce((n, p) => n + p.items.length, 0)
       return last.items.length > 0 && loaded < last.total ? pages.length + 1 : undefined
     },

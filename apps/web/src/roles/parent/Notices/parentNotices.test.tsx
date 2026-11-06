@@ -309,6 +309,22 @@ it('loads the next inbox page from a 加载更多 button and keeps the badge on 
   expect(tab()).toHaveAccessibleName('通知 23 条未读')
 })
 
+it('a notice arriving between pages is not shown twice and does not trigger an extra empty page', async () => {
+  const all = Array.from({ length: 25 }, (_, i) => item({ id: `n${i + 1}`, title: `通知${i + 1}` }))
+  // 第 1 页取完后来了 n0:第 2 页按位置 21–26 给,开头是第 1 页末尾的 n20
+  vi.mocked(noticesApi.inbox).mockImplementation(async (page) =>
+    page === 1
+      ? { items: all.slice(0, 20), total: 25, unread: 23 }
+      : { items: [all[19]!, ...all.slice(20)], total: 26, unread: 24 },
+  )
+  renderAt()
+  fireEvent.click(await screen.findByRole('button', { name: '加载更多' }))
+  expect(await screen.findByText('通知25')).toBeInTheDocument()
+  expect(screen.getAllByText('通知20')).toHaveLength(1)
+  await waitFor(() => expect(screen.queryByRole('button', { name: '加载更多' })).toBeNull())
+  expect(noticesApi.inbox).toHaveBeenCalledTimes(2)
+})
+
 it('has no 加载更多 when the inbox fits in one page', async () => {
   vi.mocked(noticesApi.inbox).mockResolvedValue(inbox([item(), item({ id: 'n2', title: '班会' })]))
   renderAt()
