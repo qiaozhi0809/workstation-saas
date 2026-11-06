@@ -489,6 +489,17 @@ def apply(
         new_class_ids.append(cid)
     old_class_ids = list(ctx.class_names)
     db.execute(text("UPDATE classes SET active = false WHERE id = ANY(:cs)"), {"cs": old_class_ids})
+    # 教室摄像头跟着班级升入新班(L154);毕业班的不动。记下每一次改绑,回滚时按记录还原
+    camera_rebinds: list[list[str]] = []
+    for old_cid, new_cid in successor.items():
+        for r in db.execute(
+            text(
+                "UPDATE cameras SET class_id = :new WHERE class_id = :old AND school_id = :s"
+                " RETURNING id"
+            ),
+            {"new": new_cid, "old": old_cid, "s": school_id},
+        ):
+            camera_rebinds.append([str(r.id), str(old_cid), str(new_cid)])
 
     # 4. 注册记录
     exceptions = {s.enrollment_id: s for s in plan.students}
@@ -649,6 +660,32 @@ def apply(
                 db, teacher_user[teacher_id], role_of[identity], scope, new_year_id, now
             )
         )
+    # 课表随班升入新学年(L154):只复制升级班(新建班没有课表);任课老师只有在"保留任课老师"
+    # 且这位老师在新班仍有任职(任一身份)时才保留,否则置空。放在任职之后,因为要看 wanted_assignments
+    teachers_in_class: dict[UUID, set[UUID]] = {}
+    for teacher_id, cid, _identity, _subject in wanted_assignments:
+        teachers_in_class.setdefault(cid, set()).add(teacher_id)
+    for c in plan.classes:
+        if c.action != "promote":
+            continue
+        cid = successor[c.from_class_id]
+        keep = sorted(teachers_in_class.get(cid, set()), key=str) if c.keep_teachers else []
+        db.execute(
+            text(
+                "INSERT INTO timetable_entries"
+                " (class_id, academic_year_id, weekday, period_no, subject, teacher_id)"
+                " SELECT :new, :new_year, weekday, period_no, subject,"
+                " CASE WHEN teacher_id = ANY(cast(:keep as uuid[])) THEN teacher_id END"
+                " FROM timetable_entries WHERE class_id = :old AND academic_year_id = :old_year"
+            ),
+            {
+                "new": cid,
+                "new_year": new_year_id,
+                "keep": keep,
+                "old": c.from_class_id,
+                "old_year": old_year_id,
+            },
+        )
 
     # 6. 旧绑定结束;非班级作用域的(校级等)复制到新学年
     old_bindings = db.execute(
@@ -717,6 +754,7 @@ def apply(
         "new_binding_ids": s(new_binding_ids),
         "old_binding_ids": s(old_binding_ids),
         "parent_links_readonly": s(parent_links_readonly),
+        "camera_rebinds": camera_rebinds,  # [[camera_id, 旧班, 新班], …]
         "counts": counts,
     }
     up = YearUpgrade(
@@ -922,7 +960,14 @@ def rollback(
     delete("role_bindings", _uuids(sm["new_binding_ids"]))
     delete("teacher_assignments", _uuids(sm["new_assignment_ids"]))
     delete("enrollments", new_enrollments)
-    delete("classes", new_classes)  # class_boards 随级联删除
+    # 摄像头回旧班(L154):只还原仍指向新班的;升级后被人手动改绑的不动。必须在删新班之前,
+    # 否则外键 ON DELETE SET NULL 先把 class_id 清空,就认不出来了。旧升级记录没有这个键
+    for cam_id, old_cid, new_cid in sm.get("camera_rebinds", []):
+        db.execute(
+            text("UPDATE cameras SET class_id = :old WHERE id = :cam AND class_id = :new"),
+            {"old": UUID(old_cid), "cam": UUID(cam_id), "new": UUID(new_cid)},
+        )
+    delete("classes", new_classes)  # class_boards、复制的课表随级联删除
     delete("grades", _uuids(sm["new_grade_ids"]))
     # 新学年若是更早一次已回滚升级的 from_year,先清掉那些行(审计日志仍留有记录)
     db.execute(
