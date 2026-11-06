@@ -59,7 +59,7 @@ const MESSAGES: Partial<Record<PlayState, { role: 'status' | 'alert'; text: stri
   // 片段下载得到、解码器却建不起来:多半是 H.265 主码流,和"连不上"分开说,信息中心才知道该改什么
   codec: {
     role: 'alert',
-    text: '这路摄像头的视频编码浏览器不支持（多为 H.265）：请让信息中心改用 H.264 子码流或开启转码',
+    text: '这路摄像头的视频编码浏览器不支持(多为 H.265):请让信息中心改用 H.264 子码流或开启转码',
   },
 }
 

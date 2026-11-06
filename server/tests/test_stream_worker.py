@@ -445,7 +445,7 @@ def _start_numbers(tmp_path: Path) -> list[int]:
 
 
 def test_start_number_increases_across_restarts(db, redis_url, fake_ffmpeg, hls_root, tmp_path):
-    """每次重启按墙上秒数起编:序列号只增不减、不与上一轮重叠,且不超过片段白名单的 8 位。"""
+    """每次重启按墙上秒数起编:序列号只增不减、不与上一轮重叠;7 位起编,离白名单的 8 位还有余量。"""
     cam = make_camera(db, "rtsp://10.0.0.5/fail")
 
     async def body(redis):
@@ -459,8 +459,8 @@ def test_start_number_increases_across_restarts(db, redis_url, fake_ffmpeg, hls_
         await settle(lambda: len(calls(tmp_path)) == 2)
         first, second = _start_numbers(tmp_path)
         assert second >= first
-        assert 0 <= first <= 99_999_999 and 0 <= second <= 99_999_999
-        assert abs(first - int(time.time()) % 10**8) < 60  # 来源是墙上秒数(mod 1e8)
+        assert 0 <= first <= 9_999_999 and 0 <= second <= 9_999_999  # 7 位起编,给 8 位白名单留余量
+        assert abs(first - int(time.time()) % 10**7) < 60  # 来源是墙上秒数(mod 1e7)
         assert st.start_number == second
         await sup.shutdown()
 
@@ -527,6 +527,55 @@ def test_no_stall_while_fresh(db, redis_url, fake_ffmpeg, hls_root, tmp_path):
         await sup.tick(601)
         assert st.proc is proc and proc.returncode is None and st.status == "streaming"
         assert len(calls(tmp_path)) == 1
+        await sup.shutdown()
+
+    run_async(redis_url, body)
+
+
+def test_stall_threshold_follows_target_duration(
+    db, redis_url, fake_ffmpeg, hls_root, tmp_path, caplog
+):
+    """copy 模式下播放列表更新周期 = 摄像头 GOP:阈值 = max(30, 3 × TARGETDURATION),不误杀长 GOP。"""
+    caplog.set_level(logging.WARNING, logger="app.stream")
+    cam = make_camera(db)
+
+    def age(index: Path, seconds: float) -> None:
+        old = time.time() - seconds
+        os.utime(index, (old, old))
+
+    async def body(redis):
+        sup = make_supervisor(db, redis, fake_ffmpeg, hls_root)
+        await want(redis, cam)
+        await sup.tick(1)
+        index = hls_root / str(cam.id) / "index.m3u8"
+        await settle(index.exists)
+        await sup.tick(2)
+        st = sup._streams[cam.id]
+        proc = st.proc
+        # 关键帧间隔 20 秒的摄像头:ffmpeg 写出 TARGETDURATION:20,阈值 60 秒
+        index.write_text(
+            "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:20\n#EXTINF:20.0,\nseg-0.ts\n"
+        )
+        age(index, 45)
+        await sup.tick(3)
+        assert st.proc is proc and proc.returncode is None and st.status == "streaming"
+        assert "stream stalled" not in caplog.text
+        age(index, 61)
+        await sup.tick(4)
+        assert proc.returncode is not None and st.proc is None and st.status == "error"
+        assert "停止更新" in st.last_error
+        # 首次判定时 warning 里写出观测到的停更秒数与阈值
+        assert "stream stalled" in caplog.text
+        assert "playlist_age=61s" in caplog.text and "threshold=60s" in caplog.text
+        # 短 GOP 不会把阈值压到 30 秒以下;播放列表不见了也算停更
+        index.parent.mkdir(exist_ok=True)
+        index.write_text("#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXTINF:2.0,\nseg-0.ts\n")
+        age(index, 25)
+        assert sup._stalled(cam.id) is None
+        age(index, 31)
+        assert sup._stalled(cam.id) == (pytest.approx(31, abs=2), 30)
+        index.unlink()
+        assert sup._stalled(cam.id) == (None, 30)
         await sup.shutdown()
 
     run_async(redis_url, body)
@@ -791,6 +840,27 @@ def test_probe_failure_keeps_grab_result(
 
     run_async(redis_url, body)
     assert PASSWORD not in caplog.text and USER not in caplog.text
+
+
+def test_probe_unexpected_exception_keeps_grab_result(
+    db, redis_url, fake_ffmpeg, fake_ffprobe, monkeypatch, caplog
+):
+    """ffprobe 分支里冒出没预料到的异常:probe 为 null、截图结果照常,不能变成"测试失败"。"""
+    caplog.set_level(logging.WARNING, logger="app.stream")
+
+    def boom(_data):
+        raise RuntimeError("unexpected")
+
+    monkeypatch.setattr(probe, "parse_ffprobe", boom)
+    cam = make_camera(db, "rtsp://10.0.0.5/hevc")
+
+    async def body(redis):
+        r, _ = await _ask(redis, db, cam, fake_ffmpeg)
+        assert r["ok"] is True and r["message"] == "连接成功" and r["probe"] is None
+        assert base64.b64decode(r["preview_jpeg_base64"]).startswith(b"\xff\xd8")
+
+    run_async(redis_url, body)
+    assert "ffprobe crashed: RuntimeError" in caplog.text
 
 
 # ---------------- 真 ffmpeg 组 ----------------

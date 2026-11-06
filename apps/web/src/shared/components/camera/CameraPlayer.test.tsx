@@ -153,7 +153,7 @@ describe('CameraPlayer', () => {
       act(() => hls().emit('hlsFragLoaded'))
       act(() => hls().emit('hlsError', { type: 'mediaError', details, fatal: true }))
       expect(screen.getByRole('alert')).toHaveTextContent(
-        '这路摄像头的视频编码浏览器不支持（多为 H.265）：请让信息中心改用 H.264 子码流或开启转码',
+        '这路摄像头的视频编码浏览器不支持(多为 H.265):请让信息中心改用 H.264 子码流或开启转码',
       )
       expect(screen.queryByText('摄像头连不上')).toBeNull()
       expect(hls().destroy).toHaveBeenCalled()

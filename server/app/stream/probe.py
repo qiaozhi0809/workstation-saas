@@ -23,14 +23,14 @@ FFPROBE_TIMEOUT = 6.0  # 与截图并行;超时只丢编解码信息
 # 浏览器(MSE)普遍只解 H.264;H.265 只有少数机器有硬解。海康 / 大华主码流默认 H.265,
 # copy 模式下 ffmpeg 能出 HLS、截图也成功,但浏览器放不了——测试连接时就要说清楚
 HINT_HEVC = (
-    "该摄像头是 H.265（HEVC）编码，大多数电脑浏览器不能直接播放："
-    "请改用摄像头的 H.264 子码流（海康 /Streaming/Channels/102，大华 subtype=1），"
-    '或勾选"转码"（每路约占 1 核 CPU）'
+    "该摄像头是 H.265(HEVC)编码,大多数电脑浏览器不能直接播放:"
+    "请改用摄像头的 H.264 子码流(海康 /Streaming/Channels/102,大华 subtype=1),"
+    "或勾选转码(每路约占 1 核 CPU)"
 )
 HINT_HEVC_TRANSCODED = (
-    "H.265 源已勾选转码，浏览器可以播放；每路转码约占 1 核 CPU，建议改用 H.264 子码流以省资源"
+    "H.265 源已勾选转码,浏览器可以播放;每路转码约占 1 核 CPU,建议改用 H.264 子码流以省资源"
 )
-HINT_OTHER = '视频编码 {codec} 浏览器不支持，请勾选"转码"或改用 H.264 码流'
+HINT_OTHER = "视频编码 {codec} 浏览器不支持,请勾选转码或改用 H.264 码流"
 
 
 def browser_playable(video_codec: str | None, transcode: bool) -> bool:
@@ -148,6 +148,17 @@ def parse_ffprobe(data: object) -> dict | None:
 
 
 async def _ffprobe(ffprobe_bin: str, url: str, secrets: tuple[str, ...]) -> dict | None:
+    """ffprobe 只是补充信息:任何异常都吞成 None,不能把截图成功的结果拖成"测试失败"。"""
+    try:
+        return await _ffprobe_unguarded(ffprobe_bin, url, secrets)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        log.warning("ffprobe crashed: %s", type(exc).__name__)
+        return None
+
+
+async def _ffprobe_unguarded(ffprobe_bin: str, url: str, secrets: tuple[str, ...]) -> dict | None:
     """失败、超时、输出不是 JSON、找不到可执行文件都返回 None——只少编解码信息,不影响截图。"""
     try:
         run = await _exec(ffprobe_bin, ffmpeg.ffprobe_args(url), FFPROBE_TIMEOUT)

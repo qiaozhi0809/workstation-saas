@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import re
 import shutil
 import signal
 import time
@@ -27,14 +28,21 @@ BACKOFF = (5, 10, 30, 60)  # 同一路连续失败后的重启间隔(秒)
 STABLE_AFTER = 30  # 持续运行超过这么久再退出,算一次新的失败,退避重新从 5 秒开始
 TERM_WAIT = 3.0  # SIGTERM 后等这么久,仍不退出则 SIGKILL
 STDERR_KEEP = 5
-# 看门狗:ffmpeg 每 2 秒写一次播放列表;进程还在但播放列表超过这么久没更新(摄像头掉线、RTSP 读挂住),
-# 就当失败处理并重连。比较的是文件 mtime 与墙上时间,不用 tick 的单调时钟
-STALL_SECONDS = 15
-STALL_MESSAGE = "画面停止更新，正在重连"
-# 片段序列号从墙上秒数起编(mod 1e8,不超过后端片段白名单 ^seg-\d{1,8}\.ts$ 的 8 位)。
-# 两次启动至少隔一个退避周期,期间每 2 秒最多产出 1 个片段,所以新序列号总比上一轮用过的都大:
-# 正在看的 hls.js 看到的是序列号前跳 + 首段 #EXT-X-DISCONTINUITY,而不是回退到 0
-START_NUMBER_MOD = 10**8
+# 看门狗:进程还在但播放列表很久没更新(摄像头掉线、RTSP 读挂住)就当失败处理并重连。
+# copy 模式只能在关键帧处切片,index.m3u8 的 mtime 步进周期 = 摄像头的 GOP(智能编码的静态画面下
+# 可达 10–15 秒,手动设置更长),所以阈值自适应:max(STALL_SECONDS, 3 × #EXT-X-TARGETDURATION)。
+# 比较的是文件 mtime 与墙上时间,不用 tick 的单调时钟
+STALL_SECONDS = 30  # 下限;播放列表里读不到 TARGETDURATION 时就用它
+STALL_TARGET_MULTIPLE = 3
+STALL_MESSAGE = "画面停止更新,正在重连"
+_TARGET_DURATION_RE = re.compile(r"^#EXT-X-TARGETDURATION:(\d+)", re.MULTILINE)
+# 片段序列号从墙上秒数起编,mod 1e7:后端片段白名单是 ^seg-\d{1,8}\.ts$,7 位起编给跑到 8 位留
+# 10 倍余量(回绕前启动的流继续往上编,9e7 个片段 ≈ 5.7 年也到不了 9 位)。每 2 秒最多产出 1 个片段,
+# 新一轮的起始号 = 启动秒数 ≥ 上一轮起始号 + 上一轮时长 / 2 ≥ 上一轮用过的最大序列号,所以不论是退避
+# 重启还是 reload / stop 后立刻重起,序列号都单调不减:正在看的 hls.js 看到的是序列号前跳 + 首段
+# #EXT-X-DISCONTINUITY,而不是回退到 0。例外是 116 天一次的回绕(下一次 epoch 1 800 000 000,
+# 2027-01-15 08:00 UTC),那一刻之后的重启序列号会回退一次,由 discont_start 兜底
+START_NUMBER_MOD = 10**7
 
 
 @dataclass
@@ -123,8 +131,8 @@ class Supervisor:
                     if st.status != "streaming" and (self._out_dir(cid) / "index.m3u8").exists():
                         st.status, st.last_error = "streaming", ""
                         await self._write_state(cid, st)
-                    elif st.status == "streaming" and self._stalled(cid):
-                        await self._restart_stalled(cid, st, now)
+                    elif st.status == "streaming" and (stall := self._stalled(cid)) is not None:
+                        await self._restart_stalled(cid, st, now, *stall)
                 elif now >= st.next_retry_at:
                     await self._launch(cid, st, now)
             except Exception as exc:  # 一路出错不能拖住后面的摄像头
@@ -205,16 +213,29 @@ class Supervisor:
         message = st.stderr[-1] if st.stderr else f"ffmpeg 退出,代码 {st.proc.returncode}"  # type: ignore[union-attr]
         await self._fail(cid, st, now, message)
 
-    def _stalled(self, cid: UUID) -> bool:
-        """进程还在、状态是 streaming,但播放列表很久没更新(或不见了)。"""
+    def _stalled(self, cid: UUID) -> tuple[float | None, float] | None:
+        """播放列表停更了就返回 (停更秒数, 阈值);没停更返回 None;文件不见了算停更,秒数为 None。"""
+        index = self._out_dir(cid) / "index.m3u8"
         try:
-            mtime = (self._out_dir(cid) / "index.m3u8").stat().st_mtime
+            age = time.time() - index.stat().st_mtime
+            text = index.read_text(encoding="utf-8", errors="replace")
         except OSError:
-            return True
-        return time.time() - mtime > STALL_SECONDS
+            return None, STALL_SECONDS
+        found = _TARGET_DURATION_RE.search(text)
+        threshold = STALL_SECONDS
+        if found:
+            threshold = max(STALL_SECONDS, STALL_TARGET_MULTIPLE * int(found.group(1)))
+        return (age, threshold) if age > threshold else None
 
-    async def _restart_stalled(self, cid: UUID, st: _Stream, now: float) -> None:
-        log.warning("stream stalled camera=%s", cid)
+    async def _restart_stalled(
+        self, cid: UUID, st: _Stream, now: float, age: float | None, threshold: float
+    ) -> None:
+        log.warning(
+            "stream stalled camera=%s playlist_age=%s threshold=%.0fs",
+            cid,
+            "missing" if age is None else f"{age:.0f}s",
+            threshold,
+        )
         assert st.proc is not None
         await self._terminate(st.proc)
         await self._drain_reader(st)
