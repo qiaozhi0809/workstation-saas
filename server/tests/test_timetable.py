@@ -220,6 +220,32 @@ def test_subject_taught_by_active_teacher_allowed(client, settings, db):
     assert res.status_code == 400 and "信息技术" in res.json()["error"]["message"]
 
 
+def test_unassigned_teacher_error_points_at_cell(client, settings, db):
+    """L211:整班保存时某格老师已卸任 → 400 的 details 带 {weekday, period_no, teacher},
+    message 指出哪一格;整批不写。"""
+    _seed_periods(db)
+    db.execute(
+        text("UPDATE teacher_assignments SET ended_at = now() WHERE teacher_id = :t"),
+        {"t": T_MATH},
+    )
+    cells = [
+        {"weekday": 1, "period_no": 1, "subject": "语文", "teacher_id": T_HOME},
+        {"weekday": 3, "period_no": 2, "subject": "数学", "teacher_id": T_MATH},
+    ]
+    res = _put_tt(client, settings, cells)
+    assert res.status_code == 400, res.text
+    err = res.json()["error"]
+    assert err["code"] == "BAD_REQUEST"
+    assert err["details"] == {"weekday": 3, "period_no": 2, "teacher": "赵老师"}
+    assert "星期三" in err["message"] and "第 2 节" in err["message"] and "赵老师" in err["message"]
+    assert db.scalar(select(func.count()).select_from(TimetableEntry)) == 0
+    # 不存在的 teacher_id:teacher 退回 id 字符串
+    ghost = str(uuid4())
+    cell = {"weekday": 1, "period_no": 1, "subject": "语文", "teacher_id": ghost}
+    res = _put_tt(client, settings, [cell])
+    assert res.json()["error"]["details"] == {"weekday": 1, "period_no": 1, "teacher": ghost}
+
+
 def test_permissions(client, settings, db):
     other = make_class(db, "三年九班")
     homeroom_other = make_teacher_account(db, SCHOOL_ID, "home_other")

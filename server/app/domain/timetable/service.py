@@ -173,14 +173,30 @@ def defined_period_nos(db: Session, school_id: UUID) -> set[int]:
     return set(db.scalars(select(PeriodRow.no).where(PeriodRow.school_id == school_id)))
 
 
+_WEEKDAY_NAMES = "一二三四五六日"
+
+
 def resolve_cell_teacher(
-    assignments: Sequence[tuple[UUID, str, str | None]], cell: CellInput
+    assignments: Sequence[tuple[UUID, str, str | None]],
+    cell: CellInput,
+    *,
+    teacher_name: str | None = None,
 ) -> UUID | None:
-    """显式 teacher_id 必须是该班该科在任的任课老师或班主任;省略时唯一匹配才填。"""
+    """显式 teacher_id 必须是该班该科在任的任课老师或班主任;省略时唯一匹配才填。
+
+    不满足时 400 的 message 与 details 指出是哪一格、哪位老师(L211):整班保存会原样带回
+    未改格子的 teacher_id,其中某位已卸任时,管理员要能直接找到那一格改掉。"""
     if cell.teacher_id is None:
         return _auto(assignments, cell.subject)
     if not _may_teach(assignments, cell.teacher_id, cell.subject):
-        raise ApiError(400, "BAD_REQUEST", "该老师不是本班本科目在任的任课老师或班主任")
+        who = teacher_name or str(cell.teacher_id)
+        raise ApiError(
+            400,
+            "BAD_REQUEST",
+            f"星期{_WEEKDAY_NAMES[cell.weekday - 1]}第 {cell.period_no} 节:"
+            f"「{who}」不是本班本科目在任的任课老师或班主任",
+            {"weekday": cell.weekday, "period_no": cell.period_no, "teacher": who},
+        )
     return cell.teacher_id
 
 
@@ -245,7 +261,11 @@ def save_class_timetable(
         if (c.weekday, c.period_no) in seen:
             raise ApiError(400, "BAD_REQUEST", "同一星期同一节次不能重复安排")
         seen.add((c.weekday, c.period_no))
-    resolved = [(c, resolve_cell_teacher(assignments, c)) for c in cells]
+    names = teacher_names(db, [c.teacher_id for c in cells if c.teacher_id])
+    resolved = [
+        (c, resolve_cell_teacher(assignments, c, teacher_name=names.get(c.teacher_id)))
+        for c in cells
+    ]
     replace_entries(db, cls, year, resolved)
     record(
         db,
