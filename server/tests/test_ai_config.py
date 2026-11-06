@@ -101,7 +101,7 @@ def test_provider_change_resets_preset(db):
     out = run_cli(db, ["ai-config", "set", "--provider", "qwen"])
     assert out.code == 0 and "模型:qwen-plus" in out.text
     assert "API Key:未设置" in out.text  # 换服务商,旧 Key 清除
-    assert "已更换服务商或地址,原 API Key 已清除,请用 --api-key-stdin 重新设置" in out.text
+    assert "已更换服务商,原 API Key 已清除,请用 --api-key-stdin 重新设置" in out.text
     out = run_cli(db, ["ai-config", "set", "--provider", "deepseek", "--model", "m2"])
     assert "模型:m2" in out.text
 
@@ -262,3 +262,22 @@ def test_config_audited_without_key(db):
 
 def test_status_requires_login(client):
     assert client.get("/api/v1/ai/status").status_code == 401
+
+
+def test_malformed_stored_base_url_is_tolerated(db, settings):
+    from app.ai.settings import AIConfig, is_ready, load_ai_config, save_ai_config
+
+    cfg = AIConfig(
+        provider="custom",
+        base_url="https://[bad",
+        model="m",
+        api_key="",
+        temperature=0.7,
+        mask_forced=False,
+    )
+    save_ai_config(db, settings.school_id, settings.master_key_bytes, cfg)
+    db.commit()
+    loaded = load_ai_config(db, settings.school_id, settings.master_key_bytes)
+    assert loaded is not None and is_ready(loaded) is False  # 坏地址按非本地处理
+    out = run_cli(db, ["ai-config", "show"])
+    assert out.code == 0 and "地址:https://[bad" in out.text

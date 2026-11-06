@@ -98,7 +98,10 @@ def clear_ai_config(db: Session, school_id: UUID) -> None:
 
 
 def _is_local(base_url: str) -> bool:
-    return urlparse(base_url).hostname in ("localhost", "127.0.0.1")
+    try:
+        return urlparse(base_url).hostname in ("localhost", "127.0.0.1")
+    except ValueError:  # 库里已有的坏地址(如 https://[bad)按非本地处理
+        return False
 
 
 def is_ready(cfg: AIConfig | None) -> bool:

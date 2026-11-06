@@ -146,7 +146,7 @@ def _set(ns: argparse.Namespace, db: Session, key: bytes, school_id) -> int:
     db.commit()
     print("已保存")
     if dropped:
-        print("已更换服务商或地址,原 API Key 已清除,请用 --api-key-stdin 重新设置")
+        print("已更换服务商,原 API Key 已清除,请用 --api-key-stdin 重新设置")
     _show(cfg)
     return 0
 
