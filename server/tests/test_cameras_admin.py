@@ -395,18 +395,20 @@ def test_camera_test_session_released_before_probe_wait(
     peer_client, settings, db, on, redis_client, monkeypatch
 ):
     cid = _create(peer_client(("10.0.0.5", 1)), settings)["id"]
-    events = []
-    real_commit = db.commit
-    monkeypatch.setattr(db, "commit", lambda: (events.append("commit"), real_commit())[1])
+    monkeypatch.setattr(service, "PROBE_TIMEOUT", 0.6)
+    seen = []
+    real_sleep = time.sleep
 
-    def probe(*a, **kw):
-        events.append("probe")
-        return CameraTestResult(ok=False, message="x")
+    def hook(s):  # 每次轮询之间:会话不能还在事务里(连接已归还)
+        seen.append(db.in_transaction())
+        real_sleep(min(s, 0.05))
 
-    monkeypatch.setattr(service, "test_camera", probe)
+    monkeypatch.setattr(service.time, "sleep", hook)
     res = peer_client(("10.0.0.5", 1)).post(f"{URL}/{cid}/test", headers=auth(settings, IT_ADMIN))
     assert res.status_code == 200
-    assert events.index("commit") < events.index("probe")
+    assert res.json()["message"] == "转流服务没有响应"
+    assert seen and not any(seen), seen
+    redis_client.delete("ws:cam:probe")
 
 
 def test_camera_test_with_fake_worker(client, settings, db, on, redis_client):

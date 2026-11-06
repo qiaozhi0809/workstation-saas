@@ -649,12 +649,14 @@ def test_dev_keeps_proxy_peer_behaviour(make_client, pb_settings, cam):
 def test_db_released_before_waiting(make_client, pb_settings, db, on, monkeypatch):
     c0 = _camera(db, "三年二班前", CLASS_ID)  # 没有 worker 输出:会进入等待
     events = []
+    in_tx = []
     real_commit = db.commit
     monkeypatch.setattr(db, "commit", lambda: (events.append("commit"), real_commit())[1])
     now = [0.0]
 
     def fake_sleep(s):
         events.append("sleep")
+        in_tx.append(db.in_transaction())
         now[0] += s
 
     timing = Timing(timeout=1, interval=0.2, sleep=fake_sleep, monotonic=lambda: now[0])
@@ -662,3 +664,4 @@ def test_db_released_before_waiting(make_client, pb_settings, db, on, monkeypatc
     assert res.json()["error"]["code"] == "STREAM_STARTING"
     assert "sleep" in events
     assert events.index("commit") < events.index("sleep")
+    assert in_tx and not any(in_tx), in_tx  # 等待期间没有事务(连接已归还)

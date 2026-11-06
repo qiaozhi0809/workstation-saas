@@ -3,6 +3,7 @@ import binascii
 import json
 import time
 import uuid
+from types import SimpleNamespace
 from uuid import UUID
 
 from fastapi import Request
@@ -277,7 +278,18 @@ def test_camera(
     *,
     interval: float = PROBE_INTERVAL,
 ) -> CameraTestResult:
-    """R9:同步轮询回复键;任务里只放摄像头 id 和回复键,凭据由 worker 自己读库。"""
+    return probe_camera(redis, camera.id, timeout, interval=interval)
+
+
+def probe_camera(
+    redis: Redis,
+    camera_id: UUID,
+    timeout: float = PROBE_TIMEOUT,
+    *,
+    interval: float = PROBE_INTERVAL,
+) -> CameraTestResult:
+    """R9:同步轮询回复键;只用 id,不碰 ORM 对象和数据库;凭据由 worker 自己读库。"""
+    camera = SimpleNamespace(id=camera_id)
     reply_key = PROBE_REPLY.format(uuid.uuid4())
     redis.rpush(PROBE_QUEUE, json.dumps({"id": str(camera.id), "reply_key": reply_key}))
     deadline = time.monotonic() + timeout
@@ -308,7 +320,7 @@ def run_test(
     camera = get_camera(db, school_id, camera_id)
     cam_id, cam_name = camera.id, camera.name
     db.commit()  # 等待期间不占着数据库连接
-    result = test_camera(db, redis, camera, PROBE_TIMEOUT)
+    result = probe_camera(redis, cam_id, PROBE_TIMEOUT)
     record(
         db,
         user_id=user_id,
