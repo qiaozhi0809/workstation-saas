@@ -331,11 +331,9 @@ export function CameraPlayer({
         className="h-full w-full object-contain"
       />
       {msg && (
-        <div
-          role={msg.role}
-          className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-background/80 px-3 text-center text-sm text-foreground"
-        >
-          {msg.text}
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-background/80 px-3 text-center text-sm text-foreground">
+          {/* 告警 / 状态容器里只有文字:读屏不会把"重试"按钮也当作告警内容读出(L304) */}
+          <div role={msg.role}>{msg.text}</div>
           {/* 停滞提示与"连不上"(含停滞重取撞上转流重启、预算用尽)都给重试:重建 hls 实例 */}
           {(state === 'stalled' || state === 'offline') && (
             <Button

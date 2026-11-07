@@ -656,6 +656,24 @@ describe('CameraPlayer', () => {
     expect(vi.getTimerCount()).toBe(0)
   })
 
+  it('retry button not inside alert', () => {
+    // 读屏只朗读告警文字本身;"重试"是告警旁的兄弟节点,不被当作告警内容一起读出(L304)
+    vi.useFakeTimers()
+    render(<CameraPlayer cameraId="c1" title="t" />)
+    act(() => hls().emit('hlsFragLoaded'))
+    act(() => void vi.advanceTimersByTime(40000))
+    const stalled = screen.getByRole('alert')
+    const retry = screen.getByRole('button', { name: '重试' })
+    expect(stalled.textContent).toBe('画面已停止,正在重连…')
+    expect(stalled).not.toContainElement(retry)
+    expect(stalled.parentElement).toBe(retry.parentElement)
+    // 连不上(含预算用尽)同样:告警里只有文字
+    act(() => hls().emit('hlsError', segmentError(0)))
+    const offline = screen.getByRole('alert')
+    expect(offline.textContent).toBe('摄像头连不上')
+    expect(offline).not.toContainElement(screen.getByRole('button', { name: '重试' }))
+  })
+
   it('shows unsupported hint when Hls is not supported', () => {
     FakeHls.supported = false
     render(<CameraPlayer cameraId="c1" title="t" />)
