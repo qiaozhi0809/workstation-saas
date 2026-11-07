@@ -9,7 +9,9 @@ from collections.abc import Sequence
 from datetime import datetime
 from uuid import UUID
 
+import structlog
 from redis import Redis
+from redis.exceptions import RedisError
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
@@ -33,6 +35,8 @@ from app.rbac.roles import ROLE_PERMS, Perm
 
 STATE_KEY = "ws:cam:state:{}"
 _STATUSES = ("idle", "streaming", "error")
+
+log = structlog.get_logger()
 
 
 def ensure_monitor_on(db: Session, school_id: UUID) -> None:
@@ -141,9 +145,14 @@ def can_view(
 
 
 def _state(redis: Redis | None, camera_id: UUID) -> str:
+    """观看入口只是"顺手"带上流状态:Redis 故障时退回 idle 并告警(L292),列表本身照常给。"""
     if redis is None:
         return "idle"
-    status = redis.hget(STATE_KEY.format(camera_id), "status")
+    try:
+        status = redis.hget(STATE_KEY.format(camera_id), "status")
+    except RedisError as exc:
+        log.warning("cameras.state_unavailable", camera_id=str(camera_id), error=type(exc).__name__)
+        return "idle"
     return status if status in _STATUSES else "idle"
 
 
