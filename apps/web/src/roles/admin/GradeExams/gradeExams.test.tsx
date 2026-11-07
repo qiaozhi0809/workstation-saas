@@ -414,7 +414,8 @@ it('edits an exam: keeps its grade and full marks, lists legacy subjects, shows 
   expect(within(dlg).getByRole('checkbox', { name: '语文' })).toBeChecked()
   expect(within(dlg).getByRole('checkbox', { name: '英语' })).not.toBeChecked()
   expect(within(dlg).getByRole('checkbox', { name: '道法' })).toBeChecked()
-  expect(subjectRow(dlg, '语文')).toHaveTextContent('满分 90')
+  // 编辑态已勾选的科目满分是输入框,初值是考试里的满分(L235)
+  expect(within(dlg).getByLabelText('语文 满分')).toHaveValue(90)
   expect(subjectRow(dlg, '道法')).toHaveTextContent('已不在目录')
   fireEvent.click(within(dlg).getByRole('checkbox', { name: '数学' }))
   fireEvent.click(within(dlg).getByRole('button', { name: '保存' }))
@@ -468,6 +469,76 @@ it('edits an exam: keeps the exam subject order and appends newly picked subject
       ],
     }),
   )
+})
+
+// L235(Q1):编辑态已勾选的科目可以改满分,提交 subjects[].full;新建态与未勾选的科目仍只显示目录满分。
+// 降到已录分数之下时沿用后端 409 EXAM_HAS_SCORES 的提示,对话框不关
+it('edit full marks', async () => {
+  vi.mocked(adminApi.updateGradeExam)
+    .mockRejectedValueOnce(
+      new ApiError(409, 'EXAM_HAS_SCORES', '「语文」已有成绩,满分不能低于已录入的最高分', {
+        subject: '语文',
+      }),
+    )
+    .mockResolvedValueOnce(exam())
+  await renderPage()
+  fireEvent.click(within(row()).getByRole('button', { name: '编辑' }))
+  const dlg = await screen.findByRole('dialog')
+  const full = await within(dlg).findByLabelText('语文 满分')
+  expect(full).toHaveValue(100)
+  // 没勾选的科目只显示目录满分,没有输入框
+  expect(within(dlg).queryByLabelText('英语 满分')).toBeNull()
+  expect(subjectRow(dlg, '英语')).toHaveTextContent('满分 100')
+  // 本地先拦:满分要是 1–1000 的整数
+  fireEvent.change(full, { target: { value: '0' } })
+  fireEvent.click(within(dlg).getByRole('button', { name: '保存' }))
+  expect(await within(dlg).findByRole('alert')).toHaveTextContent(
+    '「语文」的满分须为 1–1000 的整数',
+  )
+  expect(adminApi.updateGradeExam).not.toHaveBeenCalled()
+  // 降满分:提交 full 60,后端 409 → 显示它的提示,对话框还在
+  fireEvent.change(full, { target: { value: '60' } })
+  fireEvent.click(within(dlg).getByRole('button', { name: '保存' }))
+  await waitFor(() =>
+    expect(adminApi.updateGradeExam).toHaveBeenCalledWith('ge1', {
+      grade_id: 'g3',
+      name: '十月联考',
+      exam_type: '月考',
+      date: '2026-10-20',
+      subjects: [
+        { name: '语文', full: 60 },
+        { name: '数学', full: 100 },
+      ],
+    }),
+  )
+  expect(await within(dlg).findByRole('alert')).toHaveTextContent(
+    '「语文」已有成绩,满分不能低于已录入的最高分',
+  )
+  expect(screen.getByRole('dialog')).toBeInTheDocument()
+  // 改成 120 再保存就过了
+  fireEvent.change(within(dlg).getByLabelText('语文 满分'), { target: { value: '120' } })
+  fireEvent.click(within(dlg).getByRole('button', { name: '保存' }))
+  await waitFor(() =>
+    expect(adminApi.updateGradeExam).toHaveBeenLastCalledWith(
+      'ge1',
+      expect.objectContaining({
+        subjects: [
+          { name: '语文', full: 120 },
+          { name: '数学', full: 100 },
+        ],
+      }),
+    ),
+  )
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+})
+
+it('new exam form shows catalog full marks read-only', async () => {
+  await renderPage()
+  fireEvent.click(screen.getByRole('button', { name: '新建联考' }))
+  const dlg = await screen.findByRole('dialog')
+  await within(dlg).findByRole('checkbox', { name: '语文' })
+  expect(within(dlg).queryByLabelText('语文 满分')).toBeNull()
+  expect(subjectRow(dlg, '语文')).toHaveTextContent('满分 100')
 })
 
 it('tells when the catalog cannot be loaded instead of offering free text', async () => {

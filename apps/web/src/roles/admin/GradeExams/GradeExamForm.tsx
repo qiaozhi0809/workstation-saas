@@ -55,6 +55,8 @@ export default function GradeExamForm({
   const [type, setType] = useState<ExamType>(exam?.exam_type ?? '月考')
   // null = 还没按目录初始化(新建默认全选,编辑默认选考试里已有的)
   const [picked, setPicked] = useState<Set<string> | null>(null)
+  // 编辑态已勾选科目的满分草稿(按科目名),先存字符串,提交时转数字校验;没改过的用考试 / 目录里的值(L235)
+  const [fulls, setFulls] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
 
   const catalog = useQuery({
@@ -63,6 +65,8 @@ export default function GradeExamForm({
   })
   const options = catalog.data && stage ? buildOptions(catalog.data[stage], exam) : null
   const selected = picked ?? new Set((exam ? exam.subjects : (options ?? [])).map((s) => s.name))
+  const fullOf = (o: Option) => fulls[o.name] ?? String(o.full)
+  const validFull = (n: number) => Number.isInteger(n) && n >= 1 && n <= 1000
 
   const save = useMutation({
     mutationFn: (input: GradeExamInput) =>
@@ -106,9 +110,23 @@ export default function GradeExamForm({
           ...all.filter((o) => !exam.subjects.some((s) => s.name === o.name)),
         ]
       : all
-    const subjects = ordered
-      .filter((o) => selected.has(o.name))
-      .map((o) => ({ name: o.name, full: o.full }))
+    // 编辑态提交的是输入框里的满分(后端 PUT 接受 subjects[].full;降到已录分数之下会 409 EXAM_HAS_SCORES);
+    // 新建态就是目录满分
+    const subjects: SubjectFull[] = []
+    for (const o of ordered) {
+      if (!selected.has(o.name)) continue
+      if (!exam) {
+        subjects.push({ name: o.name, full: o.full })
+        continue
+      }
+      const raw = fullOf(o).trim()
+      const full = Number(raw)
+      if (raw === '' || !validFull(full)) {
+        setError(`「${o.name}」的满分须为 1–1000 的整数`)
+        return
+      }
+      subjects.push({ name: o.name, full })
+    }
     if (subjects.length === 0) {
       setError('至少选择一个科目')
       return
@@ -176,8 +194,8 @@ export default function GradeExamForm({
           ) : options ? (
             <ul className="grid gap-1 sm:grid-cols-2">
               {options.map((o) => (
-                <li key={o.name}>
-                  <label className="flex items-center gap-2 rounded-md border px-2 py-1.5">
+                <li key={o.name} className="flex items-center gap-2 rounded-md border px-2 py-1.5">
+                  <label className="flex min-w-0 flex-1 items-center gap-2">
                     <input
                       type="checkbox"
                       aria-label={o.name}
@@ -185,9 +203,27 @@ export default function GradeExamForm({
                       onChange={() => toggle(o.name)}
                     />
                     <span className="flex-1">{o.name}</span>
-                    {o.legacy && <span className="text-xs text-warning">已不在目录</span>}
-                    <span className="text-xs text-muted-foreground">{`满分 ${o.full}`}</span>
                   </label>
+                  {o.legacy && <span className="text-xs text-warning">已不在目录</span>}
+                  {exam && selected.has(o.name) ? (
+                    // 编辑态已勾选的科目可改满分(L235);新建态与未勾选的只显示目录 / 考试里的满分
+                    <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                      满分
+                      <Input
+                        type="number"
+                        inputMode="numeric"
+                        min={1}
+                        max={1000}
+                        step={1}
+                        aria-label={`${o.name} 满分`}
+                        className="h-7 w-20 text-sm text-foreground"
+                        value={fullOf(o)}
+                        onChange={(e) => setFulls({ ...fulls, [o.name]: e.target.value })}
+                      />
+                    </label>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">{`满分 ${o.full}`}</span>
+                  )}
                 </li>
               ))}
             </ul>
