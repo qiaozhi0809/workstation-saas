@@ -10,7 +10,8 @@
 # 等数据库就绪最多 120 秒(L184):开机补跑的定时备份可能比容器先到。
 # 数据库只经 pg_dump / psql(在 postgres 容器内走本地 socket,不经命令行密码);Caddy 数据只经容器读取
 # (data/caddy 里的私钥属容器内 root、权限 600,宿主机普通用户读不了)。
-# 成功后原地覆盖写 data/logs/backup-last.json(该目录是 1777 粘滞目录,不能写临时文件再 mv)。
+# 成功后原地覆盖写 data/logs/backup-last.json(该目录是 1777 粘滞目录,不能写临时文件再 mv),字段 at / file / size_bytes /
+# caddy(included / skipped,与 manifest 一致,L277;GET /admin/system/info 读它)。
 # 安全约定:不开 xtrace;不打印密钥;回显容器输出前先过 redact。
 set +x
 unset BASH_XTRACEFD
@@ -193,10 +194,11 @@ main() {
   fi
 
   # 原地覆盖写(不写临时文件再 mv:data/logs 是 1777 粘滞目录)。写失败不算备份失败:备份文件已经好了。
+  # caddy 字段(L277)与 manifest 一致:included / skipped,管理端系统卡据此提示"上次备份未包含网关数据"
   mkdir -p "$DEPLOY_DIR/data/logs" 2>/dev/null || true
   if ! ( umask 022
-         printf '{"at": "%s", "file": "%s", "size_bytes": %s}\n' \
-           "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(basename "$final")" "$(wc -c <"$final" | tr -d '[:space:]')" \
+         printf '{"at": "%s", "file": "%s", "size_bytes": %s, "caddy": "%s"}\n' \
+           "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(basename "$final")" "$(wc -c <"$final" | tr -d '[:space:]')" "$caddy_state" \
            >"$DEPLOY_DIR/data/logs/backup-last.json" ) 2>/dev/null; then
     log_warn "备份已完成,备份文件已保留($final);只是写 data/logs/backup-last.json 失败(检查该文件的属主与权限),设置页里的\"上次备份\"可能不更新"
   fi
