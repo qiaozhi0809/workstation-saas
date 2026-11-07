@@ -138,6 +138,8 @@ export default function ClassNoticesPage() {
   // 班级列表到了、当前 classId 却不在里面(被移出该班 / 旧地址):不再一直转圈(L91);
   // TeacherLayout 随后会把当前班重置为第一个,这里先把话说清楚
   const unknownClass = !!classId && !!classes.data && !cls
+  // 还没选班而列表已到(L258):请老师先在顶栏选班,而不是一直转圈
+  const noClass = !classId && !!classes.data
   // 与导航、教室页同一个 key,共用缓存;页面自己也判权,直接打开 URL 不会发班级公告请求;
   // 班级列表确认有这个班才去取概况,不给不存在的班发请求
   const summary = useQuery({
@@ -156,6 +158,8 @@ export default function ClassNoticesPage() {
           onRetry={() => void classes.refetch()}
           retrying={classes.isFetching}
         />
+      ) : noClass ? (
+        <EmptyState title="请先选择班级" className="justify-center p-6" />
       ) : unknownClass ? (
         <EmptyState
           title="这个班不在你的班级列表里"
