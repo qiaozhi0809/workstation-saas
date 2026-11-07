@@ -164,11 +164,33 @@ done
 pass "部署目录就绪,.env.example 密钥留空"
 
 echo "== 4/6 启动服务并等待健康"
-# up 输出写到临时文件,失败时 fail 会打印各服务日志尾部(输出里不含密钥)
-compose up -d --wait --wait-timeout 300 >"$TMP/up.log" 2>&1 || {
+# up 输出写到临时文件,失败时 fail 会打印各服务日志尾部(输出里不含密钥)。
+# 不用 compose up --wait:新版 compose 对 healthcheck: disable 的 scheduler 报 "has no healthcheck configured" 并返回非 0;
+# 按 lib.sh::wait_healthy 的口径自己等——有健康检查的等 healthy,没有的等 running
+compose up -d >"$TMP/up.log" 2>&1 || {
   tail -n 30 "$TMP/up.log" >&2
-  fail "服务未能在 300 秒内全部健康"
+  fail "docker compose up 失败"
 }
+# wait_all_healthy <秒数>:postgres / redis / app / web / stream-worker 变 healthy、scheduler(无健康检查)在运行;超时返回 1
+wait_all_healthy() {
+  local limit="$1" waited=0 svc cid state pending
+  while :; do
+    pending=""
+    for svc in postgres redis app web stream-worker scheduler; do
+      cid="$(compose ps -q "$svc" 2>/dev/null | head -n 1)"
+      state="missing"
+      if [ -n "$cid" ]; then
+        state="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid" 2>/dev/null || echo missing)"
+      fi
+      case "$state" in healthy|running) ;; *) pending="$pending $svc=$state" ;; esac
+    done
+    [ -n "$pending" ] || return 0
+    [ "$waited" -lt "$limit" ] || { echo "  ${limit} 秒后仍未就绪:$pending" >&2; return 1; }
+    sleep 3
+    waited=$((waited + 3))
+  done
+}
+wait_all_healthy 300 || fail "服务未能在 300 秒内全部健康"
 pass "所有服务已启动且健康"
 
 echo "== 5/6 逐项断言"
@@ -227,6 +249,37 @@ pass "scheduler 在运行且未重启"
 stream_state="$(docker inspect -f '{{.State.Running}} {{.RestartCount}} {{if .State.Health}}{{.State.Health.Status}}{{else}}nohealth{{end}}' "$(compose ps -q stream-worker)")"
 [ "$stream_state" = "true 0 healthy" ] || fail "stream-worker 应在运行、未重启且 healthy,实际:$stream_state"
 pass "stream-worker 在运行、未重启且 healthy"
+# L293:stream-worker 的出站限制。入口脚本以 root 写 iptables 后降权,worker(PID 1)必须是 uid 10001;
+# 默认只放行三段私网 + compose 子网里的数据库 / Redis 端口,公网与 compose 子网其余端口(如 web 的 80)被拒;
+# 连接检查用 bash 的 /dev/tcp(镜像里没有 wget / nc):被 REJECT 的连接立即失败,不依赖外网通不通
+stream_uid="$(compose exec -T stream-worker awk '/^Uid:/ { print $2 }' /proc/1/status | tr -d '\r\n')"
+[ "$stream_uid" = "10001" ] || fail "stream-worker 的 PID 1 应以 uid 10001 运行(入口脚本写完规则要降权),实际 $stream_uid"
+rules="$(compose exec -T stream-worker iptables -S OUTPUT 2>&1)" || fail "stream-worker 里读不到 iptables 规则(入口脚本没有写规则?):$rules"
+for want in '-d 10.0.0.0/8 -j ACCEPT' '-d 172.16.0.0/12 -j ACCEPT' '-d 192.168.0.0/16 -j ACCEPT' '-d 172.30.0.0/24 -p tcp -m tcp --dport 6379 -j ACCEPT' '-d 172.30.0.0/24 -p tcp -m tcp --dport 5432 -j ACCEPT' '-o lo -j ACCEPT'; do
+  grep -qF -- "$want" <<<"$rules" || fail "stream-worker 的 OUTPUT 链缺少规则「$want」,实际:$rules"
+done
+grep -Eq -- '^-A OUTPUT -j (REJECT|DROP)' <<<"$rules" || fail "stream-worker 的 OUTPUT 链末尾应是一律拒绝,实际:$rules"
+grep -Eq -- '^-A OUTPUT -d 172\.30\.0\.0/24 -j (REJECT|DROP)' <<<"$rules" || fail "compose 子网其余地址应被拒绝(否则 172.16.0.0/12 会把它整个放进来),实际:$rules"
+compose exec -T stream-worker timeout 5 bash -c '</dev/tcp/redis/6379' || fail "stream-worker 应能连到 redis:6379(出站规则把 Redis 也挡了)"
+compose exec -T stream-worker timeout 5 bash -c '</dev/tcp/postgres/5432' || fail "stream-worker 应能连到 postgres:5432(出站规则把数据库也挡了)"
+if compose exec -T stream-worker timeout 5 bash -c '</dev/tcp/web/80' 2>/dev/null; then
+  fail "stream-worker 不应连到 compose 子网里的 web:80(RTSP 重定向能探测内部服务)"
+fi
+if compose exec -T stream-worker timeout 5 bash -c '</dev/tcp/1.1.1.1/80' 2>/dev/null; then
+  fail "stream-worker 不应连到公网地址 1.1.1.1:80(出站限制没有生效)"
+fi
+pass "stream-worker:PID 1 为 uid 10001;出站只放行三段私网与 compose 子网的 5432 / 6379,web:80 与公网被拒"
+# WS_CAMERA_NETS=any 关闭限制(CI / 开发的假摄像头在回环或 compose 子网里):不写规则、不需要 NET_ADMIN,仍降权;
+# 同一镜像、不带 NET_ADMIN 直接起:入口脚本必须明确报错退出,而不是静默放行
+any_out="$(docker run --rm --network "${PROJECT}_ws-net" -e WS_CAMERA_NETS=any "workstation-stream:$VERSION" \
+  bash -c 'timeout 5 bash -c "</dev/tcp/web/80" && id -u' 2>&1)" || fail "WS_CAMERA_NETS=any 时应不写规则、能连 web:80 并降权运行命令,实际:$any_out"
+[ "$(tail -n 1 <<<"$any_out" | tr -d '\r')" = "10001" ] || fail "WS_CAMERA_NETS=any 时命令也应以 uid 10001 运行,实际输出:$any_out"
+grep -q 'WS_CAMERA_NETS=any' <<<"$any_out" || fail "WS_CAMERA_NETS=any 时应打印\"未设置出站限制\"的提示,实际输出:$any_out"
+nocap_rc=0
+nocap_out="$(docker run --rm --network "${PROJECT}_ws-net" "workstation-stream:$VERSION" true 2>&1)" || nocap_rc=$?
+[ "$nocap_rc" -ne 0 ] || fail "没有 NET_ADMIN 时入口脚本应报错退出,实际退出码 0,输出:$nocap_out"
+grep -q 'NET_ADMIN' <<<"$nocap_out" || fail "没有 NET_ADMIN 时的报错应点明需要 NET_ADMIN(或 WS_CAMERA_NETS=any),实际输出:$nocap_out"
+pass "WS_CAMERA_NETS=any 关闭限制且仍降权;没有 NET_ADMIN 时入口明确报错(退出码 $nocap_rc)"
 # ws-hls(tmpfs 卷)在 stream-worker 与 app 之间共享:worker 写的文件 app 读得到,app 侧是只读挂载
 compose exec -T stream-worker sh -c 'echo shared-ok >/run/ws-hls/.smoke' || fail "stream-worker 写不进 /run/ws-hls"
 seen="$(compose exec -T app cat /run/ws-hls/.smoke | tr -d '\r\n')" || fail "app 读不到 stream-worker 写进 ws-hls 的文件"
@@ -260,5 +313,34 @@ for _ in $(seq 1 30); do
 done
 [ "$ok" = 1 ] || fail "data/logs/app.jsonl 未出现"
 pass "data/logs/app.jsonl 已落盘"
+# L315:uvicorn 多 worker 的父进程不加载应用,它的几行启动日志(Started parent process 等)此前是 uvicorn 默认格式
+#("INFO:     …",只进 stdout);镜像入口带 --log-config 后也应是 JSON 行。docker logs app 开头几行是 cli migrate 的
+# 纯文本报告(不属于 uvicorn),所以断言:含 Started parent process 的行是带 logger / level / timestamp / event 的 JSON,
+# 且全文没有 uvicorn 默认格式前缀的行
+docker logs "$(compose ps -q app)" >"$TMP/app.logs" 2>&1 || fail "读不到 app 容器日志"
+python3 - "$TMP/app.logs" <<'PY' || fail "app 容器日志形态不对(原因见上一行)"
+import json, re, sys
+lines = [ln.rstrip("\r\n") for ln in open(sys.argv[1], encoding="utf-8", errors="replace")]
+lines = [ln for ln in lines if ln]
+parent = [ln for ln in lines if "Started parent process" in ln]
+if not parent:
+    print("日志里没有 uvicorn 父进程的 Started parent process 行", file=sys.stderr)
+    sys.exit(1)
+for ln in parent:
+    try:
+        d = json.loads(ln)
+    except ValueError:
+        print("父进程日志不是 JSON:" + ln[:160], file=sys.stderr)
+        sys.exit(1)
+    missing = [k for k in ("event", "logger", "level", "timestamp") if k not in d]
+    if missing or d["logger"] != "uvicorn.error":
+        print("父进程 JSON 缺字段 %s 或 logger 不是 uvicorn.error:%s" % (missing, ln[:160]), file=sys.stderr)
+        sys.exit(1)
+bad = [ln for ln in lines if re.match(r"^(TRACE|DEBUG|INFO|WARNING|ERROR|CRITICAL):\s", ln)]
+if bad:
+    print("仍有 uvicorn 默认格式的日志行:" + bad[0][:160], file=sys.stderr)
+    sys.exit(1)
+PY
+pass "docker logs app:uvicorn 父进程日志是 JSON(logger=uvicorn.error,含 level / timestamp),没有默认格式的行"
 
 echo "冒烟测试全部通过"

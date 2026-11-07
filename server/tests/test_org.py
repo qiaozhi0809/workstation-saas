@@ -15,6 +15,9 @@ IT_ADMIN = "55555555-5555-5555-5555-555555555546"
 TEACHER04 = "55555555-5555-5555-5555-555555555541"
 GRADE4_ID = "33333333-3333-3333-3333-333333333334"
 API = "/api/v1/admin"
+SCHOOL = "/api/v1/school"
+G4 = "33333333-3333-3333-3333-333333333334"
+PARENT = "55555555-5555-5555-5555-555555555561"  # 纯家长账号
 
 
 def _actions(db, object_id, action):
@@ -44,6 +47,26 @@ def test_org_requires_permission(client, db, settings):
     denied = [r for r in _actions(db, SCHOOL_ID, "org.manage") if not r.success]
     assert len(denied) == 2
     assert client.get(f"{API}/grades", headers=auth(settings, IT_ADMIN)).status_code == 200
+
+
+def test_school_grades_visible_scope(client, db, settings):
+    """L272:GET /school/grades 是 school.view 能读的轻量年级接口——校长见全部(含显式学段 / 按名推断),
+    年级组长只见自己的年级,信息中心 / 教师 / 家长 403 并记审计;新建但还没有班的年级不出现。"""
+    g5 = _create_grade(client, settings, name="五年级", stage="初中", order=5)
+    _create_class(client, settings, g5["id"])
+    _create_grade(client, settings, name="六年级", order=6)  # 没有班 → 校长也看不到
+    res = client.get(f"{SCHOOL}/grades", headers=auth(settings, PRINCIPAL))
+    assert res.status_code == 200, res.text
+    assert res.json() == [
+        {"id": GRADE_ID, "name": "三年级", "display_order": 3, "effective_stage": "primary"},
+        {"id": G4, "name": "四年级", "display_order": 4, "effective_stage": "primary"},
+        {"id": g5["id"], "name": "五年级", "display_order": 5, "effective_stage": "junior"},
+    ]
+    head = client.get(f"{SCHOOL}/grades", headers=auth(settings, GRADE_HEAD)).json()
+    assert [g["id"] for g in head] == [GRADE_ID]
+    for uid in (IT_ADMIN, TEACHER_USER_ID, PARENT):
+        assert client.get(f"{SCHOOL}/grades", headers=auth(settings, uid)).status_code == 403
+    assert len([r for r in _actions(db, SCHOOL_ID, "school.view") if not r.success]) == 3
 
 
 def test_school_get_any_admin_context_put_needs_org_manage(client, db, settings):

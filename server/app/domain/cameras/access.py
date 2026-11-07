@@ -9,7 +9,9 @@ from collections.abc import Sequence
 from datetime import datetime
 from uuid import UUID
 
+import structlog
 from redis import Redis
+from redis.exceptions import RedisError
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
@@ -22,6 +24,7 @@ from app.domain.cameras.schemas import (
     WallClass,
     WallGrade,
 )
+from app.domain.classes.sort import class_sort_key
 from app.domain.school_settings.service import get_switches
 from app.domain.schools.service import active_academic_year
 from app.domain.timetable.service import current_slot, teaches_now
@@ -33,6 +36,8 @@ from app.rbac.roles import ROLE_PERMS, Perm
 
 STATE_KEY = "ws:cam:state:{}"
 _STATUSES = ("idle", "streaming", "error")
+
+log = structlog.get_logger()
 
 
 def ensure_monitor_on(db: Session, school_id: UUID) -> None:
@@ -141,10 +146,20 @@ def can_view(
 
 
 def _state(redis: Redis | None, camera_id: UUID) -> str:
+    """观看入口只是"顺手"带上流状态:Redis 故障时退回 idle 并告警(L292),列表本身照常给。"""
     if redis is None:
         return "idle"
-    status = redis.hget(STATE_KEY.format(camera_id), "status")
+    try:
+        status = redis.hget(STATE_KEY.format(camera_id), "status")
+    except RedisError as exc:
+        log.warning("cameras.state_unavailable", camera_id=str(camera_id), error=type(exc).__name__)
+        return "idle"
     return status if status in _STATUSES else "idle"
+
+
+def _camera_key(camera: Camera) -> tuple:
+    """摄像头列表的顺序(L164):名字按数值序,同名按 id;列表无分页,排序在 Python 里做。"""
+    return (class_sort_key(camera.name), str(camera.id))
 
 
 def _brief(camera: Camera, redis: Redis | None) -> CameraBrief:
@@ -173,10 +188,9 @@ def class_cameras(
         return ClassCameras(class_id=cls.id, cameras=[], reason="homeroom", period=None)
     reason, period = found
     rows = db.scalars(
-        select(Camera)
-        .where(Camera.class_id == cls.id, Camera.enabled.is_(True))
-        .order_by(Camera.name, Camera.id)
+        select(Camera).where(Camera.class_id == cls.id, Camera.enabled.is_(True))
     ).all()
+    rows = sorted(rows, key=_camera_key)  # 名字数值序(L164):教室 2 < 教室 10
     return ClassCameras(
         class_id=cls.id,
         cameras=[_brief(c, redis) for c in rows],
@@ -223,8 +237,19 @@ def camera_wall(
                 SchoolClass.academic_year_id == year.id,
                 SchoolClass.active.is_(True),
             )
-            .order_by(Grade.display_order, Grade.name, SchoolClass.name, Camera.name, Camera.id)
         ).all()
+        # 年级按 display_order,班名 / 摄像头名按数值序(L164 / L266):三年二班 < 三年十班
+        rows = sorted(
+            rows,
+            key=lambda r: (
+                r[2].display_order,
+                class_sort_key(r[2].name),
+                str(r[2].id),
+                class_sort_key(r[1].name),
+                str(r[1].id),
+                _camera_key(r[0]),
+            ),
+        )
         by_grade: dict[UUID, WallGrade] = {}
         by_class: dict[UUID, WallClass] = {}
         for cam, cls, grade in rows:
@@ -244,15 +269,13 @@ def camera_wall(
     public: list[CameraBrief] = []
     if _can_see_scope(bindings, Scope(school_id=user.school_id)):
         pub_rows = db.scalars(
-            select(Camera)
-            .where(
+            select(Camera).where(
                 Camera.school_id == user.school_id,
                 Camera.enabled.is_(True),
                 Camera.class_id.is_(None),
             )
-            .order_by(Camera.name, Camera.id)
         ).all()
-        public = [_brief(c, redis) for c in pub_rows]
+        public = [_brief(c, redis) for c in sorted(pub_rows, key=_camera_key)]
     return CameraWall(
         school_name=school.name,
         timezone=school.timezone,

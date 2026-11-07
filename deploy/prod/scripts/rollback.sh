@@ -111,7 +111,12 @@ main() {
   old_version="$(tr -d '[:space:]' <"$snap/VERSION")"
   cur_version="$(tr -d '[:space:]' <"$DEPLOY_DIR/VERSION")"
   str_grep "$old_version" -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$' || die "快照里的版本号格式不对:$old_version"
-  docker image inspect "workstation-app:$old_version" >/dev/null 2>&1 || die "本机没有旧版本镜像 workstation-app:$old_version,无法回退到 $old_version"
+  # L309:旧版的三个镜像(app / web / stream)缺一不可,缺了就在动手之前停下并点名,不能等到启动阶段才发现
+  local img missing=""
+  for img in workstation-app workstation-web workstation-stream; do
+    docker image inspect "$img:$old_version" >/dev/null 2>&1 || missing="$missing $img:$old_version"
+  done
+  [ -z "$missing" ] || die "本机没有旧版本镜像:${missing# }(回退要 workstation-app / workstation-web / workstation-stream 三个 $old_version 的镜像都在),无法回退到 $old_version。请从 $old_version 的离线包载入镜像(docker load -i <解开的离线包>/images/workstation-images-$old_version.tar)后重试;未改动任何文件"
   if [ -z "$backup" ]; then backup="$(ls -1 "$DEPLOY_DIR"/backups/ws-backup-*-v"$old_version".tar.gz 2>/dev/null | sort | tail -n 1 || true)"; fi
   new_pkg="$(new_package_hint "$cur_version")"
 
@@ -153,18 +158,26 @@ main() {
   find "$DEPLOY_DIR" -maxdepth 1 -name '.ws-upgrade.*' -type d -exec rm -rf {} + 2>/dev/null || true
   log_info "程序文件已还原到 $old_version,.env 的 WS_VERSION 已改回 $old_version"
 
-  # 4. 数据库结构是否被新版本动过:先确保数据库在跑,再比对
+  # 4. 数据库结构是否被新版本动过:先确保数据库在跑,再比对。起不来(如 postgres 镜像被删)就停下给手工步骤(L309):
+  #    程序文件与 WS_VERSION 已还原、状态文件已清,处理好数据库后带快照目录重跑本脚本即可(还原是幂等的)
   if [ -z "$(compose ps -q postgres 2>/dev/null | head -n 1)" ]; then
-    if ! out="$(compose up -d --pull never postgres 2>&1)"; then printf '%s\n' "$out" | tail -n 8 | redact >&2; fi
+    if ! out="$(compose up -d --pull never postgres 2>&1)"; then
+      printf '%s\n' "$out" | tail -n 8 | redact >&2
+      die "启动数据库容器失败(上面是原因,常见于 postgres:16-alpine 镜像被删)。程序文件与 WS_VERSION 已回到 $old_version,数据库尚未比对。请手工处理:1) 镜像缺失时从离线包载入:docker load -i <解开的离线包>/images/workstation-images-$old_version.tar;2) 启动数据库:docker compose -p ${WS_COMPOSE_PROJECT:-workstation} --project-directory '$DEPLOY_DIR' up -d postgres;3) 重新执行 ./scripts/rollback.sh $snap --yes 完成回退"
+    fi
   fi
-  wait_healthy postgres 120 || die "数据库服务(postgres)没有就绪,无法判断数据库状态。请检查 docker compose logs postgres 后重试"
+  wait_healthy postgres 120 || die "数据库服务(postgres)没有就绪,无法判断数据库状态。请检查 docker compose -p ${WS_COMPOSE_PROJECT:-workstation} --project-directory '$DEPLOY_DIR' logs postgres,数据库能起来后重新执行 ./scripts/rollback.sh $snap --yes"
   db_rev="$(db_revision)"
   head="$(old_image_head)"
   [ -n "$db_rev" ] || die "读不到数据库的迁移版本(alembic_version)。程序文件已还原;请用升级前的备份恢复:./scripts/restore.sh ${backup:-<备份文件>}"
   [ -n "$head" ] || die "读不到旧版本镜像的迁移 head。程序文件已还原;请用升级前的备份恢复:./scripts/restore.sh ${backup:-<备份文件>}"
   if [ "$db_rev" != "$head" ]; then
     log_warn "数据库已被新版本迁移到 $db_rev(旧版本 $old_version 的结构是 $head),旧程序不能直接使用这个库;停止应用容器"
-    compose stop app scheduler stream-worker 2>&1 | redact >/dev/null || true
+    # L309:stop 失败不能吞掉——应用容器若还在用新版结构跑,下面"二选一"的前提就不成立
+    if ! out="$(compose stop app scheduler stream-worker 2>&1)"; then
+      printf '%s\n' "$out" | tail -n 8 | redact >&2
+      die "停止应用容器(app / scheduler / stream-worker)失败(上面是原因)。程序文件与 WS_VERSION 已回到 $old_version,但数据库已是新版本结构。请先手工停止:docker compose -p ${WS_COMPOSE_PROJECT:-workstation} --project-directory '$DEPLOY_DIR' stop app scheduler stream-worker,再二选一:重新执行 ./scripts/upgrade.sh <离线包 $new_pkg 的路径> 保留升级后的数据;或 ./scripts/restore.sh ${backup:-backups/<升级前的备份>.tar.gz} 回到 $old_version(丢失升级之后产生的数据)"
+    fi
     {
       printf '\n程序文件与 WS_VERSION 已回到 %s,但数据库已是新版本的结构,%s 的程序不能直接使用它。请二选一:\n' "$old_version" "$old_version"
       printf '  A) 保留升级之后产生的数据(推荐,数据库不动):重新执行本次升级\n'

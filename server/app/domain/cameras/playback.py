@@ -17,7 +17,7 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from fastapi import Request
 from redis import Redis
 
-from app.audit.service import _client_ip, peer_ip
+from app.audit.service import client_ip, peer_ip
 from app.config import Settings
 from app.domain.cameras.lan import is_lan_ip
 from app.errors import ApiError
@@ -90,15 +90,15 @@ def rewrite_playlist(text: str, camera_id: UUID, user_id: UUID, exp: int, sig: s
 def is_lan_client(request: Request, settings: Settings) -> bool:
     """来源是内网客户端;来源不明一律 False(失败即关)。
 
-    非开发环境三条规则(直连地址 = TCP 对端,解析出的 IP = `_client_ip` 按可信代理取到的客户端 IP):
+    非开发环境三条规则(直连地址 = TCP 对端,解析出的 IP = `client_ip` 按可信代理取到的客户端 IP):
 
     1. 请求带 `X-Forwarded-For` 而直连地址不在可信代理网段 → False。说明前面有一个未被采信的代理,
-       真实来源不明。否则 `WS_TRUSTED_PROXIES` 漏配 / 配错时,`_client_ip` 会回退到直连地址 ——
+       真实来源不明。否则 `WS_TRUSTED_PROXIES` 漏配 / 配错时,`client_ip` 会回退到直连地址 ——
        Caddy 容器的 172.30.0.x 属 172.16/12 私网,会被当成内网客户端,公网请求反而被放行(L177)。
     2. 解析出的 IP 落在可信代理网段 → False。它是代理自己(头缺失 / 非法 / 全是可信地址时
-       `_client_ip` 回退到直连地址),不是真实客户端。
+       `client_ip` 回退到直连地址),不是真实客户端。
     3. 其余按 `is_lan_ip` 判内网;回环只有开发环境放行(与摄像头地址的回环规则一致,见 R1)。"""
-    ip = _client_ip(request)
+    ip = client_ip(request)
     if ip is None:
         return False
     dev = settings.env == "dev"

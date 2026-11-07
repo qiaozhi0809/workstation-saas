@@ -54,7 +54,8 @@ def test_homeroom_sends_to_class_parents(client, db, settings, events):  # noqa:
     pushed = [m for m in events() if m["event"]["type"] == "notice.new"]
     assert len(pushed) == 1 and set(pushed[0]["user_ids"]) == {LI, T04}
     item = client.get(INBOX, headers=auth(settings, LI)).json()["items"][0]
-    assert item["id"] == notice["id"] and item["students"] == ["王小一"] and item["can_ack"] is True
+    assert item["id"] == notice["id"] and item["can_ack"] is True
+    assert item["students_detail"] == [{"name": "王小一", "class_name": "三年二班"}]  # L282
 
 
 def test_class_notice_scope(client, db, settings):

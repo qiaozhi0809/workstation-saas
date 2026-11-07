@@ -1001,7 +1001,7 @@ def test_two_children_one_notice(client, db, settings):
     assert student_rows(db, nid) == {("S0001", LI), ("S0017", LI), ("S0002", T04)}
     h = auth(settings, LI)
     item = inbox(client, settings, LI)["items"][0]
-    assert item["students"] == ["魏小七", "王小一"]  # 按学号
+    assert [s["name"] for s in item["students_detail"]] == ["魏小七", "王小一"]  # 按学号
     ack = client.post(f"{INBOX}/{nid}/ack", json={"choice": None, "note": None}, headers=h)
     assert ack.status_code == 204
     stats = client.get(f"{INBOX}/{nid}/acks", headers=auth(settings, PRINCIPAL)).json()
@@ -1028,8 +1028,9 @@ def test_dual_role_teacher_parent(client, db, settings):
     p = send_parents(client, settings, PRINCIPAL, TARGET_C32, ack=CONFIRM).json()
     t = send(client, settings, PRINCIPAL, TARGET_SCHOOL, ack=CONFIRM).json()
     items = {i["id"]: i for i in inbox(client, settings, T04)["items"]}
-    assert items[p["id"]]["students"] == ["李小二"] and items[p["id"]]["can_ack"] is True
-    assert items[t["id"]]["students"] == [] and items[t["id"]]["can_ack"] is True
+    assert [s["name"] for s in items[p["id"]]["students_detail"]] == ["李小二"]
+    assert items[p["id"]]["can_ack"] is True
+    assert items[t["id"]]["students_detail"] == [] and items[t["id"]]["can_ack"] is True
     h = auth(settings, T04)
     ack = {"choice": None, "note": None}
     assert client.post(f"{INBOX}/{p['id']}/ack", json=ack, headers=h).status_code == 204
@@ -1194,6 +1195,21 @@ def test_send_options(client, db, settings):
     assert len(denied) == 1
 
 
+def test_send_options_classes_numeric_order(client, db, settings):
+    """L266:班名按数值序(三年三班 < 三年七班),不是码位序(七 U+4E03 < 三 U+4E09)。"""
+    seven = str(make_class(db, "三年七班"))
+    three = str(make_class(db, "三年三班"))
+    opts = client.get(f"{ADMIN}/options", headers=auth(settings, PRINCIPAL)).json()
+    assert [c["name"] for c in opts["classes"]] == [
+        "三年一班",
+        "三年二班",
+        "三年三班",
+        "三年七班",
+        "四年一班",
+    ]
+    assert [c["id"] for c in opts["classes"]][2:4] == [three, seven]
+
+
 def test_page_and_q_caps(client, settings):
     h = auth(settings, PRINCIPAL)
     # 项目口径:查询参数校验失败统一 400 BAD_REQUEST(契约写 422,按代码)
@@ -1257,7 +1273,8 @@ def test_inbox_new_fields_for_teacher_notice(client, db, settings):
     ]
     item = inbox(client, settings, T01)["items"][0]
     assert item["id"] == nid and item["ack"] == ack and item["my_ack"] is None
-    assert item["students"] == [] and item["can_ack"] is True and item["ack_deadline"] is None
+    assert item["students_detail"] == [] and item["can_ack"] is True
+    assert item["ack_deadline"] is None
     plain = send(client, settings, PRINCIPAL, {"kind": "class", "class_id": C32}).json()["id"]
     got = {i["id"]: i for i in inbox(client, settings, T01)["items"]}
     assert got[plain]["ack"] == {"kind": "none"} and got[plain]["can_ack"] is False

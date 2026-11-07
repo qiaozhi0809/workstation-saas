@@ -1,10 +1,12 @@
 import pytest
 from sqlalchemy import func, select
+from sqlalchemy import text as sql
 
 from app.domain.timetable.importer import parse_csv
 from app.models.timetable import Period, TimetableEntry
+from tests.factories import make_teacher_account
 from tests.helpers import audit_rows, auth
-from tests.seed_ids import CLASS_ID, SCHOOL_ID, TEACHER_USER_ID
+from tests.seed_ids import CLASS_ID, SCHOOL_ID, TEACHER_USER_ID, YEAR_ID
 
 IT_ADMIN = "55555555-5555-5555-5555-555555555546"
 URL = "/api/v1/admin/timetable/import"
@@ -99,6 +101,34 @@ def test_import_subject_and_teacher_errors(client, settings, db):
     assert body["ok"] is False
     assert [e["line"] for e in body["errors"]] == [2, 3, 4]
     assert _count(db) == 0
+
+
+def test_import_accepts_assigned_teacher_subject(client, settings, db):
+    """L291:导入与整班保存同一口径(allowed_subjects):组织架构里有"信息技术"老师、
+    考试科目表没有这门课 → 仍可导入,老师自动匹配;老师卸任后这门课再导入就报行错误。"""
+    _periods(db)
+    user = make_teacher_account(db, SCHOOL_ID, "it_teacher")
+    tid = db.scalar(sql("SELECT id FROM teachers WHERE user_id = :u"), {"u": user.id})
+    db.execute(
+        sql(
+            "INSERT INTO teacher_assignments (teacher_id, class_id, academic_year_id, identity,"
+            " subject) VALUES (:t, :c, :y, 'subject', '信息技术')"
+        ),
+        {"t": tid, "c": CLASS_ID, "y": YEAR_ID},
+    )
+    db.flush()
+    res = _post(client, settings, f"{HEADER}\n三年二班,周一,1,信息技术,".encode())
+    assert res.status_code == 200, res.text
+    assert res.json() == {"ok": True, "written": 1, "errors": []}
+    tt = client.get(f"/api/v1/classes/{CLASS_ID}/timetable", headers=auth(settings)).json()
+    assert tt["cells"][0]["subject"] == "信息技术"
+    assert tt["cells"][0]["teacher"] == {"id": str(tid), "name": user.display_name}
+    db.execute(
+        sql("UPDATE teacher_assignments SET ended_at = now() WHERE teacher_id = :t"), {"t": tid}
+    )
+    body = _post(client, settings, f"{HEADER}\n三年二班,周二,1,信息技术,".encode()).json()
+    assert body["ok"] is False and [e["line"] for e in body["errors"]] == [2]
+    assert "信息技术" in body["errors"][0]["message"]
 
 
 def test_import_bad_header(client, settings, db):

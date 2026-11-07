@@ -77,7 +77,11 @@ LAST="$DEPLOY/data/logs/backup-last.json"
 grep -q "\"file\": *\"$(basename "$B1")\"" "$LAST" || fail "backup-last.json 的 file 不对"
 grep -q "\"size_bytes\": *$(wc -c <"$B1" | tr -d ' ')" "$LAST" || fail "backup-last.json 的 size_bytes 不对"
 grep -Eq '"at": *"[0-9]{4}-[0-9]{2}-[0-9]{2}T' "$LAST" || fail "backup-last.json 的 at 不对"
-pass "backup-last.json 字段正确"
+# L277:系统卡要能显示"上次备份是否含网关数据",caddy 字段(included / skipped)写进 backup-last.json,不只在包内 manifest
+grep -q '"caddy": *"included"' "$LAST" || fail "backup-last.json 应记 \"caddy\": \"included\"(web 在运行),实际:$(cat "$LAST")"
+python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if d.get("caddy") == "included" else 1)' "$LAST" \
+  || fail "backup-last.json 不是合法 JSON 或 caddy 字段不是 included"
+pass "backup-last.json 字段正确(含 caddy: included)"
 
 echo "== 3/6 改数据、拆 Caddy 根证书后恢复"
 psql_scalar "DELETE FROM ws_backup_marker" >/dev/null || fail "删标识数据失败"
@@ -222,6 +226,9 @@ grep -q '"caddy": "skipped"' "$X/manifest.json" || fail "manifest 应记 caddy: 
 # shellcheck source=/dev/null
 ( . "$DEPLOY/scripts/lib.sh"; manifest_valid "$X/manifest.json" ) || fail "caddy skipped 格式的 manifest 没通过 manifest_valid"
 rm -rf "$X"
+# L277:backup-last.json 同步记 caddy: skipped,管理端系统卡据此提示"上次备份未包含网关数据"
+grep -q "\"file\": *\"$(basename "$BNW")\"" "$LAST" || fail "backup-last.json 没有指向 web 停止时做的那份备份"
+grep -q '"caddy": *"skipped"' "$LAST" || fail "web 停止时 backup-last.json 应记 \"caddy\": \"skipped\",实际:$(cat "$LAST")"
 dc start web >/dev/null 2>&1 || fail "启动 web 失败"
 w=0
 until [ "$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$(dc ps -q web)" 2>/dev/null)" = "healthy" ]; do

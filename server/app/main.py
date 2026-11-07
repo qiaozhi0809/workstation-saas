@@ -33,6 +33,7 @@ from app.domain.notices.acks_router import router as acks_router  # M4b 段 A
 from app.domain.notices.class_router import router as class_notices_router  # M4b 段 A
 from app.domain.notices.router import router as notices_router  # M3b 段 E
 from app.domain.org.router import router as org_router  # M3a 段 D
+from app.domain.org.router import school_router as org_school_router  # v1.1 L272
 from app.domain.overview.router import router as overview_router  # M3a 段 F
 from app.domain.parents.manage_router import router as parent_manage_router  # M4a 段 C
 from app.domain.parents.views_router import router as parent_views_router  # M4a 段 D
@@ -111,6 +112,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     router.include_router(accounts_router)  # M3a 段 E
     router.include_router(school_settings_router)  # M3a 段 E
     router.include_router(org_router)  # M3a 段 D
+    router.include_router(org_school_router)  # v1.1 L272:GET /school/grades
     router.include_router(ws_router)  # M3b 段 A
     router.include_router(grade_exams_router)  # M3b 段 C
     router.include_router(reports_router)  # M3b 段 C

@@ -139,7 +139,7 @@ JOIN enrollments e ON e.student_id = s.id AND e.status = 'active';
 INSERT INTO comments (id, student_id, enrollment_id, class_id, academic_year_id,
                       semester, content, generated_by_ai, created_by_user_id)
 SELECT 'c0000001-0000-0000-0000-000000000001', s.id, e.id,
-       '44444444-4444-4444-4444-444444444444', '22222222-2222-2222-2222-222222222222',
+       e.class_id, e.academic_year_id,  -- L281:随注册走,不再写死班级 / 学年
        '2026-2027 第一学期',
        '做事认真踏实,是老师的好帮手。希望下学期在课堂上更大胆地表达自己的想法。',
        false, '55555555-5555-5555-5555-555555555555'
@@ -306,7 +306,7 @@ JOIN students s ON s.mk = v.mk;
 INSERT INTO comments (id, student_id, enrollment_id, class_id, academic_year_id,
                       semester, content, generated_by_ai, created_by_user_id)
 SELECT 'c0000002-0000-0000-0000-000000000002', s.id, e.id,
-       '44444444-4444-4444-4444-444444444444', '22222222-2222-2222-2222-222222222222',
+       e.class_id, e.academic_year_id,
        '2026-2027 第一学期',
        '担任班长以来责任心强,作业按时完成,乐于帮助同学。希望下学期在数学计算上更细心。',
        false, '55555555-5555-5555-5555-555555555555'

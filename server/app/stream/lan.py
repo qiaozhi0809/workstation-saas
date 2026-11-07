@@ -2,9 +2,17 @@
 
 from urllib.parse import urlsplit
 
-from app.domain.cameras.lan import IPNetwork, is_lan_ip, resolve_is_lan, resolve_lan_ips
+from app.domain.cameras.lan import IPNetwork, is_lan_ip, mask_url, resolve_is_lan, resolve_lan_ips
 
-__all__ = ["IPNetwork", "is_lan_ip", "is_rtsp_url", "resolve_is_lan", "resolve_lan_ips", "url_host"]
+__all__ = [
+    "IPNetwork",
+    "is_lan_ip",
+    "is_rtsp_url",
+    "mask_url",
+    "resolve_is_lan",
+    "resolve_lan_ips",
+    "url_host",
+]
 
 
 def url_host(url: str) -> str | None:

@@ -436,6 +436,7 @@ init_school() {
 # L184:定时器按学校时区,不按服务器的 UTC);失败降级为 crontab 提示。升级成功后由 upgrade.sh 用同一函数重写(I-1)。
 install_backup_timer() {
   local tz
+  warn_bad_backup_timezone
   tz="$(backup_timezone)"
   if [ "$(id -u)" -eq 0 ] && systemd_available; then
     if write_backup_timer_units; then

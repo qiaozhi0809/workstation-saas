@@ -268,6 +268,19 @@ def test_mask_text_password_with_url_delimiters(password):
     assert ffmpeg.mask_text(plain) == plain
 
 
+def test_mask_text_shares_query_keys_with_backend():
+    """L295:worker 与后端只有一份口令参数表(domain/cameras/lan.py):api_key / key / secret / auth
+    这些原先只有后端认得的键,worker 日志里也要打码;sig 反过来也进了后端那份。"""
+    from app.domain.cameras import lan
+
+    text = "open rtsp://10.0.0.2/x?api_key=k1&key=k2&secret=s1&auth=a1&sig=g1&a=1 failed"
+    masked = ffmpeg.mask_text(text)
+    for leaked in ("k1", "k2", "s1", "a1", "g1"):
+        assert leaked not in masked, masked
+    assert "a=1" in masked
+    assert ffmpeg.mask_url is lan.mask_url
+
+
 def test_hls_flags_include_discont_start(tmp_path):
     """重启后的新播放列表首段带 #EXT-X-DISCONTINUITY,序列号从给定值接着编(不回退到 0)。"""
     for transcode in (False, True):

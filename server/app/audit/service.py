@@ -55,10 +55,6 @@ def client_ip(request: Request | None) -> str | None:
     return str(peer)
 
 
-# 公开名是 client_ip(L59);auth/login_log.py 与 cameras/playback.py 仍按旧名导入,别名保留到它们切换
-_client_ip = client_ip
-
-
 def record(
     db: Session,
     *,

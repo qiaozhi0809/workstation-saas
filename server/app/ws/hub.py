@@ -56,8 +56,9 @@ class Hub:
                 del self._sockets[user_id]
 
     def is_expired(self, websocket: WebSocket, now: datetime) -> bool:
+        """失败即关(L130):没登记过期时间的连接(未 register / 已 unregister)一律按已过期处理。"""
         expires_at = self._expires.get(websocket)
-        return expires_at is not None and now >= expires_at
+        return expires_at is None or now >= expires_at
 
     async def _close(self, user_id: UUID, ws: WebSocket, code: int) -> None:
         try:

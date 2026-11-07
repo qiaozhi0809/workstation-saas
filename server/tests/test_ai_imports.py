@@ -73,3 +73,31 @@ def test_either_module_imports_first_without_cycle(module):
     subprocess.run(
         [sys.executable, "-c", f"import {module}"], check=True, cwd=APP.parent, timeout=60
     )
+
+
+def _private_imports_from_audit_service() -> list[str]:
+    """跨模块从 app.audit.service 导入下划线名字的位置(L245)。"""
+    found = []
+    for path in sorted(APP.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ImportFrom) or node.module != "app.audit.service":
+                continue
+            for alias in node.names:
+                if alias.name.startswith("_"):
+                    rel = path.relative_to(APP.parent)
+                    found.append(f"{rel}:{node.lineno} {node.module}.{alias.name}")
+    return found
+
+
+def test_audit_service_has_no_private_client_ip_alias():
+    """L245:audit/service 的 client_ip 只有公开名;旧别名(下划线开头的同名)全仓不再出现,
+    连字面量也不留(名字拼出来,免得这条测试自己成为 rg 的命中)。"""
+    assert _private_imports_from_audit_service() == []
+    legacy = "_" + "client_ip"
+    hits = [
+        str(p.relative_to(APP.parent))
+        for p in sorted(APP.rglob("*.py"))
+        if legacy in p.read_text(encoding="utf-8")
+    ]
+    assert hits == []

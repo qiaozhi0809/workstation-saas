@@ -60,6 +60,28 @@ subnets="$(docker network inspect "${PROJECT}_ws-net" -f '{{range .IPAM.Config}}
 case "$subnets" in *"$TEST_SUBNET"*) ;; *) fail "compose 网络子网应为 $TEST_SUBNET,实际:$subnets" ;; esac
 grep -q "WS_SUBNET.*$TEST_SUBNET" "$LOG" || fail "安装输出里没有说明子网来自 WS_SUBNET=$TEST_SUBNET"
 pass "WS_SUBNET=$TEST_SUBNET 生效:.env 两键一致、docker 网络子网一致"
+# L314:子网重叠检测(lib.sh::host_routes)要看全部路由表(多网卡 + 策略路由的校园网),不只主表。
+# 用一个假的 ip 命令证明:只在 `table all` 里出现的网段也会被列出,重复的只列一次,local / broadcast / default 行跳过。
+# 网段全部用文档保留段(192.0.2.0/24、10.77.0.0/16 只是虚构值)
+mkdir -p "$TMP/fakebin"
+cat >"$TMP/fakebin/ip" <<'SH'
+#!/usr/bin/env bash
+case "$*" in
+  *"table all"*)
+    printf '%s\n' 'default via 192.0.2.1 dev eth0' '192.0.2.0/24 dev eth0 proto kernel scope link src 192.0.2.10' \
+      '10.77.0.0/16 via 192.0.2.1 dev eth0 table 100' '10.77.0.0/16 via 192.0.2.1 dev eth0 table 200' \
+      'local 192.0.2.10 dev eth0 table local proto kernel scope host src 192.0.2.10' 'broadcast 192.0.2.255 dev eth0 table local'
+    ;;
+  *) printf '%s\n' 'default via 192.0.2.1 dev eth0' '192.0.2.0/24 dev eth0 proto kernel scope link src 192.0.2.10' ;;
+esac
+SH
+chmod +x "$TMP/fakebin/ip"
+routes="$( PATH="$TMP/fakebin:$PATH" bash -c '. "$1/scripts/lib.sh"; host_routes' _ "$DEPLOY" )" || fail "host_routes 执行失败"
+[ "$(grep -cx '10.77.0.0/16' <<<"$routes" || true)" = "1" ] || fail "host_routes 应列出只在其他路由表里的 10.77.0.0/16,且只列一次(去重),实际:$routes"
+grep -qx '192.0.2.0/24' <<<"$routes" || fail "host_routes 应列出主表里的 192.0.2.0/24,实际:$routes"
+! grep -Eq '^(local|broadcast|default)' <<<"$routes" || fail "host_routes 不应把 local / broadcast / default 行当成网段,实际:$routes"
+rm -rf "$TMP/fakebin"
+pass "host_routes 看全部路由表:策略路由表里的网段也列出且去重,local / broadcast / default 行被跳过(L314)"
 
 echo "== 3/5 服务与登录"
 assert_healthz
