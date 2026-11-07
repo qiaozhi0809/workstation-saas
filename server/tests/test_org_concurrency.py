@@ -19,6 +19,7 @@ from app import clock
 from app.domain.org import service, staff
 from app.domain.org.schemas import ClassInput, GradeInput, StaffInput
 from app.domain.years import service as years_service
+from app.domain.years.plan import GradeHeadPlan, NewClassPlan
 from app.domain.years.suggest import suggest
 from app.errors import ApiError
 from app.models import SchoolClass
@@ -34,6 +35,8 @@ TEACHER01_TID = "66666666-6666-6666-6666-666666666666"
 YEAR_ID = "22222222-2222-2222-2222-222222222222"
 EMPTY_CLASS_NAME = "并发空班"
 EMPTY_GRADE_NAME = "并发年级"
+HEADED_GRADE_NAME = "一年级"  # 升级时新建、带组长、随后删空的新年级(与回滚并发删)
+GRADE_HEAD_USER = UUID("55555555-5555-5555-5555-555555555545")
 WAIT = 30
 
 
@@ -545,16 +548,7 @@ def test_create_class_queued_behind_rollback_gets_409(cengine, monkeypatch):
                     " ORDER BY g.display_order LIMIT 1"
                 )
             ).one()
-        counted, release = threading.Event(), threading.Event()
-        original = years_service._edits_since_upgrade
-
-        def stalled(*args, **kwargs):
-            out = original(*args, **kwargs)
-            counted.set()
-            assert release.wait(WAIT)
-            return out
-
-        monkeypatch.setattr(years_service, "_edits_since_upgrade", stalled)
+        counted, release = _stall_rollback(monkeypatch)
         roller = Worker(
             cengine,
             "roll",
@@ -579,6 +573,84 @@ def test_create_class_queued_behind_rollback_gets_409(cengine, monkeypatch):
                 ).scalar_one()
                 == 0
             )
+            assert conn.execute(
+                text("SELECT id FROM academic_years WHERE is_active")
+            ).scalar_one() == UUID(YEAR_ID)
+    finally:
+        _undo_upgrades(cengine)
+
+
+def _stall_rollback(monkeypatch) -> tuple[threading.Event, threading.Event]:
+    """回滚停在 _edits_since_upgrade 之后(已持新班行锁 + 学年 FOR UPDATE,还没开始删)。"""
+    counted, release = threading.Event(), threading.Event()
+    original = years_service._edits_since_upgrade
+
+    def stalled(*args, **kwargs):
+        out = original(*args, **kwargs)
+        counted.set()
+        assert release.wait(WAIT)
+        return out
+
+    monkeypatch.setattr(years_service, "_edits_since_upgrade", stalled)
+    return counted, release
+
+
+def test_delete_grade_vs_rollback_no_deadlock(cengine, monkeypatch):
+    """审查修复轮 1(L261):删年级要改该年级的组长绑定再删年级,回滚也是先删绑定再删年级;
+    删年级若只锁年级行,与回滚在绑定行 / 年级行上互等 → 40P01。现在删年级先对学年行取 KEY SHARE,
+    整个排在回滚之后:回滚提交后学年已删 → 409 NO_ACTIVE_YEAR;回滚成功,没有死锁。
+    被删的是升级建出来的、带年级组长、没有班的新年级(新班在升级后被删掉)。"""
+    school = UUID(SCHOOL_ID)
+    try:
+        with Session(cengine) as s:
+            plan = suggest(s, school, "2027-2028", date(2027, 9, 1), date(2028, 7, 15))
+            plan.new_classes.append(NewClassPlan(grade_name=HEADED_GRADE_NAME, name="一年一班"))
+            assert plan.grade_heads is not None
+            plan.grade_heads.append(
+                GradeHeadPlan(grade_name=HEADED_GRADE_NAME, user_ids=[GRADE_HEAD_USER])
+            )
+            years_service.apply(s, school, plan, now=datetime.now(UTC))
+            grade_id = s.execute(
+                text(
+                    "SELECT g.id FROM grades g JOIN academic_years y ON y.id = g.academic_year_id"
+                    " WHERE y.is_active AND g.name = :n"
+                ),
+                {"n": HEADED_GRADE_NAME},
+            ).scalar_one()
+            # 让它成为"有组长、没有班"的年级(新建的一年一班还没有学生,可以直接删)
+            s.execute(text("DELETE FROM classes WHERE grade_id = :g"), {"g": grade_id})
+            assert (
+                s.execute(
+                    text(
+                        "SELECT count(*) FROM role_bindings WHERE role_type = 'grade_head'"
+                        " AND ended_at IS NULL AND scope->>'grade_id' = :g"
+                    ),
+                    {"g": str(grade_id)},
+                ).scalar_one()
+                == 1
+            )
+            s.commit()
+        counted, release = _stall_rollback(monkeypatch)
+        roller = Worker(
+            cengine,
+            "roll",
+            lambda db: years_service.rollback(db, school, now=datetime.now(UTC)),
+        ).start()
+        deleter = Worker(cengine, "del", _delete_grade(grade_id))
+        try:
+            assert counted.wait(WAIT)  # 回滚持学年 FOR UPDATE,停在删除之前
+            deleter.start()
+            _wait_until_blocked(cengine, 1)  # 删年级卡在学年行锁上,还没碰绑定行 / 年级行
+        finally:
+            release.set()
+        roller.join()
+        deleter.join()
+        assert roller.error is None, roller.error  # 没有 40P01
+        assert isinstance(deleter.error, ApiError), deleter.error
+        assert deleter.error.status in (404, 409), deleter.error
+        assert deleter.error.code in ("NO_ACTIVE_YEAR", "NOT_FOUND"), deleter.error
+        assert not _grade_exists(cengine, grade_id)
+        with cengine.connect() as conn:
             assert conn.execute(
                 text("SELECT id FROM academic_years WHERE is_active")
             ).scalar_one() == UUID(YEAR_ID)

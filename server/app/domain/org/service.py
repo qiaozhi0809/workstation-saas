@@ -241,7 +241,11 @@ def delete_grade(
     request: Request | None,
 ) -> None:
     grade = get_grade(db, school_id, grade_id)
-    lock_grade(db, grade.id)  # 与建班串行:判"没有班"到删除之间不会有新班插进来(L261)
+    # 先学年行 KEY SHARE、再年级行 FOR UPDATE(L261,与建班同序):下面要改该年级的组长绑定再删
+    # 年级,而回滚持学年 FOR UPDATE 后也是先删绑定、再删年级——不先排在学年锁上,两边会在绑定行与
+    # 年级行上互等(40P01)。学年刚被回滚 → 409;学年锁到手后年级已被回滚删掉 → 404。
+    ensure_year_live(db, grade.academic_year_id)
+    lock_grade(db, grade.id)  # 与建班串行:判"没有班"到删除之间不会有新班插进来
     if _class_count(db, grade.id) > 0:
         raise ApiError(409, "GRADE_NOT_EMPTY", "该年级下还有班级,不能删除")
     # 该年级的年级组长绑定随年级一并结束,避免悬空
@@ -407,12 +411,14 @@ def create_class(
     grade = get_grade(db, school_id, body.grade_id)
     if grade.academic_year_id != year_id:
         raise ApiError(400, "BAD_REQUEST", "只能在当前学年的年级下建班")
-    if _class_name_taken(db, grade.id, body.name, None):
-        raise ApiError(409, "NAME_TAKEN", "该年级下已有同名班级")
     # 先学年行 KEY SHARE、再年级行 FOR UPDATE、最后插入(L261):学年刚被回滚 → 409 而不是外键 500;
     # 年级正在被删 → 等它提交后 404。顺序与回滚"学年 FOR UPDATE → DELETE grades"一致,不互等。
     ensure_year_live(db, year_id)
     lock_grade(db, grade.id)
+    # 重名检查放在年级行锁之后:同年级并发建班在锁上排队,后到的能看见先到的已提交的行,
+    # 唯一索引 uq_classes_grade_name 只是最后防线(L263)
+    if _class_name_taken(db, grade.id, body.name, None):
+        raise ApiError(409, "NAME_TAKEN", "该年级下已有同名班级")
     cls = SchoolClass(
         school_id=school_id,
         academic_year_id=year_id,
@@ -453,6 +459,10 @@ def update_class(
     grade = get_grade(db, school_id, body.grade_id)
     if grade.academic_year_id != cls.academic_year_id:
         raise ApiError(400, "BAD_REQUEST", "只能换到当前学年的年级")
+    if grade.id != cls.grade_id:
+        # 换年级:先班级行(上面)、再目标年级行 FOR UPDATE,与回滚"班级 → 年级"同序;目标年级
+        # 正在被删 → 等它提交后 404,而不是 UPDATE 撞年级外键 500(L261)
+        lock_grade(db, grade.id)
     if _class_name_taken(db, grade.id, body.name, cls.id):
         raise ApiError(409, "NAME_TAKEN", "该年级下已有同名班级")
     cls.grade_id = grade.id
