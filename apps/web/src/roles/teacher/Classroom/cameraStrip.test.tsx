@@ -124,6 +124,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   vi.useRealTimers()
+  vi.restoreAllMocks()
 })
 
 it('hidden when no cameras', async () => {
@@ -264,6 +265,38 @@ it('opens fullscreen with watermark and pauses the idle animation', async () => 
   expect(screen.getByTestId('camera-strip')).toBeInTheDocument()
   expect(live()).toEqual(['cam1', 'cam2'])
   expect(FakeHls.instances).toHaveLength(5)
+})
+
+it('keeps last frame thumbnail in fullscreen', async () => {
+  // 进全屏时把正在播的缩略画面截一帧(canvas)留在原位,而不是干巴巴的文字占位(L218 ④);
+  // 还没出画面的那一路截不到,仍用文字占位;关全屏后截帧丢掉、播放器重建
+  const drawImage = vi.fn()
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+    drawImage,
+  } as unknown as CanvasRenderingContext2D)
+  vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue(
+    'data:image/jpeg;base64,ZnJhbWU=',
+  )
+  const { strip } = await openStrip()
+  const playing = within(strip).getByLabelText('讲台机位') as HTMLVideoElement
+  Object.defineProperty(playing, 'readyState', { value: 2, configurable: true })
+  Object.defineProperty(playing, 'videoWidth', { value: 640, configurable: true })
+  Object.defineProperty(playing, 'videoHeight', { value: 360, configurable: true })
+  fireEvent.click(screen.getByRole('button', { name: '全屏查看 后排机位' }))
+  await screen.findByRole('dialog', { name: '后排机位' })
+  expect(drawImage).toHaveBeenCalledTimes(1)
+  expect(drawImage.mock.calls[0][0]).toBe(playing)
+  const frame = within(strip).getByRole('img', { name: '讲台机位 最后一帧' })
+  expect(frame).toHaveAttribute('src', 'data:image/jpeg;base64,ZnJhbWU=')
+  expect(within(strip).getByText('全屏中暂停')).toBeInTheDocument()
+  expect(within(strip).queryByRole('img', { name: '后排机位 最后一帧' })).toBeNull()
+  expect(within(strip).getByText('正在全屏')).toBeInTheDocument()
+  expect(live()).toEqual(['cam2'])
+
+  fireEvent.keyDown(document, { key: 'Escape' })
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: '后排机位' })).toBeNull())
+  expect(within(strip).queryByRole('img', { name: /最后一帧/ })).toBeNull()
+  expect(live()).toEqual(['cam1', 'cam2'])
 })
 
 it('refresh 403 counts as period ended even without a player error', async () => {

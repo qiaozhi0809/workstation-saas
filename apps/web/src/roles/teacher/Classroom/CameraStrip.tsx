@@ -30,6 +30,25 @@ const periodText = (d: ClassCameras | undefined) =>
     : null
 
 /**
+ * 进全屏前把缩略画面的当前帧截下来(片段同源,不会污染 canvas);还没出画面 / 截不到就返回 null,用文字占位。
+ * 用 JPEG dataURL 而不是留着 <canvas>:播放器马上要卸载,留一张图最省事(L218 ④)
+ */
+function snapshot(video: HTMLVideoElement | null | undefined): string | null {
+  if (!video || video.readyState < 2 || !video.videoWidth || !video.videoHeight) return null
+  try {
+    const canvas = document.createElement('canvas')
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+    return canvas.toDataURL('image/jpeg', 0.7)
+  } catch {
+    return null
+  }
+}
+
+/**
  * 舞台下方的本班摄像头缩略条:只在展开时挂载,收起 = 卸载(播放器自己 destroy)。
  * 缩略 120px 高、横向滚动;点缩略进全屏弹层(铺满 + 水印)。
  */
@@ -48,6 +67,22 @@ export default function CameraStrip({
     refetchInterval: REFETCH_MS,
   })
   const [full, setFull] = useState<CameraBrief | null>(null)
+  // 全屏期间缩略位置显示的最后一帧(按摄像头 id);进全屏那一刻从各缩略的 <video> 截下来
+  const [frames, setFrames] = useState<Record<string, string>>({})
+  const tilesRef = useRef(new Map<string, HTMLDivElement>())
+  const openFull = (c: CameraBrief, list: CameraBrief[]) => {
+    const next: Record<string, string> = {}
+    for (const cam of list) {
+      const url = snapshot(tilesRef.current.get(cam.id)?.querySelector('video'))
+      if (url) next[cam.id] = url
+    }
+    setFrames(next)
+    setFull(c)
+  }
+  const closeFull = () => {
+    setFull(null)
+    setFrames({})
+  }
   const fullscreenRef = useRef(onFullscreenChange)
   fullscreenRef.current = onFullscreenChange
   useEffect(() => {
@@ -116,11 +151,25 @@ export default function CameraStrip({
         {cameras.map((c) => (
           <div
             key={c.id}
+            ref={(el) => {
+              if (el) tilesRef.current.set(c.id, el)
+              else tilesRef.current.delete(c.id)
+            }}
             className="relative h-[120px] w-[213px] shrink-0 overflow-hidden rounded-lg border bg-muted"
           >
             {full ? (
+              // 全屏期间不挂播放器:截下的最后一帧垫底(截不到就只有文字),上面写明状态
               <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-                {full.id === c.id ? '正在全屏' : '全屏中暂停'}
+                {frames[c.id] && (
+                  <img
+                    src={frames[c.id]}
+                    alt={`${c.name} 最后一帧`}
+                    className="absolute inset-0 h-full w-full object-contain"
+                  />
+                )}
+                <span className="relative rounded bg-background/80 px-1.5 py-0.5">
+                  {full.id === c.id ? '正在全屏' : '全屏中暂停'}
+                </span>
               </div>
             ) : (
               <CameraPlayer cameraId={c.id} title={c.name} onEnded={ended} />
@@ -130,7 +179,7 @@ export default function CameraStrip({
               aria-label={`全屏查看 ${c.name}`}
               title="全屏查看"
               className="absolute inset-0 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              onClick={() => setFull(c)}
+              onClick={() => openFull(c, cameras)}
             />
             <span className="pointer-events-none absolute bottom-1 left-1 max-w-[calc(100%-0.5rem)] truncate rounded bg-background/80 px-1.5 py-0.5 text-xs text-foreground">
               {c.name}
@@ -162,7 +211,7 @@ export default function CameraStrip({
       {full && (
         <Modal
           open
-          onClose={() => setFull(null)}
+          onClose={closeFull}
           title={full.name}
           description={period ?? undefined}
           className="sm:max-w-[min(96vw,calc((100dvh_-_9rem)*16/9),1280px)]"
