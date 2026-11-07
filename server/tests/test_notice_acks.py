@@ -164,7 +164,8 @@ def test_inbox_my_ack_and_can_ack(client, db, settings):
     n = parent_notice(client, settings, CHOICE)
     item = client.get(INBOX, headers=auth(settings, LI)).json()["items"][0]
     assert item["id"] == n and item["ack"] == CHOICE and item["my_ack"] is None
-    assert item["can_ack"] is True and item["students"] == ["王小一"]
+    assert item["can_ack"] is True
+    assert item["students_detail"] == [{"name": "王小一", "class_name": "三年二班"}]
     post_ack(client, settings, LI, n, choice=1, note="有事")
     item = client.get(INBOX, headers=auth(settings, LI)).json()["items"][0]
     assert item["my_ack"]["choice"] == 1 and item["my_ack"]["note"] == "有事"
@@ -249,16 +250,15 @@ def _snapshot_rows(db, nid) -> set[tuple[str, str | None, str | None]]:
 
 
 def test_students_detail(client, db, settings):
-    """L87:两处写入点都记下发送时刻的班;收件箱给 students_detail(students 不变)。"""
+    """L87 / L282:两处写入点都记下发送时刻的班;收件箱只给 students_detail,旧的 students 已删。"""
     n = parent_notice(client, settings, CONFIRM)
     assert _snapshot_rows(db, n) == {("S0001", C32, "三年二班"), ("S0002", C32, "三年二班")}
     item = _item(client, settings, LI, n)
-    assert item["students"] == ["王小一"]
+    assert "students" not in item
     assert item["students_detail"] == [{"name": "王小一", "class_name": "三年二班"}]
 
     wide = send(client, settings, PRINCIPAL, TARGET_SCHOOL, audience="parents").json()["id"]
     item = _item(client, settings, LI, wide)
-    assert item["students"] == ["魏小七", "王小一"]
     assert item["students_detail"] == [
         {"name": "魏小七", "class_name": "四年一班"},
         {"name": "王小一", "class_name": "三年二班"},
@@ -282,7 +282,7 @@ def test_students_detail(client, db, settings):
     # 老师对象:两个列表都空
     t = send(client, settings, PRINCIPAL, TARGET_C32, ack=CONFIRM).json()["id"]
     item = _item(client, settings, T01, t)
-    assert item["students"] == [] and item["students_detail"] == []
+    assert item["students_detail"] == []
 
 
 def test_ack_block_reason(client, db, settings, monkeypatch):

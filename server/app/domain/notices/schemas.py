@@ -194,8 +194,7 @@ class InboxItem(BaseModel):
     ack: AckSpec
     ack_deadline: datetime | None
     my_ack: MyAck | None
-    students: list[str]
-    students_detail: list[StudentDetail]
+    students_detail: list[StudentDetail]  # L282:旧的 students: list[str] 已删,只留带班名的明细
     can_ack: bool
     ack_block_reason: AckBlockReason | None  # can_ack 为假时的原因;不需要回执的通知为 null
 

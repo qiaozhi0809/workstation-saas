@@ -1088,7 +1088,6 @@ def inbox(db: Session, user: User, page: int, *, now: datetime | None = None) ->
                     if acked_at is not None
                     else None
                 ),
-                students=[k.name for k in kids.get(n.id, [])],
                 students_detail=kids.get(n.id, []),
                 can_ack=n.ack_kind != "none" and reason is None,
                 ack_block_reason=reason,
