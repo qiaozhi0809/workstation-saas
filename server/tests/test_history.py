@@ -295,6 +295,62 @@ def test_grade_head_sees_none(client, settings, db, past):
     assert failed_audits(db, GRADE_HEAD3, CLASS_ID) == 3
 
 
+def test_locate_class_year(client, settings, db, past):
+    """L275:按班 id 读它所在的学年。200:往年可见班;403 + 审计:当前学年的班、年级组长看不到的班;
+    404:不存在 / 别校的班(不记审计);信息中心 / 教师 403(school.view)。"""
+    r = get(client, settings, f"/classes/{CLASS_ID}")
+    assert r.status_code == 200, r.text
+    assert r.json() == {
+        "class_id": CLASS_ID,
+        "class_name": "三年二班",
+        "year_id": YEAR_ID,
+        "year_name": "2026-2027",
+    }
+    assert get(client, settings, f"/classes/{CLASS_ID}", user=DEAN).status_code == 200
+    # 当前学年(升级后新建)的班 → 403 + 审计
+    current = db.scalars(
+        select(SchoolClass).where(SchoolClass.school_id == SCHOOL, SchoolClass.active.is_(True))
+    ).first()
+    assert get(client, settings, f"/classes/{current.id}").status_code == 403
+    assert failed_audits(db, PRINCIPAL, current.id) == 1
+    # 年级组长对往年班没有可见范围 → 403 + 审计
+    assert get(client, settings, f"/classes/{CLASS_ID}", user=GRADE_HEAD3).status_code == 403
+    assert failed_audits(db, GRADE_HEAD3, CLASS_ID) == 1
+    # 不存在 / 别校的班 → 404,不记审计
+    ghost = uuid4()
+    r = get(client, settings, f"/classes/{ghost}")
+    assert r.status_code == 404 and r.json()["error"]["code"] == "NOT_FOUND"
+    assert failed_audits(db, PRINCIPAL, ghost) == 0
+    other_id = db.execute(
+        text("INSERT INTO schools (name) VALUES ('别校') RETURNING id")
+    ).scalar_one()
+    year = AcademicYear(
+        school_id=other_id,
+        name="2025-2026",
+        start_date=date(2025, 9, 1),
+        end_date=date(2026, 7, 15),
+        is_active=False,
+    )
+    db.add(year)
+    db.flush()
+    grade = Grade(school_id=other_id, academic_year_id=year.id, name="三年级", display_order=3)
+    db.add(grade)
+    db.flush()
+    cls = SchoolClass(
+        school_id=other_id,
+        academic_year_id=year.id,
+        grade_id=grade.id,
+        name="别校一班",
+        active=False,
+    )
+    db.add(cls)
+    db.flush()
+    assert get(client, settings, f"/classes/{cls.id}").status_code == 404
+    assert failed_audits(db, PRINCIPAL, cls.id) == 0
+    for uid in (IT_ADMIN, T01):
+        assert get(client, settings, f"/classes/{CLASS_ID}", user=uid).status_code == 403
+
+
 def test_current_year_class_forbidden(client, settings, db, past):
     current = db.scalars(
         select(SchoolClass).where(SchoolClass.school_id == SCHOOL, SchoolClass.active.is_(True))

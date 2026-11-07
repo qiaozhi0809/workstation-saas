@@ -8,6 +8,7 @@ from app.auth.deps import get_current_user
 from app.db import get_db
 from app.domain.history.schemas import (
     HistoryClass,
+    HistoryClassLocation,
     HistoryExam,
     HistoryRoster,
     HistoryScores,
@@ -17,6 +18,7 @@ from app.domain.history.service import (
     class_exams,
     class_students,
     exam_scores,
+    locate_class,
     past_classes,
     past_years,
 )
@@ -49,6 +51,18 @@ def get_classes(
 ) -> list[HistoryClass]:
     ensure_school_view(db, request, user, bindings)
     return past_classes(db, user, bindings, year_id)
+
+
+@router.get("/classes/{class_id}")
+def get_class_location(
+    class_id: UUID,
+    request: Request,
+    user: Annotated[User, Depends(get_current_user)],
+    bindings: Annotated[list[Binding], Depends(get_bindings)],
+    db: Annotated[Session, Depends(get_db)],
+) -> HistoryClassLocation:
+    ensure_school_view(db, request, user, bindings)
+    return locate_class(db, user, bindings, class_id, request)
 
 
 @router.get("/classes/{class_id}/students")
