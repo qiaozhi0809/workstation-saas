@@ -397,6 +397,8 @@ def login_totp(
         if user is not None and user.status != "active":
             _log(db, settings, user, user.login_name, "inactive", request)
         raise _mfa_expired()
+    # 密钥读不出来是服务端故障(500),不是用户猜错码:先读密钥,读不出就不计失败、不会把账号锁上(L296)
+    secret = _load_secret(settings, user)
     # 锁定按登录名算:换一个 mfa_token 也一样被拒。先原子计数、再验证(L142):并发多个 mfa_token 时
     # 第 N 个请求看到的计数已含前 N-1 个,超过上限的直接拒绝,不再给它一次猜码机会;验证通过后
     # _finish_login 会把计数整个删掉,所以成功那次多计的一下不留痕迹
@@ -409,7 +411,6 @@ def login_totp(
             "登录失败次数过多,请稍后再试",
             headers=_retry_after(redis, settings, fail_key),
         )
-    secret = _load_secret(settings, user)
     if not totp.verify(redis, user.id, secret, code, clock.utc_now()):
         mfa.record_try(redis, mfa_token)
         _log(db, settings, user, user.login_name, "totp_failed", request)
