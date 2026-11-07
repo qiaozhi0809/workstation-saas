@@ -7,13 +7,11 @@ import Modal from '@/shared/components/overlay/Modal'
 import { Button } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
 import { cn } from '@/shared/lib/utils'
-import { useAuthStore } from '@/shared/stores/auth'
 import type { GradeExam, GradeExamInput } from '@/shared/types/admin'
 import { EXAM_TYPES, type ExamType, type SubjectFull } from '@/shared/types/grades'
-import { STAGE_LABEL } from '@/shared/types/school'
+import { STAGE_LABEL, type Stage } from '@/shared/types/school'
 import { errMsg } from '../Org/errMsg'
 import Field from '../Org/Field'
-import { catalogStage } from './catalogStage'
 import { invalidateTeacherExamCaches } from './teacherCache'
 
 const NAME_MAX = 30
@@ -37,14 +35,15 @@ function buildOptions(catalog: SubjectFull[], exam: GradeExam | undefined): Opti
 
 export default function GradeExamForm({
   gradeId,
-  gradeName,
+  stage,
   exam,
   today,
   onClose,
   onSaved,
 }: {
   gradeId: string
-  gradeName: string
+  /** 年级的学段键,来自 GET /school/grades 的 effective_stage(L234);契约允许为 null,此时读不到目录 */
+  stage: Stage | null
   exam?: GradeExam
   today: string
   onClose(): void
@@ -58,22 +57,11 @@ export default function GradeExamForm({
   const [picked, setPicked] = useState<Set<string> | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  // 年级表只有 org.manage 能读(年级组长会 403);读不到就按年级名推断学段,与后端同规则
-  const canReadGrades = useAuthStore((s) => s.user?.admin_perms.includes('org.manage') ?? false)
-  const grades = useQuery({
-    queryKey: ['admin', 'grades'],
-    queryFn: adminApi.grades,
-    enabled: canReadGrades,
-  })
-  const stage = catalogStage(
-    grades.data?.find((g) => g.id === (exam?.grade_id ?? gradeId))?.effective_stage,
-    exam?.grade_name ?? gradeName,
-  )
   const catalog = useQuery({
     queryKey: ['school', 'subject-catalog'],
     queryFn: schoolApi.subjectCatalog,
   })
-  const options = catalog.data ? buildOptions(catalog.data[stage], exam) : null
+  const options = catalog.data && stage ? buildOptions(catalog.data[stage], exam) : null
   const selected = picked ?? new Set((exam ? exam.subjects : (options ?? [])).map((s) => s.name))
 
   const save = useMutation({
@@ -177,9 +165,15 @@ export default function GradeExamForm({
         <div role="group" aria-label="科目" className="grid gap-2 text-sm">
           <div className="flex items-baseline justify-between gap-2">
             <span className="text-muted-foreground">科目与满分</span>
-            <span className="text-xs text-muted-foreground">{`${STAGE_LABEL[stage]}目录`}</span>
+            {stage && (
+              <span className="text-xs text-muted-foreground">{`${STAGE_LABEL[stage]}目录`}</span>
+            )}
           </div>
-          {options ? (
+          {!stage ? (
+            <p role="alert" className="text-destructive">
+              这个年级还没有学段,读不到科目目录;请先到组织架构里给年级设学段
+            </p>
+          ) : options ? (
             <ul className="grid gap-1 sm:grid-cols-2">
               {options.map((o) => (
                 <li key={o.name}>

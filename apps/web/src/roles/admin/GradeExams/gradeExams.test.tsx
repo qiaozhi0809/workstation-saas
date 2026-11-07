@@ -7,7 +7,7 @@ import { ApiError } from '@/shared/api/client'
 import { schoolApi } from '@/shared/api/school'
 import { toast } from '@/shared/components/Toast'
 import { useAuthStore } from '@/shared/stores/auth'
-import type { GradeAdmin, GradeExam, SchoolGrade } from '@/shared/types/admin'
+import type { GradeExam, SchoolGrade } from '@/shared/types/admin'
 import type { Meta, SubjectCatalog } from '@/shared/types/school'
 import GradeExamsPage from './GradeExamsPage'
 
@@ -324,37 +324,34 @@ it('grade exam form picks from catalog', async () => {
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 })
 
-it('uses the stage of the grade: junior catalog for 初一 by name, explicit stage when readable', async () => {
+// L234:学段直接用 GET /school/grades 给的 effective_stage(显式学段或后端按名推断),前端不再按年级名猜、也不再读 /admin/grades
+it('stage from grade brief', async () => {
+  // 名字像初中,但年级显式设了高中 → 高中目录;即使有 org.manage 也不去读年级表
+  useAuthStore.setState({ user: { admin_perms: ['org.manage'] } as never })
   vi.mocked(adminApi.schoolGrades).mockResolvedValue([
-    { id: 'g7', name: '初一', display_order: 7, effective_stage: 'junior' },
+    { id: 'g7', name: '初一', display_order: 7, effective_stage: 'senior' },
+    { id: 'g0', name: '国际部', display_order: 9, effective_stage: null },
   ])
   vi.mocked(adminApi.gradeExams).mockResolvedValue([exam({ grade_id: 'g7', grade_name: '初一' })])
   await renderPage()
   fireEvent.click(screen.getByRole('button', { name: '新建联考' }))
   let dlg = await screen.findByRole('dialog')
-  await within(dlg).findByRole('checkbox', { name: '物理' })
-  expect(within(dlg).getByText('初中目录')).toBeInTheDocument()
-  expect(subjectRow(dlg, '语文')).toHaveTextContent('满分 120')
-  expect(adminApi.grades).not.toHaveBeenCalled() // 没有 org.manage 不去读年级表
+  await within(dlg).findByRole('checkbox', { name: '语文' })
+  expect(within(dlg).getByText('高中目录')).toBeInTheDocument()
+  expect(subjectRow(dlg, '语文')).toHaveTextContent('满分 150')
+  expect(within(dlg).queryByRole('checkbox', { name: '物理' })).toBeNull()
+  expect(adminApi.grades).not.toHaveBeenCalled()
   fireEvent.click(within(dlg).getByRole('button', { name: '取消' }))
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 
-  // 有 org.manage:年级表里显式设的学段优先于按名字推断
-  useAuthStore.setState({ user: { admin_perms: ['org.manage'] } as never })
-  const g7: GradeAdmin = {
-    id: 'g7',
-    name: '初一',
-    stage: '高中',
-    effective_stage: '高中',
-    display_order: 1,
-    class_count: 2,
-  }
-  vi.mocked(adminApi.grades).mockResolvedValue([g7])
+  // 契约允许 effective_stage 为 null:说清楚读不到目录,不能保存
+  fireEvent.click(screen.getByRole('tab', { name: '国际部' }))
+  await waitFor(() => expect(adminApi.gradeExams).toHaveBeenCalledWith('g0'))
   fireEvent.click(screen.getByRole('button', { name: '新建联考' }))
   dlg = await screen.findByRole('dialog')
-  expect(await within(dlg).findByText('高中目录')).toBeInTheDocument()
-  expect(subjectRow(dlg, '语文')).toHaveTextContent('满分 150')
-  expect(within(dlg).queryByRole('checkbox', { name: '物理' })).toBeNull()
+  expect(await within(dlg).findByRole('alert')).toHaveTextContent('这个年级还没有学段')
+  expect(within(dlg).queryByRole('checkbox')).toBeNull()
+  expect(within(dlg).getByRole('button', { name: '保存' })).toBeDisabled()
 })
 
 it('requires a name and at least one subject locally', async () => {

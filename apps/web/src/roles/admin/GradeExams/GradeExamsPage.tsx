@@ -112,8 +112,9 @@ export default function GradeExamsPage() {
   const [delError, setDelError] = useState<string | null>(null)
 
   const list = grades.data ?? []
-  const gradeId = sel && list.some((g) => g.id === sel) ? sel : (list[0]?.id ?? null)
-  const gradeName = list.find((g) => g.id === gradeId)?.name ?? ''
+  const grade = (sel && list.find((g) => g.id === sel)) || list[0] || null
+  const gradeId = grade?.id ?? null
+  const gradeName = grade?.name ?? ''
   const exams = useQuery({
     queryKey: ['grade-exams', gradeId],
     queryFn: () => adminApi.gradeExams(gradeId),
@@ -200,10 +201,11 @@ export default function GradeExamsPage() {
         </div>
       )}
       {body}
-      {dialog?.kind === 'form' && gradeId !== null && (
+      {dialog?.kind === 'form' && grade && (
         <GradeExamForm
-          gradeId={gradeId}
-          gradeName={gradeName}
+          gradeId={grade.id}
+          // 学段直接用年级简项的 effective_stage,不再按年级名推断(L234)
+          stage={grade.effective_stage}
           exam={dialog.exam}
           today={todayIn(school.tz)}
           onClose={close}
