@@ -127,6 +127,21 @@ describe('AckSettings', () => {
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
+  it('"没动过"按选项记而不按位置:删掉后面填过的选项,前面没动过的空选项回到末尾就不再报(L281)', () => {
+    render(<Harness initial={{ kind: 'choice', options: ['去', '不去'], allow_note: false }} />)
+    fireEvent.click(screen.getByRole('button', { name: '添加选项' }))
+    fireEvent.click(screen.getByRole('button', { name: '添加选项' }))
+    typeOpt(4, '再议')
+    expect(screen.getByText('选项不能为空')).toBeInTheDocument() // 选项 3 夹在中间
+    fireEvent.click(screen.getByRole('button', { name: '删除选项 4' }))
+    expect(screen.getByLabelText('选项 3')).toHaveValue('')
+    expect(screen.queryByRole('alert')).toBeNull() // 选项 3 又成了末尾没动过的空行
+    typeOpt(3, '待定')
+    expect(screen.queryByRole('alert')).toBeNull()
+    typeOpt(3, '')
+    expect(screen.getByText('选项不能为空')).toBeInTheDocument() // 动过后清空就照报
+  })
+
   it('截止时间早于现在报错,晚于现在无错;清空回 null', () => {
     const onDeadline = vi.fn()
     render(<Harness initial={{ kind: 'confirm' }} onDeadline={onDeadline} />)

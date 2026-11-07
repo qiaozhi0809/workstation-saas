@@ -19,6 +19,23 @@ function toLocalInput(iso: string | null | undefined): string {
   return iso ? formatInTz(iso, localTz()).replace(' ', 'T') : ''
 }
 
+/** 选项的临时 id:只在本组件内把"哪个选项还没动过"记住,不进 AckSpec */
+let seq = 0
+const newId = () => `opt-${++seq}`
+
+const without = (set: ReadonlySet<string>, id: string): ReadonlySet<string> => {
+  const next = new Set(set)
+  next.delete(id)
+  return next
+}
+
+/** 去掉末尾连续的、刚添加还没动过的选项:即时校验只看前面这些(L89) */
+function settledOptions(options: string[], ids: string[], fresh: ReadonlySet<string>): string[] {
+  let n = options.length
+  while (n > 0 && fresh.has(ids[n - 1])) n--
+  return options.slice(0, n)
+}
+
 /**
  * 回执设置:不要回执 / 已知晓 / 单选。
  * - value / onChange:回执方式(AckSpec)受控。
@@ -37,39 +54,46 @@ export default function AckSettings({
   onDeadlineChange?(iso: string | null): void
 }) {
   const [local, setLocal] = useState(() => toLocalInput(deadline))
-  // 从这个下标起,末尾的选项都是刚"添加选项"加出来、还没动过的空行:先不报"选项不能为空",
-  // 等用户填了(或提交时 ackSpecError)再说;动过其中一个,它前面没动过的空行就夹在中间了,照报
-  const [freshFrom, setFreshFrom] = useState<number | null>(null)
+  const options = value.kind === 'choice' ? value.options : []
+  // 每个选项一个临时 id(与 value.options 同序);刚"添加选项"加出来、还没动过的选项 id 记在 fresh 里:
+  // 它们在末尾时先不报"选项不能为空",等用户填了(或提交时 ackSpecError)再说;
+  // 后面有动过的选项,夹在中间的空行就照报。按 id 记而不按位置,增删选项不用挪下标(L281)
+  const [ids, setIds] = useState<string[]>(() => options.map(() => newId()))
+  const [fresh, setFresh] = useState<ReadonlySet<string>>(() => new Set())
   const dlError =
     local !== '' && new Date(local).getTime() <= Date.now() ? '截止时间要晚于现在' : null
 
   const pick = (kind: AckSpec['kind']) => {
     if (kind === value.kind) return
-    if (kind === 'choice') onChange({ kind, options: ['', ''], allow_note: false })
-    else onChange({ kind })
-    setFreshFrom(null)
+    if (kind === 'choice') {
+      onChange({ kind, options: ['', ''], allow_note: false })
+      setIds([newId(), newId()])
+    } else {
+      onChange({ kind })
+      setIds([])
+    }
+    setFresh(new Set())
     if (kind === 'none') {
       setLocal('')
       onDeadlineChange?.(null)
     }
   }
-  const options = value.kind === 'choice' ? value.options : []
   const setOptions = (next: string[]) => {
     if (value.kind === 'choice') onChange({ ...value, options: next })
   }
   const addOption = () => {
-    setFreshFrom((f) => f ?? options.length)
+    const id = newId()
+    setIds([...ids, id])
+    setFresh(new Set([...fresh, id]))
     setOptions([...options, ''])
   }
   const editOption = (i: number, text: string) => {
-    if (freshFrom !== null && i >= freshFrom) setFreshFrom(i + 1 < options.length ? i + 1 : null)
+    if (fresh.has(ids[i])) setFresh(without(fresh, ids[i]))
     setOptions(options.map((o, j) => (j === i ? text : o)))
   }
   const removeOption = (i: number) => {
-    if (freshFrom !== null)
-      setFreshFrom(
-        i < freshFrom ? freshFrom - 1 : freshFrom < options.length - 1 ? freshFrom : null,
-      )
+    if (fresh.has(ids[i])) setFresh(without(fresh, ids[i]))
+    setIds(ids.filter((_, j) => j !== i))
     setOptions(options.filter((_, j) => j !== i))
   }
   const onDeadline = (v: string) => {
@@ -80,7 +104,7 @@ export default function AckSettings({
   }
 
   const choiceError =
-    value.kind === 'choice' ? optionsError(options.slice(0, freshFrom ?? undefined)) : null
+    value.kind === 'choice' ? optionsError(settledOptions(options, ids, fresh)) : null
 
   return (
     <div className="flex flex-col gap-3">
