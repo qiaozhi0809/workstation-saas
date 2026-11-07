@@ -56,7 +56,7 @@ for cand in iptables iptables-legacy; do
 done
 if [ -z "$IPT" ]; then
   err="$(iptables -w 5 -S OUTPUT 2>&1 || true)"
-  die "无法操作 iptables(${err:-未知原因})。写出站规则需要容器带 NET_ADMIN 能力:请确认 docker-compose.yml 的 stream-worker 有 cap_add: [NET_ADMIN](1.1 起的 compose 文件已带);确实不需要出站限制时可在 .env 设 WS_CAMERA_NETS=any"
+  die "无法操作 iptables(${err:-未知原因})。写出站规则需要容器带 NET_ADMIN 能力:请确认 docker-compose.yml 的 stream-worker 有 cap_add: [NET_ADMIN](1.0.0 起的 compose 文件已带);确实不需要出站限制时可在 .env 设 WS_CAMERA_NETS=any"
 fi
 ipt() { "$IPT" -w 5 "$@"; }
 
