@@ -158,7 +158,13 @@ function EnableFlow({ onDone, onCancel }: { onDone(): void; onCancel(): void }) 
           取消
         </Button>
         <Button type="submit" disabled={busy || code.length !== 6 || !password} aria-busy={busy}>
-          {busy && <Loader2 className="h-4 w-4 motion-safe:animate-spin" aria-hidden="true" />}
+          {busy && (
+            <Loader2
+              role="status"
+              aria-label="正在提交"
+              className="h-4 w-4 motion-safe:animate-spin"
+            />
+          )}
           确认开启
         </Button>
       </div>
@@ -203,7 +209,13 @@ function DisableFlow({ onDone, onCancel }: { onDone(): void; onCancel(): void })
           取消
         </Button>
         <Button type="submit" variant="destructive" disabled={busy || !password} aria-busy={busy}>
-          {busy && <Loader2 className="h-4 w-4 motion-safe:animate-spin" aria-hidden="true" />}
+          {busy && (
+            <Loader2
+              role="status"
+              aria-label="正在提交"
+              className="h-4 w-4 motion-safe:animate-spin"
+            />
+          )}
           确认关闭
         </Button>
       </div>

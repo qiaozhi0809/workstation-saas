@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore } from '@/shared/stores/auth'
 import * as client from '@/shared/api/client'
 import { CameraPlayer } from './CameraPlayer'
+import { loadHls } from './loadHls'
 
 const h = vi.hoisted(() => {
   type Handler = (event: string, data: unknown) => void
@@ -13,6 +14,7 @@ const h = vi.hoisted(() => {
     static Events = {
       ERROR: 'hlsError',
       MANIFEST_PARSED: 'hlsManifestParsed',
+      LEVEL_LOADED: 'hlsLevelLoaded',
       FRAG_LOADED: 'hlsFragLoaded',
     }
     static ErrorTypes = { NETWORK_ERROR: 'networkError', MEDIA_ERROR: 'mediaError' }
@@ -75,13 +77,19 @@ const segmentError = (code: number, body = '') => ({
 })
 const mediaError = (details = 'bufferAppendError') => ({ type: 'mediaError', details, fatal: true })
 const frag = (sn: number) => ({ frag: { sn } })
+/** hls.js LEVEL_LOADED 的样子(只保留播放器会读的字段):直播播放列表的目标时长与片段序号窗口 */
+const level = (over: Partial<{ targetduration: number; startSN: number; endSN: number }> = {}) => ({
+  details: { live: true, targetduration: 2, startSN: 1, endSN: 3, ...over },
+})
 const video = (title = 't') => screen.getByLabelText(title) as HTMLVideoElement
 const starting = () => manifestError(503, errBody('STREAM_STARTING'))
 
-beforeEach(() => {
+beforeEach(async () => {
   FakeHls.instances = []
   FakeHls.supported = true
   useAuthStore.setState({ accessToken: 'tok-1', refreshToken: 'r' })
+  // hls.js 是懒加载的(L171):先预热,下面的用例挂载即同步建实例;懒加载本身见 CameraPlayer.lazy.test.tsx
+  await loadHls()
 })
 afterEach(() => {
   cleanup()
@@ -488,23 +496,63 @@ describe('CameraPlayer', () => {
     act(() => void document.dispatchEvent(new Event('visibilitychange')))
     act(() => void vi.advanceTimersByTime(60000))
     expect(screen.queryByText('摄像头连不上')).toBeNull()
+    expect(screen.getByRole('status')).toHaveTextContent('加载中')
+    // 回来后第一段 8 秒从头计:到点先是"正在等摄像头出画…",不是连不上
     hidden = false
     act(() => void document.dispatchEvent(new Event('visibilitychange')))
     act(() => void vi.advanceTimersByTime(7999))
+    expect(screen.getByRole('status')).toHaveTextContent('加载中')
+    act(() => void vi.advanceTimersByTime(1))
+    expect(screen.getByRole('status')).toHaveTextContent('正在等摄像头出画…')
+    // 等出画期间再隐藏 / 回来:二次计时从头计 8 秒,不退回第一段
+    act(() => void vi.advanceTimersByTime(3000))
+    hidden = true
+    act(() => void document.dispatchEvent(new Event('visibilitychange')))
+    act(() => void vi.advanceTimersByTime(60000))
     expect(screen.queryByText('摄像头连不上')).toBeNull()
+    hidden = false
+    act(() => void document.dispatchEvent(new Event('visibilitychange')))
+    act(() => void vi.advanceTimersByTime(7999))
+    expect(screen.getByRole('status')).toHaveTextContent('正在等摄像头出画…')
     act(() => void vi.advanceTimersByTime(1))
     expect(screen.getByRole('alert')).toHaveTextContent('摄像头连不上')
   })
 
-  it('shows offline 8 s after MANIFEST_PARSED without any fragment', () => {
+  it('shows waiting copy after manifest without fragments', () => {
+    // L169:播放列表拿到了却一直没有片段:8 秒后先说"正在等摄像头出画…"(status,不是告警)并二次计时,
+    // 再 8 秒还没有才是"摄像头连不上"(offline 的判定不变:没出过画面)
     vi.useFakeTimers()
     render(<CameraPlayer cameraId="c1" title="t" />)
     act(() => hls().emit('hlsManifestParsed'))
     act(() => void vi.advanceTimersByTime(7999))
+    expect(screen.getByRole('status')).toHaveTextContent('加载中')
+    act(() => void vi.advanceTimersByTime(1))
+    expect(screen.getByRole('status')).toHaveTextContent('正在等摄像头出画…')
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+    expect(hls().destroy).not.toHaveBeenCalled()
+    expect(hls().loadSource).toHaveBeenCalledTimes(1)
+    act(() => void vi.advanceTimersByTime(7999))
     expect(screen.queryByText('摄像头连不上')).toBeNull()
     act(() => void vi.advanceTimersByTime(1))
     expect(screen.getByRole('alert')).toHaveTextContent('摄像头连不上')
+    expect(screen.queryByText('正在等摄像头出画…')).toBeNull()
     expect(hls().destroy).toHaveBeenCalled()
+  })
+
+  it('a fragment during the waiting stage plays normally', () => {
+    vi.useFakeTimers()
+    const onPlaying = vi.fn()
+    render(<CameraPlayer cameraId="c1" title="t" onPlaying={onPlaying} />)
+    act(() => hls().emit('hlsManifestParsed'))
+    act(() => void vi.advanceTimersByTime(8000))
+    expect(screen.getByRole('status')).toHaveTextContent('正在等摄像头出画…')
+    act(() => hls().emit('hlsFragLoaded'))
+    expect(screen.queryByRole('status')).toBeNull()
+    expect(onPlaying).toHaveBeenCalledTimes(1)
+    act(() => void vi.advanceTimersByTime(30000))
+    expect(screen.queryByText('摄像头连不上')).toBeNull()
+    expect(hls().destroy).not.toHaveBeenCalled()
   })
 
   it('calls onPlaying once, at the first picture', () => {
@@ -654,6 +702,91 @@ describe('CameraPlayer', () => {
     expect(videoSpy).toHaveBeenCalledWith('timeupdate', expect.any(Function))
     expect(videoSpy).toHaveBeenCalledWith('playing', expect.any(Function))
     expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('resets maxSn after discontinuity', () => {
+    // L301:序号回绕(START_NUMBER_MOD)后 ffmpeg 重启,新播放列表的整个窗口都比已见最大序号小 →
+    // 这是服务端序列重新开始(discont_start),基线复位,新片段算进展;重取后回放旧尾部时窗口不会整体后退
+    vi.useFakeTimers()
+    render(<CameraPlayer cameraId="c1" title="t" />)
+    const h0 = hls()
+    act(() => h0.emit('hlsLevelLoaded', level({ startSN: 9_999_990, endSN: 9_999_995 })))
+    act(() => h0.emit('hlsFragLoaded', frag(9_999_995)))
+    // 2 秒片段 → 8 秒一拍:两拍没动静 = 提示 + 重试
+    act(() => void vi.advanceTimersByTime(16000))
+    expect(screen.getByRole('alert')).toHaveTextContent('画面已停止,正在重连…')
+    expect(h0.loadSource).toHaveBeenCalledTimes(3)
+    // 重取回来的还是同一个窗口:回放旧片段不算进展,提示不撤
+    act(() => h0.emit('hlsLevelLoaded', level({ startSN: 9_999_990, endSN: 9_999_995 })))
+    act(() => h0.emit('hlsFragLoaded', frag(9_999_994)))
+    expect(screen.getByRole('alert')).toHaveTextContent('画面已停止,正在重连…')
+    // 回绕后重启:窗口整体退到小序号 → 第一片就是进展,提示撤下、预算复位
+    act(() => h0.emit('hlsLevelLoaded', level({ startSN: 100, endSN: 103 })))
+    act(() => h0.emit('hlsFragLoaded', frag(100)))
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(h0.loadSource).toHaveBeenCalledTimes(3)
+    // 新基线之下的仍不算;再停又是先悄悄重取一次
+    act(() => h0.emit('hlsFragLoaded', frag(99)))
+    act(() => void vi.advanceTimersByTime(8000))
+    expect(h0.loadSource).toHaveBeenCalledTimes(4)
+    expect(screen.queryByRole('alert')).toBeNull()
+    act(() => h0.emit('hlsFragLoaded', frag(101)))
+    act(() => void vi.advanceTimersByTime(7999))
+    expect(h0.loadSource).toHaveBeenCalledTimes(4)
+  })
+
+  it('stall threshold follows target duration', () => {
+    // 停滞阈值 = 3 × TARGETDURATION,夹在 8–20 秒(L306):4 秒片段 12 秒才重取,不再固定 20 秒
+    vi.useFakeTimers()
+    render(<CameraPlayer cameraId="c1" title="t" />)
+    const h0 = hls()
+    act(() => h0.emit('hlsLevelLoaded', level({ targetduration: 4 })))
+    act(() => h0.emit('hlsFragLoaded'))
+    act(() => void vi.advanceTimersByTime(11999))
+    expect(h0.loadSource).toHaveBeenCalledTimes(1)
+    act(() => void vi.advanceTimersByTime(1))
+    expect(h0.loadSource).toHaveBeenCalledTimes(2)
+    // 2 秒片段:下限 8 秒
+    act(() => h0.emit('hlsLevelLoaded', level({ targetduration: 2 })))
+    act(() => h0.emit('hlsFragLoaded'))
+    act(() => void vi.advanceTimersByTime(7999))
+    expect(h0.loadSource).toHaveBeenCalledTimes(2)
+    act(() => void vi.advanceTimersByTime(1))
+    expect(h0.loadSource).toHaveBeenCalledTimes(3)
+    // 10 秒片段:上限 20 秒
+    act(() => h0.emit('hlsLevelLoaded', level({ targetduration: 10 })))
+    act(() => h0.emit('hlsFragLoaded'))
+    act(() => void vi.advanceTimersByTime(19999))
+    expect(h0.loadSource).toHaveBeenCalledTimes(3)
+    act(() => void vi.advanceTimersByTime(1))
+    expect(h0.loadSource).toHaveBeenCalledTimes(4)
+    // timeupdate 也按新阈值从头计
+    act(() => h0.emit('hlsLevelLoaded', level({ targetduration: 3 })))
+    act(() => h0.emit('hlsFragLoaded'))
+    act(() => void vi.advanceTimersByTime(5000))
+    act(() => void video().dispatchEvent(new Event('timeupdate')))
+    act(() => void vi.advanceTimersByTime(8999))
+    expect(h0.loadSource).toHaveBeenCalledTimes(4)
+    act(() => void vi.advanceTimersByTime(1))
+    expect(h0.loadSource).toHaveBeenCalledTimes(5)
+  })
+
+  it('retry button not inside alert', () => {
+    // 读屏只朗读告警文字本身;"重试"是告警旁的兄弟节点,不被当作告警内容一起读出(L304)
+    vi.useFakeTimers()
+    render(<CameraPlayer cameraId="c1" title="t" />)
+    act(() => hls().emit('hlsFragLoaded'))
+    act(() => void vi.advanceTimersByTime(40000))
+    const stalled = screen.getByRole('alert')
+    const retry = screen.getByRole('button', { name: '重试' })
+    expect(stalled.textContent).toBe('画面已停止,正在重连…')
+    expect(stalled).not.toContainElement(retry)
+    expect(stalled.parentElement).toBe(retry.parentElement)
+    // 连不上(含预算用尽)同样:告警里只有文字
+    act(() => hls().emit('hlsError', segmentError(0)))
+    const offline = screen.getByRole('alert')
+    expect(offline.textContent).toBe('摄像头连不上')
+    expect(offline).not.toContainElement(screen.getByRole('button', { name: '重试' }))
   })
 
   it('shows unsupported hint when Hls is not supported', () => {

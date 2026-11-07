@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { adminApi } from '@/shared/api/admin'
 import { camerasApi } from '@/shared/api/cameras'
+import { loadHls } from '@/shared/components/camera/loadHls'
 import { ApiError } from '@/shared/api/client'
 import { useAuthStore } from '@/shared/stores/auth'
 import type { AdminPerm } from '@/shared/types/admin'
@@ -137,7 +138,9 @@ async function openWall(entry?: string) {
   return wall
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  // L171:hls.js 改为首次挂载时动态加载;预热模块缓存,让播放器实例仍在挂载时同步创建
+  await loadHls()
   vi.resetAllMocks()
   FakeHls.instances = []
   setPerms(['school.view', 'camera.view'])
