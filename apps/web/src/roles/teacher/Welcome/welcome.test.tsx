@@ -131,6 +131,27 @@ it('picks figure', async () => {
   )
 })
 
+// L241:两张形象卡各自一份 <defs>,滤镜 id 各自唯一,也不能占用教室 svg 的 crShadow(同页时文档里只能有一个)
+it('no duplicate svg ids in document', async () => {
+  renderDialog()
+  const dialog = await screen.findByRole('dialog', { name: '你好,王老师' })
+  const ids = Array.from(document.querySelectorAll('[id]')).map((el) => el.id)
+  expect(new Set(ids).size).toBe(ids.length)
+  expect(document.getElementById('crShadow')).toBeNull()
+  const svgs = Array.from(dialog.querySelectorAll('svg'))
+  expect(svgs).toHaveLength(2)
+  for (const svg of svgs) {
+    // 卡片里每个滤镜引用都指向自己这张 svg 里的 defs
+    const refs = Array.from(svg.querySelectorAll('[filter]')).map((el) => el.getAttribute('filter'))
+    expect(refs.length).toBeGreaterThan(0)
+    for (const ref of refs) {
+      const target = document.getElementById(/^url\(#(.+)\)$/.exec(ref ?? '')?.[1] ?? '')
+      expect(target?.tagName).toBe('filter')
+      expect(svg.contains(target)).toBe(true)
+    }
+  }
+})
+
 it('closing counts as done', async () => {
   renderDialog()
   const dialog = await screen.findByRole('dialog', { name: '你好,王老师' })

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ApiError } from '@/shared/api/client'
 import { preferencesApi, type PreferencesWithOnboarded } from '@/shared/api/preferences'
@@ -30,11 +30,13 @@ const VIEW = { w: 200, h: 190 }
 const STAGE = { x: 8, y: 56, w: 184, h: 140 }
 
 function FigurePreview({ figure, label }: { figure: Figure; label: string }) {
+  // 两张卡各自一份 <defs>:滤镜 id 由 useId 派生,彼此不同,也不占用同页教室 svg 的 crShadow(L241)
+  const shadowId = `crShadow-${useId().replace(/[^A-Za-z0-9_-]/g, '')}`
   return (
     <svg viewBox={`0 0 ${VIEW.w} ${VIEW.h}`} className="h-auto w-full" aria-hidden="true">
-      <CrDefs />
+      <CrDefs id={shadowId} />
       <rect width={VIEW.w} height={VIEW.h} rx={12} fill={ROOM.floor} />
-      <Podium rect={STAGE} teacher={{ figure, label }} action="idle" />
+      <Podium rect={STAGE} teacher={{ figure, label }} action="idle" shadowId={shadowId} />
     </svg>
   )
 }

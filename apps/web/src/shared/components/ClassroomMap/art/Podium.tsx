@@ -1,6 +1,6 @@
 import type { Rect } from '../layout'
 import type { TeacherAction } from '../types'
-import { GROUP_COLORS, INK, ROOM, SHADOW } from './palette'
+import { GROUP_COLORS, INK, ROOM, shadowFilter } from './palette'
 import { WOOD, WOOD_DARK, clip, edge, shade, textW, thin, tint } from './kit'
 import TeacherFigure from './TeacherFigure'
 
@@ -9,6 +9,8 @@ interface Props {
   teacher: { figure: 'female' | 'male'; label: string }
   action: TeacherAction
   pointAt?: { x: number; y: number }
+  /** 投影滤镜的 id,透传给讲台与老师;独立 svg(欢迎页形象卡)传自己那份 defs 的 id(L241) */
+  shadowId?: string
 }
 
 const LECTERN_W = 148,
@@ -18,15 +20,16 @@ const LECTERN_W = 148,
 
 // 讲台平台 → 讲桌(桌面道具都画在桌面内,不越过后沿;姓名牌挂在朝向学生的前沿)→ 老师。
 // 老师躯干在 y=0 平切、正好落在桌面后沿,先画讲桌不会遮住身体,而教鞭能压在桌面上指向学生。
-export default function Podium({ rect, teacher, action, pointAt }: Props) {
+export default function Podium({ rect, teacher, action, pointAt, shadowId }: Props) {
   const cx = rect.x + rect.w / 2,
     oy = rect.y + STAND_Y,
     lx = cx - LECTERN_W / 2
   const plate = clip(teacher.label, LECTERN_W - 32, 10.5),
     pw = textW(plate, 10.5) + 18
+  const shadow = shadowFilter(shadowId)
   return (
     <g className="cr-podium">
-      <g filter={SHADOW}>
+      <g filter={shadow}>
         <rect
           x={rect.x}
           y={rect.y + 6}
@@ -45,7 +48,7 @@ export default function Podium({ rect, teacher, action, pointAt }: Props) {
           fill={WOOD}
         />
       </g>
-      <g filter={SHADOW}>
+      <g filter={shadow}>
         <rect
           x={lx}
           y={oy}
@@ -91,7 +94,14 @@ export default function Podium({ rect, teacher, action, pointAt }: Props) {
           <ellipse cx={6.5} cy={2} rx={5} ry={1.5} fill={shade(ROOM.gold, 0.35)} />
         </g>
       )}
-      <TeacherFigure x={cx} y={oy} figure={teacher.figure} action={action} pointAt={pointAt} />
+      <TeacherFigure
+        x={cx}
+        y={oy}
+        figure={teacher.figure}
+        action={action}
+        pointAt={pointAt}
+        shadowId={shadowId}
+      />
     </g>
   )
 }

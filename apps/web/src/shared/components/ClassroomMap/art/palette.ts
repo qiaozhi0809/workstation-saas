@@ -50,7 +50,9 @@ export const GRADE_TINTS: Record<1 | 2 | 3 | 4 | 5, string> = {
 export const TEACHER_COLORS = { cardigan: '#c9785d', vest: '#5d7c9e' } as const
 
 export const SHADOW_ID = 'crShadow'
-export const SHADOW = `url(#${SHADOW_ID})`
+/** 投影滤镜的引用;同页多张各带 defs 的 svg(欢迎页形象卡)传各自唯一的 id(L241) */
+export const shadowFilter = (id: string = SHADOW_ID) => `url(#${id})`
+export const SHADOW = shadowFilter()
 
 // 线性混色:t = 0 → a,t = 1 → b(用于同色系的深浅纸片)
 export function mix(a: string, b: string, t: number): string {
