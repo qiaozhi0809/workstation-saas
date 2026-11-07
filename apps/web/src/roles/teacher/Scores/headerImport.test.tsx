@@ -175,6 +175,18 @@ it('re-reads a csv file as GBK when it is not valid UTF-8 (L15)', async () => {
   expect(screen.getByRole('textbox')).toHaveValue('姓名,语文\n王小一,90')
 })
 
+// L253:真 UTF-8 文件自己就含替换字符(比如别的工具导出时损坏的一格):按 GBK 重解只会更糟,不能因此当成 GBK
+it('keeps utf-8 when gbk is not better (L253)', async () => {
+  renderImport()
+  // "姓名,语文,备注\n王小一,90,\uFFFD" 的 UTF-8 字节:按 GBK 解出来是乱码,替换字符数(1)不比 UTF-8 的(1)少
+  pickFile(new TextEncoder().encode('姓名,语文,备注\n王小一,90,\uFFFD'))
+  await waitFor(() =>
+    expect(screen.getByText('识别到 1 行,匹配 1 人;科目:语文')).toBeInTheDocument(),
+  )
+  expect(screen.getByRole('textbox')).toHaveValue('姓名,语文,备注\n王小一,90,\uFFFD')
+  expect(screen.queryByRole('alert')).toBeNull()
+})
+
 it('keeps the UTF-8 reading and explains when the browser cannot decode GBK (L15)', async () => {
   const Real = globalThis.TextDecoder
   vi.stubGlobal(
@@ -211,6 +223,33 @@ it('points at the row and subject the server rejected (L15)', async () => {
   )
 })
 
+// L252:不属于本场考试的学生,后端只给 details.enrollment_id(没有 subject);按它找回这个学生所在的行
+it('locates unknown enrollment row (L252)', async () => {
+  vi.mocked(examsApi.saveScores).mockRejectedValue(
+    new ApiError(400, 'UNKNOWN_ENROLLMENT', '该学生不在这场考试的班级里', {
+      enrollment_id: 'e2',
+    }),
+  )
+  renderImport()
+  paste('姓名,语文,数学\n王小一,90,80\n\n李小二,88,77')
+  fireEvent.click(importBtn())
+  expect(await screen.findByRole('alert')).toHaveTextContent(
+    '第 2 行(不含表头与空行)· 李小二:该学生不在这场考试的班级里',
+  )
+})
+
+it('falls back to the server message when the unknown enrollment is not in the pasted table (L252)', async () => {
+  vi.mocked(examsApi.saveScores).mockRejectedValue(
+    new ApiError(400, 'UNKNOWN_ENROLLMENT', '该学生不在这场考试的班级里', {
+      enrollment_id: 'not-pasted',
+    }),
+  )
+  renderImport()
+  paste('姓名,语文\n王小一,90')
+  fireEvent.click(importBtn())
+  expect(await screen.findByRole('alert')).toHaveTextContent(/^该学生不在这场考试的班级里$/)
+})
+
 it('keeps the modal open and shows the error when saving fails', async () => {
   vi.mocked(examsApi.saveScores).mockRejectedValue(
     new ApiError(403, 'FORBIDDEN', '没有这个科目的录入权限'),
@@ -221,6 +260,16 @@ it('keeps the modal open and shows the error when saving fails', async () => {
   expect(await screen.findByRole('alert')).toHaveTextContent('没有这个科目的录入权限')
   expect(onImported).not.toHaveBeenCalled()
   expect(onClose).not.toHaveBeenCalled()
+})
+
+// L254:不是接口错误(断网、脚本异常)时没有服务端文案可用,describeError 的兜底分支统一说"导入失败,请重试"
+it('shows the unified text when the failure is not an API error (L254)', async () => {
+  vi.mocked(examsApi.saveScores).mockRejectedValue(new TypeError('Failed to fetch'))
+  const { onImported } = renderImport()
+  paste('姓名,语文\n王小一,90')
+  fireEvent.click(importBtn())
+  expect(await screen.findByRole('alert')).toHaveTextContent(/^导入失败,请重试$/)
+  expect(onImported).not.toHaveBeenCalled()
 })
 
 it('sends large imports in chunks of at most 2000 cells', async () => {

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
+import { examKeys } from '@/shared/api/examKeys'
 import { examsApi } from '@/shared/api/exams'
 import { studentsApi } from '@/shared/api/students'
 import { EmptyState } from '@/shared/components/feedback/EmptyState'
@@ -9,8 +10,10 @@ import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { toast } from '@/shared/components/Toast'
 import { Badge } from '@/shared/components/ui/badge'
 import { Button } from '@/shared/components/ui/button'
+import { useGrading } from '@/shared/hooks/useGrading'
 import type { Exam } from '@/shared/types/grades'
 import ClassGate, { type ClassContext } from '../ClassGate'
+import GradingFallback from '../GradingFallback'
 import ExamForm, { GRADE_EXAM_MANAGED } from './ExamForm'
 import { exportScores } from './exportScores'
 import ExamList, { GRADE_EXAM_LABEL } from './ExamList'
@@ -30,7 +33,9 @@ function ScoresBody({ ctx }: { ctx: ClassContext }) {
   const { cls, summary, perms, subjects } = ctx
   const [params, setParams] = useSearchParams()
   const [form, setForm] = useState<'new' | 'edit' | null>(null)
-  const exams = useQuery({ queryKey: ['exams', cls.id], queryFn: () => examsApi.list(cls.id) })
+  const exams = useQuery({ queryKey: examKeys.list(cls.id), queryFn: () => examsApi.list(cls.id) })
+  // 与 ScoreGrid 同一份缓存;这里只为页顶提示"比例读取失败,按默认值显示"(L236)
+  const grading = useGrading()
 
   const canWrite = perms.includes('exam.write')
   const canAllSubjects = cls.role !== 'subject_teacher'
@@ -95,6 +100,7 @@ function ScoresBody({ ctx }: { ctx: ClassContext }) {
 
   return (
     <div className="flex flex-col gap-4 p-4">
+      <GradingFallback grading={grading} />
       {canWrite && (
         <div className="flex justify-end">
           <Button onClick={() => setForm('new')}>新建考试</Button>
@@ -134,7 +140,7 @@ function ExamSection({
 }) {
   const { cls, perms, subjects } = ctx
   const sheet = useQuery({
-    queryKey: ['score-sheet', cls.id, exam.id],
+    queryKey: examKeys.sheet(cls.id, exam.id),
     queryFn: () => examsApi.sheet(cls.id, exam.id),
   })
   const roster = useQuery({

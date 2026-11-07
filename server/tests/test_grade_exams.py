@@ -1,11 +1,12 @@
 from datetime import date
 from uuid import UUID
 
-from sqlalchemy import event, select, text
+from sqlalchemy import select, text
 
 from app.models import AcademicYear, Enrollment, Exam, GradeExam, Score
 from tests.helpers import audit_rows, auth
 from tests.seed_ids import CLASS_ID, GRADE_ID, SCHOOL_ID, TEACHER_USER_ID
+from tests.sql_trace import capture_sql
 
 PRINCIPAL = "55555555-5555-5555-5555-555555555543"
 DEAN = "55555555-5555-5555-5555-555555555544"
@@ -215,25 +216,13 @@ def test_lower_full_below_scores_rejected(client, db, settings):
     )
 
 
-def _statements(db):
-    """收集本测试会话里执行的 SQL(与 test_overview 的查询计数同一做法)。"""
-    statements: list[str] = []
-
-    def count(conn, cursor, statement, params, context, executemany):
-        statements.append(statement)
-
-    conn = db.connection()
-    event.listen(conn, "before_cursor_execute", count)
-    return statements, lambda: event.remove(conn, "before_cursor_execute", count)
-
-
 def test_lower_full_check_is_one_query(client, db, settings):
     """L38:降满分检查对整场联考一次聚合查出,不再逐考试 × 科目查询。"""
     out = _create(client, settings)
     _score(db, _exam_of(db, out["id"], CLASS_ID).id, CLASS_ID, "语文", 95)
     _score(db, _exam_of(db, out["id"], CLASS_31).id, CLASS_31, "数学", 88)
     low = _body(subjects=[{"name": "语文", "full": 100}, {"name": "数学", "full": 80}])
-    statements, stop = _statements(db)
+    statements, stop = capture_sql(db)
     try:
         r = client.put(f"{API}/{out['id']}", json=low, headers=auth(settings, DEAN))
     finally:
@@ -241,6 +230,51 @@ def test_lower_full_check_is_one_query(client, db, settings):
     assert r.status_code == 409 and r.json()["error"]["details"] == {"subject": "数学"}
     max_queries = [s for s in statements if "max(scores.value)" in s]
     assert len(max_queries) == 1, max_queries
+
+
+def test_update_subject_checks_use_single_aggregate(client, db, settings):
+    """L265:编辑联考时"去掉的科目是否有分"与"保留科目的在读最高分"合成一次 GROUP BY 查出
+    (scores 表只查一遍),两条规则都保留:去科目先报、降满分后报;只有转走学生有分的科目算"有分"
+    但不参与最高分。"""
+    out = _create(client, settings)
+    _score(db, _exam_of(db, out["id"], CLASS_ID).id, CLASS_ID, "语文", 95)
+    _score(db, _exam_of(db, out["id"], CLASS_31).id, CLASS_31, "数学", 88)
+    # 去掉有分的数学 + 把语文满分降到 90:去科目先报
+    both = _body(subjects=[{"name": "语文", "full": 90}])
+    statements, stop = capture_sql(db)
+    try:
+        r = client.put(f"{API}/{out['id']}", json=both, headers=auth(settings, DEAN))
+    finally:
+        stop()
+    assert r.status_code == 409 and r.json()["error"]["details"] == {"subject": "数学"}
+    assert len([s for s in statements if "FROM scores" in s]) == 1, statements
+    # 只降满分:降满分报
+    low = _body(subjects=[{"name": "语文", "full": 90}, {"name": "数学", "full": 100}])
+    statements, stop = capture_sql(db)
+    try:
+        r = client.put(f"{API}/{out['id']}", json=low, headers=auth(settings, DEAN))
+    finally:
+        stop()
+    assert r.status_code == 409 and r.json()["error"]["details"] == {"subject": "语文"}
+    assert len([s for s in statements if "FROM scores" in s]) == 1, statements
+    # 数学的分改成转走学生的:去数学仍被拒(有分),但降数学满分不再受它限制
+    math_exam = _exam_of(db, out["id"], CLASS_31)
+    enrollment_id = db.scalar(
+        select(Score.enrollment_id).where(Score.exam_id == math_exam.id, Score.subject == "数学")
+    )
+    db.execute(
+        text("UPDATE enrollments SET status = 'transferred' WHERE id = :e"), {"e": enrollment_id}
+    )
+    r = client.put(
+        f"{API}/{out['id']}",
+        json=_body(subjects=[{"name": "语文", "full": 100}]),
+        headers=auth(settings, DEAN),
+    )
+    assert r.status_code == 409 and r.json()["error"]["details"] == {"subject": "数学"}
+    ok = _body(subjects=[{"name": "语文", "full": 95}, {"name": "数学", "full": 60}])
+    r = client.put(f"{API}/{out['id']}", json=ok, headers=auth(settings, DEAN))
+    assert r.status_code == 200, r.text
+    assert [s["full"] for s in db.get(GradeExam, UUID(out["id"])).subjects] == [95, 60]
 
 
 def test_forbidden_write_checks_permission_before_lock(client, db, settings):
@@ -254,7 +288,7 @@ def test_forbidden_write_checks_permission_before_lock(client, db, settings):
             assert client.put(f"{API}/{target}", json=_body(), headers=h).status_code == 403
             assert client.delete(f"{API}/{target}", headers=h).status_code == 403
             assert client.post(f"{API}/{target}/sync", headers=h).status_code == 403
-    statements, stop = _statements(db)
+    statements, stop = capture_sql(db)
     try:
         r = client.put(
             f"{API}/{other['id']}", json=_body(GRADE4_ID), headers=auth(settings, GRADE_HEAD)
@@ -284,7 +318,7 @@ def test_list_query_count_independent_of_exam_count(client, db, settings):
     def listed() -> tuple[int, list]:
         db.expire_all()
         db.refresh(year)  # 过期后的学年行是测试自己造成的重载,不算在列表路径里
-        statements, stop = _statements(db)
+        statements, stop = capture_sql(db)
         try:
             out = list_grade_exams(db, bindings, year, None)
         finally:

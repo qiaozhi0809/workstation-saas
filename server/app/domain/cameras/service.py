@@ -177,15 +177,20 @@ def get_camera(db: Session, school_id: UUID, camera_id: UUID) -> Camera:
     return camera
 
 
-def _check_class(db: Session, school_id: UUID, class_id: UUID | None) -> None:
+def _check_class(
+    db: Session, school_id: UUID, class_id: UUID | None, *, lock: bool = False
+) -> None:
+    """班级须是本校的。``lock`` 对班级行 FOR UPDATE(L264):改绑班级时摄像头行的 UPDATE 会对新班级
+    取外键 KEY SHARE,而学年升级 / 回滚是"班级锁 → UPDATE cameras";这里先锁班级再碰摄像头行,
+    与之同序,不再互等。必须在任何对 cameras 行的锁 / UPDATE 之前调用。"""
     if class_id is None:
         return
-    ok = db.scalar(
-        select(func.count())
-        .select_from(SchoolClass)
-        .where(SchoolClass.id == class_id, SchoolClass.school_id == school_id)
+    stmt = select(SchoolClass.id).where(
+        SchoolClass.id == class_id, SchoolClass.school_id == school_id
     )
-    if not ok:
+    if lock:
+        stmt = stmt.with_for_update()
+    if db.scalar(stmt) is None:
         raise ApiError(404, "NOT_FOUND", "班级不存在")
 
 
@@ -256,8 +261,9 @@ def update_camera(
     request: Request | None,
 ) -> CameraOut:
     url = _url(data, settings)
-    camera = get_camera(db, school_id, camera_id)
-    _check_class(db, school_id, data.class_id)
+    camera = get_camera(db, school_id, camera_id)  # 只读,不锁摄像头行
+    # 班级有变化才锁新班级行,且在下面 flush 的 UPDATE cameras 之前(锁序见 _check_class)
+    _check_class(db, school_id, data.class_id, lock=data.class_id != camera.class_id)
     state = _state(redis, camera.id)  # 提交之前读:Redis 故障就 503,不会出现"存了却报错"
     key = settings.master_key_bytes
     changed = (

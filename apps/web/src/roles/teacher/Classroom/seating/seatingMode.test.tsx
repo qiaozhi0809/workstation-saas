@@ -921,9 +921,14 @@ it('keeps drawing the draft desks until the draft is rebuilt after the class set
   await act(async () => {
     await client.invalidateQueries({ queryKey: ['my-classes'] })
   })
-  await new Promise((r) => setTimeout(r, 50))
-  expect(
-    client.getQueryData<{ items: { podium_left: number }[] }>(['my-classes'])?.items[0].podium_left,
-  ).toBe(1)
+  await waitFor(() =>
+    expect(
+      client.getQueryData<{ items: { podium_left: number }[] }>(['my-classes'])?.items[0]
+        .podium_left,
+    ).toBe(1),
+  )
+  // 查询结果经 notifyManager 的 setTimeout(0) 才送到 ClassroomPage 的 useQuery:这段等待放进 act,
+  // 那次更新就不会落在 act 之外(L259 基线上那条 "not wrapped in act" 警告的来源)
+  await act(() => new Promise<void>((r) => setTimeout(r, 50)))
   expect(container.querySelector('[data-seat="0--1"]')).toBeNull()
 })

@@ -85,25 +85,35 @@ export function genderPairSeats(
     loose.filter((s) => s.gender === 'female'),
     rand,
   )
-  const groups: DraftStudent[][] = []
+  const mixed: DraftStudent[][] = []
   const rest: DraftStudent[] = []
   for (const g of genderGroups(males, females, k, rand)) {
-    if (g.length === k) groups.push(g)
+    if (g.length === k) mixed.push(g)
     else rest.push(...g)
   }
   rest.push(...males, ...females, ...loose.filter((s) => s.gender === null))
+  // 配不上对的同学自己凑桌(同性 / 性别不明)
+  const sameSex: DraftStudent[][] = []
   const alone: DraftStudent[] = []
-  const mixed = shuffled(rest, rand)
-  for (let i = 0; i < mixed.length; i += k) {
-    const chunk = mixed.slice(i, i + k)
-    if (chunk.length === k) groups.push(chunk)
+  const pool = shuffled(rest, rand)
+  for (let i = 0; i < pool.length; i += k) {
+    const chunk = pool.slice(i, i + k)
+    if (chunk.length === k) sameSex.push(chunk)
     else alone.push(...chunk)
   }
-  return placeGroups(students, grid, groups, alone, rand)
+  // 桌子不够时男女混合的桌优先落座,同性凑的桌排在后面(L257 / Q4);两层各自打乱,桌位仍是随机的
+  return placeGroups(
+    students,
+    grid,
+    [...shuffled(mixed, rand), ...shuffled(sameSex, rand)],
+    alone,
+    rand,
+  )
 }
 
 /**
- * 把成好的同桌组放进空桌(桌序打乱、组内左右随机翻转),落单的和放不下的补进散座 / 剩余座位。
+ * 把成好的同桌组按给定顺序放进空桌(桌子不够时排在后面的组进待安排;组内左右随机翻转),
+ * 落单的和放不下的补进散座 / 剩余座位。调用方自己决定组的顺序(要随机就先 shuffled 再传进来)。
  * 整桌 = 同一排里第 p*k+1 .. p*k+k 列都空着;凑不成整桌的空座是散座。
  */
 function placeGroups(
@@ -137,7 +147,7 @@ function placeGroups(
   const placed = new Map<string, Cell>()
   const queue: DraftStudent[] = []
   const unusedDesks = [...desks]
-  for (const group of shuffled(groups, rand)) {
+  for (const group of groups) {
     const desk = unusedDesks.shift()
     if (!desk) {
       queue.push(...group)
@@ -179,6 +189,10 @@ export function mentorSeats(
     if (g.length === k) groups.push(g)
     else alone.push(...g)
   }
-  // 没坐进整桌的:有名次的组先补空位,然后是落单的有名次同学,没成绩的最后
-  return placeGroups(students, grid, groups, alone, rand, (a, q) => [...q, ...a, ...unranked])
+  // 哪组坐哪张桌随机;没坐进整桌的:有名次的组先补空位,然后是落单的有名次同学,没成绩的最后
+  return placeGroups(students, grid, shuffled(groups, rand), alone, rand, (a, q) => [
+    ...q,
+    ...a,
+    ...unranked,
+  ])
 }

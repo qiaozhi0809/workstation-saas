@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app import clock
 from app.audit.service import record
 from app.domain.students.schemas import StudentProfile, StudentSeat, TeacherNote
+from app.domain.students.seats import SEAT_ORDER, serialize_seats
 from app.errors import ApiError
 from app.models import Enrollment, Exam, SchoolClass, Student
 from app.rbac.bindings import Binding, Scope, can
@@ -32,29 +33,9 @@ def list_roster(db: Session, class_id: UUID, year_id: UUID) -> list[StudentSeat]
             Enrollment.academic_year_id == year_id,
             Enrollment.status == "active",
         )
-        .order_by(
-            Enrollment.seat_row.asc().nulls_last(),
-            Enrollment.seat_col.asc().nulls_last(),
-            Student.mk,
-        )
+        .order_by(*SEAT_ORDER)
     ).all()
-    return [
-        StudentSeat(
-            enrollment_id=e.id,
-            student_id=s.id,
-            name=s.name,
-            mk=s.mk,
-            seat_row=e.seat_row,
-            seat_col=e.seat_col,
-            avatar_seed=s.avatar_seed,
-            gender=s.gender,
-            student_no=s.student_no,
-            birthdate=s.birthdate,
-            class_role=e.class_role,
-            seat_locked=e.seat_locked,
-        )
-        for e, s in rows
-    ]
+    return serialize_seats(rows)
 
 
 def find_enrolled_student(

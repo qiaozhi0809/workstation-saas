@@ -1,8 +1,6 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { examsApi } from '@/shared/api/exams'
-import { schoolApi } from '@/shared/api/school'
-import { DEFAULT_GRADING } from '@/shared/lib/grades'
 import type { GradebookExam } from '@/shared/types/grades'
 import { reviewsApi } from '@/shared/api/reviews'
 import { todosApi } from '@/shared/api/todos'
@@ -17,12 +15,15 @@ vi.mock('@/shared/api/seating')
 vi.mock('@/shared/api/todos')
 vi.mock('@/shared/api/preferences')
 vi.mock('@/shared/api/exams')
-vi.mock('@/shared/api/school')
+// 及格 / 优秀比例固定为默认值:Classroom 目录统一 mock useGrading 这一种隔离写法(L259),不再 mock 整个 school api
+vi.mock('@/shared/hooks/useGrading', async () => {
+  const { DEFAULT_GRADING } = await import('@/shared/lib/grades')
+  return { useGrading: () => ({ ...DEFAULT_GRADING, failed: false, retry: () => {} }) }
+})
 
 beforeEach(() => {
   vi.resetAllMocks()
   defaultApiMocks()
-  vi.mocked(schoolApi.grading).mockResolvedValue(DEFAULT_GRADING)
 })
 
 const openPanel = async () =>

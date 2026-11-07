@@ -1,5 +1,5 @@
 import type { TeacherAction } from '../types'
-import { INK, ROOM, SHADOW, TEACHER_COLORS, mix } from './palette'
+import { INK, ROOM, TEACHER_COLORS, mix, shadowFilter } from './palette'
 import { Limb } from './parts'
 
 interface Pt {
@@ -12,6 +12,8 @@ interface Props {
   figure: 'female' | 'male'
   action: TeacherAction
   pointAt?: Pt
+  /** 投影滤镜的 id;不传用整张教室 svg 共用的 crShadow,独立 svg(欢迎页形象卡)传自己那份 defs 的 id(L241) */
+  shadowId?: string
 }
 
 // 度,0 = 正右,顺时针为正(SVG y 轴向下)
@@ -131,7 +133,7 @@ const Glasses = () => (
   </g>
 )
 
-export default function TeacherFigure({ x, y, figure, action, pointAt }: Props) {
+export default function TeacherFigure({ x, y, figure, action, pointAt, shadowId }: Props) {
   const look = figure === 'female' ? Female() : Male()
   const angle = action === 'point' ? (pointAt ? pointerAngle({ x, y: y + SY }, pointAt) : 90) : 0
   const side = angle > 90 ? -1 : 1 // 指向画面左侧时换另一只手
@@ -146,7 +148,7 @@ export default function TeacherFigure({ x, y, figure, action, pointAt }: Props) 
       data-figure={figure}
       data-action={action}
       transform={`translate(${x} ${y})`}
-      filter={SHADOW}
+      filter={shadowFilter(shadowId)}
     >
       {look.back}
       <rect x={-5.5} y={-60} width={11} height={10} fill={INK.skin} />

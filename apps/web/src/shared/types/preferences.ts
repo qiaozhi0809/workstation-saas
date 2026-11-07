@@ -3,7 +3,7 @@ export interface ReviewReason {
   delta: number
 }
 
-/** 各语境首次引导的完成时间(ISO);只记录当前用户拥有的语境 */
+/** 各语境首次引导的完成时间(ISO);只记录当前用户拥有的语境。唯一定义(L240),shared/api/preferences.ts 从这里 import */
 export interface Onboarded {
   teacher?: string
   parent?: string

@@ -5,13 +5,21 @@ const anchors: HTMLAnchorElement[] = []
 let click: ReturnType<typeof vi.spyOn>
 const createUrl = vi.fn(() => 'blob:ws/1')
 const revokeUrl = vi.fn()
+const RealURL = globalThis.URL
 
 beforeEach(() => {
   vi.useFakeTimers()
   anchors.length = 0
   createUrl.mockClear()
   revokeUrl.mockClear()
-  Object.assign(URL, { createObjectURL: createUrl, revokeObjectURL: revokeUrl })
+  // jsdom 没有 createObjectURL / revokeObjectURL:整个换成带这两个静态方法的子类,用完由 unstubAllGlobals 还原(L237)
+  vi.stubGlobal(
+    'URL',
+    Object.assign(class extends RealURL {}, {
+      createObjectURL: createUrl,
+      revokeObjectURL: revokeUrl,
+    }),
+  )
   click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
     this: HTMLAnchorElement,
   ) {
@@ -20,6 +28,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   click.mockRestore()
+  vi.unstubAllGlobals()
   vi.useRealTimers()
 })
 
