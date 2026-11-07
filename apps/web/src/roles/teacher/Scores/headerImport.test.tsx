@@ -211,6 +211,33 @@ it('points at the row and subject the server rejected (L15)', async () => {
   )
 })
 
+// L252:不属于本场考试的学生,后端只给 details.enrollment_id(没有 subject);按它找回这个学生所在的行
+it('locates unknown enrollment row (L252)', async () => {
+  vi.mocked(examsApi.saveScores).mockRejectedValue(
+    new ApiError(400, 'UNKNOWN_ENROLLMENT', '该学生不在这场考试的班级里', {
+      enrollment_id: 'e2',
+    }),
+  )
+  renderImport()
+  paste('姓名,语文,数学\n王小一,90,80\n\n李小二,88,77')
+  fireEvent.click(importBtn())
+  expect(await screen.findByRole('alert')).toHaveTextContent(
+    '第 2 行(不含表头与空行)· 李小二:该学生不在这场考试的班级里',
+  )
+})
+
+it('falls back to the server message when the unknown enrollment is not in the pasted table (L252)', async () => {
+  vi.mocked(examsApi.saveScores).mockRejectedValue(
+    new ApiError(400, 'UNKNOWN_ENROLLMENT', '该学生不在这场考试的班级里', {
+      enrollment_id: 'not-pasted',
+    }),
+  )
+  renderImport()
+  paste('姓名,语文\n王小一,90')
+  fireEvent.click(importBtn())
+  expect(await screen.findByRole('alert')).toHaveTextContent(/^该学生不在这场考试的班级里$/)
+})
+
 it('keeps the modal open and shows the error when saving fails', async () => {
   vi.mocked(examsApi.saveScores).mockRejectedValue(
     new ApiError(403, 'FORBIDDEN', '没有这个科目的录入权限'),

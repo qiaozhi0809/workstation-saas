@@ -102,15 +102,34 @@ function summary(n: number, p: Plan): string {
   return msg
 }
 
-/** 服务端拒绝某一格(4xx 带 enrollment_id + subject)时指出它在表里的位置,好让老师回表里改 */
+/** 行号与"识别到 N 行"同一数法:不含表头,空行也不算 */
+const rowPrefix = (at: CellOrigin) => `第 ${at.row} 行(不含表头与空行)· `
+
+/** 只知道学生不知道科目(UNKNOWN_ENROLLMENT 的 details 只有 enrollment_id,L252):取该生在表里最靠前的一行 */
+function rowOfStudent(p: Plan, enrollmentId: string): CellOrigin | undefined {
+  let found: CellOrigin | undefined
+  for (const [key, at] of p.origin) {
+    if (key.startsWith(`${enrollmentId}|`) && (!found || at.row < found.row)) found = at
+  }
+  return found
+}
+
+/**
+ * 服务端拒绝时指出位置,好让老师回表里改:
+ * 4xx 带 enrollment_id + subject(SCORE_INVALID)精确到格;只带 enrollment_id(UNKNOWN_ENROLLMENT)精确到行;
+ * 表里找不到对应位置、或不是接口错误时退回服务端消息 / 统一文案。
+ */
 function describeError(e: unknown, p: Plan): string {
   if (!(e instanceof ApiError)) return GENERIC_ERROR
   const message = e.message || GENERIC_ERROR
   const d = e.details as { enrollment_id?: unknown; subject?: unknown } | undefined
-  if (typeof d?.enrollment_id !== 'string' || typeof d.subject !== 'string') return message
+  if (typeof d?.enrollment_id !== 'string') return message
+  if (typeof d.subject !== 'string') {
+    const at = rowOfStudent(p, d.enrollment_id)
+    return at ? `${rowPrefix(at)}${at.name}:${message}` : message
+  }
   const at = p.origin.get(`${d.enrollment_id}|${d.subject}`)
-  // 行号与"识别到 N 行"同一数法:不含表头,空行也不算
-  return at ? `第 ${at.row} 行(不含表头与空行)· ${d.subject}(${at.name}):${message}` : message
+  return at ? `${rowPrefix(at)}${d.subject}(${at.name}):${message}` : message
 }
 
 /**
