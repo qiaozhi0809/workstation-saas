@@ -486,6 +486,14 @@ def failing_students(
     subjects, scores, ids = load_exam_data(db, cls, exam, access)
     table = exam_table(subjects, scores, ids)
     pass_ratio = (ratios or get_grading(db, cls.school_id)).pass_ratio
+    found = _failing_rows(subjects, table, pass_ratio)
+    return [(db.get(Enrollment, eid), n) for eid, n in found]  # type: ignore[misc]
+
+
+def _failing_rows(
+    subjects: Sequence[SubjectFull], table: Sequence[Row], pass_ratio: float
+) -> list[tuple[UUID, int]]:
+    """在已算好的名次表上数两科及以上不及格的 (enrollment_id, 科数),科数降序;不取数。"""
     found = []
     for r in table:
         count = sum(
@@ -496,7 +504,7 @@ def failing_students(
         if count >= 2:
             found.append((r.enrollment_id, count))
     found.sort(key=lambda t: -t[1])
-    return [(db.get(Enrollment, eid), n) for eid, n in found]  # type: ignore[misc]
+    return found
 
 
 def _moves_text(moves: Sequence[tuple[Enrollment, int]], names: dict[UUID, str], sign: str) -> str:
@@ -539,8 +547,9 @@ def exam_context(
     if compare is not None:
         lines.extend(_compare_lines(db, cls, exam, compare, access, st, names, ratios))
     if len(subjects) >= 2:
-        failing = failing_students(db, cls, exam, access, ratios=ratios)
-        lines.append("两科及以上不及格：" + ("、".join(names[e.id] for e, _ in failing) or "无"))
+        # 名次表 st.table 已经算好,不及格名单直接在上面数,本场不再重新取数(L250;对比场见 L18)
+        failing = _failing_rows(subjects, st.table, ratios.pass_ratio)
+        lines.append("两科及以上不及格：" + ("、".join(names[eid] for eid, _ in failing) or "无"))
     return "\n".join(lines)
 
 

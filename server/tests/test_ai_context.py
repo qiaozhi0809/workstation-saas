@@ -193,8 +193,33 @@ def test_exam_context_loads_compare_exam_once(db, monkeypatch):
     c = exam_context(db, cls, mid, monthly, access)
     assert "对比「第一次月考」" in c and "进步 5 名及以上：无" in c
     assert loads.count(monthly.id) == 1
-    # 本场:exam_context 开头一次 + failing_students 一次;对比块不再重载
-    assert loads.count(mid.id) == 2
+    # 本场也只在 exam_context 开头加载一次(L250);对比块不再重载
+    assert loads.count(mid.id) == 1
+
+
+def test_exam_context_loads_current_exam_once(db, monkeypatch):
+    """L250:本场考试只 ``load_exam_data`` 一次——"两科及以上不及格"直接在已算好的名次表上数,
+    不再像单独调用 ``failing_students`` 那样重新取数;名单结果与单独调用一致。"""
+    import app.ai.context as ctx_mod
+
+    cls, _, access = _who(db, TEACHER_USER_ID)
+    monthly = db.get(Exam, UUID(EXAM_IDS[0]))
+    real = ctx_mod.load_exam_data
+    loads: list[UUID] = []
+
+    def counting(db_, cls_, exam, access_):
+        loads.append(exam.id)
+        return real(db_, cls_, exam, access_)
+
+    monkeypatch.setattr(ctx_mod, "load_exam_data", counting)
+    c = exam_context(db, cls, monthly, None, access)
+    assert "两科及以上不及格：陈小五" in c
+    assert loads == [monthly.id]
+    # 单独调用 failing_students 仍自己取数一次,名单相同
+    loads.clear()
+    ((enr, count),) = failing_students(db, cls, monthly, access)
+    assert loads == [monthly.id] and count == 2
+    assert enr.id == enrollment_of(db, STUDENT_IDS[4])
 
 
 def test_exam_context_reads_grading_once(db, monkeypatch):
