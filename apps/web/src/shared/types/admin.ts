@@ -450,14 +450,14 @@ export interface InboxItem {
   ack: AckSpec
   ack_deadline: string | null
   my_ack: { choice: number | null; note: string | null; acked_at: string } | null
-  students: string[]
-  /** students 的明细:姓名 + 发送时的班名快照(L87);students 仍是字符串列表,第 2 波前端再切换 */
+  /** 涉及的孩子:姓名 + 发送时的班名快照(L87);旧的 students 字符串列表已无读者,契约里删掉(L282) */
   students_detail: { name: string; class_name: string | null }[]
   can_ack: boolean
   /** can_ack 为假时后端给出的原因,为真时 null(L88) */
   ack_block_reason: AckBlockReason
 }
-export type AckBlockReason = 'closed' | 'recalled' | 'readonly' | 'not_primary' | null
+/** readonly = 孩子已毕业 / 离校(家长账号只读);unlinked = 绑定已结束或孩子已删(L231) */
+export type AckBlockReason = 'closed' | 'recalled' | 'readonly' | 'not_primary' | 'unlinked' | null
 export interface NoticeOptions {
   school_wide: boolean
   grades: { id: string; name: string }[]

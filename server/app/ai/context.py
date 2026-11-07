@@ -22,9 +22,9 @@ from app.ai.stats import (
     score_line,
     subject_stats,
 )
-from app.domain.exams.schemas import SubjectFull
-from app.domain.exams.service import _scores_by_enrollment, _visible_of
-from app.domain.exams.subjects import Stage, stage_of
+from app.domain.exams.schemas import Stage, SubjectFull
+from app.domain.exams.service import scores_by_enrollment, visible_subjects_of
+from app.domain.exams.subjects import stage_of
 from app.domain.school_settings.schemas import Grading
 from app.domain.school_settings.service import get_grading
 from app.domain.schools.service import local_day_start_utc, school_tz, week_no
@@ -145,8 +145,10 @@ def visible_exams(db: Session, cls: SchoolClass, access: Access) -> list[Exam]:
 def _scores_of(
     db: Session, exams: Sequence[Exam], ids: Sequence[UUID], access: Access
 ) -> dict[UUID, dict[UUID, dict[str, float | None]]]:
-    allowed = {e.id: {s.name for s in _visible_of(e, access.visible_subjects)} for e in exams}
-    return _scores_by_enrollment(db, [e.id for e in exams], set(ids), allowed)
+    allowed = {
+        e.id: {s.name for s in visible_subjects_of(e, access.visible_subjects)} for e in exams
+    }
+    return scores_by_enrollment(db, [e.id for e in exams], set(ids), allowed)
 
 
 def load_exam_data(
@@ -155,7 +157,7 @@ def load_exam_data(
     """已按可见科目裁剪的 (科目, 分数, 在籍 enrollment_id),可直接喂给 ``app.ai.stats``。"""
     ids = [e.id for e in active_enrollments(db, cls.id)]
     scores = _scores_of(db, [exam], ids, access)[exam.id]
-    return _visible_of(exam, access.visible_subjects), scores, ids
+    return visible_subjects_of(exam, access.visible_subjects), scores, ids
 
 
 def _names(db: Session, enrollment_ids: Iterable[UUID]) -> dict[UUID, str]:
@@ -226,7 +228,7 @@ def _latest_exam_line(db: Session, cls: SchoolClass, access: Access) -> str:
     scores = _scores_of(db, exams, ids, access)
     ratios = get_grading(db, cls.school_id)
     for exam in reversed(exams):
-        subjects = _visible_of(exam, access.visible_subjects)
+        subjects = visible_subjects_of(exam, access.visible_subjects)
         st = exam_stats(subjects, scores[exam.id], ids, ratios=ratios)
         if st is None:
             continue
@@ -344,7 +346,7 @@ def _student_exam_lines(db: Session, enrollment: Enrollment, access: Access) -> 
         sc = scores[exam.id]
         if not sc.get(enrollment.id):
             continue
-        subjects = _visible_of(exam, access.visible_subjects)
+        subjects = visible_subjects_of(exam, access.visible_subjects)
         latest = (exam, subjects)
         table = exam_table(subjects, sc, ids)
         row = next(r for r in table if r.enrollment_id == enrollment.id)
@@ -484,6 +486,14 @@ def failing_students(
     subjects, scores, ids = load_exam_data(db, cls, exam, access)
     table = exam_table(subjects, scores, ids)
     pass_ratio = (ratios or get_grading(db, cls.school_id)).pass_ratio
+    found = _failing_rows(subjects, table, pass_ratio)
+    return [(db.get(Enrollment, eid), n) for eid, n in found]  # type: ignore[misc]
+
+
+def _failing_rows(
+    subjects: Sequence[SubjectFull], table: Sequence[Row], pass_ratio: float
+) -> list[tuple[UUID, int]]:
+    """在已算好的名次表上数两科及以上不及格的 (enrollment_id, 科数),科数降序;不取数。"""
     found = []
     for r in table:
         count = sum(
@@ -494,7 +504,7 @@ def failing_students(
         if count >= 2:
             found.append((r.enrollment_id, count))
     found.sort(key=lambda t: -t[1])
-    return [(db.get(Enrollment, eid), n) for eid, n in found]  # type: ignore[misc]
+    return found
 
 
 def _moves_text(moves: Sequence[tuple[Enrollment, int]], names: dict[UUID, str], sign: str) -> str:
@@ -537,8 +547,9 @@ def exam_context(
     if compare is not None:
         lines.extend(_compare_lines(db, cls, exam, compare, access, st, names, ratios))
     if len(subjects) >= 2:
-        failing = failing_students(db, cls, exam, access, ratios=ratios)
-        lines.append("两科及以上不及格：" + ("、".join(names[e.id] for e, _ in failing) or "无"))
+        # 名次表 st.table 已经算好,不及格名单直接在上面数,本场不再重新取数(L250;对比场见 L18)
+        failing = _failing_rows(subjects, st.table, ratios.pass_ratio)
+        lines.append("两科及以上不及格：" + ("、".join(names[eid] for eid, _ in failing) or "无"))
     return "\n".join(lines)
 
 

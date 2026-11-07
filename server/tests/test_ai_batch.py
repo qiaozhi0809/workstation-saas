@@ -265,8 +265,8 @@ def test_run_rechecks_item_status_under_lock(client, settings, db, redis_client,
     item_id = chat["items"][0]["id"]
     real = ai_router.acquire_lock
 
-    def racing_acquire(redis, chat_id):
-        token = real(redis, chat_id)
+    def racing_acquire(redis, chat_id, **kwargs):
+        token = real(redis, chat_id, **kwargs)
         # 另一个请求刚把这一条生成完
         row = db.get(AiBatchItem, UUID(item_id))
         row.status, row.content = "done", "已生成"

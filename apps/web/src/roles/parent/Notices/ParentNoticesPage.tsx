@@ -4,7 +4,7 @@ import { noticesApi } from '@/shared/api/notices'
 import { EmptyState } from '@/shared/components/feedback/EmptyState'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
-import { INBOX_KEY, inboxItems, useInbox } from '@/shared/components/notices/useInbox'
+import { inboxItems, markInboxRead, useInbox } from '@/shared/components/notices/useInbox'
 import { toast } from '@/shared/components/Toast'
 import { Button } from '@/shared/components/ui/button'
 import type { InboxItem } from '@/shared/types/admin'
@@ -16,11 +16,10 @@ export default function ParentNoticesPage() {
   const [openId, setOpenId] = useState<string | null>(null)
   const inbox = useInbox()
   const { hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = inbox
+  // 标已读只就地改缓存(这条变已读、页签徽标减一),不重取已加载的各页(L280)
   const read = useMutation({
     mutationFn: (id: string) => noticesApi.read(id),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: INBOX_KEY })
-    },
+    onSuccess: (_, id) => markInboxRead(qc, id),
     onError: () => toast('标记已读失败,请重试'),
   })
 

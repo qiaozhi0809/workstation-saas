@@ -8,8 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.audit.service import record
-from app.domain.exams.schemas import SubjectFull
-from app.domain.exams.subjects import PRESETS, Stage
+from app.domain.exams.schemas import PRESETS, Stage, SubjectFull
 from app.domain.school_settings.schemas import (
     Grading,
     SecuritySettings,

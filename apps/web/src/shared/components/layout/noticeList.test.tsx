@@ -14,7 +14,6 @@ const item = (over: Partial<InboxItem> = {}): InboxItem => ({
   ack: { kind: 'none' },
   ack_deadline: null,
   my_ack: null,
-  students: [],
   students_detail: [],
   can_ack: false,
   ack_block_reason: null,

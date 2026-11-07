@@ -18,6 +18,7 @@ from app.ai.chats import (
     item_status,
     list_chats,
     ordered_messages,
+    running_item_of,
 )
 from app.ai.context import system_prompt
 from app.ai.gateway import (
@@ -226,12 +227,19 @@ def get_ai_chat(
     chat = get_own_chat(db, user.id, chat_id)
     cfg = load_ai_config(db, settings.school_id, settings.master_key_bytes)
     try:
-        generating = redis.exists(lock_key(chat.id)) == 1
+        lock_value = redis.get(lock_key(chat.id))
     except RedisError:
         # Redis 不可用不能让本来能读的详情变 500:当作没在生成,退化为旧的 2 分钟陈旧规则
         log.warning("ai_chat_lock_unreadable", chat_id=str(chat.id))
-        generating = False
-    return chat_out(db, chat, clock.utc_now(), mask_forced=_mask_forced(cfg), generating=generating)
+        lock_value = None
+    return chat_out(
+        db,
+        chat,
+        clock.utc_now(),
+        mask_forced=_mask_forced(cfg),
+        generating=lock_value is not None,
+        running_item=running_item_of(lock_value),
+    )
 
 
 @router.delete("/chats/{chat_id}", status_code=204)
@@ -413,7 +421,7 @@ def ai_chat_run_item(
     _check_item_runnable(item)
     # 学生已不在本班等问题:开始推流前就以普通 400 返回
     build_item_job(db, user, cls, chat, item, mask=chat.mask or cfg.mask_forced)
-    token = acquire_lock(redis, chat.id)
+    token = acquire_lock(redis, chat.id, target=item.id)
     try:
         db.refresh(item)  # 拿到锁后重查:并发的另一次点击可能已经生成完了
         _check_item_runnable(item)

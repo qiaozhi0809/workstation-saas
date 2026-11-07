@@ -127,6 +127,21 @@ describe('AckSettings', () => {
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
+  it('"没动过"按选项记而不按位置:删掉后面填过的选项,前面没动过的空选项回到末尾就不再报(L281)', () => {
+    render(<Harness initial={{ kind: 'choice', options: ['去', '不去'], allow_note: false }} />)
+    fireEvent.click(screen.getByRole('button', { name: '添加选项' }))
+    fireEvent.click(screen.getByRole('button', { name: '添加选项' }))
+    typeOpt(4, '再议')
+    expect(screen.getByText('选项不能为空')).toBeInTheDocument() // 选项 3 夹在中间
+    fireEvent.click(screen.getByRole('button', { name: '删除选项 4' }))
+    expect(screen.getByLabelText('选项 3')).toHaveValue('')
+    expect(screen.queryByRole('alert')).toBeNull() // 选项 3 又成了末尾没动过的空行
+    typeOpt(3, '待定')
+    expect(screen.queryByRole('alert')).toBeNull()
+    typeOpt(3, '')
+    expect(screen.getByText('选项不能为空')).toBeInTheDocument() // 动过后清空就照报
+  })
+
   it('截止时间早于现在报错,晚于现在无错;清空回 null', () => {
     const onDeadline = vi.fn()
     render(<Harness initial={{ kind: 'confirm' }} onDeadline={onDeadline} />)
@@ -175,7 +190,6 @@ const item = (over: Partial<InboxItem> = {}): InboxItem => ({
   ack: { kind: 'confirm' },
   ack_deadline: null,
   my_ack: null,
-  students: [],
   students_detail: [],
   can_ack: true,
   ack_block_reason: null,
@@ -296,12 +310,22 @@ describe('AckForm', () => {
   })
 
   // 不能回执的原因由后端给(ack_block_reason,L88),前端不再按时间 / 学生列表推断
-  const REASONS = ['已撤回', '已截止', '孩子已毕业或离校,不能回执', '由主家长回执']
+  const REASONS = [
+    '已撤回',
+    '已截止',
+    '孩子已毕业或离校,不能回执',
+    '由主家长回执',
+    '与孩子的关联已结束,不能回执',
+  ]
   const blocked: [NonNullable<InboxItem['ack_block_reason']>, string, Partial<InboxItem>][] = [
     ['recalled', '已撤回', { recalled: true }],
     ['closed', '已截止', { ack_deadline: FUTURE }], // 浏览器时钟偏慢:截止在"未来"也听后端的
-    ['readonly', '孩子已毕业或离校,不能回执', { ack_deadline: FUTURE, students: ['小明'] }],
-    ['not_primary', '由主家长回执', { students: ['小明'] }],
+    [
+      'readonly',
+      '孩子已毕业或离校,不能回执',
+      { ack_deadline: FUTURE, students_detail: [{ name: '小明', class_name: null }] },
+    ],
+    ['not_primary', '由主家长回执', { students_detail: [{ name: '小明', class_name: null }] }],
   ]
   it.each(blocked)('can_ack=false:%s → %s', (reason, text, over) => {
     renderForm(item({ can_ack: false, ack_block_reason: reason, ...over }))
@@ -309,6 +333,25 @@ describe('AckForm', () => {
     for (const other of REASONS.filter((r) => r !== text)) {
       expect(screen.queryByText(other)).toBeNull()
     }
+    expect(screen.queryByRole('button', { name: '已知晓' })).toBeNull()
+  })
+
+  // L231:绑定已结束 / 孩子已删是 unlinked,与 readonly(孩子毕业或离校)分开说
+  it('unlinked reason copy', () => {
+    renderForm(item({ can_ack: false, ack_block_reason: 'unlinked', ack_deadline: FUTURE }))
+    expect(screen.getByText('与孩子的关联已结束,不能回执')).toBeInTheDocument()
+    expect(screen.queryByText('孩子已毕业或离校,不能回执')).toBeNull()
+    expect(screen.queryByRole('button', { name: '已知晓' })).toBeNull()
+  })
+
+  // Review Focus 4:后端将来再加新值、或旧前端缓存遇到新后端,查不到文案就不显示原因,不编造;
+  // 原型链上的键(constructor / __proto__)也不算"查到"
+  it.each(['archived', 'constructor', '__proto__'])('unknown reason shows nothing (%s)', (raw) => {
+    const unknown = raw as unknown as InboxItem['ack_block_reason']
+    renderForm(item({ can_ack: false, ack_block_reason: unknown }))
+    for (const r of REASONS) expect(screen.queryByText(r)).toBeNull()
+    expect(screen.queryByText(raw)).toBeNull()
+    expect(screen.queryByText(/function|Object/)).toBeNull()
     expect(screen.queryByRole('button', { name: '已知晓' })).toBeNull()
   })
 

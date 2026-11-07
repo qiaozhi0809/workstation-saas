@@ -15,8 +15,8 @@ from app.ai.context import Access, class_context, exam_context, load_exam_data
 from app.ai.stats import exam_stats
 from app.domain.classes.service import class_scope_of
 from app.domain.classes.sort import class_sort_key
-from app.domain.exams.schemas import SubjectFull
-from app.domain.exams.subjects import PRESETS, merge_subjects
+from app.domain.exams.schemas import PRESETS, SubjectFull
+from app.domain.exams.subjects import merge_subjects
 from app.domain.school_settings.service import DEFAULT_GRADING, get_catalog, get_grading
 from app.errors import ApiError
 from app.models import Exam, Grade, GradeExam, SchoolClass, Score
