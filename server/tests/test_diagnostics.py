@@ -208,6 +208,7 @@ def test_system_info(client, settings, tmp_path, engine):
         "at": "2026-11-05T02:00:00Z",
         "file": "ws-backup-20261105.tar.gz",
         "size_bytes": 1234,
+        "caddy": None,
     }
     for bad in ("{not json", "[]", json.dumps({"at": "x"}), "null"):
         f.write_text(bad)
