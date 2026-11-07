@@ -47,7 +47,9 @@ export default function ChangePasswordPage() {
     authApi
       .me()
       .then((me) => {
-        if (me && typeof me === 'object') useAuthStore.getState().setUser(me)
+        // 在途期间若已登出,不把用户写回空会话
+        if (me && typeof me === 'object' && useAuthStore.getState().accessToken)
+          useAuthStore.getState().setUser(me)
       })
       .catch(() => {
         /* 沿用本地的原因 */
