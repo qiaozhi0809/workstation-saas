@@ -13,13 +13,15 @@ const NOTE_MAX = 200
 type MyAck = NonNullable<InboxItem['my_ack']>
 
 /** can_ack=false 时的文案,按后端给的原因(L88);不再用浏览器时钟或学生列表推断。
- * readonly 也覆盖绑定已结束 / 孩子已删,所以写"毕业或离校"。 */
-const BLOCKED_TEXT: Record<NonNullable<AckBlockReason>, string> = {
+ * readonly = 孩子已毕业 / 离校(家长账号只读);unlinked = 绑定已结束或孩子已删(L231)。
+ * 这里查不到的值(更新的后端、或旧前端缓存)不显示原因,不编造。 */
+const BLOCKED_TEXT: Partial<Record<string, string>> = {
   recalled: '已撤回',
   closed: '已截止',
   readonly: '孩子已毕业或离校,不能回执',
   not_primary: '由主家长回执',
-}
+  unlinked: '与孩子的关联已结束,不能回执',
+} satisfies Record<NonNullable<AckBlockReason>, string>
 
 /** 收件箱里一条通知的回执区:已知晓 / 单选 / 已回执(可修改)/ 不能回执的原因 */
 export default function AckForm({ item, onSubmitted }: { item: InboxItem; onSubmitted?(): void }) {
@@ -51,7 +53,8 @@ export default function AckForm({ item, onSubmitted }: { item: InboxItem; onSubm
       ? mut.error.message
       : '提交失败,请重试'
     : null
-  const reason = !item.can_ack && item.ack_block_reason ? BLOCKED_TEXT[item.ack_block_reason] : null
+  const reason =
+    !item.can_ack && item.ack_block_reason ? (BLOCKED_TEXT[item.ack_block_reason] ?? null) : null
 
   const choiceLabel = (c: number | null) =>
     spec.kind === 'choice' && c !== null ? (spec.options[c] ?? '') : '已知晓'

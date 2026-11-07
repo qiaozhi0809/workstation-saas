@@ -296,7 +296,13 @@ describe('AckForm', () => {
   })
 
   // 不能回执的原因由后端给(ack_block_reason,L88),前端不再按时间 / 学生列表推断
-  const REASONS = ['已撤回', '已截止', '孩子已毕业或离校,不能回执', '由主家长回执']
+  const REASONS = [
+    '已撤回',
+    '已截止',
+    '孩子已毕业或离校,不能回执',
+    '由主家长回执',
+    '与孩子的关联已结束,不能回执',
+  ]
   const blocked: [NonNullable<InboxItem['ack_block_reason']>, string, Partial<InboxItem>][] = [
     ['recalled', '已撤回', { recalled: true }],
     ['closed', '已截止', { ack_deadline: FUTURE }], // 浏览器时钟偏慢:截止在"未来"也听后端的
@@ -309,6 +315,23 @@ describe('AckForm', () => {
     for (const other of REASONS.filter((r) => r !== text)) {
       expect(screen.queryByText(other)).toBeNull()
     }
+    expect(screen.queryByRole('button', { name: '已知晓' })).toBeNull()
+  })
+
+  // L231:绑定已结束 / 孩子已删是 unlinked,与 readonly(孩子毕业或离校)分开说
+  it('unlinked reason copy', () => {
+    renderForm(item({ can_ack: false, ack_block_reason: 'unlinked', ack_deadline: FUTURE }))
+    expect(screen.getByText('与孩子的关联已结束,不能回执')).toBeInTheDocument()
+    expect(screen.queryByText('孩子已毕业或离校,不能回执')).toBeNull()
+    expect(screen.queryByRole('button', { name: '已知晓' })).toBeNull()
+  })
+
+  // Review Focus 4:后端将来再加新值、或旧前端缓存遇到新后端,查不到文案就不显示原因,不编造
+  it('unknown reason shows nothing', () => {
+    const unknown = 'archived' as unknown as InboxItem['ack_block_reason']
+    renderForm(item({ can_ack: false, ack_block_reason: unknown }))
+    for (const r of REASONS) expect(screen.queryByText(r)).toBeNull()
+    expect(screen.queryByText('archived')).toBeNull()
     expect(screen.queryByRole('button', { name: '已知晓' })).toBeNull()
   })
 
