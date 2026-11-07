@@ -243,6 +243,51 @@ def test_lower_full_check_is_one_query(client, db, settings):
     assert len(max_queries) == 1, max_queries
 
 
+def test_update_subject_checks_use_single_aggregate(client, db, settings):
+    """L265:编辑联考时"去掉的科目是否有分"与"保留科目的在读最高分"合成一次 GROUP BY 查出
+    (scores 表只查一遍),两条规则都保留:去科目先报、降满分后报;只有转走学生有分的科目算"有分"
+    但不参与最高分。"""
+    out = _create(client, settings)
+    _score(db, _exam_of(db, out["id"], CLASS_ID).id, CLASS_ID, "语文", 95)
+    _score(db, _exam_of(db, out["id"], CLASS_31).id, CLASS_31, "数学", 88)
+    # 去掉有分的数学 + 把语文满分降到 90:去科目先报
+    both = _body(subjects=[{"name": "语文", "full": 90}])
+    statements, stop = _statements(db)
+    try:
+        r = client.put(f"{API}/{out['id']}", json=both, headers=auth(settings, DEAN))
+    finally:
+        stop()
+    assert r.status_code == 409 and r.json()["error"]["details"] == {"subject": "数学"}
+    assert len([s for s in statements if "FROM scores" in s]) == 1, statements
+    # 只降满分:降满分报
+    low = _body(subjects=[{"name": "语文", "full": 90}, {"name": "数学", "full": 100}])
+    statements, stop = _statements(db)
+    try:
+        r = client.put(f"{API}/{out['id']}", json=low, headers=auth(settings, DEAN))
+    finally:
+        stop()
+    assert r.status_code == 409 and r.json()["error"]["details"] == {"subject": "语文"}
+    assert len([s for s in statements if "FROM scores" in s]) == 1, statements
+    # 数学的分改成转走学生的:去数学仍被拒(有分),但降数学满分不再受它限制
+    math_exam = _exam_of(db, out["id"], CLASS_31)
+    enrollment_id = db.scalar(
+        select(Score.enrollment_id).where(Score.exam_id == math_exam.id, Score.subject == "数学")
+    )
+    db.execute(
+        text("UPDATE enrollments SET status = 'transferred' WHERE id = :e"), {"e": enrollment_id}
+    )
+    r = client.put(
+        f"{API}/{out['id']}",
+        json=_body(subjects=[{"name": "语文", "full": 100}]),
+        headers=auth(settings, DEAN),
+    )
+    assert r.status_code == 409 and r.json()["error"]["details"] == {"subject": "数学"}
+    ok = _body(subjects=[{"name": "语文", "full": 95}, {"name": "数学", "full": 60}])
+    r = client.put(f"{API}/{out['id']}", json=ok, headers=auth(settings, DEAN))
+    assert r.status_code == 200, r.text
+    assert [s["full"] for s in db.get(GradeExam, UUID(out["id"])).subjects] == [95, 60]
+
+
 def test_forbidden_write_checks_permission_before_lock(client, db, settings):
     """L38:写端点先判权再加锁:无发联考权的人对任何 id 都是 403(不泄露联考是否存在),
     年级组长对别的年级 403;被拒的请求不执行 FOR UPDATE。"""

@@ -85,7 +85,9 @@ def _grade_classes(
 def _lock_classes(db: Session, classes: Sequence[SchoolClass]) -> None:
     """先按 id 升序锁住联考涉及的班级行(与学年升级、课表导入同序,防死锁),再碰学年行(L56):
     create / sync / update 都是"先这里、后 ensure_year_live";名册 / 任职写入也是"先班级、
-    后学年(外键 KEY SHARE)",与回滚"先班级、后学年 FOR UPDATE"同序。"""
+    后学年(外键 KEY SHARE)",与回滚"先班级、后学年 FOR UPDATE"同序。
+
+    联考没有任何场次(年级暂无班级)时不锁任何班级行:编辑不会产生指向班级的新行,无害(L265)。"""
     if classes:
         db.execute(
             select(SchoolClass.id)
@@ -256,34 +258,20 @@ def _lock_class_exams(db: Session, ge: GradeExam) -> list[Exam]:
     )
 
 
-def _scored_subjects(db: Session, exam_ids: Sequence[UUID], names: Sequence[str]) -> set[str]:
-    """Subjects with at least one entered cell (absent included) in any of the exams."""
-    if not exam_ids or not names:
-        return set()
-    return set(
-        db.scalars(
-            select(Score.subject)
-            .where(Score.exam_id.in_(exam_ids), Score.subject.in_(names))
-            .distinct()
-        ).all()
-    )
-
-
-def _max_scores(db: Session, exam_ids: Sequence[UUID], names: Sequence[str]) -> dict[str, float]:
-    """各科在读学生已录的最高分,整场联考一次聚合查出(L38);没有分数的科目不在结果里。"""
+def _subject_scores(
+    db: Session, exam_ids: Sequence[UUID], names: Sequence[str]
+) -> dict[str, float | None]:
+    """整场联考各科的录分情况,一次 GROUP BY 查出(L38、L265):键 = 至少录了一格(缺考、转走学生的
+    也算)的科目;值 = 在读学生已录的最高分,没有有效分数时为 None。去科目看键、降满分看值。"""
     if not exam_ids or not names:
         return {}
     rows = db.execute(
-        select(Score.subject, func.max(Score.value))
+        select(Score.subject, func.max(Score.value).filter(Enrollment.status == "active"))
         .join(Enrollment, Enrollment.id == Score.enrollment_id)
-        .where(
-            Score.exam_id.in_(exam_ids),
-            Score.subject.in_(names),
-            Enrollment.status == "active",
-        )
+        .where(Score.exam_id.in_(exam_ids), Score.subject.in_(names))
         .group_by(Score.subject)
     ).all()
-    return {subject: top for subject, top in rows if top is not None}
+    return {subject: top for subject, top in rows}
 
 
 def _ensure_unscored(db: Session, exams: Sequence[Exam]) -> None:
@@ -370,14 +358,14 @@ def update(
     exam_ids = [e.id for e in exams]
     kept = {s.name for s in body.subjects}
     removed = [s["name"] for s in ge.subjects if s["name"] not in kept]
-    scored = _scored_subjects(db, exam_ids, removed)
+    scored = _subject_scores(db, exam_ids, [*removed, *kept])
     for name in removed:  # 按联考原有科目顺序,报第一个
         if name in scored:
             raise ApiError(
                 409, "EXAM_HAS_SCORES", f"「{name}」已有成绩,不能去掉", {"subject": name}
             )
     # 去科目与降满分被拒同一个码 409 EXAM_HAS_SCORES(契约;L38),details 指出科目
-    top = _max_scores(db, exam_ids, [s.name for s in body.subjects])
+    top = {name: v for name, v in scored.items() if name in kept and v is not None}
     for s in body.subjects:
         if s.name in top and s.full < top[s.name]:
             raise ApiError(
