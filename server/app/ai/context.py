@@ -22,9 +22,9 @@ from app.ai.stats import (
     score_line,
     subject_stats,
 )
-from app.domain.exams.schemas import SubjectFull
+from app.domain.exams.schemas import Stage, SubjectFull
 from app.domain.exams.service import _scores_by_enrollment, _visible_of
-from app.domain.exams.subjects import Stage, stage_of
+from app.domain.exams.subjects import stage_of
 from app.domain.school_settings.schemas import Grading
 from app.domain.school_settings.service import get_grading
 from app.domain.schools.service import local_day_start_utc, school_tz, week_no
