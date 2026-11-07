@@ -2,6 +2,7 @@ import { act, cleanup, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CameraBrief } from '@/shared/types/camera'
 import { CameraGrid } from './CameraGrid'
+import { loadHls } from './loadHls'
 
 const h = vi.hoisted(() => {
   type Handler = (event: string, data: unknown) => void
@@ -51,7 +52,10 @@ const cams = (n: number): CameraBrief[] =>
     status: 'streaming',
   }))
 
-beforeEach(() => void (h.FakeHls.instances = []))
+beforeEach(async () => {
+  h.FakeHls.instances = []
+  await loadHls() // hls.js 懒加载(L171):预热后格子挂载即同步建实例
+})
 afterEach(() => {
   cleanup()
   vi.useRealTimers()

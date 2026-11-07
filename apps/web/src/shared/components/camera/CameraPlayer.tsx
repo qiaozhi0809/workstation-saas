@@ -1,9 +1,10 @@
-import Hls from 'hls.js'
+import type HlsClass from 'hls.js'
 import { useEffect, useRef, useState } from 'react'
 import { camerasApi } from '@/shared/api/cameras'
 import { tryRefreshAccessToken } from '@/shared/api/client'
 import { Button } from '@/shared/components/ui/button'
 import { useAuthStore } from '@/shared/stores/auth'
+import { loadedHls, loadHls } from './loadHls'
 
 type PlayState =
   | 'loading'
@@ -111,13 +112,31 @@ export function CameraPlayer({
   onEndedRef.current = onEnded
   const onPlayingRef = useRef(onPlaying)
   onPlayingRef.current = onPlaying
-  const [state, setState] = useState<PlayState>(() =>
-    Hls.isSupported() ? 'loading' : 'unsupported',
-  )
+  const [state, setState] = useState<PlayState>('loading')
   // "重试"按钮 +1:effect 重跑,hls 实例重建
   const [epoch, setEpoch] = useState(0)
+  // hls.js 下载完成 +1:effect 重跑,这次拿得到构造函数(只在本组件是页面上第一个播放器时发生一次)
+  const [hlsReady, setHlsReady] = useState(0)
 
   useEffect(() => {
+    // hls.js 懒加载(L171):还没下载到就先去下载,到了再重跑本 effect;拿到过就直接同步建实例
+    const Hls = loadedHls()
+    if (!Hls) {
+      let cancelled = false
+      setState('loading') // 下载失败后点"重试"再来时,把"连不上"换回"加载中"
+      void loadHls().then(
+        () => {
+          if (!cancelled) setHlsReady((n) => n + 1)
+        },
+        () => {
+          // 连 hls.js 都下载不到(断网 / 静态资源 404):按连不上处理,"重试"会再下载一次
+          if (!cancelled) setState('offline')
+        },
+      )
+      return () => {
+        cancelled = true
+      }
+    }
     if (!Hls.isSupported()) {
       setState('unsupported')
       return
@@ -146,7 +165,7 @@ export function CameraPlayer({
     // 否则 ffmpeg 活着却不出片时就成了每 ~26 秒静默重取 + 回放旧画面,"画面已停止"永远到不了。
     // 后端重启 ffmpeg 时 start_number 取 epoch 秒(stream/supervisor.py),新一轮的序列号照样更大
     let maxSn = -1
-    let hls: Hls | null = new Hls({
+    let hls: HlsClass | null = new Hls({
       manifestLoadPolicy: PLAYLIST_POLICY,
       playlistLoadPolicy: PLAYLIST_POLICY,
       xhrSetup: (xhr, url) => {
@@ -371,7 +390,7 @@ export function CameraPlayer({
       hls?.destroy()
       hls = null
     }
-  }, [cameraId, epoch])
+  }, [cameraId, epoch, hlsReady])
 
   const msg = MESSAGES[state]
   return (

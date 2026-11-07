@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore } from '@/shared/stores/auth'
 import * as client from '@/shared/api/client'
 import { CameraPlayer } from './CameraPlayer'
+import { loadHls } from './loadHls'
 
 const h = vi.hoisted(() => {
   type Handler = (event: string, data: unknown) => void
@@ -83,10 +84,12 @@ const level = (over: Partial<{ targetduration: number; startSN: number; endSN: n
 const video = (title = 't') => screen.getByLabelText(title) as HTMLVideoElement
 const starting = () => manifestError(503, errBody('STREAM_STARTING'))
 
-beforeEach(() => {
+beforeEach(async () => {
   FakeHls.instances = []
   FakeHls.supported = true
   useAuthStore.setState({ accessToken: 'tok-1', refreshToken: 'r' })
+  // hls.js 是懒加载的(L171):先预热,下面的用例挂载即同步建实例;懒加载本身见 CameraPlayer.lazy.test.tsx
+  await loadHls()
 })
 afterEach(() => {
   cleanup()

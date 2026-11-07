@@ -5,6 +5,7 @@ import { camerasApi } from '@/shared/api/cameras'
 import { classesApi } from '@/shared/api/classes'
 import { ApiError } from '@/shared/api/client'
 import { classroomApi } from '@/shared/api/classroom'
+import { loadHls } from '@/shared/components/camera/loadHls'
 import { useTeacherStore } from '@/shared/stores/teacher'
 import type { ClassCameras } from '@/shared/types/camera'
 import { classFixture, defaultApiMocks, setup, summaryFixture } from './pageTestUtils'
@@ -114,13 +115,14 @@ async function openStrip() {
   return { strip, client, router }
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.resetAllMocks()
   FakeHls.instances = []
   h.idle.length = 0
   defaultApiMocks()
   vi.mocked(classroomApi.summary).mockResolvedValue(summaryFixture({ cameras: 2 }))
   vi.mocked(camerasApi.classCameras).mockResolvedValue(classCameras())
+  await loadHls() // hls.js 懒加载(L171):预热后播放器挂载即同步建实例
 })
 afterEach(() => {
   vi.useRealTimers()
