@@ -23,6 +23,7 @@ import {
 } from '@/shared/lib/grades'
 import { useStudentDrawer } from '../StudentProfile/useStudentDrawer'
 import ClassGate from '../ClassGate'
+import GradingFallback from '../GradingFallback'
 import { AttentionPanel } from './AttentionPanel'
 import { BandChart } from './BandChart'
 import { KpiRow } from './KpiRow'
@@ -150,6 +151,7 @@ function AnalysisBody({
 
   return (
     <div className="flex flex-col gap-4 p-4">
+      <GradingFallback grading={grading} />
       {unscoredPick && (
         <p role="status" className="text-sm text-muted-foreground">
           「{unscoredPick.name}」这场考试还没有分数,先显示最近一场有分数的考试

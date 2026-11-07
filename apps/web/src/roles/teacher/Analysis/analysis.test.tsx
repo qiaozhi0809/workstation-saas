@@ -223,6 +223,19 @@ describe('AnalysisPage', () => {
     )
   })
 
+  // L236:比例读取失败时页顶说明"按默认 60% / 85% 显示"并可重试;读取成功后提示消失
+  it('shows grading fallback banner', async () => {
+    vi.mocked(schoolApi.grading).mockRejectedValue(new Error('boom'))
+    setup([first])
+    const text = '及格线读取失败,先按默认 60% / 85% 显示'
+    const note = (await screen.findByText(text)).closest('[role="status"]') as HTMLElement
+    expect(note).not.toBeNull()
+    vi.mocked(schoolApi.grading).mockResolvedValue({ pass_ratio: 0.7, good_ratio: 0.9 })
+    fireEvent.click(within(note).getByRole('button', { name: '重试' }))
+    await waitFor(() => expect(screen.queryByText(text)).toBeNull())
+    expect(schoolApi.grading).toHaveBeenCalledTimes(2)
+  })
+
   it('analysis uses school ratios', async () => {
     // 第一次月考总分 140 / 120 / 100(满分 200):默认 60% 两人及格,学校改成 70% 后只剩一人
     vi.mocked(schoolApi.grading).mockResolvedValue({ pass_ratio: 0.7, good_ratio: 0.9 })
