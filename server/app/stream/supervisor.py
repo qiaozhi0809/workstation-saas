@@ -165,6 +165,14 @@ class Supervisor:
     def _running(self) -> int:
         return sum(1 for s in self._streams.values() if s.proc is not None)
 
+    def running_pids(self) -> list[int]:
+        """还在跑的 ffmpeg 进程号(只读;性能冒烟按它采样 CPU / 内存,不碰 _Stream 内部状态)。"""
+        return [
+            s.proc.pid
+            for s in self._streams.values()
+            if s.proc is not None and s.proc.returncode is None
+        ]
+
     async def _launch(self, cid: UUID, st: _Stream, now: float) -> None:
         if self._running() >= self._max:
             await self._set_error(cid, st, "busy")
