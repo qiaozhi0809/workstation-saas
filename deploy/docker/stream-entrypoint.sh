@@ -22,7 +22,7 @@ warn() { printf 'stream-worker 入口警告:%s\n' "$*" >&2; }
 
 # 降权后 exec:PID 1 仍是 worker 本身(compose 的 stop 信号直达);清掉可继承能力并禁止再提权
 drop_privileges() {
-  exec setpriv --reuid=10001 --regid=10001 --clear-groups --inh-caps=-all --no-new-privs -- "$@"
+  exec setpriv --reuid=10001 --regid=10001 --clear-groups --inh-caps=-all --bounding-set=-all --no-new-privs -- "$@"
 }
 
 case "$(printf '%s' "$nets" | tr '[:upper:]' '[:lower:]')" in
@@ -90,6 +90,9 @@ if command -v ip6tables >/dev/null 2>&1 && ip6tables -w 5 -S OUTPUT >/dev/null 2
   ip6tables -w 5 -F OUTPUT || die "清空 IPv6 OUTPUT 链失败"
   ip6tables -w 5 -A OUTPUT -o lo -j ACCEPT || die "写 IPv6 出站规则失败(lo)"
   ip6tables -w 5 -A OUTPUT -j REJECT 2>/dev/null || ip6tables -w 5 -A OUTPUT -j DROP || die "写 IPv6 出站规则失败"
+elif [ -r /proc/net/if_inet6 ] && awk '$4 != "10" && $6 != "lo" && $1 !~ /^fe80/ { f = 1 } END { exit !f }' /proc/net/if_inet6; then
+  # 有非回环、非链路本地的 IPv6 地址却写不了 ip6tables:IPv6 出口不受限,失败关闭而不是静默放行
+  die "容器有 IPv6 地址但 ip6tables 不可用,无法限制 IPv6 出站;请关闭该网络的 IPv6,或确认内核支持 ip6tables,或在 .env 设 WS_CAMERA_NETS=any"
 fi
 note=""
 if [ "$REJECT_FALLBACK" -eq 1 ]; then note="(内核没有 REJECT 模块,改用 DROP,被拒的连接要等超时)"; fi

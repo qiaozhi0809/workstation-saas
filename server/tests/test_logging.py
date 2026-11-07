@@ -158,3 +158,24 @@ def test_create_app_logs_started_event(tmp_path):
     assert started[0]["version"] == APP_VERSION and started[0]["env"] == s.env
     blob = json.dumps(started[0])
     assert s.jwt_secret not in blob and s.master_key not in blob and "postgresql" not in blob
+
+
+def test_uvicorn_log_config_emits_json_with_exception(capsys):
+    import logging.config
+    from pathlib import Path
+
+    import app
+
+    cfg = json.loads((Path(app.__file__).parent / "uvicorn-log.json").read_text(encoding="utf-8"))
+    logging.config.dictConfig(cfg)
+    log = logging.getLogger("uvicorn.error")
+    log.info("Started parent process [1]")
+    try:
+        raise ValueError("boom")
+    except ValueError:
+        log.exception("failed")
+    lines = capsys.readouterr().out.strip().splitlines()
+    assert len(lines) == 2
+    first, second = (json.loads(x) for x in lines)
+    assert first["logger"] == "uvicorn.error" and first["level"] == "info"
+    assert "ValueError: boom" in second["exception"]
