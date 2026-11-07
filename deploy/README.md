@@ -375,7 +375,7 @@ tar -xzf <新包>/workstation-deploy-1.0.0.tar.gz -C . --strip-components=1 work
 
 两种都已对密钥、数据库密码、令牌、手机号打码,但打码只覆盖**已知模式**。**发给外部之前,请自己打开看一遍**:应用日志里的异常堆栈、上游服务的错误响应体仍可能含业务数据。
 
-1.0.0 起 `data/logs/app.jsonl` 里也包含 web 服务器(uvicorn)的访问日志与各第三方库的日志(每行一条 JSON,`logger` 字段标明来源),不再只有应用自己的事件;播放片段地址里的 `u=`、`sig=`、`token=` 参数在写入时就已打码(L111 / L158)。`docker compose logs app` 看到的是同样的内容。
+1.0.0 起 `data/logs/app.jsonl` 里也包含 web 服务器(uvicorn)的访问日志与各第三方库的日志(每行一条 JSON,`logger` 字段标明来源),不再只有应用自己的事件;播放片段地址里的 `u=`、`sig=`、`token=` 参数在写入时就已打码(L111 / L158)。`docker compose logs app` 看到的是同样的内容,外加两类不进 `app.jsonl` 的行:启动时迁移预检的纯文本报告,以及 uvicorn 管理进程(多 worker 的父进程,不加载应用)的几行启动 / 停止日志——1.1 起后者也是同形的 JSON 行(`logger` 为 `uvicorn.error`),整段容器日志可以按 JSON 行过滤。
 
 ## 11. 账号安全运维(两步验证、登录日志、密码策略)
 

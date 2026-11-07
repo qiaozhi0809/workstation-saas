@@ -291,5 +291,34 @@ for _ in $(seq 1 30); do
 done
 [ "$ok" = 1 ] || fail "data/logs/app.jsonl 未出现"
 pass "data/logs/app.jsonl 已落盘"
+# L315:uvicorn 多 worker 的父进程不加载应用,它的几行启动日志(Started parent process 等)此前是 uvicorn 默认格式
+#("INFO:     …",只进 stdout);镜像入口带 --log-config 后也应是 JSON 行。docker logs app 开头几行是 cli migrate 的
+# 纯文本报告(不属于 uvicorn),所以断言:含 Started parent process 的行是带 logger / level / timestamp / event 的 JSON,
+# 且全文没有 uvicorn 默认格式前缀的行
+docker logs "$(compose ps -q app)" >"$TMP/app.logs" 2>&1 || fail "读不到 app 容器日志"
+python3 - "$TMP/app.logs" <<'PY' || fail "app 容器日志形态不对(原因见上一行)"
+import json, re, sys
+lines = [ln.rstrip("\r\n") for ln in open(sys.argv[1], encoding="utf-8", errors="replace")]
+lines = [ln for ln in lines if ln]
+parent = [ln for ln in lines if "Started parent process" in ln]
+if not parent:
+    print("日志里没有 uvicorn 父进程的 Started parent process 行", file=sys.stderr)
+    sys.exit(1)
+for ln in parent:
+    try:
+        d = json.loads(ln)
+    except ValueError:
+        print("父进程日志不是 JSON:" + ln[:160], file=sys.stderr)
+        sys.exit(1)
+    missing = [k for k in ("event", "logger", "level", "timestamp") if k not in d]
+    if missing or d["logger"] != "uvicorn.error":
+        print("父进程 JSON 缺字段 %s 或 logger 不是 uvicorn.error:%s" % (missing, ln[:160]), file=sys.stderr)
+        sys.exit(1)
+bad = [ln for ln in lines if re.match(r"^(TRACE|DEBUG|INFO|WARNING|ERROR|CRITICAL):\s", ln)]
+if bad:
+    print("仍有 uvicorn 默认格式的日志行:" + bad[0][:160], file=sys.stderr)
+    sys.exit(1)
+PY
+pass "docker logs app:uvicorn 父进程日志是 JSON(logger=uvicorn.error,含 level / timestamp),没有默认格式的行"
 
 echo "冒烟测试全部通过"
