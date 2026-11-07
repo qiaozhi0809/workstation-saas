@@ -222,13 +222,18 @@ jobs:
         working-directory: apps/web
         run: npm ci
 
-      # m5c project 用 runner 预装的 Google Chrome(channel: chrome):Playwright 自带的 Chromium 没有 H.264 解码器,
-      # 真流用例放不出画面。这里只确认它在,不重装
+      # m5c 的真流用例用 runner 预装的 Google Chrome(Playwright 自带的 Chromium 没有 H.264 解码器,放不出画面):
+      # 探测到 Chrome 就设 WS_CHROME=1,playwright.config 据此给 m5c project 用 channel: chrome(不重装);
+      # 没有就只告警,m5c 退回 Chromium、真流用例按同一变量跳过,其余用例照跑
       - name: Install Playwright browser
         working-directory: apps/web
         run: |
           npx playwright install --with-deps chromium
-          google-chrome --version
+          if google-chrome --version; then
+            echo "WS_CHROME=1" >> "$GITHUB_ENV"
+          else
+            echo "::warning::runner 没有 Google Chrome,m5c 用 Playwright 自带的 Chromium 跑,真流用例会跳过"
+          fi
 
       - name: Start frontend
         working-directory: apps/web

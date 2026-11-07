@@ -38,6 +38,11 @@ const CAM2 = `rtsp://127.0.0.1:${RTSP_PORT}/cam2`
 const CAMERA_NAME = 'E2E讲台机位'
 /** 首帧:worker 收到"想看"才起 ffmpeg、等关键帧、写出首个片段,后端最多挂 8 秒,hls.js 再拉片段解码 */
 const FIRST_FRAME_MS = 30_000
+// 真流用例(要在浏览器里放出 H.264 画面)只在 WS_CHROME=1 时跑:playwright.config 据此给本 project 用系统 Chrome;
+// 没有 Chrome 时 project 退回 Playwright 自带的 Chromium,它解不了 H.264,这几条跳过而不是红。其余用例不看画面,照跑
+const USE_CHROME = process.env.WS_CHROME === '1'
+const skipWithoutChrome = () =>
+  test.skip(!USE_CHROME, '真流用例要系统 Chrome 解 H.264:设 WS_CHROME=1 才跑,Chromium 下跳过')
 
 // 本文件改的共享数据:学校"监控"开关、摄像头(名字都以 E2E 开头)、学校作息、三年二班课表。
 // 每个用例结束在 finally 里还原;beforeEach / afterEach 再按本文件开跑前的快照兜底一次
@@ -196,6 +201,7 @@ test('homeroom teacher watches the own classroom: first frame, watermark, fullsc
   page,
   request,
 }) => {
+  skipWithoutChrome()
   await setMonitor(request, true)
   const it = await login(request, 'itadmin01')
   const camera = await addCamera(request, it, CLASS_3_2)
@@ -241,6 +247,7 @@ test('subject teacher sees the camera only in the timetabled period; reassigning
   browser,
   request,
 }) => {
+  skipWithoutChrome()
   await setMonitor(request, true)
   const principal = await login(request, 'principal01')
   const it = await login(request, 'itadmin01')
@@ -307,6 +314,7 @@ test('principal: the camera wall plays a class, auto-rotates to the next class, 
   page,
   request,
 }) => {
+  skipWithoutChrome()
   await setMonitor(request, true)
   const it = await login(request, 'itadmin01')
   const first = await addCamera(request, it, CLASS_3_2)
