@@ -113,9 +113,16 @@ def lock_key(chat_id: UUID | str) -> str:
     return f"ai:chat:{chat_id}"
 
 
-def acquire_lock(redis: Redis, chat_id: UUID | str) -> str:
-    """拿到返回随机令牌;拿不到抛 409 AI_BUSY。"""
+def acquire_lock(redis: Redis, chat_id: UUID | str, *, target: UUID | None = None) -> str:
+    """拿到返回随机令牌;拿不到抛 409 AI_BUSY。
+
+    ``target`` 是这次要生成的批量条目:给了就把它拼进锁值 ``"<hex>|<item_id>"``,读对话详情时
+    只有这一条算"生成中"(L249,解析见 ``chats.running_item_of``);释放 / 续期都比较整串,
+    不传 ``target`` 的调用方行为不变。
+    """
     token = secrets.token_hex(16)
+    if target is not None:
+        token = f"{token}|{target}"
     if not redis.set(lock_key(chat_id), token, nx=True, ex=LOCK_TTL):
         raise ApiError(409, "AI_BUSY", "这个对话正在生成,请稍候")
     return token

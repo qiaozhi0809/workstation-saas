@@ -90,10 +90,30 @@ def _stale(updated_at: datetime, now: datetime) -> bool:
     return now - updated_at > STALE_AFTER
 
 
-def item_status(item: AiBatchItem, now: datetime, *, generating: bool = False) -> str:
+def running_item_of(lock_value: str | None) -> UUID | None:
+    """对话锁的值 ``"<hex>|<item_id>"`` 里正在生成的批量条目;旧格式(没有 ``|``)、后缀不是
+    UUID 或没有锁都返回 None——调用方退回对话级判断,不报错(L249)。"""
+    if not lock_value or "|" not in lock_value:
+        return None
+    try:
+        return UUID(lock_value.rsplit("|", 1)[1])
+    except ValueError:
+        return None
+
+
+def item_status(
+    item: AiBatchItem,
+    now: datetime,
+    *,
+    generating: bool = False,
+    running_item: UUID | None = None,
+) -> str:
     """显示用状态:超过 2 分钟还在 run 的算 wait;``generating``(对话锁还在手里,
-    见 ``gateway.lock_key``)说明确实还在生成,再久也照样显示 run。"""
-    stale = item.status == "run" and not generating and _stale(item.updated_at, now)
+    见 ``gateway.lock_key``)说明确实还在生成,再久也照样显示 run。
+    ``running_item``(锁值里带的条目 id)不为 None 时只有那一条算生成中,
+    进程被杀留下的陈旧 run 条目不会跟着显示 run(L249)。"""
+    mine = generating and (running_item is None or running_item == item.id)
+    stale = item.status == "run" and not mine and _stale(item.updated_at, now)
     return "wait" if stale else item.status
 
 
@@ -104,11 +124,13 @@ def chat_out(
     *,
     mask_forced: bool = False,
     generating: bool = False,
+    running_item: UUID | None = None,
 ) -> AiChatOut:
     """``mask_forced``:学校当前是否强制脱敏;返回的 ``mask`` 是实际生效的值
     (``chat.mask or mask_forced``,与追问 / 批量 / 复制提示词同一口径),不是建对话时存的值。
     ``generating``:这个对话的生成锁当前还被持有——一次生成超过 2 分钟时并发读取仍显示
-    "生成中",锁释放(生成器收尾或崩溃)后才按 2 分钟陈旧规则显示"中断"。"""
+    "生成中",锁释放(生成器收尾或崩溃)后才按 2 分钟陈旧规则显示"中断"。
+    ``running_item``:锁值里带的正在生成的批量条目(``running_item_of``),只对它放宽。"""
     messages = []
     for m in ordered_messages(db, chat.id):
         status, error = m.status, m.error
@@ -127,7 +149,7 @@ def chat_out(
     items = []
     for it in chat_items(db, chat.id):
         student = db.get(Student, it.student_id)
-        status = item_status(it, now, generating=generating)
+        status = item_status(it, now, generating=generating, running_item=running_item)
         items.append(
             AiBatchItemOut(
                 id=it.id,
