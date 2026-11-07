@@ -11,6 +11,7 @@ from app.audit.service import deny
 from app.domain.cameras.access import admin_sees_class, enabled_camera_counts
 from app.domain.classes.service import class_scope_of
 from app.domain.classes.sort import class_sort_key
+from app.domain.exams.subjects import grade_stage
 from app.domain.grade_exams.service import progress
 from app.domain.notices.service import recent_sent
 from app.domain.overview.schemas import (
@@ -39,6 +40,7 @@ from app.domain.schools.service import (
     week_monday,
 )
 from app.domain.students.schemas import StudentSeat
+from app.domain.students.seats import SEAT_ORDER, seat_of
 from app.models import (
     AcademicYear,
     Attendance,
@@ -368,35 +370,16 @@ def today_view(db: Session, user: User, bindings: Sequence[Binding]) -> TodayVie
 
 
 def _seats_by_class(db: Session, class_ids: list[UUID]) -> dict[UUID, list[StudentSeat]]:
-    """一条 SQL 取全部班的名单;字段与排序同 list_roster。"""
+    """一条 SQL 取全部班的名单;字段与排序同 list_roster(共用 students/seats.py,L24)。"""
     rows = db.execute(
         select(Enrollment, Student)
         .join(Student, Enrollment.student_id == Student.id)
         .where(Enrollment.class_id.in_(class_ids), Enrollment.status == "active")
-        .order_by(
-            Enrollment.seat_row.asc().nulls_last(),
-            Enrollment.seat_col.asc().nulls_last(),
-            Student.mk,
-        )
+        .order_by(*SEAT_ORDER)
     ).all()
     out: dict[UUID, list[StudentSeat]] = defaultdict(list)
     for e, st in rows:
-        out[e.class_id].append(
-            StudentSeat(
-                enrollment_id=e.id,
-                student_id=st.id,
-                name=st.name,
-                mk=st.mk,
-                seat_row=e.seat_row,
-                seat_col=e.seat_col,
-                avatar_seed=st.avatar_seed,
-                gender=st.gender,
-                student_no=st.student_no,
-                birthdate=st.birthdate,
-                class_role=e.class_role,
-                seat_locked=e.seat_locked,
-            )
-        )
+        out[e.class_id].append(seat_of(e, st))
     return out
 
 
@@ -476,7 +459,9 @@ def board_view(
 ) -> BoardView:
     year = require_active_year(db, user.school_id)
     visible = _visible(db, bindings, year.id, year.school_id)
-    grades = [(g.id, g.name) for g in _visible_grades(db, bindings, year.id, visible)]
+    grades = [
+        (g.id, g.name, grade_stage(g)) for g in _visible_grades(db, bindings, year.id, visible)
+    ]
     if grade_id is None:
         grade_id = grades[0][0] if grades else None
     elif grade_id not in {g[0] for g in grades}:
@@ -489,7 +474,9 @@ def board_view(
             request=request,
         )
     picked = [v for v in visible if v.grade.id == grade_id]
-    grade_list = [GradeBrief(id=gid, name=name) for gid, name in grades]
+    grade_list = [
+        GradeBrief(id=gid, name=name, effective_stage=stage) for gid, name, stage in grades
+    ]
     if not picked:
         return BoardView(grades=grade_list, grade_id=grade_id, classes=[])
 

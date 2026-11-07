@@ -1,7 +1,9 @@
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, Response
+from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import clock
@@ -9,6 +11,8 @@ from app.audit.service import deny
 from app.auth.deps import get_current_user
 from app.auth.service import contexts_of
 from app.db import get_db
+from app.domain.classes.sort import class_sort_key
+from app.domain.exams.subjects import grade_stage
 from app.domain.org import service, staff
 from app.domain.org.schemas import (
     AdminRole,
@@ -23,14 +27,17 @@ from app.domain.org.schemas import (
     YearAdmin,
     YearUpdate,
 )
+from app.domain.overview.service import ensure_school_view, visible_classes
 from app.domain.schools.service import require_active_year
-from app.models import User
+from app.models import AcademicYear, Grade, User
 from app.rbac.admin import ensure_admin
 from app.rbac.bindings import Binding
 from app.rbac.deps import get_bindings
-from app.rbac.roles import Perm
+from app.rbac.roles import LEADER_ROLES, Perm
 
 router = APIRouter(prefix="/admin", tags=["org"])
+# 无 /admin 前缀的只读接口(L272):school.view 即可,不要 org.manage
+school_router = APIRouter(prefix="/school", tags=["org"])
 
 Auth = Annotated[User, Depends(get_current_user)]
 Bind = Annotated[list[Binding], Depends(get_bindings)]
@@ -39,6 +46,49 @@ Db = Annotated[Session, Depends(get_db)]
 
 def _org(db: Session, request: Request, user: User, bindings: list[Binding]) -> None:
     ensure_admin(db, request, user.id, bindings, Perm.ORG_MANAGE, user.school_id)
+
+
+class SchoolGrade(BaseModel):
+    """`GET /school/grades` 的一行(L272):给考勤报告 / 联考页做年级筛选的轻量只读接口,
+    按看板同一口径裁剪可见年级;effective_stage 与看板 `GradeBrief.effective_stage` 同一取值。"""
+
+    id: UUID
+    name: str
+    display_order: int
+    effective_stage: Literal["primary", "junior", "senior"] | None = None
+
+
+def _school_grades(db: Session, bindings: list[Binding], year: AcademicYear) -> list[SchoolGrade]:
+    """当前学年调用者可见的年级(L272),与看板同一口径:可见班所在的年级 ∪ 领导绑定的年级
+    (即使该年级当前没有在读班);年级组长只回自己的年级。按 display_order、年级名数值序。"""
+    wanted = {c.grade_id for c in visible_classes(db, bindings, year)}
+    wanted |= {
+        b.scope.grade_id
+        for b in bindings
+        if b.role in LEADER_ROLES and b.scope.grade_id is not None
+    }
+    grades = (
+        db.scalars(
+            select(Grade).where(Grade.id.in_(wanted), Grade.academic_year_id == year.id)
+        ).all()
+        if wanted
+        else []
+    )
+    return [
+        SchoolGrade(
+            id=g.id, name=g.name, display_order=g.display_order, effective_stage=grade_stage(g)
+        )
+        for g in sorted(grades, key=lambda g: (g.display_order, class_sort_key(g.name), str(g.id)))
+    ]
+
+
+@school_router.get("/grades")
+def get_school_grades(request: Request, user: Auth, bindings: Bind, db: Db) -> list[SchoolGrade]:
+    """当前学年调用者可见的年级(看板同一口径):领导身份可读,年级组长只见自己的年级;
+    信息中心 / 教师 / 家长 403 并记审计。"""
+    ensure_school_view(db, request, user, bindings)
+    year = require_active_year(db, user.school_id)
+    return _school_grades(db, bindings, year)
 
 
 @router.get("/school")

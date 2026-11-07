@@ -1,5 +1,6 @@
 import io
 import json
+import logging
 from contextlib import contextmanager
 from datetime import UTC, date, datetime, time
 from uuid import UUID, uuid4
@@ -125,14 +126,27 @@ def test_failed_job_retries(db, redis_client):
     assert len(calls) == 2
 
 
+@contextmanager
+def _capture_debug_logs():
+    """app.logging 默认按 INFO 过滤,debug 行到不了 capture_logs;测试期间临时放到 DEBUG。"""
+    prev = structlog.get_config()["wrapper_class"]
+    structlog.configure(wrapper_class=structlog.make_filtering_bound_logger(logging.DEBUG))
+    try:
+        with capture_logs() as logs:
+            yield logs
+    finally:
+        structlog.configure(wrapper_class=prev)
+
+
 def test_run_due_skips_without_school(db, redis_client):
     calls: list = []
     now = _local(5, 3, 15).astimezone(UTC)
-    with capture_logs() as logs:
+    with _capture_debug_logs() as logs:
         done = run_due(_factory(db), redis_client, now, [_job(calls)], school_id=uuid4())
     assert done == [] and calls == []
     entries = [e for e in logs if e["event"] == "scheduler.no_school"]
-    assert entries and all(e["log_level"] == "info" for e in entries)
+    # L116:首次安装先于 init-school 启动是常态,只留 debug 级
+    assert entries and all(e["log_level"] == "debug" for e in entries)
 
 
 def test_run_due_skips_when_locked(db, redis_client):

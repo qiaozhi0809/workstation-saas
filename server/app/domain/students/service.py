@@ -10,8 +10,9 @@ from sqlalchemy.orm import Session
 from app import clock
 from app.audit.service import record
 from app.domain.students.schemas import StudentProfile, StudentSeat, TeacherNote
+from app.domain.students.seats import SEAT_ORDER, serialize_seats
 from app.errors import ApiError
-from app.models import Enrollment, SchoolClass, Student
+from app.models import Enrollment, Exam, SchoolClass, Student
 from app.rbac.bindings import Binding, Scope, can
 from app.rbac.roles import Perm
 
@@ -32,29 +33,9 @@ def list_roster(db: Session, class_id: UUID, year_id: UUID) -> list[StudentSeat]
             Enrollment.academic_year_id == year_id,
             Enrollment.status == "active",
         )
-        .order_by(
-            Enrollment.seat_row.asc().nulls_last(),
-            Enrollment.seat_col.asc().nulls_last(),
-            Student.mk,
-        )
+        .order_by(*SEAT_ORDER)
     ).all()
-    return [
-        StudentSeat(
-            enrollment_id=e.id,
-            student_id=s.id,
-            name=s.name,
-            mk=s.mk,
-            seat_row=e.seat_row,
-            seat_col=e.seat_col,
-            avatar_seed=s.avatar_seed,
-            gender=s.gender,
-            student_no=s.student_no,
-            birthdate=s.birthdate,
-            class_role=e.class_role,
-            seat_locked=e.seat_locked,
-        )
-        for e, s in rows
-    ]
+    return serialize_seats(rows)
 
 
 def find_enrolled_student(
@@ -136,6 +117,21 @@ def active_enrollments(db: Session, class_id: UUID) -> list[Enrollment]:
             .where(Enrollment.class_id == class_id, Enrollment.status == "active")
             .order_by(Enrollment.id)
         ).all()
+    )
+
+
+def exam_roster_ids(db: Session, exam: Exam, current_year: bool) -> list[UUID]:
+    """这场考试参与名次 / 平均 / 最高的注册 id,家长端与教师端同一口径(L76 / L278):
+    当前学年的班只算在读注册(与 active_enrollments 同一筛选),往年的班算全部未删除的注册
+    (history.exam_scores);被移出 / 转出的注册都不算。按 Student.mk 排序,同分并列的顺序确定。"""
+    enrolled = Enrollment.status == "active" if current_year else Enrollment.status != "removed"
+    return list(
+        db.scalars(
+            select(Enrollment.id)
+            .join(Student, Student.id == Enrollment.student_id)
+            .where(Enrollment.class_id == exam.class_id, enrolled)
+            .order_by(Student.mk)
+        )
     )
 
 

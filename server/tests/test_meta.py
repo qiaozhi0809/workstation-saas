@@ -24,6 +24,20 @@ def test_meta_for_parent(client, db, settings):
     assert client.get(META, headers=auth(settings, LI)).json()["school_tz"] == "Asia/Urumqi"
 
 
+def test_meta_readable_while_password_change_required(client, db, settings):
+    """L230:被要求改密的账号,其他接口 403 PASSWORD_CHANGE_REQUIRED,/meta 仍 200(改密页显示校名)。"""
+    db.execute(
+        text("UPDATE users SET must_change_password = true WHERE id = :u"), {"u": TEACHER_USER_ID}
+    )
+    h = auth(settings, TEACHER_USER_ID)
+    blocked = client.get("/api/v1/me/classes", headers=h)
+    assert blocked.status_code == 403
+    assert blocked.json()["error"]["code"] == "PASSWORD_CHANGE_REQUIRED"
+    res = client.get(META, headers=h)
+    assert res.status_code == 200, res.text
+    assert res.json()["school_name"] == "示例小学"
+
+
 def test_meta_requires_login(client):
     res = client.get(META)
     assert res.status_code == 401

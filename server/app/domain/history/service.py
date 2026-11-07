@@ -13,6 +13,7 @@ from app.domain.classes.sort import class_sort_key
 from app.domain.exams.schemas import SubjectFull
 from app.domain.history.schemas import (
     HistoryClass,
+    HistoryClassLocation,
     HistoryExam,
     HistoryRoster,
     HistoryScoreRow,
@@ -130,6 +131,30 @@ def _past_class_or_deny(
     ):
         _deny(db, request, user, "class", class_id)
     return cls
+
+
+def locate_class(
+    db: Session,
+    user: User,
+    bindings: Sequence[Binding],
+    class_id: UUID,
+    request: Request | None = None,
+) -> HistoryClassLocation:
+    """按班 id 读它所在的学年(L275)。不存在 / 别校的班 → 404(没有可泄露的归属,不记审计);
+    存在但是当前学年的班、或调用者不可见 → 403 + 审计(与其余历史接口同一口径)。"""
+    cls = db.get(SchoolClass, class_id)
+    if cls is None or cls.school_id != user.school_id:
+        raise ApiError(404, "NOT_FOUND", "班级不存在")
+    current = active_academic_year(db, user.school_id)
+    if (current is not None and cls.academic_year_id == current.id) or not _visible_to(
+        bindings, cls
+    ):
+        _deny(db, request, user, "class", class_id)
+    year = db.get(AcademicYear, cls.academic_year_id)
+    assert year is not None
+    return HistoryClassLocation(
+        class_id=cls.id, class_name=cls.name, year_id=year.id, year_name=year.name
+    )
 
 
 def class_students(

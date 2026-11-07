@@ -1,8 +1,11 @@
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime
 from uuid import UUID
 
 from fastapi import Request
 from sqlalchemy import func, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.audit.service import record
@@ -20,6 +23,7 @@ from app.domain.org.schemas import (
     YearAdmin,
     YearUpdate,
 )
+from app.domain.years.locks import ensure_year_live
 from app.errors import ApiError
 from app.models import AcademicYear, Grade, RoleBinding, School, SchoolClass
 
@@ -176,6 +180,7 @@ def create_grade(
 ) -> GradeAdmin:
     if _name_taken(db, year_id, body.name, None):
         raise ApiError(409, "NAME_TAKEN", "该年级名称已存在")
+    ensure_year_live(db, year_id)  # 学年刚被回滚 → 409,而不是插入撞学年外键 500(L261)
     grade = Grade(
         school_id=school_id,
         academic_year_id=year_id,
@@ -236,6 +241,11 @@ def delete_grade(
     request: Request | None,
 ) -> None:
     grade = get_grade(db, school_id, grade_id)
+    # 先学年行 KEY SHARE、再年级行 FOR UPDATE(L261,与建班同序):下面要改该年级的组长绑定再删
+    # 年级,而回滚持学年 FOR UPDATE 后也是先删绑定、再删年级——不先排在学年锁上,两边会在绑定行与
+    # 年级行上互等(40P01)。学年刚被回滚 → 409;学年锁到手后年级已被回滚删掉 → 404。
+    ensure_year_live(db, grade.academic_year_id)
+    lock_grade(db, grade.id)  # 与建班串行:判"没有班"到删除之间不会有新班插进来
     if _class_count(db, grade.id) > 0:
         raise ApiError(409, "GRADE_NOT_EMPTY", "该年级下还有班级,不能删除")
     # 该年级的年级组长绑定随年级一并结束,避免悬空
@@ -372,6 +382,25 @@ def _class_name_taken(db: Session, grade_id: UUID, name: str, exclude: UUID | No
     return db.scalars(stmt).first() is not None
 
 
+# 同年级班名唯一索引的名字,以 ORM 声明(models/school.py)为唯一来源,避免两处字面量
+_CLASS_NAME_INDEX = next(ix.name for ix in SchoolClass.__table__.indexes if ix.unique)
+
+
+@contextmanager
+def _class_name_guard(db: Session) -> Iterator[None]:
+    """应用层重名检查之外的最后一道防线(L263):两个会话并发建 / 改成同一班名时各自都看不见对方
+    未提交的行,唯一索引 uq_classes_grade_name 拦下后提交的一方 → 与应用层检查同一个码 409
+    NAME_TAKEN,不是 500。"""
+    try:
+        yield
+    except IntegrityError as exc:
+        diag = getattr(exc.orig, "diag", None)
+        if getattr(diag, "constraint_name", None) != _CLASS_NAME_INDEX:
+            raise
+        db.rollback()
+        raise ApiError(409, "NAME_TAKEN", "该年级下已有同名班级") from exc
+
+
 def create_class(
     db: Session,
     school_id: UUID,
@@ -383,6 +412,12 @@ def create_class(
     grade = get_grade(db, school_id, body.grade_id)
     if grade.academic_year_id != year_id:
         raise ApiError(400, "BAD_REQUEST", "只能在当前学年的年级下建班")
+    # 先学年行 KEY SHARE、再年级行 FOR UPDATE、最后插入(L261):学年刚被回滚 → 409 而不是外键 500;
+    # 年级正在被删 → 等它提交后 404。顺序与回滚"学年 FOR UPDATE → DELETE grades"一致,不互等。
+    ensure_year_live(db, year_id)
+    lock_grade(db, grade.id)
+    # 重名检查放在年级行锁之后:同年级并发建班在锁上排队,后到的能看见先到的已提交的行,
+    # 唯一索引 uq_classes_grade_name 只是最后防线(L263)
     if _class_name_taken(db, grade.id, body.name, None):
         raise ApiError(409, "NAME_TAKEN", "该年级下已有同名班级")
     cls = SchoolClass(
@@ -396,19 +431,20 @@ def create_class(
         seat_rows=6,
         seat_cols=8,
     )
-    db.add(cls)
-    db.flush()
-    record(
-        db,
-        user_id=user_id,
-        action="org.class_create",
-        success=True,
-        object_type="class",
-        object_id=str(cls.id),
-        request=request,
-        extra={"name": cls.name, "grade_id": str(grade.id)},
-    )
-    db.commit()
+    with _class_name_guard(db):
+        db.add(cls)
+        db.flush()
+        record(
+            db,
+            user_id=user_id,
+            action="org.class_create",
+            success=True,
+            object_type="class",
+            object_id=str(cls.id),
+            request=request,
+            extra={"name": cls.name, "grade_id": str(grade.id)},
+        )
+        db.commit()
     return class_admin(db, cls)
 
 
@@ -424,23 +460,37 @@ def update_class(
     grade = get_grade(db, school_id, body.grade_id)
     if grade.academic_year_id != cls.academic_year_id:
         raise ApiError(400, "BAD_REQUEST", "只能换到当前学年的年级")
+    if grade.id != cls.grade_id:
+        # 换年级:先班级行(上面)、再目标年级行 FOR UPDATE,与回滚"班级 → 年级"同序;目标年级
+        # 正在被删 → 等它提交后 404,而不是 UPDATE 撞年级外键 500(L261)
+        lock_grade(db, grade.id)
     if _class_name_taken(db, grade.id, body.name, cls.id):
         raise ApiError(409, "NAME_TAKEN", "该年级下已有同名班级")
     cls.grade_id = grade.id
     cls.name = body.name
     cls.room = body.room
-    record(
-        db,
-        user_id=user_id,
-        action="org.class_update",
-        success=True,
-        object_type="class",
-        object_id=str(cls.id),
-        request=request,
-        extra={"name": cls.name, "grade_id": str(grade.id)},
-    )
-    db.commit()
+    with _class_name_guard(db):
+        record(
+            db,
+            user_id=user_id,
+            action="org.class_update",
+            success=True,
+            object_type="class",
+            object_id=str(cls.id),
+            request=request,
+            extra={"name": cls.name, "grade_id": str(grade.id)},
+        )
+        db.commit()
     return class_admin(db, cls)
+
+
+def lock_grade(db: Session, grade_id: UUID) -> None:
+    """锁住年级行直到事务结束:建班与删年级因此串行(L261)。年级已被并发删掉 → 404。"""
+    found = db.execute(
+        text("SELECT id FROM grades WHERE id = :g FOR UPDATE"), {"g": grade_id}
+    ).first()
+    if found is None:
+        raise ApiError(404, "NOT_FOUND", "年级不存在")
 
 
 def lock_class(db: Session, cls: SchoolClass) -> None:

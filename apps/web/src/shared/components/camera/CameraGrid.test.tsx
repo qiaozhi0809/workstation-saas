@@ -1,7 +1,8 @@
-import { act, cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CameraBrief } from '@/shared/types/camera'
 import { CameraGrid } from './CameraGrid'
+import { loadHls } from './loadHls'
 
 const h = vi.hoisted(() => {
   type Handler = (event: string, data: unknown) => void
@@ -11,6 +12,7 @@ const h = vi.hoisted(() => {
     static Events = {
       ERROR: 'hlsError',
       MANIFEST_PARSED: 'hlsManifestParsed',
+      LEVEL_LOADED: 'hlsLevelLoaded',
       FRAG_LOADED: 'hlsFragLoaded',
     }
     static ErrorTypes = { NETWORK_ERROR: 'networkError', MEDIA_ERROR: 'mediaError' }
@@ -50,7 +52,10 @@ const cams = (n: number): CameraBrief[] =>
     status: 'streaming',
   }))
 
-beforeEach(() => void (h.FakeHls.instances = []))
+beforeEach(async () => {
+  h.FakeHls.instances = []
+  await loadHls() // hls.js 懒加载(L171):预热后格子挂载即同步建实例
+})
 afterEach(() => {
   cleanup()
   vi.useRealTimers()
@@ -87,6 +92,26 @@ describe('CameraGrid', () => {
     expect(screen.getAllByText('加载中')).toHaveLength(7)
     expect(h.FakeHls.instances.filter((i) => i.destroy.mock.calls.length > 0)).toHaveLength(1)
     expect(screen.getAllByLabelText(/机位/)).toHaveLength(9)
+  })
+
+  it('nine grid shows the watermark on every tile', () => {
+    // 九宫格 9 路同时播,每一格都要盖着"正在直播 · 校名 · 时间 · 观看者"的水印(L218 ②)
+    render(
+      <CameraGrid
+        cameras={cams(9)}
+        size={9}
+        schoolName="示例小学"
+        viewerName="赵老师"
+        timeZone="Asia/Shanghai"
+      />,
+    )
+    expect(screen.getAllByText(/^正在直播 · 示例小学 · .+ · 赵老师$/)).toHaveLength(9)
+    for (let i = 0; i < 9; i++) {
+      // 每一格:标题下面是画面 + 盖在画面上的水印
+      const tile = screen.getByText(`机位${i}`).parentElement!
+      expect(within(tile).getByLabelText(`机位${i}`)).toBeInTheDocument()
+      expect(within(tile).getByText(/^正在直播/)).toBeInTheDocument()
+    }
   })
 
   it('shows tile titles and watermark only when all props given', () => {

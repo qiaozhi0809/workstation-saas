@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { classesApi } from '@/shared/api/classes'
 import { ApiError } from '@/shared/api/client'
 import { preferencesApi, type PreferencesWithOnboarded } from '@/shared/api/preferences'
 import CrDefs from '@/shared/components/ClassroomMap/art/CrDefs'
@@ -30,11 +31,13 @@ const VIEW = { w: 200, h: 190 }
 const STAGE = { x: 8, y: 56, w: 184, h: 140 }
 
 function FigurePreview({ figure, label }: { figure: Figure; label: string }) {
+  // 两张卡各自一份 <defs>:滤镜 id 由 useId 派生,彼此不同,也不占用同页教室 svg 的 crShadow(L241)
+  const shadowId = `crShadow-${useId().replace(/[^A-Za-z0-9_-]/g, '')}`
   return (
     <svg viewBox={`0 0 ${VIEW.w} ${VIEW.h}`} className="h-auto w-full" aria-hidden="true">
-      <CrDefs />
+      <CrDefs id={shadowId} />
       <rect width={VIEW.w} height={VIEW.h} rx={12} fill={ROOM.floor} />
-      <Podium rect={STAGE} teacher={{ figure, label }} action="idle" />
+      <Podium rect={STAGE} teacher={{ figure, label }} action="idle" shadowId={shadowId} />
     </svg>
   )
 }
@@ -57,6 +60,8 @@ export default function WelcomeDialog() {
   const queryClient = useQueryClient()
   const name = useAuthStore((s) => s.user?.display_name) ?? ''
   const prefs = useQuery({ queryKey: ['preferences'], queryFn: preferencesApi.get })
+  // 与 TeacherLayout / ClassGate 同一个 key,共用缓存;只用来决定结尾那句话(L242)
+  const classes = useQuery({ queryKey: ['my-classes'], queryFn: classesApi.mine })
   const [dismissed, setDismissed] = useState(false)
   const [picked, setPicked] = useState<Figure | null>(null)
 
@@ -64,8 +69,12 @@ export default function WelcomeDialog() {
   const data = prefs.data
   if (dismissed || !data?.onboarded || data.onboarded.teacher) return null
   const figure = picked ?? data.teacher_figure
+  // 老师一个班都没有时(ClassGate 会显示"没有可查看的班级"),"班级已经配置好"不成立
+  const noClass = classes.data?.items.length === 0
 
   const pick = (value: Figure) => {
+    // 再点已选中的形象:什么也不发(L243)
+    if (value === figure) return
     setPicked(value)
     preferencesApi
       .save({ ...bodyOf(data), teacher_figure: value })
@@ -132,7 +141,11 @@ export default function WelcomeDialog() {
           </li>
         ))}
       </ul>
-      <p className="text-sm text-muted-foreground">你的班级已经由学校配置好,点「开始」进入教室</p>
+      <p className="text-sm text-muted-foreground">
+        {noClass
+          ? '学校还没有给你分配班级,进入后会看到提示'
+          : '你的班级已经由学校配置好,点「开始」进入教室'}
+      </p>
       <div className="flex justify-end">
         <Button type="button" className="w-full sm:w-auto" onClick={finish}>
           开始

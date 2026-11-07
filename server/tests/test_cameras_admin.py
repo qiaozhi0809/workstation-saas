@@ -17,6 +17,7 @@ from app.models.audit import AuditLog
 from app.models.cameras import Camera
 from tests.helpers import audit_rows, auth
 from tests.seed_ids import CLASS_ID, SCHOOL_ID, TEACHER_USER_ID
+from tests.sql_trace import capture_sql
 
 IT_ADMIN = "55555555-5555-5555-5555-555555555546"
 DEAN = "55555555-5555-5555-5555-555555555544"
@@ -325,6 +326,42 @@ def test_update_publishes_reload_only_when_changed(client, settings, db, on, red
     assert drain() == [cid]
 
 
+def _touches_camera_row(sql: str) -> bool:
+    s = sql.upper()
+    return "UPDATE CAMERAS" in s or ("CAMERAS" in s and "FOR UPDATE" in s)
+
+
+def test_update_camera_locks_class_first(client, settings, db, on):
+    """L264:改绑班级时先对新班级行 FOR UPDATE,再碰摄像头行(摄像头行的 UPDATE 会对班级取外键
+    KEY SHARE);与学年升级 / 回滚"班级锁 → UPDATE cameras"同序,不再互等(40P01)。
+    不改班级时不取班级锁。"""
+    h = auth(settings, IT_ADMIN)
+    cid = _create(client, settings)["id"]
+    statements, stop = capture_sql(db)
+    try:
+        r = client.put(f"{URL}/{cid}", headers=h, json=body(class_id=CLASS_ID, location="教室"))
+    finally:
+        stop()
+    assert r.status_code == 200 and r.json()["class_id"] == CLASS_ID, r.text
+    class_locks = [
+        i for i, s in enumerate(statements) if "FROM classes" in s and "FOR UPDATE" in s.upper()
+    ]
+    camera_writes = [i for i, s in enumerate(statements) if _touches_camera_row(s)]
+    assert class_locks and camera_writes, statements
+    assert class_locks[0] < camera_writes[0], statements
+    # 班级不变:只改名,不取班级锁
+    statements, stop = capture_sql(db)
+    try:
+        r = client.put(f"{URL}/{cid}", headers=h, json=body(class_id=CLASS_ID, name="改名"))
+    finally:
+        stop()
+    assert r.status_code == 200, r.text
+    assert not [s for s in statements if "FROM classes" in s and "FOR UPDATE" in s.upper()]
+    # 改到不存在的班:仍是 404
+    r = client.put(f"{URL}/{cid}", headers=h, json=body(class_id=str(uuid4())))
+    assert r.status_code == 404
+
+
 def test_status_from_redis(client, settings, on, redis_client):
     h = auth(settings, IT_ADMIN)
     cid = _create(client, settings)["id"]
@@ -363,6 +400,21 @@ def test_list_sorting(client, settings, db, on):
     _create(client, settings, name="pub-a", class_id=None, location="走廊")
     names = [c["name"] for c in client.get(URL, headers=auth(settings, IT_ADMIN)).json()]
     assert names == ["cam-c", "cam-a", "cam-b", "pub-a", "pub-b"]
+
+
+def test_camera_list_numeric_order(client, settings, db, on):
+    """L164:摄像头名 / 班名按数值序(教室 2 < 教室 10、二班 < 十班),不是码位序。"""
+    from tests.factories import make_class
+
+    ten = make_class(db, "三年十班")
+    two = make_class(db, "三年二班b")
+    _create(client, settings, name="教室 10", class_id=str(two))
+    _create(client, settings, name="教室 2", class_id=str(two))
+    _create(client, settings, name="教室 1", class_id=str(ten))
+    _create(client, settings, name="走廊 10", class_id=None, location="走廊")
+    _create(client, settings, name="走廊 9", class_id=None, location="走廊")
+    names = [c["name"] for c in client.get(URL, headers=auth(settings, IT_ADMIN)).json()]
+    assert names == ["教室 2", "教室 10", "教室 1", "走廊 9", "走廊 10"]
 
 
 # ---- 测试连接 ----

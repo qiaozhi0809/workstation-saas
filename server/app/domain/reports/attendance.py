@@ -254,7 +254,19 @@ def class_detail(
     cls = picked[0]
     tzname = str(school_tz(db, year.school_id))
     first, nxt = _bounds(month)
-    days = _class_stats(db, [cls.id], month, tzname)[cls.id].days
+    # 只要记录日天数,一条 count 即可(L59);_class_stats 的应到 / 状态两条查询这里用不上
+    days = (
+        db.scalar(
+            select(func.count())
+            .select_from(AttendanceDay)
+            .where(
+                AttendanceDay.class_id == cls.id,
+                AttendanceDay.date >= first,
+                AttendanceDay.date < nxt,
+            )
+        )
+        or 0
+    )
 
     # 该月在这个班注册过的学生(含已转出):进班日 < 下月 1 日,且未离班或离班日 ≥ 本月 1 日
     students = db.execute(

@@ -8,6 +8,7 @@ from sqlalchemy import exists, func, select, update
 from sqlalchemy.orm import Session
 
 from app.audit.service import record
+from app.domain.classes.sort import class_sort_key
 from app.domain.notices.schemas import AckInput, AckRow, AckStats
 from app.domain.notices.service import _own_notice, ack_spec, without_parent_of
 from app.domain.schools.service import school_tz
@@ -178,7 +179,12 @@ def _rows(db: Session, notice: Notice) -> list[AckRow]:
         )
         for ns, r, stu, parent_name in sorted(
             found,
-            key=lambda x: (x[0].class_name or "", x[2].student_no or "~", x[2].mk, str(x[2].id)),
+            key=lambda x: (
+                class_sort_key(x[0].class_name or ""),  # 班名数值序(L266)
+                x[2].student_no or "~",
+                x[2].mk,
+                str(x[2].id),
+            ),
         )
     ]
 

@@ -97,6 +97,12 @@ services:
     environment:
       WS_HLS_ROOT: /run/ws-hls
       TZ: ${TZ:-Asia/Shanghai}
+      # 入口脚本按它写"compose 子网只到数据库 / Redis"的出站规则;与下面 ws-net 的 subnet 同一来源(L293)
+      WS_SUBNET: ${WS_SUBNET:-172.30.0.0/24}
+    # 出站限制(L293):入口脚本以 root 写 iptables——只放行 .env 的 WS_CAMERA_NETS(默认三段私网)、compose 子网里的
+    # 数据库与 Redis,其余(公网、compose 子网其他服务)一律拒绝,RTSP 3xx 重定向跳不出校园网;写完规则降权到 10001。
+    # 写规则需要 NET_ADMIN;去掉这一项容器会报错退出(不会静默放行),WS_CAMERA_NETS=any 时才不需要
+    cap_add: [NET_ADMIN]
     # 日志只写 stdout(docker logs / diagnose.sh 收集),不挂 data/logs;限制大小防止写满磁盘(L187,各服务一致)
     logging:
       driver: json-file

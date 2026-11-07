@@ -199,7 +199,10 @@ def test_dean_sees_whole_school(client, db, settings, monkeypatch):
 def test_board_default_grade_and_attendance_map(client, db, settings, monkeypatch):
     freeze(monkeypatch, NOW)
     body = get_board(client, settings).json()
-    assert body["grades"] == [{"id": GRADE_ID, "name": "三年级"}, {"id": G4, "name": "四年级"}]
+    assert body["grades"] == [
+        {"id": GRADE_ID, "name": "三年级", "effective_stage": "primary"},
+        {"id": G4, "name": "四年级", "effective_stage": "primary"},
+    ]
     assert body["grade_id"] == GRADE_ID
     assert [c["name"] for c in body["classes"]] == ["三年一班", "三年二班"]
     one, two = body["classes"]
@@ -279,10 +282,19 @@ def test_board_explicit_grade(client, db, settings, monkeypatch):
     assert c["metrics"]["absent"] == 1 and c["metrics"]["present"] == 5
 
 
+def test_board_grades_carry_effective_stage(client, db, settings, monkeypatch):
+    """L234:看板年级带 effective_stage——显式设了学段用显式值,没设按年级名推断。"""
+    freeze(monkeypatch, NOW)
+    db.execute(update(Grade).where(Grade.id == UUID(G4)).values(stage="初中"))
+    db.flush()
+    grades = {g["name"]: g["effective_stage"] for g in get_board(client, settings).json()["grades"]}
+    assert grades == {"三年级": "primary", "四年级": "junior"}
+
+
 def test_board_grade_head_sees_only_own_grade(client, db, settings, monkeypatch):
     freeze(monkeypatch, NOW)
     body = get_board(client, settings, GRADE_HEAD3).json()
-    assert body["grades"] == [{"id": GRADE_ID, "name": "三年级"}]
+    assert body["grades"] == [{"id": GRADE_ID, "name": "三年级", "effective_stage": "primary"}]
     assert body["grade_id"] == GRADE_ID
 
 
@@ -327,7 +339,9 @@ def test_grade_head_also_homeroom_elsewhere_stays_scoped(client, db, settings, m
     assert body["totals"]["classes"] == 2
     assert {u["class_name"] for u in body["unconfirmed"]} <= {"三年一班", "三年二班"}
     board = get_board(client, settings, GRADE_HEAD3)
-    assert board.json()["grades"] == [{"id": GRADE_ID, "name": "三年级"}]
+    assert board.json()["grades"] == [
+        {"id": GRADE_ID, "name": "三年级", "effective_stage": "primary"}
+    ]
     assert get_board(client, settings, GRADE_HEAD3, grade_id=G4).status_code == 403
 
 
@@ -434,7 +448,7 @@ def test_grade_head_of_empty_grade(client, db, settings, monkeypatch):
     assert today["scope_label"] == "五年级"
     assert (today["totals"]["classes"], today["totals"]["students"]) == (0, 0)
     board = get_board(client, settings, user.id).json()
-    assert board["grades"] == [{"id": str(g5.id), "name": "五年级"}]
+    assert board["grades"] == [{"id": str(g5.id), "name": "五年级", "effective_stage": "primary"}]
     assert (board["grade_id"], board["classes"]) == (str(g5.id), [])
 
 

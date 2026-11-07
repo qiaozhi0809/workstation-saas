@@ -3,10 +3,12 @@ from uuid import UUID
 from sqlalchemy import select, text
 
 from app.auth.tokens import issue_access_token
+from app.domain.students.service import active_enrollments, exam_roster_ids
+from app.models import Exam
 from app.models.audit import AuditLog
 from app.rbac.roles import Role
 from tests.factories import bind, make_class, make_student, make_user
-from tests.seed_ids import CLASS_ID, GRADE_ID, SCHOOL_ID, TEACHER_USER_ID
+from tests.seed_ids import CLASS_ID, EXAM_IDS, GRADE_ID, SCHOOL_ID, TEACHER_USER_ID
 
 WANG = "a0000001-0000-0000-0000-000000000001"  # 王小一,family_structure='双亲家庭'
 LI = "a0000002-0000-0000-0000-000000000002"  # 李小二,family_structure=NULL
@@ -206,6 +208,36 @@ def test_transferred_enrollment_is_hidden(client, db, settings):
     assert res.json()["error"]["code"] == "NOT_FOUND"
     roster = client.get(f"/api/v1/classes/{CLASS_ID}/students", headers=auth(settings)).json()
     assert str(sid) not in [i["student_id"] for i in roster["items"]]
+
+
+def test_exam_roster_ids_rules(db):
+    """L278:考试名单口径只有一份(exam_roster_ids):当前学年只算在读注册(与 active_enrollments 同一
+    集合),往年算全部未删除的注册(含转出);被移出的都不算;按学生 mk 排序。"""
+    exam = db.get(Exam, UUID(EXAM_IDS[0]))
+    assert exam is not None and str(exam.class_id) == CLASS_ID
+    for mk, status in (("S0002", "removed"), ("S0003", "transferred")):
+        db.execute(
+            text(
+                "UPDATE enrollments SET status = :st, left_at = now()"
+                " WHERE student_id = (SELECT id FROM students WHERE mk = :mk)"
+            ),
+            {"st": status, "mk": mk},
+        )
+    db.flush()
+    mk_of = dict(
+        db.execute(
+            text(
+                "SELECT e.id, s.mk FROM enrollments e JOIN students s ON s.id = e.student_id"
+                " WHERE e.class_id = :c"
+            ),
+            {"c": CLASS_ID},
+        ).all()
+    )
+    current = exam_roster_ids(db, exam, current_year=True)
+    assert [mk_of[i] for i in current] == [f"S{n:04d}" for n in (1, 4, 5, 6, 7, 8, 9, 10)]
+    assert set(current) == {e.id for e in active_enrollments(db, UUID(CLASS_ID))}
+    past = exam_roster_ids(db, exam, current_year=False)
+    assert [mk_of[i] for i in past] == [f"S{n:04d}" for n in (1, 3, 4, 5, 6, 7, 8, 9, 10)]
 
 
 def test_principal_school_scope(client, db, settings):

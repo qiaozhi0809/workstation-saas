@@ -16,10 +16,8 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import func, select, tuple_
 from sqlalchemy.orm import Session
 
-from app.ai.stats import exam_table, round1
 from app.audit.service import record
 from app.domain.attendance.service import day_view
-from app.domain.exams.schemas import ExamType, SubjectFull
 from app.domain.growth.service import list_records
 from app.domain.org.service import _brief_rows
 from app.domain.parents.access import (
@@ -44,11 +42,9 @@ from app.models import (
     AcademicYear,
     Comment,
     Enrollment,
-    Exam,
     Grade,
     Review,
     SchoolClass,
-    Score,
     Student,
     User,
 )
@@ -178,37 +174,10 @@ class ParentReviewPage(BaseModel):
     next_cursor: str | None
 
 
-class ParentExamItem(BaseModel):
-    id: UUID
-    name: str
-    exam_type: ExamType
-    date: date
-    year_name: str
-    class_name: str
-
-
-class ExamSubjectScore(BaseModel):
-    name: str
-    full: int
-    score: float | None
-    class_avg: float | None
-    class_max: float | None
-
-
-class ParentExamDetail(BaseModel):
-    exam: ParentExamItem
-    subjects: list[ExamSubjectScore]
-    total: float | None
-    total_full: int
-    ranked: int
-    class_rank: int | None
-    band: Literal["前 10%", "前 30%"] | None
-
-
 # ---- 取数小工具 ----
 
 
-def _enrollment_rows(db: Session, student_ids: Sequence[UUID]) -> dict[UUID, list[Row]]:
+def enrollment_rows(db: Session, student_ids: Sequence[UUID]) -> dict[UUID, list[Row]]:
     """这些学生自己的全部注册(含已移出的 removed),每人按学年、入班时间从新到旧;一次查完。"""
     out: dict[UUID, list[Row]] = defaultdict(list)
     if not student_ids:
@@ -277,7 +246,7 @@ def children(db: Session, user: User, now: datetime) -> list[ParentChild]:
         return []
     ids = [lk.student_id for lk in links]
     students = {s.id: s for s in db.scalars(select(Student).where(Student.id.in_(ids)))}
-    rows = _enrollment_rows(db, ids)
+    rows = enrollment_rows(db, ids)
     tz = school_tz(db, user.school_id)
     out: list[ParentChild] = []
     for lk in links:
@@ -358,7 +327,7 @@ def today(
         raise ApiError(400, "DATE_OUT_OF_RANGE", "只能查看今天起 30 天内的记录")
     switches = get_switches(db, user.school_id)
 
-    rows = _enrollment_rows(db, [student_id])[student_id]
+    rows = enrollment_rows(db, [student_id])[student_id]
     shown = _shown(rows)
     current = shown if status == "active" and shown and shown[0].status == "active" else None
 
@@ -440,7 +409,7 @@ def _profile_of(
     db: Session, user: User, link: ParentLink, student_id: UUID, now: datetime
 ) -> ParentProfile:
     student = _student(db, student_id)
-    shown = _shown(_enrollment_rows(db, [student_id])[student_id])
+    shown = _shown(enrollment_rows(db, [student_id])[student_id])
     if shown is None:
         raise ApiError(404, "NOT_FOUND", "学生不存在")
     enrollment, cls, _, _ = shown
@@ -550,7 +519,7 @@ def reviews(
 ) -> ParentReviewPage:
     child_link_or_deny(db, request, user, student_id, now=now)
     switches = get_switches(db, user.school_id)
-    ids = _enrollment_ids(_enrollment_rows(db, [student_id])[student_id])
+    ids = _enrollment_ids(enrollment_rows(db, [student_id])[student_id])
     extra: list[Any] = []
     if cursor:
         at, rid = _decode_cursor(cursor)
@@ -563,159 +532,3 @@ def reviews(
     page = rows[:REVIEW_PAGE]
     next_cursor = _encode_cursor(page[-1][0]) if len(rows) > REVIEW_PAGE else None
     return ParentReviewPage(items=[_review_out(r, a) for r, a in page], next_cursor=next_cursor)
-
-
-def _exam_item(exam: Exam, year_name: str, class_name: str) -> ParentExamItem:
-    return ParentExamItem(
-        id=exam.id,
-        name=exam.name,
-        exam_type=exam.exam_type,  # type: ignore[arg-type]
-        date=exam.date,
-        year_name=year_name,
-        class_name=class_name,
-    )
-
-
-def _class_cutoffs(db: Session, school_id: UUID, rows: Sequence[Row]) -> dict[UUID, date | None]:
-    """每个班里孩子可看考试的截止日(学校本地日期):该班没有在读注册、且有结束日时,
-    取最晚的 left_at;在读或没有结束日(如毕业)不截止。"""
-    tz = school_tz(db, school_id)
-    by_class: dict[UUID, list[Enrollment]] = defaultdict(list)
-    for e, c, _, _ in rows:
-        by_class[c.id].append(e)
-    out: dict[UUID, date | None] = {}
-    for cid, ens in by_class.items():
-        ends = [e.left_at for e in ens]
-        if any(e.status == "active" for e in ens) or any(x is None for x in ends):
-            out[cid] = None
-        else:
-            out[cid] = max(x for x in ends if x is not None).astimezone(tz).date()
-    return out
-
-
-def exams(
-    db: Session, request: Request | None, user: User, student_id: UUID, now: datetime
-) -> list[ParentExamItem]:
-    child_link_or_deny(db, request, user, student_id, now=now)
-    enroll = _enrollment_rows(db, [student_id])[student_id]
-    cutoffs = _class_cutoffs(db, user.school_id, enroll)
-    class_ids = {r[1].id for r in enroll}
-    if not class_ids:
-        return []
-    rows = db.execute(
-        select(Exam, AcademicYear.name, SchoolClass.name)
-        .join(AcademicYear, AcademicYear.id == Exam.academic_year_id)
-        .join(SchoolClass, SchoolClass.id == Exam.class_id)
-        .where(Exam.class_id.in_(class_ids))
-        .order_by(Exam.date.desc(), Exam.created_at.desc(), Exam.id)
-    ).all()
-    return [
-        _exam_item(e, y, c)
-        for e, y, c in rows
-        if cutoffs.get(e.class_id) is None or e.date <= cutoffs[e.class_id]
-    ]
-
-
-def _exam_roster(db: Session, school_id: UUID, exam: Exam) -> list[UUID]:
-    """这场考试参与名次 / 平均 / 最高的注册,与教师端同一口径(L76):当前学年的班只算在读注册
-    (score_sheet / gradebook 的 active_enrollments),往年的班算全部未删除的注册
-    (history.exam_scores)。被移出 / 转出的注册都不算;按 Student.mk 排序让同分并列顺序确定。"""
-    year = active_academic_year(db, school_id)
-    current = year is not None and exam.academic_year_id == year.id
-    enrolled = Enrollment.status == "active" if current else Enrollment.status != "removed"
-    return list(
-        db.scalars(
-            select(Enrollment.id)
-            .join(Student, Student.id == Enrollment.student_id)
-            .where(Enrollment.class_id == exam.class_id, enrolled)
-            .order_by(Student.mk)
-        )
-    )
-
-
-def _band(rank: int | None, ranked: int) -> Literal["前 10%", "前 30%"] | None:
-    if rank is None or ranked < 10:
-        return None
-    if rank <= -(-ranked * 10 // 100):
-        return "前 10%"
-    if rank <= -(-ranked * 30 // 100):
-        return "前 30%"
-    return None
-
-
-def exam_detail(
-    db: Session,
-    request: Request | None,
-    user: User,
-    student_id: UUID,
-    exam_id: UUID,
-    now: datetime,
-) -> ParentExamDetail:
-    child_link_or_deny(db, request, user, student_id, now=now)
-    switches = get_switches(db, user.school_id)
-    enroll = _enrollment_rows(db, [student_id])[student_id]
-    mine = {r[1].id: r[0] for r in reversed(enroll)}
-    cutoffs = _class_cutoffs(db, user.school_id, enroll)
-    exam = db.get(Exam, exam_id)
-    if (
-        exam is None
-        or exam.class_id not in mine
-        or (cutoffs[exam.class_id] is not None and exam.date > cutoffs[exam.class_id])
-    ):
-        record(
-            db,
-            user_id=user.id,
-            action="parent.view",
-            success=False,
-            object_type="student",
-            object_id=str(student_id),
-            request=request,
-            extra={"exam_id": str(exam_id)},
-        )
-        db.commit()
-        raise ApiError(403, "FORBIDDEN", "没有权限访问该资源")
-    my_enrollment = mine[exam.class_id].id
-    year_name = db.scalars(
-        select(AcademicYear.name).where(AcademicYear.id == exam.academic_year_id)
-    ).one()
-    class_name = db.scalars(select(SchoolClass.name).where(SchoolClass.id == exam.class_id)).one()
-
-    ids = _exam_roster(db, user.school_id, exam)
-    scores: dict[UUID, dict[str, float | None]] = {}
-    for eid, subject, value in db.execute(
-        select(Score.enrollment_id, Score.subject, Score.value).where(Score.exam_id == exam.id)
-    ):
-        scores.setdefault(eid, {})[subject] = value
-    subjects = [SubjectFull(**s) for s in exam.subjects]
-    table = exam_table(subjects, scores, ids)
-    # 孩子已不在名单里(被移出 / 转出):自己的分数照给,但不补进名单,也就没有名次与段位(L76)
-    on_roster = my_enrollment in ids
-    me = (
-        next(r for r in table if r.enrollment_id == my_enrollment)
-        if on_roster
-        else exam_table(subjects, scores, [my_enrollment])[0]
-    )
-    ranked = sum(1 for r in table if r.total is not None)
-    rank = me.rank if on_roster else None
-
-    detail: list[ExamSubjectScore] = []
-    for s in subjects:
-        vals = [v for r in table if (v := r.subs.get(s.name)) is not None]
-        detail.append(
-            ExamSubjectScore(
-                name=s.name,
-                full=s.full,
-                score=me.subs.get(s.name),
-                class_avg=round1(sum(vals) / len(vals)) if vals else None,
-                class_max=max(vals) if vals else None,
-            )
-        )
-    return ParentExamDetail(
-        exam=_exam_item(exam, year_name, class_name),
-        subjects=detail,
-        total=me.total,
-        total_full=sum(s.full for s in subjects),
-        ranked=ranked,
-        class_rank=rank if switches.parent_rank else None,
-        band=None if switches.parent_rank else _band(rank, ranked),
-    )

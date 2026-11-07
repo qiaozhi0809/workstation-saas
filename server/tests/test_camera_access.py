@@ -312,6 +312,23 @@ def test_wall_orders_grades_and_classes(client, db, settings, on):
     assert names == sorted(names)
 
 
+def test_wall_and_class_cameras_numeric_order(client, db, settings, on):
+    """L164 / L266:监控墙的班名、各处摄像头名按数值序(三年二班 < 三年十班,教室 2 < 教室 10)。"""
+    ten = make_class(db, "三年十班")
+    _camera(db, "教室 10", CLASS_ID)
+    _camera(db, "教室 2", CLASS_ID)
+    _camera(db, "教室 1", ten)
+    _camera(db, "走廊 10", None)
+    _camera(db, "走廊 9", None)
+    body = _get(client, settings, WALL, PRINCIPAL).json()
+    classes = body["grades"][0]["classes"]
+    assert [c["class_name"] for c in classes] == ["三年二班", "三年十班"]
+    assert [c["name"] for c in classes[0]["cameras"]] == ["教室 2", "教室 10"]
+    assert [c["name"] for c in body["public"]] == ["走廊 9", "走廊 10"]
+    cams = _get(client, settings, CAMS).json()["cameras"]
+    assert [c["name"] for c in cams] == ["教室 2", "教室 10"]
+
+
 def test_staff_and_parent_judged_as_staff(client, db, settings, monkeypatch, on):
     from tests.seed_ids import STUDENT_IDS
 

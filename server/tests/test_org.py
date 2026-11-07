@@ -15,6 +15,9 @@ IT_ADMIN = "55555555-5555-5555-5555-555555555546"
 TEACHER04 = "55555555-5555-5555-5555-555555555541"
 GRADE4_ID = "33333333-3333-3333-3333-333333333334"
 API = "/api/v1/admin"
+SCHOOL = "/api/v1/school"
+G4 = "33333333-3333-3333-3333-333333333334"
+PARENT = "55555555-5555-5555-5555-555555555561"  # 纯家长账号
 
 
 def _actions(db, object_id, action):
@@ -44,6 +47,26 @@ def test_org_requires_permission(client, db, settings):
     denied = [r for r in _actions(db, SCHOOL_ID, "org.manage") if not r.success]
     assert len(denied) == 2
     assert client.get(f"{API}/grades", headers=auth(settings, IT_ADMIN)).status_code == 200
+
+
+def test_school_grades_visible_scope(client, db, settings):
+    """L272:GET /school/grades 是 school.view 能读的轻量年级接口——校长见全部(含显式学段 / 按名推断),
+    年级组长只见自己的年级,信息中心 / 教师 / 家长 403 并记审计;新建但还没有班的年级不出现。"""
+    g5 = _create_grade(client, settings, name="五年级", stage="初中", order=5)
+    _create_class(client, settings, g5["id"])
+    _create_grade(client, settings, name="六年级", order=6)  # 没有班 → 校长也看不到
+    res = client.get(f"{SCHOOL}/grades", headers=auth(settings, PRINCIPAL))
+    assert res.status_code == 200, res.text
+    assert res.json() == [
+        {"id": GRADE_ID, "name": "三年级", "display_order": 3, "effective_stage": "primary"},
+        {"id": G4, "name": "四年级", "display_order": 4, "effective_stage": "primary"},
+        {"id": g5["id"], "name": "五年级", "display_order": 5, "effective_stage": "junior"},
+    ]
+    head = client.get(f"{SCHOOL}/grades", headers=auth(settings, GRADE_HEAD)).json()
+    assert [g["id"] for g in head] == [GRADE_ID]
+    for uid in (IT_ADMIN, TEACHER_USER_ID, PARENT):
+        assert client.get(f"{SCHOOL}/grades", headers=auth(settings, uid)).status_code == 403
+    assert len([r for r in _actions(db, SCHOOL_ID, "school.view") if not r.success]) == 3
 
 
 def test_school_get_any_admin_context_put_needs_org_manage(client, db, settings):
@@ -146,6 +169,99 @@ def test_create_class_defaults(client, db, settings):
         f"{API}/classes", json={"grade_id": GRADE_ID, "name": "三年三班", "room": ""}, headers=h
     )
     assert dup.status_code == 409 and dup.json()["error"]["code"] == "NAME_TAKEN"
+
+
+def test_concurrent_same_class_name_rejected(engine, monkeypatch):
+    """L263:两个会话并发把同年级的两个班改成同一个名字。改名不换年级时不锁年级行,两边的应用层
+    重名检查互相看不见对方未提交的改动,由唯一索引 uq_classes_grade_name 兜底——后提交的一方
+    409 NAME_TAKEN(与应用层检查同一个码),不是 500。
+    A 在 record 处停住(重名检查已过、UPDATE 还没发出),B 整个跑完并提交;放行 A,A 的 UPDATE
+    撞上 B 已提交的索引项。(建班路径先锁年级行,排在后面的一方会被应用层检查拦下,见 L261。)"""
+    import threading
+
+    from sqlalchemy.orm import Session
+
+    from app.domain.org import service
+    from app.domain.org.schemas import ClassInput
+    from app.errors import ApiError
+    from app.models import SchoolClass
+
+    name, wait = "并发同名班", 30
+    with Session(engine) as s:  # 两个待改名的空班(共享测试库,用后删除)
+        ids = []
+        for n in ("并发甲班", "并发乙班"):
+            cls = SchoolClass(
+                school_id=UUID(SCHOOL_ID),
+                academic_year_id=UUID(YEAR_ID),
+                grade_id=UUID(GRADE_ID),
+                name=n,
+                seat_rows=6,
+                seat_cols=8,
+            )
+            s.add(cls)
+            s.flush()
+            ids.append(cls.id)
+        s.commit()
+    in_record, release = threading.Event(), threading.Event()
+    original = service.record
+
+    def stalled(*args, **kwargs):
+        if threading.current_thread().name == "A":
+            in_record.set()
+            assert release.wait(wait)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(service, "record", stalled)
+    results: dict[str, object] = {}
+
+    def rename(class_id: UUID) -> None:
+        with Session(engine) as s:
+            try:
+                cls = s.get(SchoolClass, class_id)
+                assert cls is not None
+                results[threading.current_thread().name] = service.update_class(
+                    s,
+                    UUID(SCHOOL_ID),
+                    cls,
+                    ClassInput(grade_id=UUID(GRADE_ID), name=name),
+                    UUID(PRINCIPAL),
+                    None,
+                )
+            except Exception as exc:  # noqa: BLE001 — 结果交给断言
+                s.rollback()
+                results[threading.current_thread().name] = exc
+
+    a = threading.Thread(target=rename, args=(ids[0],), name="A")
+    b = threading.Thread(target=rename, args=(ids[1],), name="B")
+    try:
+        a.start()
+        assert in_record.wait(wait)  # A 已过重名检查,停在写入之前
+        b.start()
+        b.join(wait)  # B 不等任何锁,整个跑完并提交
+        assert not b.is_alive()
+    finally:
+        release.set()
+        a.join(wait)
+        with engine.begin() as conn:  # 共享测试库:清掉本用例的班级与审计
+            renamed = conn.execute(
+                text("SELECT count(*) FROM classes WHERE name = :n"), {"n": name}
+            ).scalar_one()
+            conn.execute(
+                text(
+                    "DELETE FROM audit_logs WHERE object_type = 'class'"
+                    " AND object_id = ANY(cast(:ids as text[]))"
+                ),
+                {"ids": [str(i) for i in ids]},
+            )
+            conn.execute(
+                text("DELETE FROM classes WHERE id = ANY(cast(:ids as uuid[]))"), {"ids": ids}
+            )
+    assert not a.is_alive()
+    assert not isinstance(results["B"], Exception), results["B"]
+    loser = results["A"]
+    assert isinstance(loser, ApiError), loser
+    assert loser.status == 409 and loser.code == "NAME_TAKEN"
+    assert renamed == 1
 
 
 def test_list_and_get_classes(client, settings):

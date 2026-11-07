@@ -237,6 +237,7 @@ def test_mask_url_password_with_at_sign():
         "api_key",
         "PassWord",
         "Api_Key",
+        "sig",  # L295:原先只有 worker 的正则认得,合并后一份
     ],
 )
 def test_mask_url_secret_query_keys(key):

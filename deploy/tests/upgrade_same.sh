@@ -21,7 +21,8 @@ make_package() {  # $1=输出 tar.gz;包里的 compose 文件末尾加一行注�
   local pkg="$TMP/pkgsrc/workstation-deploy-$NEWV"
   rm -rf "$TMP/pkgsrc"
   mkdir -p "$pkg"
-  cp -R "$DEPLOY_SRC/." "$pkg/"
+  # L313:不复制 images/(镜像已在本机,WS_INSTALL_SKIP_LOAD=1;离线包里的镜像 tar 有上 GB,打进测试包白费 CI 时间)
+  ( cd "$DEPLOY_SRC" && tar --exclude='./images' -cf - . ) | ( cd "$pkg" && tar -xf - ) || fail "复制部署源失败"
   printf '%s\n' "$NEWV" >"$pkg/VERSION"
   printf '# upgraded-marker\n' >>"$pkg/docker-compose.yml"
   # L198:新包的 Caddyfile.internal 多发一个响应头,升级后生效的 Caddyfile 应被替换、web 重读配置后浏览器能看到它
@@ -38,6 +39,16 @@ grep -v '^WS_SUBNET=' "$DEPLOY/.env" >"$TMP/env.nosubnet"
 cat "$TMP/env.nosubnet" >"$DEPLOY/.env"
 rm -f "$TMP/env.nosubnet"
 ! grep -q '^WS_SUBNET=' "$DEPLOY/.env" || fail "测试自身问题:WS_SUBNET 没有从 .env 里去掉"
+# L310:模拟"新版本去掉了某个服务":在已部署的 compose 里临时加一个服务并起容器,新包的 compose 里没有它,
+# 升级重启后它的容器应被清理(start_and_verify 的 --remove-orphans),而不是留下来
+awk '{ print } /^services:$/ { print "  ws-orphan-probe:"; print "    image: redis:7-alpine"; print "    command: [\"sleep\", \"3600\"]"; print "    networks: [ws-net]" }' \
+  "$DEPLOY/docker-compose.yml" >"$TMP/compose.orphan"
+grep -q 'ws-orphan-probe' "$TMP/compose.orphan" || fail "测试自身问题:没能把临时服务加进 compose 文件"
+cat "$TMP/compose.orphan" >"$DEPLOY/docker-compose.yml"
+rm -f "$TMP/compose.orphan"
+dc up -d ws-orphan-probe >"$TMP/orphan-up.log" 2>&1 || { tail -n 10 "$TMP/orphan-up.log" >&2; fail "测试自身问题:起临时服务 ws-orphan-probe 失败"; }
+orphan_filter=(--filter "label=com.docker.compose.project=$PROJECT" --filter "label=com.docker.compose.service=ws-orphan-probe")
+[ -n "$(docker ps -q "${orphan_filter[@]}")" ] || fail "测试自身问题:临时服务 ws-orphan-probe 的容器没有在运行"
 env_sha="$(sha256_of "$DEPLOY/.env")"
 env_rest_sha="$(grep -v -e '^WS_VERSION=' -e '^WS_SUBNET=' "$DEPLOY/.env" | { if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi; })"
 caddy_sha="$(sha256_of "$DEPLOY/Caddyfile")"
@@ -57,6 +68,9 @@ newest="$(ls -1t "$DEPLOY"/backups/ws-backup-*.tar.gz | head -n 1)"
 [ -s "$newest" ] || fail "备份文件为空"
 pass "升级前已生成备份"
 grep -q 'upgraded-marker' "$DEPLOY/docker-compose.yml" || fail "docker-compose.yml 没有被新包覆盖"
+# L310:新包的 compose 里没有 ws-orphan-probe,升级重启后它的容器(含已停止的)应已被清理
+[ -z "$(docker ps -a -q "${orphan_filter[@]}")" ] || fail "升级后仍残留不在新 compose 里的孤儿容器 ws-orphan-probe(start_and_verify 的 compose up 缺 --remove-orphans)"
+pass "升级重启清掉了新 compose 里不存在的服务的容器(--remove-orphans)"
 [ "$(env_value WS_VERSION)" = "$NEWV" ] || fail "升级后 .env 的 WS_VERSION 应为 $NEWV,实际 $(env_value WS_VERSION)"
 [ "$(sha256_of "$DEPLOY/.env")" != "$env_sha" ] || fail "WS_VERSION 变了,.env 的哈希却没变,不合理"
 [ "$(grep -v -e '^WS_VERSION=' -e '^WS_SUBNET=' "$DEPLOY/.env" | { if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi; })" = "$env_rest_sha" ] \
@@ -99,11 +113,12 @@ docker image inspect "workstation-app:$VERSION" >/dev/null 2>&1 || fail "升级�
 [ ! -e "$DEPLOY/backups/.ws-upgrade-state" ] || fail "升级成功后状态文件应被清除"
 pass "输出含旧镜像清理命令且旧镜像仍在;升级前快照已保存,状态文件已清除"
 
-echo "== 3b I-1 / L184:root 安装的 systemd 定时器在升级成功后被按新模板与 TZ 重写(需要 systemd 与免密 sudo,没有则跳过)"
+echo "== 3b I-1 / L184 / L311:root 安装的 systemd 定时器在升级成功后被按新模板与 TZ 重写(需要 systemd 与免密 sudo,没有则跳过)"
 # 部署测试不以 root 运行,上面那次升级走的是"非 root 不碰 systemd"分支(/etc/systemd/system 里也不该出现任何东西)。
 # 这里分两步证明:(1) upgrade.sh 确实在启动确认(start_and_verify)之后调用 refresh_backup_timer_if_installed;
 # (2) 用 sudo 以 root 身份、对同一个部署目录执行该函数:预先放一份"1.0.0 之前写入"的单元(指向本部署目录、OnCalendar 不带时区),
-#     执行后单元应被重写为带时区的 02:30 并处于 enabled;指向别的部署目录的单元不被碰。
+#     已启用的 → 重写为带时区的 02:30 并仍 enabled;管理员手动停用(disabled)的 → 只重写单元文件、保持 disabled 并提示(L311);
+#     指向别的部署目录的单元不被碰。
 awk '/start_and_verify "\$HEALTH_TIMEOUT"/ { seen = 1 } seen && /^ *refresh_backup_timer_if_installed/ { found = 1 } END { exit !found }' "$DEPLOY/scripts/upgrade.sh" \
   || fail "upgrade.sh 没有在 start_and_verify 之后调用 refresh_backup_timer_if_installed"
 UNIT_DIR=/etc/systemd/system
@@ -111,8 +126,8 @@ UNIT_DIR=/etc/systemd/system
 if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ] && sudo -n true 2>/dev/null \
   && [ ! -e "$UNIT_DIR/workstation-backup.timer" ] && [ ! -e "$UNIT_DIR/workstation-backup.service" ]; then
   expect_tz="$(env_value TZ 2>/dev/null || true)"; [ -n "$expect_tz" ] || expect_tz="Asia/Shanghai"
-  write_old_units() {  # $1=单元里指向的部署目录
-    printf '[Unit]\nDescription=old\n[Service]\nType=oneshot\nWorkingDirectory=%s\nExecStart="%s/scripts/backup.sh"\n' "$1" "$1" \
+  write_old_units() {  # $1=单元里指向的部署目录;$2=Description(可选)
+    printf '[Unit]\nDescription=%s\n[Service]\nType=oneshot\nWorkingDirectory=%s\nExecStart="%s/scripts/backup.sh"\n' "${2:-old}" "$1" "$1" \
       | sudo -n tee "$UNIT_DIR/workstation-backup.service" >/dev/null
     printf '[Unit]\nDescription=old timer\n[Timer]\nOnCalendar=*-*-* 02:30:00\nPersistent=true\nUnit=workstation-backup.service\n[Install]\nWantedBy=timers.target\n' \
       | sudo -n tee "$UNIT_DIR/workstation-backup.timer" >/dev/null
@@ -127,15 +142,19 @@ if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ] && sudo -n
     sudo -n env WS_COMPOSE_PROJECT="$PROJECT" bash -c 'cd "$1" && . scripts/lib.sh && refresh_backup_timer_if_installed' _ "$DEPLOY" >"$1" 2>&1
   }
   err=""
-  # (a) 指向别的部署目录的单元:不动
-  write_old_units "/opt/some-other-deploy"
+  # (a) 指向别的部署目录的单元:不动。Description 里故意写上本部署目录的 backup.sh 路径:识别"是不是本部署的单元"
+  #     必须看 ExecStart= 行,不能全文子串匹配(L312)
+  write_old_units "/opt/some-other-deploy" "old unit, migrated from $DEPLOY/scripts/backup.sh"
   other_sha="$(sudo -n cat "$UNIT_DIR/workstation-backup.timer" | { if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi; })"
   run_refresh "$TMP/timer-refresh-other.log" || err="别的部署的单元存在时函数应静默返回 0"
   [ "$(sudo -n cat "$UNIT_DIR/workstation-backup.timer" | { if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi; })" = "$other_sha" ] \
-    || err="${err:-指向别的部署目录的单元不应被重写}"
-  # (b) 指向本部署目录、不带时区的旧单元:重写为带时区并启用
+    || err="${err:-指向别的部署目录的单元不应被重写(即使 Description 里提到本部署目录)}"
+  # (b) 指向本部署目录、不带时区、已启用的旧单元(1.0.0 之前的 install.sh 是 enable --now 写入的):重写为带时区并仍 enabled
   if [ -z "$err" ]; then
     write_old_units "$DEPLOY"
+    sudo -n systemctl daemon-reload >/dev/null 2>&1 || true
+    sudo -n systemctl enable --now workstation-backup.timer >/dev/null 2>&1 || err="测试自身问题:启用旧定时器失败"
+    [ -n "$err" ] || [ "$(systemctl is-enabled workstation-backup.timer 2>/dev/null || true)" = "enabled" ] || err="测试自身问题:旧定时器没有处于 enabled"
     rc=0; run_refresh "$TMP/timer-refresh.log" || rc=$?
     [ "$rc" -eq 0 ] || err="refresh_backup_timer_if_installed 退出码 $rc"
     [ -n "$err" ] || grep -q '重写 systemd 定时备份单元' "$TMP/timer-refresh.log" || err="输出里没有「重写 systemd 定时备份单元」"
@@ -144,9 +163,43 @@ if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ] && sudo -n
     [ -n "$err" ] || sudo -n grep -q "^WorkingDirectory=$DEPLOY\$" "$UNIT_DIR/workstation-backup.service" || err="重写后的 service 应指向本部署目录"
     [ -n "$err" ] || [ "$(systemctl is-enabled workstation-backup.timer 2>/dev/null || true)" = "enabled" ] || err="重写后 workstation-backup.timer 应为 enabled"
   fi
+  # (b2) L312:.env 的 TZ 拼错(tzdata 里没有)时只告警一次,定时器按 Asia/Shanghai 渲染;之后把 .env 原样放回
+  if [ -z "$err" ] && [ -d /usr/share/zoneinfo ]; then
+    cp -p "$DEPLOY/.env" "$TMP/env.tzsaved"
+    if grep -q '^TZ=' "$DEPLOY/.env"; then
+      awk '/^TZ=/ { print "TZ=Asia/Shangai"; next } { print }' "$TMP/env.tzsaved" >"$TMP/env.tzbad"
+    else
+      { cat "$TMP/env.tzsaved"; printf 'TZ=Asia/Shangai\n'; } >"$TMP/env.tzbad"
+    fi
+    cat "$TMP/env.tzbad" >"$DEPLOY/.env"
+    rc=0; run_refresh "$TMP/timer-refresh-badtz.log" || rc=$?
+    cat "$TMP/env.tzsaved" >"$DEPLOY/.env"
+    rm -f "$TMP/env.tzsaved" "$TMP/env.tzbad"
+    [ "$rc" -eq 0 ] || err="TZ 拼错时 refresh_backup_timer_if_installed 退出码 $rc(应降级为告警并按 Asia/Shanghai 继续)"
+    n_warn="$(grep -c 'Asia/Shangai' "$TMP/timer-refresh-badtz.log" || true)"
+    [ -n "$err" ] || [ "$n_warn" = "1" ] || err="TZ 拼错的告警应只打一次,实际 $n_warn 次(L312)"
+    [ -n "$err" ] || sudo -n grep -q '^OnCalendar=\*-\*-\* 02:30:00 Asia/Shanghai$' "$UNIT_DIR/workstation-backup.timer" \
+      || err="TZ 拼错时 timer 应按 Asia/Shanghai 渲染,实际:$(sudo -n grep OnCalendar "$UNIT_DIR/workstation-backup.timer" || true)"
+  fi
+  # (c) L311:管理员手动停用(systemctl disable)的旧单元:只重写单元文件(时区补上),不 enable --now,输出提示怎样恢复
+  if [ -z "$err" ]; then
+    remove_units
+    write_old_units "$DEPLOY"
+    sudo -n systemctl daemon-reload >/dev/null 2>&1 || true
+    sudo -n systemctl disable --now workstation-backup.timer >/dev/null 2>&1 || true
+    [ "$(systemctl is-enabled workstation-backup.timer 2>/dev/null || true)" = "disabled" ] || err="测试自身问题:旧定时器没有处于 disabled(实际 $(systemctl is-enabled workstation-backup.timer 2>/dev/null || true))"
+    rc=0; [ -n "$err" ] || run_refresh "$TMP/timer-refresh-disabled.log" || rc=$?
+    [ -n "$err" ] || [ "$rc" -eq 0 ] || err="disabled 分支:refresh_backup_timer_if_installed 退出码 $rc"
+    [ -n "$err" ] || grep -q '保持停用' "$TMP/timer-refresh-disabled.log" || err="disabled 分支:输出里没有「保持停用」的提示"
+    [ -n "$err" ] || grep -q 'systemctl enable --now workstation-backup.timer' "$TMP/timer-refresh-disabled.log" || err="disabled 分支:输出里没有告诉管理员怎样重新启用"
+    [ -n "$err" ] || sudo -n grep -q "^OnCalendar=\*-\*-\* 02:30:00 $expect_tz\$" "$UNIT_DIR/workstation-backup.timer" \
+      || err="disabled 分支:单元文件仍应被重写(OnCalendar 带 $expect_tz),实际:$(sudo -n grep OnCalendar "$UNIT_DIR/workstation-backup.timer" || true)"
+    [ -n "$err" ] || [ "$(systemctl is-enabled workstation-backup.timer 2>/dev/null || true)" = "disabled" ] \
+      || err="disabled 分支:管理员停用的定时器不应被升级重新启用(实际 $(systemctl is-enabled workstation-backup.timer 2>/dev/null || true))"
+  fi
   remove_units
-  [ -z "$err" ] || { cat "$TMP/timer-refresh.log" "$TMP/timer-refresh-other.log" 2>/dev/null | tail -n 10 >&2; fail "$err"; }
-  pass "root 下升级成功后的定时器重写:本部署的旧单元被改为 OnCalendar 带 $expect_tz 并 enabled;别的部署的单元未动"
+  [ -z "$err" ] || { cat "$TMP/timer-refresh.log" "$TMP/timer-refresh-other.log" "$TMP/timer-refresh-badtz.log" "$TMP/timer-refresh-disabled.log" 2>/dev/null | tail -n 15 >&2; fail "$err"; }
+  pass "root 下升级成功后的定时器重写:已启用的旧单元改为 OnCalendar 带 $expect_tz 并仍 enabled;TZ 拼错只告警一次;停用的只重写文件、保持 disabled 并提示;别的部署的单元(Description 提到本目录)未动"
 else
   echo "  跳过:本机没有 systemd / 免密 sudo,或已有真实的 workstation-backup 单元;只验证了 upgrade.sh 的调用位置"
 fi
@@ -161,7 +214,8 @@ NEWV2="$VERSION-up2"
 make_alias_tags "$NEWV2"
 pkg2="$TMP/pkgsrc2/workstation-deploy-$NEWV2"
 mkdir -p "$pkg2"
-cp -R "$DEPLOY_SRC/." "$pkg2/"
+# L313:同上,不复制 images/
+( cd "$DEPLOY_SRC" && tar --exclude='./images' -cf - . ) | ( cd "$pkg2" && tar -xf - ) || fail "复制部署源失败"
 printf '%s\n' "$NEWV2" >"$pkg2/VERSION"
 awk '{ print } /^\theader [{]$/ { print "\t\tX-Ws-Upgrade-Marker \"2\"" }' "$DEPLOY_SRC/Caddyfile.internal" >"$pkg2/Caddyfile.internal"
 PKG2="$TMP/workstation-deploy-$NEWV2.tar.gz"
