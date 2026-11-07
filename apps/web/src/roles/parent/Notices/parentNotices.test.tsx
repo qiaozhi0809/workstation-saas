@@ -42,7 +42,6 @@ const item = (over: Partial<InboxItem> = {}): InboxItem => ({
   ack: { kind: 'none' },
   ack_deadline: null,
   my_ack: null,
-  students: ['王小一'],
   students_detail: [{ name: '王小一', class_name: '三年二班' }],
   can_ack: false,
   ack_block_reason: null,
@@ -177,7 +176,6 @@ it('lists notices of all children, bold when unread, with the children named', a
         id: 'n2',
         title: '班会',
         read_at: '2026-11-04T03:00:00Z',
-        students: ['王小二'],
         students_detail: [{ name: '王小二', class_name: '五年一班' }],
       }),
     ]),
@@ -197,7 +195,6 @@ it('names the children with the class snapshot taken when the notice was sent (L
     inbox([
       // 发送时孩子在二年二班(升学后现在是三年二班):显示快照,不显示现在的班
       item({
-        students: ['王小一', '王小二'],
         students_detail: [
           { name: '王小一', class_name: '二年二班' },
           { name: '王小二', class_name: null },

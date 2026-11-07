@@ -190,7 +190,6 @@ const item = (over: Partial<InboxItem> = {}): InboxItem => ({
   ack: { kind: 'confirm' },
   ack_deadline: null,
   my_ack: null,
-  students: [],
   students_detail: [],
   can_ack: true,
   ack_block_reason: null,
@@ -321,8 +320,12 @@ describe('AckForm', () => {
   const blocked: [NonNullable<InboxItem['ack_block_reason']>, string, Partial<InboxItem>][] = [
     ['recalled', '已撤回', { recalled: true }],
     ['closed', '已截止', { ack_deadline: FUTURE }], // 浏览器时钟偏慢:截止在"未来"也听后端的
-    ['readonly', '孩子已毕业或离校,不能回执', { ack_deadline: FUTURE, students: ['小明'] }],
-    ['not_primary', '由主家长回执', { students: ['小明'] }],
+    [
+      'readonly',
+      '孩子已毕业或离校,不能回执',
+      { ack_deadline: FUTURE, students_detail: [{ name: '小明', class_name: null }] },
+    ],
+    ['not_primary', '由主家长回执', { students_detail: [{ name: '小明', class_name: null }] }],
   ]
   it.each(blocked)('can_ack=false:%s → %s', (reason, text, over) => {
     renderForm(item({ can_ack: false, ack_block_reason: reason, ...over }))
