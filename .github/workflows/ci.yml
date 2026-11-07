@@ -377,13 +377,15 @@ jobs:
       WS_TEST_PROJECT: ws-m5a-ci
       WS_HTTP_PORT: 18080
       WS_HTTPS_PORT: 18443
+      # compose_smoke.sh 不自己 make image:用 bundle_upgrade 从离线包载入的镜像
+      WS_SMOKE_SKIP_BUILD: "1"
     steps:
       - uses: actions/checkout@v7
 
       # runner 自带 shellcheck;-S warning 与本地、计划一致
       - name: Shellcheck
-        # -x 跟进 source 进来的文件(与段 B 本地一致)
-        run: shellcheck -S warning -x deploy/prod/scripts/*.sh deploy/tests/*.sh deploy/release/*.sh
+        # -x 跟进 source 进来的文件(与段 B 本地一致);deploy/docker 里是镜像入口脚本
+        run: shellcheck -S warning -x deploy/prod/scripts/*.sh deploy/tests/*.sh deploy/release/*.sh deploy/docker/*.sh
 
       - name: Build offline bundle
         run: deploy/release/build-bundle.sh "$WS_TEST_VERSION"
@@ -403,10 +405,12 @@ jobs:
       - name: Remove locally built images
         run: docker image rm "workstation-app:$WS_TEST_VERSION" "workstation-web:$WS_TEST_VERSION" "workstation-stream:$WS_TEST_VERSION" postgres:16-alpine redis:7-alpine
 
-      # 一个脚本一个脚本地跑;每个脚本后台抓各服务日志,失败时作为 artifact 上传
+      # 一个脚本一个脚本地跑;每个脚本后台抓各服务日志,失败时作为 artifact 上传。
+      # compose_smoke 紧跟 bundle_upgrade(镜像已从包里载入,WS_SMOKE_SKIP_BUILD=1):镜像内容、compose 形态、
+      # stream-worker 出站限制(L293)与 uvicorn 日志形态(L315)的断言都在它里面
       - name: Deploy tests
         run: |
-          for t in bundle_upgrade install_fresh install_twice backup_restore restore_rejects upgrade_same upgrade_precheck_fail; do
+          for t in bundle_upgrade compose_smoke install_fresh install_twice backup_restore restore_rejects upgrade_same upgrade_precheck_fail; do
             echo "::group::$t"
             stop="$RUNNER_TEMP/stop-$t"
             deploy/tests/bundle_collect_logs.sh "$WS_TEST_PROJECT" "$RUNNER_TEMP/service-logs/$t" "$stop" &
