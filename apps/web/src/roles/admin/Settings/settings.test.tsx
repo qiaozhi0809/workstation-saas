@@ -320,7 +320,12 @@ const INFO: SystemInfo = {
   migration: '0010',
   started_at: '2026-11-05T01:00:00Z',
   db_size_bytes: 5 * 1024 * 1024,
-  last_backup: { at: new Date().toISOString(), file: 'ws-backup-x.tar.gz', size_bytes: 1024 },
+  last_backup: {
+    at: new Date().toISOString(),
+    file: 'ws-backup-x.tar.gz',
+    size_bytes: 1024,
+    caddy: 'included',
+  },
 }
 
 it('shows system card for settings.manage', async () => {
@@ -356,7 +361,7 @@ it('alerts when the last backup is older than 48 hours, with the age in days', a
   const at = new Date(Date.now() - 5 * 24 * 3600 * 1000).toISOString()
   vi.mocked(adminApi.systemInfo).mockResolvedValue({
     ...INFO,
-    last_backup: { at, file: 'f', size_bytes: 1 },
+    last_backup: { at, file: 'f', size_bytes: 1, caddy: null },
   })
   await renderPage()
   const alert = await screen.findByRole('alert')
@@ -369,7 +374,7 @@ it('does not alert at 30 hours, alerts just past 48 hours', async () => {
   const ago = (h: number) => new Date(Date.now() - h * 3600 * 1000).toISOString()
   vi.mocked(adminApi.systemInfo).mockResolvedValue({
     ...INFO,
-    last_backup: { at: ago(30), file: 'f', size_bytes: 1 },
+    last_backup: { at: ago(30), file: 'f', size_bytes: 1, caddy: null },
   })
   await renderPage()
   await screen.findByText('0.7.0')
@@ -378,7 +383,7 @@ it('does not alert at 30 hours, alerts just past 48 hours', async () => {
   cleanup()
   vi.mocked(adminApi.systemInfo).mockResolvedValue({
     ...INFO,
-    last_backup: { at: ago(49), file: 'f', size_bytes: 1 },
+    last_backup: { at: ago(49), file: 'f', size_bytes: 1, caddy: null },
   })
   await renderPage()
   expect(await screen.findByRole('alert')).toHaveTextContent('上次备份是 2 天前,请检查定时任务')
@@ -389,12 +394,36 @@ it('shows a neutral notice when the last backup time cannot be parsed', async ()
   asAdmin(['settings.manage'])
   vi.mocked(adminApi.systemInfo).mockResolvedValue({
     ...INFO,
-    last_backup: { at: 'not-a-date', file: 'f', size_bytes: 1 },
+    last_backup: { at: 'not-a-date', file: 'f', size_bytes: 1, caddy: null },
   })
   await renderPage()
   const alert = await screen.findByRole('alert')
   expect(alert).toHaveTextContent('上次备份时间无法识别,请检查备份记录')
   expect(alert).not.toHaveTextContent('NaN')
+})
+
+// L277:backup.sh 把 caddy: skipped 写进 backup-last.json → LastBackup.caddy → 系统卡一行提示;included / null 不提示
+it('caddy skipped line', async () => {
+  asAdmin(['settings.manage'])
+  const backup = (caddy: 'included' | 'skipped' | null) => ({
+    ...INFO,
+    last_backup: { ...INFO.last_backup!, caddy },
+  })
+  vi.mocked(adminApi.systemInfo).mockResolvedValue(backup('skipped'))
+  await renderPage()
+  const note = await screen.findByText('上次备份未包含网关数据(当时网关未运行)')
+  expect(note).toHaveAttribute('role', 'status')
+  expect(screen.queryByRole('alert')).toBeNull() // 备份本身是新鲜的,不算告警
+  cleanup()
+  vi.mocked(adminApi.systemInfo).mockResolvedValue(backup('included'))
+  await renderPage()
+  await screen.findByText('0.7.0')
+  expect(screen.queryByText(/未包含网关数据/)).toBeNull()
+  cleanup()
+  vi.mocked(adminApi.systemInfo).mockResolvedValue(backup(null))
+  await renderPage()
+  await screen.findByText('0.7.0')
+  expect(screen.queryByText(/未包含网关数据/)).toBeNull()
 })
 
 it('downloads diagnostics through downloadBlob, disabled while running', async () => {

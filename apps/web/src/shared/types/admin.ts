@@ -619,7 +619,13 @@ export interface SystemInfo {
   migration: string
   started_at: string
   db_size_bytes: number
-  last_backup: { at: string; file: string; size_bytes: number } | null
+  /** caddy:上次备份是否包含网关数据(backup.sh 写进 backup-last.json,V3-4 / V5);旧记录没有这一项时为 null(L277) */
+  last_backup: {
+    at: string
+    file: string
+    size_bytes: number
+    caddy: 'included' | 'skipped' | null
+  } | null
 }
 
 export interface SecuritySettings {

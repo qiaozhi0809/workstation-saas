@@ -106,6 +106,15 @@ export default function SystemCard() {
               : new Date(info.last_backup.at).toLocaleString('zh-CN')}
           </Row>
         </dl>
+        {info.last_backup?.caddy === 'skipped' && (
+          // web 容器长期停机时每一份备份都不含网关(含 CA 私钥)数据,这里是管理员唯一能看出来的地方(L277)
+          <p
+            role="status"
+            className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning"
+          >
+            上次备份未包含网关数据(当时网关未运行)
+          </p>
+        )}
       </div>
     )
   }
