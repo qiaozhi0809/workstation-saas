@@ -11,6 +11,7 @@ from app.audit.service import deny
 from app.domain.cameras.access import admin_sees_class, enabled_camera_counts
 from app.domain.classes.service import class_scope_of
 from app.domain.classes.sort import class_sort_key
+from app.domain.exams.subjects import grade_stage
 from app.domain.grade_exams.service import progress
 from app.domain.notices.service import recent_sent
 from app.domain.overview.schemas import (
@@ -476,7 +477,9 @@ def board_view(
 ) -> BoardView:
     year = require_active_year(db, user.school_id)
     visible = _visible(db, bindings, year.id, year.school_id)
-    grades = [(g.id, g.name) for g in _visible_grades(db, bindings, year.id, visible)]
+    grades = [
+        (g.id, g.name, grade_stage(g)) for g in _visible_grades(db, bindings, year.id, visible)
+    ]
     if grade_id is None:
         grade_id = grades[0][0] if grades else None
     elif grade_id not in {g[0] for g in grades}:
@@ -489,7 +492,9 @@ def board_view(
             request=request,
         )
     picked = [v for v in visible if v.grade.id == grade_id]
-    grade_list = [GradeBrief(id=gid, name=name) for gid, name in grades]
+    grade_list = [
+        GradeBrief(id=gid, name=name, effective_stage=stage) for gid, name, stage in grades
+    ]
     if not picked:
         return BoardView(grades=grade_list, grade_id=grade_id, classes=[])
 
