@@ -70,28 +70,34 @@ export default function CameraStrip({
 
   // 多路同时 403 只提示一次;收起后本组件卸载,其余播放器随之销毁
   const endedRef = useRef(false)
-  const ended = () => {
+  const finish = (text: string) => {
     if (endedRef.current) return
     endedRef.current = true
-    toast('本节课已结束')
+    toast(text)
     void qc.invalidateQueries({ queryKey: ['classroom', classId] })
     onClose()
     // 把这个班的列表缓存丢掉,下次展开从头加载,不会被缓存里的空列表/403 立刻再收起
     qc.removeQueries({ queryKey: ['cameras', 'class', classId] })
   }
-  const endedFnRef = useRef(ended)
-  endedFnRef.current = ended
+  const ended = () => finish('本节课已结束')
+  const finishRef = useRef(finish)
+  finishRef.current = finish
   const period = periodText(q.data)
   const cameras = q.data?.cameras ?? []
-  // 下课后后端返回 200 + 空列表(403 只在失去班级读权限时才有)。
-  // 曾经看到过机位、刷新后变空 → 按"本节课已结束"处理;首次加载就是空的照常显示提示
-  const hadCamerasRef = useRef(false)
-  if (cameras.length > 0) hadCamerasRef.current = true
-  const emptied = !!q.data && cameras.length === 0 && hadCamerasRef.current
+  // 下课后后端返回 200 + 空列表(403 只在失去班级读权限时才有)。曾经看到过机位、刷新后变空要分原因(L218 ③):
+  // 接口没有单独的"停用 / 结束"字段——任课老师(上次 reason 'period')的时段还在(period 仍非空,后端仍放行)
+  // 却没机位了 → 管理员课中停用了全部摄像头;时段没了(占位 reason 'homeroom'、period null)→ 本节课已结束;
+  // 班主任 / 管理员的观看资格不随节次结束,变空只能是停用。首次加载就是空的照常显示提示
+  const hadReasonRef = useRef<ClassCameras['reason'] | null>(null)
+  if (q.data && cameras.length > 0) hadReasonRef.current = q.data.reason
+  const emptied = !!q.data && cameras.length === 0 && hadReasonRef.current !== null
+  const disabled =
+    emptied && (hadReasonRef.current !== 'period' || (q.data?.period ?? null) !== null)
   const forbidden = q.error instanceof ApiError && q.error.status === 403
   useEffect(() => {
-    if (forbidden || emptied) endedFnRef.current()
-  }, [forbidden, emptied])
+    if (forbidden) finishRef.current('本节课已结束')
+    else if (emptied) finishRef.current(disabled ? '摄像头已被管理员停用' : '本节课已结束')
+  }, [forbidden, emptied, disabled])
 
   let body: ReactNode
   if (q.isPending) body = <p className="px-1 text-sm text-muted-foreground">加载中…</p>

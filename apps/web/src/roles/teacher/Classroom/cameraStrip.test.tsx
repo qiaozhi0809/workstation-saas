@@ -277,9 +277,15 @@ it('refresh 403 counts as period ended even without a player error', async () =>
   expect(live()).toEqual([])
 })
 
+const PERIOD = { no: 3, subject: '数学', ends_at: '10:25' }
+
 it('ends the class when the 30 s refresh comes back with no cameras', async () => {
+  // 任课老师下课:后端不再放行,回 200 + 空列表、占位 reason 'homeroom'、period null → 本节课已结束
   // 只假 setInterval:让查询的 30 秒刷新可推进;setTimeout 保持真实,查询结果照常送到组件
   vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+  vi.mocked(camerasApi.classCameras).mockResolvedValue(
+    classCameras({ reason: 'period', period: PERIOD }),
+  )
   await openStrip()
   expect(camerasApi.classCameras).toHaveBeenCalledTimes(1)
   vi.mocked(camerasApi.classCameras).mockResolvedValue(classCameras({ cameras: [] }))
@@ -287,8 +293,40 @@ it('ends the class when the 30 s refresh comes back with no cameras', async () =
   expect(camerasApi.classCameras).toHaveBeenCalledTimes(2)
   await waitFor(() => expect(screen.queryByTestId('camera-strip')).toBeNull())
   expect(screen.getAllByText('本节课已结束')).toHaveLength(1)
+  expect(screen.queryByText('摄像头已被管理员停用')).toBeNull()
   expect(screen.getByTestId('camera-toggle')).toHaveAttribute('aria-pressed', 'false')
   await waitFor(() => expect(classroomApi.summary).toHaveBeenCalledTimes(2))
+  expect(live()).toEqual([])
+})
+
+it('admin disabled mid-period copy', async () => {
+  // 任课老师的时段还在(后端仍按本节课放行,period 非空)却没机位了:是管理员课中停用了全部摄像头,
+  // 不是下课(L218 ③;接口没有单独的"停用 / 结束"字段,按 period 是否还在推断)
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+  vi.mocked(camerasApi.classCameras).mockResolvedValue(
+    classCameras({ reason: 'period', period: PERIOD }),
+  )
+  await openStrip()
+  vi.mocked(camerasApi.classCameras).mockResolvedValue(
+    classCameras({ cameras: [], reason: 'period', period: PERIOD }),
+  )
+  act(() => void vi.advanceTimersByTime(30_000))
+  await waitFor(() => expect(screen.queryByTestId('camera-strip')).toBeNull())
+  expect(screen.getAllByText('摄像头已被管理员停用')).toHaveLength(1)
+  expect(screen.queryByText('本节课已结束')).toBeNull()
+  expect(screen.getByTestId('camera-toggle')).toHaveAttribute('aria-pressed', 'false')
+  await waitFor(() => expect(classroomApi.summary).toHaveBeenCalledTimes(2))
+  expect(live()).toEqual([])
+})
+
+it('homeroom teacher: cameras vanishing means disabled, not class end', async () => {
+  // 班主任的观看资格不随节次结束:列表变空只能是停用
+  const { client } = await openStrip()
+  vi.mocked(camerasApi.classCameras).mockResolvedValue(classCameras({ cameras: [] }))
+  await act(() => client.refetchQueries({ queryKey: ['cameras', 'class', 'c1'] }))
+  await waitFor(() => expect(screen.queryByTestId('camera-strip')).toBeNull())
+  expect(screen.getAllByText('摄像头已被管理员停用')).toHaveLength(1)
+  expect(screen.queryByText('本节课已结束')).toBeNull()
   expect(live()).toEqual([])
 })
 
