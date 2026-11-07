@@ -164,11 +164,33 @@ done
 pass "部署目录就绪,.env.example 密钥留空"
 
 echo "== 4/6 启动服务并等待健康"
-# up 输出写到临时文件,失败时 fail 会打印各服务日志尾部(输出里不含密钥)
-compose up -d --wait --wait-timeout 300 >"$TMP/up.log" 2>&1 || {
+# up 输出写到临时文件,失败时 fail 会打印各服务日志尾部(输出里不含密钥)。
+# 不用 compose up --wait:新版 compose 对 healthcheck: disable 的 scheduler 报 "has no healthcheck configured" 并返回非 0;
+# 按 lib.sh::wait_healthy 的口径自己等——有健康检查的等 healthy,没有的等 running
+compose up -d >"$TMP/up.log" 2>&1 || {
   tail -n 30 "$TMP/up.log" >&2
-  fail "服务未能在 300 秒内全部健康"
+  fail "docker compose up 失败"
 }
+# wait_all_healthy <秒数>:postgres / redis / app / web / stream-worker 变 healthy、scheduler(无健康检查)在运行;超时返回 1
+wait_all_healthy() {
+  local limit="$1" waited=0 svc cid state pending
+  while :; do
+    pending=""
+    for svc in postgres redis app web stream-worker scheduler; do
+      cid="$(compose ps -q "$svc" 2>/dev/null | head -n 1)"
+      state="missing"
+      if [ -n "$cid" ]; then
+        state="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid" 2>/dev/null || echo missing)"
+      fi
+      case "$state" in healthy|running) ;; *) pending="$pending $svc=$state" ;; esac
+    done
+    [ -n "$pending" ] || return 0
+    [ "$waited" -lt "$limit" ] || { echo "  ${limit} 秒后仍未就绪:$pending" >&2; return 1; }
+    sleep 3
+    waited=$((waited + 3))
+  done
+}
+wait_all_healthy 300 || fail "服务未能在 300 秒内全部健康"
 pass "所有服务已启动且健康"
 
 echo "== 5/6 逐项断言"
