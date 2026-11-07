@@ -14,8 +14,8 @@ import pytest
 from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session
 
-from app.domain.timetable import service
-from app.domain.timetable.schemas import CellInput, Period
+from app.domain.timetable import importer, service
+from app.domain.timetable.schemas import CellInput, Period, TimetableImportRow
 from app.errors import ApiError
 from app.models import AcademicYear, SchoolClass
 from tests.concurrent_db import make_concurrent_engine
@@ -117,6 +117,23 @@ def _remove_third(db: Session) -> Any:
     return service.save_periods(db, UUID(SCHOOL_ID), PERIODS[:2], IT_ADMIN, None)
 
 
+def _import_cell(period_no: int) -> Callable[[Session], Any]:
+    def run(db: Session) -> Any:
+        year = db.get(AcademicYear, UUID(YEAR_ID))
+        assert year is not None
+        row = TimetableImportRow(
+            line=2,
+            class_name="三年二班",
+            weekday=1,
+            period_no=period_no,
+            subject="语文",
+            employee_no=None,
+        )
+        return importer.import_rows(db, UUID(SCHOOL_ID), year, [row], IT_ADMIN, None)
+
+    return run
+
+
 def _orphans(engine: Engine) -> int:
     with engine.connect() as conn:
         return conn.execute(ORPHANS).scalar_one()
@@ -144,6 +161,36 @@ def test_write_timetable_then_delete_period(cengine, monkeypatch):
     writer.join()
     remover.join()
     assert writer.error is None, writer.error
+    assert isinstance(remover.error, ApiError) and remover.error.code == "PERIOD_IN_USE"
+    assert _orphans(cengine) == 0
+    with cengine.connect() as conn:
+        assert conn.execute(text("SELECT count(*) FROM periods")).scalar_one() == 3
+
+
+def test_import_vs_delete_period_serialized(cengine, monkeypatch):
+    """L290:CSV 导入读完"已设节次"后停住;删节次必须等它提交(同一把 School 锁),
+    然后看到第 3 节在用 → 409。修复前导入不拿锁,删节次直接过,留下引用已删节次的格子。"""
+    read_done, go = threading.Event(), threading.Event()
+    real = service.defined_period_nos
+
+    def paused(db, school_id):
+        nos = real(db, school_id)
+        read_done.set()
+        assert go.wait(WAIT)
+        return nos
+
+    monkeypatch.setattr(service, "defined_period_nos", paused)
+    writer = Worker(cengine, "import", _import_cell(3)).start()
+    try:
+        assert read_done.wait(WAIT)
+        remover = Worker(cengine, "remove", _remove_third).start()
+        _wait_blocked(cengine, remover)
+    finally:
+        go.set()
+    writer.join()
+    remover.join()
+    assert writer.error is None, writer.error
+    assert writer.value.ok is True and writer.value.written == 1
     assert isinstance(remover.error, ApiError) and remover.error.code == "PERIOD_IN_USE"
     assert _orphans(cengine) == 0
     with cengine.connect() as conn:

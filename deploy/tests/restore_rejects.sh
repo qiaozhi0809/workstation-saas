@@ -130,6 +130,14 @@ grep -q '校验和不符' "$TMP/reject-db数据损坏但sha自洽.log" && fail "
 tamper_backup "$GOOD" "$TMP/bad/dbtrunc.tar.gz" dbtrunc
 expect_reject db数据被截断但sha自洽 "$TMP/bad/dbtrunc.tar.gz" "被截断" --yes
 grep -q '校验和不符' "$TMP/reject-db数据被截断但sha自洽.log" && fail "db数据被截断:不应报校验和不符(原因应是 pg_restore 读不出)"
+# L313:目录(TOC)完整、数据块坏:pg_restore -l 读得出目录,所以校验阶段全过、建了临时库之后真正 pg_restore 才失败。
+# 这是"校验全过、临时库阶段失败"唯一的专用用例:报错应是 pg_restore 失败(不是 -l 阶段的"读不出"),
+# 临时库被清、正式库未动、app 全程在线由 expect_reject 断言
+tamper_backup "$GOOD" "$TMP/bad/dbdata.tar.gz" dbdata
+expect_reject db数据块损坏但目录完整 "$TMP/bad/dbdata.tar.gz" "pg_restore 失败" --yes
+grep -q '恢复进临时库' "$TMP/reject-db数据块损坏但目录完整.log" || fail "db数据块损坏但目录完整:应已通过目录检查、进入临时库阶段才失败"
+grep -q '读不出' "$TMP/reject-db数据块损坏但目录完整.log" && fail "db数据块损坏但目录完整:不应在 pg_restore -l 阶段被拒(目录应是完整的)"
+grep -q '校验和不符' "$TMP/reject-db数据块损坏但目录完整.log" && fail "db数据块损坏但目录完整:不应报校验和不符(manifest 的 sha 已同步重算)"
 # manifest 说有 caddy.tar(included)而包里没有:清单与内容不一致
 tamper_backup "$GOOD" "$TMP/bad/nocaddy.tar.gz" nocaddy
 expect_reject manifest含caddy但包里没有 "$TMP/bad/nocaddy.tar.gz" "文件清单与备份内容不一致" --yes

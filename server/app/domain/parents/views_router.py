@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app import clock
 from app.auth.deps import get_current_user
 from app.db import get_db
-from app.domain.parents import views
+from app.domain.parents import exams, views
 from app.models import User
 
 router = APIRouter(prefix="/parent", tags=["parent"])
@@ -71,12 +71,12 @@ def get_reviews(
 @router.get("/children/{student_id}/exams")
 def get_exams(
     student_id: UUID, request: Request, user: CurrentUser, db: Db
-) -> list[views.ParentExamItem]:
-    return views.exams(db, request, user, student_id, clock.utc_now())
+) -> list[exams.ParentExamItem]:
+    return exams.exams(db, request, user, student_id, clock.utc_now())
 
 
 @router.get("/children/{student_id}/exams/{exam_id}")
 def get_exam(
     student_id: UUID, exam_id: UUID, request: Request, user: CurrentUser, db: Db
-) -> views.ParentExamDetail:
-    return views.exam_detail(db, request, user, student_id, exam_id, clock.utc_now())
+) -> exams.ParentExamDetail:
+    return exams.exam_detail(db, request, user, student_id, exam_id, clock.utc_now())

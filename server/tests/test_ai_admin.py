@@ -2,8 +2,10 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import httpx
+import pytest
 from sqlalchemy import select
 
+from app.domain.ai_admin.service import _origin
 from app.models import User
 from app.models.audit import AuditLog
 from tests.fake_llm import sse_transport
@@ -316,6 +318,29 @@ def _stored(db, settings):
     from app.ai.settings import load_ai_config
 
     return load_ai_config(db, settings.school_id, settings.master_key_bytes)
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("https://api.deepseek.com", ("https", "api.deepseek.com", 443)),
+        ("https://api.deepseek.com:443/v1/", ("https", "api.deepseek.com", 443)),  # 默认端口 = 省略
+        ("HTTPS://API.DeepSeek.com/V1", ("https", "api.deepseek.com", 443)),  # 大小写、路径忽略
+        ("http://api.deepseek.com", ("http", "api.deepseek.com", 80)),
+        ("http://api.deepseek.com:8080/v1", ("http", "api.deepseek.com", 8080)),
+        ("http://[::1]:8080/v1", ("http", "::1", 8080)),  # IPv6 字面量
+        ("http://[2001:db8::1]/v1", ("http", "2001:db8::1", 80)),
+        ("https://user:pw@api.deepseek.com/v1", ("https", "api.deepseek.com", 443)),  # userinfo
+        ("http://api.deepseek.com:0/", ("http", "api.deepseek.com", 0)),  # 显式 :0 不是默认端口
+        ("  https://api.deepseek.com/v1  ", ("https", "api.deepseek.com", 443)),  # 首尾空白
+        ("ftp://files.example.test", ("ftp", "files.example.test", None)),  # 未知 scheme 不补端口
+        ("http://api.deepseek.com:99999", ("http://api.deepseek.com:99999", "", None)),  # 端口非法
+        ("http://[::1", ("http://[::1", "", None)),  # 括号不闭合
+    ],
+)
+def test_origin_parametrized(url, expected):
+    """L59:_origin 的边界——IPv6、userinfo、显式端口 / 默认端口 / 端口 0、大小写与路径、非法输入。"""
+    assert _origin(url) == expected
 
 
 def test_key_required_when_origin_or_provider_changes(client, db, settings):

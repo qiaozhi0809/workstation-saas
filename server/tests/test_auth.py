@@ -248,7 +248,8 @@ def test_first_failure_sets_ttl_atomically(client, settings, redis_client, monke
     monkeypatch.setattr(redis_client, "incr", forbidden)
     monkeypatch.setattr(redis_client, "expire", forbidden)
     assert login(client, pw="wrong").status_code == 401
-    assert flags == [True]
+    # 失败计数 + 登录日志 per-IP 计数(L294)各一条事务管道,incr/expire 都不走裸命令
+    assert flags == [True, True]
     assert 0 < redis_client.ttl(key) <= settings.login_lock_seconds
 
 
@@ -599,7 +600,7 @@ def _pending_users(source: str) -> set[str]:
 
 
 def test_pending_dependency_only_on_allowed_routes():
-    """只有 /auth/me、/auth/password、/auth/password-policy 允许需改密码的账号访问。"""
+    """只有 /auth/me、/auth/password、/auth/password-policy、/meta(L230)允许需改密码的账号访问。"""
     from pathlib import Path
 
     root = Path(__file__).resolve().parent.parent / "app"
@@ -608,9 +609,11 @@ def test_pending_dependency_only_on_allowed_routes():
         for path in root.rglob("*.py")
         if "get_current_user_pending" in path.read_text(encoding="utf-8")
     }
-    assert users == {"auth/deps.py", "auth/router.py"}
+    assert users == {"auth/deps.py", "auth/router.py", "domain/meta/router.py"}
     hits = _pending_users((root / "auth" / "router.py").read_text(encoding="utf-8"))
     assert hits == {"me", "change_password", "password_policy"}
+    meta = _pending_users((root / "domain" / "meta" / "router.py").read_text(encoding="utf-8"))
+    assert meta == {"get_meta"}
 
 
 def test_pending_scanner_catches_violations():

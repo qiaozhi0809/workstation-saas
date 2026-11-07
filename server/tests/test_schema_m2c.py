@@ -127,6 +127,14 @@ def test_seed_growth_and_comment(db):
         ("王小一", "2026-2027 第一学期", False, True),
         ("李小二", "2026-2027 第一学期", False, True),
     ]
+    # L281:评语的班级 / 学年跟着学生的在读注册走,不是写死的常量
+    mismatched = db.execute(
+        text(
+            "SELECT count(*) FROM comments c JOIN enrollments e ON e.id = c.enrollment_id"
+            " WHERE c.class_id <> e.class_id OR c.academic_year_id <> e.academic_year_id"
+        )
+    ).scalar_one()
+    assert mismatched == 0
 
 
 def test_session_scope_reuses_test_session(client, db):

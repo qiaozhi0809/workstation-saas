@@ -1,6 +1,6 @@
 import json
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel
@@ -31,6 +31,9 @@ class LastBackup(BaseModel):
     at: str
     file: str
     size_bytes: int
+    # 备份是否包含 Caddy 数据(证书 / 配置;L277):由备份脚本写进 backup-last.json;
+    # 旧脚本没写这个键 → None(前端按"未知"显示),其他值也当未知
+    caddy: Literal["included", "skipped"] | None = None
 
 
 class SystemInfo(BaseModel):
@@ -54,7 +57,13 @@ def read_last_backup(settings: Settings) -> LastBackup | None:
             return None
         if isinstance(size, bool) or not isinstance(size, int):
             return None
-        return LastBackup(at=at, file=file, size_bytes=size)
+        caddy = raw.get("caddy")
+        return LastBackup(
+            at=at,
+            file=file,
+            size_bytes=size,
+            caddy=caddy if caddy in ("included", "skipped") else None,
+        )
     except (OSError, ValueError):
         return None
 

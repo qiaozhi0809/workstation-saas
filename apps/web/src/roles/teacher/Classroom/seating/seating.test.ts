@@ -174,6 +174,20 @@ describe('algorithms', () => {
     }
   })
 
+  // L257(Q4):桌子不够时男女混合的一桌优先落座,同性凑成的桌才进待安排(旧实现整体 shuffled,种子 3 就会把混合桌挤出去)
+  it('mixed pairs seated before same-sex pairs', () => {
+    const students = [
+      ...['m1', 'm2', 'm3', 'm4', 'm5'].map((id) => st(id, 'male', null, null)),
+      st('f1', 'female', null, null),
+    ]
+    // 1 排 × 4 列 = 两张双人桌:一对男女 + 两桌男生共 3 桌,只放得下 2 桌
+    for (let seed = 1; seed <= 20; seed++) {
+      const out = genderPairSeats(students, grid(1, 4), lcg(seed))
+      expect(out.find((x) => x.enrollmentId === 'f1')?.row).toBe(1)
+      expect(out.filter((x) => x.row === null).map((x) => x.gender)).toEqual(['male', 'male'])
+    }
+  })
+
   it('returns inputs in order without mutating them', () => {
     const students = [st('a', null, null, null), st('b', null, null, null)]
     const out = shuffleSeats(students, grid(1, 2), lcg())

@@ -216,6 +216,16 @@ it('says the class is not in my list and links back instead of loading forever',
   expect(classNoticesApi.list).not.toHaveBeenCalled()
 })
 
+// L258:还没选班(classId 为空)而班级列表已经到了:说清楚"请先选择班级",不再一直显示加载中
+it('no class selected', async () => {
+  useTeacherStore.setState({ classId: null })
+  renderPage()
+  expect(await screen.findByText('请先选择班级')).toBeInTheDocument()
+  expect(screen.queryByText('加载中…')).toBeNull()
+  expect(classroomApi.summary).not.toHaveBeenCalled()
+  expect(classNoticesApi.list).not.toHaveBeenCalled()
+})
+
 it('shows an empty state without class.notice and makes no class-notice requests', async () => {
   vi.mocked(classroomApi.summary).mockResolvedValue(summaryFixture({ my_perms: [] }))
   renderPage()

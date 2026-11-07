@@ -178,8 +178,9 @@ class StudentDetail(BaseModel):
     class_name: str | None  # 发送时刻所在的班(notice_students 快照)
 
 
-# 不能回执的原因(L88):撤回 / 已过截止(服务器时间)/ 孩子绑定只读 / 调用者不是主家长
-AckBlockReason = Literal["closed", "recalled", "readonly", "not_primary"]
+# 不能回执的原因(L88 / L231):撤回 / 已过截止(服务器时间)/ 孩子已毕业或离校(绑定只读)/
+# 调用者不是主家长 / 与孩子的关联已结束(绑定 ended 或学生已删,unlinked)
+AckBlockReason = Literal["closed", "recalled", "readonly", "not_primary", "unlinked"]
 
 
 class InboxItem(BaseModel):
@@ -193,8 +194,7 @@ class InboxItem(BaseModel):
     ack: AckSpec
     ack_deadline: datetime | None
     my_ack: MyAck | None
-    students: list[str]
-    students_detail: list[StudentDetail]
+    students_detail: list[StudentDetail]  # L282:旧的 students: list[str] 已删,只留带班名的明细
     can_ack: bool
     ack_block_reason: AckBlockReason | None  # can_ack 为假时的原因;不需要回执的通知为 null
 

@@ -7,6 +7,7 @@ from sqlalchemy import delete, select, text
 from sqlalchemy.orm import Session
 
 from app.audit.service import record
+from app.domain.classes.sort import class_sort_key
 from app.domain.exams.subjects import class_subjects, merge_subjects
 from app.domain.schools.service import active_academic_year, school_tz
 from app.domain.timetable.schemas import (
@@ -64,7 +65,7 @@ def save_periods(
         .order_by(SchoolClass.name, TimetableEntry.period_no)
     ).all()
     if in_use:
-        names = sorted({name for name, _ in in_use})
+        names = sorted({name for name, _ in in_use}, key=class_sort_key)  # 班名数值序(L266)
         nos = sorted({no for _, no in in_use})
         raise ApiError(
             409,
@@ -115,6 +116,14 @@ def _assignments(db: Session, class_id: UUID, year_id: UUID) -> list[tuple[UUID,
 
 def auto_teacher(db: Session, cls: SchoolClass, year: AcademicYear, subject: str) -> UUID | None:
     return _auto(_assignments(db, cls.id, year.id), subject)
+
+
+def allowed_subjects(
+    db: Session, cls: SchoolClass, assignments: Sequence[tuple[UUID, str, str | None]]
+) -> set[str]:
+    """可排进课表的科目(L210 / L291)= 本班科目(考试科目表 / 目录)∪ 本班在任老师登记的任教科目:
+    组织架构里有"信息技术"老师、考试科目表没有这门课,也该能排进课表。整班保存与 CSV 导入共用。"""
+    return {s.name for s in class_subjects(db, cls)} | {subj for _, _, subj in assignments if subj}
 
 
 def _auto(assignments: Sequence[tuple[UUID, str, str | None]], subject: str) -> UUID | None:
@@ -249,11 +258,7 @@ def save_class_timetable(
     merge_subjects(db, cls, [])
     periods = defined_period_nos(db, cls.school_id)
     assignments = _assignments(db, cls.id, year.id)
-    # 可排的科目 = 本班科目(考试科目表 / 目录)∪ 本班在任老师登记的任教科目(L210):
-    # 组织架构里有"信息技术"老师、考试科目表没有这门课,也该能排进课表
-    subjects = {s.name for s in class_subjects(db, cls)} | {
-        subj for _, _, subj in assignments if subj
-    }
+    subjects = allowed_subjects(db, cls, assignments)
     seen: set[tuple[int, int]] = set()
     for c in cells:
         if c.period_no not in periods:

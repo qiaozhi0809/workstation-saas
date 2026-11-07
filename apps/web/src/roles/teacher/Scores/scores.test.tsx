@@ -273,6 +273,21 @@ it('switches exams by url', async () => {
   expect(l.getByRole('button', { name: /九月月考/ })).toHaveAttribute('aria-current', 'true')
 })
 
+// L236:学校及格 / 优秀比例读取失败时不再静默按默认值着色:页顶 role=status 说明,并能重试
+it('shows grading fallback banner', async () => {
+  vi.mocked(schoolApi.grading).mockRejectedValue(new Error('boom'))
+  setup()
+  const text = '及格线读取失败,先按默认 60% / 85% 显示'
+  const note = (await screen.findByText(text)).closest('[role="status"]') as HTMLElement
+  expect(note).not.toBeNull()
+  vi.mocked(schoolApi.grading).mockResolvedValue(DEFAULT_GRADING)
+  // 页面与成绩表格各挂一个 useGrading,出错状态下后挂的那个会再取一次;只断言"重试"正好多发一次
+  const before = vi.mocked(schoolApi.grading).mock.calls.length
+  fireEvent.click(within(note).getByRole('button', { name: '重试' }))
+  await waitFor(() => expect(screen.queryByText(text)).toBeNull())
+  expect(schoolApi.grading).toHaveBeenCalledTimes(before + 1)
+})
+
 it('pads the page like the other teacher pages', async () => {
   setup()
   const nav = await screen.findByRole('navigation', { name: '考试列表' })

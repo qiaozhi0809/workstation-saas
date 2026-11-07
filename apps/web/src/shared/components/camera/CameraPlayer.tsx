@@ -1,16 +1,37 @@
-import Hls from 'hls.js'
+import type HlsClass from 'hls.js'
 import { useEffect, useRef, useState } from 'react'
 import { camerasApi } from '@/shared/api/cameras'
 import { tryRefreshAccessToken } from '@/shared/api/client'
 import { Button } from '@/shared/components/ui/button'
 import { useAuthStore } from '@/shared/stores/auth'
+import { loadedHls, loadHls } from './loadHls'
 
 type PlayState =
-  'loading' | 'playing' | 'stalled' | 'ended' | 'lan' | 'busy' | 'offline' | 'unsupported' | 'codec'
+  | 'loading'
+  | 'waiting'
+  | 'playing'
+  | 'stalled'
+  | 'ended'
+  | 'lan'
+  | 'busy'
+  | 'offline'
+  | 'unsupported'
+  | 'codec'
 
+/** 播放列表拿到之后等第一个片段的一段计时;到点先提示"正在等摄像头出画…"再计一段,还没有才算连不上(L169) */
 const NO_PICTURE_MS = 8000
-/** 出画面之后:这么久没有新片段、也没有 timeupdate,就当画面停了 */
-const STALL_MS = 20_000
+/**
+ * 出画面之后:这么久没有新片段、也没有 timeupdate,就当画面停了。
+ * 拿到播放列表(LEVEL_LOADED)后按 3 × TARGETDURATION 算,夹在 8–20 秒之间(片段 2 秒 → 8 秒,
+ * 片段 ≥ 7 秒 → 20 秒);拿到之前沿用 20 秒(L306)
+ */
+const STALL_MS_DEFAULT = 20_000
+const STALL_MS_MIN = 8_000
+const STALL_MS_MAX = 20_000
+const stallMsFor = (targetduration: unknown): number =>
+  typeof targetduration === 'number' && targetduration > 0
+    ? Math.min(STALL_MS_MAX, Math.max(STALL_MS_MIN, 3 * targetduration * 1000))
+    : STALL_MS_DEFAULT
 const STARTING_RETRY_MS = 2000
 const STARTING_MAX_RETRIES = 4
 
@@ -30,6 +51,11 @@ interface HlsErrorData {
   fatal?: boolean
   response?: { code?: number; text?: string }
   networkDetails?: { responseText?: string } | null
+}
+
+/** LEVEL_LOADED 里播放器会读的几个字段(直播播放列表的目标时长与片段序号窗口) */
+interface LevelLoadedData {
+  details?: { live?: boolean; targetduration?: unknown; startSN?: number; endSN?: number }
 }
 
 function errorCodeOf(data: HlsErrorData): string | null {
@@ -55,6 +81,7 @@ function isPlaylistUrl(url: string): boolean {
 
 const MESSAGES: Partial<Record<PlayState, { role: 'status' | 'alert'; text: string }>> = {
   loading: { role: 'status', text: '加载中' },
+  waiting: { role: 'status', text: '正在等摄像头出画…' },
   stalled: { role: 'alert', text: '画面已停止,正在重连…' },
   ended: { role: 'status', text: '本节课已结束,看不到了' },
   lan: { role: 'alert', text: '只能在校园网内观看' },
@@ -85,21 +112,46 @@ export function CameraPlayer({
   onEndedRef.current = onEnded
   const onPlayingRef = useRef(onPlaying)
   onPlayingRef.current = onPlaying
-  const [state, setState] = useState<PlayState>(() =>
-    Hls.isSupported() ? 'loading' : 'unsupported',
-  )
+  const [state, setState] = useState<PlayState>('loading')
   // "重试"按钮 +1:effect 重跑,hls 实例重建
   const [epoch, setEpoch] = useState(0)
+  // hls.js 下载完成 +1:effect 重跑,这次拿得到构造函数(只在本组件是页面上第一个播放器时发生一次)
+  const [hlsReady, setHlsReady] = useState(0)
 
   useEffect(() => {
+    // hls.js 懒加载(L171):还没下载到就先去下载,到了再重跑本 effect;拿到过就直接同步建实例
+    const Hls = loadedHls()
+    if (!Hls) {
+      let cancelled = false
+      setState('loading') // 下载失败后点"重试"再来时,把"连不上"换回"加载中"
+      void loadHls().then(
+        () => {
+          if (!cancelled) setHlsReady((n) => n + 1)
+        },
+        () => {
+          // 连 hls.js 都下载不到(断网 / 静态资源 404):按连不上处理,"重试"会再下载一次
+          if (!cancelled) setState('offline')
+        },
+      )
+      return () => {
+        cancelled = true
+      }
+    }
     if (!Hls.isSupported()) {
       setState('unsupported')
       return
     }
-    setState('loading')
+    let alive = true
+    // 自己记住已显示的状态:每个新片段 / 每次 timeupdate 都不再调 setState 靠 React 同值跳过(L306)
+    let shown: PlayState | null = null
+    const show = (next: PlayState) => {
+      if (!alive || shown === next) return
+      shown = next
+      setState(next)
+    }
+    show('loading')
     const video = videoRef.current
     const src = camerasApi.playlistUrl(cameraId)
-    let alive = true
     let terminal = false
     let gotPicture = false
     let refreshed = false
@@ -113,7 +165,7 @@ export function CameraPlayer({
     // 否则 ffmpeg 活着却不出片时就成了每 ~26 秒静默重取 + 回放旧画面,"画面已停止"永远到不了。
     // 后端重启 ffmpeg 时 start_number 取 epoch 秒(stream/supervisor.py),新一轮的序列号照样更大
     let maxSn = -1
-    let hls: Hls | null = new Hls({
+    let hls: HlsClass | null = new Hls({
       manifestLoadPolicy: PLAYLIST_POLICY,
       playlistLoadPolicy: PLAYLIST_POLICY,
       xhrSetup: (xhr, url) => {
@@ -137,15 +189,22 @@ export function CameraPlayer({
       clearTimers()
       hls?.destroy()
       hls = null
-      if (alive) setState(next)
+      show(next)
       if (next === 'ended') onEndedRef.current?.()
     }
-    // 8 秒"无画面"计时只在播放列表已拿到之后才算;页面隐藏时暂停,可见后重新计
+    // 8 秒"无画面"计时只在播放列表已拿到之后才算;页面隐藏时暂停,可见后重新计(当前这一段从头计)。
+    // 第一段到点还没片段:先说"正在等摄像头出画…"再计第二段(二次计时),还没有才算连不上;
+    // offline 的判定本身不变——没出过画面(L169)
     let manifestReady = false
+    let waiting = false
     const armNoPictureTimer = () => {
       clearTimeout(noPictureTimer)
       noPictureTimer = setTimeout(() => {
-        if (!gotPicture) finish('offline')
+        if (gotPicture || terminal) return
+        if (waiting) return finish('offline')
+        waiting = true
+        show('waiting')
+        armNoPictureTimer()
       }, NO_PICTURE_MS)
     }
     const markFirstSign = () => {
@@ -165,18 +224,35 @@ export function CameraPlayer({
       clearTimeout(noPictureTimer)
       hls.loadSource(src)
     }
-    // 停滞看门狗(L182):出画面后 20 秒没有新片段也没有 timeupdate → 先悄悄重取一次播放列表;
-    // 还不动就提示"画面已停止,正在重连…"并给"重试"(重建实例),期间每 20 秒继续自动重取
+    // 停滞看门狗(L182):出画面后 stallMs 没有新片段也没有 timeupdate → 先悄悄重取一次播放列表;
+    // 还不动就提示"画面已停止,正在重连…"并给"重试"(重建实例),期间每 stallMs 继续自动重取
+    let stallMs = STALL_MS_DEFAULT
     const armStallTimer = () => {
       clearTimeout(stallTimer)
-      stallTimer = setTimeout(onStall, STALL_MS)
+      stallTimer = setTimeout(onStall, stallMs)
     }
     const onStall = () => {
       if (terminal) return
-      if (stallReloaded) setState('stalled')
+      if (stallReloaded) show('stalled')
       stallReloaded = true
       reload()
       armStallTimer()
+    }
+    // 播放列表到了:停滞阈值跟着它的 TARGETDURATION 走(下一次计时起生效)。
+    // 整个直播窗口都落在已见最大序号之下 → 服务端序列重新开始了(序号回绕后 ffmpeg 重启,discont_start,
+    // L301):基线挪到窗口之前,新片段才算进展;重取后回放旧尾部时窗口不会整体后退,基线不动
+    const onLevelLoaded = (data: LevelLoadedData | undefined) => {
+      if (terminal) return
+      const d = data?.details
+      stallMs = stallMsFor(d?.targetduration)
+      if (
+        d?.live &&
+        typeof d.startSN === 'number' &&
+        typeof d.endSN === 'number' &&
+        maxSn >= 0 &&
+        d.endSN < maxSn
+      )
+        maxSn = d.startSN - 1
     }
     // 出画面(片段到了 / 视频 playing):8 秒计时取消,401 再刷新与 STREAM_STARTING 的预算恢复,看门狗从头计
     const markPlaying = () => {
@@ -200,7 +276,7 @@ export function CameraPlayer({
       }
       segmentReloaded = false
       stallReloaded = false
-      setState('playing')
+      show('playing')
       markPlaying()
     }
     // 播放位置在走(也可能只是在回放重取回来的旧片段):只让看门狗从头计,预算与提示都不动
@@ -275,6 +351,7 @@ export function CameraPlayer({
     }
 
     hls.on(Hls.Events.MANIFEST_PARSED, markFirstSign)
+    hls.on(Hls.Events.LEVEL_LOADED, (_e, data) => onLevelLoaded(data))
     hls.on(Hls.Events.FRAG_LOADED, (_e, data) => onFragLoaded(data))
     hls.on(Hls.Events.ERROR, (_e, data) => handleError(data as unknown as HlsErrorData))
     if (video) {
@@ -313,7 +390,7 @@ export function CameraPlayer({
       hls?.destroy()
       hls = null
     }
-  }, [cameraId, epoch])
+  }, [cameraId, epoch, hlsReady])
 
   const msg = MESSAGES[state]
   return (
@@ -331,11 +408,9 @@ export function CameraPlayer({
         className="h-full w-full object-contain"
       />
       {msg && (
-        <div
-          role={msg.role}
-          className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-background/80 px-3 text-center text-sm text-foreground"
-        >
-          {msg.text}
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-background/80 px-3 text-center text-sm text-foreground">
+          {/* 告警 / 状态容器里只有文字:读屏不会把"重试"按钮也当作告警内容读出(L304) */}
+          <div role={msg.role}>{msg.text}</div>
           {/* 停滞提示与"连不上"(含停滞重取撞上转流重启、预算用尽)都给重试:重建 hls 实例 */}
           {(state === 'stalled' || state === 'offline') && (
             <Button

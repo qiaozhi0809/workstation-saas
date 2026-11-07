@@ -249,6 +249,25 @@ CHECKS: tuple[Check, ...] = (
         tables=("notice_recipients",),
         constraints=("notice_recipients_ack_content_ck",),
     ),
+    # 0014 uq_classes_grade_name:同一年级里班名唯一。按行报(每个与同年级其他班重名的班一行),
+    # 与 locate_sql 的行数一致。
+    Check(
+        revision="0014",
+        name="classes 同年级重名",
+        count_sql=(
+            "SELECT count(*) FROM classes c WHERE EXISTS (SELECT 1 FROM classes d"
+            " WHERE d.grade_id = c.grade_id AND d.name = c.name AND d.id <> c.id)"
+        ),
+        locate_sql=(
+            "SELECT c.id, c.name, c.grade_id FROM classes c WHERE EXISTS (SELECT 1 FROM classes d"
+            " WHERE d.grade_id = c.grade_id AND d.name = c.name AND d.id <> c.id)"
+            " ORDER BY c.grade_id, c.name, c.id;"
+        ),
+        advice="把同一年级里重名的班级改名后再升级(组织架构里改班级名,或直接 UPDATE classes)。",
+        problem="{n} 个班级与同年级其他班重名",
+        tables=("classes",),
+        constraints=("uq_classes_grade_name",),
+    ),
 )
 
 # 对已有表加了约束、但不需要预检的:(revision, 约束标识) -> 理由。标识为约束名 / 索引名,
@@ -299,6 +318,11 @@ EXEMPT_CONSTRAINTS: dict[tuple[str, str], str] = {
 #   - user_preferences ADD onboarded jsonb NOT NULL DEFAULT '{}'::jsonb:常量默认值,PG16 不重写表;
 #   - users ADD token_floor_at timestamptz 可空;
 #   - 无 CHECK、无唯一约束、无 ALTER TYPE、无 DO 块。
+# 0014 签收备注:
+#   - CREATE INDEX ix_notice_students_class_id ON notice_students (class_id):普通索引,无约束;
+#   - CREATE UNIQUE INDEX uq_classes_grade_name ON classes (grade_id, name):已登记 CHECKS
+#     "classes 同年级重名"(扫描器自己也认得出);
+#   - 不加列、不改类型、无 ALTER TYPE、无 DO 块。
 REVIEWED_REVISIONS: frozenset[str] = frozenset(
     {
         "0001",
@@ -314,6 +338,7 @@ REVIEWED_REVISIONS: frozenset[str] = frozenset(
         "0011",
         "0012",
         "0013",
+        "0014",
     }
 )
 

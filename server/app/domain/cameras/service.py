@@ -20,6 +20,7 @@ from app.config import Settings
 from app.crypto import CryptoError, decrypt, encrypt
 from app.domain.cameras.lan import mask_url, validate_rtsp_url
 from app.domain.cameras.schemas import CameraInput, CameraOut, CameraTestResult
+from app.domain.classes.sort import class_sort_key
 from app.domain.school_settings.service import get_switches
 from app.errors import ApiError
 from app.models import Grade, SchoolClass
@@ -146,21 +147,26 @@ def _out(db: Session, camera: Camera, state: tuple[str, str | None]) -> CameraOu
 @Redis503()
 def list_cameras(db: Session, redis: Redis, school_id: UUID) -> list[CameraOut]:
     rows = db.execute(
-        select(Camera, SchoolClass.name)
+        select(Camera, SchoolClass.name, Grade.display_order, Grade.name)
         .outerjoin(SchoolClass, SchoolClass.id == Camera.class_id)
         .outerjoin(Grade, Grade.id == SchoolClass.grade_id)
         .where(Camera.school_id == school_id)
-        .order_by(
-            Camera.class_id.is_(None),
-            Grade.display_order,
-            Grade.name,
-            SchoolClass.name,
-            Camera.name,
-            Camera.id,
-        )
     ).all()
+    # 班级摄像头在前(按年级、班名),公共区域在后;班名 / 摄像头名按数值序(L164):教室 2 < 教室 10
+    rows = sorted(
+        rows,
+        key=lambda r: (
+            r[0].class_id is None,
+            r[2] or 0,
+            class_sort_key(r[3] or ""),
+            class_sort_key(r[1] or ""),
+            class_sort_key(r[0].name),
+            str(r[0].id),
+        ),
+    )
     return [
-        camera_out(c, _state(redis, c.id), include_url=True, class_name=name) for c, name in rows
+        camera_out(c, _state(redis, c.id), include_url=True, class_name=name)
+        for c, name, _, _ in rows
     ]
 
 
@@ -171,15 +177,20 @@ def get_camera(db: Session, school_id: UUID, camera_id: UUID) -> Camera:
     return camera
 
 
-def _check_class(db: Session, school_id: UUID, class_id: UUID | None) -> None:
+def _check_class(
+    db: Session, school_id: UUID, class_id: UUID | None, *, lock: bool = False
+) -> None:
+    """班级须是本校的。``lock`` 对班级行 FOR UPDATE(L264):改绑班级时摄像头行的 UPDATE 会对新班级
+    取外键 KEY SHARE,而学年升级 / 回滚是"班级锁 → UPDATE cameras";这里先锁班级再碰摄像头行,
+    与之同序,不再互等。必须在任何对 cameras 行的锁 / UPDATE 之前调用。"""
     if class_id is None:
         return
-    ok = db.scalar(
-        select(func.count())
-        .select_from(SchoolClass)
-        .where(SchoolClass.id == class_id, SchoolClass.school_id == school_id)
+    stmt = select(SchoolClass.id).where(
+        SchoolClass.id == class_id, SchoolClass.school_id == school_id
     )
-    if not ok:
+    if lock:
+        stmt = stmt.with_for_update()
+    if db.scalar(stmt) is None:
         raise ApiError(404, "NOT_FOUND", "班级不存在")
 
 
@@ -250,8 +261,9 @@ def update_camera(
     request: Request | None,
 ) -> CameraOut:
     url = _url(data, settings)
-    camera = get_camera(db, school_id, camera_id)
-    _check_class(db, school_id, data.class_id)
+    camera = get_camera(db, school_id, camera_id)  # 只读,不锁摄像头行
+    # 班级有变化才锁新班级行,且在下面 flush 的 UPDATE cameras 之前(锁序见 _check_class)
+    _check_class(db, school_id, data.class_id, lock=data.class_id != camera.class_id)
     state = _state(redis, camera.id)  # 提交之前读:Redis 故障就 503,不会出现"存了却报错"
     key = settings.master_key_bytes
     changed = (

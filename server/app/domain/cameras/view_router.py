@@ -11,6 +11,7 @@ from app.auth.deps import get_current_user
 from app.db import get_db
 from app.domain.cameras import access
 from app.domain.cameras.schemas import CameraWall, ClassCameras
+from app.domain.cameras.service import Redis503
 from app.domain.classes.service import class_scope_of, get_class_or_404
 from app.errors import ApiError
 from app.models import User
@@ -30,6 +31,7 @@ Rds = Annotated[Redis, Depends(get_redis)]
 
 
 @router.get("/classes/{class_id}/cameras")
+@Redis503()
 def get_class_cameras(
     class_id: UUID, request: Request, user: Auth, bindings: Bind, db: Db, redis: Rds
 ) -> ClassCameras:
@@ -50,6 +52,7 @@ def get_class_cameras(
 
 
 @router.get("/admin/camera-wall")
+@Redis503()
 def get_camera_wall(request: Request, user: Auth, bindings: Bind, db: Db, redis: Rds) -> CameraWall:
     perms = admin_perms(bindings)
     if Perm.CAMERA_VIEW.value not in perms and Perm.CAMERA_MANAGE.value not in perms:

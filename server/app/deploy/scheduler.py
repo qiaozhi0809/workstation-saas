@@ -105,8 +105,8 @@ def run_due(
             last = _NO_SCHOOL_WARNED.get("t")
             if last is None or t - last >= NO_SCHOOL_WARN_EVERY:
                 _NO_SCHOOL_WARNED["t"] = t
-                # 首次安装时先于 init-school 启动属正常,不是告警
-                log.info("scheduler.no_school", school_id=str(sid))
+                # 首次安装时先于 init-school 启动属正常,不是告警;也不值得占 info 级日志(L116)
+                log.debug("scheduler.no_school", school_id=str(sid))
             return []
         now_local = now.astimezone(school_tz(db, sid))
     done: list[str] = []

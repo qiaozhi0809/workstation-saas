@@ -92,6 +92,8 @@ class TodayView(BaseModel):
 class GradeBrief(BaseModel):
     id: UUID
     name: str
+    # 年级的有效学段(L234):管理端显式设置优先,否则按年级名推断(与科目目录 / 设置向导同一函数)
+    effective_stage: Literal["primary", "junior", "senior"] | None = None
 
 
 class BoardMetrics(BaseModel):

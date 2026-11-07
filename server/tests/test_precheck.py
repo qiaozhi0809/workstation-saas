@@ -26,7 +26,7 @@ from app.deploy.precheck import (
 )
 
 VERSIONS = Path(__file__).resolve().parent.parent / "migrations" / "versions"
-ALL_REVISIONS = [f"{i:04d}" for i in range(1, 14)]
+ALL_REVISIONS = [f"{i:04d}" for i in range(1, 15)]
 
 
 @pytest.fixture(scope="module")
@@ -223,6 +223,52 @@ def test_precheck_blocks_required_ack_notice_0010(fresh_engine):
     assert [c.revision for c, _ in report.failures] == ["0010"]
 
 
+def test_0014_duplicate_class_names_reported(fresh_engine):
+    """L263:同一年级里两个同名班会让 0014 的唯一索引 uq_classes_grade_name 建不起来;
+    预检按行报(两条同名班 → count 2、locate 两行),改名后 0。"""
+    upgrade_to(fresh_engine, "0013")
+    with fresh_engine.begin() as conn:
+        school, year, grade = _school_year_grade(conn)
+        for _ in range(2):
+            conn.execute(
+                text(
+                    "INSERT INTO classes (school_id, academic_year_id, grade_id, name)"
+                    " VALUES (:s, :y, :g, '一班')"
+                ),
+                {"s": school, "y": year, "g": grade},
+            )
+        conn.execute(
+            text(
+                "INSERT INTO classes (school_id, academic_year_id, grade_id, name)"
+                " VALUES (:s, :y, :g, '二班')"
+            ),
+            {"s": school, "y": year, "g": grade},
+        )
+    pending = pending_revisions(fresh_engine)
+    assert pending == ["0014"]
+    report = run_precheck(fresh_engine, pending)
+    assert [(c.revision, n) for c, n in report.failures] == [("0014", 2)]
+    check = report.failures[0][0]
+    assert "uq_classes_grade_name" in check.constraints
+    out = render(report, pending)
+    assert "[不通过] 0014 classes 同年级重名:2 个班级与同年级其他班重名" in out
+    with fresh_engine.connect() as conn:
+        rows = conn.execute(text(check.locate_sql)).all()
+        assert len(rows) == 2 and {r.name for r in rows} == {"一班"}
+        assert {str(r.grade_id) for r in rows} == {str(grade)}
+    # 按处理建议改名后预检通过,迁移能升到 head
+    with fresh_engine.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE classes SET name = '三班' WHERE id ="
+                " (SELECT id FROM classes WHERE name = '一班' ORDER BY id LIMIT 1)"
+            )
+        )
+    assert run_precheck(fresh_engine, pending).ok
+    upgrade_to(fresh_engine, "head")
+    assert current_version(fresh_engine) == "0014"
+
+
 def test_checks_for_unpending_revisions_are_skipped(fresh_engine):
     upgrade_to(fresh_engine, "0001")
     with fresh_engine.begin() as conn:
@@ -374,6 +420,7 @@ def test_every_constraint_in_migrations_has_check():
         ("0008", "teacher_assignments_one_homeroom"),
         ("0009", "parent_links_ended_at_ck"),
         ("0010", "notice_recipients_ack_content_ck"),
+        ("0014", "uq_classes_grade_name"),
     ]:
         assert must in scanned, must
     missing = scanned - registered - exempt
@@ -559,6 +606,16 @@ def _dirty_ack_content(b: _Base) -> int:
     return 1
 
 
+def _dirty_class_names(b: _Base) -> int:
+    for _ in range(2):
+        b.klass(name="甲班")  # 两个同名 → 2 行
+    for _ in range(3):
+        b.klass(name="乙班")  # 三个同名 → 3 行
+    b.klass(name="丙班")  # 独一份,不计入
+    b.klass()  # 默认名各不相同,不计入
+    return 5
+
+
 # (revision, name 前缀) -> (要先去掉的约束 / 索引, 造脏数据并返回期望的违规数)
 DIRTY_CASES = {
     ("0002", "classes 座位行列数"): (
@@ -604,6 +661,7 @@ DIRTY_CASES = {
         ["ALTER TABLE notice_recipients DROP CONSTRAINT notice_recipients_ack_content_ck"],
         _dirty_ack_content,
     ),
+    ("0014", "classes 同年级重名"): (["DROP INDEX uq_classes_grade_name"], _dirty_class_names),
 }
 
 

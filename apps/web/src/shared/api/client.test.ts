@@ -459,6 +459,48 @@ it('403 PASSWORD_CHANGE_REQUIRED through authedFetch (downloads) marks the user 
   await expect(res.json()).resolves.toMatchObject({ error: { code: 'PASSWORD_CHANGE_REQUIRED' } })
 })
 
+it('403 handling reads body once after compare', async () => {
+  // L303:403 先比对状态码与本地会话——已标记改密 / 没有会话 / 认证接口——都用不着时不读响应体;
+  // 要比对错误码时只 clone 读一次
+  const clone = vi.spyOn(Response.prototype, 'clone')
+  const base = useAuthStore.getState().user!
+  // 已标记改密:不读体,也不再请求 /auth/me
+  useAuthStore.setState({
+    user: { ...base, must_change_password: true, password_change_reason: 'expired' },
+  })
+  let fetchMock = vi.fn().mockResolvedValueOnce(err('PASSWORD_CHANGE_REQUIRED', 403))
+  vi.stubGlobal('fetch', fetchMock)
+  await expect(api('GET', '/classes')).rejects.toMatchObject({ code: 'PASSWORD_CHANGE_REQUIRED' })
+  expect(clone).not.toHaveBeenCalled()
+  expect(fetchMock).toHaveBeenCalledTimes(1)
+  // 未标记:读一次体比对;不是 PASSWORD_CHANGE_REQUIRED 就到此为止
+  useAuthStore.setState({ user: { ...base, must_change_password: false } })
+  fetchMock = vi.fn().mockResolvedValueOnce(err('FORBIDDEN', 403))
+  vi.stubGlobal('fetch', fetchMock)
+  await expect(api('GET', '/classes')).rejects.toMatchObject({ status: 403, code: 'FORBIDDEN' })
+  expect(clone).toHaveBeenCalledTimes(1)
+  expect(fetchMock).toHaveBeenCalledTimes(1)
+  expect(useAuthStore.getState().user?.must_change_password).toBe(false)
+  // 认证接口自己的 403 不会是 PASSWORD_CHANGE_REQUIRED:不读体
+  clone.mockClear()
+  fetchMock = vi.fn().mockResolvedValueOnce(err('FORBIDDEN', 403))
+  vi.stubGlobal('fetch', fetchMock)
+  await expect(api('POST', '/auth/logout', { refresh_token: 'ref' })).rejects.toMatchObject({
+    status: 403,
+  })
+  expect(clone).not.toHaveBeenCalled()
+  // 没有会话(未登录 / 已登出)时的 403 也不读体、不去标记
+  clone.mockClear()
+  useAuthStore.setState({ accessToken: null, refreshToken: null, user: null })
+  fetchMock = vi.fn().mockResolvedValueOnce(err('PASSWORD_CHANGE_REQUIRED', 403))
+  vi.stubGlobal('fetch', fetchMock)
+  await expect(api('GET', '/classes')).rejects.toMatchObject({ code: 'PASSWORD_CHANGE_REQUIRED' })
+  expect(clone).not.toHaveBeenCalled()
+  expect(fetchMock).toHaveBeenCalledTimes(1)
+  expect(useAuthStore.getState().user).toBeNull()
+  clone.mockRestore()
+})
+
 it('concurrent 403 PASSWORD_CHANGE_REQUIRED responses fetch /auth/me once', async () => {
   let meCalls = 0
   const fetchMock = vi.fn(async (url: string) => {

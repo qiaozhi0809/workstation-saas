@@ -25,7 +25,8 @@ function parse(raw: string | null): Persisted | null | undefined {
 /** 监听其他标签对 ws-auth 的写入,同步登出 / 换号 / 刷新后的 access。返回取消监听函数。 */
 export function startAuthSync(storage: Window = window): () => void {
   const onStorage = (e: StorageEvent) => {
-    if (e.key !== KEY) return
+    // key 为 null 是另一标签 localStorage.clear():ws-auth 也随之没了,按登出处理(L131)
+    if (e.key !== KEY && e.key !== null) return
     if (e.storageArea && e.storageArea !== storage.localStorage) return
     const next = parse(e.newValue)
     if (next === undefined) return
@@ -37,6 +38,9 @@ export function startAuthSync(storage: Window = window): () => void {
       return
     }
     if (cur.user && next.userId && next.userId !== cur.user.id) {
+      // 先把新会话读进内存再整页跳转:从 assign 到真正卸载之间若刷新了 access,persist 写回 ws-auth 的
+      // 就是新用户,不会把旧用户写回去覆盖另一标签的会话(L131)
+      void useAuthStore.persist.rehydrate()
       storage.location.assign('/')
       return
     }

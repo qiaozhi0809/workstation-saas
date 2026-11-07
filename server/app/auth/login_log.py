@@ -13,7 +13,7 @@ from sqlalchemy import cast, func, select
 from sqlalchemy.dialects.postgresql import CIDR
 from sqlalchemy.orm import Session
 
-from app.audit.service import _client_ip
+from app.audit.service import client_ip
 from app.config import Settings
 from app.domain.schools.service import school_tz
 from app.models import LoginLog, User
@@ -80,7 +80,7 @@ def write(
     now: datetime,
 ) -> LoginLog:
     """在自己的 SAVEPOINT 里插入并提交,失败的登录也能留下记录。"""
-    ip = _client_ip(request)
+    ip = client_ip(request)
     if ip is not None:
         ip = str(_normalize(ip))  # 入库前还原 IPv4-mapped,历史与新记录才能按网段比
     ua = request.headers.get("user-agent") if request is not None else None
