@@ -175,6 +175,18 @@ it('re-reads a csv file as GBK when it is not valid UTF-8 (L15)', async () => {
   expect(screen.getByRole('textbox')).toHaveValue('姓名,语文\n王小一,90')
 })
 
+// L253:真 UTF-8 文件自己就含替换字符(比如别的工具导出时损坏的一格):按 GBK 重解只会更糟,不能因此当成 GBK
+it('keeps utf-8 when gbk is not better (L253)', async () => {
+  renderImport()
+  // "姓名,语文,备注\n王小一,90,\uFFFD" 的 UTF-8 字节:按 GBK 解出来是乱码,替换字符数(1)不比 UTF-8 的(1)少
+  pickFile(new TextEncoder().encode('姓名,语文,备注\n王小一,90,\uFFFD'))
+  await waitFor(() =>
+    expect(screen.getByText('识别到 1 行,匹配 1 人;科目:语文')).toBeInTheDocument(),
+  )
+  expect(screen.getByRole('textbox')).toHaveValue('姓名,语文,备注\n王小一,90,\uFFFD')
+  expect(screen.queryByRole('alert')).toBeNull()
+})
+
 it('keeps the UTF-8 reading and explains when the browser cannot decode GBK (L15)', async () => {
   const Real = globalThis.TextDecoder
   vi.stubGlobal(

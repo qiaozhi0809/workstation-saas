@@ -132,18 +132,24 @@ function describeError(e: unknown, p: Plan): string {
   return at ? `${rowPrefix(at)}${d.subject}(${at.name}):${message}` : message
 }
 
+const replacementCount = (s: string) => s.split('\uFFFD').length - 1
+
 /**
- * 先按 UTF-8 解码;出现替换字符说明不是 UTF-8(Excel 另存的 CSV 多半是 GBK),改按 GBK 再解一次。
+ * 先按 UTF-8 解码;出现替换字符说明可能不是 UTF-8(Excel 另存的 CSV 多半是 GBK),改按 GBK 再解一次。
+ * 真 UTF-8 文件自己含替换字符时按 GBK 解出来只会是乱码,所以 GBK 结果的替换字符不比 UTF-8 的少就仍用 UTF-8(L253)。
  * 浏览器不支持 GBK 时保留 UTF-8 的结果并说明原因。
  */
 function decodeCsv(bytes: ArrayBuffer): { text: string; problem: string | null } {
   const utf8 = new TextDecoder('utf-8').decode(bytes)
-  if (!utf8.includes('\uFFFD')) return { text: utf8, problem: null }
+  const bad = replacementCount(utf8)
+  if (bad === 0) return { text: utf8, problem: null }
+  let gbk: string
   try {
-    return { text: new TextDecoder('gbk').decode(bytes), problem: null }
+    gbk = new TextDecoder('gbk').decode(bytes)
   } catch {
     return { text: utf8, problem: GBK_UNSUPPORTED }
   }
+  return replacementCount(gbk) < bad ? { text: gbk, problem: null } : { text: utf8, problem: null }
 }
 
 export default function HeaderImport({
