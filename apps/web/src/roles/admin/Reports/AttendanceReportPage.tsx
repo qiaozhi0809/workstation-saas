@@ -49,7 +49,7 @@ function AttendanceReport({ tz }: { tz: string }) {
 
   // 年级选项读只读年级接口(school.view 即可,按可见年级裁剪),不再连整个看板一起拉(L272)
   const gradesQ = useQuery({
-    queryKey: ['school', 'grades'],
+    queryKey: ['admin', 'grades', 'school'], // 挂在 ['admin','grades'] 下,改年级 / 升级的失效一并覆盖
     queryFn: adminApi.schoolGrades,
   })
   const q = useQuery({

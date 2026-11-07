@@ -235,7 +235,7 @@ export default function AuditFilters({
         >
           <option value="">全部对象</option>
           {/* 对象类型与中文名由后端给(L271):新增审计对象类型不用再改前端 */}
-          {actions?.object_types.map((t) => (
+          {actions?.object_types?.map((t) => (
             <option key={t.key} value={t.key}>
               {t.label}
             </option>

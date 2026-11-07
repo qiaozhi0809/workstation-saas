@@ -102,7 +102,7 @@ export default function GradeExamsPage() {
   // 年级列表读只读的 GET /school/grades(school.view 即可,按调用者可见年级裁剪;L272);
   // /admin/grades 需要 org.manage,年级组长会 403
   const grades = useQuery({
-    queryKey: ['school', 'grades'],
+    queryKey: ['admin', 'grades', 'school'], // 挂在 ['admin','grades'] 下,改年级 / 升级的失效一并覆盖
     queryFn: adminApi.schoolGrades,
   })
   // 新建联考的默认日期按学校时区算"今天"(L41 / L43)
