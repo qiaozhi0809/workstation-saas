@@ -329,10 +329,13 @@ cidr_contains() {
   [ "${ra%% *}" -le "${rb%% *}" ] && [ "${rb##* }" -le "${ra##* }" ]
 }
 
-# host_routes:本机 IPv4 路由表里的目标网段(每行一个;default 等关键字跳过)。没有 ip 命令(非 Linux)时无输出
+# host_routes:本机 IPv4 路由里的目标网段(每行一个,去重)。看全部路由表(L314:多网卡 + 策略路由的校园网,
+# 主表之外的表里也有网段);`table all` 的输出里 local / broadcast / default 等以关键字开头的行跳过。
+# 没有 ip 命令(非 Linux)时无输出;ip 太老不认 table all 时退回主表
 host_routes() {
   command -v ip >/dev/null 2>&1 || return 0
-  ip -4 route show 2>/dev/null | awk '$1 ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(\/[0-9]+)?$/ { print $1 }' | sort -u
+  { ip -4 route show table all 2>/dev/null || ip -4 route show 2>/dev/null; } \
+    | awk '$1 ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(\/[0-9]+)?$/ { print $1 }' | sort -u
   return 0
 }
 
@@ -486,17 +489,22 @@ render_systemd_unit() {
 
 # backup_timezone:定时备份用的时区 = .env 的 TZ(容器也用它),不合法或为空时 Asia/Shanghai。
 # 形状合法还不够:systemd 的 OnCalendar 只认 tzdata 里有的名字,写错(如 Asia/Shangai)定时器会整个加载失败;
-# 本机有 tzdata 时顺带核对,没有该文件就退回默认值并告警。
+# 本机有 tzdata 时顺带核对,没有该文件就退回默认值。只算不说:本函数常在 $(...) 里被调用好几次,告警放这里会重复打印
+#(L312),由 warn_bad_backup_timezone 在写定时器之前打一次。
 backup_timezone() {
   local tz
   tz="$(read_env TZ)"
   if ! str_grep "$tz" -Eq '^[A-Za-z][A-Za-z0-9_+/-]*$'; then printf 'Asia/Shanghai\n'; return 0; fi
-  if [ -d /usr/share/zoneinfo ] && [ ! -f "/usr/share/zoneinfo/$tz" ]; then
-    log_warn ".env 里的 TZ=$tz 在本机 tzdata(/usr/share/zoneinfo)里不存在,定时备份按 Asia/Shanghai 计;请核对 TZ 的拼写"
-    printf 'Asia/Shanghai\n'
-    return 0
-  fi
+  if [ -d /usr/share/zoneinfo ] && [ ! -f "/usr/share/zoneinfo/$tz" ]; then printf 'Asia/Shanghai\n'; return 0; fi
   printf '%s\n' "$tz"
+}
+# warn_bad_backup_timezone:.env 里写了 TZ 但不是合法时区名、或本机 tzdata 里没有它时告警一次(直接调用,不要放进 $(...))
+warn_bad_backup_timezone() {
+  local tz
+  tz="$(read_env TZ)"
+  [ -n "$tz" ] && [ "$(backup_timezone)" != "$tz" ] || return 0
+  log_warn ".env 里的 TZ=$tz 不是合法的时区名,或在本机 tzdata(/usr/share/zoneinfo)里不存在,定时备份按 Asia/Shanghai 计;请核对 TZ 的拼写"
+  return 0
 }
 
 # ---- systemd 定时备份单元(install.sh 首装写入,upgrade.sh 成功后重写,L184 / I-1)----
@@ -504,16 +512,19 @@ SYSTEMD_UNIT_DIR="/etc/systemd/system"
 # systemd_available:本机由 systemd 管理且有 systemctl
 systemd_available() { command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; }
 # backup_timer_installed_here:系统里已有 workstation-backup 定时器单元,且它指向的就是本部署目录
-#(同一台机器上另一个部署的单元不算;非 root 安装从来不写单元,所以普通用户执行时通常为假)
+#(同一台机器上另一个部署的单元不算;非 root 安装从来不写单元,所以普通用户执行时通常为假)。
+# 只看 ExecStart= 行(L312):Description、注释里提到本目录不算;路径按子串比对,不经正则(目录名里可能有 . 等字符)
 backup_timer_installed_here() {
   local svc="$SYSTEMD_UNIT_DIR/workstation-backup.service"
   [ -f "$svc" ] && [ -f "$SYSTEMD_UNIT_DIR/workstation-backup.timer" ] || return 1
-  grep -qF -- "$DEPLOY_DIR/scripts/backup.sh" "$svc" 2>/dev/null
+  awk -v p="$DEPLOY_DIR/scripts/backup.sh" 'index($0, "ExecStart=") == 1 && index($0, p) > 0 { found = 1 } END { exit found ? 0 : 1 }' "$svc" 2>/dev/null
 }
-# write_backup_timer_units:把 systemd/ 下两份模板按本部署目录与 .env 的 TZ 渲染后写入系统目录,daemon-reload 并启用。
+# write_backup_timer_units [--no-enable]:把 systemd/ 下两份模板按本部署目录与 .env 的 TZ 渲染后写入系统目录,daemon-reload
+# 并启用(enable --now);带 --no-enable 时只写入与 daemon-reload,启用状态保持原样(L311)。
 # 任何一步失败返回非 0(调用者决定降级还是只告警)。需要 root。
 write_backup_timer_units() {
-  local unit tz
+  local unit tz enable=1
+  [ "${1:-}" = "--no-enable" ] && enable=0
   tz="$(backup_timezone)"
   for unit in workstation-backup.service workstation-backup.timer; do
     [ -f "$DEPLOY_DIR/systemd/$unit" ] || { log_warn "没有找到 systemd 单元文件 systemd/$unit"; return 1; }
@@ -522,17 +533,38 @@ write_backup_timer_units() {
     render_systemd_unit "$DEPLOY_DIR/systemd/$unit" "$DEPLOY_DIR" "$tz" >"$SYSTEMD_UNIT_DIR/$unit" || return 1
   done
   systemctl daemon-reload || return 1
-  systemctl enable --now workstation-backup.timer || return 1
+  if [ "$enable" -eq 1 ]; then systemctl enable --now workstation-backup.timer || return 1; fi
+}
+# backup_timer_state:workstation-backup.timer 的 systemctl is-enabled 结果(enabled / disabled / masked …;查不到时 unknown)
+backup_timer_state() {
+  local s
+  s="$(systemctl is-enabled workstation-backup.timer 2>/dev/null || true)"
+  printf '%s\n' "${s:-unknown}"
 }
 # refresh_backup_timer_if_installed:升级成功后调用。root + systemd + 本部署的单元已存在 → 用新模板与当前 TZ 重写
 #(1.0.0 之前写入的单元没有时区,02:30 按服务器的 UTC 计;单元模板本身也可能随版本变)。其他情况什么都不做。
+# L311:管理员刻意 systemctl disable 掉的定时器不能被升级悄悄重新启用——只重写单元文件、保持停用并提示。
 refresh_backup_timer_if_installed() {
+  local state
   [ "$(id -u)" -eq 0 ] && systemd_available && backup_timer_installed_here || return 0
-  if write_backup_timer_units; then
-    log_info "已按新版本的模板与 .env 的 TZ($(backup_timezone))重写 systemd 定时备份单元 workstation-backup.timer"
-  else
-    log_warn "systemd 定时备份单元重写失败(上面是原因)。请稍后执行 sudo ./scripts/install.sh 重新写入,否则定时器仍按旧单元运行"
-  fi
+  warn_bad_backup_timezone
+  state="$(backup_timer_state)"
+  case "$state" in
+    enabled|enabled-runtime)
+      if write_backup_timer_units; then
+        log_info "已按新版本的模板与 .env 的 TZ($(backup_timezone))重写 systemd 定时备份单元 workstation-backup.timer"
+      else
+        log_warn "systemd 定时备份单元重写失败(上面是原因)。请稍后执行 sudo ./scripts/install.sh 重新写入,否则定时器仍按旧单元运行"
+      fi
+      ;;
+    *)
+      if write_backup_timer_units --no-enable; then
+        log_warn "systemd 定时备份单元 workstation-backup.timer 当前是 $state(曾被手动停用),已按新版本的模板与 .env 的 TZ($(backup_timezone))重写单元文件但保持停用;需要恢复每日自动备份时执行 sudo systemctl enable --now workstation-backup.timer"
+      else
+        log_warn "systemd 定时备份单元重写失败(上面是原因);定时器当前是 $state。需要时执行 sudo ./scripts/install.sh 重新写入并启用"
+      fi
+      ;;
+  esac
   return 0
 }
 
@@ -583,16 +615,17 @@ require_compose_version() {
 # 为什么要两次 up:第一次 up 时 scheduler 依赖 app 健康,app 启动期迁移较久时 compose 可能先报错返回,
 # 此时只告警;等 app 健康后再 up 一次(这次失败直接 die),才能保证 scheduler 真的被创建并运行。
 # 之后断言:scheduler、stream-worker 在运行、web 健康,否则不能报"完成"。
+# --remove-orphans(L310):新版本去掉了某个服务时,它的旧容器不能留在项目里继续跑。
 start_and_verify() {
   local limit="$1" out
-  if ! out="$(compose up -d --pull never 2>&1)"; then
+  if ! out="$(compose up -d --pull never --remove-orphans 2>&1)"; then
     log_warn "docker compose up 返回非 0(app 启动期间可能暂时如此,稍后会再启动一次),最后几行输出:"
     printf '%s\n' "$out" | tail -n 8 | redact >&2
   fi
   if ! wait_healthy app "$limit"; then
     die "应用服务(app)在 ${limit} 秒内没有就绪。请运行 docker compose -p ${WS_COMPOSE_PROJECT:-workstation} --project-directory '$DEPLOY_DIR' logs app 查看原因"
   fi
-  if ! out="$(compose up -d --pull never 2>&1)"; then
+  if ! out="$(compose up -d --pull never --remove-orphans 2>&1)"; then
     printf '%s\n' "$out" | tail -n 8 | redact >&2
     die "应用已就绪,但启动其余服务(scheduler、stream-worker、web)失败。请运行 docker compose -p ${WS_COMPOSE_PROJECT:-workstation} --project-directory '$DEPLOY_DIR' ps -a 与 logs 查看原因"
   fi

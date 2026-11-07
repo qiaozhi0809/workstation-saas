@@ -419,6 +419,8 @@ assert_no_residue() {
 #   dbbyte      解开后改 db.dump 的一个字节,manifest 不动(校验和对不上)
 #   dbcorrupt   db.dump 换成损坏内容(不是 pg_dump 格式),manifest 的 sha 同步重算(校验阶段全过,pg_restore 才失败)
 #   dbtrunc     db.dump 只留前 1024 字节(被截断的 dump),manifest 的 sha 同步重算(校验和自洽,pg_restore -l 读不出目录)
+#   dbdata      db.dump 的头部与目录(TOC)原样,文件中段翻 64 字节(数据块坏),manifest 的 sha 同步重算
+#               (校验和自洽、pg_restore -l 读得出目录,建了临时库之后真正 pg_restore 才失败,L313)
 #   nocaddy     去掉 caddy.tar 条目,manifest 不动(manifest 说 included,包里却没有:清单与内容不一致)
 #   caddygarbage caddy.tar 换成垃圾字节,manifest 的 sha 同步重算(校验和自洽,caddy.tar 不是归档)
 #   version9    只把 manifest 的 version 改成 9.0.0(校验和仍自洽)
@@ -460,6 +462,11 @@ for mm in members:
         mm[1] = b"NOTADUMP" + data[8:]
     if kind == "dbtrunc" and m.name == "db.dump":
         mm[1] = data[:1024]
+    if kind == "dbdata" and m.name == "db.dump":
+        d = bytearray(data); mid = len(d) // 2
+        for i in range(mid, min(mid + 64, len(d))):
+            d[i] ^= 0xFF
+        mm[1] = bytes(d)
     if kind == "caddygarbage" and m.name == "caddy.tar":
         mm[1] = b"this is not a tar archive\n" * 200
 def make_caddy(kind):
@@ -484,7 +491,7 @@ for mm in members:
     if m.name != "manifest.json":
         continue
     t = data.decode()
-    if kind in ("dbcorrupt", "dbtrunc", "caddygarbage", "caddypadlink", "caddypadtrav"):
+    if kind in ("dbcorrupt", "dbtrunc", "dbdata", "caddygarbage", "caddypadlink", "caddypadtrav"):
         for n in ("db.dump", "caddy.tar"):
             t = re.sub(r'("%s": ")[0-9a-f]+(")' % re.escape(n), lambda mo: mo.group(1) + shas[n] + mo.group(2), t)
     elif kind == "version9":

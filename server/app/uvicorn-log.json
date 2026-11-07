@@ -1,0 +1,16 @@
+{
+  "_comment": "uvicorn --log-config(镜像入口 entrypoint.sh 的 app 角色传入,L315):--workers 的父进程不加载应用,它的启动 / 停止日志也按 app.logging.JsonLineFormatter 写成 JSON 行到 stdout;worker 里 create_app() → configure_logging() 会再把 uvicorn.* 接进 app.jsonl 链,这里只管父进程与加载应用之前。",
+  "version": 1,
+  "disable_existing_loggers": false,
+  "formatters": {
+    "json": {"()": "app.logging.JsonLineFormatter"}
+  },
+  "handlers": {
+    "stdout": {"class": "logging.StreamHandler", "formatter": "json", "stream": "ext://sys.stdout"}
+  },
+  "loggers": {
+    "uvicorn": {"handlers": ["stdout"], "level": "INFO", "propagate": false},
+    "uvicorn.error": {"level": "INFO"},
+    "uvicorn.access": {"handlers": ["stdout"], "level": "INFO", "propagate": false}
+  }
+}

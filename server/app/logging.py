@@ -130,6 +130,32 @@ def _mask_stdlib_event(_logger: object, _name: str, event_dict: dict) -> dict:
     return event_dict
 
 
+class JsonLineFormatter(structlog.stdlib.ProcessorFormatter):
+    """stdlib 记录 → 一行 JSON(logger 名、级别、UTC 时间戳、event;URL 打码),与 structlog 的行同形。
+
+    两处使用:configure_logging 把 root / uvicorn.* 接进 JSON 链时的 handler formatter;
+    uvicorn --log-config(server/app/uvicorn-log.json,镜像入口传入)在 dictConfig 里以 "()" 引用它——
+    --workers 的父进程不加载应用、不经 configure_logging,它的几行启动 / 停止日志此前是 uvicorn
+    默认格式(L315)。worker 里 create_app() → configure_logging() 随后把 uvicorn.* 重新接进
+    app.jsonl 链,这份配置只管父进程与加载应用之前。
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            processors=[
+                structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+                structlog.processors.JSONRenderer(),
+            ],
+            foreign_pre_chain=[
+                structlog.stdlib.add_logger_name,
+                structlog.stdlib.add_log_level,
+                structlog.processors.TimeStamper(fmt="iso", utc=True),
+                structlog.processors.format_exc_info,
+                _mask_stdlib_event,
+            ],
+        )
+
+
 def _attach_stdlib(tee: _Tee, log_level: int) -> None:
     """把 stdlib 的 root 与 uvicorn.* logger 接进同一条 JSON 链(L111)。
 
@@ -137,21 +163,8 @@ def _attach_stdlib(tee: _Tee, log_level: int) -> None:
     只替换本模块上次装的 handler,不碰别人的(如 pytest 的)。
     app.logfile 这个 logger 不向 root 传播,文件 handler 不会把自己的输出再喂回来。
     """
-    formatter = structlog.stdlib.ProcessorFormatter(
-        processors=[
-            structlog.stdlib.ProcessorFormatter.remove_processors_meta,
-            structlog.processors.JSONRenderer(),
-        ],
-        foreign_pre_chain=[
-            structlog.stdlib.add_logger_name,
-            structlog.stdlib.add_log_level,
-            structlog.processors.TimeStamper(fmt="iso", utc=True),
-            structlog.processors.format_exc_info,
-            _mask_stdlib_event,
-        ],
-    )
     handler = logging.StreamHandler(tee)
-    handler.setFormatter(formatter)
+    handler.setFormatter(JsonLineFormatter())
     setattr(handler, _STDLIB_HANDLER_MARK, True)
     root = logging.getLogger()
     for h in list(root.handlers):

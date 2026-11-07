@@ -172,7 +172,7 @@ WS_INSTALL_TLS=1 \
 
 系统只在请求来自 `WS_TRUSTED_PROXIES`(`.env` 里,逗号分隔的 IP 或网段)时才采信 `X-Forwarded-For` 里的来源地址,用于登录日志与限流等。
 
-- 它的值**必须包含 compose 内网的子网 `WS_SUBNET`**(`.env` 里相邻的一行)。`install.sh` 把两者写成同一个值:安装时依次检查 `172.30.0.0/24`、`172.31.0.0/24`、`10.250.0.0/24` 是否与本机路由(校园网、摄像头 VLAN、其他 Docker 网络)重叠,选第一个不重叠的;三个都重叠时停下,让你用环境变量 `WS_SUBNET=<网段>/24` 指定后重装。学校常把 172.16–31 用作校园网,所以**安装前先看一眼 `ip route`**,或直接指定一个不会用到的网段。
+- 它的值**必须包含 compose 内网的子网 `WS_SUBNET`**(`.env` 里相邻的一行)。`install.sh` 把两者写成同一个值:安装时依次检查 `172.30.0.0/24`、`172.31.0.0/24`、`10.250.0.0/24` 是否与本机路由(校园网、摄像头 VLAN、其他 Docker 网络;看的是全部路由表 `ip route show table all`,多网卡、策略路由的网段也算)重叠,选第一个不重叠的;三个都重叠时停下,让你用环境变量 `WS_SUBNET=<网段>/24` 指定后重装。学校常把 172.16–31 用作校园网,所以**安装前先看一眼 `ip route`**,或直接指定一个不会用到的网段。
 - 学校网络里**在本系统前面还有自己的代理**(如统一的 Nginx、负载均衡)时,把它的地址追加进去,例如 `WS_TRUSTED_PROXIES=172.30.0.0/24,10.0.0.5`,然后 `docker compose up -d` 使配置生效。不要删掉 `WS_SUBNET` 那一项。
 - 装好之后要换子网:先 `docker compose down`(数据不受影响),再把 `.env` 里的 `WS_SUBNET` 与 `WS_TRUSTED_PROXIES` 改成新网段,然后重新运行 `./scripts/install.sh`。`install.sh` 会核对 `WS_TRUSTED_PROXIES` 包含 `WS_SUBNET`、以及已存在的网络子网与 `WS_SUBNET` 一致,不一致就拒绝启动并说明原因(L186 / L207)。
 - 注意:**Docker 默认桥接网段 172.16.0.0/12 不在默认值内**。如果你自己改了 compose 的网络(用默认网络等),必须同步修改 `WS_TRUSTED_PROXIES`,否则 Caddy 到应用之间的来源地址不会被采信(L59)。
@@ -211,13 +211,13 @@ WS_INSTALL_TLS=1 \
 ./scripts/backup.sh --keep 30    # 保留最新 30 份
 ```
 
-成功后还会更新 `data/logs/backup-last.json`,管理端设置页的"上次备份"读的就是它。备份、恢复、升级互斥(`backups/.lock`),同一时刻只能有一个在跑。
+成功后还会更新 `data/logs/backup-last.json`(时间、文件名、大小;1.0.0 起还有 `"caddy": "included"` 或 `"skipped"`,记这份备份有没有带上 Caddy 数据,供管理端提示"上次备份未包含网关数据"),管理端设置页的"上次备份"读的就是它。备份、恢复、升级互斥(`backups/.lock`),同一时刻只能有一个在跑。
 
 备份开始前检查磁盘:备份目录所在盘的可用空间要不少于**上次备份大小的 2 倍、且至少 1 GB**,否则直接拒绝(不会写到一半把盘撑满)。数据库容器还没就绪时(比如开机后定时器补跑)最多等 120 秒再开始,不会直接失败。
 
 ### 每日自动备份
 
-- **root 安装**且系统有 systemd:`install.sh` 自动写入 `/etc/systemd/system/workstation-backup.service` 与 `.timer` 并启用,每天 **02:30(按 `.env` 里 `TZ` 的时区,默认 Asia/Shanghai)** 备份——服务器系统时区常是 UTC,定时器里写明时区才不会变成上午上课时备份;关机错过的那次开机后补跑(`Persistent=true`)。查看:`systemctl list-timers workstation-backup.timer`(`NEXT` 一列应是凌晨 02:30 本地时间);手动触发:`sudo systemctl start workstation-backup.service`;日志:`journalctl -u workstation-backup.service`。单元文件是安装时按当时的 `TZ` 渲染写入的;1.0.0 的 `upgrade.sh` 升级成功后会按新模板与 `.env` 里当前的 `TZ` 自动重写它(屏幕上有"已……重写 systemd 定时备份单元"一行;0.7.2 写入的单元没有时区,按第 9 节的做法用 1.0.0 的脚本升级时同样会被重写);平时改了 `.env` 的 `TZ`,重跑一次 `sudo ./scripts/install.sh` 即可重写。
+- **root 安装**且系统有 systemd:`install.sh` 自动写入 `/etc/systemd/system/workstation-backup.service` 与 `.timer` 并启用,每天 **02:30(按 `.env` 里 `TZ` 的时区,默认 Asia/Shanghai)** 备份——服务器系统时区常是 UTC,定时器里写明时区才不会变成上午上课时备份;关机错过的那次开机后补跑(`Persistent=true`)。查看:`systemctl list-timers workstation-backup.timer`(`NEXT` 一列应是凌晨 02:30 本地时间);手动触发:`sudo systemctl start workstation-backup.service`;日志:`journalctl -u workstation-backup.service`。单元文件是安装时按当时的 `TZ` 渲染写入的;1.0.0 的 `upgrade.sh` 升级成功后会按新模板与 `.env` 里当前的 `TZ` 自动重写它(屏幕上有"已……重写 systemd 定时备份单元"一行;0.7.2 写入的单元没有时区,按第 9 节的做法用 1.0.0 的脚本升级时同样会被重写);平时改了 `.env` 的 `TZ`,重跑一次 `sudo ./scripts/install.sh` 即可重写。曾用 `sudo systemctl disable workstation-backup.timer` 手动停用定时备份的,升级只重写单元文件、**不会重新启用**,屏幕上会提示"保持停用"与重新启用的命令(`sudo systemctl enable --now workstation-backup.timer`);重跑 `install.sh` 则会重新启用。
 - **非 root 安装**:`install.sh` 会打印 crontab 行,用 `crontab -e` 添加(路径换成你的部署目录)。日志交给 `logger`,由系统的 syslog / journal 轮转,不会无限增长;`CRON_TZ` 让 02:30 按学校时区计(服务器系统时区就是 Asia/Shanghai 时可省略):
 
   ```
@@ -296,7 +296,7 @@ tar -xOzf backups/ws-backup-<时间>-v<版本>.tar.gz env > .env && chmod 600 .e
 ./scripts/upgrade.sh /path/to/workstation-deploy-<新版本>.tar.gz
 ```
 
-脚本依次:校验离线包(有 `.sha256` 时核对,命名见第 2 节)→ **强制备份**(失败就停)→ 载入新镜像 → 用新镜像对现有数据库做**迁移预检** → **保存升级前快照**(见下)→ 覆盖程序文件(不动 `.env`、`certs/`、`data/`、`backups/`)→ 重启并确认 app 健康、scheduler 在运行、web 健康(缺一都按失败处理,并打印回退办法)。新版本 `.env.example` 里新增的配置项会按默认值追加进 `.env` 并提示,请核对。`./scripts/upgrade.sh --help` 可看用法。
+脚本依次:校验离线包(有 `.sha256` 时核对,命名见第 2 节)→ **强制备份**(失败就停)→ 载入新镜像 → 用新镜像对现有数据库做**迁移预检** → **保存升级前快照**(见下)→ 覆盖程序文件(不动 `.env`、`certs/`、`data/`、`backups/`)→ 重启并确认 app 健康、scheduler 在运行、web 健康(缺一都按失败处理,并打印回退办法;新版本不再有的服务,其旧容器会在重启时一并清掉)。新版本 `.env.example` 里新增的配置项会按默认值追加进 `.env` 并提示,请核对。`./scripts/upgrade.sh --help` 可看用法。
 
 生效的 `Caddyfile`(反向代理配置)怎么处理:新版本模板有变化时,**没有手工改过**的 `Caddyfile`(与升级前的模板一致)会被替换成新模板,屏幕上提示"Caddyfile 已更新",升级前那份在快照里;**手工改过**的不替换,新模板只保存为 `Caddyfile.internal / .custom / .acme`,屏幕上提示请你把改动合并进去再 `docker compose restart web`(不合并,系统仍按你改过的配置运行,只是用不上新模板里的调整)。
 
@@ -313,7 +313,7 @@ tar -xOzf backups/ws-backup-<时间>-v<版本>.tar.gz env > .env && chmod 600 .e
 
 不支持用离线包直接降级(数据库可能已迁移到更新的结构)。覆盖文件之后升级失败,脚本会打印回退办法,照着做:
 
-1. `./scripts/rollback.sh backups/pre-upgrade-<旧版本>-<时间>`(不带参数时用状态文件里记录的快照):先列出将要做的事,**输入 `yes` 确认**后(脚本里、定时任务里用 `--yes` 跳过)才动手——把快照里的程序文件复制回部署目录、把 `.env` 的 `WS_VERSION` 改回旧版本号(旧版本的镜像升级时没有删),然后比对数据库的迁移版本与旧版镜像:
+1. `./scripts/rollback.sh backups/pre-upgrade-<旧版本>-<时间>`(不带参数时用状态文件里记录的快照):先列出将要做的事,**输入 `yes` 确认**后(脚本里、定时任务里用 `--yes` 跳过)才动手——把快照里的程序文件复制回部署目录、把 `.env` 的 `WS_VERSION` 改回旧版本号(旧版本的 `workstation-app / -web / -stream` 三个镜像升级时没有删;缺了任何一个,脚本在动手之前就拒绝并点名,从旧版离线包 `docker load` 后重试),然后比对数据库的迁移版本与旧版镜像:
    - **数据库没被新版本改动**(多数失败是新版本起不来)→ 直接用旧版镜像重启全部服务、确认健康,回退完成(退出码 0)。
    - **数据库已被新版本迁移** → 停掉应用容器(数据库容器继续跑),屏幕上给出两条出路(退出码 3),见第 2 步。
 2. 只有上一步提示了才需要,二选一:
@@ -375,7 +375,7 @@ tar -xzf <新包>/workstation-deploy-1.0.0.tar.gz -C . --strip-components=1 work
 
 两种都已对密钥、数据库密码、令牌、手机号打码,但打码只覆盖**已知模式**。**发给外部之前,请自己打开看一遍**:应用日志里的异常堆栈、上游服务的错误响应体仍可能含业务数据。
 
-1.0.0 起 `data/logs/app.jsonl` 里也包含 web 服务器(uvicorn)的访问日志与各第三方库的日志(每行一条 JSON,`logger` 字段标明来源),不再只有应用自己的事件;播放片段地址里的 `u=`、`sig=`、`token=` 参数在写入时就已打码(L111 / L158)。`docker compose logs app` 看到的是同样的内容。
+1.0.0 起 `data/logs/app.jsonl` 里也包含 web 服务器(uvicorn)的访问日志与各第三方库的日志(每行一条 JSON,`logger` 字段标明来源),不再只有应用自己的事件;播放片段地址里的 `u=`、`sig=`、`token=` 参数在写入时就已打码(L111 / L158)。`docker compose logs app` 看到的是同样的内容,外加两类不进 `app.jsonl` 的行:启动时迁移预检的纯文本报告,以及 uvicorn 管理进程(多 worker 的父进程,不加载应用)的几行启动 / 停止日志——1.0.0 起后者也是同形的 JSON 行(`logger` 为 `uvicorn.error`),整段容器日志可以按 JSON 行过滤。
 
 ## 11. 账号安全运维(两步验证、登录日志、密码策略)
 
@@ -419,7 +419,7 @@ tar -xzf <新包>/workstation-deploy-1.0.0.tar.gz -C . --strip-components=1 work
 - 参考数字(持续集成的 2 vCPU 机器,3 路不转码 + 1 路 720p 转码,跑 30 秒):4 个 ffmpeg 进程合计 CPU 19%(100% = 占满一个核)、常驻内存峰值合计 284 MB,最慢的一路 3.0 秒出首个片段。
 - 真机数字还没有测:4 核 8 GB 上不转码 10 路、转码 2 路 / 4 路的 CPU 与内存、首帧与画面延迟,请学校验收时在真实服务器上量一遍(`docker stats` 看 `stream-worker` 容器的用量)。
 
-### `.env` 里的四个配置项
+### `.env` 里的五个配置项
 
 | 键 | 默认 | 作用 |
 |---|---|---|
@@ -427,9 +427,10 @@ tar -xzf <新包>/workstation-deploy-1.0.0.tar.gz -C . --strip-components=1 work
 | `WS_STREAM_CPUS` | `2` | `stream-worker` 容器的 CPU 上限(核数)。超限只会让这个容器变慢、画面卡顿,不会拖垮 app 与数据库;转码路数多时调大 |
 | `WS_STREAM_MEMORY` | `2g` | `stream-worker` 容器的内存上限 |
 | `WS_HLS_SIZE` | `1g` | 直播片段内存盘(tmpfs 卷 `ws-hls`)的上限,只按实际用量占内存;10 路主码流约 1 GB |
+| `WS_CAMERA_NETS` | `10.0.0.0/8,172.16.0.0/12,192.168.0.0/16` | 1.0.0 起:转流容器允许连出去的网段(逗号分隔),见下文"转流容器的出站限制" |
 
-- 四个键都在 `.env.example` 末尾;从 0.7.1 升级上来时 `upgrade.sh` 会按默认值补进 `.env`。内存盘与容器上限占的都是服务器内存,做预算时要一起算。
-- 改前三个键后执行 `docker compose up -d`:`.env` 变了会重建 `app`、`scheduler`、`stream-worker` 三个服务,所有人中断约半分钟,请在课后做。
+- 五个键都在 `.env.example` 末尾;从旧版本升级上来时 `upgrade.sh` 会按默认值补进 `.env`。内存盘与容器上限占的都是服务器内存,做预算时要一起算。
+- 改 `WS_STREAM_MAX`、`WS_STREAM_CPUS`、`WS_STREAM_MEMORY`、`WS_CAMERA_NETS` 后执行 `docker compose up -d`:`.env` 变了会重建 `app`、`scheduler`、`stream-worker` 三个服务,所有人中断约半分钟,请在课后做。
 - 改 `WS_HLS_SIZE` 要重建内存盘,全部服务会停几十秒,请在课后做:
 
   ```bash
@@ -455,6 +456,22 @@ tar -xzf <新包>/workstation-deploy-1.0.0.tar.gz -C . --strip-components=1 work
 - 校外客户端不能"看起来像内网":**不要把本系统的端口映射到公网**。路由器端口转发带 SNAT 会把校外客户端的来源改写成内网地址,"只接受内网来源"就失效了(Docker 自己的 userland proxy 改写出的源址 `172.30.0.1` 落在可信网段,会被当成代理自己而拒绝,不会放行,但同样不该依赖它)。学校前面另有自己的代理(第 5 节)时,只把代理的具体地址加进 `WS_TRUSTED_PROXIES`,不要写覆盖所有客户端的宽网段。
 - 副作用(知悉即可):不经 web 容器、直连后端端口的内网客户端若带了任何 `X-Forwarded-For`(公司代理、浏览器插件)也会被拒;compose 部署的后端不对外暴露端口,正常使用不受影响。
 
+### 转流容器的出站限制(1.0.0 起)
+
+摄像头的 RTSP 服务可以用 3xx 重定向把拉流指到别的地址,ffmpeg 会跟着跳,而登记时的地址校验管不了跳转。1.0.0 起 `stream-worker` 容器启动时自己写一套出站防火墙规则(容器内 iptables,不碰服务器的防火墙),把它能连出去的地方限定为:
+
+- `.env` 里 `WS_CAMERA_NETS` 列出的网段(默认三段私网 `10.0.0.0/8,172.16.0.0/12,192.168.0.0/16`,摄像头都应在这里面);
+- compose 子网(`WS_SUBNET`)里**只有**数据库(5432)与 Redis(6379)两个端口,子网里其他服务(app、web)一律拒绝;
+- 本机回环与 DNS。其余地址(公网、其他网段)一律拒绝,被重定向到这些地方的拉流会立刻失败。
+
+要点:
+
+- 摄像头在三段私网以外的网段(例如链路本地的 `169.254.0.0/16`,它在"地址必须在校园内网网段"的名单里,但不在默认放行名单里)时,把该网段追加进 `WS_CAMERA_NETS`(逗号分隔),然后 `docker compose up -d`。
+- 写规则需要容器带 `NET_ADMIN` 能力(`docker-compose.yml` 里 `stream-worker` 的 `cap_add`,升级时随新 compose 文件带上)。没有这个能力时容器**不会静默放行**,而是报错退出并反复重启:`docker compose logs stream-worker` 里有一行"写出站规则需要容器带 NET_ADMIN 能力"。请核对 compose 文件是否被手工改过。
+- 容器以 root 写完规则后立刻降权,转流进程本身仍以 uid 10001 运行,与 1.0 相同。
+- `WS_CAMERA_NETS=any` 关闭限制,此时不需要 `NET_ADMIN`。只用于开发机 / 持续集成——那里的假摄像头跑在本机回环或 compose 子网里,默认规则会把它挡住。正式环境不要设 `any`。持续集成现有的 e2e 作业不在容器里跑转流进程,不受此限制;部署冒烟(`compose_smoke.sh`)会分别验证默认规则生效、`any` 关闭规则、没有 `NET_ADMIN` 时明确报错。
+- 想现场确认:`docker compose exec stream-worker iptables -S OUTPUT` 列出规则;`docker compose exec stream-worker timeout 3 bash -c '</dev/tcp/<摄像头IP>/554'` 应能连上,换成公网地址应立刻被拒。
+
 ### "测试连接"与编码提示
 
 在「摄像头」页新建或编辑一路摄像头后点"测试连接":转流容器用 ffmpeg 拉 3 秒流、截一帧预览图,并探测视频编码。
@@ -475,6 +492,8 @@ tar -xzf <新包>/workstation-deploy-1.0.0.tar.gz -C . --strip-components=1 work
 | 多路同时连不上,「摄像头」页多路状态"异常"、红字含 `No space left on device` | 内存盘满了:路数多或主码流码率高。`docker compose exec stream-worker df -h /run/ws-hls` 可确认用量。调大 `WS_HLS_SIZE`(见上文,要重建内存盘)或把摄像头改成子码流。 |
 | 「摄像头」页顶部红色告警"以下摄像头地址不在校园内网" | 转流容器启动自检时发现这些地址解析到公网,不会拉流。在「摄像头」页改地址并保存即生效,不用重启;若只改了内网 DNS、没动登记,才需要 `docker compose restart stream-worker`(会打断所有在播的画面)。 |
 | 所有人都看不了,登录日志 IP 变成 `172.30.0.x` | `WS_TRUSTED_PROXIES` 配错,见上文"内网拓扑"。 |
+| `stream-worker` 反复重启,日志里有"写出站规则需要容器带 NET_ADMIN 能力" | `docker-compose.yml` 里 `stream-worker` 的 `cap_add: [NET_ADMIN]` 被去掉了(1.0.0 起的 compose 文件自带)。补回后 `docker compose up -d`;见上文"转流容器的出站限制"。 |
+| "测试连接"在服务器上 `</dev/tcp/<摄像头IP>/554` 能通,容器里却连不上 | 摄像头网段不在 `WS_CAMERA_NETS`(默认三段私网)里,被容器的出站规则拒绝。把该网段追加进 `.env` 的 `WS_CAMERA_NETS` 后 `docker compose up -d`。 |
 | 播放器显示"请在电脑或安卓浏览器上观看" | iPhone / iPad 的 Safari 不支持本系统带登录态的播放方式,v1 不支持;改用电脑或安卓浏览器。 |
 | 老师反映"本节课已结束,看不到了" | 不是故障:任课老师只在课表上自己这节课的时间段(提前 5 分钟到下课)内能看。核对「作息与课表」。 |
 
