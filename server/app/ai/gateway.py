@@ -272,7 +272,14 @@ async def generation_events(
         state.status, state.error_code, state.error = "error", "AI_UPSTREAM", GENERIC_ERROR
         if not finalized:
             finalized = True
-            await _finalize_and_unlock(ctx, prep, state, save)
+            try:
+                await _finalize_and_unlock(ctx, prep, state, save)
+            except Exception:
+                # 落库自己失败(如数据库不可用;锁已在 _finalize_and_unlock 的 finally 里放掉):
+                # 不能就这么掐断流——先让前端收到终结事件,再把错误抛给服务器日志(L247)
+                log.exception("ai.finalize_failed", chat_id=str(ctx.chat_id))
+                yield _final_event(state)
+                raise
         yield _final_event(state)
     finally:
         if not finalized:
