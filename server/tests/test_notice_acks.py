@@ -338,6 +338,57 @@ def test_ack_block_reason(client, db, settings, monkeypatch):
     assert item["can_ack"] is True and item["ack_block_reason"] is None
 
 
+def test_ack_block_reason_unlinked_vs_readonly(client, db, settings):
+    """L231:readonly 只留给"孩子已毕业 / 离校(家长账号只读)";绑定已结束(ended_at 非空)或
+    学生已删(notice_students 行随之级联消失)→ unlinked。一人多个孩子时有只读绑定就先算 readonly。"""
+    n = parent_notice(client, settings, CONFIRM)
+    make_readonly(db, "13800000061", "S0001")
+    assert _item(client, settings, LI, n)["ack_block_reason"] == "readonly"
+    set_link(
+        db,
+        "13800000061",
+        "S0001",
+        status="ended",
+        ended_at=datetime.now(UTC),
+        readonly_since=None,
+    )
+    item = _item(client, settings, LI, n)
+    assert item["can_ack"] is False and item["ack_block_reason"] == "unlinked"
+    res = post_ack(client, settings, LI, n)
+    assert res.status_code == 403 and code(res) == "ACK_NOT_ALLOWED"
+    # 另一位家长(teacher04,孩子 S0002)不受影响
+    assert _item(client, settings, T04, n)["ack_block_reason"] is None
+
+    # 学生已删:级联删掉 notice_students 行,这条通知在我名下已没有孩子
+    set_link(db, "13800000061", "S0001", status="active", ended_at=None)
+    assert _item(client, settings, LI, n)["ack_block_reason"] is None
+    db.execute(
+        text(
+            "DELETE FROM notice_students WHERE notice_id = :n"
+            " AND student_id = (SELECT id FROM students WHERE mk = 'S0001')"
+        ),
+        {"n": n},
+    )
+    assert _item(client, settings, LI, n)["ack_block_reason"] == "unlinked"
+
+    # 一人多个孩子(S0001 三年二班、S0017 四年一班):一个已结束、一个只读 → readonly;都结束 → unlinked
+    wide = send(client, settings, PRINCIPAL, TARGET_SCHOOL, audience="parents", ack=CONFIRM).json()[
+        "id"
+    ]
+    set_link(db, "13800000061", "S0001", status="ended", ended_at=datetime.now(UTC))
+    make_readonly(db, "13800000061", "S0017")
+    assert _item(client, settings, LI, wide)["ack_block_reason"] == "readonly"
+    set_link(
+        db,
+        "13800000061",
+        "S0017",
+        status="ended",
+        ended_at=datetime.now(UTC),
+        readonly_since=None,
+    )
+    assert _item(client, settings, LI, wide)["ack_block_reason"] == "unlinked"
+
+
 def test_secondary_parent_cannot_ack(client, db, settings):
     """A2 遗留(submit_ack):家长对象的通知只有在用的主家长绑定能回执,
     与收件箱 ack_block_reason = not_primary 的口径一致。"""

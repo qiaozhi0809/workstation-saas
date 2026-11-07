@@ -1042,6 +1042,7 @@ def inbox(db: Session, user: User, page: int, *, now: datetime | None = None) ->
     kids: dict[UUID, list[StudentDetail]] = defaultdict(list)
     primary_live: set[UUID] = set()  # 至少一个孩子:我的绑定在用且是主家长
     secondary_live: set[UUID] = set()  # 至少一个孩子:我的绑定在用但不是主家长
+    readonly_kids: set[UUID] = set()  # 至少一个孩子:我的绑定只读(孩子已毕业 / 离校)
     if parent_ids:
         # 一次查询取当页所有通知涉及的孩子姓名(按学号)、发送时的班与我和孩子的绑定状态;
         # parent_links (parent_id, student_id) 唯一,外连接不会把一个孩子变成多行
@@ -1064,10 +1065,12 @@ def inbox(db: Session, user: User, page: int, *, now: datetime | None = None) ->
             kids[nid].append(StudentDetail(name=name, class_name=class_name))
             if status == "active":
                 (primary_live if is_primary else secondary_live).add(nid)
+            elif status == "readonly":
+                readonly_kids.add(nid)
     items = []
     for n, from_name, read_at, acked_at, choice, content in rows:
         recalled = n.recalled_at is not None
-        reason = _ack_block_reason(n, now, primary_live, secondary_live)
+        reason = _ack_block_reason(n, now, primary_live, secondary_live, readonly_kids)
         items.append(
             InboxItem(
                 id=n.id,
@@ -1094,11 +1097,16 @@ def inbox(db: Session, user: User, page: int, *, now: datetime | None = None) ->
 
 
 def _ack_block_reason(
-    n: Notice, now: datetime, primary_live: set[UUID], secondary_live: set[UUID]
+    n: Notice,
+    now: datetime,
+    primary_live: set[UUID],
+    secondary_live: set[UUID],
+    readonly_kids: set[UUID],
 ) -> AckBlockReason | None:
-    """不能回执的原因(L88),按优先级:撤回 > 已过截止(服务器时间)> 家长绑定。
+    """不能回执的原因(L88 / L231),按优先级:撤回 > 已过截止(服务器时间)> 家长绑定。
     家长对象:有一个孩子仍是在用的主家长绑定就能回执;否则有在用绑定但都不是主家长 → not_primary,
-    一个在用的都没有(只读 / 已结束)→ readonly。不需要回执的通知没有"原因"。"""
+    没有在用绑定但有只读绑定(孩子已毕业 / 离校)→ readonly,连只读的都没有(绑定已结束、
+    学生已删)→ unlinked。不需要回执的通知没有"原因"。"""
     if n.ack_kind == "none":
         return None
     if n.recalled_at is not None:
@@ -1107,7 +1115,9 @@ def _ack_block_reason(
         return "closed"
     if n.audience != "parents" or n.id in primary_live:
         return None
-    return "not_primary" if n.id in secondary_live else "readonly"
+    if n.id in secondary_live:
+        return "not_primary"
+    return "readonly" if n.id in readonly_kids else "unlinked"
 
 
 def mark_read(db: Session, user: User, notice_id: UUID, *, now: datetime) -> None:
