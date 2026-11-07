@@ -1,10 +1,13 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { classesApi } from '@/shared/api/classes'
 import { preferencesApi, type PreferencesWithOnboarded } from '@/shared/api/preferences'
 import { useAuthStore } from '@/shared/stores/auth'
+import { classFixture } from '../Classroom/pageTestUtils'
 import WelcomeDialog from './WelcomeDialog'
 
+vi.mock('@/shared/api/classes', () => ({ classesApi: { mine: vi.fn() } }))
 vi.mock('@/shared/api/preferences', () => ({ preferencesApi: { get: vi.fn(), save: vi.fn() } }))
 
 const base: PreferencesWithOnboarded = {
@@ -33,6 +36,7 @@ const settled = (client: QueryClient, status: 'success' | 'error') =>
 
 beforeEach(() => {
   vi.resetAllMocks()
+  vi.mocked(classesApi.mine).mockResolvedValue({ items: [classFixture] })
   server = { ...base, onboarded: {} }
   vi.mocked(preferencesApi.get).mockImplementation(async () => server)
   vi.mocked(preferencesApi.save).mockImplementation(async (p) => {
@@ -129,6 +133,17 @@ it('picks figure', async () => {
       'male',
     ),
   )
+})
+
+// L242:老师一个班都没有时(ClassGate 会显示"没有可查看的班级"),"你的班级已经由学校配置好"不成立
+it('copy when teacher has no class', async () => {
+  vi.mocked(classesApi.mine).mockResolvedValue({ items: [] })
+  renderDialog()
+  const dialog = await screen.findByRole('dialog', { name: '你好,王老师' })
+  expect(
+    await within(dialog).findByText('学校还没有给你分配班级,进入后会看到提示'),
+  ).toBeInTheDocument()
+  expect(within(dialog).queryByText('你的班级已经由学校配置好,点「开始」进入教室')).toBeNull()
 })
 
 // L241:两张形象卡各自一份 <defs>,滤镜 id 各自唯一,也不能占用教室 svg 的 crShadow(同页时文档里只能有一个)
