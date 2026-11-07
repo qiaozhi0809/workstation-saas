@@ -35,6 +35,7 @@ const STATUS_OPTIONS = [
 ]
 
 type Dialog = { kind: 'form'; account?: Account } | { kind: 'import' } | null
+const LIST_KEY = ['admin', 'accounts']
 
 export default function AccountsPage() {
   const qc = useQueryClient()
@@ -64,11 +65,19 @@ export default function AccountsPage() {
 
   const filters = { q: q || undefined, role: role || undefined, status: status || undefined, page }
   const list = useQuery({
-    queryKey: ['admin', 'accounts', filters],
+    queryKey: [...LIST_KEY, filters],
     queryFn: () => adminApi.accounts(filters),
     placeholderData: keepPreviousData,
   })
-  const refresh = () => void qc.invalidateQueries({ queryKey: ['admin', 'accounts'] })
+  /**
+   * 变更后刷新列表(L321):变更之前就已在飞的列表请求(搜索防抖刚发出的新查询)可能后到胜出。
+   * 那种查询还没有任何数据,invalidateQueries 的 cancelRefetch 对它不生效(只会复用在飞的那个请求),
+   * 所以先 cancelQueries 把它作废,再让所有缓存页失效并重取(refetchType: 'all':换回上一个筛选时拿到的也是新数据)
+   */
+  const refresh = async () => {
+    await qc.cancelQueries({ queryKey: LIST_KEY })
+    await qc.invalidateQueries({ queryKey: LIST_KEY, refetchType: 'all' })
+  }
 
   const resetPassword = async (a: Account) => {
     try {
@@ -91,7 +100,7 @@ export default function AccountsPage() {
     try {
       await adminApi.unfreeze(a.id)
       toast(`已解冻${a.display_name}`)
-      refresh()
+      void refresh()
     } catch (err) {
       toast(err instanceof ApiError ? err.message : '解冻失败,请重试')
     }
@@ -104,7 +113,7 @@ export default function AccountsPage() {
       await adminApi.freeze(freezing.id)
       toast(`已冻结${freezing.display_name}`)
       setFreezing(null)
-      refresh()
+      void refresh()
     } catch (err) {
       setFreezeError(err instanceof ApiError ? err.message : '冻结失败,请重试')
     } finally {
@@ -120,7 +129,7 @@ export default function AccountsPage() {
       await adminApi.resetTotp(totpTarget.id)
       toast(`已重置${totpTarget.display_name}的两步验证`)
       setTotpTarget(null)
-      refresh()
+      void refresh()
     } catch (err) {
       setTotpError(
         err instanceof ApiError && err.code === 'CANNOT_RESET_SELF'
