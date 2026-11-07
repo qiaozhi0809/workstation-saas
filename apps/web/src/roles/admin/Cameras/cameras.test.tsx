@@ -1,3 +1,4 @@
+import { StrictMode } from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
@@ -337,6 +338,25 @@ it('shows codec hint', async () => {
   expect(warn).toHaveTextContent(
     '这路是 H.265(HEVC),浏览器放不出来;请在摄像头里改成 H.264,或勾选"转码"',
   )
+})
+
+// L215 ④:StrictMode(开发态)把挂载副作用跑两遍,测试连接是带审计的 POST,只能发一次
+it('test connection fires once under strict mode', async () => {
+  vi.mocked(camerasApi.test).mockResolvedValue(ok())
+  render(
+    <StrictMode>
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={['/admin/cameras']}>
+          <CamerasPage />
+        </MemoryRouter>
+      </QueryClientProvider>
+    </StrictMode>,
+  )
+  await screen.findByText('一楼走廊')
+  fireEvent.click(within(row(/三年二班教室/)).getByRole('button', { name: '测试连接' }))
+  const dlg = await screen.findByTestId('camera-test-dialog')
+  expect(await within(dlg).findByText('连接成功')).toBeInTheDocument()
+  expect(camerasApi.test).toHaveBeenCalledTimes(1)
 })
 
 it('does not re-run the test when the cameras cache is invalidated', async () => {
