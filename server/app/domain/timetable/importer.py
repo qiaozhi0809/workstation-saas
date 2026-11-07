@@ -123,6 +123,9 @@ def import_rows(
             )
         )
     }
+    # 与 save_periods / save_class_timetable 同一把锁、同一顺序(先 School 再班级,L290):
+    # 读到的"已设节次"在导入提交前不会被删节次拿走,不会写出引用已删节次的格子
+    service.lock_school(db, school_id)
     periods = service.defined_period_nos(db, school_id)
     teacher_ids = _teachers_by_employee_no(
         db, school_id, sorted({r.employee_no for r in rows if r.employee_no})
