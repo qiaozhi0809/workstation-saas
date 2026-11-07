@@ -1,13 +1,11 @@
-from typing import Literal
 from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.domain.exams.schemas import SubjectFull
+from app.domain.exams.schemas import Stage, SubjectFull
+from app.domain.school_settings.service import get_catalog
 from app.errors import ApiError
 from app.models import Grade, SchoolClass
-
-Stage = Literal["primary", "junior", "senior"]
 
 
 def stage_of(grade_name: str) -> Stage:
@@ -18,19 +16,6 @@ def stage_of(grade_name: str) -> Stage:
     if "年级" in grade_name and any(c in grade_name for c in "一二三四五六"):
         return "primary"
     return "junior"
-
-
-def _preset(names: list[str], full: int) -> list[SubjectFull]:
-    return [SubjectFull(name=n, full=full) for n in names]
-
-
-PRESETS: dict[Stage, list[SubjectFull]] = {
-    "primary": _preset(["语文", "数学", "英语", "科学", "道法"], 100),
-    "junior": _preset(["语文", "数学", "英语"], 120)
-    + _preset(["物理", "化学", "道法", "历史", "地理", "生物"], 100),
-    "senior": _preset(["语文", "数学", "英语"], 150)
-    + _preset(["物理", "化学", "生物", "政治", "历史", "地理"], 100),
-}
 
 
 STAGE_KEY: dict[str, Stage] = {"小学": "primary", "初中": "junior", "高中": "senior"}
@@ -46,9 +31,6 @@ def grade_stage(grade: Grade | None) -> Stage:
 
 def catalog_subjects(db: Session, school_id: UUID, stage: Stage) -> list[SubjectFull]:
     """学校科目目录里某学段的科目(副本;没存过目录就是内置预设)。"""
-    # school_settings.service 反过来依赖本模块的 PRESETS / Stage,只能在函数里导入
-    from app.domain.school_settings.service import get_catalog
-
     return get_catalog(db, school_id)[stage]
 
 

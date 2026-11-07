@@ -439,7 +439,7 @@ def test_chat_detail_tolerates_redis_outage(client, settings, db, redis_client, 
     def redis_down(*args, **kwargs):
         raise redis_exceptions.ConnectionError("Error 111 connecting to redis")
 
-    monkeypatch.setattr(redis_client, "exists", redis_down)
+    monkeypatch.setattr(redis_client, "get", redis_down)  # 详情页读锁值用的是 GET(L249)
     res = get_chat(client, settings, chat["id"])
     assert res.status_code == 200
     assert res.json()["messages"][1]["status"] == "streaming"  # 2 分钟内照旧显示生成中
@@ -459,13 +459,70 @@ def test_ai_generate_running_item_over_two_minutes_still_shows_run(
     ).first()
     item.status = "run"
     db.commit()
-    redis_client.set(f"ai:chat:{chat['id']}", "running-token", ex=60)
+    # 锁值 = "<随机 token>|<正在生成的条目 id>"(L249),这里正在生成的就是第一条
+    redis_client.set(f"ai:chat:{chat['id']}", f"running-token|{item.id}", ex=60)
     freeze(monkeypatch, (datetime.now(UTC) + timedelta(minutes=3)).isoformat())
     got = get_chat(client, settings, chat["id"]).json()
     assert [i["status"] for i in got["items"]] == ["run", "wait"]
     redis_client.delete(f"ai:chat:{chat['id']}")
     got = get_chat(client, settings, chat["id"]).json()
     assert [i["status"] for i in got["items"]] == ["wait", "wait"]
+
+
+def test_stale_run_item_not_marked_generating(client, settings, db, redis_client, monkeypatch):
+    """L249:``generating`` 按条目判断——锁值带着正在生成的条目 id,只有那一条超过 2 分钟
+    仍显示 run;进程被杀留下的陈旧 run 条目即使对话锁在手里也按 wait 显示。
+    锁值是旧格式 / 解析不出条目 id 时退回对话级行为(全部 run 条目都算生成中),不报错。"""
+    chat = create(client, settings, comments_body())
+    stale, live = db.scalars(
+        select(AiBatchItem)
+        .where(AiBatchItem.chat_id == UUID(chat["id"]))
+        .order_by(AiBatchItem.position)
+    ).all()
+    stale.status = live.status = "run"
+    db.commit()
+    key = f"ai:chat:{chat['id']}"
+    headers = auth(settings)
+    freeze(monkeypatch, (datetime.now(UTC) + timedelta(minutes=3)).isoformat())
+    # 正在生成第二条:第一条是上次进程被杀留下的陈旧 run
+    redis_client.set(key, f"tok|{live.id}", ex=60)
+    got = client.get(f"{CHATS}/{chat['id']}", headers=headers).json()
+    assert [i["status"] for i in got["items"]] == ["wait", "run"]
+    # 旧格式锁值(没有条目 id):退回对话级,两条都算生成中
+    redis_client.set(key, "legacy-token", ex=60)
+    got = client.get(f"{CHATS}/{chat['id']}", headers=headers).json()
+    assert [i["status"] for i in got["items"]] == ["run", "run"]
+    # 后缀不是合法 UUID:同样退回对话级,不 500
+    redis_client.set(key, "tok|not-a-uuid", ex=60)
+    res = client.get(f"{CHATS}/{chat['id']}", headers=headers)
+    assert res.status_code == 200 and [i["status"] for i in res.json()["items"]] == ["run", "run"]
+    # acquire_lock 带 target 时锁值就是 "<hex>|<item_id>";不带 target 的调用方行为不变
+    redis_client.delete(key)
+    token = acquire_lock(redis_client, UUID(chat["id"]), target=live.id)
+    assert token == redis_client.get(key) and token.endswith(f"|{live.id}")
+    got = client.get(f"{CHATS}/{chat['id']}", headers=headers).json()
+    assert [i["status"] for i in got["items"]] == ["wait", "run"]
+    redis_client.delete(key)
+    plain = acquire_lock(redis_client, UUID(chat["id"]))
+    assert "|" not in plain and redis_client.get(key) == plain
+    redis_client.delete(key)
+    # 走真实 run 接口:路由拿锁时带上条目 id,服务商被调用那一刻锁值就带着该条目
+    configure_ai(db, settings)
+    live.status = "wait"
+    db.commit()
+    seen: dict = {}
+    inner = sse_transport(["好"])
+
+    def handler(request):
+        seen["lock"] = redis_client.get(key)
+        return inner.handler(request)
+
+    client.app.state.ai_transport = httpx.MockTransport(handler)
+    with client.stream("POST", f"{CHATS}/{chat['id']}/items/{live.id}/run", headers=headers) as r:
+        assert r.status_code == 200, r.read()
+        assert read_sse(r)[-1][0] == "done"
+    assert seen["lock"].endswith(f"|{live.id}") and "|" in seen["lock"]
+    assert redis_client.exists(key) == 0  # 整串比对,收尾照样能放掉自己的锁
 
 
 def test_other_users_chat_is_404(client, settings, db):

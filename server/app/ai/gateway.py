@@ -5,7 +5,8 @@
   ``prepare(session) -> Prepared`` 在线程池里建好待写的行、重建 prompt;
   ``save(session, prepared, state)`` 在 ``finally`` 里写最终内容。
   审计、更新对话时间、提交、释放锁都由它统一处理。
-- ``stream_provider(ctx, prepared, state)``:只负责读服务商流并产出 delta / done / error 事件。
+- ``stream_provider(ctx, prepared, state)``:只负责读服务商流并产出 delta 事件,
+  顺带每 ``HEARTBEAT_SECONDS`` 心跳一次(续锁 + 刷新目标行 updated_at,L246)。
 """
 
 import contextlib
@@ -25,10 +26,12 @@ import structlog
 from redis import Redis
 from redis.exceptions import RedisError
 from sqlalchemy import func, update
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from starlette.responses import StreamingResponse
 from starlette.types import Receive, Scope, Send
 
+from app import clock
 from app.ai.chats import chat_items, ordered_messages
 from app.ai.client import AIUpstreamError, ChatMessage, Delta, Usage
 from app.ai.context import system_prompt
@@ -47,6 +50,7 @@ from app.rbac.bindings import load_bindings
 log = structlog.get_logger()
 
 LOCK_TTL = 300
+HEARTBEAT_SECONDS = 60  # 流式期间每隔这么久续一次锁、刷新一次目标行(L246)
 UNLOCK_ATTEMPTS = 3
 UNLOCK_RETRY_SECONDS = 0.5
 GENERIC_ERROR = "生成出错了,请稍后再试"
@@ -55,6 +59,10 @@ SAVE_ERROR = "生成结果没能保存,请重新生成"
 _RELEASE = (
     "if redis.call('get', KEYS[1]) == ARGV[1] then "
     "return redis.call('del', KEYS[1]) else return 0 end"
+)
+_RENEW = (
+    "if redis.call('get', KEYS[1]) == ARGV[1] then "
+    "return redis.call('expire', KEYS[1], ARGV[2]) else return 0 end"
 )
 
 
@@ -80,6 +88,7 @@ class Prepared:
     messages: list[ChatMessage]  # 发给服务商的全部消息(含系统提示)
     masker: Masker
     target_id: UUID  # 要写结果的行(助手消息 / 批量条目)
+    target_model: type[AiMessage] | type[AiBatchItem]  # 那一行所在的表(心跳刷新 updated_at 用)
     template: str | None
     student_ids: list[str]
     masked: bool
@@ -104,9 +113,16 @@ def lock_key(chat_id: UUID | str) -> str:
     return f"ai:chat:{chat_id}"
 
 
-def acquire_lock(redis: Redis, chat_id: UUID | str) -> str:
-    """拿到返回随机令牌;拿不到抛 409 AI_BUSY。"""
+def acquire_lock(redis: Redis, chat_id: UUID | str, *, target: UUID | None = None) -> str:
+    """拿到返回随机令牌;拿不到抛 409 AI_BUSY。
+
+    ``target`` 是这次要生成的批量条目:给了就把它拼进锁值 ``"<hex>|<item_id>"``,读对话详情时
+    只有这一条算"生成中"(L249,解析见 ``chats.running_item_of``);释放 / 续期都比较整串,
+    不传 ``target`` 的调用方行为不变。
+    """
     token = secrets.token_hex(16)
+    if target is not None:
+        token = f"{token}|{target}"
     if not redis.set(lock_key(chat_id), token, nx=True, ex=LOCK_TTL):
         raise ApiError(409, "AI_BUSY", "这个对话正在生成,请稍候")
     return token
@@ -117,14 +133,40 @@ def release_lock(redis: Redis, key: str, token: str) -> None:
     redis.eval(_RELEASE, 1, key, token)
 
 
+def renew_lock(redis: Redis, key: str, token: str, ttl: int = LOCK_TTL) -> bool:
+    """仅当锁还是自己的才续到 ``ttl`` 秒;返回有没有续上(锁过期后被别的生成拿走就是 False)。"""
+    return bool(redis.eval(_RENEW, 1, key, token, ttl))
+
+
+def _heartbeat(ctx: GenContext, prep: Prepared) -> None:
+    """流式期间每 ``HEARTBEAT_SECONDS`` 跑一次(L246):锁还是本次生成的才续回 ``LOCK_TTL``——
+    锁过期后被另一次生成拿走时不能替人家续(Review Focus 3);再碰一下目标行,让它的
+    updated_at 刷新,2 分钟陈旧规则不会把还在生成的行当成中断。Redis / 数据库暂时不可用
+    只记日志,不打断生成。"""
+    try:
+        if not renew_lock(ctx.redis, ctx.lock_key, ctx.lock_token):
+            log.warning("ai_lock_not_renewed", chat_id=str(ctx.chat_id))
+    except RedisError:
+        log.warning("ai_lock_renew_failed", chat_id=str(ctx.chat_id))
+    model = prep.target_model
+    try:
+        with ctx.scope() as s:
+            s.execute(update(model).where(model.id == prep.target_id).values(updated_at=func.now()))
+            s.commit()
+    except SQLAlchemyError:
+        log.warning("ai_heartbeat_touch_failed", chat_id=str(ctx.chat_id))
+
+
 # ---------------------------------------------------------------- 流式核心
 
 
 async def stream_provider(ctx: GenContext, prep: Prepared, state: GenState) -> AsyncIterator[bytes]:
     """只产出 delta 事件;结局记在 ``state``(done / error),终结事件由 ``generation_events``
-    在落库、释放锁之后再发,这样前端收到 done / error 时数据与锁都已就绪。"""
+    在落库、释放锁之后再发,这样前端收到 done / error 时数据与锁都已就绪。
+    每收到一个服务商事件看一眼时钟,距上次心跳满 ``HEARTBEAT_SECONDS`` 就跑一次 ``_heartbeat``。"""
     client = make_client(ctx.cfg, ctx.transport)
     restorer = prep.masker.restorer()
+    last_beat = clock.utc_now()
     try:
         async with contextlib.aclosing(client.stream(prep.messages)) as it:
             async for ev in it:
@@ -136,6 +178,10 @@ async def stream_provider(ctx: GenContext, prep: Prepared, state: GenState) -> A
                 elif isinstance(ev, Usage):
                     state.prompt_tokens = ev.prompt_tokens
                     state.completion_tokens = ev.completion_tokens
+                now = clock.utc_now()
+                if (now - last_beat).total_seconds() >= HEARTBEAT_SECONDS:
+                    last_beat = now
+                    await anyio.to_thread.run_sync(partial(_heartbeat, ctx, prep))
     except AIUpstreamError as e:
         state.status, state.error_code, state.error = "error", e.code, e.message
     else:
@@ -167,23 +213,25 @@ def _finalize(
     state: GenState,
     save: Callable[[Session, Prepared, GenState], None],
 ) -> None:
+    if prep is None:
+        # 还没进入生成(取第一口之前就断开 / prepare 自己失败):没有要写的行,也不记审计(L248)
+        return
     with ctx.scope() as s:
-        if prep is not None:
+        try:
+            save(s, prep, state)
+            s.flush()
+        except Exception:
+            log.exception("ai_save_failed", chat_id=str(ctx.chat_id))
+            s.rollback()
+            # 结果没存下来就不能对前端说 done:事件、审计都按出错;再试一次把行标为失败,
+            # 别把它留在 streaming / run("生成中")
+            state.status, state.error_code, state.error = "error", "AI_SAVE_FAILED", SAVE_ERROR
             try:
                 save(s, prep, state)
                 s.flush()
             except Exception:
-                log.exception("ai_save_failed", chat_id=str(ctx.chat_id))
+                log.exception("ai_save_failed_again", chat_id=str(ctx.chat_id))
                 s.rollback()
-                # 结果没存下来就不能对前端说 done:事件、审计都按出错;再试一次把行标为失败,
-                # 别把它留在 streaming / run("生成中")
-                state.status, state.error_code, state.error = "error", "AI_SAVE_FAILED", SAVE_ERROR
-                try:
-                    save(s, prep, state)
-                    s.flush()
-                except Exception:
-                    log.exception("ai_save_failed_again", chat_id=str(ctx.chat_id))
-                    s.rollback()
         s.execute(
             update(AiChat).where(AiChat.id == ctx.chat_id).values(updated_at=func.clock_timestamp())
         )
@@ -197,15 +245,15 @@ def _finalize(
                 ip=ctx.ip,
                 user_agent=ctx.user_agent,
                 extra={
-                    "template": prep.template if prep else None,
-                    "student_ids": prep.student_ids if prep else [],
+                    "template": prep.template,
+                    "student_ids": prep.student_ids,
                     "provider": ctx.cfg.provider,
                     "model": ctx.cfg.model,
-                    "masked": prep.masked if prep else False,
+                    "masked": prep.masked,
                     "outcome": state.status,
                     "prompt_tokens": state.prompt_tokens,
                     "completion_tokens": state.completion_tokens,
-                    "chars_in": prep.chars_in if prep else 0,
+                    "chars_in": prep.chars_in,
                     "chars_out": len(state.raw),
                 },
             )
@@ -270,7 +318,14 @@ async def generation_events(
         state.status, state.error_code, state.error = "error", "AI_UPSTREAM", GENERIC_ERROR
         if not finalized:
             finalized = True
-            await _finalize_and_unlock(ctx, prep, state, save)
+            try:
+                await _finalize_and_unlock(ctx, prep, state, save)
+            except Exception:
+                # 落库自己失败(如数据库不可用;锁已在 _finalize_and_unlock 的 finally 里放掉):
+                # 不能就这么掐断流——先让前端收到终结事件,再把错误抛给服务器日志(L247)
+                log.exception("ai.finalize_failed", chat_id=str(ctx.chat_id))
+                yield _final_event(state)
+                raise
         yield _final_event(state)
     finally:
         if not finalized:
@@ -390,6 +445,7 @@ def prepare_reply(s: Session, ctx: GenContext, body: AiReplyIn) -> Prepared:
         messages=messages,
         masker=masker,
         target_id=assistant.id,
+        target_model=AiMessage,
         template=chat.template_id,
         student_ids=student_ids,
         masked=mask,
@@ -476,6 +532,7 @@ def prepare_item(s: Session, ctx: GenContext, item_id: UUID) -> Prepared:
         messages=messages,
         masker=masker,
         target_id=item.id,
+        target_model=AiBatchItem,
         template=chat.template_id,
         student_ids=[str(item.student_id)],
         masked=mask,
@@ -508,6 +565,7 @@ __all__ = [
     "generation_events",
     "lock_key",
     "release_lock",
+    "renew_lock",
     "reply_events",
     "run_item_events",
     "sse",

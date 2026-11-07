@@ -10,6 +10,7 @@ import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import AccountMenu from '@/shared/components/layout/AccountMenu'
 import AppShell from '@/shared/components/layout/AppShell'
 import { switchTargets } from '@/shared/components/layout/switchTargets'
+import { INBOX_KEY, refetchInboxFirstPage } from '@/shared/components/notices/useInbox'
 import { useMeta } from '@/shared/hooks/useSchoolTz'
 import { cn } from '@/shared/lib/utils'
 import { RealtimeProvider } from '@/shared/realtime/RealtimeProvider'
@@ -47,10 +48,11 @@ export default function ParentLayout() {
 /** 家长端只订阅事件、不判权:推给谁由后端决定 */
 function ParentShell() {
   const qc = useQueryClient()
-  const refresh = () => void qc.invalidateQueries({ queryKey: ['notices', 'inbox'] })
+  const refresh = () => void qc.invalidateQueries({ queryKey: INBOX_KEY })
+  // 新通知只重取收件箱第 1 页;撤回 / 重连仍整体重取(L280)
   useRealtimeEvent('notice.new', (e) => {
     toast(`新通知:${e.title}`)
-    refresh()
+    void refetchInboxFirstPage(qc)
   })
   useRealtimeEvent('notice.recalled', refresh)
   useRealtimeEvent('reconnected', refresh)
