@@ -24,6 +24,8 @@ from tests.seed_ids import (
     YEAR_ID,
 )
 
+pytestmark = pytest.mark.usefixtures("dev_env")  # L205:这些测试经 get_settings() 读环境,显式要 dev
+
 SCHOOL = UUID(SCHOOL_ID)
 
 

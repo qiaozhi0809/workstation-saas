@@ -13,6 +13,8 @@ from app.cli import build_parser, init_school_cmd, migrate, parent_archive
 from app.deploy import precheck
 from tests.migrate_util import current_version, upgrade_to
 
+pytestmark = pytest.mark.usefixtures("dev_env")  # L205:这些测试经 get_settings() 读环境,显式要 dev
+
 PARENT02 = "55555555-5555-5555-5555-555555555562"
 
 
