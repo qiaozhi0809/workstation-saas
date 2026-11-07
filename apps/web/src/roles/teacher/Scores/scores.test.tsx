@@ -281,9 +281,11 @@ it('shows grading fallback banner', async () => {
   const note = (await screen.findByText(text)).closest('[role="status"]') as HTMLElement
   expect(note).not.toBeNull()
   vi.mocked(schoolApi.grading).mockResolvedValue(DEFAULT_GRADING)
+  // 页面与成绩表格各挂一个 useGrading,出错状态下后挂的那个会再取一次;只断言"重试"正好多发一次
+  const before = vi.mocked(schoolApi.grading).mock.calls.length
   fireEvent.click(within(note).getByRole('button', { name: '重试' }))
   await waitFor(() => expect(screen.queryByText(text)).toBeNull())
-  expect(schoolApi.grading).toHaveBeenCalledTimes(2)
+  expect(schoolApi.grading).toHaveBeenCalledTimes(before + 1)
 })
 
 it('pads the page like the other teacher pages', async () => {
