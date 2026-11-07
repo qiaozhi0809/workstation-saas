@@ -194,8 +194,9 @@ def _log(
         return None
 
 
-# 不存在的用户的日志行(unknown_user / 该名字被锁后的 locked)来自未认证请求,按来源 IP 限额(L145):
-# 内网 / 可信代理网段不限(校内误输不丢记录),其余每个 IP 每小时最多这么多行;超限仍 401、仍跑假哈希
+# 登录失败的日志行来自未认证请求,按来源 IP 限额(L145 / L294):不存在的用户(unknown_user / locked)
+# 与已存在用户的失败(bad_password / inactive / locked)共用同一个计数;内网 / 可信代理网段不限
+# (校内误输不丢记录),其余每个 IP 每小时最多这么多行;超限仍 401、仍跑假哈希
 UNKNOWN_LOG_LIMIT = 20
 UNKNOWN_LOG_WINDOW = 3600
 
@@ -233,6 +234,20 @@ def _log_unknown(
 ) -> None:
     if _unknown_log_allowed(redis, settings, request):
         _log(db, settings, None, _unknown_name(login_name), result, request)
+
+
+def _log_failure(
+    db: Session,
+    redis: Redis,
+    settings: Settings,
+    user: User,
+    login_name: str,
+    result: login_log.LoginOutcome,
+    request: Request | None,
+) -> None:
+    """已存在用户的密码登录失败行(L294):拿着一张名单从公网刷,同样不能把登录日志灌爆。"""
+    if _unknown_log_allowed(redis, settings, request):
+        _log(db, settings, user, login_name, result, request)
 
 
 _REASON_TEXT = {"night": "凌晨时段", "new_network": "新的网络环境"}
@@ -338,7 +353,7 @@ def login(
         if known is None:
             _log_unknown(db, redis, settings, login_name, "locked", request)
         else:
-            _log(db, settings, known, login_name, "locked", request)
+            _log_failure(db, redis, settings, known, login_name, "locked", request)
         raise
 
     user = get_user_by_login(db, settings.school_id, login_name)
@@ -351,7 +366,7 @@ def login(
     if user.status != "active" or not password_ok:
         _record_failure(redis, settings, fail_key)
         outcome = "inactive" if user.status != "active" else "bad_password"
-        _log(db, settings, user, login_name, outcome, request)
+        _log_failure(db, redis, settings, user, login_name, outcome, request)
         raise ApiError(401, "INVALID_CREDENTIALS", "登录名或密码不正确")
 
     if user.totp_enabled_at is not None:

@@ -114,10 +114,27 @@ def test_unknown_user_rows_capped_per_public_ip(client, db, redis_client, monkey
     assert len(checks) == service.UNKNOWN_LOG_LIMIT + 1  # 第 21 次照样跑了假哈希
     assert int(redis_client.get(f"ws:login_unknown:{ip}")) == service.UNKNOWN_LOG_LIMIT + 1
     assert 0 < redis_client.ttl(f"ws:login_unknown:{ip}") <= 3600
-    # 另一个公网 IP 有自己的额度;已存在用户的失败日志不受限
+    # 另一个公网 IP 有自己的额度;已存在用户的失败日志与它共用同一额度(L294),这个 IP 已用光
     assert _login(client, name="ghost99", pw="x", ip="198.51.100.3").status_code == 401
     assert _login(client, pw="wrong", ip=ip).status_code == 401
-    assert [r.login_name for r in _rows(db)][-2:] == ["ghost99", "teacher01"]
+    assert [r.login_name for r in _rows(db)][-2:] == ["ghost19", "ghost99"]
+
+
+def test_known_user_bad_password_rows_rate_limited(client, db, settings, redis_client):
+    """L294:拿着一张真实登录名的名单从公网刷密码,bad_password / locked 行同样按来源 IP 每小时
+    20 行封顶(与不存在的用户共用计数);响应不变(401 → 锁定后 429);内网来源不限。"""
+    ip, limit, lock_at = "203.0.113.9", service.UNKNOWN_LOG_LIMIT, settings.login_max_failures
+    statuses = [_login(client, pw="wrong", ip=ip).status_code for _ in range(limit + 1)]
+    assert statuses[:lock_at] == [401] * lock_at and set(statuses[lock_at:]) == {429}
+    rows = _rows(db)
+    assert len(rows) == limit
+    assert [r.result for r in rows] == ["bad_password"] * lock_at + ["locked"] * (limit - lock_at)
+    assert all(str(r.user_id) == TEACHER_USER_ID for r in rows)
+    assert int(redis_client.get(f"ws:login_unknown:{ip}")) == service.UNKNOWN_LOG_LIMIT + 1
+    # 内网来源不限:再失败一次照样有记录
+    assert _login(client, pw="wrong", ip="10.0.0.8").status_code == 429
+    assert len(_rows(db)) == service.UNKNOWN_LOG_LIMIT + 1
+    assert redis_client.get("ws:login_unknown:10.0.0.8") is None
 
 
 def test_unknown_user_ipv6_bucketed_by_64(client, db, redis_client):
