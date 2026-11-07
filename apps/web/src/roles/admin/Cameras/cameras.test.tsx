@@ -256,6 +256,23 @@ it('shows public host warning', async () => {
   expect(warn).toHaveTextContent('cam.example.com')
 })
 
+// L215 ③:health(内网地址检查)失败不再静默:页顶 role=alert 并可重试,重试成功后恢复正常提示
+it('health failure visible', async () => {
+  vi.mocked(camerasApi.health)
+    .mockRejectedValueOnce(new ApiError(500, 'X', '检查失败(后端)'))
+    .mockResolvedValueOnce({ public_hosts: ['203.0.113.7'] })
+  renderPage()
+  await screen.findByText('一楼走廊')
+  const alert = await screen.findByTestId('camera-health-error')
+  expect(alert).toHaveAttribute('role', 'alert')
+  expect(alert).toHaveTextContent('摄像头地址检查失败')
+  expect(screen.queryByTestId('camera-public-host-warning')).toBeNull()
+  fireEvent.click(within(alert).getByRole('button', { name: '重试' }))
+  expect(await screen.findByTestId('camera-public-host-warning')).toHaveTextContent('203.0.113.7')
+  expect(screen.queryByTestId('camera-health-error')).toBeNull()
+  expect(camerasApi.health).toHaveBeenCalledTimes(2)
+})
+
 it('tells when the monitor switch is off and links to settings', async () => {
   vi.mocked(adminApi.switches).mockResolvedValue({ ...SW, monitor: false })
   renderPage()

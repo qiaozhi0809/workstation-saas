@@ -138,6 +138,26 @@ export default function CamerasPage() {
         </div>
       )}
 
+      {!off && health.isError && (
+        // 内网地址检查失败不能静默:否则不在内网的地址不会有任何提示(L215)
+        <div
+          role="alert"
+          data-testid="camera-health-error"
+          className="flex flex-wrap items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+        >
+          <span className="mr-auto">摄像头地址检查失败,暂时看不到"不在校园内网"的提示。</span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={health.isFetching}
+            onClick={() => void health.refetch()}
+          >
+            重试
+          </Button>
+        </div>
+      )}
+
       {publicHosts.length > 0 && (
         <div
           role="alert"
