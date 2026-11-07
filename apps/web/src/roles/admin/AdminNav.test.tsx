@@ -230,14 +230,17 @@ describe('grouped nav (≥ 768)', () => {
     expect(screen.queryByRole('menu')).toBeNull()
   })
 
-  // L58:导航下拉的键盘
-  it('opens with ArrowUp too, and ArrowUp on the open trigger jumps to the last item', () => {
+  // L58 / L276:导航下拉的键盘——↑ 打开时焦点落在最后一项(APG,由 Menu 本体处理),开着时 ↑ 也跳到最后一项
+  it('opens with ArrowUp focusing the last item, and ArrowUp on the open trigger jumps there too', () => {
     renderNav()
     const btn = screen.getByRole('button', { name: '系统' })
     btn.focus()
     fireEvent.keyDown(btn, { key: 'ArrowUp' })
     const menu = screen.getByRole('menu', { name: '系统' })
     const items = within(menu).getAllByRole('menuitem')
+    expect(items[items.length - 1]).toHaveFocus()
+    btn.focus()
+    fireEvent.keyDown(btn, { key: 'ArrowDown' })
     expect(items[0]).toHaveFocus()
     btn.focus()
     fireEvent.keyDown(btn, { key: 'ArrowUp' })

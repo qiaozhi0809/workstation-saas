@@ -20,12 +20,16 @@ export function layerClass(side: LayerSide, align: LayerAlign, className?: strin
   )
 }
 
+/** 打开后初始焦点落在首项还是末项:APG 的菜单按钮 ↓ 打开聚焦第一项、↑ 打开聚焦最后一项(L276) */
+export type LayerFocus = 'first' | 'last'
+
 /**
- * initialFocus:打开后要聚焦的元素;返回 null 时聚焦浮层本身(浮层带 tabIndex=-1)。
+ * initialFocus:打开后要聚焦的元素(第二个参数说明是要首项还是末项,不区分的浮层可忽略);
+ * 返回 null 时聚焦浮层本身(浮层带 tabIndex=-1)。
  * triggerDisabled:触发按钮当前是否 disabled;开着时变成 disabled 就自动关闭(L13)。
  */
 export function useAnchoredLayer(
-  initialFocus: (layer: HTMLElement) => HTMLElement | null,
+  initialFocus: (layer: HTMLElement, at: LayerFocus) => HTMLElement | null,
   triggerDisabled = false,
 ) {
   const [open, setOpen] = useState(false)
@@ -37,6 +41,14 @@ export function useAnchoredLayer(
   useLayoutEffect(() => {
     pickFocus.current = initialFocus
   })
+  // 这次打开要把焦点放在哪;每次打开都重新指定,不记住上一次
+  const focusAt = useRef<LayerFocus>('first')
+
+  /** 打开浮层;at 指定初始焦点落在首项(默认)还是末项 */
+  const openLayer = useCallback((at: LayerFocus = 'first') => {
+    focusAt.current = at
+    setOpen(true)
+  }, [])
 
   /** restoreFocus:Esc / 选中菜单项 / 再点触发按钮时把焦点还给触发按钮 */
   const close = useCallback((restoreFocus: boolean) => {
@@ -52,8 +64,8 @@ export function useAnchoredLayer(
 
   const toggle = useCallback(() => {
     if (open) close(true)
-    else setOpen(true)
-  }, [open, close])
+    else openLayer()
+  }, [open, close, openLayer])
 
   useEscapeLayer(open, () => close(true))
 
@@ -74,7 +86,7 @@ export function useAnchoredLayer(
   useLayoutEffect(() => {
     if (!open || !layerRef.current) return
     const layer = layerRef.current
-    ;(pickFocus.current(layer) ?? layer).focus()
+    ;(pickFocus.current(layer, focusAt.current) ?? layer).focus()
   }, [open])
 
   // 点外面用捕获阶段的 click:到 click 时输入框已失焦并提交;捕获阶段也不怕别处 stopPropagation。
@@ -114,5 +126,15 @@ export function useAnchoredLayer(
     [open, close],
   )
 
-  return { open, setOpen, close, toggle, layerId, wrapperRef, triggerRef, layerRef, onWrapperBlur }
+  return {
+    open,
+    openLayer,
+    close,
+    toggle,
+    layerId,
+    wrapperRef,
+    triggerRef,
+    layerRef,
+    onWrapperBlur,
+  }
 }
