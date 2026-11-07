@@ -112,7 +112,7 @@ class Settings(BaseSettings):
     def _trusted_proxies_required_outside_dev(self) -> "Settings":
         """失败即关(L177):生产必须明确反向代理所在网段,且网段不能宽到把校外地址也当成代理。
 
-        漏配 / 配错时 `_client_ip` 会回退到直连地址(Caddy 容器 172.30.0.x,属私网),摄像头播放接口
+        漏配 / 配错时 `client_ip` 会回退到直连地址(Caddy 容器 172.30.0.x,属私网),摄像头播放接口
         就会把公网请求当成内网来源;过宽的网段(如 0.0.0.0/0)则让任何直连地址都能伪造
         X-Forwarded-For。校验器按定义顺序执行,这里依赖上面 `_parse_trusted_proxies` 已解析好
         `_trusted_networks`。"""

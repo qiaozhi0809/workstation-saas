@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import clock
-from app.audit.service import _client_ip, record
+from app.audit.service import client_ip, record
 from app.auth import login_log, mfa, sessions, totp
 from app.auth.passwords import check_policy, hash_password, verify_password
 from app.auth.tokens import issue_access_token
@@ -207,7 +207,7 @@ def _unknown_name(login_name: str) -> str:
 
 
 def _unknown_log_allowed(redis: Redis, settings: Settings, request: Request | None) -> bool:
-    ip = _client_ip(request)
+    ip = client_ip(request)
     bucket = "unknown"  # 来源不明(非法对端地址)也按失败即关计入
     if ip is not None:
         addr = ipaddress.ip_address(ip)

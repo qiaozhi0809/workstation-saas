@@ -5,7 +5,7 @@ import pytest
 from sqlalchemy import select
 from starlette.requests import Request
 
-from app.audit.service import _client_ip, client_ip, deny, record
+from app.audit.service import client_ip, deny, record
 from app.config import Settings
 from app.errors import ApiError
 from app.models.audit import AuditLog
@@ -75,9 +75,8 @@ def _proxied_request(peer: str, xff: str | list[str] | None, proxies: list[str])
     return Request({"type": "http", "client": (peer, 50000), "headers": headers, "app": app})
 
 
-def test_client_ip_is_public_and_alias_kept():
-    # L59:跨模块(ai/router)用公开名 client_ip;_client_ip 只作别名留给尚未切换的调用方
-    assert client_ip is _client_ip
+def test_clientip_public_name_only():
+    # L59 / L245:所有调用方都用公开名 client_ip,旧的下划线别名已删
     assert client_ip(_proxied_request("203.0.113.9", None, [])) == "203.0.113.9"
 
 
@@ -85,47 +84,47 @@ def test_ip_from_trusted_proxy():
     trusted = ["127.0.0.1", "10.0.0.0/8"]
     # 右往左:10.0.0.5 可信跳过,取第一个不可信的 203.0.113.9(最左的伪造值不会被采信)
     req = _proxied_request("127.0.0.1", "198.51.100.1, 203.0.113.9, 10.0.0.5", trusted)
-    assert _client_ip(req) == "203.0.113.9"
+    assert client_ip(req) == "203.0.113.9"
     # 单个值
-    assert _client_ip(_proxied_request("10.1.2.3", "203.0.113.7", trusted)) == "203.0.113.7"
+    assert client_ip(_proxied_request("10.1.2.3", "203.0.113.7", trusted)) == "203.0.113.7"
     # 全是可信地址:回退直连地址
-    assert _client_ip(_proxied_request("127.0.0.1", "10.0.0.5, 10.0.0.6", trusted)) == "127.0.0.1"
+    assert client_ip(_proxied_request("127.0.0.1", "10.0.0.5, 10.0.0.6", trusted)) == "127.0.0.1"
     # 没有该头:直连地址
-    assert _client_ip(_proxied_request("127.0.0.1", None, trusted)) == "127.0.0.1"
+    assert client_ip(_proxied_request("127.0.0.1", None, trusted)) == "127.0.0.1"
     # IPv6
-    assert _client_ip(_proxied_request("127.0.0.1", "2001:db8::1", trusted)) == "2001:db8::1"
+    assert client_ip(_proxied_request("127.0.0.1", "2001:db8::1", trusted)) == "2001:db8::1"
 
 
 def test_ip_ignores_xff_from_untrusted():
     xff = "203.0.113.9"
-    assert _client_ip(_proxied_request("198.51.100.20", xff, [])) == "198.51.100.20"
-    assert _client_ip(_proxied_request("198.51.100.20", xff, ["10.0.0.0/8"])) == "198.51.100.20"
+    assert client_ip(_proxied_request("198.51.100.20", xff, [])) == "198.51.100.20"
+    assert client_ip(_proxied_request("198.51.100.20", xff, ["10.0.0.0/8"])) == "198.51.100.20"
 
 
 def test_ip_bad_xff():
     trusted = ["127.0.0.1"]
     for bad in ("garbage", "203.0.113.9, garbage", "", "unknown", "300.1.1.1"):
-        assert _client_ip(_proxied_request("127.0.0.1", bad, trusted)) == "127.0.0.1"
+        assert client_ip(_proxied_request("127.0.0.1", bad, trusted)) == "127.0.0.1"
 
 
 def test_ip_rejects_scope_id():
     trusted = ["127.0.0.1"]
     # 直连地址带 scope id:非法 → None;XFF 里带 scope id:非法 → 回退直连地址
-    assert _client_ip(_proxied_request("fe80::1%eth0", None, trusted)) is None
-    assert _client_ip(_proxied_request("127.0.0.1", "fe80::1%eth0", trusted)) == "127.0.0.1"
-    assert _client_ip(_proxied_request("127.0.0.1", "203.0.113.9, fe80::1%eth0", trusted)) == (
+    assert client_ip(_proxied_request("fe80::1%eth0", None, trusted)) is None
+    assert client_ip(_proxied_request("127.0.0.1", "fe80::1%eth0", trusted)) == "127.0.0.1"
+    assert client_ip(_proxied_request("127.0.0.1", "203.0.113.9, fe80::1%eth0", trusted)) == (
         "127.0.0.1"
     )
 
 
 def test_ip_normalizes_ipv4_mapped():
     # 映射地址先归一成 IPv4 再判断是否可信,返回值也是 IPv4
-    assert _client_ip(_proxied_request("::ffff:198.51.100.7", None, [])) == "198.51.100.7"
+    assert client_ip(_proxied_request("::ffff:198.51.100.7", None, [])) == "198.51.100.7"
     trusted = ["10.0.0.0/8"]
     req = _proxied_request("::ffff:10.0.0.1", "203.0.113.9", trusted)
-    assert _client_ip(req) == "203.0.113.9"
+    assert client_ip(req) == "203.0.113.9"
     req = _proxied_request("10.0.0.1", "::ffff:203.0.113.9, ::ffff:10.0.0.2", trusted)
-    assert _client_ip(req) == "203.0.113.9"
+    assert client_ip(req) == "203.0.113.9"
 
 
 def test_ai_generate_audit_uses_trusted_proxy_ip(client, settings, db):
@@ -198,7 +197,7 @@ def test_ip_multiple_xff_header_lines():
     trusted = ["127.0.0.1", "10.0.0.0/8"]
     # 分开追加的两行等价于 "198.51.100.1, 203.0.113.9, 10.0.0.5":右往左取 203.0.113.9
     req = _proxied_request("127.0.0.1", ["198.51.100.1, 203.0.113.9", "10.0.0.5"], trusted)
-    assert _client_ip(req) == "203.0.113.9"
+    assert client_ip(req) == "203.0.113.9"
     # 只看第一行会得到伪造的 198.51.100.1;最后一行是客户端自带时,以最右的不可信值为准
     req = _proxied_request("127.0.0.1", ["198.51.100.1", "203.0.113.9"], trusted)
-    assert _client_ip(req) == "203.0.113.9"
+    assert client_ip(req) == "203.0.113.9"
