@@ -12,7 +12,8 @@ from app.audit.service import record
 from app.auth.deps import get_current_user
 from app.config import Settings, settings_dep
 from app.db import get_db
-from app.deploy.diagnostics import build_bundle, current_revision
+from app.deploy.diagnostics import build_bundle, bundle_filename, current_revision
+from app.domain.schools.service import school_tz
 from app.models import User
 from app.rbac.admin import ensure_admin
 from app.rbac.bindings import Binding
@@ -112,7 +113,7 @@ def diagnostics(
         raise
     record(db, user_id=user.id, action="system.diagnostics", success=True, request=request)
     db.commit()
-    name = f"ws-diagnostics-{now:%Y%m%d-%H%M%S}.zip"
+    name = bundle_filename(now, school_tz(db, settings.school_id))
     return Response(
         content,
         media_type="application/zip",

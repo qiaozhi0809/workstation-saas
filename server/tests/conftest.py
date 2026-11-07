@@ -1,4 +1,5 @@
 import os
+import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -14,15 +15,17 @@ from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
 from redis import Redis
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Engine, create_engine, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
-from testcontainers.postgres import PostgresContainer
-from testcontainers.redis import RedisContainer
+from testcontainers.community.postgres import PostgresContainer
+from testcontainers.community.redis import RedisContainer
 
-from app.config import Settings
+from app.config import Settings, get_settings
 from app.db import SessionScope, get_db, session_scope
 from app.main import create_app
 from app.redis import get_redis
+from tests.migrate_util import upgrade_to
 
 SERVER_DIR = Path(__file__).resolve().parent.parent
 # HS256 建议密钥至少 32 字节;开发默认密钥较短,每次签发都会报 InsecureKeyLengthWarning
@@ -108,3 +111,58 @@ def client(settings: Settings, db: Session, redis_client: Redis) -> TestClient:
     app.dependency_overrides[session_scope] = lambda: _reuse(db)
     app.state.ai_transport = None
     return TestClient(app)
+
+
+@pytest.fixture
+def dev_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """显式声明 dev 环境:经 get_settings() 的测试(create_app() 无参、CLI、调度任务)用它,
+    不再隐式依赖本文件顶部的 setdefault(L205)。get_settings 是 lru_cache,前后各清一次。"""
+    monkeypatch.setenv("WS_ENV", "dev")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
+@pytest.fixture(scope="module")
+def pg_admin_url() -> Iterator[str]:
+    """一个空 Postgres 容器的连接串(模块级),供迁移 / 预检类测试在里面反复建空库(L114)。"""
+    with PostgresContainer("postgres:16-alpine", driver="psycopg") as pg:
+        yield pg.get_connection_url()
+
+
+def _create_database(pg_admin_url: str) -> tuple[Engine, str]:
+    name = f"t_{uuid.uuid4().hex[:12]}"
+    admin = create_engine(pg_admin_url, isolation_level="AUTOCOMMIT")
+    with admin.connect() as conn:
+        conn.execute(text(f'CREATE DATABASE "{name}"'))
+    admin.dispose()
+    return create_engine(make_url(pg_admin_url).set(database=name)), name
+
+
+def _drop_database(pg_admin_url: str, eng: Engine, name: str) -> None:
+    eng.dispose()
+    admin = create_engine(pg_admin_url, isolation_level="AUTOCOMMIT")
+    with admin.connect() as conn:
+        conn.execute(text(f'DROP DATABASE "{name}" WITH (FORCE)'))
+    admin.dispose()
+
+
+@pytest.fixture
+def fresh_engine(pg_admin_url: str) -> Iterator[Engine]:
+    """每个测试一个全新的空库(同一个容器里 CREATE DATABASE)。"""
+    eng, name = _create_database(pg_admin_url)
+    try:
+        yield eng
+    finally:
+        _drop_database(pg_admin_url, eng, name)
+
+
+@pytest.fixture(scope="module")
+def head_engine(pg_admin_url: str) -> Iterator[Engine]:
+    """一个升到 head 的空库,供"每条 Check 都能查出脏数据"的测试在事务里反复使用。"""
+    eng, name = _create_database(pg_admin_url)
+    try:
+        upgrade_to(eng, "head")
+        yield eng
+    finally:
+        _drop_database(pg_admin_url, eng, name)

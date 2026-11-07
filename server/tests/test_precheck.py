@@ -2,16 +2,11 @@
 
 import io
 import re
-import uuid
-from collections.abc import Iterator
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from alembic import command
-from sqlalchemy import Engine, create_engine, text
-from sqlalchemy.engine import make_url
-from testcontainers.postgres import PostgresContainer
+from sqlalchemy import text
 
 from app.cli import build_parser, migrate
 from app.deploy import precheck
@@ -19,65 +14,14 @@ from app.deploy.precheck import (
     CHECKS,
     EXEMPT_CONSTRAINTS,
     REVIEWED_REVISIONS,
-    alembic_config,
     pending_revisions,
     render,
     run_precheck,
 )
+from tests.migrate_util import current_version, upgrade_to
 
 VERSIONS = Path(__file__).resolve().parent.parent / "migrations" / "versions"
 ALL_REVISIONS = [f"{i:04d}" for i in range(1, 15)]
-
-
-@pytest.fixture(scope="module")
-def pg_admin_url() -> Iterator[str]:
-    with PostgresContainer("postgres:16-alpine", driver="psycopg") as pg:
-        yield pg.get_connection_url()
-
-
-@pytest.fixture
-def fresh_engine(pg_admin_url: str) -> Iterator[Engine]:
-    """每个测试一个全新的空库(同一个容器里 CREATE DATABASE)。"""
-    name = f"t_{uuid.uuid4().hex[:12]}"
-    admin = create_engine(pg_admin_url, isolation_level="AUTOCOMMIT")
-    with admin.connect() as conn:
-        conn.execute(text(f'CREATE DATABASE "{name}"'))
-    eng = create_engine(make_url(pg_admin_url).set(database=name))
-    try:
-        yield eng
-    finally:
-        eng.dispose()
-        with admin.connect() as conn:
-            conn.execute(text(f'DROP DATABASE "{name}" WITH (FORCE)'))
-        admin.dispose()
-
-
-def upgrade_to(engine: Engine, revision: str) -> None:
-    command.upgrade(alembic_config(engine), revision)
-
-
-def current_version(engine: Engine) -> str | None:
-    with engine.connect() as conn:
-        row = conn.execute(text("SELECT version_num FROM alembic_version")).first()
-    return row[0] if row else None
-
-
-@pytest.fixture(scope="module")
-def head_engine(pg_admin_url: str) -> Iterator[Engine]:
-    """一个升到 head 的空库,供"每条 Check 都能查出脏数据"的测试在事务里反复使用。"""
-    name = f"t_{uuid.uuid4().hex[:12]}"
-    admin = create_engine(pg_admin_url, isolation_level="AUTOCOMMIT")
-    with admin.connect() as conn:
-        conn.execute(text(f'CREATE DATABASE "{name}"'))
-    eng = create_engine(make_url(pg_admin_url).set(database=name))
-    try:
-        upgrade_to(eng, "head")
-        yield eng
-    finally:
-        eng.dispose()
-        with admin.connect() as conn:
-            conn.execute(text(f'DROP DATABASE "{name}" WITH (FORCE)'))
-        admin.dispose()
 
 
 def _school_year_grade(conn) -> tuple[str, str, str]:

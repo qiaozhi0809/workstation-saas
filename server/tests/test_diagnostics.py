@@ -5,6 +5,7 @@ import re
 import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 import structlog
@@ -13,7 +14,7 @@ from sqlalchemy import func, select, update
 
 from app.config import Settings
 from app.db import get_db
-from app.deploy.diagnostics import build_bundle, mask_line, mask_settings
+from app.deploy.diagnostics import build_bundle, bundle_filename, mask_line, mask_settings
 from app.deploy.precheck import head_revision
 from app.logging import configure_logging
 from app.main import create_app
@@ -79,6 +80,13 @@ def test_diagnostics_filename_pattern(client, settings):
         r'attachment; filename="ws-diagnostics-\d{8}-\d{6}\.zip"',
         res.headers["content-disposition"],
     )
+
+
+def test_bundle_filename_uses_school_timezone():
+    """L114:文件名里的时刻是学校本地时间;UTC 20:30 在东八区已是次日 04:30。"""
+    now = datetime(2026, 11, 6, 20, 30, 0, tzinfo=UTC)
+    assert bundle_filename(now, ZoneInfo("Asia/Shanghai")) == "ws-diagnostics-20261107-043000.zip"
+    assert bundle_filename(now, ZoneInfo("UTC")) == "ws-diagnostics-20261106-203000.zip"
 
 
 def test_diagnostics_masks_secrets(settings, tmp_path, engine):

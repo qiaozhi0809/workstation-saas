@@ -5,6 +5,7 @@ from datetime import timedelta
 from uuid import UUID
 
 import pyotp
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import delete, func, select
 
@@ -22,6 +23,8 @@ from app.redis import get_redis
 from tests.factories import make_teacher_account
 from tests.helpers import auth
 from tests.seed_ids import SCHOOL_ID, TEACHER_USER_ID
+
+pytestmark = pytest.mark.usefixtures("dev_env")  # L205:这些测试经 get_settings() 读环境,显式要 dev
 
 API = "/api/v1"
 LOGS = f"{API}/admin/login-logs"
