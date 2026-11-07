@@ -11,12 +11,9 @@ from sqlalchemy import text
 from app.auth import sessions
 from app.cli import build_parser, init_school_cmd, migrate, parent_archive
 from app.deploy import precheck
-from tests.test_precheck import (  # noqa: F401  (fixtures)
-    current_version,
-    fresh_engine,
-    pg_admin_url,
-    upgrade_to,
-)
+from tests.migrate_util import current_version, upgrade_to
+
+pytestmark = pytest.mark.usefixtures("dev_env")  # L205:这些测试经 get_settings() 读环境,显式要 dev
 
 PARENT02 = "55555555-5555-5555-5555-555555555562"
 
@@ -93,7 +90,7 @@ def _migrate(engine, *argv):
     return migrate(ns, engine=engine, out=out), out.getvalue()
 
 
-def test_migrate_check_only(fresh_engine):  # noqa: F811
+def test_migrate_check_only(fresh_engine):
     upgrade_to(fresh_engine, "0001")
     code, out = _migrate(fresh_engine, "--check-only")
     assert code == 0
@@ -102,7 +99,7 @@ def test_migrate_check_only(fresh_engine):  # noqa: F811
     assert current_version(fresh_engine) == "0001"
 
 
-def test_migrate_upgrades_empty_db_then_is_idempotent(fresh_engine):  # noqa: F811
+def test_migrate_upgrades_empty_db_then_is_idempotent(fresh_engine):
     head = precheck.head_revision(fresh_engine)  # 不写死最新迁移号,从 alembic 动态取
     assert head
     code, out = _migrate(fresh_engine)
@@ -125,7 +122,7 @@ def test_migrate_other_error_exits_1():
     assert "迁移失败" in out
 
 
-def test_migrate_unknown_db_version_exits_1(fresh_engine):  # noqa: F811
+def test_migrate_unknown_db_version_exits_1(fresh_engine):
     from sqlalchemy import text as sql_text
 
     upgrade_to(fresh_engine, "0001")

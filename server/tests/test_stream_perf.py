@@ -174,11 +174,7 @@ def test_three_copy_one_transcode_30s(db, redis_url, tmp_path):
                 for c in cams:
                     if c.id not in first_segment and has_segment(c):
                         first_segment[c.id] = now
-                pids = [
-                    st.proc.pid
-                    for st in sup._streams.values()
-                    if st.proc is not None and st.proc.returncode is None
-                ]
+                pids = sup.running_pids()
                 rss_now = 0.0
                 for pid in pids:
                     cpu = _cpu_seconds(pid)

@@ -34,6 +34,7 @@ from tests.seed_ids import (
     TEACHER_USER_ID,
     YEAR_ID,
 )
+from tests.sql_trace import capture_sql
 
 GRADING = "/api/v1/school/grading"
 CATALOG = "/api/v1/school/subject-catalog"
@@ -415,9 +416,23 @@ def test_grade_exam_locks_classes_in_id_order(client, settings, db, monkeypatch)
     assert seen == sorted(seen) and seen[-1] == top and len(seen) == 3
     seen.clear()
     ge_id = r.json()["id"]
-    r = client.put(f"{GE_API}/{ge_id}", json=_ge_body([{"name": "语文", "full": 120}]), headers=h)
+    # update 腿不能靠 merge_subjects 的调用顺序断言(三个班乱序碰巧升序的概率有 1/6):
+    # 直接断言语句流里锁班级的那条 SELECT 带 ORDER BY classes.id … FOR UPDATE
+    statements, stop = capture_sql(db)
+    try:
+        r = client.put(
+            f"{GE_API}/{ge_id}", json=_ge_body([{"name": "语文", "full": 120}]), headers=h
+        )
+    finally:
+        stop()
     assert r.status_code == 200, r.text
-    assert seen == sorted(seen) and len(seen) == 3
+    class_locks = [
+        s
+        for s in statements
+        if "FROM classes" in s and "FOR UPDATE" in s and "ORDER BY classes.id" in s
+    ]
+    assert class_locks, statements
+    assert len(seen) == 3
     seen.clear()
     # 同步:两个新班,名字序(丁 < 戊)与 id 序相反
     first = _class_with_id(db, "00000000-0000-0000-0000-000000000001", "三年戊班")
@@ -491,6 +506,8 @@ def test_parent_can_read_grading(client, settings):
         (["实验班", "三年二班", "三年一班"], ["三年一班", "三年二班", "实验班"]),
         # 全角数字当数字;带圈 / 上标数字 int() 不认,当文字,但绝不能抛异常
         (["３班", "一班", "2班"], ["一班", "2班", "３班"]),
+        # 全角数字按数值排:被当成文字的话"十班"(数值 10)会排到最前,这条能区分两种实现
+        (["３班", "十班", "２班"], ["２班", "３班", "十班"]),
         (["三年②班", "三年①班", "三年一班"], ["三年一班", "三年①班", "三年②班"]),
     ],
 )
@@ -508,6 +525,7 @@ def test_class_sort_key_never_raises(name):
 
 def test_class_sort_key_is_total_and_stable():
     assert class_sort_key("3班")[:-1] == class_sort_key("三班")[:-1]  # 只差收尾的原文
+    assert class_sort_key("３班")[:-1] == class_sort_key("3班")[:-1]  # 全角与半角同一个数值
     assert class_sort_key("三班") < class_sort_key("4班")
     assert class_sort_key("2班") < class_sort_key("三班")
     # 前缀相同、长度不同的名字也能比(不会拿数字段和文字段直接比较)

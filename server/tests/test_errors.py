@@ -1,8 +1,11 @@
+import pytest
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
 from app.errors import ApiError
 from app.main import create_app
+
+pytestmark = pytest.mark.usefixtures("dev_env")  # L205:这些测试经 get_settings() 读环境,显式要 dev
 
 
 class Body(BaseModel):
