@@ -207,7 +207,7 @@ Step N+(1-k): Commit          → git add && git commit
 
 完整决策历史见 spec 附录 A(13 条)。
 
-**锁顺序(台账 L323,D1 复审教训)**:任何先取学年行 `KEY SHARE` 的写路径必须先按 id 升序锁住所涉班级行(`merge_subjects` 会隐式锁班级行,调用方要在它之前自己锁),否则会与学年回滚的 `FOR UPDATE` 互等死锁;做法见 `grade_exams/service.py::_lock_classes`。另:学年 → 年级 → 班级是全仓库统一的取锁顺序(v1.1 段 V1):往学年里插年级 / 班级 / 任职或删年级,先 `years/locks.py::ensure_year_live` 再 `org/service.py::lock_grade`,再锁班级行;改摄像头所属班级时先锁班级行再动摄像头行。
+**锁顺序(台账 L323,D1 复审教训)**:任何先取学年行 `KEY SHARE` 的写路径必须先按 id 升序锁住所涉班级行(`merge_subjects` 会隐式锁班级行,调用方要在它之前自己锁),否则会与学年回滚的 `FOR UPDATE` 互等死锁;做法见 `grade_exams/service.py::_lock_classes`。另(v1.1 段 V1,裁定 R29):以年级为对象的写路径(建班、删年级)先 `years/locks.py::ensure_year_live` 取学年 `KEY SHARE`,再 `org/service.py::lock_grade`;建年级、任命年级组长只取学年 `KEY SHARE`;以班级为对象的写路径仍按上一句先锁班级行;改摄像头所属班级时先锁班级行再动摄像头行;作息与课表写入先锁 School 行再锁班级(该锁的强度问题见台账 L387)。
 
 ---
 
