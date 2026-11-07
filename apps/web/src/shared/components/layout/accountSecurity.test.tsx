@@ -236,20 +236,40 @@ it('disable confirm shows a spinner and stays disabled while submitting', async 
   expect(within(dlg).queryByRole('status', { name: '正在提交' })).toBeNull()
 })
 
-it('reopening the dialog shows no qr or secret until setup is called again', async () => {
+// L136:原来一条用例用 if/else 兼容"Esc 关没关掉"两种情况,两个分支都断言不到;拆成两条,各自把路径钉死
+it('Escape closes the dialog; reopening shows no qr or secret until setup is called again', async () => {
   const dlg = await startEnable()
   expect(within(dlg).getByRole('img', { name: '两步验证二维码' })).toBeInTheDocument()
   fireEvent.keyDown(dlg, { key: 'Escape' })
-  if (screen.queryByRole('dialog')) {
-    fireEvent.click(within(dlg).getByRole('button', { name: '取消' }))
-    fireEvent.click(screen.getByRole('button', { name: '账号菜单' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '账号安全' }))
-  } else {
-    fireEvent.click(screen.getByRole('button', { name: '账号菜单' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '账号安全' }))
-  }
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  fireEvent.click(screen.getByRole('button', { name: '账号菜单' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: '账号安全' }))
   const again = await screen.findByRole('dialog')
+  // 重开落在概览:有"开启"按钮,没有二维码与密钥,也没有再去生成
+  expect(await within(again).findByRole('button', { name: '开启' })).toBeInTheDocument()
   expect(within(again).queryByRole('img', { name: '两步验证二维码' })).toBeNull()
   expect(again.textContent).not.toContain('JBSW')
   expect(authApi.totpSetup).toHaveBeenCalledTimes(1)
+  // 再点"开启"才重新生成
+  fireEvent.click(within(again).getByRole('button', { name: '开启' }))
+  await within(again).findByRole('img', { name: '两步验证二维码' })
+  expect(authApi.totpSetup).toHaveBeenCalledTimes(2)
+})
+
+it('取消 in the enable step returns to the overview inside the open dialog without a new setup', async () => {
+  const dlg = await startEnable()
+  fireEvent.click(within(dlg).getByRole('button', { name: '取消' }))
+  // 对话框还开着,回到概览
+  expect(screen.getByRole('dialog')).toBe(dlg)
+  expect(within(dlg).getByRole('button', { name: '开启' })).toBeInTheDocument()
+  expect(within(dlg).queryByRole('img', { name: '两步验证二维码' })).toBeNull()
+  expect(within(dlg).queryByLabelText('验证码')).toBeNull()
+  expect(dlg.textContent).not.toContain('JBSW')
+  expect(authApi.totpSetup).toHaveBeenCalledTimes(1)
+  // 再点"开启"才重新生成,输入框是空的
+  fireEvent.click(within(dlg).getByRole('button', { name: '开启' }))
+  await within(dlg).findByRole('img', { name: '两步验证二维码' })
+  expect(authApi.totpSetup).toHaveBeenCalledTimes(2)
+  expect(within(dlg).getByLabelText('验证码')).toHaveValue('')
+  expect(within(dlg).getByLabelText('当前密码')).toHaveValue('')
 })
