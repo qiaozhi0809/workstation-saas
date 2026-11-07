@@ -6,14 +6,14 @@ import { adminApi } from '@/shared/api/admin'
 import { ApiError } from '@/shared/api/client'
 import { schoolApi } from '@/shared/api/school'
 import { downloadBlob } from '@/shared/lib/download'
-import type { AttendanceClassDetail, AttendanceReport } from '@/shared/types/admin'
+import type { AttendanceClassDetail, AttendanceReport, SchoolGrade } from '@/shared/types/admin'
 import type { Meta } from '@/shared/types/school'
-import { boardView } from '../Board/boardFixtures'
 import AttendanceReportPage from './AttendanceReportPage'
 
 vi.mock('@/shared/api/admin', () => ({
   adminApi: {
     board: vi.fn(),
+    schoolGrades: vi.fn(),
     attendanceReport: vi.fn(),
     attendanceClass: vi.fn(),
     exportAttendance: vi.fn(),
@@ -23,6 +23,10 @@ vi.mock('@/shared/api/school', () => ({ schoolApi: { meta: vi.fn() } }))
 vi.mock('@/shared/lib/download', () => ({ downloadBlob: vi.fn() }))
 
 const META: Meta = { version: '1.0.0', school_name: '示例小学', school_tz: 'Asia/Shanghai' }
+const GRADES: SchoolGrade[] = [
+  { id: 'g3', name: '三年级', display_order: 3, effective_stage: 'primary' },
+  { id: 'g4', name: '四年级', display_order: 4, effective_stage: 'primary' },
+]
 
 const report = (month: string): AttendanceReport => ({
   month,
@@ -85,7 +89,7 @@ beforeEach(() => {
   // 2026-10-31 16:30 UTC:学校(上海)已进入 11 月,UTC−12 … UTC+7 的浏览器还在 10 月
   vi.setSystemTime(new Date('2026-10-31T16:30:00Z'))
   vi.mocked(schoolApi.meta).mockResolvedValue(META)
-  vi.mocked(adminApi.board).mockResolvedValue(boardView())
+  vi.mocked(adminApi.schoolGrades).mockResolvedValue(GRADES)
   vi.mocked(adminApi.attendanceReport).mockImplementation(async (m) => report(m))
   vi.mocked(adminApi.attendanceClass).mockResolvedValue(detail)
 })
@@ -158,8 +162,26 @@ describe('月度考勤报告', () => {
     expect(document.querySelector('a[download]')).toBeNull()
   })
 
+  // L272:年级筛选读只读的 GET /school/grades(school.view 可读、按可见年级裁剪),不再把整个看板拉下来
+  it('grades from school endpoint', async () => {
+    setup()
+    const select = await screen.findByRole('combobox', { name: '年级' })
+    await screen.findByRole('option', { name: '四年级' })
+    expect(
+      within(select)
+        .getAllByRole('option')
+        .map((o) => [o.getAttribute('value'), o.textContent]),
+    ).toEqual([
+      ['', '全部年级'],
+      ['g3', '三年级'],
+      ['g4', '四年级'],
+    ])
+    expect(adminApi.schoolGrades).toHaveBeenCalledTimes(1)
+    expect(adminApi.board).not.toHaveBeenCalled()
+  })
+
   it('年级列表加载失败时提示并可重试,而不是静默只剩"全部年级"(L59)', async () => {
-    vi.mocked(adminApi.board).mockRejectedValueOnce(new Error('boom'))
+    vi.mocked(adminApi.schoolGrades).mockRejectedValueOnce(new Error('boom'))
     setup()
     await screen.findByText('三年一班')
     expect(await screen.findByRole('alert')).toHaveTextContent('年级列表加载失败')

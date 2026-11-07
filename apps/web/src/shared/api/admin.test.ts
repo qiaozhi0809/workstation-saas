@@ -165,6 +165,7 @@ const cases: [string, () => Promise<unknown>, string, string, unknown?][] = [
   ['today', () => adminApi.today(), 'GET', '/admin/today'],
   ['board none', () => adminApi.board(), 'GET', '/admin/board'],
   ['board grade', () => adminApi.board('g1'), 'GET', '/admin/board?grade_id=g1'],
+  ['schoolGrades', () => adminApi.schoolGrades(), 'GET', '/school/grades'],
   ['gradeExams none', () => adminApi.gradeExams(), 'GET', '/admin/grade-exams'],
   ['gradeExams grade', () => adminApi.gradeExams('g1'), 'GET', '/admin/grade-exams?grade_id=g1'],
   ['createGradeExam', () => adminApi.createGradeExam(geB), 'POST', '/admin/grade-exams', geB],

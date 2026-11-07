@@ -7,7 +7,7 @@ import { ApiError } from '@/shared/api/client'
 import { schoolApi } from '@/shared/api/school'
 import { toast } from '@/shared/components/Toast'
 import { useAuthStore } from '@/shared/stores/auth'
-import type { BoardView, GradeAdmin, GradeExam } from '@/shared/types/admin'
+import type { GradeAdmin, GradeExam, SchoolGrade } from '@/shared/types/admin'
 import type { Meta, SubjectCatalog } from '@/shared/types/school'
 import GradeExamsPage from './GradeExamsPage'
 
@@ -15,6 +15,7 @@ vi.mock('@/shared/api/admin', () => ({
   adminApi: {
     grades: vi.fn(),
     board: vi.fn(),
+    schoolGrades: vi.fn(),
     gradeExams: vi.fn(),
     createGradeExam: vi.fn(),
     updateGradeExam: vi.fn(),
@@ -41,13 +42,8 @@ const CATALOG: SubjectCatalog = {
   senior: [{ name: '语文', full: 150 }],
 }
 
-const boardOf = (...grades: { id: string; name: string }[]): BoardView => ({
-  grades,
-  grade_id: null,
-  classes: [],
-})
-const G3 = { id: 'g3', name: '三年级' }
-const G4 = { id: 'g4', name: '四年级' }
+const G3: SchoolGrade = { id: 'g3', name: '三年级', display_order: 3, effective_stage: 'primary' }
+const G4: SchoolGrade = { id: 'g4', name: '四年级', display_order: 4, effective_stage: 'primary' }
 
 const exam = (over: Partial<GradeExam> = {}): GradeExam => ({
   id: 'ge1',
@@ -71,7 +67,7 @@ const exam = (over: Partial<GradeExam> = {}): GradeExam => ({
 beforeEach(() => {
   vi.resetAllMocks()
   useAuthStore.setState({ user: null })
-  vi.mocked(adminApi.board).mockResolvedValue(boardOf(G3, G4))
+  vi.mocked(adminApi.schoolGrades).mockResolvedValue([G3, G4])
   vi.mocked(adminApi.gradeExams).mockImplementation(async (gid) => (gid === 'g4' ? [] : [exam()]))
   vi.mocked(schoolApi.subjectCatalog).mockResolvedValue(CATALOG)
   vi.mocked(schoolApi.meta).mockResolvedValue(META)
@@ -119,13 +115,15 @@ it('lists the exams of the selected grade tab with per-class progress', async ()
   expect(await screen.findByText('四年级还没有联考')).toBeInTheDocument()
 })
 
-it('shows the grade tabs from the board even when /admin/grades is forbidden (grade head)', async () => {
+// L272:年级页签读只读的 GET /school/grades(按可见年级裁剪),既不拉看板也不碰要 org.manage 的 /admin/grades
+it('shows the grade tabs from the school grades endpoint even when /admin/grades is forbidden (grade head)', async () => {
   vi.mocked(adminApi.grades).mockRejectedValue(new ApiError(403, 'FORBIDDEN', 'forbidden'))
-  vi.mocked(adminApi.board).mockResolvedValue(boardOf(G3))
+  vi.mocked(adminApi.schoolGrades).mockResolvedValue([G3])
   await renderPage()
   expect(screen.getByRole('tab', { name: '三年级' })).toBeInTheDocument()
   expect(screen.queryByRole('tab', { name: '四年级' })).toBeNull()
-  expect(adminApi.board).toHaveBeenCalledWith(null)
+  expect(adminApi.schoolGrades).toHaveBeenCalledTimes(1)
+  expect(adminApi.board).not.toHaveBeenCalled()
   expect(adminApi.grades).not.toHaveBeenCalled()
 })
 
@@ -327,7 +325,9 @@ it('grade exam form picks from catalog', async () => {
 })
 
 it('uses the stage of the grade: junior catalog for 初一 by name, explicit stage when readable', async () => {
-  vi.mocked(adminApi.board).mockResolvedValue(boardOf({ id: 'g7', name: '初一' }))
+  vi.mocked(adminApi.schoolGrades).mockResolvedValue([
+    { id: 'g7', name: '初一', display_order: 7, effective_stage: 'junior' },
+  ])
   vi.mocked(adminApi.gradeExams).mockResolvedValue([exam({ grade_id: 'g7', grade_name: '初一' })])
   await renderPage()
   fireEvent.click(screen.getByRole('button', { name: '新建联考' }))

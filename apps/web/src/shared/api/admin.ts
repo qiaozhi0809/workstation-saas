@@ -32,6 +32,7 @@ import type {
   NoticePerson,
   NoticeRecipients,
   NoticeSent,
+  SchoolGrade,
   SchoolInfo,
   SystemInfo,
   ScoreStudentRow,
@@ -172,6 +173,8 @@ export const adminApi = {
   today: () => api<TodayView>('GET', '/admin/today'),
   board: (gradeId?: string | null) =>
     api<BoardView>('GET', `/admin/board${qs({ grade_id: gradeId })}`),
+  /** 只读年级列表(school.view 即可;按可见年级裁剪):考勤报告 / 联考页的年级筛选用它,看板查询只在看板用(L272) */
+  schoolGrades: () => api<SchoolGrade[]>('GET', '/school/grades'),
   // ---- 年级联考 ----
   gradeExams: (gradeId?: string | null) =>
     api<GradeExam[]>('GET', `/admin/grade-exams${qs({ grade_id: gradeId })}`),

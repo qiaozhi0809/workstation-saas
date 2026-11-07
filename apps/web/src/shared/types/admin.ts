@@ -1,4 +1,5 @@
 import type { ExamType, SubjectFull } from './grades'
+import type { Stage as StageKey } from './school'
 import type { StudentSeat } from './student'
 
 export type Context = 'teacher' | 'admin' | 'parent'
@@ -235,8 +236,21 @@ export interface BoardClass {
     week_net: number
   }
 }
+/**
+ * 年级简项(后端 overview/schemas.py::GradeBrief,V3-4):看板与 GET /school/grades 共用,按调用者可见年级裁剪。
+ * effective_stage 是年级显式设的学段、否则按名字推断的学段键(科目目录按它取);契约允许为 null
+ */
+export interface GradeBrief {
+  id: string
+  name: string
+  effective_stage: StageKey | null
+}
+/** GET /school/grades 的一项(school.view 可读;年级组长只拿到自己的年级,L272) */
+export interface SchoolGrade extends GradeBrief {
+  display_order: number
+}
 export interface BoardView {
-  grades: { id: string; name: string }[]
+  grades: GradeBrief[]
   grade_id: string | null
   classes: BoardClass[]
 }
