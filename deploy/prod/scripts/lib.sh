@@ -329,10 +329,13 @@ cidr_contains() {
   [ "${ra%% *}" -le "${rb%% *}" ] && [ "${rb##* }" -le "${ra##* }" ]
 }
 
-# host_routes:本机 IPv4 路由表里的目标网段(每行一个;default 等关键字跳过)。没有 ip 命令(非 Linux)时无输出
+# host_routes:本机 IPv4 路由里的目标网段(每行一个,去重)。看全部路由表(L314:多网卡 + 策略路由的校园网,
+# 主表之外的表里也有网段);`table all` 的输出里 local / broadcast / default 等以关键字开头的行跳过。
+# 没有 ip 命令(非 Linux)时无输出;ip 太老不认 table all 时退回主表
 host_routes() {
   command -v ip >/dev/null 2>&1 || return 0
-  ip -4 route show 2>/dev/null | awk '$1 ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(\/[0-9]+)?$/ { print $1 }' | sort -u
+  { ip -4 route show table all 2>/dev/null || ip -4 route show 2>/dev/null; } \
+    | awk '$1 ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(\/[0-9]+)?$/ { print $1 }' | sort -u
   return 0
 }
 
