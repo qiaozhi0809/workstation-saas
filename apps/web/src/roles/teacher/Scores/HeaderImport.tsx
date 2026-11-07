@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ApiError } from '@/shared/api/client'
-import { examsApi } from '@/shared/api/exams'
+import { examKeys, examsApi } from '@/shared/api/exams'
 import Modal from '@/shared/components/overlay/Modal'
 import { toast } from '@/shared/components/Toast'
 import { Button } from '@/shared/components/ui/button'
@@ -151,9 +151,9 @@ export default function HeaderImport({
     // 中途某一批失败时前面的批次可能已写入,所以成功失败都刷新
     onSettled: () =>
       Promise.all([
-        qc.invalidateQueries({ queryKey: ['score-sheet', classId, exam.id] }),
-        qc.invalidateQueries({ queryKey: ['exams', classId] }),
-        qc.invalidateQueries({ queryKey: ['gradebook', classId] }),
+        qc.invalidateQueries({ queryKey: examKeys.sheet(classId, exam.id) }),
+        qc.invalidateQueries({ queryKey: examKeys.list(classId) }),
+        qc.invalidateQueries({ queryKey: examKeys.gradebook(classId) }),
       ]),
     onSuccess: (_, snapshot) => {
       toast(summary(snapshot.cells.length, snapshot))

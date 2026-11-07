@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
-import { examsApi } from '@/shared/api/exams'
+import { examKeys, examsApi } from '@/shared/api/exams'
 import { studentsApi } from '@/shared/api/students'
 import { EmptyState } from '@/shared/components/feedback/EmptyState'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
@@ -30,7 +30,7 @@ function ScoresBody({ ctx }: { ctx: ClassContext }) {
   const { cls, summary, perms, subjects } = ctx
   const [params, setParams] = useSearchParams()
   const [form, setForm] = useState<'new' | 'edit' | null>(null)
-  const exams = useQuery({ queryKey: ['exams', cls.id], queryFn: () => examsApi.list(cls.id) })
+  const exams = useQuery({ queryKey: examKeys.list(cls.id), queryFn: () => examsApi.list(cls.id) })
 
   const canWrite = perms.includes('exam.write')
   const canAllSubjects = cls.role !== 'subject_teacher'
@@ -134,7 +134,7 @@ function ExamSection({
 }) {
   const { cls, perms, subjects } = ctx
   const sheet = useQuery({
-    queryKey: ['score-sheet', cls.id, exam.id],
+    queryKey: examKeys.sheet(cls.id, exam.id),
     queryFn: () => examsApi.sheet(cls.id, exam.id),
   })
   const roster = useQuery({

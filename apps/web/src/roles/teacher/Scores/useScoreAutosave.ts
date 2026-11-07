@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useBlocker } from 'react-router-dom'
-import { examsApi } from '@/shared/api/exams'
+import { examKeys, examsApi } from '@/shared/api/exams'
 import { confirmLeave, useTeacherStore } from '@/shared/stores/teacher'
 import type { ScoreCell, ScoreSheet } from '@/shared/types/grades'
 
@@ -53,7 +53,7 @@ export function useScoreAutosave({ classId, examId }: { classId: string; examId:
       setDirty(false)
       return Promise.resolve(true)
     }
-    const sheetKey = ['score-sheet', classId, examId]
+    const sheetKey = examKeys.sheet(classId, examId)
     const run = (async () => {
       setStatus('saving')
       try {
@@ -80,8 +80,8 @@ export function useScoreAutosave({ classId, examId }: { classId: string; examId:
       }
       setStatus('saved')
       setDirty(false)
-      void qc.invalidateQueries({ queryKey: ['exams', classId] })
-      void qc.invalidateQueries({ queryKey: ['gradebook', classId] })
+      void qc.invalidateQueries({ queryKey: examKeys.list(classId) })
+      void qc.invalidateQueries({ queryKey: examKeys.gradebook(classId) })
       return true
     })()
     inflight.current = run
