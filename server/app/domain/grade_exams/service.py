@@ -3,7 +3,7 @@ from datetime import datetime
 from uuid import UUID
 
 from fastapi import Request
-from sqlalchemy import delete, func, select, text
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.audit.service import record
@@ -17,6 +17,7 @@ from app.domain.grade_exams.schemas import (
     MissingClass,
 )
 from app.domain.schools.service import active_academic_year, require_active_year
+from app.domain.years.locks import ensure_year_live
 from app.errors import ApiError
 from app.models import AcademicYear, Enrollment, Exam, Grade, GradeExam, SchoolClass, Score, User
 from app.rbac.bindings import Binding, Scope, can
@@ -83,7 +84,7 @@ def _grade_classes(
 
 def _lock_classes(db: Session, classes: Sequence[SchoolClass]) -> None:
     """先按 id 升序锁住联考涉及的班级行(与学年升级、课表导入同序,防死锁),再碰学年行(L56):
-    create / sync / update 都是"先这里、后 _ensure_year_live";名册 / 任职写入也是"先班级、
+    create / sync / update 都是"先这里、后 ensure_year_live";名册 / 任职写入也是"先班级、
     后学年(外键 KEY SHARE)",与回滚"先班级、后学年 FOR UPDATE"同序。"""
     if classes:
         db.execute(
@@ -92,16 +93,6 @@ def _lock_classes(db: Session, classes: Sequence[SchoolClass]) -> None:
             .order_by(SchoolClass.id)
             .with_for_update()
         ).all()
-
-
-def _ensure_year_live(db: Session, year_id: UUID) -> None:
-    """对学年行取 KEY SHARE(与回滚持有的 FOR UPDATE 互斥):回滚进行中就等它结束;等到时学年
-    已被回滚删掉或已被升级停用 → 409,而不是写进一个马上被级联删掉 / 已成往年的学年(L56)。"""
-    row = db.execute(
-        text("SELECT is_active FROM academic_years WHERE id = :y FOR KEY SHARE"), {"y": year_id}
-    ).first()
-    if row is None or not row[0]:
-        raise ApiError(409, "NO_ACTIVE_YEAR", "学年刚被升级或回滚,请刷新后重试")
 
 
 def _new_exam(ge: GradeExam, cls: SchoolClass, user_id: UUID, now: datetime) -> Exam:
@@ -313,10 +304,10 @@ def create(
     if grade.academic_year_id != year.id:
         raise ApiError(400, "BAD_REQUEST", "只能给当前学年的年级建联考")
     _ensure_in_catalog(db, grade, body.subjects, set())
-    # 先锁班级、再确认学年仍进行中,之后才插联考行(锁序见 _lock_classes / _ensure_year_live)
+    # 先锁班级、再确认学年仍进行中,之后才插联考行(锁序见 _lock_classes / ensure_year_live)
     classes = _grade_classes(db, user.school_id, year.id, grade.id)
     _lock_classes(db, classes)
-    _ensure_year_live(db, year.id)
+    ensure_year_live(db, year.id)
     ge = GradeExam(
         school_id=user.school_id,
         academic_year_id=year.id,
@@ -366,7 +357,7 @@ def update(
     _ensure_in_catalog(db, grade, body.subjects, {s["name"] for s in ge.subjects})
     exams = _lock_class_exams(db, ge)
     # 与新建/补齐/回滚同序:先锁班级行、再碰学年行(L56)。merge_subjects 里也会锁班级行,但那在
-    # _ensure_year_live 之后——若不先锁,编辑持学年 KEY SHARE 去等回滚持有的班级锁,回滚又等
+    # ensure_year_live 之后——若不先锁,编辑持学年 KEY SHARE 去等回滚持有的班级锁,回滚又等
     # 学年 FOR UPDATE,就死锁;而排在 apply 后面的编辑会在这里等到 apply 提交,再发现学年已停用。
     classes = {
         c.id: c
@@ -375,7 +366,7 @@ def update(
         )
     }
     _lock_classes(db, list(classes.values()))
-    _ensure_year_live(db, ge.academic_year_id)
+    ensure_year_live(db, ge.academic_year_id)
     exam_ids = [e.id for e in exams]
     kept = {s.name for s in body.subjects}
     removed = [s["name"] for s in ge.subjects if s["name"] not in kept]
@@ -420,7 +411,7 @@ def delete_grade_exam(
     db: Session, user: User, ge: GradeExam, *, request: Request | None = None
 ) -> None:
     exams = _lock_class_exams(db, ge)
-    _ensure_year_live(db, ge.academic_year_id)  # 同 update:锁后复核学年仍进行中(L56)
+    ensure_year_live(db, ge.academic_year_id)  # 同 update:锁后复核学年仍进行中(L56)
     if exams:
         _ensure_unscored(db, exams)
     grade_exam_id = str(ge.id)
@@ -449,7 +440,7 @@ def sync(
 ) -> GradeExamOut:
     missing = _missing_classes(db, ge)
     _lock_classes(db, missing)  # 先锁班级,再确认学年,再插考试行(同 create)
-    _ensure_year_live(db, ge.academic_year_id)
+    ensure_year_live(db, ge.academic_year_id)
     for cls in sorted(missing, key=lambda c: c.id):
         db.add(_new_exam(ge, cls, user.id, now))
         merge_subjects(db, cls, [SubjectFull(**s) for s in ge.subjects])

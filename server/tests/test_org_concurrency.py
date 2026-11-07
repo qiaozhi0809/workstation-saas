@@ -7,6 +7,7 @@ Barrier / Event 控制时序;需要"确认对方已被挡住"时轮询 pg_stat_a
 import threading
 import time
 from collections.abc import Callable, Iterator
+from datetime import UTC, date, datetime
 from typing import Any
 from uuid import UUID
 
@@ -16,7 +17,9 @@ from sqlalchemy.orm import Session
 
 from app import clock
 from app.domain.org import service, staff
-from app.domain.org.schemas import ClassInput, StaffInput
+from app.domain.org.schemas import ClassInput, GradeInput, StaffInput
+from app.domain.years import service as years_service
+from app.domain.years.suggest import suggest
 from app.errors import ApiError
 from app.models import SchoolClass
 from tests.concurrent_db import make_concurrent_engine
@@ -30,6 +33,7 @@ TEACHER05_TID = "66666666-6666-6666-6666-666666666642"
 TEACHER01_TID = "66666666-6666-6666-6666-666666666666"
 YEAR_ID = "22222222-2222-2222-2222-222222222222"
 EMPTY_CLASS_NAME = "并发空班"
+EMPTY_GRADE_NAME = "并发年级"
 WAIT = 30
 
 
@@ -40,9 +44,14 @@ def cengine() -> Iterator[Engine]:
 
 
 def _reset(engine: Engine) -> None:
-    """恢复种子里三年二班的班主任状态(张老师),并清掉用例建的空班。"""
+    """恢复种子里三年二班的班主任状态(张老师),并清掉用例建的空班 / 空年级。"""
     with engine.begin() as conn:
         conn.execute(text("DELETE FROM classes WHERE name = :n"), {"n": EMPTY_CLASS_NAME})
+        conn.execute(
+            text("DELETE FROM classes WHERE grade_id IN (SELECT id FROM grades WHERE name = :n)"),
+            {"n": EMPTY_GRADE_NAME},
+        )
+        conn.execute(text("DELETE FROM grades WHERE name = :n"), {"n": EMPTY_GRADE_NAME})
         conn.execute(
             text(
                 "DELETE FROM role_bindings WHERE scope->>'class_id' IS NOT NULL"
@@ -471,3 +480,190 @@ def test_delete_first_then_assignment_fails_as_not_found(cengine, monkeypatch):
     assert add.error.status == 404 and add.error.code == "NOT_FOUND"
     assert not _class_exists(cengine, class_id)
     assert _open_bindings(cengine, class_id) == 0
+
+
+# ---- L261:建班 / 建年级与学年回滚、删年级的窗口 ----
+
+
+def _wait_until_blocked(engine: Engine, count: int = 1) -> None:
+    """轮询 pg_blocking_pids,直到至少 count 个会话被别的会话的锁挡住(同 test_years_concurrency)。"""
+    deadline = time.monotonic() + WAIT
+    with engine.connect() as conn:
+        while time.monotonic() < deadline:
+            n = conn.execute(
+                text(
+                    "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database()"
+                    " AND pid <> pg_backend_pid() AND cardinality(pg_blocking_pids(pid)) > 0"
+                )
+            ).scalar_one()
+            if n >= count:
+                return
+            time.sleep(0.02)
+    raise AssertionError("没有等到任何会话被锁挡住")
+
+
+def _create_class_in(grade_id: UUID, year_id: UUID) -> Callable[[Session], Any]:
+    def run(db: Session) -> Any:
+        return service.create_class(
+            db,
+            UUID(SCHOOL_ID),
+            year_id,
+            ClassInput(grade_id=grade_id, name=EMPTY_CLASS_NAME),
+            PRINCIPAL,
+            None,
+        )
+
+    return run
+
+
+def _undo_upgrades(engine: Engine) -> None:
+    """把库复原:逐个回滚升级,再清掉升级记录(同 test_years_concurrency 的 clean)。"""
+    with Session(engine) as s:
+        while True:
+            try:
+                years_service.rollback(s, UUID(SCHOOL_ID), now=datetime.now(UTC))
+            except years_service.UpgradeError as e:
+                assert e.code == "UPGRADE_NOTHING_TO_ROLLBACK"
+                break
+        s.execute(text("DELETE FROM year_upgrades"))
+        s.commit()
+
+
+def test_create_class_queued_behind_rollback_gets_409(cengine, monkeypatch):
+    """L261:回滚统计完新学年数据、持学年行 FOR UPDATE 还没删之前,有人在新学年建班。
+    建班对学年行取 KEY SHARE 要等回滚提交;学年已删 → 409 NO_ACTIVE_YEAR,
+    而不是 INSERT 撞学年外键 500,也不会把新班写进一个马上被级联删掉的学年。"""
+    school = UUID(SCHOOL_ID)
+    try:
+        with Session(cengine) as s:
+            plan = suggest(s, school, "2027-2028", date(2027, 9, 1), date(2028, 7, 15))
+            years_service.apply(s, school, plan, now=datetime.now(UTC))
+            new_year_id, grade_id = s.execute(
+                text(
+                    "SELECT g.academic_year_id, g.id FROM grades g"
+                    " JOIN academic_years y ON y.id = g.academic_year_id AND y.is_active"
+                    " ORDER BY g.display_order LIMIT 1"
+                )
+            ).one()
+        counted, release = threading.Event(), threading.Event()
+        original = years_service._edits_since_upgrade
+
+        def stalled(*args, **kwargs):
+            out = original(*args, **kwargs)
+            counted.set()
+            assert release.wait(WAIT)
+            return out
+
+        monkeypatch.setattr(years_service, "_edits_since_upgrade", stalled)
+        roller = Worker(
+            cengine,
+            "roll",
+            lambda db: years_service.rollback(db, school, now=datetime.now(UTC)),
+        ).start()
+        creator = Worker(cengine, "create", _create_class_in(grade_id, new_year_id))
+        try:
+            assert counted.wait(WAIT)  # 回滚已统计完,停在删除之前,持学年行锁
+            creator.start()
+            _wait_until_blocked(cengine, 1)  # 建班卡在学年行锁上
+        finally:
+            release.set()
+        roller.join()
+        creator.join()
+        assert roller.error is None, roller.error
+        assert isinstance(creator.error, ApiError), creator.error
+        assert creator.error.status == 409 and creator.error.code == "NO_ACTIVE_YEAR"
+        with cengine.connect() as conn:
+            assert (
+                conn.execute(
+                    text("SELECT count(*) FROM classes WHERE name = :n"), {"n": EMPTY_CLASS_NAME}
+                ).scalar_one()
+                == 0
+            )
+            assert conn.execute(
+                text("SELECT id FROM academic_years WHERE is_active")
+            ).scalar_one() == UUID(YEAR_ID)
+    finally:
+        _undo_upgrades(cengine)
+
+
+def _new_empty_grade(engine: Engine) -> UUID:
+    with Session(engine) as db:
+        out = service.create_grade(
+            db,
+            UUID(SCHOOL_ID),
+            UUID(YEAR_ID),
+            GradeInput(name=EMPTY_GRADE_NAME, display_order=9),
+            PRINCIPAL,
+            None,
+        )
+    return out.id
+
+
+def _delete_grade(grade_id: UUID) -> Callable[[Session], Any]:
+    def run(db: Session) -> Any:
+        return service.delete_grade(db, UUID(SCHOOL_ID), grade_id, PRINCIPAL, clock.utc_now(), None)
+
+    return run
+
+
+def _hold_after_grade_lock(monkeypatch, who: str) -> tuple[threading.Event, threading.Event]:
+    """名为 who 的线程拿到年级行锁后停住。返回 (已持锁, 放行)。"""
+    locked, release = threading.Event(), threading.Event()
+    original = service.lock_grade
+
+    def wrapped(db, grade_id):
+        original(db, grade_id)
+        if threading.current_thread().name == who:
+            locked.set()
+            assert release.wait(WAIT)
+
+    monkeypatch.setattr(service, "lock_grade", wrapped)
+    return locked, release
+
+
+def _grade_exists(engine: Engine, grade_id: UUID) -> bool:
+    with engine.connect() as conn:
+        return (
+            conn.execute(text("SELECT 1 FROM grades WHERE id = :g"), {"g": grade_id}).first()
+            is not None
+        )
+
+
+def test_delete_grade_vs_create_class_no_500(cengine, monkeypatch):
+    """L261:删年级与在该年级建班并发,两个方向都不 500。
+    删年级先持年级行锁:排在后面的建班拿到锁时年级已没了 → 404;
+    建班先持年级行锁:排在后面的删年级拿到锁时数到新班 → 409 GRADE_NOT_EMPTY。"""
+    grade_id = _new_empty_grade(cengine)
+    locked, release = _hold_after_grade_lock(monkeypatch, "del")
+    delete = Worker(cengine, "del", _delete_grade(grade_id)).start()
+    try:
+        assert locked.wait(WAIT)
+        create = Worker(cengine, "create", _create_class_in(grade_id, UUID(YEAR_ID))).start()
+        _wait_until_blocked(cengine, 1)  # 建班卡在年级行锁上
+    finally:
+        release.set()
+    delete.join()
+    create.join()
+    assert delete.error is None, delete.error
+    assert isinstance(create.error, ApiError), create.error
+    assert create.error.status == 404 and create.error.code == "NOT_FOUND"
+    assert not _grade_exists(cengine, grade_id)
+
+    # 反向:建班先拿到年级行锁
+    monkeypatch.undo()
+    grade_id = _new_empty_grade(cengine)
+    locked, release = _hold_after_grade_lock(monkeypatch, "create")
+    create = Worker(cengine, "create", _create_class_in(grade_id, UUID(YEAR_ID))).start()
+    try:
+        assert locked.wait(WAIT)
+        delete = Worker(cengine, "del", _delete_grade(grade_id)).start()
+        _wait_until_blocked(cengine, 1)  # 删年级卡在年级行锁上
+    finally:
+        release.set()
+    create.join()
+    delete.join()
+    assert create.error is None, create.error
+    assert isinstance(delete.error, ApiError), delete.error
+    assert delete.error.status == 409 and delete.error.code == "GRADE_NOT_EMPTY"
+    assert _grade_exists(cengine, grade_id)
+    assert _class_exists(cengine, create.value.id)

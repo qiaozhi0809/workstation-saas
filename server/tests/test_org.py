@@ -151,7 +151,8 @@ def test_create_class_defaults(client, db, settings):
 def test_concurrent_same_class_name_rejected(engine, monkeypatch):
     """L263:两个会话并发在同一年级建同名班:应用层检查互相看不见对方未提交的行,由唯一索引
     uq_classes_grade_name 兜底——后提交的一方 409 NAME_TAKEN(与应用层检查同一个码),不是 500。
-    写法同 test_org_concurrency:A 在 record 处停住(已插入、未提交),B 卡在唯一索引上。"""
+    写法同 test_org_concurrency:A 在 record 处停住(已插入、未提交),B 的重名检查看不见 A 的行,
+    先卡在年级行锁(L261)上,A 提交后 B 插入撞唯一索引。"""
     import threading
     import time
 
@@ -210,7 +211,7 @@ def test_concurrent_same_class_name_rejected(engine, monkeypatch):
         a.start()
         assert in_record.wait(wait)
         b.start()
-        wait_blocked()  # B 的 INSERT 卡在 A 未提交的唯一索引项上
+        wait_blocked()  # B 卡在 A 持有的年级行锁上(放行后再撞 A 已提交的唯一索引项)
     finally:
         release.set()
         a.join(wait)

@@ -23,6 +23,7 @@ from app.domain.org.schemas import (
     YearAdmin,
     YearUpdate,
 )
+from app.domain.years.locks import ensure_year_live
 from app.errors import ApiError
 from app.models import AcademicYear, Grade, RoleBinding, School, SchoolClass
 
@@ -179,6 +180,7 @@ def create_grade(
 ) -> GradeAdmin:
     if _name_taken(db, year_id, body.name, None):
         raise ApiError(409, "NAME_TAKEN", "该年级名称已存在")
+    ensure_year_live(db, year_id)  # 学年刚被回滚 → 409,而不是插入撞学年外键 500(L261)
     grade = Grade(
         school_id=school_id,
         academic_year_id=year_id,
@@ -239,6 +241,7 @@ def delete_grade(
     request: Request | None,
 ) -> None:
     grade = get_grade(db, school_id, grade_id)
+    lock_grade(db, grade.id)  # 与建班串行:判"没有班"到删除之间不会有新班插进来(L261)
     if _class_count(db, grade.id) > 0:
         raise ApiError(409, "GRADE_NOT_EMPTY", "该年级下还有班级,不能删除")
     # 该年级的年级组长绑定随年级一并结束,避免悬空
@@ -406,6 +409,10 @@ def create_class(
         raise ApiError(400, "BAD_REQUEST", "只能在当前学年的年级下建班")
     if _class_name_taken(db, grade.id, body.name, None):
         raise ApiError(409, "NAME_TAKEN", "该年级下已有同名班级")
+    # 先学年行 KEY SHARE、再年级行 FOR UPDATE、最后插入(L261):学年刚被回滚 → 409 而不是外键 500;
+    # 年级正在被删 → 等它提交后 404。顺序与回滚"学年 FOR UPDATE → DELETE grades"一致,不互等。
+    ensure_year_live(db, year_id)
+    lock_grade(db, grade.id)
     cls = SchoolClass(
         school_id=school_id,
         academic_year_id=year_id,
@@ -464,6 +471,15 @@ def update_class(
         )
         db.commit()
     return class_admin(db, cls)
+
+
+def lock_grade(db: Session, grade_id: UUID) -> None:
+    """锁住年级行直到事务结束:建班与删年级因此串行(L261)。年级已被并发删掉 → 404。"""
+    found = db.execute(
+        text("SELECT id FROM grades WHERE id = :g FOR UPDATE"), {"g": grade_id}
+    ).first()
+    if found is None:
+        raise ApiError(404, "NOT_FOUND", "年级不存在")
 
 
 def lock_class(db: Session, cls: SchoolClass) -> None:
