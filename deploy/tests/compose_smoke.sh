@@ -227,6 +227,37 @@ pass "scheduler 在运行且未重启"
 stream_state="$(docker inspect -f '{{.State.Running}} {{.RestartCount}} {{if .State.Health}}{{.State.Health.Status}}{{else}}nohealth{{end}}' "$(compose ps -q stream-worker)")"
 [ "$stream_state" = "true 0 healthy" ] || fail "stream-worker 应在运行、未重启且 healthy,实际:$stream_state"
 pass "stream-worker 在运行、未重启且 healthy"
+# L293:stream-worker 的出站限制。入口脚本以 root 写 iptables 后降权,worker(PID 1)必须是 uid 10001;
+# 默认只放行三段私网 + compose 子网里的数据库 / Redis 端口,公网与 compose 子网其余端口(如 web 的 80)被拒;
+# 连接检查用 bash 的 /dev/tcp(镜像里没有 wget / nc):被 REJECT 的连接立即失败,不依赖外网通不通
+stream_uid="$(compose exec -T stream-worker awk '/^Uid:/ { print $2 }' /proc/1/status | tr -d '\r\n')"
+[ "$stream_uid" = "10001" ] || fail "stream-worker 的 PID 1 应以 uid 10001 运行(入口脚本写完规则要降权),实际 $stream_uid"
+rules="$(compose exec -T stream-worker iptables -S OUTPUT 2>&1)" || fail "stream-worker 里读不到 iptables 规则(入口脚本没有写规则?):$rules"
+for want in '-d 10.0.0.0/8 -j ACCEPT' '-d 172.16.0.0/12 -j ACCEPT' '-d 192.168.0.0/16 -j ACCEPT' '-d 172.30.0.0/24 -p tcp -m tcp --dport 6379 -j ACCEPT' '-d 172.30.0.0/24 -p tcp -m tcp --dport 5432 -j ACCEPT' '-o lo -j ACCEPT'; do
+  grep -qF -- "$want" <<<"$rules" || fail "stream-worker 的 OUTPUT 链缺少规则「$want」,实际:$rules"
+done
+grep -Eq -- '^-A OUTPUT -j (REJECT|DROP)' <<<"$rules" || fail "stream-worker 的 OUTPUT 链末尾应是一律拒绝,实际:$rules"
+grep -Eq -- '^-A OUTPUT -d 172\.30\.0\.0/24 -j (REJECT|DROP)' <<<"$rules" || fail "compose 子网其余地址应被拒绝(否则 172.16.0.0/12 会把它整个放进来),实际:$rules"
+compose exec -T stream-worker timeout 5 bash -c '</dev/tcp/redis/6379' || fail "stream-worker 应能连到 redis:6379(出站规则把 Redis 也挡了)"
+compose exec -T stream-worker timeout 5 bash -c '</dev/tcp/postgres/5432' || fail "stream-worker 应能连到 postgres:5432(出站规则把数据库也挡了)"
+if compose exec -T stream-worker timeout 5 bash -c '</dev/tcp/web/80' 2>/dev/null; then
+  fail "stream-worker 不应连到 compose 子网里的 web:80(RTSP 重定向能探测内部服务)"
+fi
+if compose exec -T stream-worker timeout 5 bash -c '</dev/tcp/1.1.1.1/80' 2>/dev/null; then
+  fail "stream-worker 不应连到公网地址 1.1.1.1:80(出站限制没有生效)"
+fi
+pass "stream-worker:PID 1 为 uid 10001;出站只放行三段私网与 compose 子网的 5432 / 6379,web:80 与公网被拒"
+# WS_CAMERA_NETS=any 关闭限制(CI / 开发的假摄像头在回环或 compose 子网里):不写规则、不需要 NET_ADMIN,仍降权;
+# 同一镜像、不带 NET_ADMIN 直接起:入口脚本必须明确报错退出,而不是静默放行
+any_out="$(docker run --rm --network "${PROJECT}_ws-net" -e WS_CAMERA_NETS=any "workstation-stream:$VERSION" \
+  bash -c 'timeout 5 bash -c "</dev/tcp/web/80" && id -u' 2>&1)" || fail "WS_CAMERA_NETS=any 时应不写规则、能连 web:80 并降权运行命令,实际:$any_out"
+[ "$(tail -n 1 <<<"$any_out" | tr -d '\r')" = "10001" ] || fail "WS_CAMERA_NETS=any 时命令也应以 uid 10001 运行,实际输出:$any_out"
+grep -q 'WS_CAMERA_NETS=any' <<<"$any_out" || fail "WS_CAMERA_NETS=any 时应打印\"未设置出站限制\"的提示,实际输出:$any_out"
+nocap_rc=0
+nocap_out="$(docker run --rm --network "${PROJECT}_ws-net" "workstation-stream:$VERSION" true 2>&1)" || nocap_rc=$?
+[ "$nocap_rc" -ne 0 ] || fail "没有 NET_ADMIN 时入口脚本应报错退出,实际退出码 0,输出:$nocap_out"
+grep -q 'NET_ADMIN' <<<"$nocap_out" || fail "没有 NET_ADMIN 时的报错应点明需要 NET_ADMIN(或 WS_CAMERA_NETS=any),实际输出:$nocap_out"
+pass "WS_CAMERA_NETS=any 关闭限制且仍降权;没有 NET_ADMIN 时入口明确报错(退出码 $nocap_rc)"
 # ws-hls(tmpfs 卷)在 stream-worker 与 app 之间共享:worker 写的文件 app 读得到,app 侧是只读挂载
 compose exec -T stream-worker sh -c 'echo shared-ok >/run/ws-hls/.smoke' || fail "stream-worker 写不进 /run/ws-hls"
 seen="$(compose exec -T app cat /run/ws-hls/.smoke | tr -d '\r\n')" || fail "app 读不到 stream-worker 写进 ws-hls 的文件"

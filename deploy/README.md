@@ -419,7 +419,7 @@ tar -xzf <新包>/workstation-deploy-1.0.0.tar.gz -C . --strip-components=1 work
 - 参考数字(持续集成的 2 vCPU 机器,3 路不转码 + 1 路 720p 转码,跑 30 秒):4 个 ffmpeg 进程合计 CPU 19%(100% = 占满一个核)、常驻内存峰值合计 284 MB,最慢的一路 3.0 秒出首个片段。
 - 真机数字还没有测:4 核 8 GB 上不转码 10 路、转码 2 路 / 4 路的 CPU 与内存、首帧与画面延迟,请学校验收时在真实服务器上量一遍(`docker stats` 看 `stream-worker` 容器的用量)。
 
-### `.env` 里的四个配置项
+### `.env` 里的五个配置项
 
 | 键 | 默认 | 作用 |
 |---|---|---|
@@ -427,9 +427,10 @@ tar -xzf <新包>/workstation-deploy-1.0.0.tar.gz -C . --strip-components=1 work
 | `WS_STREAM_CPUS` | `2` | `stream-worker` 容器的 CPU 上限(核数)。超限只会让这个容器变慢、画面卡顿,不会拖垮 app 与数据库;转码路数多时调大 |
 | `WS_STREAM_MEMORY` | `2g` | `stream-worker` 容器的内存上限 |
 | `WS_HLS_SIZE` | `1g` | 直播片段内存盘(tmpfs 卷 `ws-hls`)的上限,只按实际用量占内存;10 路主码流约 1 GB |
+| `WS_CAMERA_NETS` | `10.0.0.0/8,172.16.0.0/12,192.168.0.0/16` | 1.1 起:转流容器允许连出去的网段(逗号分隔),见下文"转流容器的出站限制" |
 
-- 四个键都在 `.env.example` 末尾;从 0.7.1 升级上来时 `upgrade.sh` 会按默认值补进 `.env`。内存盘与容器上限占的都是服务器内存,做预算时要一起算。
-- 改前三个键后执行 `docker compose up -d`:`.env` 变了会重建 `app`、`scheduler`、`stream-worker` 三个服务,所有人中断约半分钟,请在课后做。
+- 五个键都在 `.env.example` 末尾;从旧版本升级上来时 `upgrade.sh` 会按默认值补进 `.env`。内存盘与容器上限占的都是服务器内存,做预算时要一起算。
+- 改 `WS_STREAM_MAX`、`WS_STREAM_CPUS`、`WS_STREAM_MEMORY`、`WS_CAMERA_NETS` 后执行 `docker compose up -d`:`.env` 变了会重建 `app`、`scheduler`、`stream-worker` 三个服务,所有人中断约半分钟,请在课后做。
 - 改 `WS_HLS_SIZE` 要重建内存盘,全部服务会停几十秒,请在课后做:
 
   ```bash
@@ -455,6 +456,22 @@ tar -xzf <新包>/workstation-deploy-1.0.0.tar.gz -C . --strip-components=1 work
 - 校外客户端不能"看起来像内网":**不要把本系统的端口映射到公网**。路由器端口转发带 SNAT 会把校外客户端的来源改写成内网地址,"只接受内网来源"就失效了(Docker 自己的 userland proxy 改写出的源址 `172.30.0.1` 落在可信网段,会被当成代理自己而拒绝,不会放行,但同样不该依赖它)。学校前面另有自己的代理(第 5 节)时,只把代理的具体地址加进 `WS_TRUSTED_PROXIES`,不要写覆盖所有客户端的宽网段。
 - 副作用(知悉即可):不经 web 容器、直连后端端口的内网客户端若带了任何 `X-Forwarded-For`(公司代理、浏览器插件)也会被拒;compose 部署的后端不对外暴露端口,正常使用不受影响。
 
+### 转流容器的出站限制(1.1 起)
+
+摄像头的 RTSP 服务可以用 3xx 重定向把拉流指到别的地址,ffmpeg 会跟着跳,而登记时的地址校验管不了跳转。1.1 起 `stream-worker` 容器启动时自己写一套出站防火墙规则(容器内 iptables,不碰服务器的防火墙),把它能连出去的地方限定为:
+
+- `.env` 里 `WS_CAMERA_NETS` 列出的网段(默认三段私网 `10.0.0.0/8,172.16.0.0/12,192.168.0.0/16`,摄像头都应在这里面);
+- compose 子网(`WS_SUBNET`)里**只有**数据库(5432)与 Redis(6379)两个端口,子网里其他服务(app、web)一律拒绝;
+- 本机回环与 DNS。其余地址(公网、其他网段)一律拒绝,被重定向到这些地方的拉流会立刻失败。
+
+要点:
+
+- 摄像头在三段私网以外的网段(例如链路本地的 `169.254.0.0/16`,它在"地址必须在校园内网网段"的名单里,但不在默认放行名单里)时,把该网段追加进 `WS_CAMERA_NETS`(逗号分隔),然后 `docker compose up -d`。
+- 写规则需要容器带 `NET_ADMIN` 能力(`docker-compose.yml` 里 `stream-worker` 的 `cap_add`,升级时随新 compose 文件带上)。没有这个能力时容器**不会静默放行**,而是报错退出并反复重启:`docker compose logs stream-worker` 里有一行"写出站规则需要容器带 NET_ADMIN 能力"。请核对 compose 文件是否被手工改过。
+- 容器以 root 写完规则后立刻降权,转流进程本身仍以 uid 10001 运行,与 1.0 相同。
+- `WS_CAMERA_NETS=any` 关闭限制,此时不需要 `NET_ADMIN`。只用于开发机 / 持续集成——那里的假摄像头跑在本机回环或 compose 子网里,默认规则会把它挡住。正式环境不要设 `any`。持续集成现有的 e2e 作业不在容器里跑转流进程,不受此限制;部署冒烟(`compose_smoke.sh`)会分别验证默认规则生效、`any` 关闭规则、没有 `NET_ADMIN` 时明确报错。
+- 想现场确认:`docker compose exec stream-worker iptables -S OUTPUT` 列出规则;`docker compose exec stream-worker timeout 3 bash -c '</dev/tcp/<摄像头IP>/554'` 应能连上,换成公网地址应立刻被拒。
+
 ### "测试连接"与编码提示
 
 在「摄像头」页新建或编辑一路摄像头后点"测试连接":转流容器用 ffmpeg 拉 3 秒流、截一帧预览图,并探测视频编码。
@@ -475,6 +492,8 @@ tar -xzf <新包>/workstation-deploy-1.0.0.tar.gz -C . --strip-components=1 work
 | 多路同时连不上,「摄像头」页多路状态"异常"、红字含 `No space left on device` | 内存盘满了:路数多或主码流码率高。`docker compose exec stream-worker df -h /run/ws-hls` 可确认用量。调大 `WS_HLS_SIZE`(见上文,要重建内存盘)或把摄像头改成子码流。 |
 | 「摄像头」页顶部红色告警"以下摄像头地址不在校园内网" | 转流容器启动自检时发现这些地址解析到公网,不会拉流。在「摄像头」页改地址并保存即生效,不用重启;若只改了内网 DNS、没动登记,才需要 `docker compose restart stream-worker`(会打断所有在播的画面)。 |
 | 所有人都看不了,登录日志 IP 变成 `172.30.0.x` | `WS_TRUSTED_PROXIES` 配错,见上文"内网拓扑"。 |
+| `stream-worker` 反复重启,日志里有"写出站规则需要容器带 NET_ADMIN 能力" | `docker-compose.yml` 里 `stream-worker` 的 `cap_add: [NET_ADMIN]` 被去掉了(1.1 起的 compose 文件自带)。补回后 `docker compose up -d`;见上文"转流容器的出站限制"。 |
+| "测试连接"在服务器上 `</dev/tcp/<摄像头IP>/554` 能通,容器里却连不上 | 摄像头网段不在 `WS_CAMERA_NETS`(默认三段私网)里,被容器的出站规则拒绝。把该网段追加进 `.env` 的 `WS_CAMERA_NETS` 后 `docker compose up -d`。 |
 | 播放器显示"请在电脑或安卓浏览器上观看" | iPhone / iPad 的 Safari 不支持本系统带登录态的播放方式,v1 不支持;改用电脑或安卓浏览器。 |
 | 老师反映"本节课已结束,看不到了" | 不是故障:任课老师只在课表上自己这节课的时间段(提前 5 分钟到下课)内能看。核对「作息与课表」。 |
 
