@@ -351,6 +351,17 @@ describe('审计日志', () => {
     expect(objectCell('赵老师')).toHaveTextContent('—')
   })
 
+  // L270:时间列按学校时区显示(与筛选区间同口径;登录日志页已如此),不按浏览器时区
+  it('time column in school tz', async () => {
+    setup()
+    await screen.findByRole('table')
+    const timeCell = within(screen.getByText('李老师').closest('tr') as HTMLElement).getAllByRole(
+      'cell',
+    )[0]
+    // 02:30 UTC 在上海是 10:30;若按浏览器(CI 为 UTC)时区就会显示 02:30
+    expect(timeCell).toHaveTextContent('2026-11-03 10:30')
+  })
+
   it('列出时间、操作人、操作、对象、IP、结果', async () => {
     setup()
     await screen.findByRole('table')
