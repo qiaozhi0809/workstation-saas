@@ -2,7 +2,7 @@ import csv
 import io
 from datetime import date
 
-from sqlalchemy import select, text
+from sqlalchemy import event, select, text
 
 from app.models import Attendance, Enrollment, Student
 from app.models.audit import AuditLog
@@ -247,6 +247,28 @@ def test_class_detail_includes_left_students_sorted(client, db, settings, monkey
         ("金小六", "2026016", 0, 0, 0),
     ]
     assert all(set(s) >= {"student_id", "name", "student_no"} for s in body["students"])
+
+
+def test_class_detail_days_single_query(client, db, settings, monkeypatch):
+    """L59:班级明细的"记录日天数"只有一条 count;不再借道 _class_stats 多跑应到 / 状态两条聚合。
+    整个请求里碰 attendance_days 的只有:天数 count 一条 + 学生状态明细 join 一条。"""
+    freeze(monkeypatch, NOW)
+    enrolled_since_september(db)
+    statements: list[str] = []
+
+    def grab(conn, cursor, statement, params, context, executemany):
+        statements.append(statement)
+
+    conn = db.connection()
+    event.listen(conn, "before_cursor_execute", grab)
+    try:
+        body = get_detail(client, settings, C31).json()
+    finally:
+        event.remove(conn, "before_cursor_execute", grab)
+    assert body["days"] == 5
+    touching = [s for s in statements if "attendance_days" in s]
+    assert len(touching) == 2, touching
+    assert sum("from attendance_days" in s.lower() for s in touching) == 1  # 天数 count
 
 
 def test_class_detail_forbidden_when_not_visible(client, db, settings, monkeypatch):

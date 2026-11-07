@@ -21,6 +21,16 @@ class HistoryClass(BaseModel):
     students: int  # 该学年在这个班注册过的人数(含转出)
 
 
+class HistoryClassLocation(BaseModel):
+    """`GET /admin/history/classes/{class_id}`(L275):按班 id 定位它所在的学年,
+    往年单班页不再逐年查找。"""
+
+    class_id: UUID
+    class_name: str
+    year_id: UUID
+    year_name: str
+
+
 class HistoryStudent(BaseModel):
     student_id: UUID
     name: str

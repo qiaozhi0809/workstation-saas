@@ -136,6 +136,20 @@ def test_period_in_use_409(client, settings, db):
     assert db.scalar(select(func.count()).select_from(Period)) == 3
 
 
+def test_period_in_use_classes_numeric_order(client, settings, db):
+    """L266:409 里的班级列表按数值序(三年二班 < 三年三班 < 三年七班),不是码位序(七 < 三 < 二)。"""
+    _seed_periods(db)
+    seven = make_class(db, "三年七班")
+    three = make_class(db, "三年三班")
+    for cid in (CLASS_ID, str(seven), str(three)):
+        _cell(db, 1, 3, "数学", None, class_id=cid)
+    res = _put_periods(client, settings, PERIODS[:2])
+    assert res.status_code == 409
+    err = res.json()["error"]
+    assert err["details"]["classes"] == ["三年二班", "三年三班", "三年七班"]
+    assert "三年二班、三年三班、三年七班" in err["message"]
+
+
 def test_save_class_timetable_auto_teacher(client, settings, db):
     _seed_periods(db)
     cells = [

@@ -8,7 +8,6 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.audit.service import record
-from app.domain.exams.subjects import class_subjects
 from app.domain.timetable import service
 from app.domain.timetable.schemas import (
     CellInput,
@@ -123,6 +122,9 @@ def import_rows(
             )
         )
     }
+    # 与 save_periods / save_class_timetable 同一把锁、同一顺序(先 School 再班级,L290):
+    # 读到的"已设节次"在导入提交前不会被删节次拿走,不会写出引用已删节次的格子
+    service.lock_school(db, school_id)
     periods = service.defined_period_nos(db, school_id)
     teacher_ids = _teachers_by_employee_no(
         db, school_id, sorted({r.employee_no for r in rows if r.employee_no})
@@ -148,10 +150,10 @@ def import_rows(
             fail(r.line, f"第 {r.period_no} 节没有在作息时间中设置")
             continue
         if cls.id not in subjects:
-            subjects[cls.id] = {s.name for s in class_subjects(db, cls)}
             assignments[cls.id] = service._assignments(db, cls.id, year.id)
+            subjects[cls.id] = service.allowed_subjects(db, cls, assignments[cls.id])
         if r.subject not in subjects[cls.id]:
-            fail(r.line, f"「{r.subject}」不是{cls.name}的科目")
+            fail(r.line, f"「{r.subject}」不是{cls.name}的科目,也没有在任老师任教它")
             continue
         key = (cls.id, r.weekday, r.period_no)
         if key in seen:

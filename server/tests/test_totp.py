@@ -713,6 +713,20 @@ def _fail_key(settings):
     return service._fail_key(settings, "teacher01")
 
 
+def test_unreadable_secret_does_not_count_failure(client, db, settings, redis_client):
+    """L296:密钥读不出来是服务端故障,反复撞上它不能把账号算成"猜码失败"而锁住。"""
+    _plant_secret(
+        db, encrypt("not base32 !!", settings.master_key_bytes, aad=f"totp:{TEACHER_USER_ID}")
+    )
+    for _ in range(settings.login_max_failures + 1):
+        token = _login(client).json()["mfa_token"]
+        res = _second_step(client, token, "123456")
+        assert _err(res) == (500, "TOTP_UNREADABLE")
+    assert redis_client.get(_fail_key(settings)) is None
+    # 第一步(密码)仍然正常,没有被锁
+    assert "mfa_token" in _login(client).json()
+
+
 def _pending_session(client, db):
     _allow(db)
     s = _login(client).json()

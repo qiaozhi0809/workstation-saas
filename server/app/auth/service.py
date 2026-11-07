@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import clock
-from app.audit.service import _client_ip, record
+from app.audit.service import client_ip, record
 from app.auth import login_log, mfa, sessions, totp
 from app.auth.passwords import check_policy, hash_password, verify_password
 from app.auth.tokens import issue_access_token
@@ -194,8 +194,9 @@ def _log(
         return None
 
 
-# 不存在的用户的日志行(unknown_user / 该名字被锁后的 locked)来自未认证请求,按来源 IP 限额(L145):
-# 内网 / 可信代理网段不限(校内误输不丢记录),其余每个 IP 每小时最多这么多行;超限仍 401、仍跑假哈希
+# 登录失败的日志行来自未认证请求,按来源 IP 限额(L145 / L294):不存在的用户(unknown_user / locked)
+# 与已存在用户的失败(bad_password / inactive / locked)共用同一个计数;内网 / 可信代理网段不限
+# (校内误输不丢记录),其余每个 IP 每小时最多这么多行;超限仍 401、仍跑假哈希
 UNKNOWN_LOG_LIMIT = 20
 UNKNOWN_LOG_WINDOW = 3600
 
@@ -206,7 +207,7 @@ def _unknown_name(login_name: str) -> str:
 
 
 def _unknown_log_allowed(redis: Redis, settings: Settings, request: Request | None) -> bool:
-    ip = _client_ip(request)
+    ip = client_ip(request)
     bucket = "unknown"  # 来源不明(非法对端地址)也按失败即关计入
     if ip is not None:
         addr = ipaddress.ip_address(ip)
@@ -233,6 +234,20 @@ def _log_unknown(
 ) -> None:
     if _unknown_log_allowed(redis, settings, request):
         _log(db, settings, None, _unknown_name(login_name), result, request)
+
+
+def _log_failure(
+    db: Session,
+    redis: Redis,
+    settings: Settings,
+    user: User,
+    login_name: str,
+    result: login_log.LoginOutcome,
+    request: Request | None,
+) -> None:
+    """已存在用户的密码登录失败行(L294):拿着一张名单从公网刷,同样不能把登录日志灌爆。"""
+    if _unknown_log_allowed(redis, settings, request):
+        _log(db, settings, user, login_name, result, request)
 
 
 _REASON_TEXT = {"night": "凌晨时段", "new_network": "新的网络环境"}
@@ -338,7 +353,7 @@ def login(
         if known is None:
             _log_unknown(db, redis, settings, login_name, "locked", request)
         else:
-            _log(db, settings, known, login_name, "locked", request)
+            _log_failure(db, redis, settings, known, login_name, "locked", request)
         raise
 
     user = get_user_by_login(db, settings.school_id, login_name)
@@ -351,7 +366,7 @@ def login(
     if user.status != "active" or not password_ok:
         _record_failure(redis, settings, fail_key)
         outcome = "inactive" if user.status != "active" else "bad_password"
-        _log(db, settings, user, login_name, outcome, request)
+        _log_failure(db, redis, settings, user, login_name, outcome, request)
         raise ApiError(401, "INVALID_CREDENTIALS", "登录名或密码不正确")
 
     if user.totp_enabled_at is not None:
@@ -382,6 +397,8 @@ def login_totp(
         if user is not None and user.status != "active":
             _log(db, settings, user, user.login_name, "inactive", request)
         raise _mfa_expired()
+    # 密钥读不出来是服务端故障(500),不是用户猜错码:先读密钥,读不出就不计失败、不会把账号锁上(L296)
+    secret = _load_secret(settings, user)
     # 锁定按登录名算:换一个 mfa_token 也一样被拒。先原子计数、再验证(L142):并发多个 mfa_token 时
     # 第 N 个请求看到的计数已含前 N-1 个,超过上限的直接拒绝,不再给它一次猜码机会;验证通过后
     # _finish_login 会把计数整个删掉,所以成功那次多计的一下不留痕迹
@@ -394,7 +411,6 @@ def login_totp(
             "登录失败次数过多,请稍后再试",
             headers=_retry_after(redis, settings, fail_key),
         )
-    secret = _load_secret(settings, user)
     if not totp.verify(redis, user.id, secret, code, clock.utc_now()):
         mfa.record_try(redis, mfa_token)
         _log(db, settings, user, user.login_name, "totp_failed", request)

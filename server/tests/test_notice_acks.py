@@ -164,7 +164,8 @@ def test_inbox_my_ack_and_can_ack(client, db, settings):
     n = parent_notice(client, settings, CHOICE)
     item = client.get(INBOX, headers=auth(settings, LI)).json()["items"][0]
     assert item["id"] == n and item["ack"] == CHOICE and item["my_ack"] is None
-    assert item["can_ack"] is True and item["students"] == ["王小一"]
+    assert item["can_ack"] is True
+    assert item["students_detail"] == [{"name": "王小一", "class_name": "三年二班"}]
     post_ack(client, settings, LI, n, choice=1, note="有事")
     item = client.get(INBOX, headers=auth(settings, LI)).json()["items"][0]
     assert item["my_ack"]["choice"] == 1 and item["my_ack"]["note"] == "有事"
@@ -249,16 +250,15 @@ def _snapshot_rows(db, nid) -> set[tuple[str, str | None, str | None]]:
 
 
 def test_students_detail(client, db, settings):
-    """L87:两处写入点都记下发送时刻的班;收件箱给 students_detail(students 不变)。"""
+    """L87 / L282:两处写入点都记下发送时刻的班;收件箱只给 students_detail,旧的 students 已删。"""
     n = parent_notice(client, settings, CONFIRM)
     assert _snapshot_rows(db, n) == {("S0001", C32, "三年二班"), ("S0002", C32, "三年二班")}
     item = _item(client, settings, LI, n)
-    assert item["students"] == ["王小一"]
+    assert "students" not in item
     assert item["students_detail"] == [{"name": "王小一", "class_name": "三年二班"}]
 
     wide = send(client, settings, PRINCIPAL, TARGET_SCHOOL, audience="parents").json()["id"]
     item = _item(client, settings, LI, wide)
-    assert item["students"] == ["魏小七", "王小一"]
     assert item["students_detail"] == [
         {"name": "魏小七", "class_name": "四年一班"},
         {"name": "王小一", "class_name": "三年二班"},
@@ -282,7 +282,7 @@ def test_students_detail(client, db, settings):
     # 老师对象:两个列表都空
     t = send(client, settings, PRINCIPAL, TARGET_C32, ack=CONFIRM).json()["id"]
     item = _item(client, settings, T01, t)
-    assert item["students"] == [] and item["students_detail"] == []
+    assert item["students_detail"] == []
 
 
 def test_ack_block_reason(client, db, settings, monkeypatch):
@@ -338,6 +338,57 @@ def test_ack_block_reason(client, db, settings, monkeypatch):
     assert item["can_ack"] is True and item["ack_block_reason"] is None
 
 
+def test_ack_block_reason_unlinked_vs_readonly(client, db, settings):
+    """L231:readonly 只留给"孩子已毕业 / 离校(家长账号只读)";绑定已结束(ended_at 非空)或
+    学生已删(notice_students 行随之级联消失)→ unlinked。一人多个孩子时有只读绑定就先算 readonly。"""
+    n = parent_notice(client, settings, CONFIRM)
+    make_readonly(db, "13800000061", "S0001")
+    assert _item(client, settings, LI, n)["ack_block_reason"] == "readonly"
+    set_link(
+        db,
+        "13800000061",
+        "S0001",
+        status="ended",
+        ended_at=datetime.now(UTC),
+        readonly_since=None,
+    )
+    item = _item(client, settings, LI, n)
+    assert item["can_ack"] is False and item["ack_block_reason"] == "unlinked"
+    res = post_ack(client, settings, LI, n)
+    assert res.status_code == 403 and code(res) == "ACK_NOT_ALLOWED"
+    # 另一位家长(teacher04,孩子 S0002)不受影响
+    assert _item(client, settings, T04, n)["ack_block_reason"] is None
+
+    # 学生已删:级联删掉 notice_students 行,这条通知在我名下已没有孩子
+    set_link(db, "13800000061", "S0001", status="active", ended_at=None)
+    assert _item(client, settings, LI, n)["ack_block_reason"] is None
+    db.execute(
+        text(
+            "DELETE FROM notice_students WHERE notice_id = :n"
+            " AND student_id = (SELECT id FROM students WHERE mk = 'S0001')"
+        ),
+        {"n": n},
+    )
+    assert _item(client, settings, LI, n)["ack_block_reason"] == "unlinked"
+
+    # 一人多个孩子(S0001 三年二班、S0017 四年一班):一个已结束、一个只读 → readonly;都结束 → unlinked
+    wide = send(client, settings, PRINCIPAL, TARGET_SCHOOL, audience="parents", ack=CONFIRM).json()[
+        "id"
+    ]
+    set_link(db, "13800000061", "S0001", status="ended", ended_at=datetime.now(UTC))
+    make_readonly(db, "13800000061", "S0017")
+    assert _item(client, settings, LI, wide)["ack_block_reason"] == "readonly"
+    set_link(
+        db,
+        "13800000061",
+        "S0017",
+        status="ended",
+        ended_at=datetime.now(UTC),
+        readonly_since=None,
+    )
+    assert _item(client, settings, LI, wide)["ack_block_reason"] == "unlinked"
+
+
 def test_secondary_parent_cannot_ack(client, db, settings):
     """A2 遗留(submit_ack):家长对象的通知只有在用的主家长绑定能回执,
     与收件箱 ack_block_reason = not_primary 的口径一致。"""
@@ -383,6 +434,24 @@ def test_snapshot_survives_upgrade(client, db, settings):
     assert _snapshot_rows(db, n) == {("S0001", None, "三年二班"), ("S0002", None, "三年二班")}
     item = _item(client, settings, LI, n)
     assert item["students_detail"] == [{"name": "王小一", "class_name": "三年二班"}]
+
+
+def test_ack_rows_numeric_order(client, db, settings):
+    """L266:回执明细按班名数值序(三年三班 < 三年七班);码位序会把"七"排到"三"前面。
+    班名读的是 notice_students 快照,直接改快照即可构造。"""
+    n = parent_notice(client, settings, CONFIRM)
+    db.execute(
+        text(
+            "UPDATE notice_students ns SET class_name = CASE s.mk WHEN 'S0001' THEN '三年七班'"
+            " ELSE '三年三班' END FROM students s WHERE s.id = ns.student_id AND ns.notice_id = :n"
+        ),
+        {"n": n},
+    )
+    stats = client.get(f"{INBOX}/{n}/acks", headers=auth(settings, PRINCIPAL)).json()
+    assert [(r["student_name"], r["class_name"]) for r in stats["rows"]] == [
+        ("李小二", "三年三班"),
+        ("王小一", "三年七班"),
+    ]
 
 
 def test_ack_stats_teacher_audience(client, db, settings):

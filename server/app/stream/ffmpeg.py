@@ -1,19 +1,15 @@
 """ffmpeg / ffprobe 命令行拼装与日志打码。带凭据的地址只在 worker 内存里,不进日志、不进 Redis。"""
 
 import os
-import re
 from pathlib import Path
 from urllib.parse import quote, urlsplit, urlunsplit
+
+from app.stream.lan import mask_url
 
 # ffmpeg 拉不通时不能无限挂住:RTSP 套接字 I/O 超时 8 秒(微秒)
 RTSP_IO_TIMEOUT_US = "8000000"
 # 输入只允许 RTSP 及其传输层用到的协议,拒绝 http / file / concat 等(库里地址被改写也读不了本地文件)
 PROTOCOL_WHITELIST = "rtsp,rtsps,rtp,srtp,udp,tcp,tls,crypto"
-
-# userinfo 整段打码到同一串非空白文本里的最后一个 @(L164):口令里带 / ? # @ 时不能停在第一个分隔符;
-# 代价是路径 / 查询串里碰巧有 @ 的地址会多打码一截(宁可多打,不能漏)。先打 userinfo,再处理查询串
-_USERINFO_RE = re.compile(r"(?i)([a-z][a-z0-9+.\-]*://)\S*@")
-_QUERY_SECRET_RE = re.compile(r"(?i)\b(password|passwd|pwd|token|sig)=[^&\s]*")
 
 
 def build_args(url: str, out_dir: Path, *, transcode: bool, start_number: int = 0) -> list[str]:
@@ -88,15 +84,11 @@ def credentials_url(url: str, username: str | None, password: str | None) -> str
 
 
 def mask_text(text: str, secrets: tuple[str, ...] = ()) -> str:
-    """打码 userinfo、查询串里的口令字段,以及已知的明文口令(含百分号编码形式)。"""
-    text = _USERINFO_RE.sub(r"\1***@", text)
-    text = _QUERY_SECRET_RE.sub(r"\1=***", text)
+    """打码 userinfo、查询串里的口令字段(正则只在 domain/cameras/lan.py 一份,L295),
+    以及已知的明文口令(含百分号编码形式)。"""
+    text = mask_url(text)
     for secret in secrets:
         if secret:
             for variant in {secret, quote(secret, safe="")}:
                 text = text.replace(variant, "***")
     return text
-
-
-def mask_url(url: str) -> str:
-    return mask_text(url)

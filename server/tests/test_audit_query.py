@@ -4,7 +4,7 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import event, func, select
 
 import app as app_pkg
 from app.audit.labels import ACTION_LABELS, GROUPS
@@ -93,6 +93,23 @@ def test_actions_groups_fixed(client, settings):
     ]
     assert any(a["action"] == "notice.send" for a in by_key["notice"]["actions"])
     assert any(a["action"] == "exam.grade_create" for a in by_key["grade"]["actions"])
+
+
+def test_actions_include_object_types(client, settings):
+    """L271:/audit/actions 一并给出对象类型下拉项 {key, label},
+    覆盖代码里所有审计写入点用到的类型。"""
+    body = _get(client, settings, url=ACTIONS).json()
+    types = body["object_types"]
+    assert all(set(t) == {"key", "label"} and t["label"] for t in types)
+    keys = [t["key"] for t in types]
+    assert len(keys) == len(set(keys)) == 19
+    assert keys[:3] == ["student", "enrollment", "class"]
+    assert {"key": "ai_chat", "label": "AI 对话"} in types
+    root = Path(app_pkg.__file__).parent
+    in_code: set[str] = set()
+    for path in root.rglob("*.py"):
+        in_code |= set(re.findall(r'object_type="([a-z_]+)"', path.read_text(encoding="utf-8")))
+    assert in_code <= set(keys), in_code - set(keys)
 
 
 def test_time_range_uses_school_local_dates_inclusive(client, settings, db):
@@ -246,6 +263,26 @@ def test_paging_total(client, settings, db):
     assert len(p1["items"]) == 50 and len(p2["items"]) == 5 and p3["items"] == []
     assert p1["items"][0]["object_id"] == "p54" and p2["items"][-1]["object_id"] == "p00"
     assert _get(client, settings, {"page": 0}).status_code == 400
+
+
+def test_count_query_selects_only_id(client, settings, db):
+    """L59:total 的计数子查询只选 id,不把 extra / user_agent 等宽列拖进子查询。"""
+    statements: list[str] = []
+
+    def grab(conn, cursor, statement, params, context, executemany):
+        statements.append(statement)
+
+    conn = db.connection()
+    event.listen(conn, "before_cursor_execute", grab)
+    try:
+        assert _get(client, settings, {"from": "2026-11-01", "to": "2026-11-01"}).status_code == 200
+    finally:
+        event.remove(conn, "before_cursor_execute", grab)
+    counts = [s for s in statements if re.search(r"SELECT count\(\*\)", s, re.IGNORECASE)]
+    assert len(counts) == 1, statements
+    inner = counts[0]
+    assert "audit_logs.id" in inner
+    assert "audit_logs.extra" not in inner and "audit_logs.action" not in inner
 
 
 def test_query_writes_no_audit(client, settings, db):
