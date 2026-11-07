@@ -13,6 +13,7 @@ const h = vi.hoisted(() => {
     static Events = {
       ERROR: 'hlsError',
       MANIFEST_PARSED: 'hlsManifestParsed',
+      LEVEL_LOADED: 'hlsLevelLoaded',
       FRAG_LOADED: 'hlsFragLoaded',
     }
     static ErrorTypes = { NETWORK_ERROR: 'networkError', MEDIA_ERROR: 'mediaError' }
@@ -75,6 +76,10 @@ const segmentError = (code: number, body = '') => ({
 })
 const mediaError = (details = 'bufferAppendError') => ({ type: 'mediaError', details, fatal: true })
 const frag = (sn: number) => ({ frag: { sn } })
+/** hls.js LEVEL_LOADED 的样子(只保留播放器会读的字段):直播播放列表的目标时长与片段序号窗口 */
+const level = (over: Partial<{ targetduration: number; startSN: number; endSN: number }> = {}) => ({
+  details: { live: true, targetduration: 2, startSN: 1, endSN: 3, ...over },
+})
 const video = (title = 't') => screen.getByLabelText(title) as HTMLVideoElement
 const starting = () => manifestError(503, errBody('STREAM_STARTING'))
 
@@ -654,6 +659,42 @@ describe('CameraPlayer', () => {
     expect(videoSpy).toHaveBeenCalledWith('timeupdate', expect.any(Function))
     expect(videoSpy).toHaveBeenCalledWith('playing', expect.any(Function))
     expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('stall threshold follows target duration', () => {
+    // 停滞阈值 = 3 × TARGETDURATION,夹在 8–20 秒(L306):4 秒片段 12 秒才重取,不再固定 20 秒
+    vi.useFakeTimers()
+    render(<CameraPlayer cameraId="c1" title="t" />)
+    const h0 = hls()
+    act(() => h0.emit('hlsLevelLoaded', level({ targetduration: 4 })))
+    act(() => h0.emit('hlsFragLoaded'))
+    act(() => void vi.advanceTimersByTime(11999))
+    expect(h0.loadSource).toHaveBeenCalledTimes(1)
+    act(() => void vi.advanceTimersByTime(1))
+    expect(h0.loadSource).toHaveBeenCalledTimes(2)
+    // 2 秒片段:下限 8 秒
+    act(() => h0.emit('hlsLevelLoaded', level({ targetduration: 2 })))
+    act(() => h0.emit('hlsFragLoaded'))
+    act(() => void vi.advanceTimersByTime(7999))
+    expect(h0.loadSource).toHaveBeenCalledTimes(2)
+    act(() => void vi.advanceTimersByTime(1))
+    expect(h0.loadSource).toHaveBeenCalledTimes(3)
+    // 10 秒片段:上限 20 秒
+    act(() => h0.emit('hlsLevelLoaded', level({ targetduration: 10 })))
+    act(() => h0.emit('hlsFragLoaded'))
+    act(() => void vi.advanceTimersByTime(19999))
+    expect(h0.loadSource).toHaveBeenCalledTimes(3)
+    act(() => void vi.advanceTimersByTime(1))
+    expect(h0.loadSource).toHaveBeenCalledTimes(4)
+    // timeupdate 也按新阈值从头计
+    act(() => h0.emit('hlsLevelLoaded', level({ targetduration: 3 })))
+    act(() => h0.emit('hlsFragLoaded'))
+    act(() => void vi.advanceTimersByTime(5000))
+    act(() => void video().dispatchEvent(new Event('timeupdate')))
+    act(() => void vi.advanceTimersByTime(8999))
+    expect(h0.loadSource).toHaveBeenCalledTimes(4)
+    act(() => void vi.advanceTimersByTime(1))
+    expect(h0.loadSource).toHaveBeenCalledTimes(5)
   })
 
   it('retry button not inside alert', () => {

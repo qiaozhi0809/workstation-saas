@@ -9,8 +9,18 @@ type PlayState =
   'loading' | 'playing' | 'stalled' | 'ended' | 'lan' | 'busy' | 'offline' | 'unsupported' | 'codec'
 
 const NO_PICTURE_MS = 8000
-/** 出画面之后:这么久没有新片段、也没有 timeupdate,就当画面停了 */
-const STALL_MS = 20_000
+/**
+ * 出画面之后:这么久没有新片段、也没有 timeupdate,就当画面停了。
+ * 拿到播放列表(LEVEL_LOADED)后按 3 × TARGETDURATION 算,夹在 8–20 秒之间(片段 2 秒 → 8 秒,
+ * 片段 ≥ 7 秒 → 20 秒);拿到之前沿用 20 秒(L306)
+ */
+const STALL_MS_DEFAULT = 20_000
+const STALL_MS_MIN = 8_000
+const STALL_MS_MAX = 20_000
+const stallMsFor = (targetduration: unknown): number =>
+  typeof targetduration === 'number' && targetduration > 0
+    ? Math.min(STALL_MS_MAX, Math.max(STALL_MS_MIN, 3 * targetduration * 1000))
+    : STALL_MS_DEFAULT
 const STARTING_RETRY_MS = 2000
 const STARTING_MAX_RETRIES = 4
 
@@ -96,10 +106,17 @@ export function CameraPlayer({
       setState('unsupported')
       return
     }
-    setState('loading')
+    let alive = true
+    // 自己记住已显示的状态:每个新片段 / 每次 timeupdate 都不再调 setState 靠 React 同值跳过(L306)
+    let shown: PlayState | null = null
+    const show = (next: PlayState) => {
+      if (!alive || shown === next) return
+      shown = next
+      setState(next)
+    }
+    show('loading')
     const video = videoRef.current
     const src = camerasApi.playlistUrl(cameraId)
-    let alive = true
     let terminal = false
     let gotPicture = false
     let refreshed = false
@@ -137,7 +154,7 @@ export function CameraPlayer({
       clearTimers()
       hls?.destroy()
       hls = null
-      if (alive) setState(next)
+      show(next)
       if (next === 'ended') onEndedRef.current?.()
     }
     // 8 秒"无画面"计时只在播放列表已拿到之后才算;页面隐藏时暂停,可见后重新计
@@ -165,18 +182,24 @@ export function CameraPlayer({
       clearTimeout(noPictureTimer)
       hls.loadSource(src)
     }
-    // 停滞看门狗(L182):出画面后 20 秒没有新片段也没有 timeupdate → 先悄悄重取一次播放列表;
-    // 还不动就提示"画面已停止,正在重连…"并给"重试"(重建实例),期间每 20 秒继续自动重取
+    // 停滞看门狗(L182):出画面后 stallMs 没有新片段也没有 timeupdate → 先悄悄重取一次播放列表;
+    // 还不动就提示"画面已停止,正在重连…"并给"重试"(重建实例),期间每 stallMs 继续自动重取
+    let stallMs = STALL_MS_DEFAULT
     const armStallTimer = () => {
       clearTimeout(stallTimer)
-      stallTimer = setTimeout(onStall, STALL_MS)
+      stallTimer = setTimeout(onStall, stallMs)
     }
     const onStall = () => {
       if (terminal) return
-      if (stallReloaded) setState('stalled')
+      if (stallReloaded) show('stalled')
       stallReloaded = true
       reload()
       armStallTimer()
+    }
+    // 播放列表到了:停滞阈值跟着它的 TARGETDURATION 走(下一次计时起生效)
+    const onLevelLoaded = (data: { details?: { targetduration?: unknown } } | undefined) => {
+      if (terminal) return
+      stallMs = stallMsFor(data?.details?.targetduration)
     }
     // 出画面(片段到了 / 视频 playing):8 秒计时取消,401 再刷新与 STREAM_STARTING 的预算恢复,看门狗从头计
     const markPlaying = () => {
@@ -200,7 +223,7 @@ export function CameraPlayer({
       }
       segmentReloaded = false
       stallReloaded = false
-      setState('playing')
+      show('playing')
       markPlaying()
     }
     // 播放位置在走(也可能只是在回放重取回来的旧片段):只让看门狗从头计,预算与提示都不动
@@ -275,6 +298,7 @@ export function CameraPlayer({
     }
 
     hls.on(Hls.Events.MANIFEST_PARSED, markFirstSign)
+    hls.on(Hls.Events.LEVEL_LOADED, (_e, data) => onLevelLoaded(data))
     hls.on(Hls.Events.FRAG_LOADED, (_e, data) => onFragLoaded(data))
     hls.on(Hls.Events.ERROR, (_e, data) => handleError(data as unknown as HlsErrorData))
     if (video) {
