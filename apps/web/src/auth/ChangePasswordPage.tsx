@@ -1,9 +1,12 @@
+import { useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { KeyRound } from 'lucide-react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { authApi } from '@/shared/api/auth'
+import { schoolApi } from '@/shared/api/school'
 import { Card, CardContent, CardHeader } from '@/shared/components/ui/card'
 import { ChangePasswordForm } from '@/shared/components/layout/ChangePasswordDialog'
+import { META_QUERY_KEY } from '@/shared/hooks/useSchoolTz'
 import { useAuthStore } from '@/shared/stores/auth'
 import type { User } from '@/shared/types/user'
 import ThemeToggle from '@/theme/ThemeToggle'
@@ -33,6 +36,32 @@ export default function ChangePasswordPage() {
   const accessToken = useAuthStore((s) => s.accessToken)
   const user = useAuthStore((s) => s.user)
   const lastContext = useAuthStore((s) => s.lastContext)
+  const mustChange = !!accessToken && (!user || user.must_change_password)
+  // 挂载时重取一次 /auth/me(L307):client.ts 兜底写进 store 的 'required' 只是占位,换成服务端的真实原因,
+  // 并拿到最新的 must_change_password(在别处已改过就直接回首页)。取不到就沿用本地的,不报错。
+  // 只取一次:自己 setUser 之后 user 变了也不再取(StrictMode 下 ref 也不会被重置)
+  const refetched = useRef(false)
+  useEffect(() => {
+    if (refetched.current || !mustChange) return
+    refetched.current = true
+    authApi
+      .me()
+      .then((me) => {
+        if (me && typeof me === 'object') useAuthStore.getState().setUser(me)
+      })
+      .catch(() => {
+        /* 沿用本地的原因 */
+      })
+  }, [mustChange])
+  // 校名来自 /meta;V3-3 合并前它在强制改密中 403——读不到就不显示,不报错也不重试
+  const meta = useQuery({
+    queryKey: META_QUERY_KEY,
+    queryFn: schoolApi.meta,
+    staleTime: 60 * 60_000,
+    retry: false,
+    refetchOnWindowFocus: false,
+    enabled: mustChange,
+  })
   if (!accessToken) return <Navigate to="/login" replace />
   if (user && !user.must_change_password)
     return <Navigate to={homeFor(user, lastContext)} replace />
@@ -65,6 +94,9 @@ export default function ChangePasswordPage() {
       <Card className="w-full max-w-sm">
         <CardHeader>
           <KeyRound className="h-8 w-8 text-primary" aria-hidden="true" />
+          {meta.data?.school_name && (
+            <p className="text-sm text-muted-foreground">{meta.data.school_name}</p>
+          )}
           <h1 className="text-xl font-semibold tracking-tight">
             {reason === 'first_login' ? '首次登录请先修改密码' : '请先修改密码'}
           </h1>
