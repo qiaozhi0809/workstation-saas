@@ -286,16 +286,17 @@ it('keeps last frame thumbnail in fullscreen', async () => {
   await screen.findByRole('dialog', { name: '后排机位' })
   expect(drawImage).toHaveBeenCalledTimes(1)
   expect(drawImage.mock.calls[0][0]).toBe(playing)
-  const frame = within(strip).getByRole('img', { name: '讲台机位 最后一帧' })
+  // 全屏弹层开着时条在 aria-hidden 之下,按 alt 找而不是按角色找
+  const frame = within(strip).getByAltText('讲台机位 最后一帧')
   expect(frame).toHaveAttribute('src', 'data:image/jpeg;base64,ZnJhbWU=')
   expect(within(strip).getByText('全屏中暂停')).toBeInTheDocument()
-  expect(within(strip).queryByRole('img', { name: '后排机位 最后一帧' })).toBeNull()
+  expect(within(strip).queryByAltText('后排机位 最后一帧')).toBeNull()
   expect(within(strip).getByText('正在全屏')).toBeInTheDocument()
   expect(live()).toEqual(['cam2'])
 
   fireEvent.keyDown(document, { key: 'Escape' })
   await waitFor(() => expect(screen.queryByRole('dialog', { name: '后排机位' })).toBeNull())
-  expect(within(strip).queryByRole('img', { name: /最后一帧/ })).toBeNull()
+  expect(within(strip).queryByAltText(/最后一帧/)).toBeNull()
   expect(live()).toEqual(['cam1', 'cam2'])
 })
 
