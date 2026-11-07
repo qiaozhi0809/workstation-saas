@@ -225,13 +225,15 @@ it('disable confirm shows a spinner and stays disabled while submitting', async 
   fireEvent.click(await within(dlg).findByRole('button', { name: '关闭两步验证' }))
   fireEvent.change(within(dlg).getByLabelText('当前密码'), { target: { value: 'pw' } })
   const confirm = within(dlg).getByRole('button', { name: '确认关闭' })
-  expect(confirm.querySelector('svg')).toBeNull()
+  // 提交中的转圈以 role=status 暴露给读屏,测试也按角色找而不是按 svg 选择器(L305)
+  expect(within(confirm).queryByRole('status')).toBeNull()
   fireEvent.click(confirm)
   await waitFor(() => expect(confirm).toHaveAttribute('aria-busy', 'true'))
   expect(confirm).toBeDisabled()
-  expect(confirm.querySelector('svg.motion-safe\\:animate-spin')).not.toBeNull()
+  expect(within(confirm).getByRole('status', { name: '正在提交' })).toBeInTheDocument()
   resolveDisable({ enabled: false })
   await waitFor(() => expect(toast).toHaveBeenCalledWith('已关闭两步验证'))
+  expect(within(dlg).queryByRole('status', { name: '正在提交' })).toBeNull()
 })
 
 it('reopening the dialog shows no qr or secret until setup is called again', async () => {
