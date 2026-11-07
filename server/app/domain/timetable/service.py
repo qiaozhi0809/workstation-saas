@@ -7,6 +7,7 @@ from sqlalchemy import delete, select, text
 from sqlalchemy.orm import Session
 
 from app.audit.service import record
+from app.domain.classes.sort import class_sort_key
 from app.domain.exams.subjects import class_subjects, merge_subjects
 from app.domain.schools.service import active_academic_year, school_tz
 from app.domain.timetable.schemas import (
@@ -64,7 +65,7 @@ def save_periods(
         .order_by(SchoolClass.name, TimetableEntry.period_no)
     ).all()
     if in_use:
-        names = sorted({name for name, _ in in_use})
+        names = sorted({name for name, _ in in_use}, key=class_sort_key)  # 班名数值序(L266)
         nos = sorted({no for _, no in in_use})
         raise ApiError(
             409,
