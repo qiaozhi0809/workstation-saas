@@ -222,13 +222,20 @@ jobs:
         working-directory: apps/web
         run: npm ci
 
-      # m5c project 用 runner 预装的 Google Chrome(channel: chrome):Playwright 自带的 Chromium 没有 H.264 解码器,
-      # 真流用例放不出画面。这里只确认它在,不重装
+      # m5c 的真流用例用 runner 预装的 Google Chrome(Playwright 自带的 Chromium 没有 H.264 解码器,放不出画面):
+      # 探测到 Chrome 就设 WS_CHROME=1,playwright.config 据此给 m5c project 用 channel: chrome(不重装)。
+      # CI 上严格:三条真流用例是仓库里唯一的真播放覆盖,runner 镜像丢了 Chrome 必须让 job 红,
+      # 不能静默退回 Chromium 把它们 skip 掉;没有 Chrome 的回退只给本机(playwright.config 不设 WS_CHROME 即可)
       - name: Install Playwright browser
         working-directory: apps/web
         run: |
           npx playwright install --with-deps chromium
-          google-chrome --version
+          if google-chrome --version; then
+            echo "WS_CHROME=1" >> "$GITHUB_ENV"
+          else
+            echo "::error::runner 没有 Google Chrome,m5c 的真流用例跑不了;换镜像或在本步装 Chrome"
+            exit 1
+          fi
 
       - name: Start frontend
         working-directory: apps/web
@@ -236,6 +243,9 @@ jobs:
           nohup npm run dev > "$RUNNER_TEMP/frontend.log" 2>&1 &
 
       - name: Wait for services
+        env:
+          # 等假摄像头推流就绪的上限(秒),函数默认 90;CI 里 mediamtx 几秒就有流,60 够了,cam2 起不来时也少拖半分钟
+          WS_RTSP_WAIT: "60"
         run: |
           wait_for() {
             for _ in $(seq 1 60); do
@@ -275,16 +285,17 @@ jobs:
             echo "Timed out waiting for rtsp port $WS_RTSP_PORT"
             return 1
           }
-          # 15 次 × (ffprobe 最多 4 秒 + 歇 2 秒) ≈ 90 秒封顶;cam2 起不来时不能把整个 job 拖住
+          # 每轮 ffprobe 最多 4 秒 + 歇 2 秒,到 WS_RTSP_WAIT 秒(默认 90)为止;cam2 起不来时不能把整个 job 拖住
           wait_rtsp_stream() {
-            for _ in $(seq 1 15); do
+            local deadline=$(( SECONDS + ${WS_RTSP_WAIT:-90} ))
+            while [ "$SECONDS" -lt "$deadline" ]; do
               if timeout 4 ffprobe -v error -rtsp_transport tcp -i "rtsp://127.0.0.1:$WS_RTSP_PORT/$1" -show_streams > /dev/null 2>&1; then
                 echo "rtsp stream $1 is up"
                 return 0
               fi
               sleep 2
             done
-            echo "Timed out waiting for rtsp stream $1"
+            echo "Timed out waiting for rtsp stream $1 (${WS_RTSP_WAIT:-90}s)"
             return 1
           }
           wait_for http://127.0.0.1:18089/last
@@ -306,12 +317,21 @@ jobs:
           }
           wait_rtsp_stream cam2 || echo "::warning::H.265 假摄像头 cam2 不可用(镜像可能没有 libx265),m5c 的 HEVC 用例会跳过"
 
+      # --project readonly 连带跑它依赖的整条改数据链(mutating → … → m5c → readonly),但不含排在它后面的 walkthrough
       - name: Playwright e2e
         working-directory: apps/web
-        run: npm run e2e -- --trace retain-on-failure
+        run: npm run e2e -- --project readonly --trace retain-on-failure
 
-      # R14 走查:walkthrough project 把三端主要页面按视口 × 主题截成整页 PNG(约 200 张),协调者下载看图。
-      # 上游 project 失败时 walkthrough 会被跳过、目录不存在,这里只提示不报错
+      # R14 走查:walkthrough project 把四个账号的主要页面按视口 × 主题截成整页 PNG(约 290 张),协调者下载看图。
+      # 单独一步、--no-deps 不重跑上面的链;某页标题变了之类的截图失败只让本步红,不拦 job(看 artifact 与本步日志)
+      - name: Walkthrough screenshots
+        id: walkthrough
+        working-directory: apps/web
+        continue-on-error: true
+        run: npx playwright test --project walkthrough --no-deps --trace retain-on-failure
+
+      # 走查那步 continue-on-error,但一张截图都没有(登录就挂了之类)说明走查整个坏了,要让 job 红;
+      # 上面的 e2e 步骤失败时走查被跳过、目录不存在,这里也会红——job 本来就已经红了,不多添判断
       - name: Upload walkthrough screenshots
         if: always()
         uses: actions/upload-artifact@v4
@@ -319,7 +339,7 @@ jobs:
           name: walkthrough-${{ github.sha }}
           path: apps/web/walkthrough/
           retention-days: 14
-          if-no-files-found: warn
+          if-no-files-found: error
 
       # R7:真 ffmpeg 组需要 ffmpeg + 假摄像头,只有这里具备(backend job 里 skip)。放在 Playwright 之后:
       # 它和 Playwright 的真流用例都要起 ffmpeg 拉同一路 cam1,先跑完浏览器用例再跑它,互不抢 CPU;
@@ -344,8 +364,9 @@ jobs:
           path: ${{ runner.temp }}/perf.txt
           if-no-files-found: ignore
 
+      # 条件与下面 Upload Playwright artifacts 一致:走查那步 continue-on-error,它红了 failure() 仍是假
       - name: Show service logs
-        if: failure()
+        if: failure() || steps.walkthrough.outcome == 'failure'
         run: |
           echo "--- backend.log ---"; cat "$RUNNER_TEMP/backend.log" || true
           echo "--- frontend.log ---"; cat "$RUNNER_TEMP/frontend.log" || true
@@ -353,8 +374,9 @@ jobs:
           echo "--- stream.log ---"; cat "$RUNNER_TEMP/stream.log" || true
           echo "--- fake cameras ---"; docker compose -f deploy/docker-compose.dev.yml --profile camera logs --tail 50 || true
 
+      # 走查那步 continue-on-error,它红了 failure() 仍是假,所以单独看它的 outcome 把 trace 也传上来
       - name: Upload Playwright artifacts
-        if: failure()
+        if: failure() || steps.walkthrough.outcome == 'failure'
         uses: actions/upload-artifact@v4
         with:
           name: playwright-artifacts

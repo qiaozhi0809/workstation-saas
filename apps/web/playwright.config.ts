@@ -19,6 +19,11 @@ const M5B = 'm5b.spec.ts'
 const M5C = 'm5c.spec.ts'
 const WALKTHROUGH = 'walkthrough.spec.ts'
 
+// m5c 的真流用例要浏览器能解 H.264,Playwright 自带的 Chromium 没有专有解码器。WS_CHROME=1 时 m5c project 用系统里的
+// Google Chrome(channel: 'chrome';GitHub ubuntu runner 预装,CI 探测到它才设这个变量);没设就退回 Chromium,
+// m5c.spec 里的真流用例按同一个变量 skip,其余用例(权限、开关、H.265 提示)照跑
+const USE_CHROME = process.env.WS_CHROME === '1'
+
 export default defineConfig({
   testDir: './e2e',
   forbidOnly: !!process.env.CI,
@@ -44,9 +49,13 @@ export default defineConfig({
     { name: 'm5b', testMatch: M5B, dependencies: ['m4b'] },
     // m5c 开学校"监控"开关、登记假摄像头(rtsp://127.0.0.1:8554/cam1、cam2,CI 的 camera profile)、
     // 建作息与三年二班课表;每个用例结束还原(关开关、删摄像头、清课表与作息),失败也由 afterEach 按快照兜底。
-    // 真流用例要浏览器能解 H.264:Playwright 自带的 Chromium 没有专有解码器,这个 project 用系统里的
-    // Google Chrome(GitHub ubuntu runner 预装);其余 project 不受影响
-    { name: 'm5c', testMatch: M5C, dependencies: ['m5b'], use: { channel: 'chrome' } },
+    // 浏览器见上面 USE_CHROME 的说明;其余 project 不受影响
+    {
+      name: 'm5c',
+      testMatch: M5C,
+      dependencies: ['m5b'],
+      use: USE_CHROME ? { channel: 'chrome' } : {},
+    },
     {
       name: 'readonly',
       testIgnore: [
@@ -67,8 +76,10 @@ export default defineConfig({
       dependencies: ['m5c'],
     },
     // 走查截图(M5d R14):只读,把各端主要页面按视口 × 主题截成整页 PNG 到 apps/web/walkthrough/,CI 作为 artifact 上传。
-    // 排在整条链末尾、独占浏览器,不与只读 project 里量布局的用例抢 CPU;文件内 8 个用例声明为并行。
-    // 一个用例要截几十张图(约 1–2 分钟),单测超时放宽到 5 分钟;单张图的等待仍受 expect 10 秒约束,卡住时快速失败
+    // 排在整条链末尾、独占浏览器,不与只读 project 里量布局的用例抢 CPU;文件内 10 个用例声明为并行。
+    // CI 把它拆成单独一步:先 `--project readonly`(连带整条依赖链,不含本 project),再 `--project walkthrough --no-deps`
+    // 且 continue-on-error——截图失败不拦 job;本机 `npm run e2e` 仍按依赖在链末尾跑它。
+    // 一个用例要截上百张图(约 2–3 分钟),单测超时放宽到 5 分钟;单张图的等待仍受 expect 10 秒约束,卡住时快速失败
     {
       name: 'walkthrough',
       testMatch: WALKTHROUGH,
