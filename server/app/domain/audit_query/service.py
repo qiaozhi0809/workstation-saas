@@ -60,8 +60,39 @@ class AuditActionGroup(BaseModel):
     actions: list[AuditActionItem]
 
 
+class AuditObjectType(BaseModel):
+    key: str
+    label: str
+
+
 class AuditActions(BaseModel):
     groups: list[AuditActionGroup]
+    object_types: list[AuditObjectType]  # 审计页"对象类型"筛选的下拉项(L271),后端一份
+
+
+# 审计写入点用到过的 object_type 与中文名(L271):新增类型要同步加到这里,
+# test_audit_query 会对照代码里的写入点检查
+OBJECT_TYPE_LABELS: dict[str, str] = {
+    "student": "学生",
+    "enrollment": "学籍",
+    "class": "班级",
+    "grade": "年级",
+    "academic_year": "学年",
+    "user": "用户",
+    "teacher_assignment": "教师任职",
+    "role_binding": "管理岗位",
+    "exam": "考试",
+    "grade_exam": "年级联考",
+    "review": "点评",
+    "review_op": "点评操作",
+    "comment": "评语",
+    "growth_record": "成长记录",
+    "notice": "通知",
+    "school": "学校",
+    "school_setting": "学校设置",
+    "camera": "摄像头",
+    "ai_chat": "AI 对话",
+}
 
 
 @dataclass
@@ -91,7 +122,8 @@ def actions_view() -> AuditActions:
             ]
         )
         groups.append(AuditActionGroup(key=key, label=label, actions=actions))
-    return AuditActions(groups=groups)
+    object_types = [AuditObjectType(key=k, label=v) for k, v in OBJECT_TYPE_LABELS.items()]
+    return AuditActions(groups=groups, object_types=object_types)
 
 
 def _apply_group(stmt, group: str):

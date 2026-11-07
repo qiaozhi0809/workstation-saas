@@ -95,6 +95,23 @@ def test_actions_groups_fixed(client, settings):
     assert any(a["action"] == "exam.grade_create" for a in by_key["grade"]["actions"])
 
 
+def test_actions_include_object_types(client, settings):
+    """L271:/audit/actions 一并给出对象类型下拉项 {key, label},
+    覆盖代码里所有审计写入点用到的类型。"""
+    body = _get(client, settings, url=ACTIONS).json()
+    types = body["object_types"]
+    assert all(set(t) == {"key", "label"} and t["label"] for t in types)
+    keys = [t["key"] for t in types]
+    assert len(keys) == len(set(keys)) == 19
+    assert keys[:3] == ["student", "enrollment", "class"]
+    assert {"key": "ai_chat", "label": "AI 对话"} in types
+    root = Path(app_pkg.__file__).parent
+    in_code: set[str] = set()
+    for path in root.rglob("*.py"):
+        in_code |= set(re.findall(r'object_type="([a-z_]+)"', path.read_text(encoding="utf-8")))
+    assert in_code <= set(keys), in_code - set(keys)
+
+
 def test_time_range_uses_school_local_dates_inclusive(client, settings, db):
     # 学校时区 Asia/Shanghai(UTC+8):11-01 本地 00:00 = 10-31 16:00Z
     _add(db, "2026-10-31T15:59:59", object_id="t-before")
