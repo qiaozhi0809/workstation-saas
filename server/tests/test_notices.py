@@ -1194,6 +1194,21 @@ def test_send_options(client, db, settings):
     assert len(denied) == 1
 
 
+def test_send_options_classes_numeric_order(client, db, settings):
+    """L266:班名按数值序(三年三班 < 三年七班),不是码位序(七 U+4E03 < 三 U+4E09)。"""
+    seven = str(make_class(db, "三年七班"))
+    three = str(make_class(db, "三年三班"))
+    opts = client.get(f"{ADMIN}/options", headers=auth(settings, PRINCIPAL)).json()
+    assert [c["name"] for c in opts["classes"]] == [
+        "三年一班",
+        "三年二班",
+        "三年三班",
+        "三年七班",
+        "四年一班",
+    ]
+    assert [c["id"] for c in opts["classes"]][2:4] == [three, seven]
+
+
 def test_page_and_q_caps(client, settings):
     h = auth(settings, PRINCIPAL)
     # 项目口径:查询参数校验失败统一 400 BAD_REQUEST(契约写 422,按代码)

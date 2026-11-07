@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app import clock
 from app.audit.service import deny, record
 from app.domain.classes.service import get_class_or_404
+from app.domain.classes.sort import class_sort_key
 from app.domain.notices.schemas import (
     AckBlockReason,
     AckSpec,
@@ -444,22 +445,22 @@ def send_options(
         grade_q = grade_q.where(Grade.id.in_(_send_grades(bindings)))
     grades = db.scalars(grade_q.order_by(Grade.display_order, Grade.name, Grade.id)).all()
     grade_ids = [g.id for g in grades]
+    grade_rank = {g.id: i for i, g in enumerate(grades)}
     classes = (
-        db.execute(
-            select(SchoolClass)
-            .join(Grade, Grade.id == SchoolClass.grade_id)
-            .where(
+        db.scalars(
+            select(SchoolClass).where(
                 SchoolClass.academic_year_id == year.id,
                 SchoolClass.school_id == year.school_id,
                 SchoolClass.active.is_(True),
                 SchoolClass.grade_id.in_(grade_ids),
             )
-            .order_by(Grade.display_order, Grade.name, SchoolClass.name, SchoolClass.id)
-        )
-        .scalars()
-        .all()
+        ).all()
         if grade_ids
         else []
+    )
+    # 班名按数值序(L266):三年二班 < 三年十班,SQL 的码位序做不到
+    classes = sorted(
+        classes, key=lambda c: (grade_rank[c.grade_id], class_sort_key(c.name), str(c.id))
     )
     return NoticeOptions(
         school_wide=wide,

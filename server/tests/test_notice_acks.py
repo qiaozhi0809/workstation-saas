@@ -436,6 +436,24 @@ def test_snapshot_survives_upgrade(client, db, settings):
     assert item["students_detail"] == [{"name": "王小一", "class_name": "三年二班"}]
 
 
+def test_ack_rows_numeric_order(client, db, settings):
+    """L266:回执明细按班名数值序(三年三班 < 三年七班);码位序会把"七"排到"三"前面。
+    班名读的是 notice_students 快照,直接改快照即可构造。"""
+    n = parent_notice(client, settings, CONFIRM)
+    db.execute(
+        text(
+            "UPDATE notice_students ns SET class_name = CASE s.mk WHEN 'S0001' THEN '三年七班'"
+            " ELSE '三年三班' END FROM students s WHERE s.id = ns.student_id AND ns.notice_id = :n"
+        ),
+        {"n": n},
+    )
+    stats = client.get(f"{INBOX}/{n}/acks", headers=auth(settings, PRINCIPAL)).json()
+    assert [(r["student_name"], r["class_name"]) for r in stats["rows"]] == [
+        ("李小二", "三年三班"),
+        ("王小一", "三年七班"),
+    ]
+
+
 def test_ack_stats_teacher_audience(client, db, settings):
     res = send(client, settings, PRINCIPAL, TARGET_C32, ack=CONFIRM)
     n = res.json()["id"]
