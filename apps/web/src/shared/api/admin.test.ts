@@ -284,6 +284,7 @@ const cases: [string, () => Promise<unknown>, string, string, unknown?][] = [
     'GET',
     '/admin/history/classes?year_id=y0',
   ],
+  ['historyClass', () => adminApi.historyClass('c1'), 'GET', '/admin/history/classes/c1'],
   [
     'historyStudents',
     () => adminApi.historyStudents('c1'),

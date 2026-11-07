@@ -270,7 +270,15 @@ describe('往年单班页', () => {
     )
   })
 
-  it('缺少 year 参数时逐个往年找这个班,标题与返回链接都用找到的学年(L58)', async () => {
+  // L275:没带 ?year=(书签 / 手输地址)时按班 id 一次 GET /admin/history/classes/{id} 定位学年,
+  // 不再从最近的往年起逐个学年拉班级列表(N+1)
+  it('locates class with one request', async () => {
+    vi.mocked(adminApi.historyClass).mockResolvedValue({
+      class_id: 'c9',
+      class_name: '初三1班',
+      year_id: 'y24',
+      year_name: '2024-2025 学年',
+    })
     setup('/admin/history/classes/c9')
     expect(
       await screen.findByRole('heading', { level: 1, name: '2024-2025 学年 初三1班' }),
@@ -279,36 +287,54 @@ describe('往年单班页', () => {
       'href',
       '/admin/history?year=y24',
     )
-    // 从最近的往年开始找,找到为止
-    expect(vi.mocked(adminApi.historyClasses).mock.calls.map((c) => c[0])).toEqual(['y25', 'y24'])
+    expect(adminApi.historyClass).toHaveBeenCalledTimes(1)
+    expect(adminApi.historyClass).toHaveBeenCalledWith('c9')
+    expect(adminApi.historyYears).not.toHaveBeenCalled()
+    expect(adminApi.historyClasses).not.toHaveBeenCalled()
     expect(await screen.findByText('张小三')).toBeInTheDocument()
   })
 
-  it('缺少 year 参数且最近的往年就有这个班时不再请求更早的学年', async () => {
-    setup('/admin/history/classes/c1')
-    expect(
-      await screen.findByRole('heading', { level: 1, name: '2025-2026 学年 高一1班' }),
-    ).toBeInTheDocument()
-    expect(vi.mocked(adminApi.historyClasses).mock.calls.map((c) => c[0])).toEqual(['y25'])
-  })
-
-  it('缺少 year 参数且哪个往年都没有这个班时标题退化为往年班级', async () => {
-    const client = makeClient()
-    setup('/admin/history/classes/nobody', client)
-    await screen.findByText('张小三')
-    // 等逐年查找真正结束(两个往年各问一次、查找结果落定为"没找到"),再断言,免得在中途就通过
-    await waitFor(() =>
-      expect(client.getQueryState(['history', 'class-year', 'nobody'])).toMatchObject({
-        status: 'success',
-        data: null,
-      }),
+  it('缺少 year 参数且定位接口 404 时标题退化为往年班级', async () => {
+    vi.mocked(adminApi.historyClass).mockRejectedValue(
+      new ApiError(404, 'CLASS_NOT_FOUND', '班级不存在'),
     )
-    expect(vi.mocked(adminApi.historyClasses).mock.calls.map((c) => c[0])).toEqual(['y25', 'y24'])
+    setup('/admin/history/classes/nobody')
+    await screen.findByText('张小三')
+    await waitFor(() => expect(adminApi.historyClass).toHaveBeenCalledWith('nobody'))
     expect(screen.getByRole('heading', { level: 1, name: '往年班级' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '← 往年班级' })).toHaveAttribute(
       'href',
       '/admin/history',
     )
+    expect(adminApi.historyClasses).not.toHaveBeenCalled()
+  })
+
+  // L275:带 ?year= 但该学年已不存在(404,比如升级被回滚)时同样回退到定位接口,标题与返回链接用它给的学年
+  it('falls back to the locate endpoint when ?year= is gone', async () => {
+    vi.mocked(adminApi.historyClasses).mockRejectedValue(
+      new ApiError(404, 'YEAR_NOT_FOUND', '学年不存在'),
+    )
+    vi.mocked(adminApi.historyClass).mockResolvedValue({
+      class_id: 'c1',
+      class_name: '高一1班',
+      year_id: 'y25',
+      year_name: '2025-2026 学年',
+    })
+    setup('/admin/history/classes/c1?year=gone')
+    expect(
+      await screen.findByRole('heading', { level: 1, name: '2025-2026 学年 高一1班' }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '← 往年班级' })).toHaveAttribute(
+      'href',
+      '/admin/history?year=y25',
+    )
+    expect(adminApi.historyClass).toHaveBeenCalledWith('c1')
+  })
+
+  it('带 ?year= 正常打开时不请求定位接口,复用列表页的缓存', async () => {
+    setup('/admin/history/classes/c1?year=y25')
+    await screen.findByRole('heading', { level: 1, name: '2025-2026 学年 高一1班' })
+    expect(adminApi.historyClass).not.toHaveBeenCalled()
   })
 
   it('year 查不到时标题退化为往年班级', async () => {

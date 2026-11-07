@@ -20,6 +20,7 @@ import type {
   GradeExamInput,
   GradeInput,
   HistoryClass,
+  HistoryClassLocation,
   HistoryExam,
   HistoryScores,
   HistoryStudent,
@@ -255,6 +256,9 @@ export const adminApi = {
   historyYears: () => api<HistoryYear[]>('GET', '/admin/history/years'),
   historyClasses: (yearId: string) =>
     api<HistoryClass[]>('GET', `/admin/history/classes${qs({ year_id: yearId })}`),
+  /** 按班 id 定位往年学年与班名(往年单班页不带 ?year= 直接打开时用,L275);不存在 404 */
+  historyClass: (classId: string) =>
+    api<HistoryClassLocation>('GET', `/admin/history/classes/${seg(classId)}`),
   historyStudents: (classId: string) =>
     api<{ students: HistoryStudent[] }>('GET', `/admin/history/classes/${seg(classId)}/students`),
   historyExams: (classId: string) =>

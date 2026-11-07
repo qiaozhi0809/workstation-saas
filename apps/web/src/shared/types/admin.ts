@@ -589,6 +589,13 @@ export interface HistoryClass {
   homeroom_name: string | null
   students: number
 }
+/** GET /admin/history/classes/{class_id}(V3-4):按班 id 一次定位它所在的往年学年;不存在 404(L275) */
+export interface HistoryClassLocation {
+  class_id: string
+  class_name: string
+  year_id: string
+  year_name: string
+}
 export interface HistoryStudent {
   student_id: string
   name: string
