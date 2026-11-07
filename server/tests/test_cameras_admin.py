@@ -365,6 +365,21 @@ def test_list_sorting(client, settings, db, on):
     assert names == ["cam-c", "cam-a", "cam-b", "pub-a", "pub-b"]
 
 
+def test_camera_list_numeric_order(client, settings, db, on):
+    """L164:摄像头名 / 班名按数值序(教室 2 < 教室 10、二班 < 十班),不是码位序。"""
+    from tests.factories import make_class
+
+    ten = make_class(db, "三年十班")
+    two = make_class(db, "三年二班b")
+    _create(client, settings, name="教室 10", class_id=str(two))
+    _create(client, settings, name="教室 2", class_id=str(two))
+    _create(client, settings, name="教室 1", class_id=str(ten))
+    _create(client, settings, name="走廊 10", class_id=None, location="走廊")
+    _create(client, settings, name="走廊 9", class_id=None, location="走廊")
+    names = [c["name"] for c in client.get(URL, headers=auth(settings, IT_ADMIN)).json()]
+    assert names == ["教室 2", "教室 10", "教室 1", "走廊 9", "走廊 10"]
+
+
 # ---- 测试连接 ----
 
 

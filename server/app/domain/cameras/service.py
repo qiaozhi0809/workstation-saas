@@ -20,6 +20,7 @@ from app.config import Settings
 from app.crypto import CryptoError, decrypt, encrypt
 from app.domain.cameras.lan import mask_url, validate_rtsp_url
 from app.domain.cameras.schemas import CameraInput, CameraOut, CameraTestResult
+from app.domain.classes.sort import class_sort_key
 from app.domain.school_settings.service import get_switches
 from app.errors import ApiError
 from app.models import Grade, SchoolClass
@@ -146,21 +147,26 @@ def _out(db: Session, camera: Camera, state: tuple[str, str | None]) -> CameraOu
 @Redis503()
 def list_cameras(db: Session, redis: Redis, school_id: UUID) -> list[CameraOut]:
     rows = db.execute(
-        select(Camera, SchoolClass.name)
+        select(Camera, SchoolClass.name, Grade.display_order, Grade.name)
         .outerjoin(SchoolClass, SchoolClass.id == Camera.class_id)
         .outerjoin(Grade, Grade.id == SchoolClass.grade_id)
         .where(Camera.school_id == school_id)
-        .order_by(
-            Camera.class_id.is_(None),
-            Grade.display_order,
-            Grade.name,
-            SchoolClass.name,
-            Camera.name,
-            Camera.id,
-        )
     ).all()
+    # 班级摄像头在前(按年级、班名),公共区域在后;班名 / 摄像头名按数值序(L164):教室 2 < 教室 10
+    rows = sorted(
+        rows,
+        key=lambda r: (
+            r[0].class_id is None,
+            r[2] or 0,
+            class_sort_key(r[3] or ""),
+            class_sort_key(r[1] or ""),
+            class_sort_key(r[0].name),
+            str(r[0].id),
+        ),
+    )
     return [
-        camera_out(c, _state(redis, c.id), include_url=True, class_name=name) for c, name in rows
+        camera_out(c, _state(redis, c.id), include_url=True, class_name=name)
+        for c, name, _, _ in rows
     ]
 
 
