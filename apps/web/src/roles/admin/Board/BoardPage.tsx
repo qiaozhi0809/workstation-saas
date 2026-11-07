@@ -56,6 +56,7 @@ export default function BoardPage() {
         {d.classes.length === 0 ? (
           <EmptyState title="暂无班级" />
         ) : (
+          // 带侧栏时 1024 宽只剩约 640 px 给卡片,保持两列到 xl 才三列(L216)
           <div
             data-class-grid
             className={cn(
@@ -70,7 +71,9 @@ export default function BoardPage() {
         )}
       </div>
       {canWatch && (
-        <div className="w-full lg:w-80 lg:shrink-0 xl:w-96">
+        // ≥ 1024 侧栏随滚动固定在 #main(滚动容器)顶部;高度不超过主区域(视口减去 3.5rem 顶栏,
+        // 否则底部 56 px 被裁掉),班级列表多时在侧栏内部滚动(L216)
+        <div className="w-full lg:sticky lg:top-0 lg:max-h-[calc(100dvh-3.5rem)] lg:w-80 lg:shrink-0 lg:overflow-auto xl:w-96">
           <CameraWallMini gradeId={active} />
         </div>
       )}
