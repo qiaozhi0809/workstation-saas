@@ -108,6 +108,13 @@ const renderPage = () =>
     </QueryClientProvider>,
   )
 const row = (name: RegExp) => screen.getByRole('row', { name })
+/** 字段 aria-describedby 指向的说明文字(L215 ⑤:URL 错误只认字段自己挂着的那条,不在整个对话框里找) */
+const describedBy = (field: HTMLElement) =>
+  (field.getAttribute('aria-describedby') ?? '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((id) => document.getElementById(id)?.textContent ?? '')
+    .join('\n')
 
 beforeEach(() => {
   vi.resetAllMocks()
@@ -212,16 +219,23 @@ it('creates a camera, checks the rtsp prefix locally and shows backend url error
   expect(within(dlg).getByTestId('camera-form')).toBeInTheDocument()
   fireEvent.change(within(dlg).getByLabelText('名称'), { target: { value: ' 操场东 ' } })
   fireEvent.change(within(dlg).getByLabelText('位置'), { target: { value: '操场' } })
-  fireEvent.change(within(dlg).getByLabelText('RTSP 地址'), { target: { value: 'http://x' } })
+  const url = within(dlg).getByLabelText('RTSP 地址')
+  expect(describedBy(url)).toContain('只能是校园内网地址')
+  expect(url).not.toHaveAttribute('aria-invalid')
+  fireEvent.change(url, { target: { value: 'http://x' } })
   fireEvent.click(within(dlg).getByRole('button', { name: '保存' }))
-  expect(await within(dlg).findByText('地址需要以 rtsp:// 开头')).toBeInTheDocument()
+  // 错误文案挂在字段的 aria-describedby 上,字段标为 aria-invalid
+  await waitFor(() => expect(describedBy(url)).toContain('地址需要以 rtsp:// 开头'))
+  expect(url).toHaveAttribute('aria-invalid', 'true')
   expect(camerasApi.create).not.toHaveBeenCalled()
 
-  fireEvent.change(within(dlg).getByLabelText('RTSP 地址'), {
-    target: { value: 'rtsp://203.0.113.7/live' },
-  })
+  fireEvent.change(url, { target: { value: 'rtsp://203.0.113.7/live' } })
+  // 改了地址就清掉旧错误
+  expect(describedBy(url)).not.toContain('地址需要以 rtsp:// 开头')
+  expect(url).not.toHaveAttribute('aria-invalid')
   fireEvent.click(within(dlg).getByRole('button', { name: '保存' }))
-  expect(await within(dlg).findByText('摄像头地址不在校园内网(203.0.113.7)')).toBeInTheDocument()
+  await waitFor(() => expect(describedBy(url)).toContain('摄像头地址不在校园内网(203.0.113.7)'))
+  expect(url).toHaveAttribute('aria-invalid', 'true')
   expect(camerasApi.create).toHaveBeenCalledWith({
     name: '操场东',
     class_id: null,

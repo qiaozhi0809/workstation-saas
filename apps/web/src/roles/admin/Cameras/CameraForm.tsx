@@ -142,16 +142,18 @@ export default function CameraForm({ camera, onClose }: { camera?: CameraOut; on
             spellCheck={false}
             placeholder="rtsp://192.168.1.10:554/stream1"
             aria-invalid={urlError ? true : undefined}
+            // 地址错误挂在字段自己的 aria-describedby 上,读屏与测试都只认这一条(L215)
+            aria-describedby={urlError ? 'cam-url-hint cam-url-error' : 'cam-url-hint'}
             onChange={(e) => {
               setRtspUrl(e.target.value)
               setUrlError('')
             }}
           />
-          <p className="text-xs text-muted-foreground">
+          <p id="cam-url-hint" className="text-xs text-muted-foreground">
             只能是校园内网地址;用户名密码不要写进地址,填在下面。
           </p>
           {urlError && (
-            <p role="alert" className="text-sm text-destructive">
+            <p id="cam-url-error" role="alert" className="text-sm text-destructive">
               {urlError}
             </p>
           )}
