@@ -18,11 +18,19 @@ const h = vi.hoisted(() => {
     static Events = {
       ERROR: 'hlsError',
       MANIFEST_PARSED: 'hlsManifestParsed',
+      LEVEL_LOADED: 'hlsLevelLoaded',
       FRAG_LOADED: 'hlsFragLoaded',
     }
+    // 与 CameraPlayer.test.tsx 的假实现同一套常量:播放器在这里收到致命的片段 / 媒体错误也不会因
+    // 读到 undefined 而抛(L259)
+    static ErrorTypes = { NETWORK_ERROR: 'networkError', MEDIA_ERROR: 'mediaError' }
     static ErrorDetails = {
       MANIFEST_LOAD_ERROR: 'manifestLoadError',
       LEVEL_LOAD_ERROR: 'levelLoadError',
+      FRAG_LOAD_ERROR: 'fragLoadError',
+      BUFFER_INCOMPATIBLE_CODECS_ERROR: 'bufferIncompatibleCodecsError',
+      BUFFER_ADD_CODEC_ERROR: 'bufferAddCodecError',
+      MANIFEST_INCOMPATIBLE_CODECS_ERROR: 'manifestIncompatibleCodecsError',
     }
     handlers = new Map<string, Handler[]>()
     config: { xhrSetup?: (xhr: XMLHttpRequest, url: string) => void }
@@ -31,6 +39,7 @@ const h = vi.hoisted(() => {
     attachMedia = vi.fn()
     stopLoad = vi.fn()
     startLoad = vi.fn()
+    recoverMediaError = vi.fn()
     destroy = vi.fn()
     constructor(config: FakeHls['config']) {
       this.config = config
@@ -174,6 +183,22 @@ it('shows period ended', async () => {
   // 概况重新拉一次:入口随 summary.cameras 变化
   await waitFor(() => expect(classroomApi.summary).toHaveBeenCalledTimes(2))
   expect(FakeHls.instances.map((i) => i.destroy.mock.calls.length)).toEqual([1, 1])
+})
+
+it('a fatal media error in a thumbnail is recovered in place, not treated as class end', async () => {
+  // 缩略播放器收到致命媒体错误:走 recoverMediaError,不收条、不提示下课(L259:假实现要带齐这些常量)
+  await openStrip()
+  act(() =>
+    FakeHls.instances[0].emit('hlsError', {
+      type: 'mediaError',
+      details: 'bufferAppendError',
+      fatal: true,
+    }),
+  )
+  expect(FakeHls.instances[0].recoverMediaError).toHaveBeenCalledTimes(1)
+  expect(FakeHls.instances[0].destroy).not.toHaveBeenCalled()
+  expect(screen.getByTestId('camera-strip')).toBeInTheDocument()
+  expect(screen.queryByText('本节课已结束')).toBeNull()
 })
 
 it('collapses on class switch', async () => {
