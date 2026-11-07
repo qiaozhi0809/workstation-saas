@@ -163,8 +163,10 @@ const cases: [string, () => Promise<unknown>, string, string, unknown?][] = [
   ['switches', () => adminApi.switches(), 'GET', '/admin/settings/switches'],
   ['saveSwitches', () => adminApi.saveSwitches(sw), 'PUT', '/admin/settings/switches', sw],
   ['today', () => adminApi.today(), 'GET', '/admin/today'],
+  ['setupChecklist', () => adminApi.setupChecklist(), 'GET', '/admin/setup-checklist'],
   ['board none', () => adminApi.board(), 'GET', '/admin/board'],
   ['board grade', () => adminApi.board('g1'), 'GET', '/admin/board?grade_id=g1'],
+  ['schoolGrades', () => adminApi.schoolGrades(), 'GET', '/school/grades'],
   ['gradeExams none', () => adminApi.gradeExams(), 'GET', '/admin/grade-exams'],
   ['gradeExams grade', () => adminApi.gradeExams('g1'), 'GET', '/admin/grade-exams?grade_id=g1'],
   ['createGradeExam', () => adminApi.createGradeExam(geB), 'POST', '/admin/grade-exams', geB],
@@ -283,6 +285,7 @@ const cases: [string, () => Promise<unknown>, string, string, unknown?][] = [
     'GET',
     '/admin/history/classes?year_id=y0',
   ],
+  ['historyClass', () => adminApi.historyClass('c1'), 'GET', '/admin/history/classes/c1'],
   [
     'historyStudents',
     () => adminApi.historyStudents('c1'),

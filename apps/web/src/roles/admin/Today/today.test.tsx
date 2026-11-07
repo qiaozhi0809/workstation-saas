@@ -3,15 +3,12 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { adminApi } from '@/shared/api/admin'
-import { api } from '@/shared/api/client'
 import { useAuthStore } from '@/shared/stores/auth'
-import type { TodayView } from '@/shared/types/admin'
-import type { SetupItem } from './SetupChecklist'
+import type { SetupItem, TodayView } from '@/shared/types/admin'
 import TodayPage from './TodayPage'
 
-vi.mock('@/shared/api/admin', () => ({ adminApi: { today: vi.fn() } }))
-// 开学准备清单直接走 api():这里只关心它挂在哪、谁看得到,逐项行为见 setupChecklist.test.tsx
-vi.mock('@/shared/api/client', () => ({ api: vi.fn() }))
+// 开学准备清单走 adminApi.setupChecklist()(L286):这里只关心它挂在哪、谁看得到,逐项行为见 setupChecklist.test.tsx
+vi.mock('@/shared/api/admin', () => ({ adminApi: { today: vi.fn(), setupChecklist: vi.fn() } }))
 vi.mock('@/roles/teacher/StudentProfile/StudentProfileDrawer', () => ({
   default: ({ studentId }: { studentId: string }) => (
     <div role="dialog" aria-label="学生档案">
@@ -197,10 +194,10 @@ describe('今日关注页', () => {
 
     it('信息中心看到清单,挂在页头之后、KPI 之前', async () => {
       login(['settings.manage'])
-      vi.mocked(api).mockResolvedValue(checklist)
+      vi.mocked(adminApi.setupChecklist).mockResolvedValue(checklist)
       setup(view())
       const region = await screen.findByRole('region', { name: '开学准备' })
-      expect(api).toHaveBeenCalledWith('GET', '/admin/setup-checklist')
+      expect(adminApi.setupChecklist).toHaveBeenCalledTimes(1)
       const header = screen.getByRole('heading', { level: 1 }).closest('header') as HTMLElement
       const kpi = screen.getByText('在读').closest('[data-kpi]') as HTMLElement
       expect(header.compareDocumentPosition(region) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
@@ -216,7 +213,7 @@ describe('今日关注页', () => {
       setup(view())
       await screen.findByRole('heading', { level: 1, name: '今日关注 · 全校' })
       expect(screen.queryByRole('region', { name: '开学准备' })).toBeNull()
-      expect(api).not.toHaveBeenCalled()
+      expect(adminApi.setupChecklist).not.toHaveBeenCalled()
     })
   })
 

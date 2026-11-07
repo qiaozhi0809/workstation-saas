@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { camerasApi } from '@/shared/api/cameras'
 import { ApiError } from '@/shared/api/client'
@@ -39,7 +39,11 @@ export default function CameraTestDialog({
   // 测试是带审计的 POST:用 mutation,只在打开时发一次、点"重试"再发,不受 ['cameras'] 失效影响
   const test = useMutation({ mutationFn: () => camerasApi.test(camera.id) })
   const { mutate } = test
+  // StrictMode(开发态)会把挂载副作用跑两遍;这是带审计的 POST,用 ref 守住只发一次(L215)
+  const fired = useRef(false)
   useEffect(() => {
+    if (fired.current) return
+    fired.current = true
     mutate()
   }, [mutate])
   const data = test.data

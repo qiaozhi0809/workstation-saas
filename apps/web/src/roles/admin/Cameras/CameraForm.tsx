@@ -9,20 +9,10 @@ import { Button } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
 import { Label } from '@/shared/components/ui/label'
 import { NativeSelect } from '@/shared/components/ui/native-select'
-import type { ClassAdmin } from '@/shared/types/admin'
 import type { CameraInput, CameraLocation, CameraOut } from '@/shared/types/camera'
+import { groupByGrade } from '../shared/groupByGrade'
 
 const LOCATIONS: CameraLocation[] = ['教室', '走廊', '操场', '食堂', '其他']
-
-function groupByGrade(classes: ClassAdmin[]): { grade: string; classes: ClassAdmin[] }[] {
-  const groups: { grade: string; classes: ClassAdmin[] }[] = []
-  for (const c of classes) {
-    const g = groups.find((x) => x.grade === c.grade_name)
-    if (g) g.classes.push(c)
-    else groups.push({ grade: c.grade_name, classes: [c] })
-  }
-  return groups
-}
 
 /** 新建(camera 为空)或编辑。密码框留空 = 不改;"清除凭据"= 显式传 null */
 export default function CameraForm({ camera, onClose }: { camera?: CameraOut; onClose(): void }) {
@@ -152,16 +142,18 @@ export default function CameraForm({ camera, onClose }: { camera?: CameraOut; on
             spellCheck={false}
             placeholder="rtsp://192.168.1.10:554/stream1"
             aria-invalid={urlError ? true : undefined}
+            // 地址错误挂在字段自己的 aria-describedby 上,读屏与测试都只认这一条(L215)
+            aria-describedby={urlError ? 'cam-url-hint cam-url-error' : 'cam-url-hint'}
             onChange={(e) => {
               setRtspUrl(e.target.value)
               setUrlError('')
             }}
           />
-          <p className="text-xs text-muted-foreground">
+          <p id="cam-url-hint" className="text-xs text-muted-foreground">
             只能是校园内网地址;用户名密码不要写进地址,填在下面。
           </p>
           {urlError && (
-            <p role="alert" className="text-sm text-destructive">
+            <p id="cam-url-error" role="alert" className="text-sm text-destructive">
               {urlError}
             </p>
           )}

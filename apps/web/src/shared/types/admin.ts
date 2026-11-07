@@ -1,4 +1,5 @@
 import type { ExamType, SubjectFull } from './grades'
+import type { Stage as StageKey } from './school'
 import type { StudentSeat } from './student'
 
 export type Context = 'teacher' | 'admin' | 'parent'
@@ -235,8 +236,21 @@ export interface BoardClass {
     week_net: number
   }
 }
+/**
+ * 年级简项(后端 overview/schemas.py::GradeBrief,V3-4):看板与 GET /school/grades 共用,按调用者可见年级裁剪。
+ * effective_stage 是年级显式设的学段、否则按名字推断的学段键(科目目录按它取);契约允许为 null
+ */
+export interface GradeBrief {
+  id: string
+  name: string
+  effective_stage: StageKey | null
+}
+/** GET /school/grades 的一项(school.view 可读;年级组长只拿到自己的年级,L272) */
+export interface SchoolGrade extends GradeBrief {
+  display_order: number
+}
 export interface BoardView {
-  grades: { id: string; name: string }[]
+  grades: GradeBrief[]
   grade_id: string | null
   classes: BoardClass[]
 }
@@ -353,6 +367,8 @@ export interface AuditRow {
 }
 export interface AuditActions {
   groups: { key: string; label: string; actions: { action: string; label: string }[] }[]
+  /** 可筛选的对象类型及中文名,由后端随动作表一起给(V3-4;L271) */
+  object_types: { key: string; label: string }[]
 }
 
 // ---- AI 使用与配置 ----
@@ -573,6 +589,13 @@ export interface HistoryClass {
   homeroom_name: string | null
   students: number
 }
+/** GET /admin/history/classes/{class_id}(V3-4):按班 id 一次定位它所在的往年学年;不存在 404(L275) */
+export interface HistoryClassLocation {
+  class_id: string
+  class_name: string
+  year_id: string
+  year_name: string
+}
 export interface HistoryStudent {
   student_id: string
   name: string
@@ -603,7 +626,24 @@ export interface SystemInfo {
   migration: string
   started_at: string
   db_size_bytes: number
-  last_backup: { at: string; file: string; size_bytes: number } | null
+  /** caddy:上次备份是否包含网关数据(backup.sh 写进 backup-last.json,V3-4 / V5);旧记录没有这一项时为 null(L277) */
+  last_backup: {
+    at: string
+    file: string
+    size_bytes: number
+    caddy: 'included' | 'skipped' | null
+  } | null
+}
+
+// ---- 开学准备清单(今日关注顶部;L286) ----
+export type SetupKey =
+  'school' | 'year' | 'classes' | 'accounts' | 'assignments' | 'timetable' | 'cameras' | 'ai'
+/** `GET /admin/setup-checklist` 的一项:done 之外的现状文字由后端给,`to` 是管理端路径 */
+export interface SetupItem {
+  key: SetupKey
+  done: boolean
+  detail: string
+  to: string
 }
 
 export interface SecuritySettings {

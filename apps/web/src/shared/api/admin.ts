@@ -20,6 +20,7 @@ import type {
   GradeExamInput,
   GradeInput,
   HistoryClass,
+  HistoryClassLocation,
   HistoryExam,
   HistoryScores,
   HistoryStudent,
@@ -32,12 +33,14 @@ import type {
   NoticePerson,
   NoticeRecipients,
   NoticeSent,
+  SchoolGrade,
   SchoolInfo,
   SystemInfo,
   ScoreStudentRow,
   ScoreSummary,
   StaffInput,
   SecuritySettings,
+  SetupItem,
   Switches,
   TagPool,
   TagPoolSave,
@@ -170,8 +173,11 @@ export const adminApi = {
   resetTotp: (userId: string) =>
     api<{ ok: true }>('POST', `/admin/accounts/${seg(userId)}/totp-reset`),
   today: () => api<TodayView>('GET', '/admin/today'),
+  setupChecklist: () => api<SetupItem[]>('GET', '/admin/setup-checklist'),
   board: (gradeId?: string | null) =>
     api<BoardView>('GET', `/admin/board${qs({ grade_id: gradeId })}`),
+  /** 只读年级列表(school.view 即可;按可见年级裁剪):考勤报告 / 联考页的年级筛选用它,看板查询只在看板用(L272) */
+  schoolGrades: () => api<SchoolGrade[]>('GET', '/school/grades'),
   // ---- 年级联考 ----
   gradeExams: (gradeId?: string | null) =>
     api<GradeExam[]>('GET', `/admin/grade-exams${qs({ grade_id: gradeId })}`),
@@ -252,6 +258,9 @@ export const adminApi = {
   historyYears: () => api<HistoryYear[]>('GET', '/admin/history/years'),
   historyClasses: (yearId: string) =>
     api<HistoryClass[]>('GET', `/admin/history/classes${qs({ year_id: yearId })}`),
+  /** 按班 id 定位往年学年与班名(往年单班页不带 ?year= 直接打开时用,L275);不存在 404 */
+  historyClass: (classId: string) =>
+    api<HistoryClassLocation>('GET', `/admin/history/classes/${seg(classId)}`),
   historyStudents: (classId: string) =>
     api<{ students: HistoryStudent[] }>('GET', `/admin/history/classes/${seg(classId)}/students`),
   historyExams: (classId: string) =>

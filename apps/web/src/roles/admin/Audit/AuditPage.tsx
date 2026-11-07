@@ -9,19 +9,13 @@ import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { Badge } from '@/shared/components/ui/badge'
 import { Button } from '@/shared/components/ui/button'
 import { todayIn, useSchoolTz } from '@/shared/hooks/useSchoolTz'
-import { addDays } from '@/shared/lib/date'
+import { addDays, formatInTz } from '@/shared/lib/date'
 import { cn } from '@/shared/lib/utils'
 import type { AuditRow } from '@/shared/types/admin'
 import AuditFilters, { type AuditFilterValue } from './AuditFilters'
 import AuditRowDetail from './AuditRowDetail'
 
 const PAGE_SIZE = 50
-const pad = (n: number) => String(n).padStart(2, '0')
-const localDate = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-const fmtTime = (iso: string) => {
-  const d = new Date(iso)
-  return `${localDate(d)} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
-}
 /** 最近 7 天:学校时区里的今天往前 6 天到今天(后端按学校时区算日界,L43) */
 const defaultRange = (tz: string) => {
   const to = todayIn(tz)
@@ -132,7 +126,8 @@ function AuditLog({ tz }: { tz: string }) {
                         !r.success && 'bg-destructive/5 text-destructive',
                       )}
                     >
-                      <td className="whitespace-nowrap px-3 py-2">{fmtTime(r.at)}</td>
+                      {/* 时间按学校时区显示,与上面的筛选区间同一口径(L270) */}
+                      <td className="whitespace-nowrap px-3 py-2">{formatInTz(r.at, tz)}</td>
                       <td className="whitespace-nowrap px-3 py-2">{r.user_name ?? '—'}</td>
                       <td className="px-3 py-2">
                         <span className="inline-flex items-center gap-1">

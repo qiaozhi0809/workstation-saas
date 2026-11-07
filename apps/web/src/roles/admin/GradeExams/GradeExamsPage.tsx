@@ -99,10 +99,11 @@ function ExamRow({
 
 export default function GradeExamsPage() {
   const qc = useQueryClient()
-  // 年级列表取自看板(school.view,按调用者可见年级裁剪);/admin/grades 需要 org.manage,年级组长会 403
-  const board = useQuery({
-    queryKey: ['admin', 'board', null],
-    queryFn: () => adminApi.board(null),
+  // 年级列表读只读的 GET /school/grades(school.view 即可,按调用者可见年级裁剪;L272);
+  // /admin/grades 需要 org.manage,年级组长会 403
+  const grades = useQuery({
+    queryKey: ['admin', 'grades', 'school'], // 挂在 ['admin','grades'] 下,改年级 / 升级的失效一并覆盖
+    queryFn: adminApi.schoolGrades,
   })
   // 新建联考的默认日期按学校时区算"今天"(L41 / L43)
   const school = useSchoolTz()
@@ -110,9 +111,10 @@ export default function GradeExamsPage() {
   const [dialog, setDialog] = useState<Dialog | null>(null)
   const [delError, setDelError] = useState<string | null>(null)
 
-  const list = board.data?.grades ?? []
-  const gradeId = sel && list.some((g) => g.id === sel) ? sel : (list[0]?.id ?? null)
-  const gradeName = list.find((g) => g.id === gradeId)?.name ?? ''
+  const list = grades.data ?? []
+  const grade = (sel && list.find((g) => g.id === sel)) || list[0] || null
+  const gradeId = grade?.id ?? null
+  const gradeName = grade?.name ?? ''
   const exams = useQuery({
     queryKey: ['grade-exams', gradeId],
     queryFn: () => adminApi.gradeExams(gradeId),
@@ -134,16 +136,16 @@ export default function GradeExamsPage() {
     onError: (e) => setDelError(errMsg(e)),
   })
 
-  if (board.isError)
+  if (grades.isError)
     return (
       <ErrorState
         title="加载失败"
-        onRetry={() => void board.refetch()}
-        retrying={board.isFetching}
+        onRetry={() => void grades.refetch()}
+        retrying={grades.isFetching}
         className="p-6"
       />
     )
-  if (!board.data || !school.ready) return <LoadingState />
+  if (!grades.data || !school.ready) return <LoadingState />
 
   let body
   if (gradeId === null) body = <EmptyState title="还没有年级" />
@@ -199,10 +201,11 @@ export default function GradeExamsPage() {
         </div>
       )}
       {body}
-      {dialog?.kind === 'form' && gradeId !== null && (
+      {dialog?.kind === 'form' && grade && (
         <GradeExamForm
-          gradeId={gradeId}
-          gradeName={gradeName}
+          gradeId={grade.id}
+          // 学段直接用年级简项的 effective_stage,不再按年级名推断(L234)
+          stage={grade.effective_stage}
           exam={dialog.exam}
           today={todayIn(school.tz)}
           onClose={close}

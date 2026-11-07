@@ -32,11 +32,21 @@ const toInput = (c: TimetableCell): TimetableCellInput => ({
   teacher_id: c.teacher?.id ?? null,
 })
 
-/** 课表里已出现过、且教同一科目的老师:没有"该班该科任课老师 id"的接口,这是前端唯一能拿到的 teachers.id 候选 */
-function seenTeachers(cells: TimetableCell[], subject: string): { id: string; name: string }[] {
+/**
+ * 老师候选(L209):该班该科的在任老师优先(组织架构 StaffBrief 带 teachers.id 即 teacher_id),
+ * 其次课表里已出现过、教同一科目但已不在任的老师;同一人只列一次
+ */
+function teacherCandidates(
+  cls: ClassAdmin | undefined,
+  cells: TimetableCell[],
+  subject: string,
+): { id: string; name: string }[] {
   const out = new Map<string, string>()
+  for (const t of cls?.subjects.find((s) => s.subject === subject)?.teachers ?? [])
+    out.set(t.teacher_id, t.display_name)
   for (const c of cells)
-    if (c.subject === subject && c.teacher) out.set(c.teacher.id, c.teacher.name)
+    if (c.subject === subject && c.teacher && !out.has(c.teacher.id))
+      out.set(c.teacher.id, c.teacher.name)
   return [...out].map(([id, name]) => ({ id, name }))
 }
 
@@ -70,7 +80,7 @@ function CellEditor({
     ...new Set([...(cls?.subjects.map((s) => s.subject) ?? []), ...cells.map((c) => c.subject)]),
   ]
   // 当前格子的老师本来就在 cells 里,所以一定已在候选中
-  const candidates = seenTeachers(cells, subject)
+  const candidates = teacherCandidates(cls, cells, subject)
   // 在任老师提示只在组织架构数据到手后给;还在加载 / 失败时不猜
   const staff =
     cls?.subjects.find((s) => s.subject === subject)?.teachers.map((t) => t.display_name) ?? []

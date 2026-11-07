@@ -24,6 +24,11 @@ const ACTIONS: AuditActions = {
     { key: 'grade', label: '成绩与考试', actions: [{ action: 'score.export', label: '导出成绩' }] },
     { key: 'denied', label: '被拒的访问', actions: [] },
   ],
+  object_types: [
+    { key: 'student', label: '学生' },
+    { key: 'notice', label: '通知' },
+    { key: 'camera', label: '摄像头' },
+  ],
 }
 
 const row = (o: Partial<AuditRow> = {}): AuditRow => ({
@@ -264,6 +269,24 @@ describe('审计日志', () => {
     )
   })
 
+  // L271:对象类型下拉来自 /admin/audit/actions 的 object_types,前端不再维护常量表
+  it('object type filter from api', async () => {
+    setup()
+    await screen.findByRole('table')
+    expect(
+      within(screen.getByLabelText('对象类型'))
+        .getAllByRole('option')
+        .map((o) => [o.getAttribute('value'), o.textContent]),
+    ).toEqual([
+      ['', '全部对象'],
+      ['student', '学生'],
+      ['notice', '通知'],
+      ['camera', '摄像头'],
+    ])
+    fireEvent.change(screen.getByLabelText('对象类型'), { target: { value: 'camera' } })
+    await waitFor(() => expect(lastFilters()).toMatchObject({ object_type: 'camera', page: 1 }))
+  })
+
   it('被拒的行用红色标记,成功的不标', async () => {
     vi.mocked(adminApi.audit).mockResolvedValue({
       items: [
@@ -349,6 +372,17 @@ describe('审计日志', () => {
     expect(objectCell('王老师')).toHaveTextContent('发送通知')
     expect(screen.queryByText('7c1e4b1a-2f3d-4e5f-8a9b-0c1d2e3f4a5b')).toBeNull()
     expect(objectCell('赵老师')).toHaveTextContent('—')
+  })
+
+  // L270:时间列按学校时区显示(与筛选区间同口径;登录日志页已如此),不按浏览器时区
+  it('time column in school tz', async () => {
+    setup()
+    await screen.findByRole('table')
+    const timeCell = within(screen.getByText('李老师').closest('tr') as HTMLElement).getAllByRole(
+      'cell',
+    )[0]
+    // 02:30 UTC 在上海是 10:30;若按浏览器(CI 为 UTC)时区就会显示 02:30
+    expect(timeCell).toHaveTextContent('2026-11-03 10:30')
   })
 
   it('列出时间、操作人、操作、对象、IP、结果', async () => {

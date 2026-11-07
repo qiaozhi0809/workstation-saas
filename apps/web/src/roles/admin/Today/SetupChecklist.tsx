@@ -2,23 +2,13 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { CheckCircle2, ChevronDown, Circle } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { api } from '@/shared/api/client'
+import { adminApi } from '@/shared/api/admin'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { Button } from '@/shared/components/ui/button'
 import { cn } from '@/shared/lib/utils'
 import { useAuthStore } from '@/shared/stores/auth'
-
-export type SetupKey =
-  'school' | 'year' | 'classes' | 'accounts' | 'assignments' | 'timetable' | 'cameras' | 'ai'
-
-/** `GET /admin/setup-checklist` 的一项:done 之外的现状文字由后端给,`to` 是管理端路径 */
-export interface SetupItem {
-  key: SetupKey
-  done: boolean
-  detail: string
-  to: string
-}
+import type { SetupKey } from '@/shared/types/admin'
 
 /** 各项的名字只在前端维护;使用手册按这里的叫法写 */
 const SETUP_LABELS: Record<SetupKey, string> = {
@@ -31,8 +21,6 @@ const SETUP_LABELS: Record<SetupKey, string> = {
   cameras: '摄像头',
   ai: 'AI 服务',
 }
-
-const fetchChecklist = () => api<SetupItem[]>('GET', '/admin/setup-checklist')
 
 const CARD = 'flex flex-col gap-3 rounded-lg border bg-card p-4'
 
@@ -47,7 +35,7 @@ export function SetupChecklist() {
   const allowed = useAuthStore((s) => canSee(s.user?.admin_perms))
   const q = useQuery({
     queryKey: ['admin', 'setup-checklist'],
-    queryFn: fetchChecklist,
+    queryFn: adminApi.setupChecklist,
     enabled: allowed,
   })
   const [expanded, setExpanded] = useState(false)

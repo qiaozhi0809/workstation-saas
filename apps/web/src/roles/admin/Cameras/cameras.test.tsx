@@ -1,3 +1,4 @@
+import { StrictMode } from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
@@ -107,6 +108,13 @@ const renderPage = () =>
     </QueryClientProvider>,
   )
 const row = (name: RegExp) => screen.getByRole('row', { name })
+/** 字段 aria-describedby 指向的说明文字(L215 ⑤:URL 错误只认字段自己挂着的那条,不在整个对话框里找) */
+const describedBy = (field: HTMLElement) =>
+  (field.getAttribute('aria-describedby') ?? '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((id) => document.getElementById(id)?.textContent ?? '')
+    .join('\n')
 
 beforeEach(() => {
   vi.resetAllMocks()
@@ -211,16 +219,23 @@ it('creates a camera, checks the rtsp prefix locally and shows backend url error
   expect(within(dlg).getByTestId('camera-form')).toBeInTheDocument()
   fireEvent.change(within(dlg).getByLabelText('名称'), { target: { value: ' 操场东 ' } })
   fireEvent.change(within(dlg).getByLabelText('位置'), { target: { value: '操场' } })
-  fireEvent.change(within(dlg).getByLabelText('RTSP 地址'), { target: { value: 'http://x' } })
+  const url = within(dlg).getByLabelText('RTSP 地址')
+  expect(describedBy(url)).toContain('只能是校园内网地址')
+  expect(url).not.toHaveAttribute('aria-invalid')
+  fireEvent.change(url, { target: { value: 'http://x' } })
   fireEvent.click(within(dlg).getByRole('button', { name: '保存' }))
-  expect(await within(dlg).findByText('地址需要以 rtsp:// 开头')).toBeInTheDocument()
+  // 错误文案挂在字段的 aria-describedby 上,字段标为 aria-invalid
+  await waitFor(() => expect(describedBy(url)).toContain('地址需要以 rtsp:// 开头'))
+  expect(url).toHaveAttribute('aria-invalid', 'true')
   expect(camerasApi.create).not.toHaveBeenCalled()
 
-  fireEvent.change(within(dlg).getByLabelText('RTSP 地址'), {
-    target: { value: 'rtsp://203.0.113.7/live' },
-  })
+  fireEvent.change(url, { target: { value: 'rtsp://203.0.113.7/live' } })
+  // 改了地址就清掉旧错误
+  expect(describedBy(url)).not.toContain('地址需要以 rtsp:// 开头')
+  expect(url).not.toHaveAttribute('aria-invalid')
   fireEvent.click(within(dlg).getByRole('button', { name: '保存' }))
-  expect(await within(dlg).findByText('摄像头地址不在校园内网(203.0.113.7)')).toBeInTheDocument()
+  await waitFor(() => expect(describedBy(url)).toContain('摄像头地址不在校园内网(203.0.113.7)'))
+  expect(url).toHaveAttribute('aria-invalid', 'true')
   expect(camerasApi.create).toHaveBeenCalledWith({
     name: '操场东',
     class_id: null,
@@ -254,6 +269,23 @@ it('shows public host warning', async () => {
   expect(warn).toHaveTextContent('以下摄像头地址不在校园内网,已拒绝拉流')
   expect(warn).toHaveTextContent('203.0.113.7')
   expect(warn).toHaveTextContent('cam.example.com')
+})
+
+// L215 ③:health(内网地址检查)失败不再静默:页顶 role=alert 并可重试,重试成功后恢复正常提示
+it('health failure visible', async () => {
+  vi.mocked(camerasApi.health)
+    .mockRejectedValueOnce(new ApiError(500, 'X', '检查失败(后端)'))
+    .mockResolvedValueOnce({ public_hosts: ['203.0.113.7'] })
+  renderPage()
+  await screen.findByText('一楼走廊')
+  const alert = await screen.findByTestId('camera-health-error')
+  expect(alert).toHaveAttribute('role', 'alert')
+  expect(alert).toHaveTextContent('摄像头地址检查失败')
+  expect(screen.queryByTestId('camera-public-host-warning')).toBeNull()
+  fireEvent.click(within(alert).getByRole('button', { name: '重试' }))
+  expect(await screen.findByTestId('camera-public-host-warning')).toHaveTextContent('203.0.113.7')
+  expect(screen.queryByTestId('camera-health-error')).toBeNull()
+  expect(camerasApi.health).toHaveBeenCalledTimes(2)
 })
 
 it('tells when the monitor switch is off and links to settings', async () => {
@@ -320,6 +352,25 @@ it('shows codec hint', async () => {
   expect(warn).toHaveTextContent(
     '这路是 H.265(HEVC),浏览器放不出来;请在摄像头里改成 H.264,或勾选"转码"',
   )
+})
+
+// L215 ④:StrictMode(开发态)把挂载副作用跑两遍,测试连接是带审计的 POST,只能发一次
+it('test connection fires once under strict mode', async () => {
+  vi.mocked(camerasApi.test).mockResolvedValue(ok())
+  render(
+    <StrictMode>
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={['/admin/cameras']}>
+          <CamerasPage />
+        </MemoryRouter>
+      </QueryClientProvider>
+    </StrictMode>,
+  )
+  await screen.findByText('一楼走廊')
+  fireEvent.click(within(row(/三年二班教室/)).getByRole('button', { name: '测试连接' }))
+  const dlg = await screen.findByTestId('camera-test-dialog')
+  expect(await within(dlg).findByText('连接成功')).toBeInTheDocument()
+  expect(camerasApi.test).toHaveBeenCalledTimes(1)
 })
 
 it('does not re-run the test when the cameras cache is invalidated', async () => {

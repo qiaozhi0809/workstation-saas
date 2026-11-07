@@ -2,12 +2,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { api } from '@/shared/api/client'
+import { adminApi } from '@/shared/api/admin'
 import { useAuthStore } from '@/shared/stores/auth'
-import type { AdminPerm } from '@/shared/types/admin'
-import { SetupChecklist, type SetupItem } from './SetupChecklist'
+import type { AdminPerm, SetupItem } from '@/shared/types/admin'
+import { SetupChecklist } from './SetupChecklist'
 
-vi.mock('@/shared/api/client', () => ({ api: vi.fn() }))
+// L286:清单走 adminApi.setupChecklist(),类型在 shared/types/admin.ts
+vi.mock('@/shared/api/admin', () => ({ adminApi: { setupChecklist: vi.fn() } }))
 
 const ALL_DONE: SetupItem[] = [
   { key: 'school', done: true, detail: '2 个年级都已设学段', to: '/admin/org' },
@@ -43,7 +44,7 @@ function setPerms(admin_perms: AdminPerm[]) {
 }
 
 function setup(items: SetupItem[]) {
-  vi.mocked(api).mockResolvedValue(items)
+  vi.mocked(adminApi.setupChecklist).mockResolvedValue(items)
   return render(
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
@@ -94,7 +95,7 @@ describe('开学准备清单', () => {
       }),
     )
     const region = await screen.findByRole('region', { name: '开学准备' })
-    expect(api).toHaveBeenCalledWith('GET', '/admin/setup-checklist')
+    expect(adminApi.setupChecklist).toHaveBeenCalledTimes(1)
     expect(await within(region).findByText('已完成 5 / 8')).toBeInTheDocument()
     expect(within(region).getByRole('progressbar', { name: '开学准备进度' })).toHaveAttribute(
       'aria-valuenow',
@@ -123,12 +124,12 @@ describe('开学准备清单', () => {
     setPerms(['school.view', 'notice.send', 'exam.grade_write', 'camera.view'])
     const { container } = setup(ALL_DONE)
     await waitFor(() => expect(container).toBeEmptyDOMElement())
-    expect(api).not.toHaveBeenCalled()
+    expect(adminApi.setupChecklist).not.toHaveBeenCalled()
   })
 
   it('keeps the card in place while loading', () => {
     setPerms(['settings.manage'])
-    vi.mocked(api).mockReturnValue(new Promise(() => {}))
+    vi.mocked(adminApi.setupChecklist).mockReturnValue(new Promise(() => {}))
     render(
       <QueryClientProvider client={new QueryClient()}>
         <MemoryRouter>
@@ -143,7 +144,7 @@ describe('开学准备清单', () => {
 
   it('shows a retry when the checklist fails to load', async () => {
     setPerms(['settings.manage'])
-    vi.mocked(api).mockRejectedValueOnce(new Error('net'))
+    vi.mocked(adminApi.setupChecklist).mockRejectedValueOnce(new Error('net'))
     setup(ALL_DONE)
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent('开学准备清单加载失败')
