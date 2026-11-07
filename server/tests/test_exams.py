@@ -356,6 +356,26 @@ def test_teacher_cannot_edit_grade_linked_exam(client, settings, db):
     assert r.status_code == 200
 
 
+def test_unknown_enrollment_details(client, settings, db):
+    """L252:批量保存里混进不属于本场(本班在籍)的 enrollment 时,400 UNKNOWN_ENROLLMENT 的
+    ``details.enrollment_id`` 指出是哪一条,按表头导入才能定位到行;状态码 / 错误码不变。"""
+    from tests.factories import make_class, make_student
+
+    stranger = enrollment_of(db, make_student(db, make_class(db, "外班"), "外班生", "WB0001"))
+    before = {(s.enrollment_id, s.subject): s.value for s in _scores(db, EXAM_IDS[0])}
+    cells = [
+        {"enrollment_id": str(enrollment_of(db, STUDENT_IDS[0])), "subject": "语文", "value": 90},
+        {"enrollment_id": str(stranger), "subject": "语文", "value": 80},
+    ]
+    r = client.put(f"{EXAMS}/{EXAM_IDS[0]}/scores", json={"cells": cells}, headers=auth(settings))
+    assert r.status_code == 400
+    err = r.json()["error"]
+    assert err["code"] == "UNKNOWN_ENROLLMENT" and err["message"] == "学生不在本班"
+    assert err["details"] == {"enrollment_id": str(stranger)}
+    db.expire_all()  # 整批都没写进去
+    assert {(s.enrollment_id, s.subject): s.value for s in _scores(db, EXAM_IDS[0])} == before
+
+
 def test_teacher_can_still_enter_scores(client, settings, db):
     _, exam_id = _grade_linked_exam(client, settings, db)
     enrollment = str(enrollment_of(db, STUDENT_IDS[0]))

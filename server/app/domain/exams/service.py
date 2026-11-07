@@ -387,7 +387,9 @@ def export_scores(
 
 def _validate_cell(cell: ScoreCellIn, exam: Exam, active: set[UUID], writable) -> None:
     if cell.enrollment_id not in active:
-        raise ApiError(400, "UNKNOWN_ENROLLMENT", "学生不在本班")
+        raise ApiError(
+            400, "UNKNOWN_ENROLLMENT", "学生不在本班", {"enrollment_id": str(cell.enrollment_id)}
+        )
     full = {s["name"]: s["full"] for s in exam.subjects}
     if cell.subject not in full:
         raise ApiError(400, "UNKNOWN_SUBJECT", "考试没有这个科目", {"subject": cell.subject})
