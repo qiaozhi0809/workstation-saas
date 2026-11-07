@@ -195,6 +195,56 @@ it('offers teachers already seen for that subject, warns about ambiguous auto ma
   expect(screen.getByTestId('timetable-cell-2-1')).not.toHaveTextContent('数学')
 })
 
+// L209:在任老师按组织架构给的 teacher_id 直接进候选,排在前面;课表里出现过、已不在任的同科老师排在后面
+it('cell candidates prefer assigned teacher by teacher_id', async () => {
+  const withLegacy: ClassTimetable = {
+    ...TT,
+    cells: [
+      ...TT.cells,
+      { weekday: 3, period_no: 2, subject: '数学', teacher: { id: 't9', name: '孙老师' } },
+    ],
+  }
+  vi.mocked(timetableApi.classTimetable).mockResolvedValue(withLegacy)
+  vi.mocked(timetableApi.saveClassTimetable).mockResolvedValue(withLegacy)
+  renderPage()
+  fireEvent.click(await screen.findByTestId('timetable-cell-1-1'))
+  const dlg = await screen.findByRole('dialog', { name: '周一 第 1 节' })
+  const candidates = () =>
+    within(within(dlg).getByLabelText('老师'))
+      .getAllByRole('option')
+      .map((o) => [o.getAttribute('value'), o.textContent])
+  // 语文:课表里从没出现过,但组织架构里有在任的王老师(t2)
+  fireEvent.change(within(dlg).getByLabelText('科目'), { target: { value: '语文' } })
+  await waitFor(() =>
+    expect(candidates()).toEqual([
+      ['', '自动匹配'],
+      ['t2', '王老师'],
+    ]),
+  )
+  fireEvent.change(within(dlg).getByLabelText('老师'), { target: { value: 't2' } })
+  fireEvent.click(within(dlg).getByRole('button', { name: '保存' }))
+  await waitFor(() =>
+    expect(timetableApi.saveClassTimetable).toHaveBeenCalledWith(
+      'c1',
+      expect.arrayContaining([{ weekday: 1, period_no: 1, subject: '语文', teacher_id: 't2' }]),
+    ),
+  )
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  // 数学:在任的赵老师(t3)、钱老师(t4)在前,课表里出现过但已不在任的孙老师(t9)在后,t3 不重复
+  fireEvent.click(screen.getByTestId('timetable-cell-2-1'))
+  const math = await screen.findByRole('dialog', { name: '周二 第 1 节' })
+  expect(
+    within(within(math).getByLabelText('老师'))
+      .getAllByRole('option')
+      .map((o) => [o.getAttribute('value'), o.textContent]),
+  ).toEqual([
+    ['', '自动匹配'],
+    ['t3', '赵老师'],
+    ['t4', '钱老师'],
+    ['t9', '孙老师'],
+  ])
+})
+
 it('does not guess about staff while class info is loading or failed', async () => {
   vi.mocked(adminApi.class).mockRejectedValue(new ApiError(500, 'X', '班级信息挂了'))
   renderPage()
