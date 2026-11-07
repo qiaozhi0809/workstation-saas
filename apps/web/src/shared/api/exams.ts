@@ -12,6 +12,7 @@ import { api } from './client'
 const base = (classId: string) => `/classes/${encodeURIComponent(classId)}`
 const exam = (classId: string, examId: string) =>
   `${base(classId)}/exams/${encodeURIComponent(examId)}`
+
 export const examsApi = {
   subjects: (classId: string) => api<ListResponse<SubjectFull>>('GET', `${base(classId)}/subjects`),
   /** 把学校目录里该班还没有的科目追加到班级科目表末尾(已有的不改满分),返回补齐后的全部科目 */
