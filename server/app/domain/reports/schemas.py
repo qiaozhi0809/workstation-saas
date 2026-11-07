@@ -14,7 +14,7 @@ class SubjectStat(BaseModel):
     avg: float | None
     max: float | None
     min: float | None
-    pass_rate: float | None  # 0..1,阈值 60% / 85% 满分(同 M2b)
+    pass_rate: float | None  # 0..1,阈值来自学校设置 grading(默认 60% / 85%)
     good_rate: float | None
 
 
