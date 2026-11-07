@@ -217,7 +217,7 @@ WS_INSTALL_TLS=1 \
 
 ### 每日自动备份
 
-- **root 安装**且系统有 systemd:`install.sh` 自动写入 `/etc/systemd/system/workstation-backup.service` 与 `.timer` 并启用,每天 **02:30(按 `.env` 里 `TZ` 的时区,默认 Asia/Shanghai)** 备份——服务器系统时区常是 UTC,定时器里写明时区才不会变成上午上课时备份;关机错过的那次开机后补跑(`Persistent=true`)。查看:`systemctl list-timers workstation-backup.timer`(`NEXT` 一列应是凌晨 02:30 本地时间);手动触发:`sudo systemctl start workstation-backup.service`;日志:`journalctl -u workstation-backup.service`。单元文件是安装时按当时的 `TZ` 渲染写入的;1.0.0 的 `upgrade.sh` 升级成功后会按新模板与 `.env` 里当前的 `TZ` 自动重写它(屏幕上有"已……重写 systemd 定时备份单元"一行;0.7.2 写入的单元没有时区,按第 9 节的做法用 1.0.0 的脚本升级时同样会被重写);平时改了 `.env` 的 `TZ`,重跑一次 `sudo ./scripts/install.sh` 即可重写。
+- **root 安装**且系统有 systemd:`install.sh` 自动写入 `/etc/systemd/system/workstation-backup.service` 与 `.timer` 并启用,每天 **02:30(按 `.env` 里 `TZ` 的时区,默认 Asia/Shanghai)** 备份——服务器系统时区常是 UTC,定时器里写明时区才不会变成上午上课时备份;关机错过的那次开机后补跑(`Persistent=true`)。查看:`systemctl list-timers workstation-backup.timer`(`NEXT` 一列应是凌晨 02:30 本地时间);手动触发:`sudo systemctl start workstation-backup.service`;日志:`journalctl -u workstation-backup.service`。单元文件是安装时按当时的 `TZ` 渲染写入的;1.0.0 的 `upgrade.sh` 升级成功后会按新模板与 `.env` 里当前的 `TZ` 自动重写它(屏幕上有"已……重写 systemd 定时备份单元"一行;0.7.2 写入的单元没有时区,按第 9 节的做法用 1.0.0 的脚本升级时同样会被重写);平时改了 `.env` 的 `TZ`,重跑一次 `sudo ./scripts/install.sh` 即可重写。曾用 `sudo systemctl disable workstation-backup.timer` 手动停用定时备份的,升级只重写单元文件、**不会重新启用**,屏幕上会提示"保持停用"与重新启用的命令(`sudo systemctl enable --now workstation-backup.timer`);重跑 `install.sh` 则会重新启用。
 - **非 root 安装**:`install.sh` 会打印 crontab 行,用 `crontab -e` 添加(路径换成你的部署目录)。日志交给 `logger`,由系统的 syslog / journal 轮转,不会无限增长;`CRON_TZ` 让 02:30 按学校时区计(服务器系统时区就是 Asia/Shanghai 时可省略):
 
   ```

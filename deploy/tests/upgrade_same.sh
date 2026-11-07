@@ -112,11 +112,12 @@ docker image inspect "workstation-app:$VERSION" >/dev/null 2>&1 || fail "升级�
 [ ! -e "$DEPLOY/backups/.ws-upgrade-state" ] || fail "升级成功后状态文件应被清除"
 pass "输出含旧镜像清理命令且旧镜像仍在;升级前快照已保存,状态文件已清除"
 
-echo "== 3b I-1 / L184:root 安装的 systemd 定时器在升级成功后被按新模板与 TZ 重写(需要 systemd 与免密 sudo,没有则跳过)"
+echo "== 3b I-1 / L184 / L311:root 安装的 systemd 定时器在升级成功后被按新模板与 TZ 重写(需要 systemd 与免密 sudo,没有则跳过)"
 # 部署测试不以 root 运行,上面那次升级走的是"非 root 不碰 systemd"分支(/etc/systemd/system 里也不该出现任何东西)。
 # 这里分两步证明:(1) upgrade.sh 确实在启动确认(start_and_verify)之后调用 refresh_backup_timer_if_installed;
 # (2) 用 sudo 以 root 身份、对同一个部署目录执行该函数:预先放一份"1.0.0 之前写入"的单元(指向本部署目录、OnCalendar 不带时区),
-#     执行后单元应被重写为带时区的 02:30 并处于 enabled;指向别的部署目录的单元不被碰。
+#     已启用的 → 重写为带时区的 02:30 并仍 enabled;管理员手动停用(disabled)的 → 只重写单元文件、保持 disabled 并提示(L311);
+#     指向别的部署目录的单元不被碰。
 awk '/start_and_verify "\$HEALTH_TIMEOUT"/ { seen = 1 } seen && /^ *refresh_backup_timer_if_installed/ { found = 1 } END { exit !found }' "$DEPLOY/scripts/upgrade.sh" \
   || fail "upgrade.sh 没有在 start_and_verify 之后调用 refresh_backup_timer_if_installed"
 UNIT_DIR=/etc/systemd/system
@@ -146,9 +147,12 @@ if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ] && sudo -n
   run_refresh "$TMP/timer-refresh-other.log" || err="别的部署的单元存在时函数应静默返回 0"
   [ "$(sudo -n cat "$UNIT_DIR/workstation-backup.timer" | { if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi; })" = "$other_sha" ] \
     || err="${err:-指向别的部署目录的单元不应被重写}"
-  # (b) 指向本部署目录、不带时区的旧单元:重写为带时区并启用
+  # (b) 指向本部署目录、不带时区、已启用的旧单元(1.0.0 之前的 install.sh 是 enable --now 写入的):重写为带时区并仍 enabled
   if [ -z "$err" ]; then
     write_old_units "$DEPLOY"
+    sudo -n systemctl daemon-reload >/dev/null 2>&1 || true
+    sudo -n systemctl enable --now workstation-backup.timer >/dev/null 2>&1 || err="测试自身问题:启用旧定时器失败"
+    [ -n "$err" ] || [ "$(systemctl is-enabled workstation-backup.timer 2>/dev/null || true)" = "enabled" ] || err="测试自身问题:旧定时器没有处于 enabled"
     rc=0; run_refresh "$TMP/timer-refresh.log" || rc=$?
     [ "$rc" -eq 0 ] || err="refresh_backup_timer_if_installed 退出码 $rc"
     [ -n "$err" ] || grep -q '重写 systemd 定时备份单元' "$TMP/timer-refresh.log" || err="输出里没有「重写 systemd 定时备份单元」"
@@ -157,9 +161,25 @@ if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ] && sudo -n
     [ -n "$err" ] || sudo -n grep -q "^WorkingDirectory=$DEPLOY\$" "$UNIT_DIR/workstation-backup.service" || err="重写后的 service 应指向本部署目录"
     [ -n "$err" ] || [ "$(systemctl is-enabled workstation-backup.timer 2>/dev/null || true)" = "enabled" ] || err="重写后 workstation-backup.timer 应为 enabled"
   fi
+  # (c) L311:管理员手动停用(systemctl disable)的旧单元:只重写单元文件(时区补上),不 enable --now,输出提示怎样恢复
+  if [ -z "$err" ]; then
+    remove_units
+    write_old_units "$DEPLOY"
+    sudo -n systemctl daemon-reload >/dev/null 2>&1 || true
+    sudo -n systemctl disable --now workstation-backup.timer >/dev/null 2>&1 || true
+    [ "$(systemctl is-enabled workstation-backup.timer 2>/dev/null || true)" = "disabled" ] || err="测试自身问题:旧定时器没有处于 disabled(实际 $(systemctl is-enabled workstation-backup.timer 2>/dev/null || true))"
+    rc=0; [ -n "$err" ] || run_refresh "$TMP/timer-refresh-disabled.log" || rc=$?
+    [ -n "$err" ] || [ "$rc" -eq 0 ] || err="disabled 分支:refresh_backup_timer_if_installed 退出码 $rc"
+    [ -n "$err" ] || grep -q '保持停用' "$TMP/timer-refresh-disabled.log" || err="disabled 分支:输出里没有「保持停用」的提示"
+    [ -n "$err" ] || grep -q 'systemctl enable --now workstation-backup.timer' "$TMP/timer-refresh-disabled.log" || err="disabled 分支:输出里没有告诉管理员怎样重新启用"
+    [ -n "$err" ] || sudo -n grep -q "^OnCalendar=\*-\*-\* 02:30:00 $expect_tz\$" "$UNIT_DIR/workstation-backup.timer" \
+      || err="disabled 分支:单元文件仍应被重写(OnCalendar 带 $expect_tz),实际:$(sudo -n grep OnCalendar "$UNIT_DIR/workstation-backup.timer" || true)"
+    [ -n "$err" ] || [ "$(systemctl is-enabled workstation-backup.timer 2>/dev/null || true)" = "disabled" ] \
+      || err="disabled 分支:管理员停用的定时器不应被升级重新启用(实际 $(systemctl is-enabled workstation-backup.timer 2>/dev/null || true))"
+  fi
   remove_units
-  [ -z "$err" ] || { cat "$TMP/timer-refresh.log" "$TMP/timer-refresh-other.log" 2>/dev/null | tail -n 10 >&2; fail "$err"; }
-  pass "root 下升级成功后的定时器重写:本部署的旧单元被改为 OnCalendar 带 $expect_tz 并 enabled;别的部署的单元未动"
+  [ -z "$err" ] || { cat "$TMP/timer-refresh.log" "$TMP/timer-refresh-other.log" "$TMP/timer-refresh-disabled.log" 2>/dev/null | tail -n 15 >&2; fail "$err"; }
+  pass "root 下升级成功后的定时器重写:已启用的旧单元改为 OnCalendar 带 $expect_tz 并仍 enabled;停用的只重写文件、保持 disabled 并提示;别的部署的单元未动"
 else
   echo "  跳过:本机没有 systemd / 免密 sudo,或已有真实的 workstation-backup 单元;只验证了 upgrade.sh 的调用位置"
 fi

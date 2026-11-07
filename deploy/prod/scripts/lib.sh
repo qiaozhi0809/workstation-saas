@@ -510,10 +510,12 @@ backup_timer_installed_here() {
   [ -f "$svc" ] && [ -f "$SYSTEMD_UNIT_DIR/workstation-backup.timer" ] || return 1
   grep -qF -- "$DEPLOY_DIR/scripts/backup.sh" "$svc" 2>/dev/null
 }
-# write_backup_timer_units:把 systemd/ 下两份模板按本部署目录与 .env 的 TZ 渲染后写入系统目录,daemon-reload 并启用。
+# write_backup_timer_units [--no-enable]:把 systemd/ 下两份模板按本部署目录与 .env 的 TZ 渲染后写入系统目录,daemon-reload
+# 并启用(enable --now);带 --no-enable 时只写入与 daemon-reload,启用状态保持原样(L311)。
 # 任何一步失败返回非 0(调用者决定降级还是只告警)。需要 root。
 write_backup_timer_units() {
-  local unit tz
+  local unit tz enable=1
+  [ "${1:-}" = "--no-enable" ] && enable=0
   tz="$(backup_timezone)"
   for unit in workstation-backup.service workstation-backup.timer; do
     [ -f "$DEPLOY_DIR/systemd/$unit" ] || { log_warn "没有找到 systemd 单元文件 systemd/$unit"; return 1; }
@@ -522,17 +524,37 @@ write_backup_timer_units() {
     render_systemd_unit "$DEPLOY_DIR/systemd/$unit" "$DEPLOY_DIR" "$tz" >"$SYSTEMD_UNIT_DIR/$unit" || return 1
   done
   systemctl daemon-reload || return 1
-  systemctl enable --now workstation-backup.timer || return 1
+  if [ "$enable" -eq 1 ]; then systemctl enable --now workstation-backup.timer || return 1; fi
+}
+# backup_timer_state:workstation-backup.timer 的 systemctl is-enabled 结果(enabled / disabled / masked …;查不到时 unknown)
+backup_timer_state() {
+  local s
+  s="$(systemctl is-enabled workstation-backup.timer 2>/dev/null || true)"
+  printf '%s\n' "${s:-unknown}"
 }
 # refresh_backup_timer_if_installed:升级成功后调用。root + systemd + 本部署的单元已存在 → 用新模板与当前 TZ 重写
 #(1.0.0 之前写入的单元没有时区,02:30 按服务器的 UTC 计;单元模板本身也可能随版本变)。其他情况什么都不做。
+# L311:管理员刻意 systemctl disable 掉的定时器不能被升级悄悄重新启用——只重写单元文件、保持停用并提示。
 refresh_backup_timer_if_installed() {
+  local state
   [ "$(id -u)" -eq 0 ] && systemd_available && backup_timer_installed_here || return 0
-  if write_backup_timer_units; then
-    log_info "已按新版本的模板与 .env 的 TZ($(backup_timezone))重写 systemd 定时备份单元 workstation-backup.timer"
-  else
-    log_warn "systemd 定时备份单元重写失败(上面是原因)。请稍后执行 sudo ./scripts/install.sh 重新写入,否则定时器仍按旧单元运行"
-  fi
+  state="$(backup_timer_state)"
+  case "$state" in
+    enabled|enabled-runtime)
+      if write_backup_timer_units; then
+        log_info "已按新版本的模板与 .env 的 TZ($(backup_timezone))重写 systemd 定时备份单元 workstation-backup.timer"
+      else
+        log_warn "systemd 定时备份单元重写失败(上面是原因)。请稍后执行 sudo ./scripts/install.sh 重新写入,否则定时器仍按旧单元运行"
+      fi
+      ;;
+    *)
+      if write_backup_timer_units --no-enable; then
+        log_warn "systemd 定时备份单元 workstation-backup.timer 当前是 $state(曾被手动停用),已按新版本的模板与 .env 的 TZ($(backup_timezone))重写单元文件但保持停用;需要恢复每日自动备份时执行 sudo systemctl enable --now workstation-backup.timer"
+      else
+        log_warn "systemd 定时备份单元重写失败(上面是原因);定时器当前是 $state。需要时执行 sudo ./scripts/install.sh 重新写入并启用"
+      fi
+      ;;
+  esac
   return 0
 }
 
