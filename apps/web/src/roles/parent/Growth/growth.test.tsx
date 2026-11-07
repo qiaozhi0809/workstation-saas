@@ -6,9 +6,8 @@ import { parentApi } from '@/shared/api/parent'
 import { schoolApi } from '@/shared/api/school'
 import ProtectedRoute from '@/shared/components/ProtectedRoute'
 import type { ParentGrowthRecord, ParentReview } from '@/shared/types/parent'
-// testkit 里 vi.mock 了 @/shared/api/preferences(壳里的首次说明卡):要先于 ParentLayout import(L305)
-import { child, meta, mockWidth, setParentUser } from '../testkit'
-import ParentLayout from '../ParentLayout'
+// 家长壳从 testkit 拿:它 vi.mock 了 @/shared/api/preferences(壳里的首次说明卡),不靠 import 顺序(L305)
+import { child, meta, mockWidth, ParentLayout, setParentUser } from '../testkit'
 import GrowthPage from './GrowthPage'
 
 vi.mock('@/shared/api/parent', () => ({

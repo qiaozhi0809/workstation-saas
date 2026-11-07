@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Input } from '@/shared/components/ui/input'
 import { Button } from '@/shared/components/ui/button'
 import { formatInTz } from '@/shared/lib/date'
@@ -60,6 +60,17 @@ export default function AckSettings({
   // 后面有动过的选项,夹在中间的空行就照报。按 id 记而不按位置,增删选项不用挪下标(L281)
   const [ids, setIds] = useState<string[]>(() => options.map(() => newId()))
   const [fresh, setFresh] = useState<ReadonlySet<string>>(() => new Set())
+  // 父组件绕过本组件整体替换了 value.options(重置 / 套模板)时,按长度调和 ids:多的裁掉、少的补新 id;
+  // 本组件自己的增删在事件里同步改 ids,这里长度相等就什么都不做
+  useEffect(() => {
+    setIds((cur) =>
+      cur.length === options.length
+        ? cur
+        : cur.length > options.length
+          ? cur.slice(0, options.length)
+          : [...cur, ...Array.from({ length: options.length - cur.length }, () => newId())],
+    )
+  }, [options.length])
   const dlError =
     local !== '' && new Date(local).getTime() <= Date.now() ? '截止时间要晚于现在' : null
 

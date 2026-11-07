@@ -344,12 +344,14 @@ describe('AckForm', () => {
     expect(screen.queryByRole('button', { name: '已知晓' })).toBeNull()
   })
 
-  // Review Focus 4:后端将来再加新值、或旧前端缓存遇到新后端,查不到文案就不显示原因,不编造
-  it('unknown reason shows nothing', () => {
-    const unknown = 'archived' as unknown as InboxItem['ack_block_reason']
+  // Review Focus 4:后端将来再加新值、或旧前端缓存遇到新后端,查不到文案就不显示原因,不编造;
+  // 原型链上的键(constructor / __proto__)也不算"查到"
+  it.each(['archived', 'constructor', '__proto__'])('unknown reason shows nothing (%s)', (raw) => {
+    const unknown = raw as unknown as InboxItem['ack_block_reason']
     renderForm(item({ can_ack: false, ack_block_reason: unknown }))
     for (const r of REASONS) expect(screen.queryByText(r)).toBeNull()
-    expect(screen.queryByText('archived')).toBeNull()
+    expect(screen.queryByText(raw)).toBeNull()
+    expect(screen.queryByText(/function|Object/)).toBeNull()
     expect(screen.queryByRole('button', { name: '已知晓' })).toBeNull()
   })
 

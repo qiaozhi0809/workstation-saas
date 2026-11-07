@@ -1,9 +1,4 @@
-import {
-  infiniteQueryOptions,
-  useInfiniteQuery,
-  type InfiniteData,
-  type QueryClient,
-} from '@tanstack/react-query'
+import { useInfiniteQuery, type InfiniteData, type QueryClient } from '@tanstack/react-query'
 import { noticesApi } from '@/shared/api/notices'
 import type { Inbox, InboxItem } from '@/shared/types/admin'
 
@@ -15,22 +10,19 @@ export type InboxPages = InfiniteData<Inbox>
 /**
  * 收件箱按页取(L90):第 1 页之后由"加载更多"追加;已取的条数还没到 total 就还有下一页。
  * 每一页的响应都带全量的 unread,徽标取第 1 页的即可,不用把每页的条目数出来。
- * 查询定义单独拿出来,useInbox 与 refetchInboxFirstPage 共用同一份。
  */
-export const inboxQuery = infiniteQueryOptions({
-  queryKey: INBOX_KEY,
-  queryFn: ({ pageParam }) => noticesApi.inbox(pageParam),
-  initialPageParam: 1,
-  getNextPageParam: (last, pages) => {
-    // 这里数的是"已翻过的位置数",故意不去重:取后页期间来了新通知,后页会把前页末尾的那条再给一次,
-    // 位置数仍与 total 对得上;若按去重后的条数比,会少 1 而多去拿一页空页。新来的那条靠刷新收件箱拿到。
-    const loaded = pages.reduce((n, p) => n + p.items.length, 0)
-    return last.items.length > 0 && loaded < last.total ? pages.length + 1 : undefined
-  },
-})
-
 export function useInbox() {
-  return useInfiniteQuery(inboxQuery)
+  return useInfiniteQuery({
+    queryKey: INBOX_KEY,
+    queryFn: ({ pageParam }) => noticesApi.inbox(pageParam),
+    initialPageParam: 1,
+    getNextPageParam: (last, pages) => {
+      // 这里数的是"已翻过的位置数",故意不去重:取后页期间来了新通知,后页会把前页末尾的那条再给一次,
+      // 位置数仍与 total 对得上;若按去重后的条数比,会少 1 而多去拿一页空页。新来的那条靠刷新收件箱拿到。
+      const loaded = pages.reduce((n, p) => n + p.items.length, 0)
+      return last.items.length > 0 && loaded < last.total ? pages.length + 1 : undefined
+    },
+  })
 }
 
 /** 已取到的全部条目,按 id 去重:取后页期间来了新通知时,前一页末尾那条会在后一页再出现一次 */
@@ -88,11 +80,15 @@ export function markInboxAllRead(qc: QueryClient, readAt = new Date().toISOStrin
 /**
  * 收到新通知(L280):新通知在最前,只重取第 1 页,不再按已加载页数逐页重取;
  * 已翻过的后页丢弃,"加载更多"会重新出现。
- * 正在进行的请求(如刚点的"加载更多")先取消,否则 fetchInfiniteQuery 会沿用它而不取第 1 页;
- * 缓存先标为过期(refetchType: 'none' 不触发重取),再按 pages: 1 只取一页。请求失败由查询状态承载。
+ * 做法是先把缓存裁到第 1 页,再 invalidate:无限查询重取的页数 = 缓存里的页数,于是只取一页;
+ * 重取走的是 observer 自己的 options(重试、behavior 都不变),进行中的请求由 invalidate 的 cancelRefetch 取消。
+ * 不用 infiniteQuery({ pages: 1 }):它会把 pages / retry 写进 query.options,直到下一次 observer setOptions 才复原。
  */
-export async function refetchInboxFirstPage(qc: QueryClient): Promise<void> {
-  await qc.cancelQueries({ queryKey: INBOX_KEY })
-  void qc.invalidateQueries({ queryKey: INBOX_KEY, refetchType: 'none' })
-  await qc.fetchInfiniteQuery({ ...inboxQuery, pages: 1 }).catch(() => undefined)
+export function refetchInboxFirstPage(qc: QueryClient): Promise<void> {
+  qc.setQueryData<InboxPages>(INBOX_KEY, (old) =>
+    old && old.pages.length > 1
+      ? { pages: old.pages.slice(0, 1), pageParams: old.pageParams.slice(0, 1) }
+      : old,
+  )
+  return qc.invalidateQueries({ queryKey: INBOX_KEY })
 }

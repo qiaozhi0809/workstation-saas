@@ -3,21 +3,29 @@ import { cleanup, render } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, vi } from 'vitest'
-import { preferencesApi, type PreferencesWithOnboarded } from '@/shared/api/preferences'
+import {
+  preferencesApi as preferencesModule,
+  type PreferencesWithOnboarded,
+} from '@/shared/api/preferences'
 import { schoolApi } from '@/shared/api/school'
 import ProtectedRoute from '@/shared/components/ProtectedRoute'
 import { useAuthStore } from '@/shared/stores/auth'
 import type { ParentChild, ParentProfile, ParentToday } from '@/shared/types/parent'
 import type { Meta } from '@/shared/types/school'
-import ParentLayout, { ParentIndex } from './ParentLayout'
+import ParentLayoutImpl, { ParentIndex as ParentIndexImpl } from './ParentLayout'
 import ProfilePage from './Profile/ProfilePage'
 import TodayPage from './Today/TodayPage'
 
-// 家长壳里的 FirstVisit 会请求 /me/preferences:这里统一 mock 掉(L305),默认按"已引导"回答(见下面的 beforeEach),
-// 要测首次使用卡的用例(parentLayout.test)在自己的 beforeEach 里改 vi.mocked(preferencesApi.get) 即可,不必再 vi.mock 一层。
-// vi.mock 在本文件被加载时登记:测试文件要先 import 本文件,再 import ParentLayout / @/shared/api/preferences,
-// 否则先加载的那份拿到的是真模块。
+// 家长壳里的 FirstVisit 会请求 /me/preferences:这里统一 mock 掉(L305),默认按"已引导"回答(见下面的 beforeEach)。
+// vi.mock 在本文件被加载时登记,之前已加载的模块拿到的是真模块。为了不让测试文件靠 import 顺序撞运气,
+// 家长壳和 mock 后的偏好接口都从这里拿,测试不要自己 import ParentLayout / '@/shared/api/preferences'。
 vi.mock('@/shared/api/preferences', () => ({ preferencesApi: { get: vi.fn(), save: vi.fn() } }))
+
+/** mock 后的偏好接口:`preferencesApi.get.mockResolvedValue(...)` 改默认回答 */
+export const preferencesApi = vi.mocked(preferencesModule)
+/** 家长壳(偏好接口已 mock)。用 const 转出而不是 export … from:后者不会被 vitest 改写成 vi.mock 之后的动态 import */
+export const ParentLayout = ParentLayoutImpl
+export const ParentIndex = ParentIndexImpl
 
 /** 已引导过的家长偏好:首次使用卡不出现 */
 export const onboardedPrefs = (): PreferencesWithOnboarded => ({
@@ -28,8 +36,8 @@ export const onboardedPrefs = (): PreferencesWithOnboarded => ({
 })
 
 beforeEach(() => {
-  vi.mocked(preferencesApi.get).mockResolvedValue(onboardedPrefs())
-  vi.mocked(preferencesApi.save).mockImplementation(async (p) => ({ ...onboardedPrefs(), ...p }))
+  preferencesApi.get.mockResolvedValue(onboardedPrefs())
+  preferencesApi.save.mockImplementation(async (p) => ({ ...onboardedPrefs(), ...p }))
 })
 
 /** /meta 的默认回答:校名与学校时区(L74 / L79);要测别的时区的用例自己再 mockResolvedValue */
