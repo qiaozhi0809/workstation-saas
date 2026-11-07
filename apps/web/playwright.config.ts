@@ -76,8 +76,10 @@ export default defineConfig({
       dependencies: ['m5c'],
     },
     // 走查截图(M5d R14):只读,把各端主要页面按视口 × 主题截成整页 PNG 到 apps/web/walkthrough/,CI 作为 artifact 上传。
-    // 排在整条链末尾、独占浏览器,不与只读 project 里量布局的用例抢 CPU;文件内 8 个用例声明为并行。
-    // 一个用例要截几十张图(约 1–2 分钟),单测超时放宽到 5 分钟;单张图的等待仍受 expect 10 秒约束,卡住时快速失败
+    // 排在整条链末尾、独占浏览器,不与只读 project 里量布局的用例抢 CPU;文件内 10 个用例声明为并行。
+    // CI 把它拆成单独一步:先 `--project readonly`(连带整条依赖链,不含本 project),再 `--project walkthrough --no-deps`
+    // 且 continue-on-error——截图失败不拦 job;本机 `npm run e2e` 仍按依赖在链末尾跑它。
+    // 一个用例要截上百张图(约 2–3 分钟),单测超时放宽到 5 分钟;单张图的等待仍受 expect 10 秒约束,卡住时快速失败
     {
       name: 'walkthrough',
       testMatch: WALKTHROUGH,

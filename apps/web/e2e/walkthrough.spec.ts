@@ -9,7 +9,10 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
  *
  * 只读:只登录与打开页面,不点任何会写数据的控件;/api/v1 下除登录 / 刷新 / 退出之外的非 GET 请求一律拦下
  * (万一哪个页面一打开就写数据,截图里会出现失败提示,数据不会被改)。
- * 矩阵:浅色 5 个视口全截;深色只截 1280×800——深色的差异(对比度、配色)与视口无关,省一半时间。
+ * 矩阵:浅色 5 个视口全截;深色只截手机(375×812)与桌面(1280×800)两档——深色的差异(对比度、配色)
+ * 与视口基本无关,手机那档单独看窄屏下的深色导航与卡片,其余三档省掉。
+ * 账号:teacher01(教师端)、principal01(校长,管理端全部 15 页)、itadmin01(信息中心,管理端 8 页)、
+ * 13800000061(家长端)。CI 单独一步 `--project walkthrough --no-deps` 跑,失败不拦 job。
  * 本机不跑(机器弱、纪律):`npx playwright test --list --project walkthrough` 能列出用例即可,截图由 CI 产出。
  */
 
@@ -27,7 +30,10 @@ const VIEWPORTS: readonly Viewport[] = [
   [1280, 800],
   [1920, 1080],
 ]
-const DARK_VIEWPORTS: readonly Viewport[] = [[1280, 800]]
+const DARK_VIEWPORTS: readonly Viewport[] = [
+  [375, 812],
+  [1280, 800],
+]
 const viewportsFor = (theme: Theme) => (theme === 'dark' ? DARK_VIEWPORTS : VIEWPORTS)
 
 interface PageSpec {
@@ -115,6 +121,21 @@ const ADMIN_PAGES: PageSpec[] = [
   { slug: 'upgrade', path: '/admin/upgrade', ready: (p) => [heading(p, '学年升级')] },
   { slug: 'history', path: '/admin/history', ready: (p) => [heading(p, '往年班级')] },
 ]
+
+// 信息中心(itadmin01):只有 org.manage / account.manage / settings.manage / audit.read / camera.manage,
+// 没有 school.view,看不到今日关注、看板、联考与报表、通知、学年升级、往年班级;登录后落在它第一个有权限的页面「组织架构」。
+// 页面与校长的同一批,但导航短、分组不同、页内按权限显示的控件不同,所以单独走一遍
+const IT_ADMIN_SLUGS = [
+  'org',
+  'timetable',
+  'accounts',
+  'settings',
+  'audit',
+  'ai-config',
+  'login-logs',
+  'cameras',
+]
+const IT_ADMIN_PAGES: PageSpec[] = ADMIN_PAGES.filter((p) => IT_ADMIN_SLUGS.includes(p.slug))
 
 // 李家长(13800000061):王小一(三年二班)与魏小七(四年一班)的主家长,登录后落在今日页
 const PARENT_PAGES: PageSpec[] = [
@@ -208,7 +229,7 @@ async function stripTeacherOnboarded(page: Page) {
   })
 }
 
-// 八个用例互不相干(各自开新上下文、登录、只读),并行跑;先后顺序不影响截图结果
+// 十个用例互不相干(各自开新上下文、登录、只读),并行跑;先后顺序不影响截图结果
 test.describe.configure({ mode: 'parallel' })
 
 for (const theme of THEMES) {
@@ -236,6 +257,13 @@ for (const theme of THEMES) {
     await useTheme(page, theme)
     await signIn(page, 'principal01', /\/admin\/today/)
     await walk(page, 'admin', ADMIN_PAGES, theme)
+  })
+
+  test(`信息中心 · ${THEME_LABEL[theme]}`, async ({ page }) => {
+    await guardReadOnly(page)
+    await useTheme(page, theme)
+    await signIn(page, 'itadmin01', /\/admin\/org/)
+    await walk(page, 'itadmin', IT_ADMIN_PAGES, theme)
   })
 
   test(`家长端 · ${THEME_LABEL[theme]}`, async ({ page }) => {
