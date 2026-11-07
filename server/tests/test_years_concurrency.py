@@ -352,9 +352,6 @@ def test_grade_exam_create_queued_behind_apply_is_rejected(clean):
     plan = _plan(clean)
     result: dict[str, Any] = {}
 
-    holder = Session(clean)
-    holder.execute(text("SELECT id FROM classes WHERE id = :c FOR UPDATE"), {"c": class_id})
-
     def upgrader() -> None:
         with Session(clean) as s:
             try:
@@ -381,9 +378,11 @@ def test_grade_exam_create_queued_behind_apply_is_rejected(clean):
                 result["create"] = e
 
     tu = threading.Thread(target=upgrader)
-    tu.start()
     tc = threading.Thread(target=creator)
+    holder = Session(clean)
     try:
+        holder.execute(text("SELECT id FROM classes WHERE id = :c FOR UPDATE"), {"c": class_id})
+        tu.start()
         _wait_until_blocked(clean, 1)  # apply 排在第一个,等 holder 的班级锁
         tc.start()
         _wait_until_blocked(clean, 2)  # 建联考排在第二个(卡在 apply 已持有的班级锁上)
@@ -417,9 +416,6 @@ def test_staff_write_queued_behind_apply_fails_and_rollback_still_works(clean):
     plan = _plan(clean)
     result: dict[str, Any] = {}
 
-    holder = Session(clean)
-    holder.execute(text("SELECT id FROM classes WHERE id = :c FOR UPDATE"), {"c": class_id})
-
     def upgrader() -> None:
         with Session(clean) as s:
             try:
@@ -445,9 +441,11 @@ def test_staff_write_queued_behind_apply_fails_and_rollback_still_works(clean):
                 result["assign"] = e
 
     tu = threading.Thread(target=upgrader)
-    tu.start()
     ta = threading.Thread(target=assigner)
+    holder = Session(clean)
     try:
+        holder.execute(text("SELECT id FROM classes WHERE id = :c FOR UPDATE"), {"c": class_id})
+        tu.start()
         _wait_until_blocked(clean, 1)  # apply 排在第一个,等 holder 的班级锁
         ta.start()
         _wait_until_blocked(clean, 2)  # 任命排在第二个
@@ -549,8 +547,6 @@ def test_grade_exam_update_queued_behind_apply_is_rejected(clean):
     result: dict[str, Any] = {}
     ge_id = _create_grade_exam(clean, grade3, dean)
     try:
-        holder = Session(clean)
-        holder.execute(text("SELECT id FROM classes WHERE id = :c FOR UPDATE"), {"c": class_id})
 
         def upgrader() -> None:
             with Session(clean) as s:
@@ -561,9 +557,11 @@ def test_grade_exam_update_queued_behind_apply_is_rejected(clean):
                     result["apply"] = e
 
         tu = threading.Thread(target=upgrader)
-        tu.start()
         tp = threading.Thread(target=_update_grade_exam, args=(clean, ge_id, dean, result))
+        holder = Session(clean)
         try:
+            holder.execute(text("SELECT id FROM classes WHERE id = :c FOR UPDATE"), {"c": class_id})
+            tu.start()
             _wait_until_blocked(clean, 1)  # apply 排在第一个,等 holder 的班级锁
             tp.start()
             _wait_until_blocked(clean, 2)  # 编辑排在第二个(卡在 apply 已持有的班级锁上)
