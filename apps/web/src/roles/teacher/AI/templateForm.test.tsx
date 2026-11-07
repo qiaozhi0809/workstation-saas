@@ -239,7 +239,7 @@ describe('template entry', () => {
 
   it('ignores an unknown template id', async () => {
     open('?tpl=nope')
-    await screen.findByText('王老师,今天想做点什么?')
+    await screen.findByText('你好,王老师,今天想做点什么?')
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 })
