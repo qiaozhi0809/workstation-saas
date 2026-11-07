@@ -455,7 +455,7 @@ jobs:
       WS_PREVIOUS_TAG: v0.7.2-m5c-cameras
       WS_PREVIOUS_VERSION: 0.7.2-ci
       # 升级后 alembic_version 必须停在这一版(A2 的 0013);以后 main 上新增迁移时同步改
-      WS_EXPECTED_MIGRATION: "0013"
+      WS_EXPECTED_MIGRATION: "0014"
     steps:
       # 需要 tag 与完整历史:旧包从 tag 的 worktree 构建
       - uses: actions/checkout@v7

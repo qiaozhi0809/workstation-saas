@@ -148,6 +148,93 @@ def test_create_class_defaults(client, db, settings):
     assert dup.status_code == 409 and dup.json()["error"]["code"] == "NAME_TAKEN"
 
 
+def test_concurrent_same_class_name_rejected(engine, monkeypatch):
+    """L263:两个会话并发在同一年级建同名班:应用层检查互相看不见对方未提交的行,由唯一索引
+    uq_classes_grade_name 兜底——后提交的一方 409 NAME_TAKEN(与应用层检查同一个码),不是 500。
+    写法同 test_org_concurrency:A 在 record 处停住(已插入、未提交),B 卡在唯一索引上。"""
+    import threading
+    import time
+
+    from sqlalchemy.orm import Session
+
+    from app.domain.org import service
+    from app.domain.org.schemas import ClassInput
+    from app.errors import ApiError
+
+    name, wait = "并发同名班", 30
+    in_record, release = threading.Event(), threading.Event()
+    original = service.record
+
+    def stalled(*args, **kwargs):
+        if threading.current_thread().name == "A":
+            in_record.set()
+            assert release.wait(wait)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(service, "record", stalled)
+    results: dict[str, object] = {}
+
+    def create() -> None:
+        with Session(engine) as s:
+            try:
+                results[threading.current_thread().name] = service.create_class(
+                    s,
+                    UUID(SCHOOL_ID),
+                    UUID(YEAR_ID),
+                    ClassInput(grade_id=UUID(GRADE_ID), name=name),
+                    UUID(PRINCIPAL),
+                    None,
+                )
+            except Exception as exc:  # noqa: BLE001 — 结果交给断言
+                s.rollback()
+                results[threading.current_thread().name] = exc
+
+    def wait_blocked() -> None:
+        deadline = time.monotonic() + wait
+        while time.monotonic() < deadline:
+            with engine.connect() as conn:
+                n = conn.execute(
+                    text(
+                        "SELECT count(*) FROM pg_stat_activity"
+                        " WHERE datname = current_database() AND wait_event_type = 'Lock'"
+                    )
+                ).scalar_one()
+            if n:
+                return
+            time.sleep(0.02)
+        raise AssertionError("没有等到被唯一索引挡住的会话")
+
+    a = threading.Thread(target=create, name="A")
+    b = threading.Thread(target=create, name="B")
+    try:
+        a.start()
+        assert in_record.wait(wait)
+        b.start()
+        wait_blocked()  # B 的 INSERT 卡在 A 未提交的唯一索引项上
+    finally:
+        release.set()
+        a.join(wait)
+        b.join(wait)
+        with engine.begin() as conn:  # 共享测试库:清掉本用例提交的班级与审计
+            created = conn.execute(
+                text("SELECT count(*) FROM classes WHERE name = :n"), {"n": name}
+            ).scalar_one()
+            conn.execute(
+                text(
+                    "DELETE FROM audit_logs WHERE object_type = 'class'"
+                    " AND object_id IN (SELECT id::text FROM classes WHERE name = :n)"
+                ),
+                {"n": name},
+            )
+            conn.execute(text("DELETE FROM classes WHERE name = :n"), {"n": name})
+    assert not a.is_alive() and not b.is_alive()
+    assert not isinstance(results["A"], Exception), results["A"]
+    loser = results["B"]
+    assert isinstance(loser, ApiError), loser
+    assert loser.status == 409 and loser.code == "NAME_TAKEN"
+    assert created == 1
+
+
 def test_list_and_get_classes(client, settings):
     h = auth(settings, PRINCIPAL)
     allc = client.get(f"{API}/classes", headers=h).json()

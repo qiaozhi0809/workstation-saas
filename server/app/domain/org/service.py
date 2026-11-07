@@ -1,8 +1,11 @@
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime
 from uuid import UUID
 
 from fastapi import Request
 from sqlalchemy import func, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.audit.service import record
@@ -372,6 +375,24 @@ def _class_name_taken(db: Session, grade_id: UUID, name: str, exclude: UUID | No
     return db.scalars(stmt).first() is not None
 
 
+_CLASS_NAME_INDEX = "uq_classes_grade_name"
+
+
+@contextmanager
+def _class_name_guard(db: Session) -> Iterator[None]:
+    """应用层重名检查之外的最后一道防线(L263):两个会话并发建 / 改成同一班名时各自都看不见对方
+    未提交的行,唯一索引 uq_classes_grade_name 拦下后提交的一方 → 与应用层检查同一个码 409
+    NAME_TAKEN,不是 500。"""
+    try:
+        yield
+    except IntegrityError as exc:
+        diag = getattr(exc.orig, "diag", None)
+        if getattr(diag, "constraint_name", None) != _CLASS_NAME_INDEX:
+            raise
+        db.rollback()
+        raise ApiError(409, "NAME_TAKEN", "该年级下已有同名班级") from exc
+
+
 def create_class(
     db: Session,
     school_id: UUID,
@@ -396,19 +417,20 @@ def create_class(
         seat_rows=6,
         seat_cols=8,
     )
-    db.add(cls)
-    db.flush()
-    record(
-        db,
-        user_id=user_id,
-        action="org.class_create",
-        success=True,
-        object_type="class",
-        object_id=str(cls.id),
-        request=request,
-        extra={"name": cls.name, "grade_id": str(grade.id)},
-    )
-    db.commit()
+    with _class_name_guard(db):
+        db.add(cls)
+        db.flush()
+        record(
+            db,
+            user_id=user_id,
+            action="org.class_create",
+            success=True,
+            object_type="class",
+            object_id=str(cls.id),
+            request=request,
+            extra={"name": cls.name, "grade_id": str(grade.id)},
+        )
+        db.commit()
     return class_admin(db, cls)
 
 
@@ -429,17 +451,18 @@ def update_class(
     cls.grade_id = grade.id
     cls.name = body.name
     cls.room = body.room
-    record(
-        db,
-        user_id=user_id,
-        action="org.class_update",
-        success=True,
-        object_type="class",
-        object_id=str(cls.id),
-        request=request,
-        extra={"name": cls.name, "grade_id": str(grade.id)},
-    )
-    db.commit()
+    with _class_name_guard(db):
+        record(
+            db,
+            user_id=user_id,
+            action="org.class_update",
+            success=True,
+            object_type="class",
+            object_id=str(cls.id),
+            request=request,
+            extra={"name": cls.name, "grade_id": str(grade.id)},
+        )
+        db.commit()
     return class_admin(db, cls)
 
 

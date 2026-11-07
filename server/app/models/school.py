@@ -2,7 +2,7 @@ import uuid
 from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import ForeignKey, Text, text
+from sqlalchemy import ForeignKey, Index, Text, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -56,6 +56,8 @@ class Grade(Base):
 
 class SchoolClass(Base):
     __tablename__ = "classes"
+    # 同一年级里班名唯一(0014):撞上它的写入在 org/service.py 里映射为 409 NAME_TAKEN
+    __table_args__ = (Index("uq_classes_grade_name", "grade_id", "name", unique=True),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, **_UUID_PK)
     school_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("schools.id", ondelete="CASCADE"))
