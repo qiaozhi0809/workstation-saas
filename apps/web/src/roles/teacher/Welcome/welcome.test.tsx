@@ -191,9 +191,13 @@ it('no duplicate svg ids in document', async () => {
   const ids = Array.from(document.querySelectorAll('[id]')).map((el) => el.id)
   expect(new Set(ids).size).toBe(ids.length)
   expect(document.getElementById('crShadow')).toBeNull()
-  const svgs = Array.from(dialog.querySelectorAll('svg'))
+  // 只看两张形象卡的 svg(关闭按钮的图标也是 svg)
+  const svgs = within(dialog)
+    .getAllByRole('button', { name: /老师$/ })
+    .map((card) => card.querySelector('svg') as SVGSVGElement)
   expect(svgs).toHaveLength(2)
   for (const svg of svgs) {
+    expect(svg).not.toBeNull()
     // 卡片里每个滤镜引用都指向自己这张 svg 里的 defs
     const refs = Array.from(svg.querySelectorAll('[filter]')).map((el) => el.getAttribute('filter'))
     expect(refs.length).toBeGreaterThan(0)
