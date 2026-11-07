@@ -45,6 +45,15 @@ it('shows 班级公告 with class.notice', () => {
   expect(screen.getByRole('link', { name: '班级公告' })).toHaveAttribute('href', '/teacher/notices')
 })
 
+// L260:< 768px 只剩图标,鼠标悬停要能看到名称;title 与可见 / 读屏文字同一个 label
+it('titles every link with its label for the icon-only layout', () => {
+  renderWith(['class.notice'])
+  const links = screen.getAllByRole('link')
+  expect(links).toHaveLength(6)
+  for (const a of links) expect(a).toHaveAttribute('title', a.textContent)
+  expect(screen.getByRole('link', { name: '教室' })).toHaveAttribute('title', '教室')
+})
+
 // L82:触屏下点击区放大到 44 × 44 由 theme/index.css 的 .touch-target 规则负责,这里确认每个入口都挂了钩子
 it('marks every nav link as a touch target', () => {
   renderWith(['class.notice'])

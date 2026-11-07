@@ -28,7 +28,7 @@ beforeEach(() => {
 describe('AiHomePage', () => {
   it('shows provider status or the not-configured hint', async () => {
     home()
-    expect(await screen.findByText('王老师,今天想做点什么?')).toBeInTheDocument()
+    expect(await screen.findByText('你好,王老师,今天想做点什么?')).toBeInTheDocument()
     expect(await screen.findByText('DeepSeek · deepseek-flash')).toBeInTheDocument()
     expect(screen.getByText(/只有点击发送或生成时/)).toBeInTheDocument()
   })

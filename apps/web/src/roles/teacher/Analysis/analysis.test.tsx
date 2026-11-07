@@ -188,6 +188,18 @@ describe('AnalysisPage', () => {
     expect(screen.queryByText(/这场考试还没有分数/)).toBeNull()
   })
 
+  // L254:地址指向成绩册里根本没有的考试(已删除 / 旧书签)也要说一句,不再静默回退
+  it('says the exam no longer exists when ?exam= points at a deleted id (L254)', async () => {
+    setup([first, second], '/teacher/analysis?exam=gone')
+    const note = await screen.findByText('这场考试已不存在,已切到最近一场')
+    expect(note).toHaveAttribute('role', 'status')
+    expect(screen.getByLabelText('考试')).toHaveValue('x2')
+    expect(screen.queryByText(/这场考试还没有分数/)).toBeNull()
+    // 换到存在的考试,提示就没了
+    fireEvent.change(screen.getByLabelText('考试'), { target: { value: 'x1' } })
+    expect(screen.queryByText('这场考试已不存在,已切到最近一场')).toBeNull()
+  })
+
   it('explains the default comparison basis and drops the note once a comparison is chosen (L16)', async () => {
     setup([first, second])
     await avgCard()
@@ -209,6 +221,19 @@ describe('AnalysisPage', () => {
       'href',
       '/teacher/scores',
     )
+  })
+
+  // L236:比例读取失败时页顶说明"按默认 60% / 85% 显示"并可重试;读取成功后提示消失
+  it('shows grading fallback banner', async () => {
+    vi.mocked(schoolApi.grading).mockRejectedValue(new Error('boom'))
+    setup([first])
+    const text = '及格线读取失败,先按默认 60% / 85% 显示'
+    const note = (await screen.findByText(text)).closest('[role="status"]') as HTMLElement
+    expect(note).not.toBeNull()
+    vi.mocked(schoolApi.grading).mockResolvedValue({ pass_ratio: 0.7, good_ratio: 0.9 })
+    fireEvent.click(within(note).getByRole('button', { name: '重试' }))
+    await waitFor(() => expect(screen.queryByText(text)).toBeNull())
+    expect(schoolApi.grading).toHaveBeenCalledTimes(2)
   })
 
   it('analysis uses school ratios', async () => {

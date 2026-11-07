@@ -253,7 +253,9 @@ export function latestExam(book: GradebookExam[]): GradebookExam | null {
 /**
  * 进退步口径(L16),文案与计算只在这里定义:
  * - 文案 RANK_CHANGE_BASIS 给界面说明用;
- * - 计算是下面的 previousExam:按成绩册顺序往前找最近一场有分数的考试,不看考试类型;
+ * - 计算是下面的 previousExam:按成绩册顺序往前找最近一场有分数的考试,**不按 exam_type 筛选**
+ *   (L255 / v1.1 Q3 裁定:不做"同类考试"比较——期中的上一场可能是月考,界面上也没有"同类"字样;
+ *   grades.test.ts 把"忽略类型"钉住了。若将来用户要"期中比上学期期中",改这里加类型比较并同步改文案与测试);
  * - BIG_MOVE 是"大幅进退步"的门槛,attention() 的退步名单与界面标题共用。
  * 改口径时三者一起改。
  */

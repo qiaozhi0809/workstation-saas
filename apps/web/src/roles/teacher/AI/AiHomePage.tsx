@@ -17,7 +17,9 @@ import { useTemplateEntry } from './useTemplateEntry'
 /** AI 助手首页:问候与状态、自由输入、模板卡片、最近对话。需要本班 ai.use 权限。 */
 export default function AiHomePage() {
   const name = useAuthStore((s) => s.user?.display_name ?? '').trim()
-  const greeting = name === '' ? '老师您好' : name.endsWith('老师') ? name : `${name}老师`
+  // 与欢迎页同一风格"你好,X"(L260);姓名没带"老师"时补上
+  const who = name === '' ? '' : name.endsWith('老师') ? name : `${name}老师`
+  const greeting = who === '' ? '你好' : `你好,${who}`
   const status = useQuery({ queryKey: ['ai-status'], queryFn: aiApi.status })
 
   return (
