@@ -157,7 +157,9 @@ def _object_labels(db: Session, logs: list[AuditLog]) -> dict[tuple[str, str], s
 
 def query(db: Session, school_id: UUID, filters: AuditFilters) -> tuple[list[AuditRow], int]:
     base = _filtered(db, school_id, filters)
-    total = db.scalar(select(func.count()).select_from(base.subquery())) or 0
+    # 计数子查询只选 id(L59):不把 extra 等宽列也拖进子查询
+    count_q = base.with_only_columns(AuditLog.id).subquery()
+    total = db.scalar(select(func.count()).select_from(count_q)) or 0
     logs = list(
         db.scalars(
             base.order_by(AuditLog.at.desc(), AuditLog.id.desc())

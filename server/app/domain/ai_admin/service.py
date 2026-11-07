@@ -169,7 +169,9 @@ def _origin(base_url: str) -> tuple[str, str, int | None]:
     except ValueError:
         return (base_url.strip().lower(), "", None)
     scheme = u.scheme.lower()
-    return (scheme, (u.hostname or "").lower(), port or {"http": 80, "https": 443}.get(scheme))
+    if port is None:  # 没写端口才补默认端口;显式的 :0 不等于默认端口
+        port = {"http": 80, "https": 443}.get(scheme)
+    return (scheme, (u.hostname or "").lower(), port)
 
 
 class KeyRequired(ApiError):
