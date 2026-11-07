@@ -119,6 +119,37 @@ def test_create_exam_on_deleted_class_is_404_not_500(db):
     assert (e.value.status, e.value.code) == (404, "NOT_FOUND")
 
 
+def test_create_exam_after_rollback_is_409(db, monkeypatch):
+    """L262:require_active_year 之后、插入之前学年刚被回滚 / 升级停用(建考试排在它后面才拿到
+    班级锁):锁班之后复核学年 → 409 NO_ACTIVE_YEAR,而不是把考试写进已成往年的学年或撞外键 500。"""
+    from sqlalchemy import text
+
+    from app.domain.exams import service
+    from app.domain.exams.schemas import ExamInput
+    from app.errors import ApiError
+    from app.models import Exam, SchoolClass
+    from app.rbac.bindings import load_bindings
+    from tests.seed_ids import TEACHER_USER_ID, YEAR_ID
+
+    cls = db.get(SchoolClass, UUID(CLASS_ID))
+    bindings = load_bindings(db, UUID(TEACHER_USER_ID), UUID(YEAR_ID))
+    original = service.merge_subjects
+
+    def deactivate_after_lock(*args, **kwargs):
+        out = original(*args, **kwargs)  # 班级行锁已到手,此时回滚 / 升级提交:学年不再进行中
+        db.execute(
+            text("UPDATE academic_years SET is_active = false WHERE id = :y"), {"y": YEAR_ID}
+        )
+        return out
+
+    monkeypatch.setattr(service, "merge_subjects", deactivate_after_lock)
+    before = len(db.scalars(select(Exam).where(Exam.class_id == cls.id)).all())
+    with pytest.raises(ApiError) as e:
+        service.create_exam(db, cls, ExamInput(**_body()), UUID(TEACHER_USER_ID), bindings, None)
+    assert (e.value.status, e.value.code) == (409, "NO_ACTIVE_YEAR")
+    assert len(db.scalars(select(Exam).where(Exam.class_id == cls.id)).all()) == before
+
+
 @pytest.mark.parametrize(
     "patch",
     [

@@ -10,6 +10,7 @@ from app.audit.service import record
 from app.domain.org import service
 from app.domain.org.schemas import AdminRole, AdminRoleInput, ClassAdmin, StaffInput
 from app.domain.org.service import class_admin
+from app.domain.years.locks import ensure_year_live
 from app.errors import ApiError
 from app.models import Grade, RoleBinding, SchoolClass, User
 from app.rbac.admin import account_admin_count
@@ -290,6 +291,10 @@ def add_role(
     ).first()
     if dup is not None:
         raise ApiError(409, "ALREADY_ASSIGNED", "该账号已担任此岗位")
+    if bind_year is not None:
+        # 只有年级组长的绑定带学年外键:学年刚被回滚 → 409,而不是插入撞外键 500(L261);
+        # 校级岗位不带学年,不取学年锁
+        ensure_year_live(db, bind_year)
     bd = RoleBinding(
         user_id=body.user_id,
         role_type=body.role,
