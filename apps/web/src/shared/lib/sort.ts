@@ -23,8 +23,21 @@ const CN_DIGIT: Record<string, number> = {
   九: 9,
 }
 const CN_UNIT: Record<string, number> = { 十: 10, 百: 100 }
-const isAsciiDigit = (c: string) => c >= '0' && c <= '9'
+/** 任何文字的十进制数字(Unicode Nd),与后端 str.isdecimal() 同范围:全角 ３、阿拉伯文 ٣ 都算,上标 ² / 带圈 ② 不算(L237) */
+const ND = /\p{Nd}/u
+const isDigit = (c: string) => ND.test(c)
 const isCnNumeral = (c: string) => c in CN_DIGIT || c in CN_UNIT
+
+/** 一个 Nd 字符的数值:每种文字的 0–9 连续编码、首个即 0,往前找到这段的开头再取差 */
+function digitValue(c: string): number {
+  const cp = c.codePointAt(0)!
+  let zero = cp
+  while (zero > 0 && ND.test(String.fromCodePoint(zero - 1))) zero--
+  return (cp - zero) % 10
+}
+
+/** 数字段的值:逐位拼十进制,不同文字混写也按位算,与 Python int('1٢') === 12 一致 */
+const digitsValue = (run: string) => [...run].reduce((n, c) => n * 10 + digitValue(c), 0)
 
 /** 中文数字的值:二十一 → 21、十 → 10、一百零一 → 101;连写的数字(一二)按位拼成 12 */
 function cnValue(run: string): number {
@@ -39,21 +52,21 @@ function cnValue(run: string): number {
   return total + num
 }
 
-/** 把名字切成数字段 [0, 数值] 与文字段 [1, 原文],末尾加 [-1, 原文] 收尾(保证全序与稳定) */
+const kindOf = (c: string) => (isDigit(c) ? 'digit' : isCnNumeral(c) ? 'cn' : 'text')
+
+/** 把名字切成数字段 [0, 数值] 与文字段 [1, 原文],末尾加 [-1, 原文] 收尾(保证全序与稳定);按码点切,星号平面的数字也完整 */
 export function classSortKey(name: string): ClassSortKey {
-  const text = name.replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+  const chars = [...name]
   const key: ClassSortKey = []
   let i = 0
-  while (i < text.length) {
-    const kind = isAsciiDigit(text[i]) ? 'digit' : isCnNumeral(text[i]) ? 'cn' : 'text'
+  while (i < chars.length) {
+    const kind = kindOf(chars[i])
     let j = i + 1
-    while (j < text.length) {
-      const k = isAsciiDigit(text[j]) ? 'digit' : isCnNumeral(text[j]) ? 'cn' : 'text'
-      if (k !== kind) break
-      j++
-    }
-    const run = text.slice(i, j)
-    key.push(kind === 'digit' ? [0, Number(run)] : kind === 'cn' ? [0, cnValue(run)] : [1, run])
+    while (j < chars.length && kindOf(chars[j]) === kind) j++
+    const run = chars.slice(i, j).join('')
+    key.push(
+      kind === 'digit' ? [0, digitsValue(run)] : kind === 'cn' ? [0, cnValue(run)] : [1, run],
+    )
     i = j
   }
   key.push([-1, name])
