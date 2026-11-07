@@ -21,7 +21,8 @@ make_package() {  # $1=输出 tar.gz;包里的 compose 文件末尾加一行注�
   local pkg="$TMP/pkgsrc/workstation-deploy-$NEWV"
   rm -rf "$TMP/pkgsrc"
   mkdir -p "$pkg"
-  cp -R "$DEPLOY_SRC/." "$pkg/"
+  # L313:不复制 images/(镜像已在本机,WS_INSTALL_SKIP_LOAD=1;离线包里的镜像 tar 有上 GB,打进测试包白费 CI 时间)
+  ( cd "$DEPLOY_SRC" && tar --exclude='./images' -cf - . ) | ( cd "$pkg" && tar -xf - ) || fail "复制部署源失败"
   printf '%s\n' "$NEWV" >"$pkg/VERSION"
   printf '# upgraded-marker\n' >>"$pkg/docker-compose.yml"
   # L198:新包的 Caddyfile.internal 多发一个响应头,升级后生效的 Caddyfile 应被替换、web 重读配置后浏览器能看到它
@@ -213,7 +214,8 @@ NEWV2="$VERSION-up2"
 make_alias_tags "$NEWV2"
 pkg2="$TMP/pkgsrc2/workstation-deploy-$NEWV2"
 mkdir -p "$pkg2"
-cp -R "$DEPLOY_SRC/." "$pkg2/"
+# L313:同上,不复制 images/
+( cd "$DEPLOY_SRC" && tar --exclude='./images' -cf - . ) | ( cd "$pkg2" && tar -xf - ) || fail "复制部署源失败"
 printf '%s\n' "$NEWV2" >"$pkg2/VERSION"
 awk '{ print } /^\theader [{]$/ { print "\t\tX-Ws-Upgrade-Marker \"2\"" }' "$DEPLOY_SRC/Caddyfile.internal" >"$pkg2/Caddyfile.internal"
 PKG2="$TMP/workstation-deploy-$NEWV2.tar.gz"

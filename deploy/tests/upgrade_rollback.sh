@@ -174,7 +174,8 @@ kill -9 -- "$kill_target" 2>/dev/null || true
 wait "$upid" 2>/dev/null || true
 [ -f "$STATE" ] || fail "kill -9 之后状态文件应还在(EXIT trap 不会执行)"
 [ -d "$DEPLOY/backups/.lock" ] || fail "kill -9 之后锁目录应还在(由下一个脚本接管)"
-SNAP2="$(grep '^SNAPSHOT=' "$STATE" | cut -d= -f2-)"
+# L313:读状态文件的 grep | cut 都接 || fail:键不在时 pipefail 下不能让脚本无提示地退出,要走 fail(带服务日志尾)
+SNAP2="$(grep '^SNAPSHOT=' "$STATE" | cut -d= -f2-)" || fail "状态文件里没有 SNAPSHOT 行"
 [ -d "$SNAP2" ] || fail "状态文件里的快照目录不存在:$SNAP2"
 [ "$SNAP2" != "$SNAP" ] || fail "第二次升级应生成新的快照目录"
 # 换一个版本不同的好包:应拒绝,并提示先 rollback.sh 或重跑同一个包;部署目录保持中断时的样子
@@ -192,7 +193,7 @@ assert_no_secrets "中断后换包升级的输出" "$TMP/upgrade-after-k9.log"
 pass "kill -9 后:状态文件与锁留下;换包升级被拒(提示先 rollback.sh),部署目录未动,解包残留被清理"
 # I-3:重跑同一个包(按重跑处理):这次做的备份是"覆盖文件之后"的状态,不能顶替状态文件里的 BACKUP;
 # 回退提示里的 restore.sh 仍应指向中断前那份备份,本次备份只记在 RESUME_BACKUP;不另建快照
-BACKUP2_ORIG="$(grep '^BACKUP=' "$STATE" | cut -d= -f2-)"
+BACKUP2_ORIG="$(grep '^BACKUP=' "$STATE" | cut -d= -f2-)" || fail "状态文件里没有 BACKUP 行"
 [ -n "$BACKUP2_ORIG" ] && [ -s "$BACKUP2_ORIG" ] || fail "状态文件里的 BACKUP 应是存在的备份文件(得到「$BACKUP2_ORIG」)"
 nbk_before="$(find "$DEPLOY/backups" -name 'ws-backup-*.tar.gz' | wc -l | tr -d ' ')"
 nsnap_before="$(find "$DEPLOY/backups" -maxdepth 1 -name 'pre-upgrade-*' -type d | wc -l | tr -d ' ')"
@@ -202,9 +203,11 @@ rc=0
 grep -q '按重跑处理' "$TMP/upgrade-resume.log" || { tail -n 15 "$TMP/upgrade-resume.log" >&2; fail "重跑同一个包应按重跑处理"; }
 grep -q '只作记录' "$TMP/upgrade-resume.log" || fail "重跑时应说明本次备份只作记录、升级前备份仍以中断前的为准"
 [ -f "$STATE" ] || fail "重跑失败后状态文件应还在"
-[ "$(grep '^BACKUP=' "$STATE" | cut -d= -f2-)" = "$BACKUP2_ORIG" ] || fail "重跑不应替换状态文件里的 BACKUP(应仍为 $(basename "$BACKUP2_ORIG"))"
-[ "$(grep '^SNAPSHOT=' "$STATE" | cut -d= -f2-)" = "$SNAP2" ] || fail "重跑应沿用中断那次的快照"
-RESUME_BK="$(grep '^RESUME_BACKUP=' "$STATE" | cut -d= -f2-)"
+state_backup="$(grep '^BACKUP=' "$STATE" | cut -d= -f2-)" || fail "重跑后状态文件里没有 BACKUP 行"
+[ "$state_backup" = "$BACKUP2_ORIG" ] || fail "重跑不应替换状态文件里的 BACKUP(应仍为 $(basename "$BACKUP2_ORIG"),实际「$state_backup」)"
+state_snap="$(grep '^SNAPSHOT=' "$STATE" | cut -d= -f2-)" || fail "重跑后状态文件里没有 SNAPSHOT 行"
+[ "$state_snap" = "$SNAP2" ] || fail "重跑应沿用中断那次的快照(实际「$state_snap」)"
+RESUME_BK="$(grep '^RESUME_BACKUP=' "$STATE" | cut -d= -f2-)" || fail "状态文件里没有 RESUME_BACKUP 行(重跑时的备份应记在这里)"
 [ -n "$RESUME_BK" ] && [ -s "$RESUME_BK" ] && [ "$RESUME_BK" != "$BACKUP2_ORIG" ] || fail "状态文件应把重跑时的备份记在 RESUME_BACKUP(得到「$RESUME_BK」)"
 [ "$(find "$DEPLOY/backups" -name 'ws-backup-*.tar.gz' | wc -l | tr -d ' ')" = "$((nbk_before + 1))" ] || fail "重跑应恰好多做一份备份"
 [ "$(find "$DEPLOY/backups" -maxdepth 1 -name 'pre-upgrade-*' -type d | wc -l | tr -d ' ')" = "$nsnap_before" ] || fail "重跑不应新建快照目录"
