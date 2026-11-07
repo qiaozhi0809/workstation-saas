@@ -42,6 +42,11 @@ interface HlsErrorData {
   networkDetails?: { responseText?: string } | null
 }
 
+/** LEVEL_LOADED 里播放器会读的几个字段(直播播放列表的目标时长与片段序号窗口) */
+interface LevelLoadedData {
+  details?: { live?: boolean; targetduration?: unknown; startSN?: number; endSN?: number }
+}
+
 function errorCodeOf(data: HlsErrorData): string | null {
   const raw = data.networkDetails?.responseText ?? data.response?.text
   if (typeof raw !== 'string' || !raw) return null
@@ -196,10 +201,21 @@ export function CameraPlayer({
       reload()
       armStallTimer()
     }
-    // 播放列表到了:停滞阈值跟着它的 TARGETDURATION 走(下一次计时起生效)
-    const onLevelLoaded = (data: { details?: { targetduration?: unknown } } | undefined) => {
+    // 播放列表到了:停滞阈值跟着它的 TARGETDURATION 走(下一次计时起生效)。
+    // 整个直播窗口都落在已见最大序号之下 → 服务端序列重新开始了(序号回绕后 ffmpeg 重启,discont_start,
+    // L301):基线挪到窗口之前,新片段才算进展;重取后回放旧尾部时窗口不会整体后退,基线不动
+    const onLevelLoaded = (data: LevelLoadedData | undefined) => {
       if (terminal) return
-      stallMs = stallMsFor(data?.details?.targetduration)
+      const d = data?.details
+      stallMs = stallMsFor(d?.targetduration)
+      if (
+        d?.live &&
+        typeof d.startSN === 'number' &&
+        typeof d.endSN === 'number' &&
+        maxSn >= 0 &&
+        d.endSN < maxSn
+      )
+        maxSn = d.startSN - 1
     }
     // 出画面(片段到了 / 视频 playing):8 秒计时取消,401 再刷新与 STREAM_STARTING 的预算恢复,看门狗从头计
     const markPlaying = () => {

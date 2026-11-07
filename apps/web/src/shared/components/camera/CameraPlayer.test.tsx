@@ -661,6 +661,37 @@ describe('CameraPlayer', () => {
     expect(vi.getTimerCount()).toBe(0)
   })
 
+  it('resets maxSn after discontinuity', () => {
+    // L301:序号回绕(START_NUMBER_MOD)后 ffmpeg 重启,新播放列表的整个窗口都比已见最大序号小 →
+    // 这是服务端序列重新开始(discont_start),基线复位,新片段算进展;重取后回放旧尾部时窗口不会整体后退
+    vi.useFakeTimers()
+    render(<CameraPlayer cameraId="c1" title="t" />)
+    const h0 = hls()
+    act(() => h0.emit('hlsLevelLoaded', level({ startSN: 9_999_990, endSN: 9_999_995 })))
+    act(() => h0.emit('hlsFragLoaded', frag(9_999_995)))
+    // 2 秒片段 → 8 秒一拍:两拍没动静 = 提示 + 重试
+    act(() => void vi.advanceTimersByTime(16000))
+    expect(screen.getByRole('alert')).toHaveTextContent('画面已停止,正在重连…')
+    expect(h0.loadSource).toHaveBeenCalledTimes(3)
+    // 重取回来的还是同一个窗口:回放旧片段不算进展,提示不撤
+    act(() => h0.emit('hlsLevelLoaded', level({ startSN: 9_999_990, endSN: 9_999_995 })))
+    act(() => h0.emit('hlsFragLoaded', frag(9_999_994)))
+    expect(screen.getByRole('alert')).toHaveTextContent('画面已停止,正在重连…')
+    // 回绕后重启:窗口整体退到小序号 → 第一片就是进展,提示撤下、预算复位
+    act(() => h0.emit('hlsLevelLoaded', level({ startSN: 100, endSN: 103 })))
+    act(() => h0.emit('hlsFragLoaded', frag(100)))
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(h0.loadSource).toHaveBeenCalledTimes(3)
+    // 新基线之下的仍不算;再停又是先悄悄重取一次
+    act(() => h0.emit('hlsFragLoaded', frag(99)))
+    act(() => void vi.advanceTimersByTime(8000))
+    expect(h0.loadSource).toHaveBeenCalledTimes(4)
+    expect(screen.queryByRole('alert')).toBeNull()
+    act(() => h0.emit('hlsFragLoaded', frag(101)))
+    act(() => void vi.advanceTimersByTime(7999))
+    expect(h0.loadSource).toHaveBeenCalledTimes(4)
+  })
+
   it('stall threshold follows target duration', () => {
     // 停滞阈值 = 3 × TARGETDURATION,夹在 8–20 秒(L306):4 秒片段 12 秒才重取,不再固定 20 秒
     vi.useFakeTimers()
