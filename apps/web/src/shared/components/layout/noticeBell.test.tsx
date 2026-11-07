@@ -179,6 +179,8 @@ describe('通知铃铛', () => {
     await waitFor(() =>
       expect(within(list).getByRole('button', { name: /通知1/ })).not.toHaveClass('font-semibold'),
     )
+    // 已读就地写进缓存,不重取收件箱(L280)
+    expect(noticesApi.inbox).toHaveBeenCalledTimes(1)
   })
 
   it('does not call read again for an already-read notice', async () => {
@@ -197,6 +199,9 @@ describe('通知铃铛', () => {
     fireEvent.click(within(list).getByRole('button', { name: '全部标为已读' }))
     await waitFor(() => expect(noticesApi.readAll).toHaveBeenCalledTimes(1))
     expect(await screen.findByRole('button', { name: '通知,0 条未读' })).toBeInTheDocument()
+    // 每条都就地写成已读,不重取收件箱(L280)
+    expect(within(list).getByRole('button', { name: /通知1/ })).not.toHaveClass('font-semibold')
+    expect(noticesApi.inbox).toHaveBeenCalledTimes(1)
   })
 
   it('shows an empty state when there are no notices', async () => {

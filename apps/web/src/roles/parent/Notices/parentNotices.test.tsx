@@ -228,10 +228,13 @@ it('shows the empty state', async () => {
 it('marks as read on open and shows the content', async () => {
   vi.mocked(noticesApi.inbox).mockResolvedValue(inbox([item()]))
   renderAt()
-  fireEvent.click(await screen.findByText('周五春游'))
+  const row = (await screen.findByText('周五春游')).closest('button')!
+  fireEvent.click(row)
   await waitFor(() => expect(noticesApi.read).toHaveBeenCalledWith('n1'))
   expect(screen.getByText('带水杯')).toBeInTheDocument()
-  await waitFor(() => expect(vi.mocked(noticesApi.inbox).mock.calls.length).toBeGreaterThan(1))
+  // 已读是就地写进缓存的(L280),不靠重取收件箱
+  await waitFor(() => expect(row.className).not.toMatch(/font-semibold/))
+  expect(noticesApi.inbox).toHaveBeenCalledTimes(1)
 })
 
 it('does not mark an already read notice again', async () => {
@@ -344,6 +347,57 @@ it('reports a failed next page and lets the parent try again', async () => {
   expect(screen.getByText('通知1')).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: '加载更多' }))
   expect(await screen.findByText('通知25')).toBeInTheDocument()
+})
+
+/** 两页都加载好:n1–n25,收件箱请求过第 1、2 页各一次 */
+async function openTwoPages() {
+  const pages = twoPages()
+  vi.mocked(noticesApi.inbox).mockImplementation(async (page) => pages(page))
+  renderAt('/parent/notices?child=s1')
+  fireEvent.click(await screen.findByRole('button', { name: '加载更多' }))
+  await screen.findByText('通知25')
+  expect(noticesApi.inbox).toHaveBeenCalledTimes(2)
+}
+
+it('mark read does not refetch pages', async () => {
+  await openTwoPages()
+  const row = screen.getByText('通知1').closest('button')!
+  fireEvent.click(row)
+  await waitFor(() => expect(noticesApi.read).toHaveBeenCalledWith('n1'))
+  // 就地改缓存(L280):这条变已读、全量未读数减一;两页都还在,没有按已加载页数逐页重取
+  await waitFor(() => expect(tab()).toHaveAccessibleName('通知 22 条未读'))
+  expect(row.className).not.toMatch(/font-semibold/)
+  expect(screen.getByText('通知25')).toBeInTheDocument()
+  expect(noticesApi.inbox).toHaveBeenCalledTimes(2)
+})
+
+it('new notice refetches first page only', async () => {
+  await openTwoPages()
+  // 来了 n0:服务端第 1 页现在是 n0 + n1–n19,总数 26,未读 24
+  const all = [
+    item({ id: 'n0', title: '通知0' }),
+    ...Array.from({ length: 25 }, (_, i) => item({ id: `n${i + 1}`, title: `通知${i + 1}` })),
+  ]
+  vi.mocked(noticesApi.inbox).mockImplementation(async (page) => ({
+    items: all.slice((page - 1) * 20, page * 20),
+    total: 26,
+    unread: 24,
+  }))
+  await push({
+    type: 'notice.new',
+    id: 'n0',
+    title: '通知0',
+    from_name: '陈老师',
+    created_at: '2026-11-04T02:00:00Z',
+  })
+  expect(await screen.findByText('通知0')).toBeInTheDocument()
+  // 只重取第 1 页(L280):不再逐页重取已加载的两页;后页丢弃,"加载更多"重新出现
+  expect(noticesApi.inbox).toHaveBeenCalledTimes(3)
+  expect(noticesApi.inbox).toHaveBeenLastCalledWith(1)
+  expect(screen.getByText('通知19')).toBeInTheDocument()
+  expect(screen.queryByText('通知25')).toBeNull()
+  expect(screen.getByRole('button', { name: '加载更多' })).toBeInTheDocument()
+  expect(tab()).toHaveAccessibleName('通知 24 条未读')
 })
 
 it('shows 此通知已撤回 and no ack form for a recalled notice', async () => {

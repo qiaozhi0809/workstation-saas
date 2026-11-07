@@ -7,8 +7,10 @@ import {
   INBOX_KEY,
   inboxItems,
   inboxUnread,
+  markInboxAllRead,
+  markInboxRead,
+  refetchInboxFirstPage,
   useInbox,
-  type InboxPages,
 } from '@/shared/components/notices/useInbox'
 import Popover from '@/shared/components/overlay/Popover'
 import { toast } from '@/shared/components/Toast'
@@ -21,38 +23,23 @@ export default function NoticeBell() {
   const inbox = useInbox()
   const refresh = () => void qc.invalidateQueries({ queryKey: INBOX_KEY })
 
+  // 新通知只重取第 1 页;撤回 / 重连仍整体重取(已加载的任一页都可能变)(L280)
   useRealtimeEvent('notice.new', (e) => {
     toast(`新通知:${e.title}`)
-    refresh()
+    void refetchInboxFirstPage(qc)
   })
   useRealtimeEvent('notice.recalled', refresh)
   useRealtimeEvent('reconnected', refresh)
 
+  // 标已读只就地改缓存(徽标立刻减一),不重取已加载的各页(L280)
   const read = useMutation({
     mutationFn: (id: string) => noticesApi.read(id),
-    onSuccess: (_, id) => {
-      // 先就地改缓存让徽标立刻减一,再重取;每页都带全量 unread,所以每页一起减
-      qc.setQueryData<InboxPages>(INBOX_KEY, (old) => {
-        if (!old) return old
-        const wasUnread = inboxItems(old).some((i) => i.id === id && !i.read_at && !i.recalled)
-        return {
-          ...old,
-          pages: old.pages.map((p) => ({
-            ...p,
-            unread: Math.max(0, p.unread - (wasUnread ? 1 : 0)),
-            items: p.items.map((i) =>
-              i.id === id && !i.read_at ? { ...i, read_at: new Date().toISOString() } : i,
-            ),
-          })),
-        }
-      })
-      refresh()
-    },
+    onSuccess: (_, id) => markInboxRead(qc, id),
     onError: () => toast('标记已读失败,请重试'),
   })
   const readAll = useMutation({
     mutationFn: () => noticesApi.readAll(),
-    onSuccess: refresh,
+    onSuccess: () => markInboxAllRead(qc),
     onError: () => toast('操作失败,请重试'),
   })
 
