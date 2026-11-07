@@ -1245,7 +1245,7 @@ def test_tick_survives_redis_timeout(db, redis_url, fake_ffmpeg, hls_root, tmp_p
     heartbeat = tmp_path / "alive"
 
     async def body(redis):
-        sup = make_supervisor(db, redis, fake_ffmpeg, hls_root)
+        sup = make_supervisor(db, redis, fake_ffmpeg, hls_root, tick_interval=0.05)
         await want(redis, cam)
         task = asyncio.create_task(sup.run(heartbeat))
         await settle(lambda: len(calls(tmp_path)) == 1)
@@ -1260,7 +1260,7 @@ def test_tick_survives_redis_timeout(db, redis_url, fake_ffmpeg, hls_root, tmp_p
         redis.scan_iter = scan_iter
         try:
             before = heartbeat.stat().st_mtime
-            await asyncio.sleep(2.3)
+            await asyncio.sleep(0.3)  # 主循环间隔 0.05 秒:足够跑好几轮失败的 tick
             assert not task.done()
             assert heartbeat.stat().st_mtime > before  # 心跳没停
             assert "tick failed: TimeoutError" in caplog.text
@@ -1285,7 +1285,7 @@ def test_reload_loop_idle_with_socket_timeout(
 
     async def body(_redis):
         redis = AsyncRedis.from_url(
-            redis_url, decode_responses=True, socket_timeout=0.3, socket_connect_timeout=0.3
+            redis_url, decode_responses=True, socket_timeout=0.1, socket_connect_timeout=0.1
         )
         try:
             sup = make_supervisor(db, redis, fake_ffmpeg, hls_root)
@@ -1294,7 +1294,7 @@ def test_reload_loop_idle_with_socket_timeout(
             await settle(lambda: len(calls(tmp_path)) == 1)
             proc = sup._streams[cam.id].proc
             task = asyncio.create_task(sup._reload_loop())
-            await asyncio.sleep(1.2)  # 远超 socket_timeout 的空闲
+            await asyncio.sleep(0.5)  # 远超 socket_timeout(0.1 秒)的空闲
             assert proc.returncode is None and cam.id in sup._streams
             assert "reload subscription lost" not in caplog.text
             for _ in range(50):  # 订阅仍然活着:一条 reload 能停掉旧进程

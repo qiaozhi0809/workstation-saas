@@ -88,6 +88,7 @@ class Supervisor:
         master_key: bytes,
         allow_loopback: bool = False,
         denied_networks: source.Networks = (),
+        tick_interval: float = 1.0,
     ) -> None:
         self._db_factory = db_factory
         self._redis = redis
@@ -98,6 +99,7 @@ class Supervisor:
         self._allow_loopback = allow_loopback
         # 可信代理 / compose 子网:解析到这里的摄像头地址拒绝拉流(L159,与保存时同口径)
         self._denied = tuple(denied_networks)
+        self._tick_interval = tick_interval  # 主循环两轮之间的间隔;测试里调小,免得真等墙钟(L297)
         self._streams: dict[UUID, _Stream] = {}
         self._stopping = asyncio.Event()
         self._lock = (
@@ -401,7 +403,7 @@ class Supervisor:
                 except Exception as exc:
                     log.warning("tick failed: %s", type(exc).__name__)
                 with contextlib.suppress(TimeoutError):
-                    await asyncio.wait_for(self._stopping.wait(), 1)
+                    await asyncio.wait_for(self._stopping.wait(), self._tick_interval)
         finally:
             reload_task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
