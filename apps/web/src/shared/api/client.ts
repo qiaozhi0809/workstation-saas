@@ -146,9 +146,21 @@ export async function authedFetch(
     res = await send(method, path, body, signal, opts)
     if (res.status === 401) throw sessionExpired()
   }
-  if (res.status === 403 && (await errorCodeOf(res)) === 'PASSWORD_CHANGE_REQUIRED')
+  // 先比对不用读体就能知道的条件(状态码、认证接口、本地会话是否存在 / 是否已标记),都过了才 clone 读一次错误码(L303)
+  if (
+    res.status === 403 &&
+    mayNeedPasswordChange(path) &&
+    (await errorCodeOf(res)) === 'PASSWORD_CHANGE_REQUIRED'
+  )
     await markPasswordChangeRequired()
   return res
+}
+
+/** 这个 403 有没有可能是 PASSWORD_CHANGE_REQUIRED:认证接口自己不会返回它;没有会话或已标记改密时也不用再问 */
+function mayNeedPasswordChange(path: string): boolean {
+  if (NO_REFRESH_PATHS.includes(path)) return false
+  const { refreshToken, user } = useAuthStore.getState()
+  return !!refreshToken && !!user && !user.must_change_password
 }
 
 export async function api<T>(
