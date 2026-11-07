@@ -73,6 +73,8 @@ export default function WelcomeDialog() {
   const noClass = classes.data?.items.length === 0
 
   const pick = (value: Figure) => {
+    // 再点已选中的形象:什么也不发(L243)
+    if (value === figure) return
     setPicked(value)
     preferencesApi
       .save({ ...bodyOf(data), teacher_figure: value })

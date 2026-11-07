@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { classesApi } from '@/shared/api/classes'
@@ -133,6 +133,44 @@ it('picks figure', async () => {
       'male',
     ),
   )
+})
+
+// L243:再点已选中的形象不再发一次相同的 PUT
+it('does not PUT again when the same figure is clicked', async () => {
+  renderDialog()
+  const dialog = await screen.findByRole('dialog', { name: '你好,王老师' })
+  // 后端当前就是女老师:点它什么也不发
+  fireEvent.click(within(dialog).getByRole('button', { name: '女老师' }))
+  await act(async () => {})
+  expect(preferencesApi.save).not.toHaveBeenCalled()
+  fireEvent.click(within(dialog).getByRole('button', { name: '男老师' }))
+  await waitFor(() => expect(preferencesApi.save).toHaveBeenCalledTimes(1))
+  // 已经是男老师了:再点不重发
+  fireEvent.click(within(dialog).getByRole('button', { name: '男老师' }))
+  await act(async () => {})
+  expect(preferencesApi.save).toHaveBeenCalledTimes(1)
+  expect(within(dialog).getByRole('button', { name: '男老师' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+})
+
+// L243:自动弹出的对话框没有"打开者",关闭后焦点回到页面主区 #main,而不是落回 <body>
+it('moves focus to the page main region after closing', async () => {
+  const main = document.createElement('main')
+  main.id = 'main'
+  main.tabIndex = -1
+  document.body.appendChild(main)
+  try {
+    renderDialog()
+    const dialog = await screen.findByRole('dialog', { name: '你好,王老师' })
+    expect(main).not.toHaveFocus()
+    fireEvent.click(within(dialog).getByRole('button', { name: '开始' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await waitFor(() => expect(main).toHaveFocus())
+  } finally {
+    main.remove()
+  }
 })
 
 // L242:老师一个班都没有时(ClassGate 会显示"没有可查看的班级"),"你的班级已经由学校配置好"不成立
