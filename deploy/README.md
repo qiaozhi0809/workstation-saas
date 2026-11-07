@@ -296,7 +296,7 @@ tar -xOzf backups/ws-backup-<时间>-v<版本>.tar.gz env > .env && chmod 600 .e
 ./scripts/upgrade.sh /path/to/workstation-deploy-<新版本>.tar.gz
 ```
 
-脚本依次:校验离线包(有 `.sha256` 时核对,命名见第 2 节)→ **强制备份**(失败就停)→ 载入新镜像 → 用新镜像对现有数据库做**迁移预检** → **保存升级前快照**(见下)→ 覆盖程序文件(不动 `.env`、`certs/`、`data/`、`backups/`)→ 重启并确认 app 健康、scheduler 在运行、web 健康(缺一都按失败处理,并打印回退办法)。新版本 `.env.example` 里新增的配置项会按默认值追加进 `.env` 并提示,请核对。`./scripts/upgrade.sh --help` 可看用法。
+脚本依次:校验离线包(有 `.sha256` 时核对,命名见第 2 节)→ **强制备份**(失败就停)→ 载入新镜像 → 用新镜像对现有数据库做**迁移预检** → **保存升级前快照**(见下)→ 覆盖程序文件(不动 `.env`、`certs/`、`data/`、`backups/`)→ 重启并确认 app 健康、scheduler 在运行、web 健康(缺一都按失败处理,并打印回退办法;新版本不再有的服务,其旧容器会在重启时一并清掉)。新版本 `.env.example` 里新增的配置项会按默认值追加进 `.env` 并提示,请核对。`./scripts/upgrade.sh --help` 可看用法。
 
 生效的 `Caddyfile`(反向代理配置)怎么处理:新版本模板有变化时,**没有手工改过**的 `Caddyfile`(与升级前的模板一致)会被替换成新模板,屏幕上提示"Caddyfile 已更新",升级前那份在快照里;**手工改过**的不替换,新模板只保存为 `Caddyfile.internal / .custom / .acme`,屏幕上提示请你把改动合并进去再 `docker compose restart web`(不合并,系统仍按你改过的配置运行,只是用不上新模板里的调整)。
 

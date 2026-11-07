@@ -583,16 +583,17 @@ require_compose_version() {
 # 为什么要两次 up:第一次 up 时 scheduler 依赖 app 健康,app 启动期迁移较久时 compose 可能先报错返回,
 # 此时只告警;等 app 健康后再 up 一次(这次失败直接 die),才能保证 scheduler 真的被创建并运行。
 # 之后断言:scheduler、stream-worker 在运行、web 健康,否则不能报"完成"。
+# --remove-orphans(L310):新版本去掉了某个服务时,它的旧容器不能留在项目里继续跑。
 start_and_verify() {
   local limit="$1" out
-  if ! out="$(compose up -d --pull never 2>&1)"; then
+  if ! out="$(compose up -d --pull never --remove-orphans 2>&1)"; then
     log_warn "docker compose up 返回非 0(app 启动期间可能暂时如此,稍后会再启动一次),最后几行输出:"
     printf '%s\n' "$out" | tail -n 8 | redact >&2
   fi
   if ! wait_healthy app "$limit"; then
     die "应用服务(app)在 ${limit} 秒内没有就绪。请运行 docker compose -p ${WS_COMPOSE_PROJECT:-workstation} --project-directory '$DEPLOY_DIR' logs app 查看原因"
   fi
-  if ! out="$(compose up -d --pull never 2>&1)"; then
+  if ! out="$(compose up -d --pull never --remove-orphans 2>&1)"; then
     printf '%s\n' "$out" | tail -n 8 | redact >&2
     die "应用已就绪,但启动其余服务(scheduler、stream-worker、web)失败。请运行 docker compose -p ${WS_COMPOSE_PROJECT:-workstation} --project-directory '$DEPLOY_DIR' ps -a 与 logs 查看原因"
   fi

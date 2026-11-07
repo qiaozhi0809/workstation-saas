@@ -38,6 +38,16 @@ grep -v '^WS_SUBNET=' "$DEPLOY/.env" >"$TMP/env.nosubnet"
 cat "$TMP/env.nosubnet" >"$DEPLOY/.env"
 rm -f "$TMP/env.nosubnet"
 ! grep -q '^WS_SUBNET=' "$DEPLOY/.env" || fail "测试自身问题:WS_SUBNET 没有从 .env 里去掉"
+# L310:模拟"新版本去掉了某个服务":在已部署的 compose 里临时加一个服务并起容器,新包的 compose 里没有它,
+# 升级重启后它的容器应被清理(start_and_verify 的 --remove-orphans),而不是留下来
+awk '{ print } /^services:$/ { print "  ws-orphan-probe:"; print "    image: redis:7-alpine"; print "    command: [\"sleep\", \"3600\"]"; print "    networks: [ws-net]" }' \
+  "$DEPLOY/docker-compose.yml" >"$TMP/compose.orphan"
+grep -q 'ws-orphan-probe' "$TMP/compose.orphan" || fail "测试自身问题:没能把临时服务加进 compose 文件"
+cat "$TMP/compose.orphan" >"$DEPLOY/docker-compose.yml"
+rm -f "$TMP/compose.orphan"
+dc up -d ws-orphan-probe >"$TMP/orphan-up.log" 2>&1 || { tail -n 10 "$TMP/orphan-up.log" >&2; fail "测试自身问题:起临时服务 ws-orphan-probe 失败"; }
+orphan_filter=(--filter "label=com.docker.compose.project=$PROJECT" --filter "label=com.docker.compose.service=ws-orphan-probe")
+[ -n "$(docker ps -q "${orphan_filter[@]}")" ] || fail "测试自身问题:临时服务 ws-orphan-probe 的容器没有在运行"
 env_sha="$(sha256_of "$DEPLOY/.env")"
 env_rest_sha="$(grep -v -e '^WS_VERSION=' -e '^WS_SUBNET=' "$DEPLOY/.env" | { if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi; })"
 caddy_sha="$(sha256_of "$DEPLOY/Caddyfile")"
@@ -57,6 +67,9 @@ newest="$(ls -1t "$DEPLOY"/backups/ws-backup-*.tar.gz | head -n 1)"
 [ -s "$newest" ] || fail "备份文件为空"
 pass "升级前已生成备份"
 grep -q 'upgraded-marker' "$DEPLOY/docker-compose.yml" || fail "docker-compose.yml 没有被新包覆盖"
+# L310:新包的 compose 里没有 ws-orphan-probe,升级重启后它的容器(含已停止的)应已被清理
+[ -z "$(docker ps -a -q "${orphan_filter[@]}")" ] || fail "升级后仍残留不在新 compose 里的孤儿容器 ws-orphan-probe(start_and_verify 的 compose up 缺 --remove-orphans)"
+pass "升级重启清掉了新 compose 里不存在的服务的容器(--remove-orphans)"
 [ "$(env_value WS_VERSION)" = "$NEWV" ] || fail "升级后 .env 的 WS_VERSION 应为 $NEWV,实际 $(env_value WS_VERSION)"
 [ "$(sha256_of "$DEPLOY/.env")" != "$env_sha" ] || fail "WS_VERSION 变了,.env 的哈希却没变,不合理"
 [ "$(grep -v -e '^WS_VERSION=' -e '^WS_SUBNET=' "$DEPLOY/.env" | { if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi; })" = "$env_rest_sha" ] \
