@@ -117,6 +117,14 @@ def auto_teacher(db: Session, cls: SchoolClass, year: AcademicYear, subject: str
     return _auto(_assignments(db, cls.id, year.id), subject)
 
 
+def allowed_subjects(
+    db: Session, cls: SchoolClass, assignments: Sequence[tuple[UUID, str, str | None]]
+) -> set[str]:
+    """可排进课表的科目(L210 / L291)= 本班科目(考试科目表 / 目录)∪ 本班在任老师登记的任教科目:
+    组织架构里有"信息技术"老师、考试科目表没有这门课,也该能排进课表。整班保存与 CSV 导入共用。"""
+    return {s.name for s in class_subjects(db, cls)} | {subj for _, _, subj in assignments if subj}
+
+
 def _auto(assignments: Sequence[tuple[UUID, str, str | None]], subject: str) -> UUID | None:
     matches = {tid for tid, _, subj in assignments if subj == subject}
     return next(iter(matches)) if len(matches) == 1 else None
@@ -249,11 +257,7 @@ def save_class_timetable(
     merge_subjects(db, cls, [])
     periods = defined_period_nos(db, cls.school_id)
     assignments = _assignments(db, cls.id, year.id)
-    # 可排的科目 = 本班科目(考试科目表 / 目录)∪ 本班在任老师登记的任教科目(L210):
-    # 组织架构里有"信息技术"老师、考试科目表没有这门课,也该能排进课表
-    subjects = {s.name for s in class_subjects(db, cls)} | {
-        subj for _, _, subj in assignments if subj
-    }
+    subjects = allowed_subjects(db, cls, assignments)
     seen: set[tuple[int, int]] = set()
     for c in cells:
         if c.period_no not in periods:

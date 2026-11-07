@@ -8,7 +8,6 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.audit.service import record
-from app.domain.exams.subjects import class_subjects
 from app.domain.timetable import service
 from app.domain.timetable.schemas import (
     CellInput,
@@ -151,10 +150,10 @@ def import_rows(
             fail(r.line, f"第 {r.period_no} 节没有在作息时间中设置")
             continue
         if cls.id not in subjects:
-            subjects[cls.id] = {s.name for s in class_subjects(db, cls)}
             assignments[cls.id] = service._assignments(db, cls.id, year.id)
+            subjects[cls.id] = service.allowed_subjects(db, cls, assignments[cls.id])
         if r.subject not in subjects[cls.id]:
-            fail(r.line, f"「{r.subject}」不是{cls.name}的科目")
+            fail(r.line, f"「{r.subject}」不是{cls.name}的科目,也没有在任老师任教它")
             continue
         key = (cls.id, r.weekday, r.period_no)
         if key in seen:
