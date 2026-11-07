@@ -486,17 +486,22 @@ render_systemd_unit() {
 
 # backup_timezone:定时备份用的时区 = .env 的 TZ(容器也用它),不合法或为空时 Asia/Shanghai。
 # 形状合法还不够:systemd 的 OnCalendar 只认 tzdata 里有的名字,写错(如 Asia/Shangai)定时器会整个加载失败;
-# 本机有 tzdata 时顺带核对,没有该文件就退回默认值并告警。
+# 本机有 tzdata 时顺带核对,没有该文件就退回默认值。只算不说:本函数常在 $(...) 里被调用好几次,告警放这里会重复打印
+#(L312),由 warn_bad_backup_timezone 在写定时器之前打一次。
 backup_timezone() {
   local tz
   tz="$(read_env TZ)"
   if ! str_grep "$tz" -Eq '^[A-Za-z][A-Za-z0-9_+/-]*$'; then printf 'Asia/Shanghai\n'; return 0; fi
-  if [ -d /usr/share/zoneinfo ] && [ ! -f "/usr/share/zoneinfo/$tz" ]; then
-    log_warn ".env 里的 TZ=$tz 在本机 tzdata(/usr/share/zoneinfo)里不存在,定时备份按 Asia/Shanghai 计;请核对 TZ 的拼写"
-    printf 'Asia/Shanghai\n'
-    return 0
-  fi
+  if [ -d /usr/share/zoneinfo ] && [ ! -f "/usr/share/zoneinfo/$tz" ]; then printf 'Asia/Shanghai\n'; return 0; fi
   printf '%s\n' "$tz"
+}
+# warn_bad_backup_timezone:.env 里写了 TZ 但不是合法时区名、或本机 tzdata 里没有它时告警一次(直接调用,不要放进 $(...))
+warn_bad_backup_timezone() {
+  local tz
+  tz="$(read_env TZ)"
+  [ -n "$tz" ] && [ "$(backup_timezone)" != "$tz" ] || return 0
+  log_warn ".env 里的 TZ=$tz 不是合法的时区名,或在本机 tzdata(/usr/share/zoneinfo)里不存在,定时备份按 Asia/Shanghai 计;请核对 TZ 的拼写"
+  return 0
 }
 
 # ---- systemd 定时备份单元(install.sh 首装写入,upgrade.sh 成功后重写,L184 / I-1)----
@@ -504,11 +509,12 @@ SYSTEMD_UNIT_DIR="/etc/systemd/system"
 # systemd_available:本机由 systemd 管理且有 systemctl
 systemd_available() { command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; }
 # backup_timer_installed_here:系统里已有 workstation-backup 定时器单元,且它指向的就是本部署目录
-#(同一台机器上另一个部署的单元不算;非 root 安装从来不写单元,所以普通用户执行时通常为假)
+#(同一台机器上另一个部署的单元不算;非 root 安装从来不写单元,所以普通用户执行时通常为假)。
+# 只看 ExecStart= 行(L312):Description、注释里提到本目录不算;路径按子串比对,不经正则(目录名里可能有 . 等字符)
 backup_timer_installed_here() {
   local svc="$SYSTEMD_UNIT_DIR/workstation-backup.service"
   [ -f "$svc" ] && [ -f "$SYSTEMD_UNIT_DIR/workstation-backup.timer" ] || return 1
-  grep -qF -- "$DEPLOY_DIR/scripts/backup.sh" "$svc" 2>/dev/null
+  awk -v p="$DEPLOY_DIR/scripts/backup.sh" 'index($0, "ExecStart=") == 1 && index($0, p) > 0 { found = 1 } END { exit found ? 0 : 1 }' "$svc" 2>/dev/null
 }
 # write_backup_timer_units [--no-enable]:把 systemd/ 下两份模板按本部署目录与 .env 的 TZ 渲染后写入系统目录,daemon-reload
 # 并启用(enable --now);带 --no-enable 时只写入与 daemon-reload,启用状态保持原样(L311)。
@@ -538,6 +544,7 @@ backup_timer_state() {
 refresh_backup_timer_if_installed() {
   local state
   [ "$(id -u)" -eq 0 ] && systemd_available && backup_timer_installed_here || return 0
+  warn_bad_backup_timezone
   state="$(backup_timer_state)"
   case "$state" in
     enabled|enabled-runtime)

@@ -125,8 +125,8 @@ UNIT_DIR=/etc/systemd/system
 if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ] && sudo -n true 2>/dev/null \
   && [ ! -e "$UNIT_DIR/workstation-backup.timer" ] && [ ! -e "$UNIT_DIR/workstation-backup.service" ]; then
   expect_tz="$(env_value TZ 2>/dev/null || true)"; [ -n "$expect_tz" ] || expect_tz="Asia/Shanghai"
-  write_old_units() {  # $1=单元里指向的部署目录
-    printf '[Unit]\nDescription=old\n[Service]\nType=oneshot\nWorkingDirectory=%s\nExecStart="%s/scripts/backup.sh"\n' "$1" "$1" \
+  write_old_units() {  # $1=单元里指向的部署目录;$2=Description(可选)
+    printf '[Unit]\nDescription=%s\n[Service]\nType=oneshot\nWorkingDirectory=%s\nExecStart="%s/scripts/backup.sh"\n' "${2:-old}" "$1" "$1" \
       | sudo -n tee "$UNIT_DIR/workstation-backup.service" >/dev/null
     printf '[Unit]\nDescription=old timer\n[Timer]\nOnCalendar=*-*-* 02:30:00\nPersistent=true\nUnit=workstation-backup.service\n[Install]\nWantedBy=timers.target\n' \
       | sudo -n tee "$UNIT_DIR/workstation-backup.timer" >/dev/null
@@ -141,12 +141,13 @@ if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ] && sudo -n
     sudo -n env WS_COMPOSE_PROJECT="$PROJECT" bash -c 'cd "$1" && . scripts/lib.sh && refresh_backup_timer_if_installed' _ "$DEPLOY" >"$1" 2>&1
   }
   err=""
-  # (a) 指向别的部署目录的单元:不动
-  write_old_units "/opt/some-other-deploy"
+  # (a) 指向别的部署目录的单元:不动。Description 里故意写上本部署目录的 backup.sh 路径:识别"是不是本部署的单元"
+  #     必须看 ExecStart= 行,不能全文子串匹配(L312)
+  write_old_units "/opt/some-other-deploy" "old unit, migrated from $DEPLOY/scripts/backup.sh"
   other_sha="$(sudo -n cat "$UNIT_DIR/workstation-backup.timer" | { if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi; })"
   run_refresh "$TMP/timer-refresh-other.log" || err="别的部署的单元存在时函数应静默返回 0"
   [ "$(sudo -n cat "$UNIT_DIR/workstation-backup.timer" | { if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi; })" = "$other_sha" ] \
-    || err="${err:-指向别的部署目录的单元不应被重写}"
+    || err="${err:-指向别的部署目录的单元不应被重写(即使 Description 里提到本部署目录)}"
   # (b) 指向本部署目录、不带时区、已启用的旧单元(1.0.0 之前的 install.sh 是 enable --now 写入的):重写为带时区并仍 enabled
   if [ -z "$err" ]; then
     write_old_units "$DEPLOY"
@@ -160,6 +161,24 @@ if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ] && sudo -n
       || err="重写后的 timer 应含 OnCalendar=*-*-* 02:30:00 $expect_tz,实际:$(sudo -n grep OnCalendar "$UNIT_DIR/workstation-backup.timer" || true)"
     [ -n "$err" ] || sudo -n grep -q "^WorkingDirectory=$DEPLOY\$" "$UNIT_DIR/workstation-backup.service" || err="重写后的 service 应指向本部署目录"
     [ -n "$err" ] || [ "$(systemctl is-enabled workstation-backup.timer 2>/dev/null || true)" = "enabled" ] || err="重写后 workstation-backup.timer 应为 enabled"
+  fi
+  # (b2) L312:.env 的 TZ 拼错(tzdata 里没有)时只告警一次,定时器按 Asia/Shanghai 渲染;之后把 .env 原样放回
+  if [ -z "$err" ] && [ -d /usr/share/zoneinfo ]; then
+    cp -p "$DEPLOY/.env" "$TMP/env.tzsaved"
+    if grep -q '^TZ=' "$DEPLOY/.env"; then
+      awk '/^TZ=/ { print "TZ=Asia/Shangai"; next } { print }' "$TMP/env.tzsaved" >"$TMP/env.tzbad"
+    else
+      { cat "$TMP/env.tzsaved"; printf 'TZ=Asia/Shangai\n'; } >"$TMP/env.tzbad"
+    fi
+    cat "$TMP/env.tzbad" >"$DEPLOY/.env"
+    rc=0; run_refresh "$TMP/timer-refresh-badtz.log" || rc=$?
+    cat "$TMP/env.tzsaved" >"$DEPLOY/.env"
+    rm -f "$TMP/env.tzsaved" "$TMP/env.tzbad"
+    [ "$rc" -eq 0 ] || err="TZ 拼错时 refresh_backup_timer_if_installed 退出码 $rc(应降级为告警并按 Asia/Shanghai 继续)"
+    n_warn="$(grep -c 'Asia/Shangai' "$TMP/timer-refresh-badtz.log" || true)"
+    [ -n "$err" ] || [ "$n_warn" = "1" ] || err="TZ 拼错的告警应只打一次,实际 $n_warn 次(L312)"
+    [ -n "$err" ] || sudo -n grep -q '^OnCalendar=\*-\*-\* 02:30:00 Asia/Shanghai$' "$UNIT_DIR/workstation-backup.timer" \
+      || err="TZ 拼错时 timer 应按 Asia/Shanghai 渲染,实际:$(sudo -n grep OnCalendar "$UNIT_DIR/workstation-backup.timer" || true)"
   fi
   # (c) L311:管理员手动停用(systemctl disable)的旧单元:只重写单元文件(时区补上),不 enable --now,输出提示怎样恢复
   if [ -z "$err" ]; then
@@ -178,8 +197,8 @@ if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ] && sudo -n
       || err="disabled 分支:管理员停用的定时器不应被升级重新启用(实际 $(systemctl is-enabled workstation-backup.timer 2>/dev/null || true))"
   fi
   remove_units
-  [ -z "$err" ] || { cat "$TMP/timer-refresh.log" "$TMP/timer-refresh-other.log" "$TMP/timer-refresh-disabled.log" 2>/dev/null | tail -n 15 >&2; fail "$err"; }
-  pass "root 下升级成功后的定时器重写:已启用的旧单元改为 OnCalendar 带 $expect_tz 并仍 enabled;停用的只重写文件、保持 disabled 并提示;别的部署的单元未动"
+  [ -z "$err" ] || { cat "$TMP/timer-refresh.log" "$TMP/timer-refresh-other.log" "$TMP/timer-refresh-badtz.log" "$TMP/timer-refresh-disabled.log" 2>/dev/null | tail -n 15 >&2; fail "$err"; }
+  pass "root 下升级成功后的定时器重写:已启用的旧单元改为 OnCalendar 带 $expect_tz 并仍 enabled;TZ 拼错只告警一次;停用的只重写文件、保持 disabled 并提示;别的部署的单元(Description 提到本目录)未动"
 else
   echo "  跳过:本机没有 systemd / 免密 sudo,或已有真实的 workstation-backup 单元;只验证了 upgrade.sh 的调用位置"
 fi
