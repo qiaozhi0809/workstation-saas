@@ -47,8 +47,8 @@ const skipWithoutChrome = () =>
 // 本文件改的共享数据:学校"监控"开关、摄像头(名字都以 E2E 开头)、学校作息、三年二班课表。
 // 每个用例结束在 finally 里还原;beforeEach / afterEach 再按本文件开跑前的快照兜底一次
 // (顺序:先开着开关删 E2E 摄像头 → 清课表 → 还原作息 → 还原课表 → 还原开关)。
-// 时钟 / 时区假设(用例 2):节次按学校时区的"现在"前 2 分钟到后 20 分钟建,夹在 00:00–23:59 内;
-// 学校时区 23:58 以后开跑会跨到第二天(星期几变了)而失败,重跑即可。
+// 时钟 / 时区假设(用例 2):星期几取服务端学校时区的"今天",节次按学校时区的"现在"前 2 分钟到后 20 分钟建,
+// 夹在 00:00–23:59 内;学校时区 23:55 以后开跑会跨到第二天(星期几变了),这条用例 skip 而不是红,过了零点重跑即可。
 // 单个用例要等真流出首帧(最多两次 30 秒)加"测试连接"(最多 10 秒),默认 30 秒的用例超时不够
 test.describe.configure({ mode: 'serial', timeout: 120_000 })
 
@@ -175,7 +175,10 @@ async function classroomCameraCount(page: Page, action: () => Promise<unknown>):
   return body.cameras
 }
 
-/** 学校时区里的"现在":ISO 星期几(1–7)取自学校的"今天",HH:MM 取同一时区的当前时刻。 */
+/** 学校时区这个时刻(含)之后不建"现在"的节次:节次会撞到 23:59 的边界,用例跑着跑着就跨日了 */
+const LAST_SAFE_HHMM = '23:55'
+
+/** 学校时区里的"现在":ISO 星期几(1–7)取自服务端给的学校"今天",HH:MM 取同一时区的当前时刻。 */
 function schoolNow(clock: { today: string; timezone: string }): { weekday: number; hhmm: string } {
   const day = new Date(`${clock.today}T00:00:00Z`).getUTCDay()
   const hhmm = new Intl.DateTimeFormat('en-GB', {
@@ -248,16 +251,22 @@ test('subject teacher sees the camera only in the timetabled period; reassigning
   request,
 }) => {
   skipWithoutChrome()
+  // 先看学校时区的钟再动数据:太晚就整条跳过,什么都不建
+  const teacher03 = await login(request, 'teacher03')
+  const clock = await schoolClock(request, teacher03, CLASS_3_2)
+  const { weekday, hhmm } = schoolNow(clock)
+  test.skip(
+    hhmm >= LAST_SAFE_HHMM,
+    `学校时区(${clock.timezone})已是 ${hhmm},节次会跨日,过了零点再跑这条`,
+  )
   await setMonitor(request, true)
   const principal = await login(request, 'principal01')
   const it = await login(request, 'itadmin01')
-  const teacher03 = await login(request, 'teacher03')
   const camera = await addCamera(request, it, CLASS_3_2)
   let session: Session | undefined
   try {
     // 用学校时区的"现在"建第 1 节(现在前 2 分钟到后 20 分钟),课表格 = 今天第 1 节数学;
     // 没有"该班该科任课老师 teachers.id"的接口,teacher_id 省略,由后端按在任任职唯一匹配(三年二班数学只有赵老师)
-    const { weekday, hhmm } = schoolNow(await schoolClock(request, teacher03, CLASS_3_2))
     await putPeriods(request, principal, [
       { no: 1, starts_at: shiftMinutes(hhmm, -2), ends_at: shiftMinutes(hhmm, 20) },
     ])
