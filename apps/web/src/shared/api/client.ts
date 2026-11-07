@@ -159,8 +159,8 @@ export async function authedFetch(
 /** 这个 403 有没有可能是 PASSWORD_CHANGE_REQUIRED:认证接口自己不会返回它;没有会话或已标记改密时也不用再问 */
 function mayNeedPasswordChange(path: string): boolean {
   if (NO_REFRESH_PATHS.includes(path)) return false
-  const { refreshToken, user } = useAuthStore.getState()
-  return !!refreshToken && !!user && !user.must_change_password
+  const { user } = useAuthStore.getState()
+  return !!user && !user.must_change_password
 }
 
 export async function api<T>(
