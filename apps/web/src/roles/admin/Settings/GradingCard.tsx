@@ -75,8 +75,8 @@ export default function GradingCard() {
         pass_ratio: Number(value.pass) / 100,
         good_ratio: Number(value.good) / 100,
       })
+      // PUT 返回的就是服务端的最新值,直接写进缓存;再 invalidate 只会紧接着多发一次 GET /school/grading(L238)
       qc.setQueryData(GRADING_QUERY_KEY, next)
-      void qc.invalidateQueries({ queryKey: GRADING_QUERY_KEY })
       setDraft(null)
       toast('已保存')
     } catch (err) {

@@ -532,6 +532,22 @@ it('edit full marks', async () => {
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 })
 
+// L238 / L234:表单不再自己读年级表(以前有 org.manage 的用户每次打开都按 staleTime 0 重取 ['admin','grades']);
+// 页面级的 GET /school/grades 也不因为开关对话框而重取
+it('grades not refetched on reopen', async () => {
+  useAuthStore.setState({ user: { admin_perms: ['org.manage'] } as never })
+  await renderPage()
+  for (let i = 0; i < 2; i++) {
+    fireEvent.click(screen.getByRole('button', { name: '新建联考' }))
+    const dlg = await screen.findByRole('dialog')
+    await within(dlg).findByRole('checkbox', { name: '语文' })
+    fireEvent.click(within(dlg).getByRole('button', { name: '取消' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  }
+  expect(adminApi.grades).not.toHaveBeenCalled()
+  expect(adminApi.schoolGrades).toHaveBeenCalledTimes(1)
+})
+
 it('new exam form shows catalog full marks read-only', async () => {
   await renderPage()
   fireEvent.click(screen.getByRole('button', { name: '新建联考' }))

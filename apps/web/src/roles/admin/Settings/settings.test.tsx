@@ -486,9 +486,7 @@ it('grading card validates', async () => {
   expect(save).toBeDisabled()
   expect(schoolApi.saveGrading).not.toHaveBeenCalled()
 
-  // 合法:发两位小数的比例,保存后失效 ['school','grading'](重取时后端已是新值)
-  const invSpy = vi.spyOn(client, 'invalidateQueries')
-  vi.mocked(schoolApi.grading).mockResolvedValue({ pass_ratio: 0.7, good_ratio: 0.9 })
+  // 合法:发两位小数的比例,保存后 PUT 的返回值直接进 ['school','grading'] 缓存
   fireEvent.change(card.getByLabelText('优秀线(%)'), { target: { value: '90' } })
   expect(card.queryByRole('alert')).toBeNull()
   fireEvent.click(save)
@@ -496,8 +494,25 @@ it('grading card validates', async () => {
     expect(schoolApi.saveGrading).toHaveBeenCalledWith({ pass_ratio: 0.7, good_ratio: 0.9 }),
   )
   expect(toast).toHaveBeenCalledWith('已保存')
-  expect(invSpy).toHaveBeenCalledWith({ queryKey: ['school', 'grading'] })
   expect(client.getQueryData(['school', 'grading'])).toEqual({ pass_ratio: 0.7, good_ratio: 0.9 })
+})
+
+// L238:保存后用 PUT 的返回值写缓存即可,不再 invalidate → 不会紧接着多发一次 GET /school/grading
+it('save issues no extra GET', async () => {
+  vi.mocked(schoolApi.saveGrading).mockResolvedValue({ pass_ratio: 0.7, good_ratio: 0.9 })
+  await renderPage()
+  const card = within(await gradingCard())
+  expect(schoolApi.grading).toHaveBeenCalledTimes(1)
+  fireEvent.change(card.getByLabelText('及格线(%)'), { target: { value: '70' } })
+  fireEvent.change(card.getByLabelText('优秀线(%)'), { target: { value: '90' } })
+  fireEvent.click(card.getByRole('button', { name: '保存及格线' }))
+  await waitFor(() => expect(toast).toHaveBeenCalledWith('已保存'))
+  await waitFor(() => expect(card.getByRole('button', { name: '保存及格线' })).toBeDisabled())
+  expect(client.getQueryData(['school', 'grading'])).toEqual({ pass_ratio: 0.7, good_ratio: 0.9 })
+  expect(client.getQueryState(['school', 'grading'])?.isInvalidated).toBe(false)
+  expect(schoolApi.grading).toHaveBeenCalledTimes(1)
+  expect(card.getByLabelText('及格线(%)')).toHaveValue(70)
+  expect(card.getByLabelText('优秀线(%)')).toHaveValue(90)
 })
 
 it('shows the backend message when saving the grading fails', async () => {
