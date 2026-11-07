@@ -635,6 +635,17 @@ export interface SystemInfo {
   } | null
 }
 
+// ---- 开学准备清单(今日关注顶部;L286) ----
+export type SetupKey =
+  'school' | 'year' | 'classes' | 'accounts' | 'assignments' | 'timetable' | 'cameras' | 'ai'
+/** `GET /admin/setup-checklist` 的一项:done 之外的现状文字由后端给,`to` 是管理端路径 */
+export interface SetupItem {
+  key: SetupKey
+  done: boolean
+  detail: string
+  to: string
+}
+
 export interface SecuritySettings {
   totp_allowed: boolean
   /** 8..32 */

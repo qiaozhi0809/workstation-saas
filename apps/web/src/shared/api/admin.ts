@@ -40,6 +40,7 @@ import type {
   ScoreSummary,
   StaffInput,
   SecuritySettings,
+  SetupItem,
   Switches,
   TagPool,
   TagPoolSave,
@@ -172,6 +173,7 @@ export const adminApi = {
   resetTotp: (userId: string) =>
     api<{ ok: true }>('POST', `/admin/accounts/${seg(userId)}/totp-reset`),
   today: () => api<TodayView>('GET', '/admin/today'),
+  setupChecklist: () => api<SetupItem[]>('GET', '/admin/setup-checklist'),
   board: (gradeId?: string | null) =>
     api<BoardView>('GET', `/admin/board${qs({ grade_id: gradeId })}`),
   /** 只读年级列表(school.view 即可;按可见年级裁剪):考勤报告 / 联考页的年级筛选用它,看板查询只在看板用(L272) */
