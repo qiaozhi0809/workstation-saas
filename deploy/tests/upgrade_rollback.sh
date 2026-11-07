@@ -102,6 +102,20 @@ grep -q 'bad-marker' "$DEPLOY/docker-compose.yml" || fail "未确认的 rollback
 [ "$(env_value WS_VERSION)" = "$BADV" ] || fail "未确认的 rollback.sh 不应改动 WS_VERSION"
 [ -f "$STATE" ] || fail "未确认的 rollback.sh 不应删除状态文件"
 pass "未确认时 rollback.sh 拒绝(提示 --yes),文件、WS_VERSION、状态文件都没动"
+# L309:回退要用旧版的 app / web / stream 三个镜像,缺一个都应在动手之前拒绝并点名。去掉 web 的旧版标签
+#(镜像本体还被运行中的容器引用,只是没了这个标签),rollback 应拒绝;之后把标签补回去
+web_id="$(docker image inspect -f '{{.Id}}' "workstation-web:$VERSION")" || fail "测试自身问题:读不到 workstation-web:$VERSION 的镜像 id"
+docker image rm -f "workstation-web:$VERSION" >/dev/null || fail "测试自身问题:去掉 workstation-web:$VERSION 标签失败"
+rc=0
+( cd "$DEPLOY" && ./scripts/rollback.sh "$SNAP" --yes ) >"$TMP/rollback-noimg.log" 2>&1 || rc=$?
+docker tag "$web_id" "workstation-web:$VERSION" || fail "测试自身问题:恢复 workstation-web:$VERSION 标签失败"
+[ "$rc" -ne 0 ] || fail "缺少旧版 web 镜像时 rollback.sh 应拒绝,实际退出码 0"
+grep -q "workstation-web:$VERSION" "$TMP/rollback-noimg.log" || { tail -n 10 "$TMP/rollback-noimg.log" >&2; fail "拒绝提示应点名缺少的镜像 workstation-web:$VERSION"; }
+grep -q 'bad-marker' "$DEPLOY/docker-compose.yml" || fail "缺镜像被拒时不应改动 compose 文件"
+[ "$(env_value WS_VERSION)" = "$BADV" ] || fail "缺镜像被拒时不应改动 WS_VERSION"
+[ -f "$STATE" ] || fail "缺镜像被拒时不应删除状态文件"
+assert_no_secrets "rollback(缺镜像)输出" "$TMP/rollback-noimg.log"
+pass "缺少旧版 web 镜像:rollback.sh 在动手之前拒绝并点名 workstation-web:$VERSION,文件、WS_VERSION、状态文件都没动"
 rc=0
 ( cd "$DEPLOY" && ./scripts/rollback.sh "$SNAP" --yes ) >"$TMP/rollback1.log" 2>&1 || rc=$?
 if [ "$rc" -ne 0 ]; then tail -n 30 "$TMP/rollback1.log" >&2; fail "rollback.sh 退出码 $rc(期望 0)"; fi
