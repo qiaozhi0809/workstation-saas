@@ -12,6 +12,7 @@ from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import Engine, inspect, text
 from sqlalchemy.engine import make_url
@@ -264,6 +265,11 @@ def collect_logs(log_dir: Path | None, now: datetime) -> bytes:
 
 def _dump(obj: Any) -> bytes:
     return json.dumps(obj, ensure_ascii=False, indent=2, default=str).encode("utf-8")
+
+
+def bundle_filename(now: datetime, tz: ZoneInfo) -> str:
+    """下载文件名里的时刻用学校本地时间(L114):管理员对照的是墙上的钟,不是 UTC。"""
+    return f"ws-diagnostics-{now.astimezone(tz):%Y%m%d-%H%M%S}.zip"
 
 
 def build_bundle(engine: Engine, settings: Settings, now: datetime) -> bytes:
