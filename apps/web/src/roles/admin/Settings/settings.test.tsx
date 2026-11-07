@@ -595,6 +595,42 @@ it('catalog card edits stage list', async () => {
   await waitFor(() => expect(save).toBeDisabled())
 })
 
+// L239(Q2):科目可以改名(与标签池同款对话框),改完和其他改动一起 PUT 整份目录;不追溯已有班级,所以没有合并语义
+it('rename subject', async () => {
+  vi.mocked(schoolApi.saveSubjectCatalog).mockImplementation(async (c) => c)
+  await renderPage()
+  const card = within(await catalogCard())
+  fireEvent.click(card.getByRole('button', { name: '改名 数学' }))
+  const dlg = await screen.findByRole('dialog', { name: '改名「数学」' })
+  expect(within(dlg).getByLabelText('新名称')).toHaveValue('数学')
+  // 同学段重名、空名都不放行
+  fireEvent.change(within(dlg).getByLabelText('新名称'), { target: { value: '语文' } })
+  fireEvent.click(within(dlg).getByRole('button', { name: '确定' }))
+  expect(within(dlg).getByRole('alert')).toHaveTextContent('这个学段已经有这门科目')
+  fireEvent.change(within(dlg).getByLabelText('新名称'), { target: { value: '  ' } })
+  fireEvent.click(within(dlg).getByRole('button', { name: '确定' }))
+  expect(within(dlg).getByRole('alert')).toHaveTextContent('科目名要在 1–10 个字')
+  fireEvent.change(within(dlg).getByLabelText('新名称'), { target: { value: ' 数学与逻辑 ' } })
+  fireEvent.click(within(dlg).getByRole('button', { name: '确定' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  // 顺序与满分都保留,只换名字;保存按钮因此可用
+  expect(subjectNames(card)).toEqual(['语文', '数学与逻辑'])
+  expect(card.getByLabelText('数学与逻辑 满分')).toHaveValue(100)
+  expect(card.getByRole('button', { name: '改名 数学与逻辑' })).toBeInTheDocument()
+  fireEvent.click(card.getByRole('button', { name: '保存科目目录' }))
+  await waitFor(() =>
+    expect(schoolApi.saveSubjectCatalog).toHaveBeenCalledWith({
+      primary: [
+        { name: '语文', full: 100 },
+        { name: '数学与逻辑', full: 100 },
+      ],
+      junior: [{ name: '语文', full: 120 }],
+      senior: [{ name: '语文', full: 150 }],
+    }),
+  )
+  expect(toast).toHaveBeenCalledWith('已保存')
+})
+
 it('rejects a bad full mark in the catalog before saving', async () => {
   await renderPage()
   const card = within(await catalogCard())

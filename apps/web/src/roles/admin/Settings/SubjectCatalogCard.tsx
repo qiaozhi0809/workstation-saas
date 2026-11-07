@@ -5,6 +5,7 @@ import { ApiError } from '@/shared/api/client'
 import { schoolApi } from '@/shared/api/school'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
+import Modal from '@/shared/components/overlay/Modal'
 import { toast } from '@/shared/components/Toast'
 import { Button } from '@/shared/components/ui/button'
 import {
@@ -15,6 +16,7 @@ import {
   CardTitle,
 } from '@/shared/components/ui/card'
 import { Input } from '@/shared/components/ui/input'
+import { Label } from '@/shared/components/ui/label'
 import { SegmentedTabs } from '@/shared/components/ui/segmented-tabs'
 import type { SubjectFull } from '@/shared/types/grades'
 import { STAGES, STAGE_LABEL, type Stage, type SubjectCatalog } from '@/shared/types/school'
@@ -26,6 +28,13 @@ const NAME_MAX = 10
 const FULL_MSG = '满分须为 1–1000 的整数'
 const validFull = (n: number) => Number.isInteger(n) && n >= 1 && n <= 1000
 const nameLen = (s: string) => Array.from(s).length
+/** 科目名校验(添加与改名共用):长度 1–10,同学段不重名;'' 表示合法 */
+function validateName(name: string, others: string[]): string {
+  const n = nameLen(name)
+  if (n < 1 || n > NAME_MAX) return `科目名要在 1–${NAME_MAX} 个字`
+  if (others.includes(name)) return '这个学段已经有这门科目'
+  return ''
+}
 
 /** 草稿里满分先存字符串,保存时再转数字校验 */
 type DraftList = { name: string; full: string }[]
@@ -65,6 +74,10 @@ export default function SubjectCatalogCard() {
   const [addError, setAddError] = useState('')
   const [saveError, setSaveError] = useState('')
   const [busy, setBusy] = useState(false)
+  // 改名对话框(L239):正在改名的科目、输入中的新名字、对话框内的校验提示
+  const [renaming, setRenaming] = useState<string | null>(null)
+  const [renameTo, setRenameTo] = useState('')
+  const [renameError, setRenameError] = useState('')
 
   if (q.isPending) return <LoadingState />
   if (q.isError) {
@@ -92,15 +105,36 @@ export default function SubjectCatalogCard() {
   const add = () => {
     const name = newName.trim()
     const full = Number(newFull)
-    const n = nameLen(name)
-    if (n < 1 || n > NAME_MAX) return setAddError(`科目名要在 1–${NAME_MAX} 个字`)
-    if (list.some((x) => x.name === name)) return setAddError('这个学段已经有这门科目')
+    const nameProblem = validateName(
+      name,
+      list.map((x) => x.name),
+    )
+    if (nameProblem) return setAddError(nameProblem)
     if (list.length >= MAX_SUBJECTS) return setAddError(`每个学段最多 ${MAX_SUBJECTS} 门科目`)
     if (newFull.trim() === '' || !validFull(full)) return setAddError(FULL_MSG)
     setList([...list, { name, full: String(full) }])
     setNewName('')
     setNewFull('100')
     setAddError('')
+  }
+
+  const openRename = (name: string) => {
+    setRenaming(name)
+    setRenameTo(name)
+    setRenameError('')
+  }
+  /** 只换名字,顺序与满分不动;目录改名不追溯已有班级,所以改成同学段已有的名字直接拒绝,没有合并语义 */
+  const confirmRename = () => {
+    const from = renaming!
+    const to = renameTo.trim()
+    if (to === from) return setRenaming(null)
+    const problem = validateName(
+      to,
+      list.filter((x) => x.name !== from).map((x) => x.name),
+    )
+    if (problem) return setRenameError(problem)
+    setList(list.map((x) => (x.name === from ? { ...x, name: to } : x)))
+    setRenaming(null)
   }
 
   const save = async () => {
@@ -162,7 +196,14 @@ export default function SubjectCatalogCard() {
               >
                 <ArrowDown className="h-3.5 w-3.5" aria-hidden="true" />
               </button>
-              <span className="min-w-12 flex-1">{x.name}</span>
+              <button
+                type="button"
+                aria-label={`改名 ${x.name}`}
+                onClick={() => openRename(x.name)}
+                className="min-w-12 flex-1 rounded px-1 text-left hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                {x.name}
+              </button>
               <label className="flex items-center gap-1 text-xs text-muted-foreground">
                 满分
                 <Input
@@ -231,7 +272,7 @@ export default function SubjectCatalogCard() {
           )}
         </div>
         <p className="text-xs text-muted-foreground">
-          三个学段一起保存;顺序就是新建班级时的科目顺序。已有班级的科目不变,老师可在成绩页用"从学校目录补齐"加进来。
+          三个学段一起保存;顺序就是新建班级时的科目顺序。点科目名可以改名。已有班级的科目不变,老师可在成绩页用"从学校目录补齐"加进来。
         </p>
         {saveError && (
           <p role="alert" className="text-sm text-destructive">
@@ -244,6 +285,52 @@ export default function SubjectCatalogCard() {
           </Button>
         </div>
       </CardContent>
+
+      {renaming !== null && (
+        <Modal
+          open
+          onClose={() => setRenaming(null)}
+          title={`改名「${renaming}」`}
+          dismissOnOutside={false}
+          className="max-w-sm"
+        >
+          <form
+            className="space-y-3"
+            onSubmit={(e) => {
+              e.preventDefault()
+              confirmRename()
+            }}
+          >
+            <div className="space-y-1">
+              <Label htmlFor="subject-new-name">新名称</Label>
+              <Input
+                id="subject-new-name"
+                value={renameTo}
+                maxLength={NAME_MAX}
+                autoFocus
+                onChange={(e) => {
+                  setRenameTo(e.target.value)
+                  setRenameError('')
+                }}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              只改目录里的名字,已有班级和联考里的科目不受影响。
+            </p>
+            {renameError && (
+              <p role="alert" className="text-sm text-destructive">
+                {renameError}
+              </p>
+            )}
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setRenaming(null)}>
+                取消
+              </Button>
+              <Button type="submit">确定</Button>
+            </div>
+          </form>
+        </Modal>
+      )}
     </Card>
   )
 }
