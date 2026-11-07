@@ -136,6 +136,32 @@ it('adds a period, saves the sorted list and shows PERIOD_IN_USE from the backen
   )
 })
 
+// L215 ①:409 PERIOD_IN_USE 要把 details 里被占用的节次与班级列出来,并给"放弃修改"回到已保存的作息
+it('period in use lists classes and offers discard', async () => {
+  vi.mocked(timetableApi.savePeriods).mockRejectedValueOnce(
+    new ApiError(409, 'PERIOD_IN_USE', '节次已被课表使用,不能删除。涉及班级:三年二班、四年一班', {
+      classes: ['三年二班', '四年一班'],
+      periods: [1, 2],
+    }),
+  )
+  renderPage()
+  await screen.findByTestId('periods-editor')
+  fireEvent.click(screen.getByRole('button', { name: '删除第 1 节' }))
+  expect(screen.queryByLabelText('第 1 节开始时间')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '保存作息' }))
+  const alert = await within(editor()).findByRole('alert')
+  expect(alert).toHaveTextContent('节次已被课表使用,不能删除。涉及班级:三年二班、四年一班')
+  expect(alert).toHaveTextContent('第 1 节、第 2 节')
+  expect(alert).toHaveTextContent('三年二班、四年一班')
+  fireEvent.click(within(editor()).getByRole('button', { name: '放弃修改' }))
+  // 回到已保存的作息:第 1 节又在了,提示消失,没有改动时保存按钮禁用
+  expect(screen.getByLabelText('第 1 节开始时间')).toHaveValue('08:00')
+  expect(within(editor()).queryByRole('alert')).toBeNull()
+  expect(within(editor()).queryByRole('button', { name: '放弃修改' })).toBeNull()
+  expect(screen.getByRole('button', { name: '保存作息' })).toBeDisabled()
+  expect(timetableApi.savePeriods).toHaveBeenCalledTimes(1)
+})
+
 it('edits a cell with auto teacher', async () => {
   vi.mocked(timetableApi.saveClassTimetable).mockResolvedValue({
     ...TT,
