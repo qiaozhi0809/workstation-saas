@@ -30,6 +30,8 @@ FIXUP_SQL: dict[Key, str] = {
     ): "UPDATE enrollments SET seat_row = NULL WHERE seat_col IS NULL",
 }
 
+# 注意:0005 用例会把 enrollments_seat_pair 在造数时去掉且不恢复(0005 的迁移不碰它),
+# 此后的库与真实 revision-1 略有差别,只影响该用例。
 # 造脏数据需要去掉的是"上一版"的同名约束,而迁移自己会 DROP CONSTRAINT 它(不带 IF EXISTS):
 # 造完数后把上一版约束以 NOT VALID 加回去,让迁移的 DROP 有对象可删。
 RESTORE_SQL: dict[Key, str] = {
@@ -89,7 +91,9 @@ def test_precheck_matches_migration_outcome(fresh_engine, check: Check):
     # (b) 真实迁移失败,失败原因就是这条 Check 登记的约束,且整体回滚
     with pytest.raises(DBAPIError) as failure:
         upgrade_to(fresh_engine, check.revision)
-    message = str(failure.value)
+    # 只看数据库驱动给的原始报错:str(DBAPIError) 还会带上整份迁移 SQL,
+    # 约束名必然出现在里面,拿它比对永远为真
+    message = str(failure.value.orig)
     markers = MARKERS.get(key, check.constraints)
     assert any(m in message for m in markers), (markers, message)
     assert current_version(fresh_engine) == before
