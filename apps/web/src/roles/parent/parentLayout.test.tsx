@@ -2,9 +2,11 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { noticesApi } from '@/shared/api/notices'
 import { parentApi } from '@/shared/api/parent'
+// testkit 里 vi.mock 了 @/shared/api/preferences(壳里的首次说明卡默认当作已看过):
+// 它要先于下面的 preferencesApi import,这里拿到的才是同一份 mock(L305)
+import { child, mockWidth, renderParent, setParentUser, today } from './testkit'
 import { preferencesApi } from '@/shared/api/preferences'
 import { schoolApi } from '@/shared/api/school'
-import { child, mockWidth, renderParent, setParentUser, today } from './testkit'
 
 vi.mock('@/shared/api/parent', () => ({
   parentApi: { children: vi.fn(), today: vi.fn(), profile: vi.fn(), saveContacts: vi.fn() },
@@ -13,8 +15,6 @@ vi.mock('@/shared/api/parent', () => ({
 vi.mock('@/shared/api/notices', () => ({
   noticesApi: { inbox: vi.fn(), read: vi.fn(), readAll: vi.fn(), ack: vi.fn() },
 }))
-// 壳里挂了首次说明卡:默认当作已看过,不显示
-vi.mock('@/shared/api/preferences', () => ({ preferencesApi: { get: vi.fn(), save: vi.fn() } }))
 
 const prefs = {
   teacher_figure: 'female' as const,

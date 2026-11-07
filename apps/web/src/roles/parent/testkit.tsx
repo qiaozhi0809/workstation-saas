@@ -13,6 +13,12 @@ import ParentLayout, { ParentIndex } from './ParentLayout'
 import ProfilePage from './Profile/ProfilePage'
 import TodayPage from './Today/TodayPage'
 
+// 家长壳里的 FirstVisit 会请求 /me/preferences:这里统一 mock 掉(L305),默认按"已引导"回答(见下面的 beforeEach),
+// 要测首次使用卡的用例(parentLayout.test)在自己的 beforeEach 里改 vi.mocked(preferencesApi.get) 即可,不必再 vi.mock 一层。
+// vi.mock 在本文件被加载时登记:测试文件要先 import 本文件,再 import ParentLayout / @/shared/api/preferences,
+// 否则先加载的那份拿到的是真模块。
+vi.mock('@/shared/api/preferences', () => ({ preferencesApi: { get: vi.fn(), save: vi.fn() } }))
+
 /** 已引导过的家长偏好:首次使用卡不出现 */
 export const onboardedPrefs = (): PreferencesWithOnboarded => ({
   teacher_figure: 'female',
@@ -21,12 +27,9 @@ export const onboardedPrefs = (): PreferencesWithOnboarded => ({
   onboarded: { parent: '2026-01-01T00:00:00Z' },
 })
 
-// 家长壳里的 FirstVisit 会请求 /me/preferences:统一按"已引导"回答,不再靠真实 fetch 失败后的回退。
-// 用 spyOn 而不是 vi.mock:有的测试先 import ParentLayout 再 import 本文件,模块级 vi.mock 对已加载的模块不生效;
-// 自己 vi.mock 了 @/shared/api/preferences 的测试(parentLayout.test)在它的 beforeEach 里照常覆盖
 beforeEach(() => {
-  vi.spyOn(preferencesApi, 'get').mockResolvedValue(onboardedPrefs())
-  vi.spyOn(preferencesApi, 'save').mockImplementation(async (p) => ({ ...onboardedPrefs(), ...p }))
+  vi.mocked(preferencesApi.get).mockResolvedValue(onboardedPrefs())
+  vi.mocked(preferencesApi.save).mockImplementation(async (p) => ({ ...onboardedPrefs(), ...p }))
 })
 
 /** /meta 的默认回答:校名与学校时区(L74 / L79);要测别的时区的用例自己再 mockResolvedValue */

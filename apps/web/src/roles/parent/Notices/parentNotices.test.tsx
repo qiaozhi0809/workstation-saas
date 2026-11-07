@@ -7,9 +7,10 @@ import { noticesApi } from '@/shared/api/notices'
 import { parentApi } from '@/shared/api/parent'
 import ProtectedRoute from '@/shared/components/ProtectedRoute'
 import type { InboxItem } from '@/shared/types/admin'
+// testkit 里 vi.mock 了 @/shared/api/preferences(壳里的首次说明卡):要先于 ParentLayout import(L305)
+import { child, mockWidth, setParentUser, today } from '../testkit'
 import ParentLayout, { ParentIndex } from '../ParentLayout'
 import TodayPage from '../Today/TodayPage'
-import { child, mockWidth, setParentUser, today } from '../testkit'
 import ParentNoticesPage from './ParentNoticesPage'
 
 vi.mock('@/shared/api/parent', () => ({
