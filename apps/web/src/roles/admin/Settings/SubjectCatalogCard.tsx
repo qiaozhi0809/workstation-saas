@@ -175,7 +175,6 @@ export default function SubjectCatalogCard() {
           {list.map((x, i) => (
             <li
               key={x.name}
-              data-subject={x.name}
               className="flex flex-wrap items-center gap-2 rounded-md border bg-background px-2 py-1 text-sm"
             >
               <button

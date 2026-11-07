@@ -7,7 +7,8 @@ import { ApiError } from '@/shared/api/client'
 import { schoolApi } from '@/shared/api/school'
 import { toast } from '@/shared/components/Toast'
 import { useAuthStore } from '@/shared/stores/auth'
-import type { GradeExam, SchoolGrade } from '@/shared/types/admin'
+import type { AdminPerm, GradeExam, SchoolGrade } from '@/shared/types/admin'
+import type { User } from '@/shared/types/user'
 import type { Meta, SubjectCatalog } from '@/shared/types/school'
 import GradeExamsPage from './GradeExamsPage'
 
@@ -44,6 +45,15 @@ const CATALOG: SubjectCatalog = {
 
 const G3: SchoolGrade = { id: 'g3', name: '三年级', display_order: 3, effective_stage: 'primary' }
 const G4: SchoolGrade = { id: 'g4', name: '四年级', display_order: 4, effective_stage: 'primary' }
+
+const adminUser = (perms: AdminPerm[]): User => ({
+  id: 'u-admin',
+  display_name: '管理员',
+  contexts: [],
+  admin_perms: perms,
+  must_change_password: false,
+  password_change_reason: null,
+})
 
 const exam = (over: Partial<GradeExam> = {}): GradeExam => ({
   id: 'ge1',
@@ -327,7 +337,7 @@ it('grade exam form picks from catalog', async () => {
 // L234:学段直接用 GET /school/grades 给的 effective_stage(显式学段或后端按名推断),前端不再按年级名猜、也不再读 /admin/grades
 it('stage from grade brief', async () => {
   // 名字像初中,但年级显式设了高中 → 高中目录;即使有 org.manage 也不去读年级表
-  useAuthStore.setState({ user: { admin_perms: ['org.manage'] } as never })
+  useAuthStore.setState({ user: adminUser(['org.manage']) })
   vi.mocked(adminApi.schoolGrades).mockResolvedValue([
     { id: 'g7', name: '初一', display_order: 7, effective_stage: 'senior' },
     { id: 'g0', name: '国际部', display_order: 9, effective_stage: null },
@@ -535,7 +545,7 @@ it('edit full marks', async () => {
 // L238 / L234:表单不再自己读年级表(以前有 org.manage 的用户每次打开都按 staleTime 0 重取 ['admin','grades']);
 // 页面级的 GET /school/grades 也不因为开关对话框而重取
 it('grades not refetched on reopen', async () => {
-  useAuthStore.setState({ user: { admin_perms: ['org.manage'] } as never })
+  useAuthStore.setState({ user: adminUser(['org.manage']) })
   await renderPage()
   for (let i = 0; i < 2; i++) {
     fireEvent.click(screen.getByRole('button', { name: '新建联考' }))

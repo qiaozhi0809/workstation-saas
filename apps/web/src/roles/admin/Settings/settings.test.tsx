@@ -7,7 +7,8 @@ import { schoolApi } from '@/shared/api/school'
 import { toast } from '@/shared/components/Toast'
 import { downloadBlob } from '@/shared/lib/download'
 import { useAuthStore } from '@/shared/stores/auth'
-import type { Switches, SystemInfo } from '@/shared/types/admin'
+import type { AdminPerm, Switches, SystemInfo } from '@/shared/types/admin'
+import type { User } from '@/shared/types/user'
 import type { SubjectCatalog } from '@/shared/types/school'
 import SettingsPage from './SettingsPage'
 
@@ -313,8 +314,17 @@ it('invalidates student caches after saving the pool', async () => {
   expect(spy).toHaveBeenCalledWith({ queryKey: ['class-students'] })
 })
 
-const asAdmin = (perms: string[]) =>
-  useAuthStore.setState({ user: { admin_perms: perms } as never })
+const asAdmin = (perms: AdminPerm[]) =>
+  useAuthStore.setState({
+    user: {
+      id: 'u-admin',
+      display_name: '管理员',
+      contexts: [],
+      admin_perms: perms,
+      must_change_password: false,
+      password_change_reason: null,
+    } satisfies User,
+  })
 const INFO: SystemInfo = {
   version: '0.7.0',
   migration: '0010',
@@ -609,8 +619,9 @@ const catalogCard = async () => screen.findByRole('group', { name: '科目目录
 const subjectNames = (card: ReturnType<typeof within>) =>
   card
     .queryAllByRole('listitem')
-    .map((li: HTMLElement) => li.getAttribute('data-subject'))
-    .filter((s: string | null): s is string => s !== null)
+    .map((li: HTMLElement) => within(li).queryByRole('button', { name: /^上移 / }))
+    .filter((b: HTMLElement | null): b is HTMLElement => b !== null)
+    .map((b: HTMLElement) => (b.getAttribute('aria-label') ?? '').replace(/^上移 /, ''))
 
 it('catalog card edits stage list', async () => {
   vi.mocked(schoolApi.saveSubjectCatalog).mockImplementation(async (c) => c)
