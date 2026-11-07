@@ -432,6 +432,25 @@ it('says so inside the strip when the camera list is empty, and 收起 closes it
   expect(screen.getByTestId('camera-toggle')).toHaveAttribute('aria-pressed', 'false')
 })
 
+it('first load 403 inline', async () => {
+  // 一展开就 403(刚被收回这个班的权限):条里行内提示,不弹"本节课已结束"、不自动收起、不去刷概况(L218 ⑤)
+  vi.mocked(camerasApi.classCameras).mockRejectedValue(new ApiError(403, 'FORBIDDEN', '不能看'))
+  setup()
+  fireEvent.click(await screen.findByTestId('camera-toggle'))
+  const strip = await screen.findByTestId('camera-strip')
+  expect(await within(strip).findByRole('alert')).toHaveTextContent('现在不能看这个班的摄像头')
+  await act(async () => {})
+  expect(screen.getByTestId('camera-strip')).toBeInTheDocument()
+  expect(screen.queryByText('本节课已结束')).toBeNull()
+  expect(screen.getByTestId('camera-toggle')).toHaveAttribute('aria-pressed', 'true')
+  expect(classroomApi.summary).toHaveBeenCalledTimes(1)
+  expect(FakeHls.instances).toHaveLength(0)
+  // 老师自己收起
+  fireEvent.click(within(strip).getByRole('button', { name: '收起' }))
+  expect(screen.queryByTestId('camera-strip')).toBeNull()
+  expect(screen.getByTestId('camera-toggle')).toHaveAttribute('aria-pressed', 'false')
+})
+
 it('shows the error inside the strip when the camera list fails', async () => {
   vi.mocked(camerasApi.classCameras).mockRejectedValue(new Error('现在不能看这个班的摄像头'))
   setup()

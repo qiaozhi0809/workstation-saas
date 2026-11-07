@@ -128,18 +128,24 @@ export default function CameraStrip({
   const emptied = !!q.data && cameras.length === 0 && hadReasonRef.current !== null
   const disabled =
     emptied && (hadReasonRef.current !== 'period' || (q.data?.period ?? null) !== null)
+  // 403 = 失去这个班的读权限:看过机位之后才按下课收起;一展开就 403 只在条里行内提示,不 toast、不自动收起(L218 ⑤)
   const forbidden = q.error instanceof ApiError && q.error.status === 403
+  const forbiddenAfterCameras = forbidden && hadReasonRef.current !== null
   useEffect(() => {
-    if (forbidden) finishRef.current('本节课已结束')
+    if (forbiddenAfterCameras) finishRef.current('本节课已结束')
     else if (emptied) finishRef.current(disabled ? '摄像头已被管理员停用' : '本节课已结束')
-  }, [forbidden, emptied, disabled])
+  }, [forbiddenAfterCameras, emptied, disabled])
 
   let body: ReactNode
   if (q.isPending) body = <p className="px-1 text-sm text-muted-foreground">加载中…</p>
   else if (q.isError && !q.data)
     body = (
       <p role="alert" className="px-1 text-sm text-destructive">
-        {q.error instanceof Error && q.error.message ? q.error.message : '教室画面加载失败'}
+        {forbidden
+          ? '现在不能看这个班的摄像头'
+          : q.error instanceof Error && q.error.message
+            ? q.error.message
+            : '教室画面加载失败'}
       </p>
     )
   else if (cameras.length === 0)
