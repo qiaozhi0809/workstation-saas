@@ -54,7 +54,7 @@ function cnValue(run: string): number {
 
 const kindOf = (c: string) => (isDigit(c) ? 'digit' : isCnNumeral(c) ? 'cn' : 'text')
 
-/** 把名字切成数字段 [0, 数值] 与文字段 [1, 原文],末尾加 [-1, 原文] 收尾(保证全序与稳定);按码点切,星号平面的数字也完整 */
+/** 把名字切成数字段 [0, 数值] 与文字段 [1, 原文],末尾加 [-1, 原文] 收尾(保证全序与稳定);按码点切,辅助平面的数字也完整 */
 export function classSortKey(name: string): ClassSortKey {
   const chars = [...name]
   const key: ClassSortKey = []
