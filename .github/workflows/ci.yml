@@ -241,6 +241,9 @@ jobs:
           nohup npm run dev > "$RUNNER_TEMP/frontend.log" 2>&1 &
 
       - name: Wait for services
+        env:
+          # 等假摄像头推流就绪的上限(秒),函数默认 90;CI 里 mediamtx 几秒就有流,60 够了,cam2 起不来时也少拖半分钟
+          WS_RTSP_WAIT: "60"
         run: |
           wait_for() {
             for _ in $(seq 1 60); do
@@ -280,16 +283,17 @@ jobs:
             echo "Timed out waiting for rtsp port $WS_RTSP_PORT"
             return 1
           }
-          # 15 次 × (ffprobe 最多 4 秒 + 歇 2 秒) ≈ 90 秒封顶;cam2 起不来时不能把整个 job 拖住
+          # 每轮 ffprobe 最多 4 秒 + 歇 2 秒,到 WS_RTSP_WAIT 秒(默认 90)为止;cam2 起不来时不能把整个 job 拖住
           wait_rtsp_stream() {
-            for _ in $(seq 1 15); do
+            local deadline=$(( SECONDS + ${WS_RTSP_WAIT:-90} ))
+            while [ "$SECONDS" -lt "$deadline" ]; do
               if timeout 4 ffprobe -v error -rtsp_transport tcp -i "rtsp://127.0.0.1:$WS_RTSP_PORT/$1" -show_streams > /dev/null 2>&1; then
                 echo "rtsp stream $1 is up"
                 return 0
               fi
               sleep 2
             done
-            echo "Timed out waiting for rtsp stream $1"
+            echo "Timed out waiting for rtsp stream $1 (${WS_RTSP_WAIT:-90}s)"
             return 1
           }
           wait_for http://127.0.0.1:18089/last
