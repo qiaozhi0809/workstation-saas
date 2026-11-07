@@ -132,7 +132,8 @@ def test_run_due_skips_without_school(db, redis_client):
         done = run_due(_factory(db), redis_client, now, [_job(calls)], school_id=uuid4())
     assert done == [] and calls == []
     entries = [e for e in logs if e["event"] == "scheduler.no_school"]
-    assert entries and all(e["log_level"] == "info" for e in entries)
+    # L116:首次安装先于 init-school 启动是常态,只留 debug 级
+    assert entries and all(e["log_level"] == "debug" for e in entries)
 
 
 def test_run_due_skips_when_locked(db, redis_client):
