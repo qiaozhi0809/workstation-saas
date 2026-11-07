@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
 import { camerasApi } from '@/shared/api/cameras'
 import { ApiError } from '@/shared/api/client'
 import { CameraPlayer } from '@/shared/components/camera/CameraPlayer'
@@ -54,6 +55,18 @@ export default function CameraStrip({
     fullscreenRef.current(true)
     return () => fullscreenRef.current(false)
   }, [full])
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
+  // 模式条上点切换时页面已先收起本条;浏览器前进 / 后退改 ?mode= 不经过那里,这里自己看着地址栏收起(L218 ①)。
+  // 别的参数(?student= / ?tab=)变化不算切模式
+  const [params] = useSearchParams()
+  const mode = params.get('mode')
+  const modeRef = useRef(mode)
+  useEffect(() => {
+    if (mode === modeRef.current) return
+    modeRef.current = mode
+    onCloseRef.current()
+  }, [mode])
 
   // 多路同时 403 只提示一次;收起后本组件卸载,其余播放器随之销毁
   const endedRef = useRef(false)

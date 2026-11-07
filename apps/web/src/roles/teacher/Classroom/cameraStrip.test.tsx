@@ -105,13 +105,13 @@ const manifestError = (code: number) => ({
   networkDetails: { responseText: '' },
 })
 
-/** 打开页面并展开缩略条,等第一路播放器出现;返回 QueryClient 以便触发刷新 */
+/** 打开页面并展开缩略条,等第一路播放器出现;返回 QueryClient 以便触发刷新、router 以便模拟历史导航 */
 async function openStrip() {
-  const { client } = setup()
+  const { client, router } = setup()
   fireEvent.click(await screen.findByTestId('camera-toggle'))
   const strip = await screen.findByTestId('camera-strip')
   await within(strip).findByLabelText('讲台机位')
-  return { strip, client }
+  return { strip, client, router }
 }
 
 beforeEach(() => {
@@ -219,6 +219,24 @@ it('collapses on mode switch', async () => {
   expect(screen.queryByTestId('camera-strip')).toBeNull()
   expect(screen.getByTestId('camera-toggle')).toHaveAttribute('aria-pressed', 'false')
   expect(FakeHls.instances.map((i) => i.destroy.mock.calls.length)).toEqual([1, 1])
+})
+
+it('collapses on mode change via history', async () => {
+  // 浏览器前进 / 后退改了 ?mode=(没经过模式条的点击):缩略条同样收起、播放器销毁(L218 ①)
+  const { router } = await openStrip()
+  // 别的参数变化(?foo=)不算切模式,条照旧开着
+  await act(() => router.navigate('/teacher/classroom?foo=1'))
+  expect(screen.getByTestId('camera-strip')).toBeInTheDocument()
+  expect(FakeHls.instances.map((i) => i.destroy.mock.calls.length)).toEqual([0, 0])
+  await act(() => router.navigate('/teacher/classroom?foo=1&mode=attendance'))
+  await waitFor(() => expect(screen.queryByTestId('camera-strip')).toBeNull())
+  expect(screen.getByTestId('camera-toggle')).toHaveAttribute('aria-pressed', 'false')
+  expect(FakeHls.instances.map((i) => i.destroy.mock.calls.length)).toEqual([1, 1])
+  // 退回日常模式:条不会自己再打开
+  await act(() => router.navigate(-1))
+  expect(await screen.findByTestId('camera-toggle')).toHaveAttribute('aria-pressed', 'false')
+  expect(screen.queryByTestId('camera-strip')).toBeNull()
+  expect(FakeHls.instances).toHaveLength(2)
 })
 
 it('opens fullscreen with watermark and pauses the idle animation', async () => {
