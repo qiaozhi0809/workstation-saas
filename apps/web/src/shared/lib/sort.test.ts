@@ -95,6 +95,23 @@ describe('compareClassName', () => {
     ])
   })
 
+  // L237:与后端 str.isdecimal() 同范围——任何文字的十进制数字(阿拉伯文 ٠–٩、天城文、全角 ０–９…)都按数值比;
+  // 上标 ² / 带圈 ② 不是十进制数字,仍当文字(后端 int() 也不认)
+  it('arabic-indic digits', () => {
+    expect(classSortKey('٣班')[0]).toEqual([0, 3])
+    expect(classSortKey('١٠班')[0]).toEqual([0, 10])
+    expect(classSortKey('३班')[0]).toEqual([0, 3])
+    // 混写的一段数字按位拼成一个数,与 Python int('1٢') 一致
+    expect(classSortKey('1٢班')[0]).toEqual([0, 12])
+    expect(compareClassName('٢班', '١٠班')).toBeLessThan(0)
+    expect(sorted(['١٠班', '2班', '三班'])).toEqual(['2班', '三班', '١٠班'])
+    expect(classSortKey('②班')).toEqual([
+      [1, '②班'],
+      [-1, '②班'],
+    ])
+    expect(classSortKey('高²班').slice(0, -1)).toEqual([[1, '高²班']])
+  })
+
   it('falls back to plain text order when there is no number', () => {
     expect(sorted(['乙班', '甲班'])).toEqual(['乙班', '甲班'].sort())
     expect(classSortKey('实验班')).toEqual([

@@ -98,6 +98,8 @@ function CommentList({ profile, timezone }: { profile: StudentProfile; timezone:
     return <ErrorState title="评语加载失败" onRetry={() => void refetch()} retrying={isFetching} />
   if (!data) return <LoadingState />
   if (data.items.length === 0) return <EmptyState icon={MessageSquareText} title="还没有评语" />
+  // 不能切的原因对所有评语都一样,只在第一条不能切的评语处说一次(L279:只读查看者每条都不能切)
+  const firstLocked = data.items.find((c) => !c.can_share)?.id
 
   return (
     <ul className="space-y-3">
@@ -153,7 +155,7 @@ function CommentList({ profile, timezone }: { profile: StudentProfile; timezone:
               />
             </button>
             <span aria-hidden="true">给家长看</span>
-            {!c.can_share && <span>只有孩子现在的班主任能改</span>}
+            {c.id === firstLocked && <span>只有孩子现在的班主任能改</span>}
             {c.generated_by_ai && !c.parent_visible && (
               <span className="text-warning">AI 生成,需确认后才给家长看</span>
             )}

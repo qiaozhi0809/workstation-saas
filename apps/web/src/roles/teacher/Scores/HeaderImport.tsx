@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ApiError } from '@/shared/api/client'
+import { examKeys } from '@/shared/api/examKeys'
 import { examsApi } from '@/shared/api/exams'
 import Modal from '@/shared/components/overlay/Modal'
 import { toast } from '@/shared/components/Toast'
@@ -102,29 +103,54 @@ function summary(n: number, p: Plan): string {
   return msg
 }
 
-/** 服务端拒绝某一格(4xx 带 enrollment_id + subject)时指出它在表里的位置,好让老师回表里改 */
+/** 行号与"识别到 N 行"同一数法:不含表头,空行也不算 */
+const rowPrefix = (at: CellOrigin) => `第 ${at.row} 行(不含表头与空行)· `
+
+/** 只知道学生不知道科目(UNKNOWN_ENROLLMENT 的 details 只有 enrollment_id,L252):取该生在表里最靠前的一行 */
+function rowOfStudent(p: Plan, enrollmentId: string): CellOrigin | undefined {
+  let found: CellOrigin | undefined
+  for (const [key, at] of p.origin) {
+    if (key.startsWith(`${enrollmentId}|`) && (!found || at.row < found.row)) found = at
+  }
+  return found
+}
+
+/**
+ * 服务端拒绝时指出位置,好让老师回表里改:
+ * 4xx 带 enrollment_id + subject(SCORE_INVALID)精确到格;只带 enrollment_id(UNKNOWN_ENROLLMENT)精确到行;
+ * 表里找不到对应位置、或不是接口错误时退回服务端消息 / 统一文案。
+ */
 function describeError(e: unknown, p: Plan): string {
   if (!(e instanceof ApiError)) return GENERIC_ERROR
   const message = e.message || GENERIC_ERROR
   const d = e.details as { enrollment_id?: unknown; subject?: unknown } | undefined
-  if (typeof d?.enrollment_id !== 'string' || typeof d.subject !== 'string') return message
+  if (typeof d?.enrollment_id !== 'string') return message
+  if (typeof d.subject !== 'string') {
+    const at = rowOfStudent(p, d.enrollment_id)
+    return at ? `${rowPrefix(at)}${at.name}:${message}` : message
+  }
   const at = p.origin.get(`${d.enrollment_id}|${d.subject}`)
-  // 行号与"识别到 N 行"同一数法:不含表头,空行也不算
-  return at ? `第 ${at.row} 行(不含表头与空行)· ${d.subject}(${at.name}):${message}` : message
+  return at ? `${rowPrefix(at)}${d.subject}(${at.name}):${message}` : message
 }
 
+const replacementCount = (s: string) => s.split('\uFFFD').length - 1
+
 /**
- * 先按 UTF-8 解码;出现替换字符说明不是 UTF-8(Excel 另存的 CSV 多半是 GBK),改按 GBK 再解一次。
+ * 先按 UTF-8 解码;出现替换字符说明可能不是 UTF-8(Excel 另存的 CSV 多半是 GBK),改按 GBK 再解一次。
+ * 真 UTF-8 文件自己含替换字符时按 GBK 解出来只会是乱码,所以 GBK 结果的替换字符不比 UTF-8 的少就仍用 UTF-8(L253)。
  * 浏览器不支持 GBK 时保留 UTF-8 的结果并说明原因。
  */
 function decodeCsv(bytes: ArrayBuffer): { text: string; problem: string | null } {
   const utf8 = new TextDecoder('utf-8').decode(bytes)
-  if (!utf8.includes('\uFFFD')) return { text: utf8, problem: null }
+  const bad = replacementCount(utf8)
+  if (bad === 0) return { text: utf8, problem: null }
+  let gbk: string
   try {
-    return { text: new TextDecoder('gbk').decode(bytes), problem: null }
+    gbk = new TextDecoder('gbk').decode(bytes)
   } catch {
     return { text: utf8, problem: GBK_UNSUPPORTED }
   }
+  return replacementCount(gbk) < bad ? { text: gbk, problem: null } : { text: utf8, problem: null }
 }
 
 export default function HeaderImport({
@@ -151,9 +177,9 @@ export default function HeaderImport({
     // 中途某一批失败时前面的批次可能已写入,所以成功失败都刷新
     onSettled: () =>
       Promise.all([
-        qc.invalidateQueries({ queryKey: ['score-sheet', classId, exam.id] }),
-        qc.invalidateQueries({ queryKey: ['exams', classId] }),
-        qc.invalidateQueries({ queryKey: ['gradebook', classId] }),
+        qc.invalidateQueries({ queryKey: examKeys.sheet(classId, exam.id) }),
+        qc.invalidateQueries({ queryKey: examKeys.list(classId) }),
+        qc.invalidateQueries({ queryKey: examKeys.gradebook(classId) }),
       ]),
     onSuccess: (_, snapshot) => {
       toast(summary(snapshot.cells.length, snapshot))

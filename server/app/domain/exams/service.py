@@ -23,6 +23,7 @@ from app.domain.exams.schemas import (
 from app.domain.exams.subjects import merge_subjects
 from app.domain.schools.service import require_active_year
 from app.domain.students.service import active_enrollments
+from app.domain.years.locks import ensure_year_live
 from app.errors import ApiError
 from app.models import Enrollment, Exam, SchoolClass, Score
 from app.rbac.bindings import Binding, visible_subjects, writable_subjects
@@ -227,6 +228,9 @@ def create_exam(
     year = require_active_year(db, cls.school_id)
     # 先锁班级行并合并科目:班级在路由检查之后被并发删掉时这里 404,而不是插入 exams 时撞外键 500
     merge_subjects(db, cls, data.subjects)
+    # 锁班之后再复核学年(L262,锁序"先班级、后学年"与升级 / 回滚一致):排在回滚 / 升级后面才拿到
+    # 班级锁时学年已删或已停用 → 409,而不是撞学年外键 500 / 把考试写进已成往年的学年
+    ensure_year_live(db, year.id)
     exam = Exam(
         class_id=cls.id,
         academic_year_id=year.id,

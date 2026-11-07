@@ -266,6 +266,23 @@ it('hints that unconfirmed AI comments are hidden from parents', async () => {
   expect(screen.getAllByText('AI 生成,需确认后才给家长看')).toHaveLength(1)
 })
 
+// L279:只读查看者(年级组长等)每条评语都不能切,"只有孩子现在的班主任能改"只在第一条不能切的评语处说一次
+it('hint shown once', async () => {
+  vi.mocked(commentsApi.list).mockResolvedValue({
+    items: [
+      cm({ id: 'a', content: '第一条', can_share: false, can_delete: false }),
+      cm({ id: 'b', content: '第二条', can_share: false, can_delete: false }),
+      cm({ id: 'c', content: '第三条', can_share: false, can_delete: false }),
+    ],
+  })
+  setup(<CommentsTab profile={profile} />, ['comment.read'])
+  const items = await screen.findAllByRole('listitem')
+  expect(items).toHaveLength(3)
+  expect(screen.getAllByText('只有孩子现在的班主任能改')).toHaveLength(1)
+  expect(within(items[0]).getByText('只有孩子现在的班主任能改')).toBeInTheDocument()
+  for (const sw of screen.getAllByRole('switch', { name: '给家长看' })) expect(sw).toBeDisabled()
+})
+
 it('disables share toggle when not allowed', async () => {
   // can_share 由后端按"学生当前在读班的班主任"给出(L69 / L70):为假时开关禁用并说明原因
   vi.mocked(commentsApi.list).mockResolvedValue({
