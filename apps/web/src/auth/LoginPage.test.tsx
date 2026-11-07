@@ -430,5 +430,13 @@ it('clears code on TOTP_INVALID', async () => {
 it('returns to an empty password field from the code step', async () => {
   await renderTotp()
   fireEvent.click(screen.getByRole('button', { name: '返回重新登录' }))
-  expect(await screen.findByLabelText('密码')).toHaveValue('')
+  const password = await screen.findByLabelText('密码')
+  // 密码框是空的、仍是必填(浏览器会拦下空提交),登录名保留,验证码步骤已退出
+  expect(password).toHaveValue('')
+  expect(password).toBeRequired()
+  expect(screen.getByLabelText('登录名')).toHaveValue('teacher01')
+  expect(screen.queryByLabelText('验证码')).toBeNull()
+  // 回退本身不再发起登录:只有最初那一次(带着当时输入的密码)
+  expect(authApi.login).toHaveBeenCalledTimes(1)
+  expect(authApi.login).toHaveBeenCalledWith('teacher01', 'pw')
 })
