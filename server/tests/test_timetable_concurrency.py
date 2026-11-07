@@ -12,6 +12,7 @@ from uuid import UUID
 
 import pytest
 from sqlalchemy import Engine, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.domain.timetable import importer, service
@@ -224,3 +225,64 @@ def test_delete_period_then_write_timetable(cengine, monkeypatch):
     assert _orphans(cengine) == 0
     with cengine.connect() as conn:
         assert conn.execute(text("SELECT count(*) FROM timetable_entries")).scalar_one() == 0
+
+
+def _hold_school_lock(engine: Engine, locked: threading.Event, go: threading.Event) -> Worker:
+    """会话 A:拿到 School 锁后停住,直到 go 被放开(随后提交)。"""
+
+    def run(db: Session) -> None:
+        service.lock_school(db, UUID(SCHOOL_ID))
+        locked.set()
+        assert go.wait(WAIT)
+        db.commit()
+
+    return Worker(engine, "holder", run).start()
+
+
+def test_school_lock_does_not_block_fk_insert(cengine):
+    """L387:A 持有 lock_school 时,B 插入同校学生(外键检查要 FOR KEY SHARE)不被挡。
+    FOR UPDATE 与 FOR KEY SHARE 互斥 → B 在 lock_timeout 内失败;
+    FOR NO KEY UPDATE 不互斥 → B 完成。"""
+    locked, go = threading.Event(), threading.Event()
+    holder = _hold_school_lock(cengine, locked, go)
+    try:
+        assert locked.wait(WAIT)
+
+        def insert_student(db: Session) -> None:
+            db.execute(text("SET LOCAL lock_timeout = '2s'"))
+            db.execute(
+                text("INSERT INTO students (school_id, mk, name) VALUES (:s, 'mk-l387', 'L387')"),
+                {"s": SCHOOL_ID},
+            )
+            db.commit()
+
+        inserter = Worker(cengine, "insert", insert_student).start()
+        inserter.join()
+    finally:
+        go.set()
+        holder.join()
+        with cengine.begin() as conn:
+            conn.execute(text("DELETE FROM students WHERE mk = 'mk-l387'"))
+    assert inserter.error is None, inserter.error
+    assert holder.error is None, holder.error
+
+
+def test_school_lock_still_mutually_exclusive(cengine):
+    """L156 不变:A 持有 lock_school 时,B 再 lock_school 在 lock_timeout 内拿不到(55P03)。"""
+    locked, go = threading.Event(), threading.Event()
+    holder = _hold_school_lock(cengine, locked, go)
+    try:
+        assert locked.wait(WAIT)
+
+        def second_lock(db: Session) -> None:
+            db.execute(text("SET LOCAL lock_timeout = '500ms'"))
+            service.lock_school(db, UUID(SCHOOL_ID))
+
+        second = Worker(cengine, "second", second_lock).start()
+        second.join()
+    finally:
+        go.set()
+        holder.join()
+    assert isinstance(second.error, OperationalError), second.error
+    assert "lock timeout" in str(second.error).lower()
+    assert holder.error is None, holder.error

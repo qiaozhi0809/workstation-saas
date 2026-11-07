@@ -44,8 +44,11 @@ def list_periods(db: Session, school_id: UUID) -> list[Period]:
 def lock_school(db: Session, school_id: UUID) -> None:
     """作息与课表共用这一把锁(L156):删节次(save_periods)与写课表(save_class_timetable)串行,
     写课表时读到的"已设节次"在它提交前不会被另一边删掉,不会留下引用已删节次的格子。
-    加锁顺序固定:先 School 行,再班级行。"""
-    db.execute(select(School.id).where(School.id == school_id).with_for_update())
+    加锁顺序固定:先 School 行,再班级行。
+    用 FOR NO KEY UPDATE(key_share=True)而非 FOR UPDATE(L387):两次 lock_school 仍互斥,
+    但不再与带 school_id 外键的 INSERT(students、login_logs 等)取的 FOR KEY SHARE 冲突,
+    否则会与"先锁班级、再插学生"的路径互等死锁,导入期间登录写日志也会被卡住。"""
+    db.execute(select(School.id).where(School.id == school_id).with_for_update(key_share=True))
 
 
 def save_periods(
