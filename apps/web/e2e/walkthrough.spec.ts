@@ -136,6 +136,12 @@ const IT_ADMIN_SLUGS = [
   'cameras',
 ]
 const IT_ADMIN_PAGES: PageSpec[] = ADMIN_PAGES.filter((p) => IT_ADMIN_SLUGS.includes(p.slug))
+// slug 写错会被 filter 静默丢掉、少截几十张图,收集阶段就报出来
+if (IT_ADMIN_PAGES.length !== IT_ADMIN_SLUGS.length) {
+  const found = new Set(IT_ADMIN_PAGES.map((p) => p.slug))
+  const missing = IT_ADMIN_SLUGS.filter((s) => !found.has(s))
+  throw new Error(`IT_ADMIN_SLUGS 里这些 slug 在 ADMIN_PAGES 找不到:${missing.join(', ')}`)
+}
 
 // 李家长(13800000061):王小一(三年二班)与魏小七(四年一班)的主家长,登录后落在今日页
 const PARENT_PAGES: PageSpec[] = [

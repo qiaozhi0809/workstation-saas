@@ -111,6 +111,8 @@ interface Baseline {
   periods: PeriodInput[]
   timetable: ClassTimetableOut
 }
+// 模块级、按 worker 存活:去掉 serial 后用例失败会换一个 worker 跑后面的用例,新 worker 里 baseline 为空、
+// 会按"当时"的数据重新快照——前提是失败用例的 afterEach restore 已经成功把数据还原,否则新快照记的就是脏状态
 let baseline: Baseline | undefined
 
 async function snapshot(request: APIRequestContext): Promise<Baseline> {
