@@ -443,6 +443,55 @@ it('downloads diagnostics through downloadBlob, disabled while running', async (
   await waitFor(() => expect(btn).toBeEnabled())
 })
 
+// L104:downloadDiagnostics 本体(绕过上面的 adminApi mock,取真实模块):令牌走请求头不进 URL、非 2xx 抛 ApiError、
+// 文件名从 Content-Disposition 解析,没有就用默认名
+it('downloadDiagnostics sends auth, rejects non-2xx, parses filename', async () => {
+  const { adminApi: real } =
+    await vi.importActual<typeof import('@/shared/api/admin')>('@/shared/api/admin')
+  const fetchMock = vi.fn()
+  vi.stubGlobal('fetch', fetchMock)
+  useAuthStore.setState({ accessToken: 'tok-123', refreshToken: 'r' })
+  try {
+    fetchMock.mockResolvedValueOnce(
+      new Response('zip-bytes', {
+        status: 200,
+        headers: {
+          'Content-Disposition': 'attachment; filename="ws-diagnostics-20261105-100000.zip"',
+        },
+      }),
+    )
+    const got = await real.downloadDiagnostics()
+    expect(got.filename).toBe('ws-diagnostics-20261105-100000.zip')
+    expect(await got.blob.text()).toBe('zip-bytes')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchMock.mock.calls[0] as [
+      string,
+      RequestInit & { headers: Record<string, string> },
+    ]
+    expect(url).toBe('/api/v1/admin/system/diagnostics')
+    expect(init.method).toBe('GET')
+    expect(init.headers.Authorization).toBe('Bearer tok-123')
+    expect(url).not.toContain('tok-123')
+
+    // 没有 Content-Disposition:用默认文件名
+    fetchMock.mockResolvedValueOnce(new Response('zip', { status: 200 }))
+    expect((await real.downloadDiagnostics()).filename).toBe('ws-diagnostics.zip')
+
+    // 非 2xx:抛 ApiError,带后端的 code / message
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: { code: 'FORBIDDEN', message: '没有权限' } }), {
+        status: 403,
+      }),
+    )
+    const err = await real.downloadDiagnostics().catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(ApiError)
+    expect(err).toMatchObject({ status: 403, code: 'FORBIDDEN', message: '没有权限' })
+  } finally {
+    vi.unstubAllGlobals()
+    useAuthStore.getState().logout()
+  }
+})
+
 it('toasts when diagnostics export fails', async () => {
   asAdmin(['settings.manage'])
   vi.mocked(adminApi.systemInfo).mockResolvedValue(INFO)
