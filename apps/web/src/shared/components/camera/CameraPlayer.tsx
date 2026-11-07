@@ -6,8 +6,18 @@ import { Button } from '@/shared/components/ui/button'
 import { useAuthStore } from '@/shared/stores/auth'
 
 type PlayState =
-  'loading' | 'playing' | 'stalled' | 'ended' | 'lan' | 'busy' | 'offline' | 'unsupported' | 'codec'
+  | 'loading'
+  | 'waiting'
+  | 'playing'
+  | 'stalled'
+  | 'ended'
+  | 'lan'
+  | 'busy'
+  | 'offline'
+  | 'unsupported'
+  | 'codec'
 
+/** 播放列表拿到之后等第一个片段的一段计时;到点先提示"正在等摄像头出画…"再计一段,还没有才算连不上(L169) */
 const NO_PICTURE_MS = 8000
 /**
  * 出画面之后:这么久没有新片段、也没有 timeupdate,就当画面停了。
@@ -70,6 +80,7 @@ function isPlaylistUrl(url: string): boolean {
 
 const MESSAGES: Partial<Record<PlayState, { role: 'status' | 'alert'; text: string }>> = {
   loading: { role: 'status', text: '加载中' },
+  waiting: { role: 'status', text: '正在等摄像头出画…' },
   stalled: { role: 'alert', text: '画面已停止,正在重连…' },
   ended: { role: 'status', text: '本节课已结束,看不到了' },
   lan: { role: 'alert', text: '只能在校园网内观看' },
@@ -162,12 +173,19 @@ export function CameraPlayer({
       show(next)
       if (next === 'ended') onEndedRef.current?.()
     }
-    // 8 秒"无画面"计时只在播放列表已拿到之后才算;页面隐藏时暂停,可见后重新计
+    // 8 秒"无画面"计时只在播放列表已拿到之后才算;页面隐藏时暂停,可见后重新计(当前这一段从头计)。
+    // 第一段到点还没片段:先说"正在等摄像头出画…"再计第二段(二次计时),还没有才算连不上;
+    // offline 的判定本身不变——没出过画面(L169)
     let manifestReady = false
+    let waiting = false
     const armNoPictureTimer = () => {
       clearTimeout(noPictureTimer)
       noPictureTimer = setTimeout(() => {
-        if (!gotPicture) finish('offline')
+        if (gotPicture || terminal) return
+        if (waiting) return finish('offline')
+        waiting = true
+        show('waiting')
+        armNoPictureTimer()
       }, NO_PICTURE_MS)
     }
     const markFirstSign = () => {

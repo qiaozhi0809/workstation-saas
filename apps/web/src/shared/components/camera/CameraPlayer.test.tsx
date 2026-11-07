@@ -493,23 +493,63 @@ describe('CameraPlayer', () => {
     act(() => void document.dispatchEvent(new Event('visibilitychange')))
     act(() => void vi.advanceTimersByTime(60000))
     expect(screen.queryByText('摄像头连不上')).toBeNull()
+    expect(screen.getByRole('status')).toHaveTextContent('加载中')
+    // 回来后第一段 8 秒从头计:到点先是"正在等摄像头出画…",不是连不上
     hidden = false
     act(() => void document.dispatchEvent(new Event('visibilitychange')))
     act(() => void vi.advanceTimersByTime(7999))
+    expect(screen.getByRole('status')).toHaveTextContent('加载中')
+    act(() => void vi.advanceTimersByTime(1))
+    expect(screen.getByRole('status')).toHaveTextContent('正在等摄像头出画…')
+    // 等出画期间再隐藏 / 回来:二次计时从头计 8 秒,不退回第一段
+    act(() => void vi.advanceTimersByTime(3000))
+    hidden = true
+    act(() => void document.dispatchEvent(new Event('visibilitychange')))
+    act(() => void vi.advanceTimersByTime(60000))
     expect(screen.queryByText('摄像头连不上')).toBeNull()
+    hidden = false
+    act(() => void document.dispatchEvent(new Event('visibilitychange')))
+    act(() => void vi.advanceTimersByTime(7999))
+    expect(screen.getByRole('status')).toHaveTextContent('正在等摄像头出画…')
     act(() => void vi.advanceTimersByTime(1))
     expect(screen.getByRole('alert')).toHaveTextContent('摄像头连不上')
   })
 
-  it('shows offline 8 s after MANIFEST_PARSED without any fragment', () => {
+  it('shows waiting copy after manifest without fragments', () => {
+    // L169:播放列表拿到了却一直没有片段:8 秒后先说"正在等摄像头出画…"(status,不是告警)并二次计时,
+    // 再 8 秒还没有才是"摄像头连不上"(offline 的判定不变:没出过画面)
     vi.useFakeTimers()
     render(<CameraPlayer cameraId="c1" title="t" />)
     act(() => hls().emit('hlsManifestParsed'))
     act(() => void vi.advanceTimersByTime(7999))
+    expect(screen.getByRole('status')).toHaveTextContent('加载中')
+    act(() => void vi.advanceTimersByTime(1))
+    expect(screen.getByRole('status')).toHaveTextContent('正在等摄像头出画…')
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+    expect(hls().destroy).not.toHaveBeenCalled()
+    expect(hls().loadSource).toHaveBeenCalledTimes(1)
+    act(() => void vi.advanceTimersByTime(7999))
     expect(screen.queryByText('摄像头连不上')).toBeNull()
     act(() => void vi.advanceTimersByTime(1))
     expect(screen.getByRole('alert')).toHaveTextContent('摄像头连不上')
+    expect(screen.queryByText('正在等摄像头出画…')).toBeNull()
     expect(hls().destroy).toHaveBeenCalled()
+  })
+
+  it('a fragment during the waiting stage plays normally', () => {
+    vi.useFakeTimers()
+    const onPlaying = vi.fn()
+    render(<CameraPlayer cameraId="c1" title="t" onPlaying={onPlaying} />)
+    act(() => hls().emit('hlsManifestParsed'))
+    act(() => void vi.advanceTimersByTime(8000))
+    expect(screen.getByRole('status')).toHaveTextContent('正在等摄像头出画…')
+    act(() => hls().emit('hlsFragLoaded'))
+    expect(screen.queryByRole('status')).toBeNull()
+    expect(onPlaying).toHaveBeenCalledTimes(1)
+    act(() => void vi.advanceTimersByTime(30000))
+    expect(screen.queryByText('摄像头连不上')).toBeNull()
+    expect(hls().destroy).not.toHaveBeenCalled()
   })
 
   it('calls onPlaying once, at the first picture', () => {
