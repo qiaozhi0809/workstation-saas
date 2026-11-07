@@ -3,10 +3,13 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { adminApi } from '@/shared/api/admin'
+import { camerasApi } from '@/shared/api/cameras'
+import { useAuthStore } from '@/shared/stores/auth'
 import BoardPage from './BoardPage'
 import { boardClass, boardView } from './boardFixtures'
 
 vi.mock('@/shared/api/admin', () => ({ adminApi: { board: vi.fn() } }))
+vi.mock('@/shared/api/cameras', () => ({ camerasApi: { wall: vi.fn() } }))
 
 function Loc() {
   const l = useLocation()
@@ -35,8 +38,17 @@ beforeEach(() => {
       ? boardView({ grade_id: 'g4', classes: [boardClass({ id: 'c9', name: '四年一班' })] })
       : boardView(),
   )
+  vi.mocked(camerasApi.wall).mockResolvedValue({
+    school_name: '示例小学',
+    timezone: 'Asia/Shanghai',
+    grades: [],
+    public: [],
+  })
 })
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  useAuthStore.setState({ user: null })
+})
 
 describe('全校看板', () => {
   it('切换年级页签请求带 grade_id', async () => {
@@ -94,6 +106,25 @@ describe('全校看板', () => {
     const grid = (await screen.findByText('三年一班')).closest('[data-class-grid]') as HTMLElement
     for (const c of ['grid-cols-1', 'md:grid-cols-2', 'lg:grid-cols-3', 'xl:grid-cols-4'])
       expect(grid).toHaveClass(c)
+  })
+
+  // L216:带监控侧栏时(≥ 1024)侧栏随滚动固定在 #main 顶部、不高于主区域(视口减 3.5rem 顶栏)并自己滚动;
+  // 卡片在 1024 宽保持两列,xl 才三列(没有侧栏时 lg 就是三列,见上一条)
+  it('sidebar is sticky', async () => {
+    useAuthStore.setState({ user: { admin_perms: ['camera.view'] } as never })
+    setup()
+    await screen.findByText('三年一班')
+    const side = screen.getByTestId('camera-wall').parentElement as HTMLElement
+    expect(side).toHaveClass(
+      'lg:sticky',
+      'lg:top-0',
+      'lg:max-h-[calc(100dvh-3.5rem)]',
+      'lg:overflow-auto',
+      'lg:w-80',
+    )
+    const grid = screen.getByText('三年一班').closest('[data-class-grid]') as HTMLElement
+    expect(grid).toHaveClass('md:grid-cols-2', 'xl:grid-cols-3')
+    expect(grid).not.toHaveClass('lg:grid-cols-3')
   })
 
   it('页面没有缩放按钮', async () => {

@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { adminApi } from '@/shared/api/admin'
@@ -145,29 +145,14 @@ function ScoresTab({ classId }: { classId: string }) {
 }
 
 /**
- * 没带 ?year= 直接打开(书签 / 手输地址)时,从最近的往年起逐个学年找这个班(L58):
- * 接口没有按班 id 读学年的方法,而往年通常只有几个。学年与班级列表都经 queryClient 取,与列表页共用缓存。
+ * 没带 ?year= 直接打开(书签 / 手输地址),或带的学年已不存在(404,如升级被回滚)时,
+ * 按班 id 一次 GET /admin/history/classes/{id} 定位学年与班名(L275);不存在 404 → 标题退化为"往年班级"
  */
 function useLocateClass(classId: string, enabled: boolean) {
-  const qc = useQueryClient()
   return useQuery({
-    queryKey: ['history', 'class-year', classId],
+    queryKey: ['history', 'class', classId],
+    queryFn: () => adminApi.historyClass(classId),
     enabled,
-    queryFn: async () => {
-      const years = await qc.fetchQuery({
-        queryKey: ['history', 'years'],
-        queryFn: () => adminApi.historyYears(),
-      })
-      for (const year of years) {
-        const classes = await qc.fetchQuery({
-          queryKey: ['history', 'classes', year.id],
-          queryFn: () => adminApi.historyClasses(year.id),
-        })
-        const cls = classes.find((c) => c.class_id === classId)
-        if (cls) return { year, cls }
-      }
-      return null
-    },
   })
 }
 
@@ -186,14 +171,17 @@ export default function HistoryClassPage() {
     queryFn: () => adminApi.historyClasses(paramYear),
     enabled: paramYear !== '',
   })
-  const located = useLocateClass(id, paramYear === '')
-  const yearId = paramYear || (located.data?.year.id ?? '')
-  const yearName = paramYear
+  const yearGone =
+    classes.isError && classes.error instanceof ApiError && classes.error.status === 404
+  const fromList = paramYear !== '' && !yearGone
+  const located = useLocateClass(id, !fromList)
+  const yearId = fromList ? paramYear : (located.data?.year_id ?? '')
+  const yearName = fromList
     ? years.data?.find((y) => y.id === paramYear)?.name
-    : located.data?.year.name
-  const className = paramYear
+    : located.data?.year_name
+  const className = fromList
     ? classes.data?.find((c) => c.class_id === id)?.class_name
-    : located.data?.cls.class_name
+    : located.data?.class_name
   const title = yearName && className ? `${yearName} ${className}` : '往年班级'
 
   return (

@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { Button } from '@/shared/components/ui/button'
 import { cn } from '@/shared/lib/utils'
 import type { PopoverProps } from './Popover'
-import { layerClass, useAnchoredLayer } from './useAnchoredLayer'
+import { layerClass, useAnchoredLayer, type LayerFocus } from './useAnchoredLayer'
 
 export type MenuProps = Omit<PopoverProps, 'children'> & { children: ReactNode }
 
@@ -13,6 +13,13 @@ const CloseMenu = createContext<() => void>(() => {})
 
 const items = (layer: HTMLElement) =>
   Array.from(layer.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+
+/** 首项 / 末项(APG:↓ 打开聚焦第一项,↑ 打开聚焦最后一项;L276) */
+const edgeItem = (layer: HTMLElement, at: LayerFocus): HTMLElement | null => {
+  const list = items(layer)
+  return (at === 'last' ? list[list.length - 1] : list[0]) ?? null
+}
+const ARROW_FOCUS: Record<string, LayerFocus> = { ArrowDown: 'first', ArrowUp: 'last' }
 
 // aria-disabled 项:悬停不高亮(免得看着能点);聚焦换成中性的 muted 底色,键盘仍能看出焦点在哪
 const ITEM = cn(
@@ -32,15 +39,26 @@ export default function Menu({
   className,
   children,
 }: MenuProps) {
-  const { open, setOpen, close, toggle, layerId, wrapperRef, triggerRef, layerRef, onWrapperBlur } =
-    useAnchoredLayer((layer) => items(layer)[0] ?? null, triggerProps?.disabled)
+  const {
+    open,
+    openLayer,
+    close,
+    toggle,
+    layerId,
+    wrapperRef,
+    triggerRef,
+    layerRef,
+    onWrapperBlur,
+  } = useAnchoredLayer(edgeItem, triggerProps?.disabled)
 
+  // ↓ 打开并聚焦第一项,↑ 打开并聚焦最后一项;已开着时分别跳到首项 / 末项(L276)
   const onTriggerKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
     triggerProps?.onKeyDown?.(e)
-    if (e.key !== 'ArrowDown' || e.defaultPrevented) return
+    const at = ARROW_FOCUS[e.key]
+    if (!at || e.defaultPrevented) return
     e.preventDefault()
-    if (open && layerRef.current) items(layerRef.current)[0]?.focus()
-    else setOpen(true)
+    if (open && layerRef.current) edgeItem(layerRef.current, at)?.focus()
+    else openLayer(at)
   }
 
   const onMenuKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -135,6 +153,12 @@ export function MenuLinkItem({
   children: ReactNode
 }) {
   const closeMenu = useContext(CloseMenu)
+  // 菜单项是链接:浏览器只把回车当激活、空格只滚动页面,菜单模式下空格也应选中(L276)
+  const onKeyDown = (e: KeyboardEvent<HTMLAnchorElement>) => {
+    if (e.key !== ' ') return
+    e.preventDefault()
+    e.currentTarget.click()
+  }
   // Link 先执行这里的 onClick,再导航
   return (
     <Link
@@ -144,6 +168,7 @@ export function MenuLinkItem({
       aria-current={current ? 'page' : undefined}
       className={ITEM}
       onClick={closeMenu}
+      onKeyDown={onKeyDown}
     >
       {children}
     </Link>

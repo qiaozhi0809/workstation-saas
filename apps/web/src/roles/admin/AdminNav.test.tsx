@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore } from '@/shared/stores/auth'
 import type { AdminPerm } from '@/shared/types/admin'
 import AdminNav from './AdminNav'
-import { ADMIN_PAGES, type AdminPage } from './pages'
+import { ADMIN_PAGES, type AdminGroup, type AdminPage } from './pages'
 
 const PERMS: Record<string, AdminPerm[]> = {
   principal: [
@@ -57,6 +57,37 @@ const nav = () => screen.getByRole('navigation', { name: '主导航' })
 const top = () =>
   Array.from(nav().querySelectorAll('a, button')).map((el) => el.textContent?.trim())
 
+// ---- 期望从 ADMIN_PAGES 派生(L214):新增页面只改 pages.tsx,这里的三处清单不用再跟着改 ----
+const GROUP_LABEL: Record<AdminGroup, string> = {
+  manage: '学校管理',
+  reports: '联考与报表',
+  system: '系统',
+}
+/** 该权限集能看到的页面(不含 hidden),保持数组顺序 */
+const visible = (perms: AdminPerm[], pages = ADMIN_PAGES) =>
+  pages.filter((p) => !p.hidden && perms.includes(p.perm))
+/** 顶层条目:组放在它第一个页面的位置;按权限过滤后只剩一项的组退化成那一页的链接 */
+function expectedTop(perms: AdminPerm[]): string[] {
+  const list = visible(perms)
+  const out: string[] = []
+  const placed = new Set<AdminGroup>()
+  for (const p of list) {
+    const members = p.group ? list.filter((x) => x.group === p.group) : []
+    if (!p.group || members.length === 1) out.push(p.label)
+    else if (!placed.has(p.group)) {
+      placed.add(p.group)
+      out.push(GROUP_LABEL[p.group])
+    }
+  }
+  return out
+}
+/** 某个组下拉里的 [名字, href],按数组顺序 */
+const expectedMenu = (group: AdminGroup, perms: AdminPerm[]) =>
+  visible(perms)
+    .filter((p) => p.group === group)
+    .map((p) => [p.label, `/admin/${p.path}`])
+const expectedHrefs = (perms: AdminPerm[]) => visible(perms).map((p) => `/admin/${p.path}`)
+
 /** 按 min-width 查询串与当前宽度求值的 matchMedia;resize 会通知已订阅的监听器 */
 function mockViewport(width: number) {
   let w = width
@@ -99,8 +130,11 @@ describe('grouped nav (≥ 768)', () => {
   it('shows direct links and three groups for a principal, in page order', () => {
     mockViewport(768) // 恰好 768 就是宽屏
     renderNav()
-    expect(top()).toEqual(['今日关注', '全校看板', '学校管理', '联考与报表', '系统', '通知'])
-    for (const g of ['学校管理', '联考与报表', '系统']) {
+    const expected = expectedTop(PERMS.principal)
+    // 派生出来的清单至少要像样:三个组都在,直接链接也在,再逐项对 DOM
+    expect(expected).toEqual(expect.arrayContaining(['今日关注', '学校管理', '联考与报表', '系统']))
+    expect(top()).toEqual(expected)
+    for (const g of Object.values(GROUP_LABEL)) {
       expect(screen.getByRole('button', { name: g })).toHaveAttribute('aria-haspopup', 'menu')
     }
   })
@@ -112,39 +146,20 @@ describe('grouped nav (≥ 768)', () => {
       const items = within(screen.getByRole('menu', { name })).getAllByRole('menuitem')
       return items.map((i) => [i.textContent?.trim(), i.getAttribute('href')])
     }
-    expect(open('联考与报表')).toEqual([
-      ['年级联考', '/admin/grade-exams'],
-      ['成绩汇总', '/admin/reports/scores'],
-      ['考勤报告', '/admin/reports/attendance'],
-    ])
-    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
-    expect(open('学校管理')).toEqual([
-      ['组织架构', '/admin/org'],
-      ['作息与课表', '/admin/timetable'],
-      ['账号', '/admin/accounts'],
-      ['学校设置', '/admin/settings'],
-      ['学年升级', '/admin/upgrade'],
-      ['往年班级', '/admin/history'],
-    ])
-    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
-    expect(open('系统')).toEqual([
-      ['审计日志', '/admin/audit'],
-      ['AI 使用', '/admin/ai/usage'],
-      ['AI 配置', '/admin/ai/config'],
-      ['登录日志', '/admin/login-logs'],
-    ])
+    for (const group of Object.keys(GROUP_LABEL) as AdminGroup[]) {
+      const expected = expectedMenu(group, PERMS.principal)
+      expect(expected.length).toBeGreaterThan(1) // 校长看得到每个组的不止一项,否则组会退化成链接
+      expect(open(GROUP_LABEL[group])).toEqual(expected)
+      fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
+    }
   })
 
-  it.each([
-    ['dean', ['今日关注', '全校看板', '学校管理', '联考与报表', 'AI 使用', '通知']],
-    ['gradeHead', ['今日关注', '全校看板', '联考与报表', '通知', '往年班级']],
-    ['itAdmin', ['学校管理', '系统']],
-  ])(
+  it.each(['dean', 'gradeHead', 'itAdmin'])(
     'filters by permission for %s: empty groups vanish, single-item groups become plain links',
-    (role, expected) => {
+    (role) => {
       setPerms(PERMS[role])
       renderNav()
-      expect(top()).toEqual(expected)
+      expect(top()).toEqual(expectedTop(PERMS[role]))
     },
   )
 
@@ -160,7 +175,14 @@ describe('grouped nav (≥ 768)', () => {
     setPerms(['school.view'])
     renderNav()
     // 只有 school.view:系统组一项都没有 → 不显示;学校管理组只剩"往年班级" → 退化成链接;联考与报表还有 2 项 → 仍是下拉
-    expect(top()).toEqual(['今日关注', '全校看板', '联考与报表', '往年班级'])
+    expect(top()).toEqual(expectedTop(['school.view']))
+    expect(within(nav()).queryByRole('button', { name: '系统' })).toBeNull()
+    expect(within(nav()).queryByRole('button', { name: '学校管理' })).toBeNull()
+    expect(within(nav()).getByRole('link', { name: '往年班级' })).toHaveAttribute(
+      'href',
+      '/admin/history',
+    )
+    expect(within(nav()).getByRole('button', { name: '联考与报表' })).toBeInTheDocument()
   })
 
   it('marks the group button active on any of its routes, including hidden sub-routes', () => {
@@ -208,14 +230,17 @@ describe('grouped nav (≥ 768)', () => {
     expect(screen.queryByRole('menu')).toBeNull()
   })
 
-  // L58:导航下拉的键盘
-  it('opens with ArrowUp too, and ArrowUp on the open trigger jumps to the last item', () => {
+  // L58 / L276:导航下拉的键盘——↑ 打开时焦点落在最后一项(APG,由 Menu 本体处理),开着时 ↑ 也跳到最后一项
+  it('opens with ArrowUp focusing the last item, and ArrowUp on the open trigger jumps there too', () => {
     renderNav()
     const btn = screen.getByRole('button', { name: '系统' })
     btn.focus()
     fireEvent.keyDown(btn, { key: 'ArrowUp' })
     const menu = screen.getByRole('menu', { name: '系统' })
     const items = within(menu).getAllByRole('menuitem')
+    expect(items[items.length - 1]).toHaveFocus()
+    btn.focus()
+    fireEvent.keyDown(btn, { key: 'ArrowDown' })
     expect(items[0]).toHaveFocus()
     btn.focus()
     fireEvent.keyDown(btn, { key: 'ArrowUp' })
@@ -300,40 +325,28 @@ describe('narrow nav (< 768)', () => {
     renderNav()
     const el = nav()
     expect(within(el).queryAllByRole('button')).toHaveLength(0)
+    const expected = expectedHrefs(PERMS.principal)
+    // 校长没有 camera.manage:摄像头页不在;hidden 的子页也不在
+    expect(expected).not.toContain('/admin/cameras')
+    expect(expected).toEqual(expect.arrayContaining(['/admin/today', '/admin/history']))
     expect(
       within(el)
         .getAllByRole('link')
         .map((l) => l.getAttribute('href')),
-    ).toEqual([
-      '/admin/today',
-      '/admin/board',
-      '/admin/org',
-      '/admin/timetable',
-      '/admin/accounts',
-      '/admin/settings',
-      '/admin/grade-exams',
-      '/admin/reports/scores',
-      '/admin/reports/attendance',
-      '/admin/audit',
-      '/admin/ai/usage',
-      '/admin/ai/config',
-      '/admin/login-logs',
-      '/admin/notices',
-      '/admin/upgrade',
-      '/admin/history',
-    ])
+    ).toEqual(expected)
     expect(el).toHaveClass('relative', 'overflow-x-auto')
   })
 
   it('switches layout when the viewport crosses 768 and unsubscribes on unmount', () => {
     const vp = mockViewport(1024)
     const { unmount } = renderNav()
-    expect(within(nav()).getAllByRole('button')).toHaveLength(3)
+    const groups = Object.keys(GROUP_LABEL).length
+    expect(within(nav()).getAllByRole('button')).toHaveLength(groups)
     vp.resize(600)
     expect(within(nav()).queryAllByRole('button')).toHaveLength(0)
-    expect(within(nav()).getAllByRole('link')).toHaveLength(16)
+    expect(within(nav()).getAllByRole('link')).toHaveLength(visible(PERMS.principal).length)
     vp.resize(900)
-    expect(within(nav()).getAllByRole('button')).toHaveLength(3)
+    expect(within(nav()).getAllByRole('button')).toHaveLength(groups)
     unmount()
     expect(vp.removed).toHaveBeenCalled()
     expect(vp.listeners.size).toBe(0)

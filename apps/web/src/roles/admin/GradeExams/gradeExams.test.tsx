@@ -7,7 +7,8 @@ import { ApiError } from '@/shared/api/client'
 import { schoolApi } from '@/shared/api/school'
 import { toast } from '@/shared/components/Toast'
 import { useAuthStore } from '@/shared/stores/auth'
-import type { BoardView, GradeAdmin, GradeExam } from '@/shared/types/admin'
+import type { AdminPerm, GradeExam, SchoolGrade } from '@/shared/types/admin'
+import type { User } from '@/shared/types/user'
 import type { Meta, SubjectCatalog } from '@/shared/types/school'
 import GradeExamsPage from './GradeExamsPage'
 
@@ -15,6 +16,7 @@ vi.mock('@/shared/api/admin', () => ({
   adminApi: {
     grades: vi.fn(),
     board: vi.fn(),
+    schoolGrades: vi.fn(),
     gradeExams: vi.fn(),
     createGradeExam: vi.fn(),
     updateGradeExam: vi.fn(),
@@ -41,13 +43,17 @@ const CATALOG: SubjectCatalog = {
   senior: [{ name: '语文', full: 150 }],
 }
 
-const boardOf = (...grades: { id: string; name: string }[]): BoardView => ({
-  grades,
-  grade_id: null,
-  classes: [],
+const G3: SchoolGrade = { id: 'g3', name: '三年级', display_order: 3, effective_stage: 'primary' }
+const G4: SchoolGrade = { id: 'g4', name: '四年级', display_order: 4, effective_stage: 'primary' }
+
+const adminUser = (perms: AdminPerm[]): User => ({
+  id: 'u-admin',
+  display_name: '管理员',
+  contexts: [],
+  admin_perms: perms,
+  must_change_password: false,
+  password_change_reason: null,
 })
-const G3 = { id: 'g3', name: '三年级' }
-const G4 = { id: 'g4', name: '四年级' }
 
 const exam = (over: Partial<GradeExam> = {}): GradeExam => ({
   id: 'ge1',
@@ -71,7 +77,7 @@ const exam = (over: Partial<GradeExam> = {}): GradeExam => ({
 beforeEach(() => {
   vi.resetAllMocks()
   useAuthStore.setState({ user: null })
-  vi.mocked(adminApi.board).mockResolvedValue(boardOf(G3, G4))
+  vi.mocked(adminApi.schoolGrades).mockResolvedValue([G3, G4])
   vi.mocked(adminApi.gradeExams).mockImplementation(async (gid) => (gid === 'g4' ? [] : [exam()]))
   vi.mocked(schoolApi.subjectCatalog).mockResolvedValue(CATALOG)
   vi.mocked(schoolApi.meta).mockResolvedValue(META)
@@ -119,13 +125,15 @@ it('lists the exams of the selected grade tab with per-class progress', async ()
   expect(await screen.findByText('四年级还没有联考')).toBeInTheDocument()
 })
 
-it('shows the grade tabs from the board even when /admin/grades is forbidden (grade head)', async () => {
+// L272:年级页签读只读的 GET /school/grades(按可见年级裁剪),既不拉看板也不碰要 org.manage 的 /admin/grades
+it('shows the grade tabs from the school grades endpoint even when /admin/grades is forbidden (grade head)', async () => {
   vi.mocked(adminApi.grades).mockRejectedValue(new ApiError(403, 'FORBIDDEN', 'forbidden'))
-  vi.mocked(adminApi.board).mockResolvedValue(boardOf(G3))
+  vi.mocked(adminApi.schoolGrades).mockResolvedValue([G3])
   await renderPage()
   expect(screen.getByRole('tab', { name: '三年级' })).toBeInTheDocument()
   expect(screen.queryByRole('tab', { name: '四年级' })).toBeNull()
-  expect(adminApi.board).toHaveBeenCalledWith(null)
+  expect(adminApi.schoolGrades).toHaveBeenCalledTimes(1)
+  expect(adminApi.board).not.toHaveBeenCalled()
   expect(adminApi.grades).not.toHaveBeenCalled()
 })
 
@@ -326,35 +334,34 @@ it('grade exam form picks from catalog', async () => {
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 })
 
-it('uses the stage of the grade: junior catalog for 初一 by name, explicit stage when readable', async () => {
-  vi.mocked(adminApi.board).mockResolvedValue(boardOf({ id: 'g7', name: '初一' }))
+// L234:学段直接用 GET /school/grades 给的 effective_stage(显式学段或后端按名推断),前端不再按年级名猜、也不再读 /admin/grades
+it('stage from grade brief', async () => {
+  // 名字像初中,但年级显式设了高中 → 高中目录;即使有 org.manage 也不去读年级表
+  useAuthStore.setState({ user: adminUser(['org.manage']) })
+  vi.mocked(adminApi.schoolGrades).mockResolvedValue([
+    { id: 'g7', name: '初一', display_order: 7, effective_stage: 'senior' },
+    { id: 'g0', name: '国际部', display_order: 9, effective_stage: null },
+  ])
   vi.mocked(adminApi.gradeExams).mockResolvedValue([exam({ grade_id: 'g7', grade_name: '初一' })])
   await renderPage()
   fireEvent.click(screen.getByRole('button', { name: '新建联考' }))
   let dlg = await screen.findByRole('dialog')
-  await within(dlg).findByRole('checkbox', { name: '物理' })
-  expect(within(dlg).getByText('初中目录')).toBeInTheDocument()
-  expect(subjectRow(dlg, '语文')).toHaveTextContent('满分 120')
-  expect(adminApi.grades).not.toHaveBeenCalled() // 没有 org.manage 不去读年级表
+  await within(dlg).findByRole('checkbox', { name: '语文' })
+  expect(within(dlg).getByText('高中目录')).toBeInTheDocument()
+  expect(subjectRow(dlg, '语文')).toHaveTextContent('满分 150')
+  expect(within(dlg).queryByRole('checkbox', { name: '物理' })).toBeNull()
+  expect(adminApi.grades).not.toHaveBeenCalled()
   fireEvent.click(within(dlg).getByRole('button', { name: '取消' }))
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 
-  // 有 org.manage:年级表里显式设的学段优先于按名字推断
-  useAuthStore.setState({ user: { admin_perms: ['org.manage'] } as never })
-  const g7: GradeAdmin = {
-    id: 'g7',
-    name: '初一',
-    stage: '高中',
-    effective_stage: '高中',
-    display_order: 1,
-    class_count: 2,
-  }
-  vi.mocked(adminApi.grades).mockResolvedValue([g7])
+  // 契约允许 effective_stage 为 null:说清楚读不到目录,不能保存
+  fireEvent.click(screen.getByRole('tab', { name: '国际部' }))
+  await waitFor(() => expect(adminApi.gradeExams).toHaveBeenCalledWith('g0'))
   fireEvent.click(screen.getByRole('button', { name: '新建联考' }))
   dlg = await screen.findByRole('dialog')
-  expect(await within(dlg).findByText('高中目录')).toBeInTheDocument()
-  expect(subjectRow(dlg, '语文')).toHaveTextContent('满分 150')
-  expect(within(dlg).queryByRole('checkbox', { name: '物理' })).toBeNull()
+  expect(await within(dlg).findByRole('alert')).toHaveTextContent('这个年级还没有学段')
+  expect(within(dlg).queryByRole('checkbox')).toBeNull()
+  expect(within(dlg).getByRole('button', { name: '保存' })).toBeDisabled()
 })
 
 it('requires a name and at least one subject locally', async () => {
@@ -417,7 +424,8 @@ it('edits an exam: keeps its grade and full marks, lists legacy subjects, shows 
   expect(within(dlg).getByRole('checkbox', { name: '语文' })).toBeChecked()
   expect(within(dlg).getByRole('checkbox', { name: '英语' })).not.toBeChecked()
   expect(within(dlg).getByRole('checkbox', { name: '道法' })).toBeChecked()
-  expect(subjectRow(dlg, '语文')).toHaveTextContent('满分 90')
+  // 编辑态已勾选的科目满分是输入框,初值是考试里的满分(L235)
+  expect(within(dlg).getByLabelText('语文 满分')).toHaveValue(90)
   expect(subjectRow(dlg, '道法')).toHaveTextContent('已不在目录')
   fireEvent.click(within(dlg).getByRole('checkbox', { name: '数学' }))
   fireEvent.click(within(dlg).getByRole('button', { name: '保存' }))
@@ -471,6 +479,92 @@ it('edits an exam: keeps the exam subject order and appends newly picked subject
       ],
     }),
   )
+})
+
+// L235(Q1):编辑态已勾选的科目可以改满分,提交 subjects[].full;新建态与未勾选的科目仍只显示目录满分。
+// 降到已录分数之下时沿用后端 409 EXAM_HAS_SCORES 的提示,对话框不关
+it('edit full marks', async () => {
+  vi.mocked(adminApi.updateGradeExam)
+    .mockRejectedValueOnce(
+      new ApiError(409, 'EXAM_HAS_SCORES', '「语文」已有成绩,满分不能低于已录入的最高分', {
+        subject: '语文',
+      }),
+    )
+    .mockResolvedValueOnce(exam())
+  await renderPage()
+  fireEvent.click(within(row()).getByRole('button', { name: '编辑' }))
+  const dlg = await screen.findByRole('dialog')
+  const full = await within(dlg).findByLabelText('语文 满分')
+  expect(full).toHaveValue(100)
+  // 没勾选的科目只显示目录满分,没有输入框
+  expect(within(dlg).queryByLabelText('英语 满分')).toBeNull()
+  expect(subjectRow(dlg, '英语')).toHaveTextContent('满分 100')
+  // 本地先拦:满分要是 1–1000 的整数
+  fireEvent.change(full, { target: { value: '0' } })
+  fireEvent.click(within(dlg).getByRole('button', { name: '保存' }))
+  expect(await within(dlg).findByRole('alert')).toHaveTextContent(
+    '「语文」的满分须为 1–1000 的整数',
+  )
+  expect(adminApi.updateGradeExam).not.toHaveBeenCalled()
+  // 降满分:提交 full 60,后端 409 → 显示它的提示,对话框还在
+  fireEvent.change(full, { target: { value: '60' } })
+  fireEvent.click(within(dlg).getByRole('button', { name: '保存' }))
+  await waitFor(() =>
+    expect(adminApi.updateGradeExam).toHaveBeenCalledWith('ge1', {
+      grade_id: 'g3',
+      name: '十月联考',
+      exam_type: '月考',
+      date: '2026-10-20',
+      subjects: [
+        { name: '语文', full: 60 },
+        { name: '数学', full: 100 },
+      ],
+    }),
+  )
+  expect(await within(dlg).findByRole('alert')).toHaveTextContent(
+    '「语文」已有成绩,满分不能低于已录入的最高分',
+  )
+  expect(screen.getByRole('dialog')).toBeInTheDocument()
+  // 改成 120 再保存就过了
+  fireEvent.change(within(dlg).getByLabelText('语文 满分'), { target: { value: '120' } })
+  fireEvent.click(within(dlg).getByRole('button', { name: '保存' }))
+  await waitFor(() =>
+    expect(adminApi.updateGradeExam).toHaveBeenLastCalledWith(
+      'ge1',
+      expect.objectContaining({
+        subjects: [
+          { name: '语文', full: 120 },
+          { name: '数学', full: 100 },
+        ],
+      }),
+    ),
+  )
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+})
+
+// L238 / L234:表单不再自己读年级表(以前有 org.manage 的用户每次打开都按 staleTime 0 重取 ['admin','grades']);
+// 页面级的 GET /school/grades 也不因为开关对话框而重取
+it('grades not refetched on reopen', async () => {
+  useAuthStore.setState({ user: adminUser(['org.manage']) })
+  await renderPage()
+  for (let i = 0; i < 2; i++) {
+    fireEvent.click(screen.getByRole('button', { name: '新建联考' }))
+    const dlg = await screen.findByRole('dialog')
+    await within(dlg).findByRole('checkbox', { name: '语文' })
+    fireEvent.click(within(dlg).getByRole('button', { name: '取消' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  }
+  expect(adminApi.grades).not.toHaveBeenCalled()
+  expect(adminApi.schoolGrades).toHaveBeenCalledTimes(1)
+})
+
+it('new exam form shows catalog full marks read-only', async () => {
+  await renderPage()
+  fireEvent.click(screen.getByRole('button', { name: '新建联考' }))
+  const dlg = await screen.findByRole('dialog')
+  await within(dlg).findByRole('checkbox', { name: '语文' })
+  expect(within(dlg).queryByLabelText('语文 满分')).toBeNull()
+  expect(subjectRow(dlg, '语文')).toHaveTextContent('满分 100')
 })
 
 it('tells when the catalog cannot be loaded instead of offering free text', async () => {

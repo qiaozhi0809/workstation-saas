@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import type { KeyboardEvent } from 'react'
 import { Check, ChevronDown, Cog, FileBarChart2, FolderKanban, type LucideIcon } from 'lucide-react'
 import { NavLink, useLocation } from 'react-router-dom'
 import Menu, { MenuLinkItem } from '@/shared/components/overlay/Menu'
@@ -84,32 +83,7 @@ function NavItem({ page, labelClass = WIDE_LABEL }: { page: AdminPage; labelClas
   )
 }
 
-// 导航下拉的键盘补齐(L58)只做在这一层;Menu 本体归 C2b 的 L13
-const menuItems = (menu: HTMLElement) =>
-  Array.from(menu.querySelectorAll<HTMLElement>('[role="menuitem"]'))
-
-/** Menu 本体只认 ↓:↑ 也打开(焦点照常落在第一项);菜单已开着时 ↑ 跳到最后一项 */
-function openOnArrowUp(e: KeyboardEvent<HTMLButtonElement>) {
-  if (e.key !== 'ArrowUp') return
-  e.preventDefault()
-  const btn = e.currentTarget
-  const menu =
-    btn.getAttribute('aria-expanded') === 'true'
-      ? document.getElementById(btn.getAttribute('aria-controls') ?? '')
-      : null
-  const items = menu ? menuItems(menu) : []
-  if (items.length > 0) items[items.length - 1].focus()
-  else btn.click()
-}
-
-/** 菜单项是链接:浏览器只把回车当激活、空格只滚动页面,菜单模式下空格也应选中 */
-function activateOnSpace(e: KeyboardEvent<HTMLDivElement>) {
-  if (e.key !== ' ' || !(e.target instanceof HTMLElement)) return
-  if (e.target.getAttribute('role') !== 'menuitem') return
-  e.preventDefault()
-  e.target.click()
-}
-
+// 导航下拉的键盘(↑ 打开聚焦最后一项、空格激活链接项)都在 Menu / MenuLinkItem 本体里(L276)
 function GroupMenu({ group, pages }: { group: AdminGroup; pages: AdminPage[] }) {
   const { label, icon: Icon } = GROUPS[group]
   const { pathname } = useLocation()
@@ -125,7 +99,6 @@ function GroupMenu({ group, pages }: { group: AdminGroup; pages: AdminPage[] }) 
         className: cn(ITEM_BASE, itemState(active)),
         'aria-current': active ? 'true' : undefined,
         title: label,
-        onKeyDown: openOnArrowUp,
       }}
       trigger={
         <>
@@ -135,19 +108,16 @@ function GroupMenu({ group, pages }: { group: AdminGroup; pages: AdminPage[] }) 
         </>
       }
     >
-      {/* display: contents 的包裹层只为接住菜单项冒上来的空格键,不影响菜单的纵向排布 */}
-      <div role="presentation" className="contents" onKeyDown={activateOnSpace}>
-        {pages.map(({ path, label: text, icon: PageIcon }) => {
-          const current = underPath(pathname, path)
-          return (
-            <MenuLinkItem key={path} to={`/admin/${path}`} current={current}>
-              <PageIcon className="mr-2 h-4 w-4 shrink-0" aria-hidden="true" />
-              <span className={cn('mr-2', current && 'font-medium')}>{text}</span>
-              {current && <Check className="ml-auto h-4 w-4 shrink-0" aria-hidden="true" />}
-            </MenuLinkItem>
-          )
-        })}
-      </div>
+      {pages.map(({ path, label: text, icon: PageIcon }) => {
+        const current = underPath(pathname, path)
+        return (
+          <MenuLinkItem key={path} to={`/admin/${path}`} current={current}>
+            <PageIcon className="mr-2 h-4 w-4 shrink-0" aria-hidden="true" />
+            <span className={cn('mr-2', current && 'font-medium')}>{text}</span>
+            {current && <Check className="ml-auto h-4 w-4 shrink-0" aria-hidden="true" />}
+          </MenuLinkItem>
+        )
+      })}
     </Menu>
   )
 }

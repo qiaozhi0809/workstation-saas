@@ -39,16 +39,39 @@ function validatePeriods(periods: Period[]): string | null {
   return null
 }
 
+/** 409 PERIOD_IN_USE 的 details(timetable/service.py::save_periods):被占用的节次编号与涉及的班级名 */
+interface InUse {
+  periods: number[]
+  classes: string[]
+}
+function inUseOf(details: unknown): InUse {
+  const d = (details ?? {}) as { periods?: unknown; classes?: unknown }
+  return {
+    periods: Array.isArray(d.periods)
+      ? d.periods.filter((n): n is number => typeof n === 'number')
+      : [],
+    classes: Array.isArray(d.classes)
+      ? d.classes.filter((s): s is string => typeof s === 'string')
+      : [],
+  }
+}
+
 /** 作息时间:整体替换式编辑,保存前前端先按后端同样的规则查一遍 */
 export default function PeriodsEditor({ periods }: { periods: Period[] }) {
   const qc = useQueryClient()
   const [draft, setDraft] = useState<Period[] | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  // 409 PERIOD_IN_USE 时另列被占用的节次与班级,并给"放弃修改"(L215)
+  const [inUse, setInUse] = useState<InUse | null>(null)
   const value = draft ?? periods
 
-  const update = (index: number, patch: Partial<Period>) => {
+  const clearError = () => {
     setError('')
+    setInUse(null)
+  }
+  const update = (index: number, patch: Partial<Period>) => {
+    clearError()
     setDraft(value.map((p, i) => (i === index ? { ...p, ...patch } : p)))
   }
   const add = () => {
@@ -59,19 +82,23 @@ export default function PeriodsEditor({ periods }: { periods: Period[] }) {
     const last = ordered[ordered.length - 1]
     const starts = last?.ends_at ? addMinutes(last.ends_at, 10) : '08:00'
     const ends = starts ? addMinutes(starts, 40) : null
-    setError('')
+    clearError()
     setDraft([...value, { no, starts_at: starts ?? '', ends_at: ends ?? '' }])
   }
   const remove = (index: number) => {
-    setError('')
+    clearError()
     setDraft(value.filter((_, i) => i !== index))
+  }
+  const discard = () => {
+    clearError()
+    setDraft(null)
   }
 
   const save = async () => {
     const problem = validatePeriods(value)
     if (problem) return setError(problem)
     setBusy(true)
-    setError('')
+    clearError()
     try {
       const saved = await timetableApi.savePeriods(byNo(value))
       qc.setQueryData(['periods'], saved)
@@ -79,6 +106,7 @@ export default function PeriodsEditor({ periods }: { periods: Period[] }) {
       toast('已保存作息时间')
     } catch (err) {
       setError(err instanceof ApiError ? err.message : '保存失败,请重试')
+      if (err instanceof ApiError && err.code === 'PERIOD_IN_USE') setInUse(inUseOf(err.details))
     } finally {
       setBusy(false)
     }
@@ -142,9 +170,19 @@ export default function PeriodsEditor({ periods }: { periods: Period[] }) {
           ))}
         </ul>
         {error && (
-          <p role="alert" className="text-sm text-destructive">
-            {error}
-          </p>
+          <div role="alert" className="space-y-1 text-sm text-destructive">
+            <p>{error}</p>
+            {inUse && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span>
+                  {`被课表占用的节次:${inUse.periods.map((n) => `第 ${n} 节`).join('、')}(${inUse.classes.join('、')});先改课表,或放弃这次修改。`}
+                </span>
+                <Button type="button" variant="outline" size="sm" onClick={discard}>
+                  放弃修改
+                </Button>
+              </div>
+            )}
+          </div>
         )}
         <div className="flex flex-wrap items-center gap-2">
           <Button

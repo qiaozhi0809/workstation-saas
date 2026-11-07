@@ -47,10 +47,10 @@ function AttendanceReport({ tz }: { tz: string }) {
   const [gradeId, setGradeId] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
 
-  // 年级选项沿用全校看板的来源(school.view 即可读)
-  const boardQ = useQuery({
-    queryKey: ['admin', 'board', null],
-    queryFn: () => adminApi.board(null),
+  // 年级选项读只读年级接口(school.view 即可,按可见年级裁剪),不再连整个看板一起拉(L272)
+  const gradesQ = useQuery({
+    queryKey: ['admin', 'grades', 'school'], // 挂在 ['admin','grades'] 下,改年级 / 升级的失效一并覆盖
+    queryFn: adminApi.schoolGrades,
   })
   const q = useQuery({
     queryKey: ['report', 'attendance', month, gradeId],
@@ -70,7 +70,7 @@ function AttendanceReport({ tz }: { tz: string }) {
   }
 
   const isCurrent = month >= monthIn(tz)
-  const grades = boardQ.data?.grades ?? []
+  const grades = gradesQ.data ?? []
 
   return (
     <div data-attendance-report className="flex flex-col gap-4 p-4 md:p-6">
@@ -135,7 +135,7 @@ function AttendanceReport({ tz }: { tz: string }) {
             ))}
           </NativeSelect>
         </label>
-        {boardQ.isError && (
+        {gradesQ.isError && (
           // 年级列表取不到时说出来并可重试,而不是静默只剩"全部年级"(L59)
           <span
             data-no-print
@@ -149,8 +149,8 @@ function AttendanceReport({ tz }: { tz: string }) {
               size="sm"
               className="h-auto p-0 text-xs"
               aria-label="重试加载年级"
-              disabled={boardQ.isFetching}
-              onClick={() => void boardQ.refetch()}
+              disabled={gradesQ.isFetching}
+              onClick={() => void gradesQ.refetch()}
             >
               重试
             </Button>

@@ -136,6 +136,32 @@ it('adds a period, saves the sorted list and shows PERIOD_IN_USE from the backen
   )
 })
 
+// L215 ①:409 PERIOD_IN_USE 要把 details 里被占用的节次与班级列出来,并给"放弃修改"回到已保存的作息
+it('period in use lists classes and offers discard', async () => {
+  vi.mocked(timetableApi.savePeriods).mockRejectedValueOnce(
+    new ApiError(409, 'PERIOD_IN_USE', '节次已被课表使用,不能删除。涉及班级:三年二班、四年一班', {
+      classes: ['三年二班', '四年一班'],
+      periods: [1, 2],
+    }),
+  )
+  renderPage()
+  await screen.findByTestId('periods-editor')
+  fireEvent.click(screen.getByRole('button', { name: '删除第 1 节' }))
+  expect(screen.queryByLabelText('第 1 节开始时间')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '保存作息' }))
+  const alert = await within(editor()).findByRole('alert')
+  expect(alert).toHaveTextContent('节次已被课表使用,不能删除。涉及班级:三年二班、四年一班')
+  expect(alert).toHaveTextContent('第 1 节、第 2 节')
+  expect(alert).toHaveTextContent('三年二班、四年一班')
+  fireEvent.click(within(editor()).getByRole('button', { name: '放弃修改' }))
+  // 回到已保存的作息:第 1 节又在了,提示消失,没有改动时保存按钮禁用
+  expect(screen.getByLabelText('第 1 节开始时间')).toHaveValue('08:00')
+  expect(within(editor()).queryByRole('alert')).toBeNull()
+  expect(within(editor()).queryByRole('button', { name: '放弃修改' })).toBeNull()
+  expect(screen.getByRole('button', { name: '保存作息' })).toBeDisabled()
+  expect(timetableApi.savePeriods).toHaveBeenCalledTimes(1)
+})
+
 it('edits a cell with auto teacher', async () => {
   vi.mocked(timetableApi.saveClassTimetable).mockResolvedValue({
     ...TT,
@@ -193,6 +219,56 @@ it('offers teachers already seen for that subject, warns about ambiguous auto ma
   await waitFor(() => expect(timetableApi.saveClassTimetable).toHaveBeenCalledWith('c1', []))
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   expect(screen.getByTestId('timetable-cell-2-1')).not.toHaveTextContent('数学')
+})
+
+// L209:在任老师按组织架构给的 teacher_id 直接进候选,排在前面;课表里出现过、已不在任的同科老师排在后面
+it('cell candidates prefer assigned teacher by teacher_id', async () => {
+  const withLegacy: ClassTimetable = {
+    ...TT,
+    cells: [
+      ...TT.cells,
+      { weekday: 3, period_no: 2, subject: '数学', teacher: { id: 't9', name: '孙老师' } },
+    ],
+  }
+  vi.mocked(timetableApi.classTimetable).mockResolvedValue(withLegacy)
+  vi.mocked(timetableApi.saveClassTimetable).mockResolvedValue(withLegacy)
+  renderPage()
+  fireEvent.click(await screen.findByTestId('timetable-cell-1-1'))
+  const dlg = await screen.findByRole('dialog', { name: '周一 第 1 节' })
+  const candidates = () =>
+    within(within(dlg).getByLabelText('老师'))
+      .getAllByRole('option')
+      .map((o) => [o.getAttribute('value'), o.textContent])
+  // 语文:课表里从没出现过,但组织架构里有在任的王老师(t2)
+  fireEvent.change(within(dlg).getByLabelText('科目'), { target: { value: '语文' } })
+  await waitFor(() =>
+    expect(candidates()).toEqual([
+      ['', '自动匹配'],
+      ['t2', '王老师'],
+    ]),
+  )
+  fireEvent.change(within(dlg).getByLabelText('老师'), { target: { value: 't2' } })
+  fireEvent.click(within(dlg).getByRole('button', { name: '保存' }))
+  await waitFor(() =>
+    expect(timetableApi.saveClassTimetable).toHaveBeenCalledWith(
+      'c1',
+      expect.arrayContaining([{ weekday: 1, period_no: 1, subject: '语文', teacher_id: 't2' }]),
+    ),
+  )
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  // 数学:在任的赵老师(t3)、钱老师(t4)在前,课表里出现过但已不在任的孙老师(t9)在后,t3 不重复
+  fireEvent.click(screen.getByTestId('timetable-cell-2-1'))
+  const math = await screen.findByRole('dialog', { name: '周二 第 1 节' })
+  expect(
+    within(within(math).getByLabelText('老师'))
+      .getAllByRole('option')
+      .map((o) => [o.getAttribute('value'), o.textContent]),
+  ).toEqual([
+    ['', '自动匹配'],
+    ['t3', '赵老师'],
+    ['t4', '钱老师'],
+    ['t9', '孙老师'],
+  ])
 })
 
 it('does not guess about staff while class info is loading or failed', async () => {

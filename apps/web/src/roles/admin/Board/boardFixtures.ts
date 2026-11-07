@@ -36,8 +36,8 @@ export const boardClass = (over: Partial<BoardClass> = {}): BoardClass => ({
 
 export const boardView = (over: Partial<BoardView> = {}): BoardView => ({
   grades: [
-    { id: 'g3', name: '三年级' },
-    { id: 'g4', name: '四年级' },
+    { id: 'g3', name: '三年级', effective_stage: 'primary' },
+    { id: 'g4', name: '四年级', effective_stage: 'primary' },
   ],
   grade_id: 'g3',
   classes: [

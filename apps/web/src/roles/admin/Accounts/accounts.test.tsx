@@ -410,6 +410,49 @@ it('resets totp after confirm', async () => {
   expect(screen.queryByRole('dialog', { name: '重置两步验证' })).toBeNull()
 })
 
+// L321:变更之前就已在飞的列表请求(搜索防抖刚发出的新查询,还没有任何数据)不能后到胜出——
+// 刷新要先取消它再重取,界面不能停在变更前的状态(e2e m5b 重置两步验证后按钮不消失)
+it('in-flight list fetch is cancelled on refresh', async () => {
+  const stale = { items: [me, withTotp], total: 2 }
+  const fresh = { items: [me, { ...withTotp, totp_enabled: false }], total: 2 }
+  let release!: (page: typeof stale) => void
+  vi.mocked(adminApi.accounts)
+    .mockResolvedValueOnce(stale) // 首屏
+    .mockImplementationOnce(() => new Promise((r) => (release = r))) // 搜索 "孙" 的新查询,变更前发出、一直没回
+    .mockResolvedValue(fresh) // 变更后的任何重取
+  vi.mocked(adminApi.resetTotp).mockResolvedValue({ ok: true })
+  renderPage()
+  await screen.findByText('孙丽')
+  fireEvent.change(screen.getByLabelText('搜索姓名或登录名'), { target: { value: '孙' } })
+  await waitFor(() => expect(adminApi.accounts).toHaveBeenCalledTimes(2))
+  const searchCalls = () =>
+    vi.mocked(adminApi.accounts).mock.calls.filter(([f]) => f?.q === '孙').length
+  expect(searchCalls()).toBe(1)
+  // 列表还显示着上一页数据(keepPreviousData),在上面重置孙丽的两步验证
+  fireEvent.click(
+    within(screen.getByRole('row', { name: /孙丽/ })).getByRole('button', { name: '重置两步验证' }),
+  )
+  fireEvent.click(screen.getByRole('button', { name: '确认重置' }))
+  await waitFor(() => expect(adminApi.resetTotp).toHaveBeenCalledWith('u7'))
+  // 刷新后对同一个搜索条件再发了一次请求,而不是等那个变更前的请求
+  await waitFor(() => expect(searchCalls()).toBe(2))
+  await waitFor(() =>
+    expect(
+      within(screen.getByRole('row', { name: /孙丽/ })).queryByRole('button', {
+        name: '重置两步验证',
+      }),
+    ).toBeNull(),
+  )
+  // 变更前的请求这时才回来:结果已被丢弃,按钮不会再出现
+  release(stale)
+  await new Promise((r) => setTimeout(r, 0))
+  expect(
+    within(screen.getByRole('row', { name: /孙丽/ })).queryByRole('button', {
+      name: '重置两步验证',
+    }),
+  ).toBeNull()
+})
+
 it('shows a readable message when resetting yourself is rejected', async () => {
   vi.mocked(adminApi.accounts).mockResolvedValue({ items: [me, withTotp], total: 2 })
   vi.mocked(adminApi.resetTotp).mockRejectedValue(

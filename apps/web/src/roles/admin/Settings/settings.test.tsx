@@ -7,7 +7,8 @@ import { schoolApi } from '@/shared/api/school'
 import { toast } from '@/shared/components/Toast'
 import { downloadBlob } from '@/shared/lib/download'
 import { useAuthStore } from '@/shared/stores/auth'
-import type { Switches, SystemInfo } from '@/shared/types/admin'
+import type { AdminPerm, Switches, SystemInfo } from '@/shared/types/admin'
+import type { User } from '@/shared/types/user'
 import type { SubjectCatalog } from '@/shared/types/school'
 import SettingsPage from './SettingsPage'
 
@@ -313,14 +314,28 @@ it('invalidates student caches after saving the pool', async () => {
   expect(spy).toHaveBeenCalledWith({ queryKey: ['class-students'] })
 })
 
-const asAdmin = (perms: string[]) =>
-  useAuthStore.setState({ user: { admin_perms: perms } as never })
+const asAdmin = (perms: AdminPerm[]) =>
+  useAuthStore.setState({
+    user: {
+      id: 'u-admin',
+      display_name: '管理员',
+      contexts: [],
+      admin_perms: perms,
+      must_change_password: false,
+      password_change_reason: null,
+    } satisfies User,
+  })
 const INFO: SystemInfo = {
   version: '0.7.0',
   migration: '0010',
   started_at: '2026-11-05T01:00:00Z',
   db_size_bytes: 5 * 1024 * 1024,
-  last_backup: { at: new Date().toISOString(), file: 'ws-backup-x.tar.gz', size_bytes: 1024 },
+  last_backup: {
+    at: new Date().toISOString(),
+    file: 'ws-backup-x.tar.gz',
+    size_bytes: 1024,
+    caddy: 'included',
+  },
 }
 
 it('shows system card for settings.manage', async () => {
@@ -356,7 +371,7 @@ it('alerts when the last backup is older than 48 hours, with the age in days', a
   const at = new Date(Date.now() - 5 * 24 * 3600 * 1000).toISOString()
   vi.mocked(adminApi.systemInfo).mockResolvedValue({
     ...INFO,
-    last_backup: { at, file: 'f', size_bytes: 1 },
+    last_backup: { at, file: 'f', size_bytes: 1, caddy: null },
   })
   await renderPage()
   const alert = await screen.findByRole('alert')
@@ -369,7 +384,7 @@ it('does not alert at 30 hours, alerts just past 48 hours', async () => {
   const ago = (h: number) => new Date(Date.now() - h * 3600 * 1000).toISOString()
   vi.mocked(adminApi.systemInfo).mockResolvedValue({
     ...INFO,
-    last_backup: { at: ago(30), file: 'f', size_bytes: 1 },
+    last_backup: { at: ago(30), file: 'f', size_bytes: 1, caddy: null },
   })
   await renderPage()
   await screen.findByText('0.7.0')
@@ -378,7 +393,7 @@ it('does not alert at 30 hours, alerts just past 48 hours', async () => {
   cleanup()
   vi.mocked(adminApi.systemInfo).mockResolvedValue({
     ...INFO,
-    last_backup: { at: ago(49), file: 'f', size_bytes: 1 },
+    last_backup: { at: ago(49), file: 'f', size_bytes: 1, caddy: null },
   })
   await renderPage()
   expect(await screen.findByRole('alert')).toHaveTextContent('上次备份是 2 天前,请检查定时任务')
@@ -389,12 +404,36 @@ it('shows a neutral notice when the last backup time cannot be parsed', async ()
   asAdmin(['settings.manage'])
   vi.mocked(adminApi.systemInfo).mockResolvedValue({
     ...INFO,
-    last_backup: { at: 'not-a-date', file: 'f', size_bytes: 1 },
+    last_backup: { at: 'not-a-date', file: 'f', size_bytes: 1, caddy: null },
   })
   await renderPage()
   const alert = await screen.findByRole('alert')
   expect(alert).toHaveTextContent('上次备份时间无法识别,请检查备份记录')
   expect(alert).not.toHaveTextContent('NaN')
+})
+
+// L277:backup.sh 把 caddy: skipped 写进 backup-last.json → LastBackup.caddy → 系统卡一行提示;included / null 不提示
+it('caddy skipped line', async () => {
+  asAdmin(['settings.manage'])
+  const backup = (caddy: 'included' | 'skipped' | null) => ({
+    ...INFO,
+    last_backup: { ...INFO.last_backup!, caddy },
+  })
+  vi.mocked(adminApi.systemInfo).mockResolvedValue(backup('skipped'))
+  await renderPage()
+  const note = await screen.findByText('上次备份未包含网关数据(当时网关未运行)')
+  expect(note).toHaveAttribute('role', 'status')
+  expect(screen.queryByRole('alert')).toBeNull() // 备份本身是新鲜的,不算告警
+  cleanup()
+  vi.mocked(adminApi.systemInfo).mockResolvedValue(backup('included'))
+  await renderPage()
+  await screen.findByText('0.7.0')
+  expect(screen.queryByText(/未包含网关数据/)).toBeNull()
+  cleanup()
+  vi.mocked(adminApi.systemInfo).mockResolvedValue(backup(null))
+  await renderPage()
+  await screen.findByText('0.7.0')
+  expect(screen.queryByText(/未包含网关数据/)).toBeNull()
 })
 
 it('downloads diagnostics through downloadBlob, disabled while running', async () => {
@@ -412,6 +451,55 @@ it('downloads diagnostics through downloadBlob, disabled while running', async (
     expect(downloadBlob).toHaveBeenCalledWith(blob, 'ws-diagnostics-20261105-100000.zip'),
   )
   await waitFor(() => expect(btn).toBeEnabled())
+})
+
+// L104:downloadDiagnostics 本体(绕过上面的 adminApi mock,取真实模块):令牌走请求头不进 URL、非 2xx 抛 ApiError、
+// 文件名从 Content-Disposition 解析,没有就用默认名
+it('downloadDiagnostics sends auth, rejects non-2xx, parses filename', async () => {
+  const { adminApi: real } =
+    await vi.importActual<typeof import('@/shared/api/admin')>('@/shared/api/admin')
+  const fetchMock = vi.fn()
+  vi.stubGlobal('fetch', fetchMock)
+  useAuthStore.setState({ accessToken: 'tok-123', refreshToken: 'r' })
+  try {
+    fetchMock.mockResolvedValueOnce(
+      new Response('zip-bytes', {
+        status: 200,
+        headers: {
+          'Content-Disposition': 'attachment; filename="ws-diagnostics-20261105-100000.zip"',
+        },
+      }),
+    )
+    const got = await real.downloadDiagnostics()
+    expect(got.filename).toBe('ws-diagnostics-20261105-100000.zip')
+    expect(await got.blob.text()).toBe('zip-bytes')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchMock.mock.calls[0] as [
+      string,
+      RequestInit & { headers: Record<string, string> },
+    ]
+    expect(url).toBe('/api/v1/admin/system/diagnostics')
+    expect(init.method).toBe('GET')
+    expect(init.headers.Authorization).toBe('Bearer tok-123')
+    expect(url).not.toContain('tok-123')
+
+    // 没有 Content-Disposition:用默认文件名
+    fetchMock.mockResolvedValueOnce(new Response('zip', { status: 200 }))
+    expect((await real.downloadDiagnostics()).filename).toBe('ws-diagnostics.zip')
+
+    // 非 2xx:抛 ApiError,带后端的 code / message
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: { code: 'FORBIDDEN', message: '没有权限' } }), {
+        status: 403,
+      }),
+    )
+    const err = await real.downloadDiagnostics().catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(ApiError)
+    expect(err).toMatchObject({ status: 403, code: 'FORBIDDEN', message: '没有权限' })
+  } finally {
+    vi.unstubAllGlobals()
+    useAuthStore.getState().logout()
+  }
 })
 
 it('toasts when diagnostics export fails', async () => {
@@ -486,9 +574,7 @@ it('grading card validates', async () => {
   expect(save).toBeDisabled()
   expect(schoolApi.saveGrading).not.toHaveBeenCalled()
 
-  // 合法:发两位小数的比例,保存后失效 ['school','grading'](重取时后端已是新值)
-  const invSpy = vi.spyOn(client, 'invalidateQueries')
-  vi.mocked(schoolApi.grading).mockResolvedValue({ pass_ratio: 0.7, good_ratio: 0.9 })
+  // 合法:发两位小数的比例,保存后 PUT 的返回值直接进 ['school','grading'] 缓存
   fireEvent.change(card.getByLabelText('优秀线(%)'), { target: { value: '90' } })
   expect(card.queryByRole('alert')).toBeNull()
   fireEvent.click(save)
@@ -496,8 +582,25 @@ it('grading card validates', async () => {
     expect(schoolApi.saveGrading).toHaveBeenCalledWith({ pass_ratio: 0.7, good_ratio: 0.9 }),
   )
   expect(toast).toHaveBeenCalledWith('已保存')
-  expect(invSpy).toHaveBeenCalledWith({ queryKey: ['school', 'grading'] })
   expect(client.getQueryData(['school', 'grading'])).toEqual({ pass_ratio: 0.7, good_ratio: 0.9 })
+})
+
+// L238:保存后用 PUT 的返回值写缓存即可,不再 invalidate → 不会紧接着多发一次 GET /school/grading
+it('save issues no extra GET', async () => {
+  vi.mocked(schoolApi.saveGrading).mockResolvedValue({ pass_ratio: 0.7, good_ratio: 0.9 })
+  await renderPage()
+  const card = within(await gradingCard())
+  expect(schoolApi.grading).toHaveBeenCalledTimes(1)
+  fireEvent.change(card.getByLabelText('及格线(%)'), { target: { value: '70' } })
+  fireEvent.change(card.getByLabelText('优秀线(%)'), { target: { value: '90' } })
+  fireEvent.click(card.getByRole('button', { name: '保存及格线' }))
+  await waitFor(() => expect(toast).toHaveBeenCalledWith('已保存'))
+  await waitFor(() => expect(card.getByRole('button', { name: '保存及格线' })).toBeDisabled())
+  expect(client.getQueryData(['school', 'grading'])).toEqual({ pass_ratio: 0.7, good_ratio: 0.9 })
+  expect(client.getQueryState(['school', 'grading'])?.isInvalidated).toBe(false)
+  expect(schoolApi.grading).toHaveBeenCalledTimes(1)
+  expect(card.getByLabelText('及格线(%)')).toHaveValue(70)
+  expect(card.getByLabelText('优秀线(%)')).toHaveValue(90)
 })
 
 it('shows the backend message when saving the grading fails', async () => {
@@ -516,8 +619,9 @@ const catalogCard = async () => screen.findByRole('group', { name: '科目目录
 const subjectNames = (card: ReturnType<typeof within>) =>
   card
     .queryAllByRole('listitem')
-    .map((li: HTMLElement) => li.getAttribute('data-subject'))
-    .filter((s: string | null): s is string => s !== null)
+    .map((li: HTMLElement) => within(li).queryByRole('button', { name: /^上移 / }))
+    .filter((b: HTMLElement | null): b is HTMLElement => b !== null)
+    .map((b: HTMLElement) => (b.getAttribute('aria-label') ?? '').replace(/^上移 /, ''))
 
 it('catalog card edits stage list', async () => {
   vi.mocked(schoolApi.saveSubjectCatalog).mockImplementation(async (c) => c)
@@ -578,6 +682,42 @@ it('catalog card edits stage list', async () => {
   expect(toast).toHaveBeenCalledWith('已保存')
   expect(invSpy).toHaveBeenCalledWith({ queryKey: ['school', 'subject-catalog'] })
   await waitFor(() => expect(save).toBeDisabled())
+})
+
+// L239(Q2):科目可以改名(与标签池同款对话框),改完和其他改动一起 PUT 整份目录;不追溯已有班级,所以没有合并语义
+it('rename subject', async () => {
+  vi.mocked(schoolApi.saveSubjectCatalog).mockImplementation(async (c) => c)
+  await renderPage()
+  const card = within(await catalogCard())
+  fireEvent.click(card.getByRole('button', { name: '改名 数学' }))
+  const dlg = await screen.findByRole('dialog', { name: '改名「数学」' })
+  expect(within(dlg).getByLabelText('新名称')).toHaveValue('数学')
+  // 同学段重名、空名都不放行
+  fireEvent.change(within(dlg).getByLabelText('新名称'), { target: { value: '语文' } })
+  fireEvent.click(within(dlg).getByRole('button', { name: '确定' }))
+  expect(within(dlg).getByRole('alert')).toHaveTextContent('这个学段已经有这门科目')
+  fireEvent.change(within(dlg).getByLabelText('新名称'), { target: { value: '  ' } })
+  fireEvent.click(within(dlg).getByRole('button', { name: '确定' }))
+  expect(within(dlg).getByRole('alert')).toHaveTextContent('科目名要在 1–10 个字')
+  fireEvent.change(within(dlg).getByLabelText('新名称'), { target: { value: ' 数学与逻辑 ' } })
+  fireEvent.click(within(dlg).getByRole('button', { name: '确定' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  // 顺序与满分都保留,只换名字;保存按钮因此可用
+  expect(subjectNames(card)).toEqual(['语文', '数学与逻辑'])
+  expect(card.getByLabelText('数学与逻辑 满分')).toHaveValue(100)
+  expect(card.getByRole('button', { name: '改名 数学与逻辑' })).toBeInTheDocument()
+  fireEvent.click(card.getByRole('button', { name: '保存科目目录' }))
+  await waitFor(() =>
+    expect(schoolApi.saveSubjectCatalog).toHaveBeenCalledWith({
+      primary: [
+        { name: '语文', full: 100 },
+        { name: '数学与逻辑', full: 100 },
+      ],
+      junior: [{ name: '语文', full: 120 }],
+      senior: [{ name: '语文', full: 150 }],
+    }),
+  )
+  expect(toast).toHaveBeenCalledWith('已保存')
 })
 
 it('rejects a bad full mark in the catalog before saving', async () => {
