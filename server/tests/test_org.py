@@ -149,20 +149,36 @@ def test_create_class_defaults(client, db, settings):
 
 
 def test_concurrent_same_class_name_rejected(engine, monkeypatch):
-    """L263:两个会话并发在同一年级建同名班:应用层检查互相看不见对方未提交的行,由唯一索引
-    uq_classes_grade_name 兜底——后提交的一方 409 NAME_TAKEN(与应用层检查同一个码),不是 500。
-    写法同 test_org_concurrency:A 在 record 处停住(已插入、未提交),B 的重名检查看不见 A 的行,
-    先卡在年级行锁(L261)上,A 提交后 B 插入撞唯一索引。"""
+    """L263:两个会话并发把同年级的两个班改成同一个名字。改名不换年级时不锁年级行,两边的应用层
+    重名检查互相看不见对方未提交的改动,由唯一索引 uq_classes_grade_name 兜底——后提交的一方
+    409 NAME_TAKEN(与应用层检查同一个码),不是 500。
+    A 在 record 处停住(重名检查已过、UPDATE 还没发出),B 整个跑完并提交;放行 A,A 的 UPDATE
+    撞上 B 已提交的索引项。(建班路径先锁年级行,排在后面的一方会被应用层检查拦下,见 L261。)"""
     import threading
-    import time
 
     from sqlalchemy.orm import Session
 
     from app.domain.org import service
     from app.domain.org.schemas import ClassInput
     from app.errors import ApiError
+    from app.models import SchoolClass
 
     name, wait = "并发同名班", 30
+    with Session(engine) as s:  # 两个待改名的空班(共享测试库,用后删除)
+        ids = []
+        for n in ("并发甲班", "并发乙班"):
+            cls = SchoolClass(
+                school_id=UUID(SCHOOL_ID),
+                academic_year_id=UUID(YEAR_ID),
+                grade_id=UUID(GRADE_ID),
+                name=n,
+                seat_rows=6,
+                seat_cols=8,
+            )
+            s.add(cls)
+            s.flush()
+            ids.append(cls.id)
+        s.commit()
     in_record, release = threading.Event(), threading.Event()
     original = service.record
 
@@ -175,13 +191,15 @@ def test_concurrent_same_class_name_rejected(engine, monkeypatch):
     monkeypatch.setattr(service, "record", stalled)
     results: dict[str, object] = {}
 
-    def create() -> None:
+    def rename(class_id: UUID) -> None:
         with Session(engine) as s:
             try:
-                results[threading.current_thread().name] = service.create_class(
+                cls = s.get(SchoolClass, class_id)
+                assert cls is not None
+                results[threading.current_thread().name] = service.update_class(
                     s,
                     UUID(SCHOOL_ID),
-                    UUID(YEAR_ID),
+                    cls,
                     ClassInput(grade_id=UUID(GRADE_ID), name=name),
                     UUID(PRINCIPAL),
                     None,
@@ -190,50 +208,37 @@ def test_concurrent_same_class_name_rejected(engine, monkeypatch):
                 s.rollback()
                 results[threading.current_thread().name] = exc
 
-    def wait_blocked() -> None:
-        deadline = time.monotonic() + wait
-        while time.monotonic() < deadline:
-            with engine.connect() as conn:
-                n = conn.execute(
-                    text(
-                        "SELECT count(*) FROM pg_stat_activity"
-                        " WHERE datname = current_database() AND wait_event_type = 'Lock'"
-                    )
-                ).scalar_one()
-            if n:
-                return
-            time.sleep(0.02)
-        raise AssertionError("没有等到被唯一索引挡住的会话")
-
-    a = threading.Thread(target=create, name="A")
-    b = threading.Thread(target=create, name="B")
+    a = threading.Thread(target=rename, args=(ids[0],), name="A")
+    b = threading.Thread(target=rename, args=(ids[1],), name="B")
     try:
         a.start()
-        assert in_record.wait(wait)
+        assert in_record.wait(wait)  # A 已过重名检查,停在写入之前
         b.start()
-        wait_blocked()  # B 卡在 A 持有的年级行锁上(放行后再撞 A 已提交的唯一索引项)
+        b.join(wait)  # B 不等任何锁,整个跑完并提交
+        assert not b.is_alive()
     finally:
         release.set()
         a.join(wait)
-        b.join(wait)
-        with engine.begin() as conn:  # 共享测试库:清掉本用例提交的班级与审计
-            created = conn.execute(
+        with engine.begin() as conn:  # 共享测试库:清掉本用例的班级与审计
+            renamed = conn.execute(
                 text("SELECT count(*) FROM classes WHERE name = :n"), {"n": name}
             ).scalar_one()
             conn.execute(
                 text(
                     "DELETE FROM audit_logs WHERE object_type = 'class'"
-                    " AND object_id IN (SELECT id::text FROM classes WHERE name = :n)"
+                    " AND object_id = ANY(cast(:ids as text[]))"
                 ),
-                {"n": name},
+                {"ids": [str(i) for i in ids]},
             )
-            conn.execute(text("DELETE FROM classes WHERE name = :n"), {"n": name})
-    assert not a.is_alive() and not b.is_alive()
-    assert not isinstance(results["A"], Exception), results["A"]
-    loser = results["B"]
+            conn.execute(
+                text("DELETE FROM classes WHERE id = ANY(cast(:ids as uuid[]))"), {"ids": ids}
+            )
+    assert not a.is_alive()
+    assert not isinstance(results["B"], Exception), results["B"]
+    loser = results["A"]
     assert isinstance(loser, ApiError), loser
     assert loser.status == 409 and loser.code == "NAME_TAKEN"
-    assert created == 1
+    assert renamed == 1
 
 
 def test_list_and_get_classes(client, settings):

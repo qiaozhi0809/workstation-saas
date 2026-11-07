@@ -382,7 +382,8 @@ def _class_name_taken(db: Session, grade_id: UUID, name: str, exclude: UUID | No
     return db.scalars(stmt).first() is not None
 
 
-_CLASS_NAME_INDEX = "uq_classes_grade_name"
+# 同年级班名唯一索引的名字,以 ORM 声明(models/school.py)为唯一来源,避免两处字面量
+_CLASS_NAME_INDEX = next(ix.name for ix in SchoolClass.__table__.indexes if ix.unique)
 
 
 @contextmanager

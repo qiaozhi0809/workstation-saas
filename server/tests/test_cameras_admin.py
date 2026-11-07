@@ -17,6 +17,7 @@ from app.models.audit import AuditLog
 from app.models.cameras import Camera
 from tests.helpers import audit_rows, auth
 from tests.seed_ids import CLASS_ID, SCHOOL_ID, TEACHER_USER_ID
+from tests.sql_trace import capture_sql
 
 IT_ADMIN = "55555555-5555-5555-5555-555555555546"
 DEAN = "55555555-5555-5555-5555-555555555544"
@@ -325,20 +326,6 @@ def test_update_publishes_reload_only_when_changed(client, settings, db, on, red
     assert drain() == [cid]
 
 
-def _statements(db):
-    """收集本测试会话里执行的 SQL(与 test_grade_exams 的查询计数同一做法)。"""
-    from sqlalchemy import event
-
-    statements: list[str] = []
-
-    def collect(conn, cursor, statement, params, context, executemany):
-        statements.append(statement)
-
-    conn = db.connection()
-    event.listen(conn, "before_cursor_execute", collect)
-    return statements, lambda: event.remove(conn, "before_cursor_execute", collect)
-
-
 def _touches_camera_row(sql: str) -> bool:
     s = sql.upper()
     return "UPDATE CAMERAS" in s or ("CAMERAS" in s and "FOR UPDATE" in s)
@@ -350,7 +337,7 @@ def test_update_camera_locks_class_first(client, settings, db, on):
     不改班级时不取班级锁。"""
     h = auth(settings, IT_ADMIN)
     cid = _create(client, settings)["id"]
-    statements, stop = _statements(db)
+    statements, stop = capture_sql(db)
     try:
         r = client.put(f"{URL}/{cid}", headers=h, json=body(class_id=CLASS_ID, location="教室"))
     finally:
@@ -363,7 +350,7 @@ def test_update_camera_locks_class_first(client, settings, db, on):
     assert class_locks and camera_writes, statements
     assert class_locks[0] < camera_writes[0], statements
     # 班级不变:只改名,不取班级锁
-    statements, stop = _statements(db)
+    statements, stop = capture_sql(db)
     try:
         r = client.put(f"{URL}/{cid}", headers=h, json=body(class_id=CLASS_ID, name="改名"))
     finally:
