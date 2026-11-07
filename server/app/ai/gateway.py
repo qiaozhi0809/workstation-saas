@@ -167,23 +167,25 @@ def _finalize(
     state: GenState,
     save: Callable[[Session, Prepared, GenState], None],
 ) -> None:
+    if prep is None:
+        # 还没进入生成(取第一口之前就断开 / prepare 自己失败):没有要写的行,也不记审计(L248)
+        return
     with ctx.scope() as s:
-        if prep is not None:
+        try:
+            save(s, prep, state)
+            s.flush()
+        except Exception:
+            log.exception("ai_save_failed", chat_id=str(ctx.chat_id))
+            s.rollback()
+            # 结果没存下来就不能对前端说 done:事件、审计都按出错;再试一次把行标为失败,
+            # 别把它留在 streaming / run("生成中")
+            state.status, state.error_code, state.error = "error", "AI_SAVE_FAILED", SAVE_ERROR
             try:
                 save(s, prep, state)
                 s.flush()
             except Exception:
-                log.exception("ai_save_failed", chat_id=str(ctx.chat_id))
+                log.exception("ai_save_failed_again", chat_id=str(ctx.chat_id))
                 s.rollback()
-                # 结果没存下来就不能对前端说 done:事件、审计都按出错;再试一次把行标为失败,
-                # 别把它留在 streaming / run("生成中")
-                state.status, state.error_code, state.error = "error", "AI_SAVE_FAILED", SAVE_ERROR
-                try:
-                    save(s, prep, state)
-                    s.flush()
-                except Exception:
-                    log.exception("ai_save_failed_again", chat_id=str(ctx.chat_id))
-                    s.rollback()
         s.execute(
             update(AiChat).where(AiChat.id == ctx.chat_id).values(updated_at=func.clock_timestamp())
         )
@@ -197,15 +199,15 @@ def _finalize(
                 ip=ctx.ip,
                 user_agent=ctx.user_agent,
                 extra={
-                    "template": prep.template if prep else None,
-                    "student_ids": prep.student_ids if prep else [],
+                    "template": prep.template,
+                    "student_ids": prep.student_ids,
                     "provider": ctx.cfg.provider,
                     "model": ctx.cfg.model,
-                    "masked": prep.masked if prep else False,
+                    "masked": prep.masked,
                     "outcome": state.status,
                     "prompt_tokens": state.prompt_tokens,
                     "completion_tokens": state.completion_tokens,
-                    "chars_in": prep.chars_in if prep else 0,
+                    "chars_in": prep.chars_in,
                     "chars_out": len(state.raw),
                 },
             )
