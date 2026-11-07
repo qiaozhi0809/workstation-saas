@@ -256,10 +256,11 @@ describe('AI status failure', () => {
 })
 
 describe('home greeting', () => {
+  // L260:与欢迎页"你好,X"同一风格;没有姓名时只说"你好",不再是"老师您好"
   it.each([
-    ['王', '王老师,今天想做点什么?'],
-    ['王老师', '王老师,今天想做点什么?'],
-    ['', '老师您好,今天想做点什么?'],
+    ['王', '你好,王老师,今天想做点什么?'],
+    ['王老师', '你好,王老师,今天想做点什么?'],
+    ['', '你好,今天想做点什么?'],
   ])('greets display name %j as %s', async (display_name, text) => {
     // 先让用户为空,避免 setupAi 的默认姓名先渲染
     setupAi({ element: <AiHomePage /> })
