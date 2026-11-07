@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useBlocker } from 'react-router-dom'
-import { examKeys, examsApi } from '@/shared/api/exams'
+import { examKeys } from '@/shared/api/examKeys'
+import { examsApi } from '@/shared/api/exams'
 import { confirmLeave, useTeacherStore } from '@/shared/stores/teacher'
 import type { ScoreCell, ScoreSheet } from '@/shared/types/grades'
 

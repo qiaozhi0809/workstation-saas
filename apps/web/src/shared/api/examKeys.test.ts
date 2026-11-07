@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { examKeys } from './exams'
+import { examKeys } from './examKeys'
 
-// L273:老师端考试查询键只在这里定义;联考失效(roles/admin/GradeExams/teacherCache.ts)与各页 useQuery 共用,
+// L273:老师端考试查询键只在 examKeys.ts 定义;联考失效(roles/admin/GradeExams/teacherCache.ts)与各页 useQuery 共用,
 // 键的形状钉死,改键名时这里先红
 describe('examKeys', () => {
   it('pins the four teacher-side exam query keys', () => {
