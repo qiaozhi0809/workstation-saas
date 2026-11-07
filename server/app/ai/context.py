@@ -23,7 +23,7 @@ from app.ai.stats import (
     subject_stats,
 )
 from app.domain.exams.schemas import Stage, SubjectFull
-from app.domain.exams.service import _scores_by_enrollment, _visible_of
+from app.domain.exams.service import scores_by_enrollment, visible_subjects_of
 from app.domain.exams.subjects import stage_of
 from app.domain.school_settings.schemas import Grading
 from app.domain.school_settings.service import get_grading
@@ -145,8 +145,10 @@ def visible_exams(db: Session, cls: SchoolClass, access: Access) -> list[Exam]:
 def _scores_of(
     db: Session, exams: Sequence[Exam], ids: Sequence[UUID], access: Access
 ) -> dict[UUID, dict[UUID, dict[str, float | None]]]:
-    allowed = {e.id: {s.name for s in _visible_of(e, access.visible_subjects)} for e in exams}
-    return _scores_by_enrollment(db, [e.id for e in exams], set(ids), allowed)
+    allowed = {
+        e.id: {s.name for s in visible_subjects_of(e, access.visible_subjects)} for e in exams
+    }
+    return scores_by_enrollment(db, [e.id for e in exams], set(ids), allowed)
 
 
 def load_exam_data(
@@ -155,7 +157,7 @@ def load_exam_data(
     """已按可见科目裁剪的 (科目, 分数, 在籍 enrollment_id),可直接喂给 ``app.ai.stats``。"""
     ids = [e.id for e in active_enrollments(db, cls.id)]
     scores = _scores_of(db, [exam], ids, access)[exam.id]
-    return _visible_of(exam, access.visible_subjects), scores, ids
+    return visible_subjects_of(exam, access.visible_subjects), scores, ids
 
 
 def _names(db: Session, enrollment_ids: Iterable[UUID]) -> dict[UUID, str]:
@@ -226,7 +228,7 @@ def _latest_exam_line(db: Session, cls: SchoolClass, access: Access) -> str:
     scores = _scores_of(db, exams, ids, access)
     ratios = get_grading(db, cls.school_id)
     for exam in reversed(exams):
-        subjects = _visible_of(exam, access.visible_subjects)
+        subjects = visible_subjects_of(exam, access.visible_subjects)
         st = exam_stats(subjects, scores[exam.id], ids, ratios=ratios)
         if st is None:
             continue
@@ -344,7 +346,7 @@ def _student_exam_lines(db: Session, enrollment: Enrollment, access: Access) -> 
         sc = scores[exam.id]
         if not sc.get(enrollment.id):
             continue
-        subjects = _visible_of(exam, access.visible_subjects)
+        subjects = visible_subjects_of(exam, access.visible_subjects)
         latest = (exam, subjects)
         table = exam_table(subjects, sc, ids)
         row = next(r for r in table if r.enrollment_id == enrollment.id)

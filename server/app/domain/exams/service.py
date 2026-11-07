@@ -494,3 +494,21 @@ def gradebook(
             for e, out in zip(exams, outs, strict=True)
         ]
     )
+
+
+# ---------------------------------------------------------------- 给 app.ai 的公开名(L244)
+
+
+def visible_subjects_of(exam: Exam, visible: frozenset[str] | None) -> list[SubjectFull]:
+    """考试里调用者可见的科目(``visible`` 为 None 表示全部)。"""
+    return _visible_of(exam, visible)
+
+
+def scores_by_enrollment(
+    db: Session,
+    exam_ids: Sequence[UUID],
+    enrollment_ids: set[UUID],
+    allowed: dict[UUID, set[str]],
+) -> dict[UUID, dict[UUID, dict[str, float | None]]]:
+    """exam_id -> enrollment_id -> subject -> value,只含 ``allowed[exam_id]`` 里的科目。"""
+    return _scores_by_enrollment(db, exam_ids, enrollment_ids, allowed)

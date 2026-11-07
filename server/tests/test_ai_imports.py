@@ -30,6 +30,25 @@ def test_no_private_names_imported_from_app_ai():
     assert _private_imports_from_app_ai() == []
 
 
+def test_no_private_imports_across_modules():
+    """反方向同样成立:app.ai 自己不许伸手拿别的包的私有名字(L244:context.py 曾导入
+    exams.service 的 ``_visible_of`` / ``_scores_by_enrollment``);两个方向合起来才是
+    完整的包边界。"""
+    found = []
+    for path in sorted((APP / "ai").rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ImportFrom) or not node.module:
+                continue
+            if not node.module.startswith("app.") or node.module.startswith("app.ai"):
+                continue
+            for alias in node.names:
+                if alias.name.startswith("_"):
+                    rel = path.relative_to(APP.parent)
+                    found.append(f"{rel}:{node.lineno} {node.module}.{alias.name}")
+    assert found == []
+
+
 def test_subjects_module_has_no_function_level_imports():
     """L227 ①:``catalog_subjects`` 曾在函数体里导入 ``get_catalog`` 以绕开与
     school_settings.service 的循环;循环已靠叶子类型下沉到 exams.schemas 打断,
