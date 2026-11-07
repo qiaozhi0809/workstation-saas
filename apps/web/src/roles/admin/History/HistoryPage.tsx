@@ -7,16 +7,9 @@ import { EmptyState } from '@/shared/components/feedback/EmptyState'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { NativeSelect } from '@/shared/components/ui/native-select'
-import type { HistoryClass } from '@/shared/types/admin'
+import { groupByGrade } from '../shared/groupByGrade'
 
 const statusOf = (e: unknown) => (e instanceof ApiError ? e.status : null)
-
-/** 按 grade_name 分组,年级与同年级内的顺序都保持接口返回的顺序 */
-function groupByGrade(classes: HistoryClass[]) {
-  const groups = new Map<string, HistoryClass[]>()
-  for (const c of classes) groups.set(c.grade_name, [...(groups.get(c.grade_name) ?? []), c])
-  return [...groups.entries()]
-}
 
 export default function HistoryPage() {
   // 从单班页返回时带 ?year=,回到原来那个学年
@@ -69,7 +62,7 @@ export default function HistoryPage() {
   } else {
     body = (
       <div className="flex flex-col gap-6">
-        {groupByGrade(classes.data).map(([grade, list]) => (
+        {groupByGrade(classes.data).map(({ grade, classes: list }) => (
           <section key={grade} className="flex flex-col gap-3">
             <h2 className="text-base font-semibold">{grade}</h2>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">

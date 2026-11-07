@@ -9,21 +9,10 @@ import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { Button } from '@/shared/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card'
 import { NativeSelect } from '@/shared/components/ui/native-select'
-import type { ClassAdmin } from '@/shared/types/admin'
+import { groupByGrade } from '../shared/groupByGrade'
 import ClassTimetableGrid from './ClassTimetableGrid'
 import PeriodsEditor from './PeriodsEditor'
 import TimetableImportDialog from './TimetableImportDialog'
-
-/** 按年级分组,保持后端给的顺序 */
-function groupByGrade(classes: ClassAdmin[]): { grade: string; classes: ClassAdmin[] }[] {
-  const groups: { grade: string; classes: ClassAdmin[] }[] = []
-  for (const c of classes) {
-    const g = groups.find((x) => x.grade === c.grade_name)
-    if (g) g.classes.push(c)
-    else groups.push({ grade: c.grade_name, classes: [c] })
-  }
-  return groups
-}
 
 export default function TimetablePage() {
   const periods = useQuery({ queryKey: ['periods'], queryFn: () => timetableApi.periods() })
