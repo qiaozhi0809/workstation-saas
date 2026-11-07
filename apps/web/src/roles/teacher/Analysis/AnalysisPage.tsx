@@ -71,11 +71,11 @@ function AnalysisBody({
   )
   // 下拉按新→旧,与成绩页的考试列表同序
   const options = useMemo(() => [...scored].reverse(), [scored])
-  // 地址里指到一场还没有分数的考试(如从成绩页"看分析"跳来):回退到最近一场时要说明
-  const unscoredPick =
-    examParam && !scored.some((e) => e.id === examParam)
-      ? book.data?.exams.find((e) => e.id === examParam)
-      : undefined
+  // 地址里指到的考试:在成绩册里但还没有分数(如从成绩页"看分析"跳来)→ 回退到最近一场时要说明;
+  // 成绩册里根本没有(已删除 / 旧书签)→ 同样回退并说明(L254),不静默
+  const picked = examParam ? book.data?.exams.find((e) => e.id === examParam) : undefined
+  const unscoredPick = picked && !scored.some((e) => e.id === examParam) ? picked : undefined
+  const missingPick = !!examParam && !!book.data && !picked
 
   // 当前考试、对比考试及其派生数据只在输入变化时算一次
   const view = useMemo(() => {
@@ -153,6 +153,11 @@ function AnalysisBody({
       {unscoredPick && (
         <p role="status" className="text-sm text-muted-foreground">
           「{unscoredPick.name}」这场考试还没有分数,先显示最近一场有分数的考试
+        </p>
+      )}
+      {missingPick && (
+        <p role="status" className="text-sm text-muted-foreground">
+          这场考试已不存在,已切到最近一场
         </p>
       )}
       <div className="flex flex-wrap gap-4">

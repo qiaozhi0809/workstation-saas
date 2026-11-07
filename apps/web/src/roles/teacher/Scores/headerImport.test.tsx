@@ -262,6 +262,16 @@ it('keeps the modal open and shows the error when saving fails', async () => {
   expect(onClose).not.toHaveBeenCalled()
 })
 
+// L254:不是接口错误(断网、脚本异常)时没有服务端文案可用,describeError 的兜底分支统一说"导入失败,请重试"
+it('shows the unified text when the failure is not an API error (L254)', async () => {
+  vi.mocked(examsApi.saveScores).mockRejectedValue(new TypeError('Failed to fetch'))
+  const { onImported } = renderImport()
+  paste('姓名,语文\n王小一,90')
+  fireEvent.click(importBtn())
+  expect(await screen.findByRole('alert')).toHaveTextContent(/^导入失败,请重试$/)
+  expect(onImported).not.toHaveBeenCalled()
+})
+
 it('sends large imports in chunks of at most 2000 cells', async () => {
   const many = Array.from({ length: 1100 }, (_, i) => ({
     ...rosterFixture[0],

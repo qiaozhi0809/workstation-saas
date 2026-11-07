@@ -188,6 +188,18 @@ describe('AnalysisPage', () => {
     expect(screen.queryByText(/这场考试还没有分数/)).toBeNull()
   })
 
+  // L254:地址指向成绩册里根本没有的考试(已删除 / 旧书签)也要说一句,不再静默回退
+  it('says the exam no longer exists when ?exam= points at a deleted id (L254)', async () => {
+    setup([first, second], '/teacher/analysis?exam=gone')
+    const note = await screen.findByText('这场考试已不存在,已切到最近一场')
+    expect(note).toHaveAttribute('role', 'status')
+    expect(screen.getByLabelText('考试')).toHaveValue('x2')
+    expect(screen.queryByText(/这场考试还没有分数/)).toBeNull()
+    // 换到存在的考试,提示就没了
+    fireEvent.change(screen.getByLabelText('考试'), { target: { value: 'x1' } })
+    expect(screen.queryByText('这场考试已不存在,已切到最近一场')).toBeNull()
+  })
+
   it('explains the default comparison basis and drops the note once a comparison is chosen (L16)', async () => {
     setup([first, second])
     await avgCard()
