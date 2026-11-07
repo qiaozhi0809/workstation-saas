@@ -24,6 +24,11 @@ const ACTIONS: AuditActions = {
     { key: 'grade', label: '成绩与考试', actions: [{ action: 'score.export', label: '导出成绩' }] },
     { key: 'denied', label: '被拒的访问', actions: [] },
   ],
+  object_types: [
+    { key: 'student', label: '学生' },
+    { key: 'notice', label: '通知' },
+    { key: 'camera', label: '摄像头' },
+  ],
 }
 
 const row = (o: Partial<AuditRow> = {}): AuditRow => ({
@@ -262,6 +267,24 @@ describe('审计日志', () => {
         page: 1,
       }),
     )
+  })
+
+  // L271:对象类型下拉来自 /admin/audit/actions 的 object_types,前端不再维护常量表
+  it('object type filter from api', async () => {
+    setup()
+    await screen.findByRole('table')
+    expect(
+      within(screen.getByLabelText('对象类型'))
+        .getAllByRole('option')
+        .map((o) => [o.getAttribute('value'), o.textContent]),
+    ).toEqual([
+      ['', '全部对象'],
+      ['student', '学生'],
+      ['notice', '通知'],
+      ['camera', '摄像头'],
+    ])
+    fireEvent.change(screen.getByLabelText('对象类型'), { target: { value: 'camera' } })
+    await waitFor(() => expect(lastFilters()).toMatchObject({ object_type: 'camera', page: 1 }))
   })
 
   it('被拒的行用红色标记,成功的不标', async () => {

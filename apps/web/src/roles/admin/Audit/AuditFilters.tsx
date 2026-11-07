@@ -6,7 +6,6 @@ import { Button } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
 import { NativeSelect } from '@/shared/components/ui/native-select'
 import type { AuditActions } from '@/shared/types/admin'
-import { OBJECT_TYPE_LABELS } from './objectTypes'
 
 export interface AuditFilterValue {
   from: string
@@ -235,9 +234,10 @@ export default function AuditFilters({
           onChange={(e) => onChange({ objectType: e.target.value })}
         >
           <option value="">全部对象</option>
-          {Object.entries(OBJECT_TYPE_LABELS).map(([k, label]) => (
-            <option key={k} value={k}>
-              {label}
+          {/* 对象类型与中文名由后端给(L271):新增审计对象类型不用再改前端 */}
+          {actions?.object_types.map((t) => (
+            <option key={t.key} value={t.key}>
+              {t.label}
             </option>
           ))}
         </NativeSelect>

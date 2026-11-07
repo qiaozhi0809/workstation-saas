@@ -353,6 +353,8 @@ export interface AuditRow {
 }
 export interface AuditActions {
   groups: { key: string; label: string; actions: { action: string; label: string }[] }[]
+  /** 可筛选的对象类型及中文名,由后端随动作表一起给(V3-4;L271) */
+  object_types: { key: string; label: string }[]
 }
 
 // ---- AI 使用与配置 ----
