@@ -80,14 +80,21 @@ export default defineConfig({
     // CI 把它拆成单独一步:先 `--project readonly`(连带整条依赖链,不含本 project),再 `--project walkthrough --no-deps`
     // 且 continue-on-error——截图失败不拦 job;本机 `npm run e2e` 仍按依赖在链末尾跑它。
     // 一个用例要截上百张图(约 2–3 分钟),单测超时放宽到 5 分钟;单张图的等待仍受 expect 10 秒约束,卡住时快速失败
-    // 只有本 project 用 --lang=zh-CN 启动浏览器:Playwright 的 locale 选项改不了 date / time 控件的显示,只有启动参数能改;
-    // 其余 project 不带这个参数,行为不变
+    // 只有本 project 切中文,其余 project 行为不变。两层各管一件事:
+    // locale 管页面里的 navigator.language 和 Intl;launchOptions.env 的 LANG / LANGUAGE 管 Chromium 的界面语言,
+    // 也就是 date / time 控件的显示格式(Linux 上 Chromium 忽略 --lang,只认这两个环境变量;--lang 留着给 Windows / macOS)
     {
       name: 'walkthrough',
       testMatch: WALKTHROUGH,
       dependencies: ['readonly'],
       timeout: 5 * 60_000,
-      use: { launchOptions: { args: ['--lang=zh-CN'] } },
+      use: {
+        locale: 'zh-CN',
+        launchOptions: {
+          args: ['--lang=zh-CN'],
+          env: { ...process.env, LANG: 'zh_CN.UTF-8', LANGUAGE: 'zh_CN:zh' },
+        },
+      },
     },
   ],
 })
