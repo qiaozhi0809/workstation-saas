@@ -1,6 +1,8 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './theme/index.css'
+import '@/shared/components/arc/foundation.css'
+import './theme/arc-overrides.css'
 import App from './App'
 import { startAuthSync } from './shared/stores/authSync'
 

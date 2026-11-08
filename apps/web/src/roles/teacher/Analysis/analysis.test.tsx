@@ -268,9 +268,9 @@ describe('AnalysisPage', () => {
         p.getAttribute('fill'),
       )
     }
-    const LOW = 'hsl(var(--chart-4))'
-    const MID = 'hsl(var(--chart-1))'
-    const GOOD = 'hsl(var(--chart-3))'
+    const LOW = 'hsl(var(--ws-chart-4))'
+    const MID = 'hsl(var(--ws-chart-1))'
+    const GOOD = 'hsl(var(--ws-chart-3))'
     const a = setup([banded])
     await avgCard()
     // 默认 60% / 85%:50–60% 不及格段;60–70% 及格段;80–90% 跨 85% 的优秀线,仍是及格段
@@ -293,8 +293,8 @@ describe('AnalysisPage', () => {
       )
     const passLineY = () =>
       Number(chart().querySelector('.recharts-reference-line line')?.getAttribute('y1'))
-    const LOW = 'hsl(var(--chart-4))'
-    const MAIN = 'hsl(var(--chart-1))'
+    const LOW = 'hsl(var(--ws-chart-4))'
+    const MAIN = 'hsl(var(--ws-chart-1))'
     const a = setup([first])
     await avgCard()
     expect(fills()).toEqual([MAIN, MAIN])

@@ -1,7 +1,7 @@
 import type { Config } from 'tailwindcss'
 import animate from 'tailwindcss-animate'
 
-const token = (name: string) => `hsl(var(--${name}))`
+const token = (name: string) => `hsl(var(--ws-${name}))`
 const pair = (name: string) => ({ DEFAULT: token(name), foreground: token(`${name}-foreground`) })
 
 export default {
@@ -34,9 +34,9 @@ export default {
         info: pair('info'),
       },
       borderRadius: {
-        lg: 'var(--radius)',
-        md: 'calc(var(--radius) - 2px)',
-        sm: 'calc(var(--radius) - 4px)',
+        lg: 'var(--ws-radius)',
+        md: 'calc(var(--ws-radius) - 2px)',
+        sm: 'calc(var(--ws-radius) - 4px)',
       },
       fontFamily: {
         sans: [

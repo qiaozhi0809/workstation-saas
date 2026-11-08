@@ -16,11 +16,11 @@ interface ChartBase {
 }
 
 const TONE_COLOR = {
-  main: 'hsl(var(--chart-1))',
-  low: 'hsl(var(--chart-4))',
-  good: 'hsl(var(--chart-3))',
+  main: 'hsl(var(--ws-chart-1))',
+  low: 'hsl(var(--ws-chart-4))',
+  good: 'hsl(var(--ws-chart-3))',
 } as const
-const CONFIG: ChartConfig = { value: { label: '数值', color: 'hsl(var(--chart-1))' } }
+const CONFIG: ChartConfig = { value: { label: '数值', color: 'hsl(var(--ws-chart-1))' } }
 
 // 柱状图:各科得分率、分数段
 export function ScoreBars({
@@ -93,12 +93,12 @@ export function ScoreBars({
       {refLine && (
         <ReferenceLine
           y={refLine.value}
-          stroke="hsl(var(--chart-5))"
+          stroke="hsl(var(--ws-chart-5))"
           strokeDasharray="4 4"
           label={{
             value: refLine.label,
             position: 'right',
-            fill: 'hsl(var(--chart-5))',
+            fill: 'hsl(var(--ws-chart-5))',
             fontSize: 12,
           }}
         />

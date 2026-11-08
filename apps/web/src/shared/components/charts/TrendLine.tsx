@@ -16,12 +16,12 @@ interface ChartBase {
 }
 
 const COLORS = [
-  'hsl(var(--chart-1))',
-  'hsl(var(--chart-3))',
-  'hsl(var(--chart-4))',
-  'hsl(var(--chart-5))',
+  'hsl(var(--ws-chart-1))',
+  'hsl(var(--ws-chart-3))',
+  'hsl(var(--ws-chart-4))',
+  'hsl(var(--ws-chart-5))',
 ]
-const MUTED = 'hsl(var(--chart-2))'
+const MUTED = 'hsl(var(--ws-chart-2))'
 
 // 折线:null 断开;endLabel 在主系列(第一个非 muted)最后一个非空点上方显示 format(值)
 export function TrendLine({
@@ -91,9 +91,9 @@ export function TrendLine({
           config[String(name)]?.label ?? name,
         ]}
         contentStyle={{
-          background: 'hsl(var(--popover))',
-          color: 'hsl(var(--popover-foreground))',
-          border: '1px solid hsl(var(--border))',
+          background: 'hsl(var(--ws-popover))',
+          color: 'hsl(var(--ws-popover-foreground))',
+          border: '1px solid hsl(var(--ws-border))',
           borderRadius: 6,
           fontSize: 12,
         }}
