@@ -196,8 +196,8 @@ describe('今日关注页', () => {
       { key: 'school', done: false, detail: '2 个年级未设学段', to: '/admin/org' },
       { key: 'year', done: true, detail: '当前学年 2026-2027', to: '/admin/upgrade' },
     ]
-    it('信息中心看到清单,挂在页头之后、KPI 之前', async () => {
-      login(['settings.manage'])
+    it('有 school.view 的领导看到清单,挂在页头之后、KPI 之前', async () => {
+      login(['school.view', 'settings.manage'])
       vi.mocked(adminApi.setupChecklist).mockResolvedValue(checklist)
       setup(view())
       const region = await screen.findByRole('region', { name: '开学准备' })
