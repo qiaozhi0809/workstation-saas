@@ -83,6 +83,12 @@ jobs:
       - name: Vitest
         run: npm run test
 
+      - name: Production build
+        run: npx vite build
+
+      - name: Bundle size
+        run: du -sh dist/assets/*.js | sort -h | tail -5
+
   # Playwright e2e 冒烟:真实 Postgres/Redis + 后端 + Vite dev server(/api 代理到 8080)
   # + 假摄像头(mediamtx + H.264 / H.265 推流)+ stream worker:m5c 的监控用例与 pytest 真 ffmpeg 组在这里跑
   e2e:
