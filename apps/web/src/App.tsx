@@ -40,6 +40,7 @@ import { useApplyTheme } from '@/theme/useTheme'
 const ClassroomPlayground = import.meta.env.DEV
   ? lazy(() => import('@/dev/ClassroomPlayground'))
   : null
+const UiGallery = import.meta.env.DEV ? lazy(() => import('@/dev/UiGallery')) : null
 
 /** 旧的学生档案地址 /teacher/students/:id → 教室页并打开档案抽屉 */
 function StudentRedirect() {
@@ -76,6 +77,16 @@ const routes = createRoutesFromElements(
         element={
           <Suspense fallback={null}>
             <ClassroomPlayground />
+          </Suspense>
+        }
+      />
+    )}
+    {UiGallery && (
+      <Route
+        path="/dev/ui"
+        element={
+          <Suspense fallback={null}>
+            <UiGallery />
           </Suspense>
         }
       />
