@@ -5,7 +5,7 @@ import { useAuthStore } from '@/shared/stores/auth'
 import type { AdminPerm } from '@/shared/types/admin'
 import RequirePerm from './RequirePerm'
 
-const renderWith = (perms: AdminPerm[]) => {
+const renderWith = (perms: AdminPerm[], need: AdminPerm | AdminPerm[] = 'org.manage') => {
   useAuthStore.setState({
     accessToken: 'a',
     refreshToken: 'r',
@@ -25,7 +25,7 @@ const renderWith = (perms: AdminPerm[]) => {
         <Route
           path="/admin/org"
           element={
-            <RequirePerm perm="org.manage">
+            <RequirePerm perm={need}>
               <div>org page</div>
             </RequirePerm>
           }
@@ -49,4 +49,12 @@ it('redirects to /admin without the perm', () => {
   renderWith(['account.manage'])
   expect(screen.getByText('admin home')).toBeInTheDocument()
   expect(screen.queryByText('org page')).toBeNull()
+})
+
+it('accepts an array of perms: any one is enough (L398)', () => {
+  const { unmount } = renderWith(['settings.manage'], ['school.view', 'settings.manage'])
+  expect(screen.getByText('org page')).toBeInTheDocument()
+  unmount()
+  renderWith(['account.manage'], ['school.view', 'settings.manage'])
+  expect(screen.getByText('admin home')).toBeInTheDocument()
 })

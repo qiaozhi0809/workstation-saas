@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
-import type { AdminPerm } from '@/shared/types/admin'
+import type { PagePerm } from './perms'
 // 第 2 波各段只在自己的锚点处追加 import,不动别人的行;锚点之间留空行以免 git 合并冲突。
 
 import { LayoutGrid, Sun } from 'lucide-react'
@@ -56,7 +56,9 @@ export interface AdminPage {
   path: string
   label: string
   icon: LucideIcon
-  perm: AdminPerm
+  perm: PagePerm
+  /** 当 /admin 落地页用的权限;没写就用 perm。今日关注对信息中心只开放开学准备卡,不改变他们原来的落地页 */
+  landing?: PagePerm
   element: ReactNode
   /** 只注册路由,不进导航 */
   hidden?: boolean
@@ -69,7 +71,15 @@ export type AdminGroup = 'manage' | 'reports' | 'system'
 // 导航顺序即数组顺序;标了 group 的页面按数组顺序收进同一个下拉(组放在它第一个页面的位置),按权限过滤后只剩一项的组退化成普通链接。
 // 每段只在自己的锚点处追加(一个元素一行,末尾带逗号),不动别人的行。
 export const ADMIN_PAGES: AdminPage[] = [
-  { path: 'today', label: '今日关注', icon: Sun, perm: 'school.view', element: <TodayPage /> },
+  {
+    path: 'today',
+    label: '今日关注',
+    icon: Sun,
+    // 业务区块要 school.view;org.manage / settings.manage 也能进,但只看到开学准备卡(见 TodayPage)
+    perm: ['school.view', 'org.manage', 'settings.manage'],
+    landing: 'school.view',
+    element: <TodayPage />,
+  },
   // ── today:追加在此行之上 ──
 
   {

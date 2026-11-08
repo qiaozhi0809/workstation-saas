@@ -4,7 +4,7 @@ import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { adminApi } from '@/shared/api/admin'
 import { useAuthStore } from '@/shared/stores/auth'
-import type { SetupItem, TodayView } from '@/shared/types/admin'
+import type { AdminPerm, SetupItem, TodayView } from '@/shared/types/admin'
 import TodayPage from './TodayPage'
 
 // 开学准备清单走 adminApi.setupChecklist()(L286):这里只关心它挂在哪、谁看得到,逐项行为见 setupChecklist.test.tsx
@@ -64,7 +64,24 @@ function Url() {
   return <div data-testid="url">{l.pathname + l.search}</div>
 }
 
+function login(admin_perms: AdminPerm[]) {
+  useAuthStore.setState({
+    accessToken: 'a',
+    refreshToken: 'r',
+    user: {
+      id: 'u1',
+      display_name: '蒋老师',
+      contexts: ['admin'],
+      admin_perms,
+      must_change_password: false,
+      password_change_reason: null,
+    },
+  })
+}
+
 function setup(data: TodayView) {
+  // 没登录过就按校长看(有 school.view);要换身份的用例先自己 login
+  if (!useAuthStore.getState().user) login(['school.view'])
   vi.mocked(adminApi.today).mockResolvedValue(data)
   return render(
     <QueryClientProvider
@@ -155,6 +172,7 @@ describe('今日关注页', () => {
   })
 
   it('加载失败显示错误并可重试', async () => {
+    login(['school.view'])
     vi.mocked(adminApi.today).mockRejectedValueOnce(new Error('x'))
     render(
       <QueryClientProvider
@@ -178,20 +196,6 @@ describe('今日关注页', () => {
       { key: 'school', done: false, detail: '2 个年级未设学段', to: '/admin/org' },
       { key: 'year', done: true, detail: '当前学年 2026-2027', to: '/admin/upgrade' },
     ]
-    const login = (admin_perms: ('school.view' | 'settings.manage')[]) =>
-      useAuthStore.setState({
-        accessToken: 'a',
-        refreshToken: 'r',
-        user: {
-          id: 'u1',
-          display_name: '蒋老师',
-          contexts: ['admin'],
-          admin_perms,
-          must_change_password: false,
-          password_change_reason: null,
-        },
-      })
-
     it('信息中心看到清单,挂在页头之后、KPI 之前', async () => {
       login(['settings.manage'])
       vi.mocked(adminApi.setupChecklist).mockResolvedValue(checklist)
@@ -206,6 +210,29 @@ describe('今日关注页', () => {
         'href',
         '/admin/org',
       )
+    })
+
+    it('信息中心(没有 school.view)只看到开学准备,不发 /admin/today 请求,没有业务区块 (L398)', async () => {
+      login(['org.manage', 'settings.manage'])
+      vi.mocked(adminApi.setupChecklist).mockResolvedValue(checklist)
+      setup(view())
+      expect(await screen.findByRole('region', { name: '开学准备' })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { level: 1, name: '今日关注' })).toBeInTheDocument()
+      expect(adminApi.today).not.toHaveBeenCalled()
+      for (const t of ['今日缺勤与请假', '还没确认考勤的班级', '本周点评']) {
+        expect(screen.queryByRole('heading', { name: t })).toBeNull()
+      }
+      expect(screen.queryByText('在读')).toBeNull()
+      expect(screen.queryByText('王小一')).toBeNull()
+    })
+
+    it('校长(school.view + org.manage)两样都有', async () => {
+      login(['school.view', 'org.manage'])
+      vi.mocked(adminApi.setupChecklist).mockResolvedValue(checklist)
+      setup(view())
+      expect(await screen.findByRole('region', { name: '开学准备' })).toBeInTheDocument()
+      expect(await screen.findByRole('heading', { name: '今日缺勤与请假' })).toBeInTheDocument()
+      expect(adminApi.today).toHaveBeenCalledTimes(1)
     })
 
     it('年级组长(只有 school.view)看不到清单,也不发请求', async () => {
