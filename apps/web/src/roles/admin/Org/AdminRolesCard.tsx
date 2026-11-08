@@ -81,7 +81,7 @@ export default function AdminRolesCard() {
         {roles.data &&
           ROLES.map(({ role, title: t }) => (
             <section key={role} className="grid gap-2 border-b pb-3 last:border-b-0">
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-3">
                 <h3 className="text-sm font-medium">{t}</h3>
                 <Button
                   variant="outline"
@@ -95,16 +95,16 @@ export default function AdminRolesCard() {
                   添加
                 </Button>
               </div>
-              <ul className="flex flex-wrap gap-x-4 gap-y-1">
+              <ul className="flex flex-wrap items-center gap-x-6 gap-y-2">
                 {roles.data
                   .filter((r) => r.role === role)
                   .map((r) => (
-                    <li key={r.binding_id} className="flex items-center gap-1 text-sm">
+                    <li key={r.binding_id} className="flex items-center gap-2 text-sm">
                       <span>
                         {r.grade_name ? `${r.display_name}(${r.grade_name})` : r.display_name}
                       </span>
                       <Button
-                        variant="ghost"
+                        variant="outline"
                         size="sm"
                         aria-label={`卸任 ${r.display_name}`}
                         onClick={() => {

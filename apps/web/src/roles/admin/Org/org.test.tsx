@@ -222,3 +222,21 @@ it('wraps the class table in an overflow-x-auto container', async () => {
   expect(table.closest('.overflow-x-auto')).not.toBeNull()
   expect(within(table).getByText('三年二班')).toBeInTheDocument()
 })
+
+it('puts the add button next to the role name and shows the end-term button as a button (L404)', async () => {
+  renderPage()
+  const heading = await screen.findByRole('heading', { name: '信息中心' })
+  // 添加按钮与岗位名同在标题行里,不是被 justify-between 推到卡片最右端
+  const row = heading.parentElement as HTMLElement
+  expect(row).toContainElement(screen.getByRole('button', { name: '添加信息中心' }))
+  expect(row.className).not.toMatch(/justify-between/)
+  // 卸任是带边框的按钮样式,不是裸文字
+  expect(screen.getByRole('button', { name: '卸任 周信息' }).className).toMatch(/border/)
+})
+
+it('starts both columns of 年级与班级 with the same toolbar row (L399)', async () => {
+  renderPage()
+  const gradeBtn = await screen.findByRole('button', { name: '新建年级' })
+  const classBtn = screen.getByRole('button', { name: '新建班级' })
+  expect(gradeBtn.parentElement?.className).toBe(classBtn.parentElement?.className)
+})
