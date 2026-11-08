@@ -32,7 +32,7 @@ interface State {
 // 适应(锁定):挂载 / 点"适应" / 缩小到适应比例时进入;舞台尺寸变化时重新适应;拖动、普通滚轮、键盘聚焦都不动视图
 // 放大(可拖):从适应放大后进入;平移与缩放都夹在场景边界内;舞台变化后若比例已 ≤ 新的适应比例则回到适应
 export function useViewport(
-  stageRef: RefObject<HTMLElement>,
+  stageRef: RefObject<HTMLElement | null>,
   content: Size & { safeW?: number; core?: { y: number; h: number } },
   enabled = true,
 ) {
