@@ -14,7 +14,7 @@ import { homeFor } from './home'
 
 type Reason = NonNullable<User['password_change_reason']>
 
-/** 原因说明:首次登录 / 已过期各有文案;'required'(前端兜底)或将来后端新增的值一律中性文案,不冒充前两者 */
+/** 原因说明:first_login(首次登录或管理员重置,服务端不区分,文案两者通用)/ 已过期各有文案;'required'(前端兜底)或将来后端新增的值一律中性文案,不冒充前两者 */
 function ReasonNote({ reason }: { reason: Reason }) {
   const policy = useQuery({
     queryKey: ['auth', 'password-policy'],
@@ -22,7 +22,7 @@ function ReasonNote({ reason }: { reason: Reason }) {
     staleTime: 60_000,
   })
   const days = policy.data?.max_age_days
-  if (reason === 'first_login') return <p className="text-sm">首次登录请设置新密码</p>
+  if (reason === 'first_login') return <p className="text-sm">管理员设置了临时密码,请设置新密码</p>
   if (reason !== 'expired') return <p className="text-sm">管理员要求你先修改密码</p>
   return (
     <p className="text-sm">
@@ -100,7 +100,7 @@ export default function ChangePasswordPage() {
             <p className="text-sm text-muted-foreground">{meta.data.school_name}</p>
           )}
           <h1 className="text-xl font-semibold tracking-tight">
-            {reason === 'first_login' ? '首次登录请先修改密码' : '请先修改密码'}
+            {reason === 'first_login' ? '管理员设置了临时密码,请先修改密码' : '请先修改密码'}
           </h1>
         </CardHeader>
         <CardContent className="space-y-4">

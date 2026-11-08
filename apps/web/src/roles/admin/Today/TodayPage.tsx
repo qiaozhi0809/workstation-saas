@@ -5,6 +5,7 @@ import { adminApi } from '@/shared/api/admin'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { weekdayCN } from '@/shared/lib/date'
+import { useAuthStore } from '@/shared/stores/auth'
 import { AbsenteeList } from './AbsenteeList'
 import { GradeExamCard } from './GradeExamCard'
 import { KpiRow } from './KpiRow'
@@ -24,8 +25,24 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 export default function TodayPage() {
   const { studentId, open } = useStudentDrawer()
-  const q = useQuery({ queryKey: ['admin', 'today'], queryFn: adminApi.today })
+  // 业务区块(KPI、缺勤、点评…)只给有 school.view 的人,后端 /admin/today 也是这个权限;
+  // 只有 org.manage / settings.manage 的账号(信息中心)只看开学准备卡,并且不发 /admin/today 请求,免得 403
+  const canViewSchool = useAuthStore((s) => s.user?.admin_perms.includes('school.view') ?? false)
+  const q = useQuery({
+    queryKey: ['admin', 'today'],
+    queryFn: adminApi.today,
+    enabled: canViewSchool,
+  })
 
+  if (!canViewSchool)
+    return (
+      <div className="mx-auto flex max-w-6xl flex-col gap-6 p-4 md:p-6">
+        <header className="flex flex-col gap-1">
+          <h1 className="text-xl font-semibold">今日关注</h1>
+        </header>
+        <SetupChecklist />
+      </div>
+    )
   if (q.isError)
     return (
       <ErrorState

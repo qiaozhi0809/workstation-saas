@@ -127,7 +127,9 @@ test('homeroom teacher creates a parent account who signs in on a phone and sees
     ctx = phoneCtx.ctx
     const mobile = phoneCtx.page
     await signIn(mobile, phone, tempPassword!)
-    await expect(mobile.getByRole('heading', { name: '首次登录请先修改密码' })).toBeVisible()
+    await expect(
+      mobile.getByRole('heading', { name: '管理员设置了临时密码,请先修改密码' }),
+    ).toBeVisible()
     await mobile.getByLabel('旧密码').fill(tempPassword!)
     await mobile.getByLabel('新密码', { exact: true }).fill('E2e-pass-2026')
     await mobile.getByLabel('确认新密码').fill('E2e-pass-2026')

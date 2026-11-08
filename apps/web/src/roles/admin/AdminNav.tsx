@@ -4,6 +4,7 @@ import { NavLink, useLocation } from 'react-router-dom'
 import Menu, { MenuLinkItem } from '@/shared/components/overlay/Menu'
 import { cn } from '@/shared/lib/utils'
 import { useAuthStore } from '@/shared/stores/auth'
+import { hasPagePerm } from './perms'
 import { ADMIN_PAGES, type AdminGroup, type AdminPage } from './pages'
 
 /** 组的名字与图标;哪些页面属于哪个组由 pages.tsx 里每页的 group 决定。图标不与组内页面的图标重复(768–1023 宽只显示图标) */
@@ -18,7 +19,7 @@ type Entry =
 
 /** 按权限过滤后分组:组放在它第一个页面的位置;一项都没有的组不出现,只剩一项的组退化成链接 */
 function buildEntries(pages: AdminPage[], perms: readonly string[] | undefined): Entry[] {
-  const visible = pages.filter((p) => !p.hidden && perms?.includes(p.perm))
+  const visible = pages.filter((p) => !p.hidden && hasPagePerm(perms, p.perm))
   const members = (g: AdminGroup) => visible.filter((p) => p.group === g)
   const entries: Entry[] = []
   const placed = new Set<AdminGroup>()
@@ -128,7 +129,7 @@ export default function AdminNav({ pages = ADMIN_PAGES }: { pages?: AdminPage[] 
   const wide = useWide()
 
   if (!wide) {
-    const links = pages.filter((p) => !p.hidden && perms?.includes(p.perm))
+    const links = pages.filter((p) => !p.hidden && hasPagePerm(perms, p.perm))
     // relative:sr-only 标签是 absolute,导航不是定位祖先时它们逃出 overflow-x-auto 的裁剪,窄屏下整页出现横向滚动
     return (
       <nav

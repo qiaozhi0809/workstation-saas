@@ -11,6 +11,7 @@ import { examsApi } from '@/shared/api/exams'
 import { growthApi } from '@/shared/api/growth'
 import { reviewsApi } from '@/shared/api/reviews'
 import { studentsApi } from '@/shared/api/students'
+import { useAuthStore } from '@/shared/stores/auth'
 import type { TodayView } from '@/shared/types/admin'
 import TodayPage from './TodayPage'
 import ClassViewPage from '../Board/ClassViewPage'
@@ -118,6 +119,18 @@ const client = () => new QueryClient({ defaultOptions: { queries: { retry: false
 
 describe('领导身份的档案抽屉是只读的', () => {
   it('今日关注页:各页签都没有写入口', async () => {
+    useAuthStore.setState({
+      accessToken: 'a',
+      refreshToken: 'r',
+      user: {
+        id: 'u1',
+        display_name: '校长',
+        contexts: ['admin'],
+        admin_perms: ['school.view'],
+        must_change_password: false,
+        password_change_reason: null,
+      },
+    })
     render(
       <QueryClientProvider client={client()}>
         <MemoryRouter initialEntries={['/admin/today?student=s1']}>

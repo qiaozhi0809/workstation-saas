@@ -202,7 +202,20 @@ export default function GradesPanel() {
         <CardTitle>年级与班级</CardTitle>
       </CardHeader>
       <CardContent className="grid gap-4 md:grid-cols-[18rem_minmax(0,1fr)]">
+        {/* 两列都从同一套行高开始:工具条 h-8 → 表头行 h-10 → 数据行 3.25rem + 左列行距 gap-1(0.25rem),右表行高同步加上(L399) */}
         <div className="grid content-start gap-2">
+          <div className="flex h-8 items-center justify-between gap-2">
+            <h3 className="text-sm font-medium">年级</h3>
+            <Button variant="outline" size="sm" onClick={() => setDialog({ kind: 'create' })}>
+              新建年级
+            </Button>
+          </div>
+          <div
+            aria-hidden="true"
+            className="flex h-10 items-center border-b px-2 text-sm font-medium text-muted-foreground"
+          >
+            名称 · 学段 · 班数
+          </div>
           {grades.isPending && <LoadingState />}
           {grades.isError && (
             <ErrorState
@@ -216,7 +229,7 @@ export default function GradesPanel() {
               <li
                 key={g.id}
                 className={cn(
-                  'flex items-center gap-1 rounded-md border px-2 py-1',
+                  'flex h-[3.25rem] items-center gap-1 rounded-md border px-2',
                   g.id === gradeId && 'border-primary bg-accent',
                 )}
               >
@@ -266,15 +279,11 @@ export default function GradesPanel() {
               </li>
             ))}
           </ul>
-          <div>
-            <Button variant="outline" size="sm" onClick={() => setDialog({ kind: 'create' })}>
-              新建年级
-            </Button>
-          </div>
         </div>
 
         <div className="grid min-w-0 content-start gap-2">
-          <div className="flex justify-end">
+          <div className="flex h-8 items-center justify-between gap-2">
+            <h3 className="text-sm font-medium">班级</h3>
             <Button
               size="sm"
               disabled={gradeId === null}
@@ -297,18 +306,18 @@ export default function GradesPanel() {
               <table className="w-full min-w-[32rem] text-sm">
                 <thead>
                   <tr className="border-b text-left text-muted-foreground">
-                    <th className="py-2 pr-3 font-medium">班名</th>
-                    <th className="py-2 pr-3 font-medium">教室</th>
-                    <th className="py-2 pr-3 font-medium">班主任</th>
-                    <th className="py-2 pr-3 font-medium">学生数</th>
-                    <th className="py-2 font-medium">
+                    <th className="h-10 pr-3 font-medium">班名</th>
+                    <th className="h-10 pr-3 font-medium">教室</th>
+                    <th className="h-10 pr-3 font-medium">班主任</th>
+                    <th className="h-10 pr-3 font-medium">学生数</th>
+                    <th className="h-10 font-medium">
                       <span className="sr-only">操作</span>
                     </th>
                   </tr>
                 </thead>
                 <tbody>
                   {classes.data.map((c) => (
-                    <tr key={c.id} className="border-b">
+                    <tr key={c.id} className="h-[calc(3.25rem+0.25rem)] border-b">
                       <td className="py-2 pr-3">
                         <Link
                           to={`/admin/org/classes/${c.id}`}

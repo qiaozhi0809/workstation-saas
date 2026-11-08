@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore } from '@/shared/stores/auth'
 import type { AdminPerm } from '@/shared/types/admin'
 import AdminNav from './AdminNav'
+import { hasPagePerm } from './perms'
 import { ADMIN_PAGES, type AdminGroup, type AdminPage } from './pages'
 
 const PERMS: Record<string, AdminPerm[]> = {
@@ -65,7 +66,7 @@ const GROUP_LABEL: Record<AdminGroup, string> = {
 }
 /** 该权限集能看到的页面(不含 hidden),保持数组顺序 */
 const visible = (perms: AdminPerm[], pages = ADMIN_PAGES) =>
-  pages.filter((p) => !p.hidden && perms.includes(p.perm))
+  pages.filter((p) => !p.hidden && hasPagePerm(perms, p.perm))
 /** 顶层条目:组放在它第一个页面的位置;按权限过滤后只剩一项的组退化成那一页的链接 */
 function expectedTop(perms: AdminPerm[]): string[] {
   const list = visible(perms)
@@ -162,6 +163,20 @@ describe('grouped nav (≥ 768)', () => {
       expect(top()).toEqual(expectedTop(PERMS[role]))
     },
   )
+
+  it('shows 今日关注 to org.manage / settings.manage holders without school.view (L398)', () => {
+    for (const perms of [['org.manage'], ['settings.manage']] as AdminPerm[][]) {
+      setPerms(perms)
+      renderNav()
+      expect(within(nav()).getByRole('link', { name: '今日关注' })).toHaveAttribute(
+        'href',
+        '/admin/today',
+      )
+      // 其余 school.view 页面(看板)仍不给
+      expect(within(nav()).queryByRole('link', { name: '全校看板' })).toBeNull()
+      cleanup()
+    }
+  })
 
   it('turns a one-item group into a real link, not a dropdown', () => {
     setPerms(PERMS.dean)
