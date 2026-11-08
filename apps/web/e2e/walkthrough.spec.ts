@@ -251,6 +251,8 @@ for (const theme of THEMES) {
     await guardReadOnly(page)
     await useTheme(page, theme)
     await signIn(page, 'teacher01', /\/teacher\/classroom/)
+    // 走查必须用中文浏览器语言,日期 / 时间控件才显示成 2026/09/01 这类格式(由 playwright.config 的启动参数保证)
+    expect(await page.evaluate(() => navigator.language)).toMatch(/^zh/)
     await walk(page, 'teacher', TEACHER_PAGES, theme)
     await stripTeacherOnboarded(page)
     await page.goto('/teacher/classroom')
