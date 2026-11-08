@@ -202,7 +202,7 @@ export default function GradesPanel() {
         <CardTitle>年级与班级</CardTitle>
       </CardHeader>
       <CardContent className="grid gap-4 md:grid-cols-[18rem_minmax(0,1fr)]">
-        {/* 两列都从同一套行高开始:工具条 h-8 → 表头行 h-10 → 数据行 h-[3.25rem](L399) */}
+        {/* 两列都从同一套行高开始:工具条 h-8 → 表头行 h-10 → 数据行 3.25rem + 左列行距 gap-1(0.25rem),右表行高同步加上(L399) */}
         <div className="grid content-start gap-2">
           <div className="flex h-8 items-center justify-between gap-2">
             <h3 className="text-sm font-medium">年级</h3>
@@ -317,7 +317,7 @@ export default function GradesPanel() {
                 </thead>
                 <tbody>
                   {classes.data.map((c) => (
-                    <tr key={c.id} className="h-[3.25rem] border-b">
+                    <tr key={c.id} className="h-[calc(3.25rem+0.25rem)] border-b">
                       <td className="py-2 pr-3">
                         <Link
                           to={`/admin/org/classes/${c.id}`}
