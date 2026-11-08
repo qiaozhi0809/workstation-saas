@@ -60,3 +60,6 @@ deploy/prod/data/
 
 # 离线包构建产物(deploy/release/build-bundle.sh)
 /dist/
+
+# ---- Arc 接入备份(M6 A0,CI 绿后删除) ----
+apps/web/backup-pre-uiarc/
