@@ -340,7 +340,9 @@ test('unlinking a parent whose only child it was logs the open parent page out w
       ws.on('framereceived', (f) => s.frames.push(String(f.payload)))
     })
     await signIn(mobile, phone, temp)
-    await expect(mobile.getByRole('heading', { name: '首次登录请先修改密码' })).toBeVisible()
+    await expect(
+      mobile.getByRole('heading', { name: '管理员设置了临时密码,请先修改密码' }),
+    ).toBeVisible()
     await mobile.getByLabel('旧密码').fill(temp)
     await mobile.getByLabel('新密码', { exact: true }).fill('E2e-pass-2026')
     await mobile.getByLabel('确认新密码').fill('E2e-pass-2026')

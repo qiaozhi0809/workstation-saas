@@ -117,7 +117,9 @@ test('it admin creates a teacher account, who changes the temp password and is l
   const ctx = await browser.newContext({ baseURL: BASE_URL })
   const teacherPage = await ctx.newPage()
   await signIn(teacherPage, loginName, tempPassword)
-  await expect(teacherPage.getByRole('heading', { name: '首次登录请先修改密码' })).toBeVisible()
+  await expect(
+    teacherPage.getByRole('heading', { name: '管理员设置了临时密码,请先修改密码' }),
+  ).toBeVisible()
   await teacherPage.getByLabel('旧密码').fill(tempPassword)
   await teacherPage.getByLabel('新密码', { exact: true }).fill('E2e-pass-2026')
   await teacherPage.getByLabel('确认新密码').fill('E2e-pass-2026')

@@ -64,9 +64,11 @@ afterEach(() => {
 
 it('shows the heading and the rule hint', async () => {
   renderPage()
-  expect(screen.getByRole('heading', { name: '首次登录请先修改密码' })).toBeInTheDocument()
+  expect(
+    screen.getByRole('heading', { name: '管理员设置了临时密码,请先修改密码' }),
+  ).toBeInTheDocument()
   expect(await screen.findByText('至少 8 位,字母、数字、符号中至少两种')).toBeInTheDocument()
-  expect(screen.getByText('首次登录请设置新密码')).toBeInTheDocument()
+  expect(screen.getByText('管理员设置了临时密码,请设置新密码')).toBeInTheDocument()
 })
 
 it('shows expired reason', async () => {
@@ -183,7 +185,7 @@ it('keeps the local reason when /auth/me fails', async () => {
   renderPage()
   await waitFor(() => expect(authApi.me).toHaveBeenCalledTimes(1))
   await act(async () => {})
-  expect(screen.getByText('首次登录请设置新密码')).toBeInTheDocument()
+  expect(screen.getByText('管理员设置了临时密码,请设置新密码')).toBeInTheDocument()
   expect(screen.queryByRole('alert')).toBeNull()
   expect(useAuthStore.getState().user?.password_change_reason).toBe('first_login')
 })
@@ -207,7 +209,9 @@ it('shows the school name from /meta and stays quiet when it is forbidden', asyn
   await act(async () => {})
   expect(screen.queryByText('示例小学')).toBeNull()
   expect(screen.queryByRole('alert')).toBeNull()
-  expect(screen.getByRole('heading', { name: '首次登录请先修改密码' })).toBeInTheDocument()
+  expect(
+    screen.getByRole('heading', { name: '管理员设置了临时密码,请先修改密码' }),
+  ).toBeInTheDocument()
   expect(client.getQueryState(META_QUERY_KEY)?.status).toBe('error')
   expect(schoolApi.meta).toHaveBeenCalledTimes(2)
 })
