@@ -4,7 +4,10 @@ import { toast } from '@/shared/components/Toast'
 const UNSUPPORTED = '浏览器不支持全屏,可以按 F11'
 
 /** 让 ref 指向的元素进入 / 退出全屏;active 跟随 fullscreenchange(含按 Esc 退出)。 */
-export function useFullscreen(ref: RefObject<HTMLElement>): { active: boolean; toggle(): void } {
+export function useFullscreen(ref: RefObject<HTMLElement | null>): {
+  active: boolean
+  toggle(): void
+} {
   const [active, setActive] = useState(false)
 
   useEffect(() => {

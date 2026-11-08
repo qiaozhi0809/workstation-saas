@@ -9,7 +9,7 @@ import { placeCard } from './placeCard'
 const FALLBACK = { w: 200, h: 120 } // jsdom 量不出尺寸时的估计
 
 interface Props {
-  stageRef: RefObject<HTMLElement>
+  stageRef: RefObject<HTMLElement | null>
   seatKey: string
   children: ReactNode
 }

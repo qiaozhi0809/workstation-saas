@@ -12,7 +12,7 @@ export interface DragState {
 }
 
 interface Options {
-  stageRef: RefObject<HTMLElement>
+  stageRef: RefObject<HTMLElement | null>
   cellAt: (key: string) => MapCell | undefined
   locked: (seat: Seat) => boolean
   onDrop?: (from: Cell, to: Cell) => void

@@ -57,7 +57,7 @@ interface Options {
   /** 投屏状态:切换时关掉弹层(锚点随布局变了) */
   presenting: boolean
   /** 地图舞台容器:弹层相对它定位 */
-  stageRef: RefObject<HTMLElement>
+  stageRef: RefObject<HTMLElement | null>
 }
 
 interface Open {
