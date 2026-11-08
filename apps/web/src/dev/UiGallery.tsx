@@ -26,7 +26,11 @@ export default function UiGallery() {
                 key={size}
                 variant={variant}
                 size={size}
-                data-testid={variant === 'primary' ? `arc-button-${size}` : undefined}
+                data-testid={
+                  variant === 'primary' || (variant === 'secondary' && size === 'md')
+                    ? `arc-button-${variant === 'primary' ? '' : 'secondary-'}${size}`
+                    : undefined
+                }
               >
                 {variant} {size}
               </ArcButton>

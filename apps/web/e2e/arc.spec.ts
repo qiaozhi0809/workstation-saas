@@ -20,17 +20,31 @@ test('arc button and badge follow the baseline', async ({ page }) => {
 })
 
 test('dark mode reaches arc components', async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem('ws-theme', 'dark'))
+  // 把计算出的背景色(Chromium 可能序列化成 oklch)经 1x1 canvas 转成 sRGB,再算相对亮度
+  const luminanceOf = (testId: string) =>
+    page.getByTestId(testId).evaluate((el) => {
+      const ctx = document.createElement('canvas').getContext('2d')!
+      ctx.fillStyle = getComputedStyle(el).backgroundColor
+      ctx.fillRect(0, 0, 1, 1)
+      const [r, g, b] = Array.from(ctx.getImageData(0, 0, 1, 1).data).map((v) => v / 255)
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b
+    })
+
   await page.goto('/dev/ui')
+  await expect(page.locator('html')).not.toHaveAttribute('data-theme', 'dark')
+  const light = await luminanceOf('arc-button-secondary-md')
+
+  await page.evaluate(() => localStorage.setItem('ws-theme', 'dark'))
+  await page.reload()
   const html = page.locator('html')
   await expect(html).toHaveClass(/dark/)
   await expect(html).toHaveAttribute('data-theme', 'dark')
-  const luminance = await page.getByTestId('arc-button-md').evaluate((el) => {
-    const m = getComputedStyle(el).backgroundColor.match(/[\d.]+/g) ?? []
-    const [r, g, b] = m.slice(0, 3).map((v) => Number(v) / 255)
-    return 0.2126 * r + 0.7152 * g + 0.0722 * b
-  })
-  expect(luminance).toBeLessThan(0.5)
+  const dark = await luminanceOf('arc-button-secondary-md')
+
+  expect(light).toBeGreaterThan(0.5)
+  expect(dark).toBeLessThan(0.5)
+  expect(dark).not.toBe(light)
+  await page.evaluate(() => localStorage.removeItem('ws-theme'))
 })
 
 test('keyboard focus on admin nav menu items is visible', async ({ page }) => {
