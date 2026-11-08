@@ -2,3 +2,4 @@ dist
 playwright-report
 test-results
 node_modules
+src/shared/components/arc

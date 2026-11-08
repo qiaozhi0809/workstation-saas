@@ -497,7 +497,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
     // 高度跟着窗口走:1024×768 的投影下各模式都不用滚动页面,舞台吃掉剩余高度(排座的操作条多,舞台就矮一些)
     <div
       ref={rootRef}
-      className="relative flex h-full gap-4 bg-background p-3 lg:p-4 [background-image:linear-gradient(hsl(var(--muted)/0.4),hsl(var(--muted)/0.4))]"
+      className="relative flex h-full gap-4 bg-background p-3 lg:p-4 [background-image:linear-gradient(hsl(var(--ws-muted)/0.4),hsl(var(--ws-muted)/0.4))]"
     >
       <section className="flex min-w-0 flex-1 flex-col gap-3">
         {!presenting && <h2 className="sr-only">{cls.name}</h2>}

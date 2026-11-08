@@ -9,7 +9,7 @@ interface ChartBase {
   className?: string
 }
 
-const CONFIG: ChartConfig = { v: { label: '数值', color: 'hsl(var(--chart-1))' } }
+const CONFIG: ChartConfig = { v: { label: '数值', color: 'hsl(var(--ws-chart-1))' } }
 
 // 迷你曲线:无坐标轴、无交互;null 断开
 export function Sparkline({
@@ -30,7 +30,7 @@ export function Sparkline({
       <Line
         dataKey="v"
         type="monotone"
-        stroke="hsl(var(--chart-1))"
+        stroke="hsl(var(--ws-chart-1))"
         strokeWidth={1.5}
         dot={false}
         connectNulls={false}

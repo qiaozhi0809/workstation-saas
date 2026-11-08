@@ -26,7 +26,11 @@ export function resolveTheme(mode: ThemeMode, systemDark: boolean): 'light' | 'd
 }
 
 export function applyTheme(resolved: 'light' | 'dark'): void {
-  document.documentElement.classList.toggle('dark', resolved === 'dark')
+  const root = document.documentElement
+  root.classList.toggle('dark', resolved === 'dark')
+  // Arc 用 data-theme 切暗色,shadcn 用 .dark 类:两套开关同步
+  if (resolved === 'dark') root.setAttribute('data-theme', 'dark')
+  else root.removeAttribute('data-theme')
 }
 
 const ORDER: ThemeMode[] = ['system', 'light', 'dark']

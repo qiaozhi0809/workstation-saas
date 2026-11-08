@@ -15,6 +15,7 @@ describe('theme', () => {
   beforeEach(() => {
     localStorage.clear()
     document.documentElement.classList.remove('dark')
+    document.documentElement.removeAttribute('data-theme')
     useThemeStore.setState({ mode: 'system' })
   })
 
@@ -53,6 +54,24 @@ describe('theme', () => {
     expect(screen.getByRole('button', { name: '主题:深色' })).toBeInTheDocument()
     expect(document.documentElement).toHaveClass('dark')
     expect(localStorage.getItem(THEME_KEY)).toBe('dark')
+  })
+
+  it('dark mode sets both .dark and data-theme', () => {
+    function Root() {
+      useApplyTheme()
+      return <ThemeToggle />
+    }
+    render(<Root />)
+    const html = document.documentElement
+    // 系统 -> 浅色 -> 深色 -> 系统
+    fireEvent.click(screen.getByRole('button', { name: '主题:跟随系统' }))
+    expect(html.dataset.theme).toBeUndefined()
+    fireEvent.click(screen.getByRole('button', { name: '主题:浅色' }))
+    expect(html).toHaveClass('dark')
+    expect(html.dataset.theme).toBe('dark')
+    fireEvent.click(screen.getByRole('button', { name: '主题:深色' }))
+    expect(html).not.toHaveClass('dark')
+    expect(html.dataset.theme).toBeUndefined()
   })
 
   it('follows OS changes in system mode and drops .dark in light mode', () => {

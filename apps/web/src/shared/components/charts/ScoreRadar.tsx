@@ -26,7 +26,7 @@ export function ScoreRadar({
   const config: ChartConfig = Object.fromEntries(
     series.map((s) => [
       s.key,
-      { label: s.label, color: s.muted ? 'hsl(var(--chart-2))' : 'hsl(var(--chart-1))' },
+      { label: s.label, color: s.muted ? 'hsl(var(--ws-chart-2))' : 'hsl(var(--ws-chart-1))' },
     ]),
   )
   const chart = (
@@ -36,9 +36,9 @@ export function ScoreRadar({
       <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
       <Tooltip
         contentStyle={{
-          background: 'hsl(var(--popover))',
-          color: 'hsl(var(--popover-foreground))',
-          border: '1px solid hsl(var(--border))',
+          background: 'hsl(var(--ws-popover))',
+          color: 'hsl(var(--ws-popover-foreground))',
+          border: '1px solid hsl(var(--ws-border))',
           borderRadius: 6,
           fontSize: 12,
         }}

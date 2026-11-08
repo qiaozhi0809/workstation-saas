@@ -11,7 +11,7 @@ function parseTheme(source: string, theme: 'light' | 'dark'): Record<string, HSL
   const end = source.indexOf('}', start)
   const block = source.slice(start, end)
   const out: Record<string, HSL> = {}
-  for (const m of block.matchAll(/--([\w-]+):\s*([\d.]+)\s+([\d.]+)%\s+([\d.]+)%;/g)) {
+  for (const m of block.matchAll(/--ws-([\w-]+):\s*([\d.]+)\s+([\d.]+)%\s+([\d.]+)%;/g)) {
     out[m[1]] = [Number(m[2]), Number(m[3]), Number(m[4])]
   }
   return out
