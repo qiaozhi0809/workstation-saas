@@ -5,13 +5,14 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { adminApi } from '@/shared/api/admin'
 import { schoolApi } from '@/shared/api/school'
 import { toast } from '@/shared/components/Toast'
+import { Sidebar } from '@/shared/components/layout/Sidebar'
 import { formatInTz } from '@/shared/lib/date'
 import { downloadBlob } from '@/shared/lib/download'
 import { localTz } from '@/shared/lib/time'
 import type { LoginLog } from '@/shared/types/admin'
 import { useAuthStore } from '@/shared/stores/auth'
 import type { AdminPerm } from '@/shared/types/admin'
-import AdminNav from '../AdminNav'
+import { adminGroups } from '../AdminNav'
 import { ADMIN_PAGES } from '../pages'
 import LoginLogsPage from './LoginLogsPage'
 
@@ -184,6 +185,20 @@ it('paginates at 50 per page', async () => {
   await waitFor(() => expect(lastFilters()?.page).toBe(2))
 })
 
+/** 侧栏里的主导航(只渲染导航本身,不带外壳) */
+function AdminNav() {
+  const perms = useAuthStore((s) => s.user?.admin_perms)
+  return (
+    <Sidebar
+      groups={adminGroups(ADMIN_PAGES, perms)}
+      collapsed={false}
+      onToggle={() => {}}
+      header={null}
+      footer={null}
+    />
+  )
+}
+
 const navFor = (admin_perms: AdminPerm[]) => {
   useAuthStore.setState({
     accessToken: 'a',
@@ -199,16 +214,16 @@ const navFor = (admin_perms: AdminPerm[]) => {
   })
   render(
     <MemoryRouter initialEntries={['/admin/today']}>
-      <AdminNav pages={ADMIN_PAGES} />
+      <AdminNav />
     </MemoryRouter>,
   )
 }
 
 it('hidden without audit.read', () => {
   navFor(['ai.usage', 'settings.manage'])
-  fireEvent.click(screen.getByRole('button', { name: '系统' }))
-  expect(screen.getByRole('menuitem', { name: 'AI 配置' })).toBeInTheDocument()
-  expect(screen.queryByRole('menuitem', { name: '登录日志' })).toBeNull()
+  const nav = screen.getByRole('navigation', { name: '主导航' })
+  expect(within(nav).getByRole('link', { name: 'AI 配置' })).toBeInTheDocument()
+  expect(within(nav).queryByRole('link', { name: '登录日志' })).toBeNull()
   expect(ADMIN_PAGES.find((p) => p.path === 'login-logs')).toMatchObject({
     perm: 'audit.read',
     group: 'system',
@@ -219,8 +234,8 @@ it('hidden without audit.read', () => {
 
 it('is in the system menu with audit.read', () => {
   navFor(['audit.read', 'settings.manage'])
-  fireEvent.click(screen.getByRole('button', { name: '系统' }))
-  expect(screen.getByRole('menuitem', { name: '登录日志' })).toHaveAttribute(
+  const nav = screen.getByRole('navigation', { name: '主导航' })
+  expect(within(nav).getByRole('link', { name: '登录日志' })).toHaveAttribute(
     'href',
     '/admin/login-logs',
   )

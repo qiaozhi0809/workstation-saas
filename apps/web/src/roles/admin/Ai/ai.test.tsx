@@ -6,10 +6,12 @@ import { adminApi } from '@/shared/api/admin'
 import { ApiError } from '@/shared/api/client'
 import { schoolApi } from '@/shared/api/school'
 import { toast } from '@/shared/components/Toast'
+import { Sidebar } from '@/shared/components/layout/Sidebar'
 import { useAuthStore } from '@/shared/stores/auth'
 import type { AiConfigView, AiUsage } from '@/shared/types/admin'
 import type { Meta } from '@/shared/types/school'
-import AdminNav from '../AdminNav'
+import { adminGroups } from '../AdminNav'
+import { ADMIN_PAGES } from '../pages'
 import AiConfigPage from './AiConfigPage'
 import AiUsagePage from './AiUsagePage'
 
@@ -47,6 +49,20 @@ const view = (o: Partial<AiConfigView> = {}): AiConfigView => ({
   providers: PROVIDERS,
   ...o,
 })
+
+/** 侧栏里的主导航(只渲染导航本身,不带外壳) */
+function AdminNav() {
+  const perms = useAuthStore((s) => s.user?.admin_perms)
+  return (
+    <Sidebar
+      groups={adminGroups(ADMIN_PAGES, perms)}
+      collapsed={false}
+      onToggle={() => {}}
+      header={null}
+      footer={null}
+    />
+  )
+}
 
 const wrap = (ui: React.ReactNode) =>
   render(
@@ -461,17 +477,16 @@ describe('导航', () => {
     })
     wrap(<AdminNav />)
     const nav = screen.getByRole('navigation', { name: '主导航' })
-    // 两项都有 → 收进"系统"下拉
-    fireEvent.click(within(nav).getByRole('button', { name: '系统' }))
-    const menu = screen.getByRole('menu', { name: '系统' })
-    expect(within(menu).getByRole('menuitem', { name: 'AI 使用' })).toHaveAttribute(
+    // 两项都在"系统"组下,侧栏里直接是链接
+    expect(within(nav).getByRole('heading', { name: '系统' })).toBeInTheDocument()
+    expect(within(nav).getByRole('link', { name: 'AI 使用' })).toHaveAttribute(
       'href',
       '/admin/ai/usage',
     )
-    expect(within(menu).getByRole('menuitem', { name: '审计日志' })).toHaveAttribute(
+    expect(within(nav).getByRole('link', { name: '审计日志' })).toHaveAttribute(
       'href',
       '/admin/audit',
     )
-    expect(within(menu).queryByRole('menuitem', { name: 'AI 配置' })).toBeNull()
+    expect(within(nav).queryByRole('link', { name: 'AI 配置' })).toBeNull()
   })
 })
