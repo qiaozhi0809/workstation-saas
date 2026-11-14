@@ -11,7 +11,9 @@ import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { Badge } from '@/shared/components/ui/badge'
 import { Button } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
+import { PageContainer, PageHeader } from '@/shared/components/ui/page'
 import { SegmentedTabs } from '@/shared/components/ui/segmented-tabs'
+import { Table, TableBody, TableHead, TableRow, Td, Th } from '@/shared/components/ui/table'
 import { downloadText } from '@/shared/lib/csv'
 import { examTable, latestExam, previousExam, rankChanges } from '@/shared/lib/grades'
 import { gridOf, seatText as cellText, type DeskGrid } from '@/shared/lib/seats'
@@ -45,7 +47,11 @@ const FILTERS: { value: RosterFilter; label: string }[] = [
 const MAX_TAGS = 3
 
 export default function StudentsPage() {
-  return <ClassGate title="学生">{(ctx) => <Roster ctx={ctx} />}</ClassGate>
+  return (
+    <ClassGate title="学生" titleMode="none">
+      {(ctx) => <Roster ctx={ctx} />}
+    </ClassGate>
+  )
 }
 
 function Roster({ ctx: { cls, summary, perms } }: { ctx: ClassContext }) {
@@ -127,14 +133,24 @@ function Roster({ ctx: { cls, summary, perms } }: { ctx: ClassContext }) {
     )
   }, [action, canManage, setParams])
 
-  if (records.isLoading) return <LoadingState />
+  if (records.isLoading) {
+    return (
+      <PageContainer className="min-w-0">
+        <PageHeader title="学生" />
+        <LoadingState variant="table" />
+      </PageContainer>
+    )
+  }
   if (!items) {
     return (
-      <ErrorState
-        title="学生名单加载失败"
-        onRetry={() => void records.refetch()}
-        retrying={records.isFetching}
-      />
+      <PageContainer className="min-w-0">
+        <PageHeader title="学生" />
+        <ErrorState
+          title="学生名单加载失败"
+          onRetry={() => void records.refetch()}
+          retrying={records.isFetching}
+        />
+      </PageContainer>
     )
   }
   const dialogs = (
@@ -150,33 +166,42 @@ function Roster({ ctx: { cls, summary, perms } }: { ctx: ClassContext }) {
       {importing && <ImportDialog cls={cls} onClose={() => setImporting(false)} />}
     </>
   )
-  const manageButtons = canManage && (
-    <>
-      <Button type="button" size="sm" onClick={() => setEditor({})}>
-        <UserPlus aria-hidden="true" className="mr-1 h-4 w-4" />
-        添加学生
-      </Button>
-      <Button type="button" variant="outline" size="sm" onClick={() => setImporting(true)}>
-        <Upload aria-hidden="true" className="mr-1 h-4 w-4" />
-        批量导入
-      </Button>
-    </>
+  const importButton = canManage && (
+    <Button type="button" variant="outline" onClick={() => setImporting(true)}>
+      <Upload aria-hidden="true" className="mr-1 h-4 w-4" />
+      批量导入
+    </Button>
+  )
+  const addButton = canManage && (
+    <Button type="button" onClick={() => setEditor({})}>
+      <UserPlus aria-hidden="true" className="mr-1 h-4 w-4" />
+      添加学生
+    </Button>
   )
   if (items.length === 0) {
     return (
-      <>
+      <PageContainer className="min-w-0">
+        <PageHeader title="学生" />
         <EmptyState
           title="还没有学生"
-          action={manageButtons ? <div className="flex gap-2">{manageButtons}</div> : undefined}
+          action={
+            canManage ? (
+              <div className="flex gap-2">
+                {addButton}
+                {importButton}
+              </div>
+            ) : undefined
+          }
         />
         {dialogs}
-      </>
+      </PageContainer>
     )
   }
 
   const grid = gridOf(cls)
-  const showContacts = !narrow && items.some((r) => 'contacts' in r)
-  const showTags = !narrow
+  // 整列为空就不占位:没有任何人有联系人 / 标签时不渲染这两列
+  const showContacts = !narrow && items.some((r) => (r.contacts?.length ?? 0) > 0)
+  const showTags = !narrow && items.some((r) => (r.tags?.length ?? 0) > 0)
   const visible = sortRows(filterRows(rows, q, filter, today), sort, dir)
 
   const toggleSort = (next: RosterSort) => {
@@ -203,12 +228,37 @@ function Roster({ ctx: { cls, summary, perms } }: { ctx: ClassContext }) {
   }
 
   return (
-    <div className="min-w-0 space-y-3 p-4">
-      <div className="flex flex-wrap items-center gap-2">
+    <PageContainer className="min-w-0">
+      <PageHeader
+        title="学生"
+        actions={
+          <>
+            {exportError && (
+              <span role="alert" className="text-sm text-destructive">
+                导出失败,请重试
+              </span>
+            )}
+            {canExport && (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={exporting}
+                onClick={() => void exportRoster()}
+              >
+                <Download aria-hidden="true" className="mr-1 h-4 w-4" />
+                导出名单
+              </Button>
+            )}
+            {importButton}
+            {addButton}
+          </>
+        }
+      />
+      <div className="flex flex-col gap-3">
         <div className="relative w-full max-w-xs">
           <Search
             aria-hidden="true"
-            className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground"
+            className="pointer-events-none absolute left-2.5 top-3 h-4 w-4 text-muted-foreground"
           />
           <Input
             type="search"
@@ -219,96 +269,74 @@ function Roster({ ctx: { cls, summary, perms } }: { ctx: ClassContext }) {
             onChange={(e) => setQ(e.target.value)}
           />
         </div>
-        <div className="ml-auto flex items-center gap-2">
-          {exportError && (
-            <span role="alert" className="text-sm text-destructive">
-              导出失败,请重试
-            </span>
-          )}
-          {manageButtons}
-          {canExport && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={exporting}
-              onClick={() => void exportRoster()}
-            >
-              <Download aria-hidden="true" className="mr-1 h-4 w-4" />
-              导出名单
-            </Button>
-          )}
-        </div>
-      </div>
-      <div className="overflow-x-auto">
-        <div className="w-max whitespace-nowrap">
-          <SegmentedTabs<RosterFilter>
-            label="筛选"
-            items={FILTERS}
-            value={filter}
-            onChange={setFilter}
-          />
+        <div className="overflow-x-auto">
+          <div className="w-max whitespace-nowrap">
+            <SegmentedTabs<RosterFilter>
+              label="筛选"
+              items={FILTERS}
+              value={filter}
+              onChange={setFilter}
+            />
+          </div>
         </div>
       </div>
       {visible.length === 0 ? (
         <EmptyState title="没有符合条件的学生" />
       ) : (
-        <div className="relative overflow-x-auto rounded-md border">
-          <table className="w-full text-sm">
-            <thead className="bg-muted text-muted-foreground">
-              <tr>
-                <SortHead by="no" {...sortProps}>
-                  学号
+        <Table containerClassName="relative">
+          <TableHead className="bg-muted/50">
+            <TableRow>
+              <SortHead by="no" {...sortProps}>
+                学号
+              </SortHead>
+              <SortHead by="name" {...sortProps}>
+                姓名
+              </SortHead>
+              <Th>性别</Th>
+              <Th>座位</Th>
+              <Th>职务</Th>
+              <SortHead by="birthday" {...sortProps}>
+                生日
+              </SortHead>
+              {showContacts && <Th>主要联系人</Th>}
+              {showTags && <Th>标签</Th>}
+              {canExam && (
+                <SortHead by="rank" numeric {...sortProps}>
+                  排名
                 </SortHead>
-                <SortHead by="name" {...sortProps}>
-                  姓名
+              )}
+              {canReview && (
+                <SortHead by="points" numeric {...sortProps}>
+                  积分
                 </SortHead>
-                <Head>性别</Head>
-                <Head>座位</Head>
-                <Head>职务</Head>
-                <SortHead by="birthday" {...sortProps}>
-                  生日
-                </SortHead>
-                {showContacts && <Head>主要联系人</Head>}
-                {showTags && <Head>标签</Head>}
-                {canExam && (
-                  <SortHead by="rank" {...sortProps}>
-                    排名
-                  </SortHead>
-                )}
-                {canReview && (
-                  <SortHead by="points" {...sortProps}>
-                    积分
-                  </SortHead>
-                )}
-                {canManage && (
-                  <th scope="col" className="whitespace-nowrap px-3 py-2">
-                    <span className="sr-only">操作</span>
-                  </th>
-                )}
-              </tr>
-            </thead>
-            <tbody>
-              {visible.map((r) => (
-                <StudentRow
-                  key={r.enrollment_id}
-                  row={r}
-                  grid={grid}
-                  showContacts={showContacts}
-                  showTags={showTags}
-                  canExam={canExam}
-                  canReview={canReview}
-                  canManage={canManage}
-                  onOpen={() => drawer.open(r.student_id)}
-                  onEdit={() => setEditor({ record: r })}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
+              )}
+              {canManage && (
+                <Th align="end">
+                  <span className="sr-only">操作</span>
+                </Th>
+              )}
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {visible.map((r) => (
+              <StudentRow
+                key={r.enrollment_id}
+                row={r}
+                grid={grid}
+                showContacts={showContacts}
+                showTags={showTags}
+                canExam={canExam}
+                canReview={canReview}
+                canManage={canManage}
+                onOpen={() => drawer.open(r.student_id)}
+                onEdit={() => setEditor({ record: r })}
+              />
+            ))}
+          </TableBody>
+        </Table>
       )}
       {dialogs}
-    </div>
+    </PageContainer>
   )
 }
 
@@ -317,24 +345,28 @@ function SortHead({
   sort,
   dir,
   onSort,
+  numeric,
   children,
 }: {
   by: RosterSort
   sort: RosterSort
   dir: 'asc' | 'desc'
   onSort(by: RosterSort): void
+  numeric?: boolean
   children: string
 }) {
   return (
-    <th
-      scope="col"
+    <Th
+      numeric={numeric}
       aria-sort={sort === by ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}
-      className="whitespace-nowrap px-3 py-2 text-left font-medium"
     >
-      <button
+      {/* 按钮自带 12 的内边距,用负外边距让文字与单元格内容同一条边 */}
+      <Button
         type="button"
+        variant="ghost"
+        size="sm"
         onClick={() => onSort(by)}
-        className="inline-flex items-center gap-1 hover:text-foreground"
+        className={cn('gap-1 px-3 text-xs font-medium', numeric ? '-mr-3' : '-ml-3')}
       >
         {children}
         {sort === by &&
@@ -343,16 +375,8 @@ function SortHead({
           ) : (
             <ArrowDown aria-hidden="true" className="h-3 w-3" />
           ))}
-      </button>
-    </th>
-  )
-}
-
-function Head({ children }: { children: string }) {
-  return (
-    <th scope="col" className="whitespace-nowrap px-3 py-2 text-left font-medium">
-      {children}
-    </th>
+      </Button>
+    </Th>
   )
 }
 
@@ -404,24 +428,26 @@ function StudentRow({
   const contact = r.contacts?.[0]
   const tags = r.tags ?? []
   return (
-    <tr className="cursor-pointer border-t hover:bg-muted/50" onClick={onOpen}>
-      <td className="whitespace-nowrap px-3 py-2">{r.student_no ?? '—'}</td>
-      <td className="whitespace-nowrap px-3 py-2 font-medium">
-        <button
+    <TableRow className="cursor-pointer hover:bg-muted/50" onClick={onOpen}>
+      <Td>{r.student_no ?? '—'}</Td>
+      <Td className="font-medium">
+        <Button
           type="button"
-          className="touch-target text-left hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          variant="link"
+          size="sm"
+          className="touch-target px-0 font-medium text-foreground"
           onClick={(e) => {
             e.stopPropagation()
             onOpen()
           }}
         >
           {r.name}
-        </button>
-      </td>
-      <td className="whitespace-nowrap px-3 py-2">{r.gender ?? '—'}</td>
-      <td className="whitespace-nowrap px-3 py-2">{seatText(r, grid)}</td>
-      <td className="whitespace-nowrap px-3 py-2">{r.class_role ?? '—'}</td>
-      <td className="whitespace-nowrap px-3 py-2">
+        </Button>
+      </Td>
+      <Td>{r.gender ?? '—'}</Td>
+      <Td>{seatText(r, grid)}</Td>
+      <Td>{r.class_role ?? '—'}</Td>
+      <Td>
         {r.birthdate ? (
           <span
             {...(r.daysToBirthday === 0 ? { 'data-birthday-today': true } : {})}
@@ -433,14 +459,10 @@ function StudentRow({
         ) : (
           '—'
         )}
-      </td>
-      {showContacts && (
-        <td className="whitespace-nowrap px-3 py-2">
-          {contact ? `${contact.name} ${contact.phone}` : '—'}
-        </td>
-      )}
+      </Td>
+      {showContacts && <Td>{contact ? `${contact.name} ${contact.phone}` : '—'}</Td>}
       {showTags && (
-        <td className="min-w-[8rem] px-3 py-2">
+        <Td nowrap={false} className="min-w-[8rem]">
           <div className="flex flex-wrap gap-1">
             {tags.slice(0, MAX_TAGS).map((t) => (
               <Badge key={t} variant="neutral">
@@ -451,10 +473,10 @@ function StudentRow({
               <Badge variant="outline">{`+${tags.length - MAX_TAGS}`}</Badge>
             )}
           </div>
-        </td>
+        </Td>
       )}
       {canExam && (
-        <td className="whitespace-nowrap px-3 py-2">
+        <Td numeric>
           {r.rank === null ? (
             '—'
           ) : (
@@ -469,11 +491,11 @@ function StudentRow({
               )}
             </span>
           )}
-        </td>
+        </Td>
       )}
-      {canReview && <td className="whitespace-nowrap px-3 py-2">{r.points ?? '—'}</td>}
+      {canReview && <Td numeric>{r.points ?? '—'}</Td>}
       {canManage && (
-        <td className="whitespace-nowrap px-3 py-2">
+        <Td align="end">
           <Button
             type="button"
             variant="ghost"
@@ -486,8 +508,8 @@ function StudentRow({
           >
             编辑
           </Button>
-        </td>
+        </Td>
       )}
-    </tr>
+    </TableRow>
   )
 }

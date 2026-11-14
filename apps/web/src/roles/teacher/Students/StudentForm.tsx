@@ -1,12 +1,4 @@
-import {
-  cloneElement,
-  isValidElement,
-  useId,
-  useRef,
-  useState,
-  type FormEvent,
-  type ReactNode,
-} from 'react'
+import { useId, useRef, useState, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ApiError } from '@/shared/api/client'
 import { schoolApi } from '@/shared/api/school'
@@ -14,6 +6,8 @@ import { studentsApi } from '@/shared/api/students'
 import Modal from '@/shared/components/overlay/Modal'
 import { toast } from '@/shared/components/Toast'
 import { Button } from '@/shared/components/ui/button'
+import { Checkbox } from '@/shared/components/ui/checkbox'
+import { Field, useFormErrors } from '@/shared/components/ui/field'
 import { Input } from '@/shared/components/ui/input'
 import { Label } from '@/shared/components/ui/label'
 import { NativeSelect } from '@/shared/components/ui/native-select'
@@ -127,33 +121,8 @@ function initialState(
 
 const orNull = (s: string) => s.trim() || null
 
-function Field({
-  id,
-  label,
-  error,
-  className,
-  children,
-}: {
-  id: string
-  label: string
-  error?: string
-  className?: string
-  children: ReactNode
-}) {
-  return (
-    <div className={cn('space-y-1', className)}>
-      <Label htmlFor={id}>{label}</Label>
-      {error && isValidElement<Record<string, unknown>>(children)
-        ? cloneElement(children, { 'aria-invalid': true, 'aria-describedby': `${id}-error` })
-        : children}
-      {error && (
-        <p id={`${id}-error`} className="text-sm text-destructive">
-          {error}
-        </p>
-      )}
-    </div>
-  )
-}
+const FIELD_ORDER = ['name', 'studentNo', 'seat', 'contact'] as const
+type FieldKey = (typeof FIELD_ORDER)[number]
 
 export default function StudentForm({
   cls,
@@ -170,7 +139,6 @@ export default function StudentForm({
   const uid = useId()
   const id = (k: string) => `${uid}-${k}`
   const editing = !!record
-  const nameRef = useRef<HTMLInputElement>(null)
   // 每行联系人的"姓名"框:校验出错时焦点落到第一个出错的那行(L14)
   const contactNameRefs = useRef<(HTMLInputElement | null)[]>([])
   const [f, setF] = useState(() =>
@@ -185,14 +153,10 @@ export default function StudentForm({
   const [tagsFull, setTagsFull] = useState(false)
   const [keepAdding, setKeepAdding] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [errors, setErrors] = useState<{
-    name?: string
-    studentNo?: string
-    seat?: string
-    /** 出错的联系人行号(0 起)与提示 */
-    contact?: { at: number; text: string }
-    form?: string
-  }>({})
+  const { errors, report, clear, fieldRef } = useFormErrors(FIELD_ORDER)
+  /** 出错的联系人行号(0 起);提示文字在 errors.contact */
+  const [contactAt, setContactAt] = useState<number | null>(null)
+  const [formError, setFormError] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setF((s) => ({ ...s, [k]: v }))
@@ -263,15 +227,15 @@ export default function StudentForm({
     }))
     const filled = (c: Contact) => !!(c.name || c.relation || c.phone || c.job)
     const contacts = trimmed.filter(filled)
-    const next: typeof errors = {}
+    const next: Partial<Record<FieldKey, string>> = {}
     if (!name) next.name = '请填写姓名'
     const badContact = trimmed.findIndex((c) => filled(c) && !c.name && !c.phone)
-    if (badContact >= 0) next.contact = { at: badContact, text: '联系人姓名和电话至少填一项' }
-    setErrors(next)
-    if (Object.keys(next).length > 0) {
-      // 焦点移到表单里最靠前的出错字段
-      if (next.name) nameRef.current?.focus()
-      else if (next.contact) contactNameRefs.current[next.contact.at]?.focus()
+    if (badContact >= 0) next.contact = '联系人姓名和电话至少填一项'
+    setContactAt(badContact >= 0 ? badContact : null)
+    setFormError(null)
+    // report 把焦点移到最靠前的出错字段;联系人行没有登记单个元素,单独聚焦
+    if (!report(next)) {
+      if (!next.name && badContact >= 0) contactNameRefs.current[badContact]?.focus()
       return
     }
 
@@ -314,10 +278,13 @@ export default function StudentForm({
       } else onClose()
     } catch (err) {
       if (err instanceof ApiError && err.code === 'DUPLICATE_STUDENT_NO')
-        setErrors({ studentNo: '这个学号已经有人用了' })
+        report({ studentNo: '这个学号已经有人用了' })
       else if (err instanceof ApiError && err.code === 'SEAT_LOCKED')
-        setErrors({ seat: '该座位的同学已固定,不能互换' })
-      else setErrors({ form: err instanceof ApiError ? err.message : '保存失败,请重试' })
+        report({ seat: '该座位的同学已固定,不能互换' })
+      else {
+        report({})
+        setFormError(err instanceof ApiError ? err.message : '保存失败,请重试')
+      }
     } finally {
       setBusy(false)
     }
@@ -333,7 +300,7 @@ export default function StudentForm({
       onClose()
     } catch (err) {
       setConfirmDelete(false)
-      setErrors({ form: err instanceof ApiError ? err.message : '删除失败,请重试' })
+      setFormError(err instanceof ApiError ? err.message : '删除失败,请重试')
     } finally {
       setBusy(false)
     }
@@ -351,18 +318,19 @@ export default function StudentForm({
     >
       <form onSubmit={(e) => void submit(e)} className="space-y-4">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field id={id('name')} label="姓名" error={errors.name}>
+          <Field label="姓名" error={errors.name}>
             <Input
-              ref={nameRef}
-              id={id('name')}
+              ref={fieldRef('name')}
               maxLength={20}
               value={f.name}
-              onChange={(e) => set('name', e.target.value)}
+              onChange={(e) => {
+                set('name', e.target.value)
+                clear('name')
+              }}
             />
           </Field>
-          <Field id={id('gender')} label="性别">
+          <Field label="性别">
             <NativeSelect
-              id={id('gender')}
               className="w-full"
               value={f.gender}
               onChange={(e) => set('gender', e.target.value)}
@@ -372,42 +340,46 @@ export default function StudentForm({
               <option value="女">女</option>
             </NativeSelect>
           </Field>
-          <Field id={id('no')} label="学号" error={errors.studentNo}>
+          <Field label="学号" error={errors.studentNo}>
             <Input
-              id={id('no')}
+              ref={fieldRef('studentNo')}
               maxLength={20}
               value={f.studentNo}
-              onChange={(e) => set('studentNo', e.target.value)}
+              onChange={(e) => {
+                set('studentNo', e.target.value)
+                clear('studentNo')
+              }}
             />
           </Field>
-          <Field id={id('birthdate')} label="生日">
+          <Field label="生日">
             <Input
-              id={id('birthdate')}
               type="date"
               value={f.birthdate}
               onChange={(e) => set('birthdate', e.target.value)}
             />
           </Field>
-          <Field id={id('role')} label="职务">
+          <Field label="职务">
             <Input
-              id={id('role')}
               list={id('roles')}
               maxLength={10}
               value={f.classRole}
               onChange={(e) => set('classRole', e.target.value)}
             />
-            <datalist id={id('roles')}>
-              {ROLES.map((r) => (
-                <option key={r} value={r} />
-              ))}
-            </datalist>
           </Field>
-          <Field id={id('seat')} label="座位" error={errors.seat}>
+          <datalist id={id('roles')}>
+            {ROLES.map((r) => (
+              <option key={r} value={r} />
+            ))}
+          </datalist>
+          <Field label="座位" error={errors.seat}>
             <NativeSelect
-              id={id('seat')}
+              ref={fieldRef('seat')}
               className="w-full"
               value={f.seat}
-              onChange={(e) => set('seat', e.target.value)}
+              onChange={(e) => {
+                set('seat', e.target.value)
+                clear('seat')
+              }}
             >
               {seatOptions.map((o) => (
                 <option key={o.value} value={o.value} disabled={o.disabled}>
@@ -416,9 +388,8 @@ export default function StudentForm({
               ))}
             </NativeSelect>
           </Field>
-          <Field id={id('family')} label="家庭结构">
+          <Field label="家庭结构">
             <NativeSelect
-              id={id('family')}
               className="w-full"
               value={f.family}
               onChange={(e) => set('family', e.target.value)}
@@ -431,15 +402,12 @@ export default function StudentForm({
               ))}
             </NativeSelect>
           </Field>
-          <div className="flex items-end pb-2">
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={f.boarding}
-                onChange={(e) => toggleBoarding(e.target.checked)}
-              />
-              住校
-            </label>
+          <div className="flex items-end">
+            <Checkbox
+              label="住校"
+              checked={f.boarding}
+              onChange={(e) => toggleBoarding(e.target.checked)}
+            />
           </div>
         </div>
 
@@ -455,10 +423,10 @@ export default function StudentForm({
                   aria-pressed={on}
                   onClick={() => toggleTag(t)}
                   className={cn(
-                    'rounded-full border px-2.5 py-0.5 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
+                    'h-8 rounded-sm px-3 text-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
                     on
-                      ? 'border-primary bg-primary text-primary-foreground'
-                      : 'bg-background text-foreground hover:bg-accent',
+                      ? 'bg-accent font-medium text-accent-foreground shadow-[inset_0_0_0_1px_hsl(var(--ws-foreground)/0.35)]'
+                      : 'bg-background text-muted-foreground shadow-[inset_0_0_0_1px_hsl(var(--ws-input))] hover:bg-accent/50',
                   )}
                 >
                   {t}
@@ -496,7 +464,7 @@ export default function StudentForm({
           </datalist>
           {f.contacts.map((c, i) => {
             // 出错的那行:姓名与电话(二选一的两个字段)标 aria-invalid 并关联提示
-            const bad = errors.contact?.at === i
+            const bad = !!errors.contact && contactAt === i
             const invalid = bad
               ? { 'aria-invalid': true, 'aria-describedby': id('contact-error') }
               : {}
@@ -540,48 +508,43 @@ export default function StudentForm({
             )
           })}
           {errors.contact && (
-            <p id={id('contact-error')} className="text-sm text-destructive">
-              {errors.contact.text}
+            <p id={id('contact-error')} className="text-xs text-destructive">
+              {errors.contact}
             </p>
           )}
         </div>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field id={id('familyNote')} label="家庭备注">
+          <Field label="家庭备注">
             <Textarea
-              id={id('familyNote')}
               maxLength={500}
               value={f.familyNote}
               onChange={(e) => set('familyNote', e.target.value)}
             />
           </Field>
-          <Field id={id('learning')} label="学习情况">
+          <Field label="学习情况">
             <Textarea
-              id={id('learning')}
               maxLength={500}
               value={f.learning}
               onChange={(e) => set('learning', e.target.value)}
             />
           </Field>
-          <Field id={id('personality')} label="性格与特长">
+          <Field label="性格与特长">
             <Textarea
-              id={id('personality')}
               maxLength={500}
               value={f.personality}
               onChange={(e) => set('personality', e.target.value)}
             />
           </Field>
-          <Field id={id('health')} label="健康情况">
+          <Field label="健康情况">
             <Textarea
-              id={id('health')}
               maxLength={300}
               value={f.health}
               onChange={(e) => set('health', e.target.value)}
             />
           </Field>
-          <Field id={id('note')} label="其他备注" className="sm:col-span-2">
+          <Field label="其他备注" className="sm:col-span-2">
             <Textarea
-              id={id('note')}
               maxLength={500}
               value={f.note}
               onChange={(e) => set('note', e.target.value)}
@@ -589,9 +552,9 @@ export default function StudentForm({
           </Field>
         </div>
 
-        {errors.form && (
+        {formError && (
           <p role="alert" className="text-sm text-destructive">
-            {errors.form}
+            {formError}
           </p>
         )}
 
@@ -606,14 +569,11 @@ export default function StudentForm({
               删除学生
             </Button>
           ) : (
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={keepAdding}
-                onChange={(e) => setKeepAdding(e.target.checked)}
-              />
-              保存后继续添加
-            </label>
+            <Checkbox
+              label="保存后继续添加"
+              checked={keepAdding}
+              onChange={(e) => setKeepAdding(e.target.checked)}
+            />
           )}
           <div className="ml-auto flex gap-2">
             <Button type="button" variant="outline" onClick={onClose}>

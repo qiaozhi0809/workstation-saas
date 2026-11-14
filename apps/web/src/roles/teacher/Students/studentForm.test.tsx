@@ -146,6 +146,17 @@ it('marks the invalid name, links its error and focuses it on submit', async () 
   expect(screen.getByRole('textbox', { name: '学号' })).not.toHaveAttribute('aria-invalid')
 })
 
+it('never disables save for an empty required field, only while saving', async () => {
+  renderForm()
+  expect(screen.getByRole('button', { name: '保存' })).toBeEnabled()
+  fireEvent.click(screen.getByRole('button', { name: '保存' }))
+  expect(await screen.findByText('请填写姓名')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '保存' })).toBeEnabled()
+  // 开始输入后错误就地消失
+  fireEvent.change(screen.getByLabelText('姓名'), { target: { value: '赵' } })
+  await waitFor(() => expect(screen.queryByText('请填写姓名')).toBeNull())
+})
+
 it('keeps the form open with the next number when asked to continue', async () => {
   vi.mocked(studentsApi.create).mockResolvedValue(
     rec({ enrollment_id: 'e9', student_no: '2026011' }),
