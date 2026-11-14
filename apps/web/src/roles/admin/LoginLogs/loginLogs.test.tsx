@@ -232,7 +232,7 @@ it('hidden without audit.read', () => {
   act(() => useAuthStore.getState().logout())
 })
 
-it('is in the system menu with audit.read', () => {
+it('is in the 系统 group with audit.read', () => {
   navFor(['audit.read', 'settings.manage'])
   const nav = screen.getByRole('navigation', { name: '主导航' })
   expect(within(nav).getByRole('link', { name: '登录日志' })).toHaveAttribute(

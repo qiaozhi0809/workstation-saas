@@ -62,6 +62,8 @@ export interface AdminPage {
   element: ReactNode
   /** 只注册路由,不进导航 */
   hidden?: boolean
+  /** 隐藏页的上级可见页(那一页的 path),面包屑据此补父级链接 */
+  parent?: string
   /** 导航分组:同组的页面在侧栏里放进同一个有标题的组;没标的进最前面的无标题组。组的名字见 Breadcrumb 的 ADMIN_GROUP_LABELS */
   group?: AdminGroup
 }
@@ -96,6 +98,7 @@ export const ADMIN_PAGES: AdminPage[] = [
     perm: 'school.view',
     element: <ClassViewPage />,
     hidden: true,
+    parent: 'board',
   },
   // ── board:追加在此行之上 ──
 
@@ -114,6 +117,7 @@ export const ADMIN_PAGES: AdminPage[] = [
     perm: 'org.manage',
     element: <ClassInfoPage />,
     hidden: true,
+    parent: 'org',
     group: 'manage',
   },
   {
@@ -250,6 +254,7 @@ export const ADMIN_PAGES: AdminPage[] = [
     perm: 'school.view',
     element: <HistoryClassPage />,
     hidden: true,
+    parent: 'history',
     group: 'manage',
   },
   // ── history:追加在此行之上 ──

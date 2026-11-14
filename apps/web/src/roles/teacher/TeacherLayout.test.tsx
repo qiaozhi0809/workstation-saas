@@ -548,7 +548,7 @@ it('opens no realtime connection on /change-password', async () => {
   expect(noticesApi.inbox).not.toHaveBeenCalled()
 })
 
-it('puts the notice bell before the theme toggle in the top bar', async () => {
+it('puts the notice bell before the theme toggle in the sidebar footer', async () => {
   vi.mocked(classesApi.mine).mockResolvedValue({
     items: [cls('a', '三年二班', 'homeroom_teacher')],
   })

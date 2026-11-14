@@ -89,15 +89,35 @@ describe('adminGroups', () => {
     expect(all).not.toContain('/admin/classes/:id')
     // 校长没有 camera.manage
     expect(all).not.toContain('/admin/cameras')
-    expect([...all].sort()).toEqual(visible(PERMS.principal).map((p) => `/admin/${p.path}`).sort())
+    expect([...all].sort()).toEqual(
+      visible(PERMS.principal)
+        .map((p) => `/admin/${p.path}`)
+        .sort(),
+    )
   })
 
-  it.each(['dean', 'gradeHead', 'itAdmin'])('filters by permission for %s', (role) => {
+  // 写死的期望:不在测试里重算权限,pages.tsx 的顺序或权限变了这里要跟着改
+  const EXPECTED: Record<string, [string, string[]][]> = {
+    dean: [
+      ['', ['今日关注', '全校看板', '通知']],
+      ['学校管理', ['组织架构', '作息与课表', '学年升级', '往年班级']],
+      ['联考与报表', ['年级联考', '成绩汇总', '考勤报告']],
+      ['系统', ['AI 使用']],
+    ],
+    gradeHead: [
+      ['', ['今日关注', '全校看板', '通知']],
+      ['学校管理', ['往年班级']],
+      ['联考与报表', ['年级联考', '成绩汇总', '考勤报告']],
+    ],
+    itAdmin: [
+      ['', ['今日关注']],
+      ['学校管理', ['组织架构', '作息与课表', '账号', '学校设置']],
+      ['系统', ['审计日志', 'AI 配置', '登录日志']],
+    ],
+  }
+  it.each(Object.keys(EXPECTED))('lists exactly these pages for %s', (role) => {
     const groups = adminGroups(ADMIN_PAGES, PERMS[role])
-    const flat = groups.flatMap((g) => g.items.map((i) => i.label))
-    expect(flat.sort()).toEqual(visible(PERMS[role]).map((p) => p.label).sort())
-    // 一项都没有的组不出现
-    for (const g of groups) expect(g.items.length).toBeGreaterThan(0)
+    expect(groups.map((g) => [g.label ?? '', labels(g)])).toEqual(EXPECTED[role])
   })
 
   it('info-center sees today without school.view', () => {

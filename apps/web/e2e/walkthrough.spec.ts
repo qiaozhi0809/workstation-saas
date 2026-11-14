@@ -313,7 +313,7 @@ test('教师端展开侧栏', async ({ page }) => {
   await signIn(page, 'teacher01', /\/teacher\/classroom/)
   const spec = TEACHER_PAGES[0]
   await settle(page, spec.ready(page))
-  await shootExpanded(page, 'teacher', `${spec.slug}`)
+  await shootExpanded(page, 'teacher', spec.slug)
 })
 
 test('管理端展开侧栏', async ({ page }) => {

@@ -1,4 +1,4 @@
-import { ADMIN_GROUP_LABELS } from '@/shared/components/layout/Breadcrumb'
+import { ADMIN_GROUP_LABELS } from '@/shared/components/layout/crumbs'
 import type { SidebarGroup } from '@/shared/components/layout/Sidebar'
 import { hasPagePerm } from './perms'
 import type { AdminGroup, AdminPage } from './pages'
