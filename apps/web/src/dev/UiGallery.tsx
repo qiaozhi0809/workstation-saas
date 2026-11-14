@@ -262,6 +262,9 @@ export default function UiGallery() {
             <Button className="h-11" data-testid="btn-override-h">
               高 44
             </Button>
+            <Button className="hidden" data-testid="btn-override-hidden">
+              隐藏
+            </Button>
             <Button variant="ghost" data-testid="btn-ghost-plain">
               普通
             </Button>

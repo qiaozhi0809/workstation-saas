@@ -35,3 +35,29 @@ test('narrow page body is capped at 768 and the title stays on the left edge', a
   expect(body!.width).toBeGreaterThan(0)
   expect(body!.width).toBeLessThanOrEqual(768)
 })
+
+test('hidden on an arc button wins over arc display', async ({ page }) => {
+  await page.goto('/dev/ui')
+  await expect(page.getByTestId('btn-override-hidden')).toBeHidden()
+  await expect(page.getByTestId('btn-ghost-plain')).toBeVisible()
+})
+
+test('arc buttons keep their own surface', async ({ page }) => {
+  await page.goto('/dev/ui')
+  const primary = page.getByTestId('arc-button-md')
+  const styles = await primary.evaluate((el) => {
+    const s = getComputedStyle(el)
+    return {
+      background: s.backgroundColor,
+      paddingLeft: parseFloat(s.paddingLeft),
+      height: el.getBoundingClientRect().height,
+    }
+  })
+  expect(styles.background).not.toBe('rgba(0, 0, 0, 0)')
+  expect(styles.paddingLeft).toBeGreaterThan(0)
+  expect(styles.height).toBe(40)
+  const border = await page
+    .getByTestId('arc-button-secondary-md')
+    .evaluate((el) => getComputedStyle(el).borderTopWidth)
+  expect(border).toBe('1px')
+})
