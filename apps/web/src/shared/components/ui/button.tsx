@@ -81,6 +81,9 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
           className={cn(buttonClass({ variant, size }), className)}
           {...(type ? { type } : {})}
           {...props}
+          aria-busy={loading || props['aria-busy'] || undefined}
+          aria-disabled={loading || props['aria-disabled'] || undefined}
+          onClick={loading ? (event: React.MouseEvent) => event.preventDefault() : onClick}
         />
       )
     }
@@ -94,8 +97,6 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
           className={className}
           type={type ?? 'button'}
           onClick={onClick}
-          data-variant={ARC_VARIANT[variant]}
-          data-size={ARC_SIZE[size as keyof typeof ARC_SIZE]}
           {...props}
         />
       )
@@ -105,10 +106,10 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         ref={ref}
         className={cn(buttonClass({ variant, size }), className)}
         type={type ?? 'button'}
-        aria-busy={loading || undefined}
+        {...props}
+        aria-busy={loading || props['aria-busy'] || undefined}
         aria-disabled={loading || props['aria-disabled'] || undefined}
         onClick={loading ? (event) => event.preventDefault() : onClick}
-        {...props}
       />
     )
   },

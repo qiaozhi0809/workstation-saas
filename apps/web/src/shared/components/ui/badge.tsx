@@ -14,7 +14,7 @@ type Variant =
   | 'destructive'
   | 'outline'
 
-export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
+export interface BadgeProps extends Omit<React.HTMLAttributes<HTMLSpanElement>, 'color'> {
   variant?: Variant
 }
 
@@ -32,15 +32,7 @@ const TONE: Record<Exclude<Variant, 'outline'>, BadgeTone> = {
 function Badge({ variant = 'default', ...props }: BadgeProps) {
   const outline = variant === 'outline'
   const tone = outline ? 'neutral' : TONE[variant]
-  return (
-    <ArcBadge
-      tone={tone}
-      outline={outline}
-      data-tone={tone}
-      data-outline={outline || undefined}
-      {...props}
-    />
-  )
+  return <ArcBadge tone={tone} outline={outline} {...props} />
 }
 
 // 只给还没改成 <Badge> 的调用点(教室未排座托盘)留着;新代码用 <Badge>
