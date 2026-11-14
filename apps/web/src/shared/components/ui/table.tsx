@@ -94,7 +94,7 @@ function alignClass({ numeric, align }: { numeric?: boolean; align?: CellAlign }
   return 'text-left'
 }
 
-export interface ThProps extends React.ThHTMLAttributes<HTMLTableCellElement> {
+export interface ThProps extends Omit<React.ThHTMLAttributes<HTMLTableCellElement>, 'align'> {
   numeric?: boolean
   align?: CellAlign
   nowrap?: boolean
@@ -115,7 +115,7 @@ export function Th({ numeric, align, nowrap = true, className, scope = 'col', ..
   )
 }
 
-export interface TdProps extends React.TdHTMLAttributes<HTMLTableCellElement> {
+export interface TdProps extends Omit<React.TdHTMLAttributes<HTMLTableCellElement>, 'align'> {
   numeric?: boolean
   align?: CellAlign
   nowrap?: boolean

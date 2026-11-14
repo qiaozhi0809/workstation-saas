@@ -10,6 +10,7 @@ import { Checkbox } from '@/shared/components/ui/checkbox'
 import { Field, useFormErrors } from '@/shared/components/ui/field'
 import { IconButton } from '@/shared/components/ui/icon-button'
 import { Input } from '@/shared/components/ui/input'
+import { NativeSelect } from '@/shared/components/ui/native-select'
 import { PageContainer, PageHeader } from '@/shared/components/ui/page'
 import { StatusDot } from '@/shared/components/ui/status-dot'
 import { Switch } from '@/shared/components/ui/switch'
@@ -207,6 +208,16 @@ export default function UiGallery() {
             表单与选择控件
           </h2>
           <FieldDemo />
+          <div className="flex flex-wrap items-center gap-3">
+            <Input aria-label="默认输入框" placeholder="md 40" className="w-40" />
+            <Input aria-label="小输入框" controlSize="sm" placeholder="sm 32" className="w-40" />
+            <NativeSelect aria-label="默认选择" className="w-40">
+              <option>md 40</option>
+            </NativeSelect>
+            <NativeSelect aria-label="小选择" controlSize="sm" className="w-40">
+              <option>sm 32</option>
+            </NativeSelect>
+          </div>
           <div className="flex flex-wrap items-center gap-6">
             <Switch label="本周之星" description="在首页展示" />
             <Switch aria-label="已开启" defaultChecked />
