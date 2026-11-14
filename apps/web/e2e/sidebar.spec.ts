@@ -154,3 +154,13 @@ test('drawer keeps the footer inside the viewport at 768×1024', async ({ page }
   expect(box.y + box.height, '账号菜单按钮底边在视口内').toBeLessThanOrEqual(1024)
   expect(box.y).toBeGreaterThanOrEqual(0)
 })
+
+test('classroom is a drawer below 1280 so the stage keeps the full width', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 })
+  await signInTeacher(page)
+  await mapReady(page)
+  await expect(aside(page)).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '打开菜单' })).toBeVisible()
+  // 顶部条里还看得到班名
+  await expect(page.getByText(/三年二班/).first()).toBeVisible()
+})

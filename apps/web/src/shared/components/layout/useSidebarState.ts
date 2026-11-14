@@ -10,6 +10,12 @@ export const SIDEBAR_KEYS = {
 const DRAWER_QUERY = '(min-width: 1024px)'
 const EXPAND_QUERY = '(min-width: 1280px)'
 
+/**
+ * 低于这个宽度侧栏改成抽屉(顶部条里放打开菜单的按钮,主区占满宽度)。
+ * 教室页要尽量留出舞台宽度,所以 1280 以下一律抽屉;其余页面 1024 以下
+ */
+export const DRAWER_BREAKPOINT: Record<SidebarScope, number> = { default: 1024, classroom: 1280 }
+
 /** 没有用户记录时的默认:教室页永远从 rail 开始;其他页 < 1280 宽收成 rail */
 export function defaultCollapsed(width: number, scope: SidebarScope): boolean {
   if (scope === 'classroom') return true
@@ -68,7 +74,7 @@ export function useSidebarState(scope: SidebarScope): {
   const [record, setRecord] = useState(() => ({ scope, value: readStored(scope) }))
   const stored = record.scope === scope ? record.value : readStored(scope)
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const mode = bucket >= 1024 ? 'panel' : 'drawer'
+  const mode = bucket >= DRAWER_BREAKPOINT[scope] ? 'panel' : 'drawer'
 
   const collapsed = mode === 'drawer' ? false : (stored ?? defaultCollapsed(bucket, scope))
 

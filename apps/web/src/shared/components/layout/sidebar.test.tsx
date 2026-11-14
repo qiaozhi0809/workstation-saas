@@ -7,6 +7,7 @@ import { Building2, Sun } from 'lucide-react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AccountMenu from './AccountMenu'
 import { Sidebar, type SidebarGroup } from './Sidebar'
+import { DRAWER_BREAKPOINT } from './useSidebarState'
 import SidebarShell from './SidebarShell'
 import { Breadcrumb } from './Breadcrumb'
 import { adminCrumbs, teacherCrumbs } from './crumbs'
@@ -162,15 +163,21 @@ describe('Sidebar', () => {
   })
 })
 
-const shell = (breadcrumb: ReactNode | null, at = '/admin/org') =>
+const shell = (
+  breadcrumb: ReactNode | null,
+  at = '/admin/org',
+  scope: 'default' | 'classroom' = 'default',
+  drawerBar?: ReactNode,
+) =>
   render(
     <Wrap at={at}>
       <SidebarShell
-        scope="default"
+        scope={scope}
         groups={GROUPS}
         header={() => <span>品牌</span>}
         footer={() => <span>脚</span>}
         breadcrumb={breadcrumb}
+        drawerBar={drawerBar}
         overlays={<div data-testid="overlay" />}
       >
         <p>内容</p>
@@ -198,6 +205,41 @@ describe('SidebarShell', () => {
     // 抽屉靠遮罩、Esc 和抽屉自带的「关闭」收起,不再放折叠按钮
     expect(within(dialog).queryByRole('button', { name: '折叠侧栏' })).toBeNull()
     expect(within(dialog).getByRole('button', { name: '关闭' })).toBeInTheDocument()
+  })
+
+  it('exports one drawer breakpoint per scope', () => {
+    expect(DRAWER_BREAKPOINT).toEqual({ default: 1024, classroom: 1280 })
+  })
+
+  it('classroom scope is a drawer at 1024 and a rail at 1280', () => {
+    mockWidth(1024)
+    const first = shell(null, '/teacher/classroom', 'classroom')
+    expect(screen.getByRole('button', { name: '打开菜单' })).toBeInTheDocument()
+    expect(screen.queryByRole('complementary', { name: '侧栏' })).toBeNull()
+    first.unmount()
+    mockWidth(1279)
+    const second = shell(null, '/teacher/classroom', 'classroom')
+    expect(screen.getByRole('button', { name: '打开菜单' })).toBeInTheDocument()
+    second.unmount()
+    mockWidth(1280)
+    shell(null, '/teacher/classroom', 'classroom')
+    expect(screen.queryByRole('button', { name: '打开菜单' })).toBeNull()
+    expect(screen.getByRole('button', { name: '展开侧栏' })).toBeInTheDocument()
+  })
+
+  it('default scope is a rail at 1024', () => {
+    mockWidth(1024)
+    shell(null)
+    expect(screen.queryByRole('button', { name: '打开菜单' })).toBeNull()
+    expect(screen.getByRole('complementary', { name: '侧栏' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '展开侧栏' })).toBeInTheDocument()
+  })
+
+  it('drawer bar shows drawerBar content next to the menu button when there is no breadcrumb', () => {
+    mockWidth(1024)
+    shell(null, '/teacher/classroom', 'classroom', <p>三年二班 · 第 10 周</p>)
+    expect(screen.getByText('三年二班 · 第 10 周')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '打开菜单' })).toBeInTheDocument()
   })
 
   it('skip link focuses main', () => {

@@ -119,6 +119,14 @@ export default function TeacherLayout() {
           </>
         )}
         breadcrumb={inClassroom ? null : <Breadcrumb items={teacherCrumbs(pathname)} />}
+        drawerBar={
+          cls && (
+            <p className="min-w-0 truncate text-sm">
+              <span className="font-medium">{cls.name}</span>
+              {infoText && <span className="text-muted-foreground"> · {infoText}</span>}
+            </p>
+          )
+        }
         overlays={
           <>
             {studentId && <StudentProfileDrawer key={studentId} studentId={studentId} />}

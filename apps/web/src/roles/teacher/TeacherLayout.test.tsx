@@ -619,6 +619,37 @@ it('other teacher pages show a breadcrumb and use the default scope', async () =
   expect(localStorage.getItem('ws-sidebar:classroom')).toBeNull()
 })
 
+describe('classroom below 1280', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('is a drawer with the class name and week line in the top bar', async () => {
+    vi.stubGlobal('matchMedia', (q: string) => {
+      const min = Number(/min-width:\s*(\d+)px/.exec(q)?.[1] ?? 0)
+      return {
+        matches: 1024 >= min,
+        media: q,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }
+    })
+    vi.mocked(classesApi.mine).mockResolvedValue(TWO_CLASSES())
+    renderLayout()
+    expect(await screen.findByText(/三年二班/)).toBeInTheDocument()
+    expect(await screen.findByText(/三年级 · 2026-2027 第 10 周/)).toBeInTheDocument()
+    expect(screen.queryByRole('complementary', { name: '侧栏' })).toBeNull()
+    // 抽屉里切班仍走 confirmLeave
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    useTeacherStore.getState().setUnsaved('seating', true)
+    fireEvent.click(screen.getByRole('button', { name: '打开菜单' }))
+    fireEvent.change(await screen.findByRole('combobox', { name: '切换班级' }), {
+      target: { value: 'b' },
+    })
+    expect(confirmSpy).toHaveBeenCalledWith('有未保存的座位修改,确定离开吗?')
+    expect(useTeacherStore.getState().classId).toBe('a')
+    confirmSpy.mockRestore()
+  })
+})
+
 describe('rail', () => {
   beforeEach(() => localStorage.setItem('ws-sidebar:classroom', '1'))
 

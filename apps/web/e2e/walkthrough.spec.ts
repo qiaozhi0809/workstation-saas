@@ -288,9 +288,16 @@ const EXPANDED_VIEWPORTS: readonly Viewport[] = [
   [1024, 768],
   [1280, 800],
 ]
+// 教室页 < 1280 是抽屉、没有侧栏可展开,只截 1280 一档
+const CLASSROOM_EXPANDED_VIEWPORTS: readonly Viewport[] = [[1280, 800]]
 
-async function shootExpanded(page: Page, role: string, slug: string) {
-  for (const [width, height] of EXPANDED_VIEWPORTS) {
+async function shootExpanded(
+  page: Page,
+  role: string,
+  slug: string,
+  viewports: readonly Viewport[] = EXPANDED_VIEWPORTS,
+) {
+  for (const [width, height] of viewports) {
     await page.setViewportSize({ width, height })
     await page.waitForTimeout(300)
     await page.screenshot({
@@ -313,7 +320,7 @@ test('教师端展开侧栏', async ({ page }) => {
   await signIn(page, 'teacher01', /\/teacher\/classroom/)
   const spec = TEACHER_PAGES[0]
   await settle(page, spec.ready(page))
-  await shootExpanded(page, 'teacher', spec.slug)
+  await shootExpanded(page, 'teacher', spec.slug, CLASSROOM_EXPANDED_VIEWPORTS)
 })
 
 test('管理端展开侧栏', async ({ page }) => {

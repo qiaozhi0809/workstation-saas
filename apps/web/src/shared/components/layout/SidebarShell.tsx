@@ -14,6 +14,8 @@ export interface SidebarShellProps {
   footer(collapsed: boolean): ReactNode
   /** null = 不渲染面包屑条(教室) */
   breadcrumb: ReactNode | null
+  /** 抽屉形态下顶部条里菜单按钮右边的内容;只在 breadcrumb 为 null 时用(教室页的班名与周次) */
+  drawerBar?: ReactNode
   /** 放在 <main> 之外的东西(抽屉、Toaster) */
   overlays?: ReactNode
   children: ReactNode
@@ -26,6 +28,7 @@ export default function SidebarShell({
   header,
   footer,
   breadcrumb,
+  drawerBar,
   overlays,
   children,
 }: SidebarShellProps) {
@@ -91,7 +94,7 @@ export default function SidebarShell({
                 <MenuIcon className="h-5 w-5" aria-hidden="true" />
               </Button>
             )}
-            {breadcrumb}
+            {breadcrumb ?? drawerBar}
           </div>
         )}
         <main
