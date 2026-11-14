@@ -1,7 +1,10 @@
-import type { ReactElement } from 'react'
+import { useState, type ReactElement } from 'react'
 import * as Tooltip from '@radix-ui/react-tooltip'
 
-/** rail 里图标的右侧提示。disabled(侧栏展开、名字已显示)时原样返回子元素 */
+/**
+ * rail 里图标的右侧提示。disabled(侧栏展开、名字已显示)时只是不显示提示,
+ * 子元素始终在同一棵树里:折叠状态一变也不会被卸载重挂,键盘焦点不丢
+ */
 export function RailTip({
   label,
   children,
@@ -11,10 +14,10 @@ export function RailTip({
   children: ReactElement
   disabled?: boolean
 }) {
-  if (disabled) return children
+  const [open, setOpen] = useState(false)
   return (
     <Tooltip.Provider delayDuration={300} skipDelayDuration={200}>
-      <Tooltip.Root>
+      <Tooltip.Root open={!disabled && open} onOpenChange={setOpen}>
         <Tooltip.Trigger asChild>{children}</Tooltip.Trigger>
         <Tooltip.Portal>
           <Tooltip.Content

@@ -1,12 +1,14 @@
 import type { ReactNode } from 'react'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { useState } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import { Building2, Sun } from 'lucide-react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AccountMenu from './AccountMenu'
 import { Sidebar, type SidebarGroup } from './Sidebar'
 import SidebarShell from './SidebarShell'
-import { Breadcrumb, adminCrumbs, teacherCrumbs } from './Breadcrumb'
+import { Breadcrumb } from './Breadcrumb'
+import { adminCrumbs, teacherCrumbs } from './crumbs'
 import { ADMIN_PAGES } from '@/roles/admin/pages'
 
 const GROUPS: SidebarGroup[] = [
@@ -72,10 +74,7 @@ describe('Sidebar', () => {
 
   it('marks the current page', () => {
     sidebar()
-    expect(screen.getByRole('link', { name: '组织架构' })).toHaveAttribute(
-      'aria-current',
-      'page',
-    )
+    expect(screen.getByRole('link', { name: '组织架构' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('link', { name: '今日关注' })).not.toHaveAttribute('aria-current')
   })
 
@@ -90,6 +89,51 @@ describe('Sidebar', () => {
     const { container } = sidebar({ navLoading: true })
     expect(container.querySelectorAll('[data-nav-skeleton]')).toHaveLength(6)
     expect(screen.queryByRole('link')).toBeNull()
+  })
+
+  it('is a labelled complementary landmark', () => {
+    sidebar()
+    expect(screen.getByRole('complementary', { name: '侧栏' })).toBeInTheDocument()
+  })
+
+  it('marks links, the toggle and the footer slots as touch targets', () => {
+    sidebar()
+    for (const link of screen.getAllByRole('link')) expect(link).toHaveClass('touch-target')
+    expect(screen.getByRole('button', { name: '折叠侧栏' })).toHaveClass('touch-target')
+  })
+
+  it('keeps keyboard focus on the toggle when collapsing', () => {
+    function Stateful() {
+      const [collapsed, setCollapsed] = useState(false)
+      return (
+        <Sidebar
+          groups={GROUPS}
+          collapsed={collapsed}
+          onToggle={() => setCollapsed((c) => !c)}
+          header={null}
+          footer={null}
+        />
+      )
+    }
+    render(
+      <Wrap>
+        <Stateful />
+      </Wrap>,
+    )
+    const toggle = screen.getByRole('button', { name: '折叠侧栏' })
+    const link = screen.getByRole('link', { name: '组织架构' })
+    toggle.focus()
+    fireEvent.click(toggle)
+    // 同一个节点,名称变成「展开侧栏」,焦点没有掉到 body
+    expect(screen.getByRole('button', { name: '展开侧栏' })).toBe(toggle)
+    expect(document.activeElement).toBe(toggle)
+    // 链接也没有被卸载重挂
+    expect(screen.getByRole('link', { name: '组织架构' })).toBe(link)
+  })
+
+  it('drawer variant has no collapse toggle', () => {
+    sidebar({ variant: 'drawer' })
+    expect(screen.queryByRole('button', { name: '折叠侧栏' })).toBeNull()
   })
 
   it('toggle button reports state and calls onToggle', () => {
@@ -135,6 +179,9 @@ describe('SidebarShell', () => {
     fireEvent.click(screen.getByRole('button', { name: '打开菜单' }))
     const dialog = screen.getByRole('dialog')
     expect(within(dialog).getByRole('navigation', { name: '主导航' })).toBeInTheDocument()
+    // 抽屉靠遮罩、Esc 和抽屉自带的「关闭」收起,不再放折叠按钮
+    expect(within(dialog).queryByRole('button', { name: '折叠侧栏' })).toBeNull()
+    expect(within(dialog).getByRole('button', { name: '关闭' })).toBeInTheDocument()
   })
 
   it('skip link focuses main', () => {
@@ -225,6 +272,13 @@ describe('Breadcrumb', () => {
     const child = adminCrumbs('/admin/org/classes/abc', ADMIN_PAGES)
     expect(child.map((c) => c.label)).toEqual(['学校管理', '组织架构', '班级信息'])
     expect(child[1].to).toBe('/admin/org')
+    // 看板里的班级页:没有分组,父级是全校看板
+    const klass = adminCrumbs('/admin/classes/abc', ADMIN_PAGES)
+    expect(klass.map((c) => c.label)).toEqual(['全校看板', '班级'])
+    expect(klass[0].to).toBe('/admin/board')
+    // 往年单班与父页同名:只显示父页
+    const past = adminCrumbs('/admin/history/classes/abc', ADMIN_PAGES)
+    expect(past.map((c) => c.label)).toEqual(['学校管理', '往年班级'])
     expect(adminCrumbs('/admin/nowhere', ADMIN_PAGES)).toEqual([])
   })
 

@@ -29,7 +29,8 @@ const inside = (a: Box, b: Box) =>
   a.x + a.width <= b.x + b.width + 1 &&
   a.y + a.height <= b.y + b.height + 1
 
-const aside = (page: Page) => page.locator('aside')
+// 成绩页、看板里也有 <aside>,只认带名字的侧栏
+const aside = (page: Page) => page.getByRole('complementary', { name: '侧栏' })
 const asideWidth = async (page: Page) => (await aside(page).boundingBox())!.width
 const canvasTransform = (page: Page) => page.locator('.cr-canvas').getAttribute('style')
 
@@ -133,11 +134,23 @@ test('rail has no vertical scrollbar at 1280×400', async ({ page }) => {
 test('drawer below 1024', async ({ page }) => {
   await page.setViewportSize({ width: 768, height: 1024 })
   await signIn(page, 'principal01', /\/admin\/today/)
-  await expect(page.locator('aside')).toHaveCount(0)
+  await expect(aside(page)).toHaveCount(0)
   await page.getByRole('button', { name: '打开菜单' }).click()
   const dialog = page.getByRole('dialog')
   await expect(dialog.getByRole('navigation', { name: '主导航' })).toBeVisible()
   await dialog.getByRole('link', { name: '全校看板' }).click()
   await expect(page).toHaveURL(/\/admin\/board/)
   await expect(page.getByRole('dialog')).toHaveCount(0)
+})
+
+test('drawer keeps the footer inside the viewport at 768×1024', async ({ page }) => {
+  await page.setViewportSize({ width: 768, height: 1024 })
+  await signIn(page, 'principal01', /\/admin\/today/)
+  await page.getByRole('button', { name: '打开菜单' }).click()
+  const dialog = page.getByRole('dialog')
+  const account = dialog.getByRole('button', { name: '账号菜单' })
+  await expect(account).toBeVisible()
+  const box = (await account.boundingBox())!
+  expect(box.y + box.height, '账号菜单按钮底边在视口内').toBeLessThanOrEqual(1024)
+  expect(box.y).toBeGreaterThanOrEqual(0)
 })

@@ -259,7 +259,7 @@ it('opens no realtime connection on /change-password', async () => {
   expect(noticesApi.inbox).not.toHaveBeenCalled()
 })
 
-it('puts the notice bell before the theme toggle in the top bar', async () => {
+it('puts the notice bell before the theme toggle in the sidebar footer', async () => {
   setUser(['admin'], ['org.manage'])
   renderAt('/admin')
   const bell = await screen.findByRole('button', { name: '通知,1 条未读' })
@@ -277,12 +277,12 @@ it('shows the breadcrumb for the current page above the content', async () => {
 it('keeps the brand, bell, theme and account menu in the sidebar, not a top bar', async () => {
   setUser(['admin'], ['org.manage'])
   renderAt('/admin/org')
-  const side = await screen.findByRole('complementary')
+  const side = await screen.findByRole('complementary', { name: '侧栏' })
   expect(within(side).getByRole('navigation', { name: '主导航' })).toBeInTheDocument()
   expect(await within(side).findByText('虚构实验学校')).toBeInTheDocument()
-  expect(within(side).getByRole('button', { name: /^通知/ })).toBeInTheDocument()
-  expect(within(side).getByRole('button', { name: /^主题:/ })).toBeInTheDocument()
-  expect(within(side).getByRole('button', { name: '账号菜单' })).toBeInTheDocument()
+  expect(within(side).getByRole('button', { name: /^通知/ })).toHaveClass('touch-target')
+  expect(within(side).getByRole('button', { name: /^主题:/ })).toHaveClass('touch-target')
+  expect(within(side).getByRole('button', { name: '账号菜单' })).toHaveClass('touch-target')
   expect(screen.queryByRole('banner')).toBeNull()
 })
 

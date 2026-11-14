@@ -24,7 +24,7 @@ export default function AccountMenu({
   preferences?: boolean
   /** 菜单弹出方向;侧栏底部用 'top' */
   placement?: 'top' | 'bottom'
-  /** 只显示头像、不画下拉箭头(侧栏 rail 里宽度只有 48) */
+  /** 只显示头像、不画下拉箭头(侧栏 rail 宽 72,放不下头像加箭头) */
   compact?: boolean
 }) {
   const navigate = useNavigate()
@@ -43,7 +43,9 @@ export default function AccountMenu({
         align={placement === 'top' ? 'start' : 'end'}
         triggerProps={{
           variant: 'ghost',
-          className: compact ? 'min-h-11 min-w-11 px-0' : 'min-h-11 min-w-11 gap-1 px-1.5',
+          className: compact
+            ? 'touch-target min-h-11 min-w-11 px-0'
+            : 'touch-target min-h-11 min-w-11 gap-1 px-1.5',
           'aria-label': '账号菜单',
           title: name,
         }}

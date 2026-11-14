@@ -53,7 +53,7 @@ export default function NoticeBell({ side = 'bottom' }: { side?: 'top' | 'bottom
       triggerProps={{
         variant: 'ghost',
         size: 'icon',
-        className: 'relative',
+        className: 'touch-target relative',
         'aria-label': `通知,${unread} 条未读`,
         title: '通知',
       }}

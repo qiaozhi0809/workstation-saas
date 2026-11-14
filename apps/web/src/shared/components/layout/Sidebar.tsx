@@ -46,6 +46,7 @@ export function Sidebar({
   const ToggleIcon = collapsed ? PanelLeftOpen : PanelLeftClose
   return (
     <aside
+      aria-label="侧栏"
       data-collapsed={collapsed}
       className={cn(
         'flex shrink-0 flex-col bg-card',
@@ -54,7 +55,7 @@ export function Sidebar({
               'm-4 h-[calc(100dvh-2rem)] rounded-sidebar shadow-surface',
               collapsed ? 'w-[72px]' : 'w-[264px]',
             )
-          : 'h-full w-full',
+          : 'min-h-0 w-full flex-1',
       )}
     >
       <div className={cn('flex shrink-0 flex-col gap-2 p-3', collapsed && 'items-center')}>
@@ -97,21 +98,23 @@ export function Sidebar({
               </div>
             ))}
       </nav>
-      <div className={cn('flex shrink-0 px-3 pt-2', collapsed && 'justify-center')}>
-        <RailTip label={collapsed ? '展开侧栏' : '折叠侧栏'} disabled={!collapsed}>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-10 w-10 text-muted-foreground"
-            aria-label={collapsed ? '展开侧栏' : '折叠侧栏'}
-            aria-expanded={!collapsed}
-            aria-keyshortcuts="["
-            onClick={onToggle}
-          >
-            <ToggleIcon className="h-4 w-4" aria-hidden="true" />
-          </Button>
-        </RailTip>
-      </div>
+      {variant === 'floating' && (
+        <div className={cn('flex shrink-0 px-3 pt-2', collapsed && 'justify-center')}>
+          <RailTip label={collapsed ? '展开侧栏' : '折叠侧栏'} disabled={!collapsed}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="touch-target h-10 w-10 text-muted-foreground"
+              aria-label={collapsed ? '展开侧栏' : '折叠侧栏'}
+              aria-expanded={!collapsed}
+              aria-keyshortcuts="["
+              onClick={onToggle}
+            >
+              <ToggleIcon className="h-4 w-4" aria-hidden="true" />
+            </Button>
+          </RailTip>
+        </div>
+      )}
       <div
         className={cn(
           'flex shrink-0 gap-1 p-3',
@@ -132,7 +135,7 @@ function SidebarLink({ item, collapsed }: { item: SidebarItem; collapsed: boolea
         to={to}
         className={({ isActive }) =>
           cn(
-            'flex h-10 shrink-0 items-center gap-2 rounded-md text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            'touch-target flex h-10 shrink-0 items-center gap-2 rounded-md text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
             collapsed ? 'w-10 justify-center' : 'w-full px-3',
             isActive
               ? 'bg-accent text-foreground'
