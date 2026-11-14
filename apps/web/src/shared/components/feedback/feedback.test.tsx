@@ -15,6 +15,47 @@ describe('LoadingState', () => {
   })
 })
 
+describe('LoadingState variants', () => {
+  const original = window.matchMedia
+  afterEach(() => {
+    window.matchMedia = original
+  })
+
+  it('table skeleton keeps row slots', () => {
+    const { container } = render(<LoadingState variant="table" rows={5} label="读取成绩" />)
+    expect(container.querySelectorAll('[data-skeleton-row]')).toHaveLength(5)
+    expect(screen.getByRole('status', { name: '读取成绩' })).toBeInTheDocument()
+  })
+
+  it('cards skeleton renders three blocks', () => {
+    const { container } = render(<LoadingState variant="cards" />)
+    expect(container.querySelectorAll('[data-skeleton-card]')).toHaveLength(3)
+    expect(screen.getByRole('status')).toBeInTheDocument()
+  })
+
+  it('form skeleton uses arc skeleton', () => {
+    render(<LoadingState variant="form" label="读取表单" />)
+    const status = screen.getByRole('status', { name: '读取表单' })
+    expect(status).toHaveAttribute('aria-busy', 'true')
+    expect(status.querySelectorAll('span[aria-hidden="true"] > span').length).toBeGreaterThan(0)
+  })
+
+  it('skeleton pulses by default', () => {
+    const { container } = render(<LoadingState variant="table" rows={1} />)
+    expect(container.querySelector('.animate-pulse')).not.toBeNull()
+  })
+
+  it('skeleton stops under reduced motion', () => {
+    window.matchMedia = vi.fn().mockReturnValue({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })
+    const { container } = render(<LoadingState variant="table" rows={2} />)
+    expect(container.querySelector('.animate-pulse')).toBeNull()
+  })
+})
+
 describe('ErrorState', () => {
   it('has alert role and calls onRetry', () => {
     const onRetry = vi.fn()
@@ -48,5 +89,12 @@ describe('EmptyState', () => {
     expect(screen.getByRole('heading', { name: '没有数据' })).toBeInTheDocument()
     expect(screen.getByText('先添加一些')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '添加' })).toBeInTheDocument()
+  })
+
+  it('aligns start by default and centers on request', () => {
+    const { container, rerender } = render(<EmptyState title="没有数据" />)
+    expect(container.firstElementChild).toHaveClass('items-start', 'text-left')
+    rerender(<EmptyState title="没有数据" align="center" />)
+    expect(container.firstElementChild).toHaveClass('items-center', 'text-center')
   })
 })
