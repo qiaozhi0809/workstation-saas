@@ -1,4 +1,4 @@
-import { useEffect, useMemo, type ReactNode } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AlertCircle, Check, GraduationCap } from 'lucide-react'
 import { Link, Outlet, useLocation, useMatch, useNavigate } from 'react-router-dom'
@@ -11,7 +11,7 @@ import { Breadcrumb } from '@/shared/components/layout/Breadcrumb'
 import { teacherCrumbs } from '@/shared/components/layout/crumbs'
 import NoticeBell from '@/shared/components/layout/NoticeBell'
 import SidebarShell from '@/shared/components/layout/SidebarShell'
-import Menu, { MenuItem } from '@/shared/components/overlay/Menu'
+import Menu, { MenuItem, MenuLabel } from '@/shared/components/overlay/Menu'
 import { NativeSelect } from '@/shared/components/ui/native-select'
 import { compareClassName } from '@/shared/lib/sort'
 import { cn } from '@/shared/lib/utils'
@@ -67,13 +67,13 @@ export default function TeacherLayout() {
     navigate('/login', { replace: true })
   }
 
-  const info = cls && summary.data && (
-    <span className="truncate text-sm text-muted-foreground">
-      {[cls.grade_name, cls.room, `${summary.data.year.name} 第 ${summary.data.week_no} 周`]
-        .filter(Boolean)
-        .join(' · ')}
-    </span>
-  )
+  // 「年级 · 教室 · 学年 第 N 周」:展开时显示在班级下面,rail 下放在班级菜单顶部和按钮提示里
+  const infoText =
+    cls && summary.data
+      ? [cls.grade_name, cls.room, `${summary.data.year.name} 第 ${summary.data.week_no} 周`]
+          .filter(Boolean)
+          .join(' · ')
+      : ''
 
   const onPick = (id: string) => {
     if (confirmLeave()) setClass(id)
@@ -101,7 +101,7 @@ export default function TeacherLayout() {
               classId={classId}
               failed={isError}
               weekNo={summary.data?.week_no}
-              info={info}
+              infoText={infoText}
               onPick={onPick}
             />
           </>
@@ -141,7 +141,7 @@ function ClassSwitcher({
   classId,
   failed,
   weekNo,
-  info,
+  infoText,
   onPick,
 }: {
   collapsed: boolean
@@ -149,7 +149,7 @@ function ClassSwitcher({
   classId: string | null
   failed: boolean
   weekNo: number | undefined
-  info: ReactNode
+  infoText: string
   onPick(id: string): void
 }) {
   const current = classes.find((c) => c.id === classId)
@@ -183,7 +183,7 @@ function ClassSwitcher({
             ))}
           </NativeSelect>
         )}
-        {info}
+        {infoText && <span className="truncate text-sm text-muted-foreground">{infoText}</span>}
       </div>
     )
   }
@@ -196,28 +196,24 @@ function ClassSwitcher({
   return (
     <div className="flex flex-col items-center gap-1">
       {error}
-      {classes.length === 1 && (
-        <span
-          title={classes[0].name}
-          className={cn(badge, 'flex h-10 w-10 items-center justify-center rounded-md')}
-        >
-          {initial}
-        </span>
-      )}
-      {classes.length > 1 && (
+      {classes.length > 0 && (
         <Menu
-          label="切换班级"
+          label={classes.length > 1 ? '切换班级' : '班级信息'}
           side="bottom"
           align="start"
           triggerProps={{
             variant: 'ghost',
             size: 'icon',
             className: badge,
-            'aria-label': `切换班级,当前${current?.name ?? ''}`,
-            title: current?.name,
+            'aria-label':
+              classes.length > 1
+                ? `切换班级,当前${current?.name ?? ''}`
+                : `当前班级,${classes[0].name}`,
+            title: [current?.name, infoText].filter(Boolean).join(' · '),
           }}
           trigger={<span aria-hidden="true">{initial}</span>}
         >
+          {infoText && <MenuLabel>{infoText}</MenuLabel>}
           {classes.map((c) => (
             <MenuItem key={c.id} onSelect={() => onPick(c.id)}>
               <span className="mr-2">{c.name}</span>
