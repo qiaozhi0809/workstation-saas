@@ -105,54 +105,6 @@ function ScoresTable({ examId }: { examId: string }) {
   )
 }
 
-function ScoresTable({ examId }: { examId: string }) {
-  const q = useQuery({
-    queryKey: ['history', 'scores', examId],
-    queryFn: () => adminApi.historyScores(examId),
-  })
-  if (q.isError) {
-    return isForbidden(q.error) ? (
-      <EmptyState title={NO_PERM} />
-    ) : (
-      <ErrorState title="成绩加载失败" onRetry={() => void q.refetch()} retrying={q.isFetching} />
-    )
-  }
-  if (!q.data) return <LoadingState variant="table" />
-  const { exam, students } = q.data
-  return (
-    <div className="overflow-x-auto">
-      <table aria-label="成绩表" className="w-full min-w-[32rem] text-sm">
-        <thead>
-          <tr className="border-b text-left text-muted-foreground">
-            <th className="py-2 pr-3 font-medium">学号</th>
-            <th className="py-2 pr-3 font-medium">姓名</th>
-            {exam.subjects.map((s) => (
-              <th key={s.name} className="py-2 pr-3 font-medium">{`${s.name} /${s.full}`}</th>
-            ))}
-            <th className="py-2 pr-3 font-medium">总分</th>
-            <th className="py-2 font-medium">班级名次</th>
-          </tr>
-        </thead>
-        <tbody>
-          {students.map((s) => (
-            <tr key={s.student_id} className="border-b">
-              <td className="py-2 pr-3">{dash(s.student_no)}</td>
-              <td className="py-2 pr-3">{s.name}</td>
-              {exam.subjects.map((sub) => (
-                <td key={sub.name} className="py-2 pr-3">
-                  {dash(s.scores[sub.name])}
-                </td>
-              ))}
-              <td className="py-2 pr-3">{dash(s.total)}</td>
-              <td className="py-2">{dash(s.class_rank)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
 function ScoresTab({ classId }: { classId: string }) {
   const [picked, setPicked] = useState<string | null>(null)
   const exams = useQuery({

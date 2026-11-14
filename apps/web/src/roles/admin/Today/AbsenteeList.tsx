@@ -1,7 +1,5 @@
 import { Button } from '@/shared/components/ui/button'
 import { Card } from '@/shared/components/ui/card'
-import { Button } from '@/shared/components/ui/button'
-import { Card } from '@/shared/components/ui/card'
 import { EmptyState } from '@/shared/components/feedback/EmptyState'
 import type { TodayView } from '@/shared/types/admin'
 import { cn } from '@/shared/lib/utils'
