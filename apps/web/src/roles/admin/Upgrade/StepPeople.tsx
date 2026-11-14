@@ -23,7 +23,7 @@ export default function StepPeople({ plan, edit, problem, nameOf, remember }: St
           '尚未编辑时按"跟届"规则沿用原年级组长;改动任何一行后以这里的名单为准。'}
       </p>
       {lost && (
-        <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm">
+        <p role="status" className="rounded-md bg-warning/10 p-3 text-sm text-warning">
           年级名已改,组长未沿用,请重新选择
         </p>
       )}
@@ -38,8 +38,8 @@ export default function StepPeople({ plan, edit, problem, nameOf, remember }: St
               key={g}
               data-invalid={bad || undefined}
               className={cn(
-                'flex flex-wrap items-center gap-3 rounded-md border px-3 py-2',
-                bad && 'border-destructive',
+                'flex flex-wrap items-center gap-3 rounded-md bg-muted p-3',
+                bad && 'bg-destructive/10',
               )}
             >
               <span className="min-w-24 text-sm font-medium">{g}</span>

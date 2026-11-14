@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import Modal from '@/shared/components/overlay/Modal'
+import { X } from 'lucide-react'
 import { Button } from '@/shared/components/ui/button'
+import { IconButton } from '@/shared/components/ui/icon-button'
 import { Input } from '@/shared/components/ui/input'
 import { cn } from '@/shared/lib/utils'
 import { orgApi, type OrgPerson } from '../Org/orgApi'
@@ -41,8 +43,8 @@ function Candidates({ chosen, onToggle }: { chosen: Set<string>; onToggle(p: Org
               type="button"
               aria-pressed={isChosen(chosen, a)}
               className={cn(
-                'flex w-full flex-wrap items-center gap-x-3 rounded-md border px-3 py-2 text-left text-sm hover:bg-accent',
-                isChosen(chosen, a) && 'border-primary bg-accent',
+                'flex min-h-10 w-full flex-wrap items-center gap-x-3 rounded-md px-3 py-2 text-left text-sm hover:bg-accent',
+                isChosen(chosen, a) && 'bg-accent',
               )}
               onClick={() => onToggle(a)}
             >
@@ -100,17 +102,16 @@ export default function PersonSelect({
         selected.map((p) => (
           <span
             key={p.id}
-            className="inline-flex items-center gap-1 rounded-md bg-secondary px-2 py-1 text-sm"
+            className="inline-flex items-center gap-1 rounded-sm bg-secondary pl-2 text-sm"
           >
             {p.name}
-            <button
-              type="button"
+            <IconButton
+              size="sm"
+              icon={X}
               aria-label={`移除 ${label} ${p.name}`}
               className="text-muted-foreground hover:text-foreground"
               onClick={() => onChange(selected.filter((x) => x.id !== p.id))}
-            >
-              ×
-            </button>
+            />
           </span>
         ))}
       <Button
@@ -119,20 +120,22 @@ export default function PersonSelect({
         size="sm"
         aria-label={label}
         aria-invalid={invalid || undefined}
-        className={cn(invalid && 'border-destructive text-destructive')}
+        className={cn(invalid && 'text-destructive')}
         onClick={() => setOpen(true)}
       >
         {multiple ? '添加' : (selected[0]?.name ?? emptyText)}
       </Button>
       {!multiple && selected.length > 0 && (
-        <button
+        <Button
           type="button"
+          variant="link"
+          size="sm"
           aria-label={`清除 ${label}`}
-          className="text-sm text-muted-foreground hover:text-foreground"
+          className="text-muted-foreground"
           onClick={() => onChange([])}
         >
           清除
-        </button>
+        </Button>
       )}
       <Modal
         open={open}

@@ -82,7 +82,7 @@ export default function StepNewClasses({ plan, edit, problem, nameOf, remember }
             <li
               key={i}
               data-invalid={bad || undefined}
-              className={cn('grid gap-2 rounded-md border p-3', bad && 'border-destructive')}
+              className={cn('grid gap-2 rounded-md bg-muted p-3', bad && 'bg-destructive/10')}
             >
               <div className="flex items-center justify-between">
                 <span className="font-medium">{k}</span>
