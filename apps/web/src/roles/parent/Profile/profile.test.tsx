@@ -116,8 +116,18 @@ it('rejects a contact with neither name nor phone and keeps the form open', asyn
     target: { value: '父亲' },
   })
   fireEvent.click(screen.getByRole('button', { name: '保存' }))
-  expect(await screen.findByRole('alert')).toHaveTextContent('联系人姓名和电话至少填一项')
+  // 就地报错:挂在出错那一行的姓名框下面,焦点移过去;保存按钮不因此禁用
+  const alert = await screen.findByRole('alert')
+  expect(alert).toHaveTextContent('联系人姓名和电话至少填一项')
+  const name = screen.getByRole('textbox', { name: '联系人2姓名' })
+  expect(name).toHaveAttribute('aria-invalid', 'true')
+  expect(name.getAttribute('aria-describedby')).toContain(alert.id)
+  expect(name).toHaveFocus()
+  expect(screen.getByRole('button', { name: '保存' })).toBeEnabled()
   expect(parentApi.saveContacts).not.toHaveBeenCalled()
+  // 改了这一行就清掉它的错误
+  fireEvent.change(name, { target: { value: '王爸爸' } })
+  expect(screen.queryByRole('alert')).toBeNull()
 })
 
 it('keeps the form and shows the server message when saving fails', async () => {

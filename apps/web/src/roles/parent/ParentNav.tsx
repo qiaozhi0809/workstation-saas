@@ -10,7 +10,7 @@ const TABS: { path: string; label: string; icon: LucideIcon }[] = [
   { path: 'notices', label: '通知', icon: Bell },
 ]
 
-/** < 768 底部固定页签(图标在上文字在下,避开 iOS 安全区);≥ 768 放进顶栏 */
+/** < 768 底部固定页签(图标在上文字在下,避开 iOS 安全区);≥ 1024 放进顶栏、768–1023 放进顶栏下的第二行 */
 export default function ParentNav({
   placement,
   childId,

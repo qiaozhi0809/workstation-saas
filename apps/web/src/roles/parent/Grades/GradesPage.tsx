@@ -36,7 +36,7 @@ function ExamList({ sid }: { sid: string }) {
                 aria-expanded={open}
                 aria-controls={`exam-panel-${e.id}`}
                 onClick={() => setOpenId(open ? null : e.id)}
-                className="flex min-h-11 w-full flex-col items-start gap-0.5 rounded-lg px-4 py-3 text-left"
+                className="flex min-h-11 w-full flex-col items-start gap-0.5 rounded-lg px-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <span className="text-base font-medium">{e.name}</span>
                 <span className="text-xs text-muted-foreground">

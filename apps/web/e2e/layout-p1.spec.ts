@@ -51,9 +51,8 @@ for (const theme of ['light', 'dark'] as const) {
 async function navLabelLineCounts(page: Page): Promise<number[]> {
   return page.getByRole('navigation', { name: '主导航' }).evaluate((nav) =>
     Array.from(nav.querySelectorAll('a')).map((link) => {
-      const label = Array.from(link.querySelectorAll('span')).find(
-        (s) => !s.classList.contains('sr-only') && (s.textContent ?? '').trim().length > 0,
-      )
+      // 只量标签文字那个 span:图标 + 徽标的 span.relative、读屏用的 sr-only 都不算
+      const label = link.querySelector(':scope > span:not(.relative):not(.sr-only)')
       if (!label) return 0
       const range = document.createRange()
       range.selectNodeContents(label)
@@ -89,7 +88,8 @@ test('header survives long school name and two children', async ({ page }) => {
 test('first visit card button is a touch target', async ({ page }) => {
   await guardReadOnly(page)
   await patchJson(page, /\/me\/preferences$/, (json) => {
-    if (json.onboarded) delete json.onboarded.parent
+    json.onboarded = { ...(json.onboarded ?? {}) }
+    delete json.onboarded.parent
   })
   await page.setViewportSize({ width: 768, height: 1024 })
   await signInAs(page, 'parent')

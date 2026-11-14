@@ -74,7 +74,7 @@ function GrowthTabs({ sid }: { sid: string }) {
         onChange={setTab}
         className="h-auto w-full [&>button]:min-h-11 [&>button]:flex-1"
       />
-      <div role="tabpanel" aria-label={label}>
+      <div role="tabpanel" tabIndex={0} aria-label={label}>
         {tab === 'growth' && <GrowthTab sid={sid} />}
         {tab === 'comments' && <CommentsTab sid={sid} />}
         {tab === 'reviews' && <ReviewHistory sid={sid} />}
