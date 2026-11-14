@@ -48,6 +48,10 @@ function errorText(e: unknown): string {
 
 const FULL_MSG = '满分须为 1–1000 的整数'
 const FIELD_ORDER = ['name', 'date', 'subjects'] as const
+const examTypeItems: readonly { value: ExamType; label: string }[] = EXAM_TYPES.map((t) => ({
+  value: t,
+  label: t,
+}))
 const validFull = (n: number) => Number.isInteger(n) && n >= 1 && n <= 1000
 
 export const GRADE_EXAM_MANAGED = '这是年级联考,由教导处修改'
@@ -279,7 +283,7 @@ function FormBody(p: Props & { catalog: SubjectFull[] }) {
         <span className="text-xs font-medium">类型</span>
         <SegmentedTabs
           label="考试类型"
-          items={EXAM_TYPES.map((t) => ({ value: t, label: t }))}
+          items={examTypeItems}
           value={type}
           onChange={setType}
           size="sm"

@@ -142,10 +142,10 @@ it('groups settings under labelled fieldsets', async () => {
 })
 
 it('has a single h1 in a narrow page container', async () => {
-  const { container } = renderPage()
+  renderPage()
   const h1 = await screen.findByRole('heading', { level: 1, name: '我的偏好' })
   expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
-  expect(container.querySelector('[data-page-container]')).toHaveAttribute('data-width', 'narrow')
+  expect(h1.closest('[data-page-container]')).toHaveAttribute('data-width', 'narrow')
   expect(h1.closest('[data-page-header]')).not.toBeNull()
 })
 
