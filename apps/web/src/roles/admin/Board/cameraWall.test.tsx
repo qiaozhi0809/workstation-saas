@@ -256,7 +256,7 @@ describe('CameraWallMini', () => {
     renamed.grades[0].classes[0].cameras[0] = cam('a1', '讲台机位(新)', 'idle')
     act(() => qc.setQueryData(['camera-wall'], renamed))
     // 班名下方的小字先变(直接读 query 数据),播放器 aria-label 也要跟着变
-    await within(wall).findByText('讲台机位(新)', { selector: 'span' })
+    await within(wall).findByText('讲台机位(新)', { selector: 'span.text-muted-foreground' })
     expect(within(wall).getByLabelText('讲台机位(新)')).toBeInTheDocument()
     expect(within(wall).queryByLabelText('讲台机位')).toBeNull()
     expect(FakeHls.instances).toHaveLength(1)
