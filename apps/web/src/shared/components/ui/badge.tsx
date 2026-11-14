@@ -29,10 +29,15 @@ const TONE: Record<Exclude<Variant, 'outline'>, BadgeTone> = {
   destructive: 'danger',
 }
 
-function Badge({ variant = 'default', ...props }: BadgeProps) {
+function Badge({ variant = 'default', children, ...props }: BadgeProps) {
   const outline = variant === 'outline'
   const tone = outline ? 'neutral' : TONE[variant]
-  return <ArcBadge tone={tone} outline={outline} {...props} />
+  // children 包一层 Fragment:Arc 对纯字符串会走文字切换动画,旧文字的退出副本会在 DOM 里多留一会儿
+  return (
+    <ArcBadge tone={tone} outline={outline} {...props}>
+      <>{children}</>
+    </ArcBadge>
+  )
 }
 
 // 只给还没改成 <Badge> 的调用点(教室未排座托盘)留着;新代码用 <Badge>
