@@ -2,6 +2,7 @@ import { Download } from 'lucide-react'
 import Modal from '@/shared/components/overlay/Modal'
 import { toast } from '@/shared/components/Toast'
 import { Button } from '@/shared/components/ui/button'
+import { Table, TableBody, TableHead, TableRow, Td, Th } from '@/shared/components/ui/table'
 import { downloadText, toCSV } from '@/shared/lib/csv'
 
 export interface TempPassword {
@@ -55,26 +56,24 @@ export default function TempPasswordDialog({
       className={many ? 'max-w-xl' : 'max-w-sm'}
     >
       {many ? (
-        <div className="max-h-80 overflow-auto rounded-md border">
-          <table className="w-full text-sm">
-            <thead className="bg-muted text-left text-muted-foreground">
-              <tr>
-                <th className="px-3 py-2 font-medium">登录名</th>
-                <th className="px-3 py-2 font-medium">姓名</th>
-                <th className="px-3 py-2 font-medium">临时密码</th>
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((e) => (
-                <tr key={e.login_name} className="border-t">
-                  <td className="px-3 py-1.5">{e.login_name}</td>
-                  <td className="px-3 py-1.5">{e.display_name}</td>
-                  <td className="px-3 py-1.5 font-mono">{e.temp_password}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Table density="compact" containerClassName="max-h-80 overflow-auto">
+          <TableHead>
+            <TableRow>
+              <Th>登录名</Th>
+              <Th>姓名</Th>
+              <Th>临时密码</Th>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {entries.map((e) => (
+              <TableRow key={e.login_name}>
+                <Td>{e.login_name}</Td>
+                <Td>{e.display_name}</Td>
+                <Td className="font-mono">{e.temp_password}</Td>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       ) : (
         entries.map((e) => (
           <div key={e.login_name} className="space-y-1 rounded-md bg-muted px-3 py-3 text-center">

@@ -466,3 +466,18 @@ it('shows a readable message when resetting yourself is rejected', async () => {
   fireEvent.click(screen.getByRole('button', { name: '确认重置' }))
   expect(await screen.findByRole('alert')).toHaveTextContent('不能重置自己的两步验证')
 })
+
+it('role badges never wrap per character', async () => {
+  renderPage()
+  const badge = (await screen.findAllByText('三年二班 班主任'))[0]
+  const cell = badge.closest('td') as HTMLElement
+  expect(cell.className).toContain('whitespace-nowrap')
+  expect(cell.className).toContain('min-w-[8rem]')
+})
+
+it('shows a frozen account with a status dot and a text label', async () => {
+  renderPage()
+  const row = await screen.findByRole('row', { name: /赵强/ })
+  expect(within(row).getByText('已冻结')).toBeInTheDocument()
+  expect(within(screen.getByRole('row', { name: /王芳/ })).getByText('在用')).toBeInTheDocument()
+})
