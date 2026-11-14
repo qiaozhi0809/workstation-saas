@@ -85,7 +85,9 @@ export async function expectBaselineLayout(
       if (rect.width === 0 || rect.height === 0) continue
       if (getComputedStyle(el).visibility === 'hidden') continue
       if (!allowed.includes(Math.round(rect.height))) {
-        out.push(`${el.tagName.toLowerCase()} "${(el.textContent ?? '').trim().slice(0, 20)}" h=${rect.height}`)
+        out.push(
+          `${el.tagName.toLowerCase()} "${(el.textContent ?? '').trim().slice(0, 20)}" h=${rect.height}`,
+        )
       }
     }
     return out

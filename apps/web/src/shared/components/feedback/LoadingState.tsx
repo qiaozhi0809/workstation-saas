@@ -50,7 +50,12 @@ export function LoadingState({
         className={cn('grid gap-6 sm:grid-cols-2 lg:grid-cols-3', className)}
       >
         {[0, 1, 2].map((i) => (
-          <div key={i} data-skeleton-card aria-hidden="true" className={cn('h-32 rounded-lg', bar)} />
+          <div
+            key={i}
+            data-skeleton-card
+            aria-hidden="true"
+            className={cn('h-32 rounded-lg', bar)}
+          />
         ))}
       </div>
     )

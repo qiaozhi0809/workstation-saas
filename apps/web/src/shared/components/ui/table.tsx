@@ -46,15 +46,20 @@ export function Table({
   )
 }
 
-export const TableHead = ({ className, ...props }: React.HTMLAttributes<HTMLTableSectionElement>) => (
-  <thead className={cn(className)} {...props} />
-)
+export const TableHead = ({
+  className,
+  ...props
+}: React.HTMLAttributes<HTMLTableSectionElement>) => <thead className={cn(className)} {...props} />
 
-export const TableBody = ({ className, ...props }: React.HTMLAttributes<HTMLTableSectionElement>) => (
-  <tbody className={cn(className)} {...props} />
-)
+export const TableBody = ({
+  className,
+  ...props
+}: React.HTMLAttributes<HTMLTableSectionElement>) => <tbody className={cn(className)} {...props} />
 
-export const TableFoot = ({ className, ...props }: React.HTMLAttributes<HTMLTableSectionElement>) => (
+export const TableFoot = ({
+  className,
+  ...props
+}: React.HTMLAttributes<HTMLTableSectionElement>) => (
   <tfoot className={cn('font-medium', className)} {...props} />
 )
 

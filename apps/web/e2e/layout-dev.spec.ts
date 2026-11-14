@@ -11,3 +11,16 @@ test('ui gallery meets the baseline in light and dark', async ({ page }) => {
     await expectBaselineLayout(page, { checkTitleX: true })
   }
 })
+
+test('caller className wins over arc styles', async ({ page }) => {
+  await page.goto('/dev/ui')
+  const color = (id: string) => page.getByTestId(id).evaluate((el) => getComputedStyle(el).color)
+  const height = (id: string) =>
+    page.getByTestId(id).evaluate((el) => el.getBoundingClientRect().height)
+
+  const override = await color('btn-override-color')
+  expect(override).not.toBe(await color('btn-ghost-plain'))
+  expect(override).toBe(await color('destructive-ref'))
+  expect(await height('btn-override-minh')).toBeGreaterThanOrEqual(44)
+  expect(await height('btn-override-h')).toBeGreaterThanOrEqual(44)
+})
