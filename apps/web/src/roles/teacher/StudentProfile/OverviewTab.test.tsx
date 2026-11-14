@@ -266,6 +266,31 @@ it('rounds radar values to integers', async () => {
   expect(radar.series[1].values).toEqual([Math.round(((55 + 100 + 61) / 3 / 120) * 100)])
 })
 
+it('says there is only one exam instead of drawing a lone point', async () => {
+  const one: Gradebook = { exams: [book.exams[1]] }
+  vi.mocked(examsApi.gradebook).mockResolvedValue(one)
+  renderTab({ perms: ['exam.read'], student: profile })
+  expect(await screen.findByText(/只有 1 次考试/)).toBeInTheDocument()
+  expect(trendLine).not.toHaveBeenCalled()
+  // 雷达图不是趋势图,照常画
+  await waitFor(() => expect(scoreRadar).toHaveBeenCalled())
+})
+
+it('uses card blocks and medium-weight tabular numbers for the KPIs', async () => {
+  vi.mocked(examsApi.gradebook).mockResolvedValue(book)
+  renderTab({ perms: ['review.read', 'exam.read'], student: profile })
+  const total = await screen.findByText('140')
+  expect(total).toHaveClass('font-medium', 'tabular-nums')
+  expect(total).not.toHaveClass('font-semibold')
+  const group = screen.getByRole('group', { name: '概况指标' })
+  const cards = group.querySelectorAll('[data-slot="card"]')
+  expect(cards.length).toBeGreaterThan(0)
+  for (const card of Array.from(cards)) {
+    expect(card).not.toHaveClass('border')
+    expect(card.querySelector('.font-medium')).not.toBeNull()
+  }
+})
+
 it('renders no score blocks without scores', async () => {
   renderTab({ perms: ['exam.read'], student: profile })
   await waitFor(() => expect(examsApi.gradebook).toHaveBeenCalled())

@@ -103,6 +103,19 @@ it('welcome shows once', async () => {
   expect(preferencesApi.save).toHaveBeenCalledTimes(1)
 })
 
+it('draws the figure cards at radius 16 with a ring for the selected one and a plain list', async () => {
+  renderDialog()
+  const dialog = await screen.findByRole('dialog', { name: '你好,王老师' })
+  const female = within(dialog).getByRole('button', { name: '女老师' })
+  const male = within(dialog).getByRole('button', { name: '男老师' })
+  expect(female).toHaveClass('rounded-lg', 'ring-2', 'ring-ring')
+  expect(female).not.toHaveClass('rounded-xl', 'border-2')
+  expect(male).not.toHaveClass('ring-2')
+  const list = dialog.querySelector('ul') as HTMLElement
+  expect(list).toHaveClass('list-disc')
+  expect(list.querySelector('[aria-hidden="true"]')).toBeNull()
+})
+
 it('picks figure', async () => {
   const { client } = renderDialog()
   const dialog = await screen.findByRole('dialog', { name: '你好,王老师' })

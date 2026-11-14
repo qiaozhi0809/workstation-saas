@@ -21,12 +21,14 @@ import {
   subjectStats,
 } from '@/shared/lib/grades'
 import { Badge } from '@/shared/components/ui/badge'
+import { Card } from '@/shared/components/ui/card'
 import { Button } from '@/shared/components/ui/button'
 import { NativeSelect } from '@/shared/components/ui/native-select'
 import { toast } from '@/shared/components/Toast'
 import type { StudentProfile } from '@/shared/types/student'
 import Field from './Field'
 import { GROWTH_TONE } from './GrowthTab'
+import SingleExamSummary from './SingleExamSummary'
 import { useStudentDrawer } from './useStudentDrawer'
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -81,7 +83,7 @@ function ClassRoleRow({ student }: { student: StudentProfile }) {
       <dd>
         <NativeSelect
           aria-label="职务"
-          className="h-8"
+          controlSize="sm"
           value={value}
           onChange={(e) => {
             setValue(e.target.value)
@@ -102,11 +104,11 @@ function ClassRoleRow({ student }: { student: StudentProfile }) {
 
 function KpiCard({ title, value, hint }: { title: string; value: string; hint?: string }) {
   return (
-    <div className="rounded-lg border bg-card p-3 text-card-foreground">
+    <Card className="p-3">
       <div className="text-xs text-muted-foreground">{title}</div>
-      <div className="text-lg font-semibold">{value}</div>
+      <div className="text-lg font-medium tabular-nums">{value}</div>
       {hint && <div className="text-xs text-muted-foreground">{hint}</div>}
-    </div>
+    </Card>
   )
 }
 
@@ -211,7 +213,7 @@ function ScoreBlocks({ student, enabled }: { student: StudentProfile; enabled: b
       <section>
         <h3 className="mb-1 text-sm font-medium">最近考试 · {latest.name}</h3>
         <div className="flex items-baseline gap-3">
-          <span className="text-2xl font-semibold">{row?.total ?? '—'}</span>
+          <span className="text-2xl font-medium tabular-nums">{row?.total ?? '—'}</span>
           {row?.rank != null && <span className="text-sm">第 {row.rank} 名</span>}
           {change !== undefined && change !== 0 && (
             <span className="text-sm text-muted-foreground">
@@ -222,17 +224,25 @@ function ScoreBlocks({ student, enabled }: { student: StudentProfile; enabled: b
       </section>
       <section>
         <h3 className="mb-1 text-sm font-medium">总分得分率</h3>
-        <TrendLine
-          label="总分得分率"
-          labels={trend.map((p) => p.name)}
-          domain={[40, 100]}
-          endLabel
-          format={(v) => `${Math.round(v)}%`}
-          series={[
-            { key: 'avg', label: '班级平均', values: classRate, muted: true },
-            { key: 'me', label: student.name, values: trend.map((p) => p.rate) },
-          ]}
-        />
+        {trend.length < 2 ? (
+          <SingleExamSummary
+            text={`只有 1 次考试:总分得分率 ${
+              trend[0]?.rate == null ? '—' : `${Math.round(trend[0].rate)}%`
+            }`}
+          />
+        ) : (
+          <TrendLine
+            label="总分得分率"
+            labels={trend.map((p) => p.name)}
+            domain={[40, 100]}
+            endLabel
+            format={(v) => `${Math.round(v)}%`}
+            series={[
+              { key: 'avg', label: '班级平均', values: classRate, muted: true },
+              { key: 'me', label: student.name, values: trend.map((p) => p.rate) },
+            ]}
+          />
+        )}
       </section>
       {axes.length > 0 && (
         <section>
@@ -267,7 +277,6 @@ function RecentGrowth({ student }: { student: StudentProfile }) {
           type="button"
           variant="ghost"
           size="sm"
-          className="h-7 px-2"
           onClick={() => open(student.id, '成长记录')}
         >
           查看全部

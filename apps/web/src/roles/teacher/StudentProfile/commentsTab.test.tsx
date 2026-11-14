@@ -236,6 +236,15 @@ it('header: AI 写评语 jumps to the comment template', async () => {
   expect(screen.getByTestId('loc')).toHaveTextContent('/teacher/ai?tpl=comment1&stu=s1')
 })
 
+it('renders 给家长看 with the shared switch control', async () => {
+  vi.mocked(commentsApi.list).mockResolvedValue({ items: [cm({ parent_visible: false })] })
+  setup(<CommentsTab profile={profile} />, ['comment.read', 'comment.write'])
+  const sw = await screen.findByRole('switch', { name: '给家长看' })
+  expect(sw.tagName).toBe('INPUT')
+  expect(sw).toHaveAttribute('type', 'checkbox')
+  expect(sw.closest('label')).toHaveClass('min-h-8')
+})
+
 it('toggles 给家长看 via setParentVisible and updates the display', async () => {
   vi.mocked(commentsApi.list).mockResolvedValue({ items: [cm({ parent_visible: false })] })
   vi.mocked(commentsApi.setParentVisible).mockResolvedValue(cm({ parent_visible: true }))

@@ -125,7 +125,7 @@ function Timeline({ profile, canWrite }: { profile: StudentProfile; canWrite: bo
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="ml-auto h-7 px-2"
+                className="ml-auto"
                 disabled={remove.isPending}
                 onClick={() => {
                   if (window.confirm('删除这条成长记录?')) remove.mutate(r.id)

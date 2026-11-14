@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Copy } from 'lucide-react'
 import { classesApi } from '@/shared/api/classes'
 import { toast } from '@/shared/components/Toast'
-import { Button } from '@/shared/components/ui/button'
+import { IconButton } from '@/shared/components/ui/icon-button'
 import type { StudentProfile } from '@/shared/types/student'
 import { Separator } from '@/shared/components/ui/separator'
 import Field from './Field'
@@ -50,7 +50,7 @@ export default function ArchiveTab({ student }: { student: StudentProfile }) {
             <h3 className="mb-1 text-sm font-medium">家庭与联系人</h3>
             <ul className="space-y-2">
               {student.contacts!.map((c, i) => (
-                <li key={i} className="rounded-md border p-2 text-sm">
+                <li key={i} className="rounded-md bg-muted/50 p-3 text-sm">
                   <div className="flex items-center justify-between gap-2">
                     <span>
                       <span className="font-medium">{c.name}</span>{' '}
@@ -59,15 +59,12 @@ export default function ArchiveTab({ student }: { student: StudentProfile }) {
                     {c.phone && (
                       <span className="flex items-center gap-1">
                         <span>{c.phone}</span>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
+                        <IconButton
+                          icon={Copy}
+                          size="sm"
                           aria-label="复制电话"
                           onClick={() => void copyPhone(c.phone)}
-                        >
-                          <Copy className="h-4 w-4" aria-hidden="true" />
-                        </Button>
+                        />
                       </span>
                     )}
                   </div>

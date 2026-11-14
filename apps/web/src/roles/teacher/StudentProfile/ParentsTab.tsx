@@ -200,7 +200,6 @@ function ParentRow({
             type="button"
             variant="ghost"
             size="sm"
-            className="h-7 px-2"
             disabled={busy}
             onClick={() => primary.mutate()}
           >
@@ -211,7 +210,6 @@ function ParentRow({
           type="button"
           variant="ghost"
           size="sm"
-          className="h-7 px-2"
           disabled={busy || p.shared_account}
           onClick={() => reset.mutate()}
         >
@@ -221,7 +219,6 @@ function ParentRow({
           type="button"
           variant="ghost"
           size="sm"
-          className="h-7 px-2"
           disabled={busy}
           onClick={() => {
             if (window.confirm('解绑后这位家长将看不到该学生')) unlink.mutate()
