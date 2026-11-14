@@ -88,6 +88,16 @@ it('titleMode none leaves the heading to the page', async () => {
   expect(screen.queryByRole('heading', { level: 1, name: '成绩录入' })).toBeNull()
 })
 
+it('titleMode none still gives the non-content states a single visible heading', async () => {
+  vi.mocked(classroomApi.summary).mockResolvedValue(
+    summaryFixture({ my_perms: ['attendance.read'] }),
+  )
+  renderGate('exam.read', undefined, 'none')
+  expect(await screen.findByText('你在本班没有这项权限')).toBeInTheDocument()
+  const h1 = screen.getByRole('heading', { level: 1, name: '成绩录入' })
+  expect(h1).not.toHaveClass('sr-only')
+})
+
 it('renders children without any perm check when need is omitted', async () => {
   vi.mocked(classroomApi.summary).mockResolvedValue(
     summaryFixture({ my_perms: [], my_subjects: [] }),
