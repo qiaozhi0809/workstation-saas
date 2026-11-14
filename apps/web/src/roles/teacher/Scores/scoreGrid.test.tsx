@@ -258,6 +258,21 @@ it('asks only once when a header confirm is followed by navigation', async () =>
   expect(confirmSpy).toHaveBeenCalledTimes(1)
 })
 
+it('aligns score columns right and identity columns left', async () => {
+  setup()
+  const c = await cell('王小一', '语文')
+  const heads = screen.getAllByRole('columnheader')
+  const byName = (re: RegExp) => heads.find((h) => re.test(h.textContent ?? '')) as HTMLElement
+  expect(byName(/^学号/)).toHaveClass('text-left')
+  expect(byName(/^姓名/)).toHaveClass('text-left')
+  for (const re of [/^语文/, /^数学/, /^总分/, /^排名/]) {
+    expect(byName(re)).toHaveClass('text-right', 'tabular-nums')
+  }
+  const tr = c.closest('tr') as HTMLElement
+  expect(within(tr).getByTestId('total')).toHaveClass('text-right', 'tabular-nums')
+  expect(within(tr).getByTestId('rank')).toHaveClass('text-right', 'tabular-nums')
+})
+
 it('keeps headers and identity cells on one line so narrow screens scroll instead of squeezing', async () => {
   setup()
   const c = await cell('王小一', '语文')
