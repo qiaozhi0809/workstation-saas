@@ -5,8 +5,9 @@ import { schoolApi } from '@/shared/api/school'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import Modal from '@/shared/components/overlay/Modal'
 import { Button } from '@/shared/components/ui/button'
+import { Checkbox } from '@/shared/components/ui/checkbox'
 import { Input } from '@/shared/components/ui/input'
-import { cn } from '@/shared/lib/utils'
+import { SegmentedTabs } from '@/shared/components/ui/segmented-tabs'
 import type { GradeExam, GradeExamInput } from '@/shared/types/admin'
 import { EXAM_TYPES, type ExamType, type SubjectFull } from '@/shared/types/grades'
 import { STAGE_LABEL, type Stage } from '@/shared/types/school'
@@ -158,25 +159,16 @@ export default function GradeExamForm({
           <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         </Field>
 
-        <div role="group" aria-label="考试类型" className="grid gap-1 text-sm">
+        <div className="grid gap-1 text-sm">
           <span className="text-muted-foreground">类型</span>
-          <div className="flex flex-wrap gap-2">
-            {EXAM_TYPES.map((t) => (
-              <button
-                key={t}
-                type="button"
-                aria-pressed={t === type}
-                onClick={() => setType(t)}
-                className={cn(
-                  'rounded-full border px-3 py-1 text-sm transition-colors',
-                  t === type
-                    ? 'border-primary bg-primary text-primary-foreground'
-                    : 'border-input bg-background hover:bg-accent',
-                )}
-              >
-                {t}
-              </button>
-            ))}
+          <div className="max-w-full overflow-x-auto">
+            <SegmentedTabs<ExamType>
+              label="考试类型"
+              size="sm"
+              items={EXAM_TYPES.map((t) => ({ value: t, label: t }))}
+              value={type}
+              onChange={setType}
+            />
           </div>
         </div>
 
@@ -188,22 +180,20 @@ export default function GradeExamForm({
             )}
           </div>
           {!stage ? (
-            <p role="alert" className="text-destructive">
+            <p role="status" className="text-warning">
               这个年级还没有学段,读不到科目目录;请先到组织架构里给年级设学段
             </p>
           ) : options ? (
             <ul className="grid gap-1 sm:grid-cols-2">
               {options.map((o) => (
-                <li key={o.name} className="flex items-center gap-2 rounded-md border px-2 py-1.5">
-                  <label className="flex min-w-0 flex-1 items-center gap-2">
-                    <input
-                      type="checkbox"
-                      aria-label={o.name}
-                      checked={selected.has(o.name)}
-                      onChange={() => toggle(o.name)}
-                    />
-                    <span className="flex-1">{o.name}</span>
-                  </label>
+                <li key={o.name} className="flex items-center gap-2 rounded-md bg-muted px-2 py-1">
+                  <Checkbox
+                    aria-label={o.name}
+                    label={o.name}
+                    className="min-w-0 flex-1 items-center"
+                    checked={selected.has(o.name)}
+                    onChange={() => toggle(o.name)}
+                  />
                   {o.legacy && <span className="text-xs text-warning">已不在目录</span>}
                   {exam && selected.has(o.name) ? (
                     // 编辑态已勾选的科目可改满分(L235);新建态与未勾选的只显示目录 / 考试里的满分
@@ -216,7 +206,7 @@ export default function GradeExamForm({
                         max={1000}
                         step={1}
                         aria-label={`${o.name} 满分`}
-                        className="h-7 w-20 text-sm text-foreground"
+                        className="h-8 w-20 text-sm text-foreground"
                         value={fullOf(o)}
                         onChange={(e) => setFulls({ ...fulls, [o.name]: e.target.value })}
                       />

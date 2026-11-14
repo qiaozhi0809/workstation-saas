@@ -8,6 +8,8 @@ import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { toast } from '@/shared/components/Toast'
 import { Badge } from '@/shared/components/ui/badge'
 import { Button } from '@/shared/components/ui/button'
+import { Card } from '@/shared/components/ui/card'
+import { PageContainer, PageHeader } from '@/shared/components/ui/page'
 import { SegmentedTabs } from '@/shared/components/ui/segmented-tabs'
 import { todayIn, useSchoolTz } from '@/shared/hooks/useSchoolTz'
 import type { GradeExam } from '@/shared/types/admin'
@@ -21,7 +23,10 @@ function Progress({ c }: { c: GradeExam['classes'][number] }) {
   const pct = c.expected > 0 ? Math.min(100, Math.round((c.entered / c.expected) * 100)) : 0
   return (
     <li className="flex items-center gap-2 text-xs text-muted-foreground">
-      <span className="w-28 shrink-0">{`${c.class_name} ${c.entered}/${c.expected}`}</span>
+      <span
+        className="min-w-28 shrink-0 truncate"
+        title={`${c.class_name} ${c.entered}/${c.expected}`}
+      >{`${c.class_name} ${c.entered}/${c.expected}`}</span>
       <span
         role="progressbar"
         aria-label={`${c.class_name} 录分进度`}
@@ -57,42 +62,46 @@ function ExamRow({
     onError: (e) => toast(errMsg(e)),
   })
   return (
-    <li aria-label={exam.name} className="grid gap-3 rounded-lg border bg-card p-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <h3 className="font-medium">{exam.name}</h3>
-        <Badge variant="neutral">{exam.exam_type}</Badge>
-        <span className="text-sm text-muted-foreground">{exam.date}</span>
-        <div className="ml-auto flex flex-wrap items-center gap-2">
-          <Button asChild variant="outline" size="sm">
-            <Link to={`/admin/reports/scores?exam=${encodeURIComponent(exam.id)}`}>查看汇总</Link>
-          </Button>
-          <Button variant="outline" size="sm" onClick={onEdit}>
-            编辑
-          </Button>
-          <Button variant="outline" size="sm" className="text-destructive" onClick={onDelete}>
-            删除
-          </Button>
+    <li aria-label={exam.name}>
+      <Card className="grid gap-3 p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="font-medium">{exam.name}</h3>
+          <Badge variant="neutral">{exam.exam_type}</Badge>
+          <span className="text-sm tabular-nums text-muted-foreground">{exam.date}</span>
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-1">
+            <Button asChild variant="link" size="sm">
+              <Link to={`/admin/reports/scores?exam=${encodeURIComponent(exam.id)}`}>查看汇总</Link>
+            </Button>
+            <Button variant="link" size="sm" onClick={onEdit}>
+              编辑
+            </Button>
+            <Button variant="link" size="sm" className="text-destructive" onClick={onDelete}>
+              删除
+            </Button>
+          </div>
         </div>
-      </div>
-      <p className="text-sm text-muted-foreground">{exam.subjects.map((s) => s.name).join('、')}</p>
-      {exam.missing_classes.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 rounded-md bg-warning/10 px-3 py-2 text-sm text-warning">
-          <span>{`有 ${exam.missing_classes.length} 个班还没有这场考试`}</span>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={sync.isPending}
-            onClick={() => sync.mutate()}
-          >
-            补建
-          </Button>
-        </div>
-      )}
-      <ul aria-label="各班录分进度" className="grid gap-1.5">
-        {exam.classes.map((c) => (
-          <Progress key={c.class_id} c={c} />
-        ))}
-      </ul>
+        <p className="text-sm text-muted-foreground">
+          {exam.subjects.map((s) => s.name).join('、')}
+        </p>
+        {exam.missing_classes.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 rounded-md bg-warning/10 px-3 py-2 text-sm text-warning">
+            <span>{`有 ${exam.missing_classes.length} 个班还没有这场考试`}</span>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={sync.isPending}
+              onClick={() => sync.mutate()}
+            >
+              补建
+            </Button>
+          </div>
+        )}
+        <ul aria-label="各班录分进度" className="grid gap-1.5">
+          {exam.classes.map((c) => (
+            <Progress key={c.class_id} c={c} />
+          ))}
+        </ul>
+      </Card>
     </li>
   )
 }
@@ -138,14 +147,22 @@ export default function GradeExamsPage() {
 
   if (grades.isError)
     return (
-      <ErrorState
-        title="加载失败"
-        onRetry={() => void grades.refetch()}
-        retrying={grades.isFetching}
-        className="p-6"
-      />
+      <PageContainer width="default">
+        <PageHeader title="年级联考" />
+        <ErrorState
+          title="加载失败"
+          onRetry={() => void grades.refetch()}
+          retrying={grades.isFetching}
+        />
+      </PageContainer>
     )
-  if (!grades.data || !school.ready) return <LoadingState />
+  if (!grades.data || !school.ready)
+    return (
+      <PageContainer width="default">
+        <PageHeader title="年级联考" />
+        <LoadingState variant="cards" />
+      </PageContainer>
+    )
 
   let body
   if (gradeId === null) body = <EmptyState title="还没有年级" />
@@ -157,11 +174,11 @@ export default function GradeExamsPage() {
         retrying={exams.isFetching}
       />
     )
-  } else if (!exams.data) body = <LoadingState />
+  } else if (!exams.data) body = <LoadingState variant="cards" />
   else if (exams.data.length === 0) body = <EmptyState title={`${gradeName}还没有联考`} />
   else {
     body = (
-      <ul aria-label="联考列表" className="grid gap-3">
+      <ul aria-label="联考列表" className="grid gap-6">
         {exams.data.map((x) => (
           <ExamRow
             key={x.id}
@@ -178,28 +195,28 @@ export default function GradeExamsPage() {
   }
 
   return (
-    <div className="mx-auto flex w-full min-w-0 max-w-4xl flex-col gap-4 p-4 md:p-6">
-      <header className="flex flex-wrap items-center gap-3">
-        <h1 className="text-lg font-semibold">年级联考</h1>
-        <Button
-          className="ml-auto"
-          disabled={gradeId === null}
-          onClick={() => setDialog({ kind: 'form' })}
-        >
-          新建联考
-        </Button>
-      </header>
-      {list.length > 0 && (
-        <div className="max-w-full overflow-x-auto">
-          <SegmentedTabs
-            label="年级"
-            variant="underline"
-            value={gradeId ?? ''}
-            items={list.map((g) => ({ value: g.id, label: g.name }))}
-            onChange={setSel}
-          />
-        </div>
-      )}
+    <PageContainer width="default">
+      <PageHeader
+        title="年级联考"
+        actions={
+          <>
+            {list.length > 0 && (
+              <div className="max-w-full overflow-x-auto">
+                <SegmentedTabs
+                  label="年级"
+                  size="sm"
+                  value={gradeId ?? ''}
+                  items={list.map((g) => ({ value: g.id, label: g.name }))}
+                  onChange={setSel}
+                />
+              </div>
+            )}
+            <Button disabled={gradeId === null} onClick={() => setDialog({ kind: 'form' })}>
+              新建联考
+            </Button>
+          </>
+        }
+      />
       {body}
       {dialog?.kind === 'form' && grade && (
         <GradeExamForm
@@ -227,6 +244,6 @@ export default function GradeExamsPage() {
             : ''}
         </p>
       </ConfirmBox>
-    </div>
+    </PageContainer>
   )
 }
