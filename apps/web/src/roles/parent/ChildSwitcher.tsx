@@ -17,7 +17,7 @@ export default function ChildSwitcher({
       <span className="flex min-w-0 items-center gap-1.5">
         <span className="truncate text-sm font-medium">{current.name}</span>
         {current.status === 'readonly' && (
-          <span className="shrink-0 rounded-full bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">
+          <span className="shrink-0 rounded-sm bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">
             已{leftReasonText(current.left_reason)}
           </span>
         )}
@@ -27,7 +27,7 @@ export default function ChildSwitcher({
   return (
     <NativeSelect
       aria-label="切换孩子"
-      className="h-11 min-w-0 max-w-full flex-1 text-base md:text-sm"
+      className="h-11 min-w-24 shrink-0 text-base md:text-sm"
       value={current.student_id}
       onChange={(e) => onSelect(e.target.value)}
     >

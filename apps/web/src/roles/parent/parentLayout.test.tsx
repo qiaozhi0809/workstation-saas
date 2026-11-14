@@ -64,7 +64,8 @@ it('shows the school name from /meta in the top bar, before the child', async ()
   const switcher = within(banner).getByRole('combobox', { name: '切换孩子' })
   expect(school.compareDocumentPosition(switcher) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   // 多个孩子时窄屏放不下校名 + 下拉 + 档案:校名只在 ≥ sm 显示,孩子切换器优先
-  expect(school).toHaveClass('hidden', 'sm:inline')
+  expect(school).toHaveClass('hidden', 'sm:inline', 'min-w-0', 'truncate')
+  expect(school).toHaveAttribute('title', '示例小学')
 })
 
 it('keeps the school name visible on phones when there is a single child', async () => {
@@ -72,7 +73,14 @@ it('keeps the school name visible on phones when there is a single child', async
   renderParent('/parent/today?child=s1')
   const school = await within(screen.getByRole('banner')).findByText('示例小学')
   expect(school).not.toHaveClass('hidden')
-  expect(school).toHaveClass('truncate')
+  expect(school).toHaveClass('min-w-0', 'truncate')
+  expect(school).toHaveAttribute('title', '示例小学')
+})
+
+it('keeps the child switcher from being squeezed below 96px', async () => {
+  renderParent('/parent/today?child=s1')
+  const switcher = await screen.findByRole('combobox', { name: '切换孩子' })
+  expect(switcher).toHaveClass('min-w-24', 'shrink-0', 'h-11')
 })
 
 it('still renders the shell when /meta fails', async () => {
@@ -96,12 +104,33 @@ it('puts the tabs at the bottom below 768 with safe-area padding, not in the top
   for (const l of within(nav).getAllByRole('link')) expect(l.className).toMatch(/min-h-\[44px\]/)
 })
 
-it('moves the tabs into the top bar from 768', async () => {
-  mockWidth(768)
+it('keeps every tab label on one line', async () => {
+  mockWidth(1280)
+  renderParent()
+  await screen.findByText('三年二班')
+  const nav = screen.getByRole('navigation', { name: '主导航' })
+  for (const l of within(nav).getAllByRole('link')) expect(l).toHaveClass('whitespace-nowrap')
+})
+
+it('puts the tabs in the top bar from 1024', async () => {
+  mockWidth(1024)
   renderParent()
   await screen.findByText('三年二班')
   const nav = screen.getByRole('navigation', { name: '主导航' })
   expect(screen.getByRole('banner')).toContainElement(nav)
+})
+
+it('puts the tabs on a second row under the top bar between 768 and 1023', async () => {
+  mockWidth(768)
+  renderParent()
+  await screen.findByText('三年二班')
+  const nav = screen.getByRole('navigation', { name: '主导航' })
+  expect(screen.getByRole('banner')).not.toContainElement(nav)
+  expect(screen.getByRole('main')).toContainElement(nav)
+  // 第一行:校名、切换孩子、档案、主题、账号
+  expect(
+    within(screen.getByRole('banner')).getByRole('combobox', { name: '切换孩子' }),
+  ).toBeTruthy()
 })
 
 it('lands on today with the first child written into ?child=', async () => {
