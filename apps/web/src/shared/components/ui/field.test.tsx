@@ -40,7 +40,7 @@ describe('Field', () => {
     )
     const input = screen.getByLabelText('标题')
     expect(input).toHaveAttribute('aria-required', 'true')
-    expect(input).not.toBeRequired()
+    expect(input).not.toHaveAttribute('required')
   })
 
   it('keeps an explicit id on the control', () => {
