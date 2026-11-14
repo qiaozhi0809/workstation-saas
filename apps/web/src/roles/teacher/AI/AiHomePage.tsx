@@ -5,6 +5,7 @@ import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { useAuthStore } from '@/shared/stores/auth'
 import { Button } from '@/shared/components/ui/button'
+import { PageContainer, PageHeader } from '@/shared/components/ui/page'
 import type { AiStatus, AiTemplate, AiValue } from '@/shared/types/ai'
 import ClassGate from '../ClassGate'
 import Composer from './Composer'
@@ -23,26 +24,29 @@ export default function AiHomePage() {
   const status = useQuery({ queryKey: ['ai-status'], queryFn: aiApi.status })
 
   return (
-    <ClassGate title="AI 助手" need="ai.use">
+    <ClassGate title="AI 助手" need="ai.use" titleMode="none">
       {({ cls, summary, perms }) => (
-        <div className="mx-auto max-w-3xl space-y-6 p-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <p className="text-lg font-semibold text-foreground">{greeting},今天想做点什么?</p>
-            <StatusPill status={status.data} />
-            {status.isError && (
-              <span className="inline-flex items-center gap-2 text-xs text-destructive">
-                AI 状态加载失败
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => void status.refetch()}
-                >
-                  重试
-                </Button>
-              </span>
-            )}
-          </div>
+        <PageContainer width="narrow">
+          <PageHeader
+            title="AI 助手"
+            description={`${greeting},今天想做点什么?`}
+            meta={<StatusPill status={status.data} />}
+            actions={
+              status.isError ? (
+                <span className="inline-flex items-center gap-2 text-xs text-destructive">
+                  AI 状态加载失败
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void status.refetch()}
+                  >
+                    重试
+                  </Button>
+                </span>
+              ) : undefined
+            }
+          />
           <Composer
             classId={cls.id}
             status={status.data}
@@ -54,7 +58,7 @@ export default function AiHomePage() {
             只有点击发送或生成时,才会把选中的资料发给学校配置的 AI
             服务;家长姓名、电话等联系方式从不发送。
           </p>
-        </div>
+        </PageContainer>
       )}
     </ClassGate>
   )
@@ -75,7 +79,7 @@ function Templates({ classId, status }: { classId: string; status: AiStatus | un
     q.data?.items,
     useCallback((template, initial) => setPicked({ template, initial }), []),
   )
-  if (q.isLoading) return <LoadingState />
+  if (q.isLoading) return <LoadingState variant="cards" />
   if (!q.data)
     return (
       <ErrorState title="模板加载失败" onRetry={() => void q.refetch()} retrying={q.isFetching} />

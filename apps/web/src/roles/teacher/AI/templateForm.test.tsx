@@ -279,3 +279,13 @@ describe('home greeting', () => {
     expect(await screen.findByText(text)).toBeInTheDocument()
   })
 })
+
+describe('TemplateForm selection controls', () => {
+  it('keeps the check field and the student list as checkboxes, and the mask as a switch', async () => {
+    form()
+    expect(await screen.findByRole('checkbox', { name: '附带建议' })).toBeChecked()
+    expect(await screen.findByRole('checkbox', { name: '王小一' })).not.toBeChecked()
+    expect(screen.getByRole('switch', { name: '隐去学生姓名' })).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: '隐去学生姓名' })).toBeNull()
+  })
+})

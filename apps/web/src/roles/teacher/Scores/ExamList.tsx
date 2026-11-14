@@ -39,6 +39,7 @@ export default function ExamList({
               <li key={x.id}>
                 <button
                   type="button"
+                  data-layout-exempt
                   aria-current={current ? 'true' : undefined}
                   onClick={() => onSelect(x.id)}
                   className={cn(
