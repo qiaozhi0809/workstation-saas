@@ -34,9 +34,17 @@ export default {
         info: pair('info'),
       },
       borderRadius: {
-        lg: 'var(--ws-radius)',
-        md: 'calc(var(--ws-radius) - 2px)',
-        sm: 'calc(var(--ws-radius) - 4px)',
+        sm: '6px',
+        DEFAULT: '6px',
+        md: '12px',
+        lg: '16px',
+        xl: '16px',
+        '2xl': '16px',
+        sidebar: '20px',
+      },
+      boxShadow: {
+        surface: 'var(--ws-shadow-surface)',
+        overlay: 'var(--ws-shadow-overlay)',
       },
       fontFamily: {
         sans: [
@@ -47,7 +55,6 @@ export default {
           'system-ui',
           'sans-serif',
         ],
-        num: ['"SF Pro Display"', '"Segoe UI Variable"', 'sans-serif'],
       },
     },
   },
