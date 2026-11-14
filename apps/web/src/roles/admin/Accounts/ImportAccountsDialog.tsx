@@ -140,7 +140,11 @@ export default function ImportAccountsDialog({
           </Button>
         </div>
         {rows && (
-          <Table density="compact" minWidth={640} containerClassName="max-h-72 overflow-auto">
+          <Table
+            density="compact"
+            className="min-w-[640px]"
+            containerClassName="max-h-72 overflow-auto bg-transparent shadow-none"
+          >
             <TableHead>
               <TableRow>
                 {['行', '登录名', '姓名', '工号', '科目', '手机'].map((h) => (

@@ -16,13 +16,15 @@ import DeskSummary from './DeskSummary'
 import { errMsg } from './errMsg'
 import StaffEditor from './StaffEditor'
 
+const NAME_ORDER = ['name'] as const
+
 function BasicCard({ cls }: { cls: ClassAdmin }) {
   const qc = useQueryClient()
   const grades = useQuery({ queryKey: ['admin', 'grades'], queryFn: adminApi.grades })
   const [name, setName] = useState(cls.name)
   const [gradeId, setGradeId] = useState(cls.grade_id)
   const [room, setRoom] = useState(cls.room)
-  const { errors, report, clear, fieldRef } = useFormErrors(['name'] as const)
+  const { errors, report, clear, fieldRef } = useFormErrors(NAME_ORDER)
   const save = useMutation({
     mutationFn: () =>
       adminApi.updateClass(cls.id, { grade_id: gradeId, name: name.trim(), room: room.trim() }),

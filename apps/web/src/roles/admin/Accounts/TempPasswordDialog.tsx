@@ -56,7 +56,10 @@ export default function TempPasswordDialog({
       className={many ? 'max-w-xl' : 'max-w-sm'}
     >
       {many ? (
-        <Table density="compact" containerClassName="max-h-80 overflow-auto">
+        <Table
+          density="compact"
+          containerClassName="max-h-80 overflow-auto bg-transparent shadow-none"
+        >
           <TableHead>
             <TableRow>
               <Th>登录名</Th>

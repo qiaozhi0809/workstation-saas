@@ -11,11 +11,13 @@ import { Input } from '@/shared/components/ui/input'
 import type { SchoolInfo } from '@/shared/types/admin'
 import { errMsg } from './errMsg'
 
+const NAME_ORDER = ['name'] as const
+
 function SchoolForm({ initial }: { initial: SchoolInfo }) {
   const qc = useQueryClient()
   const [name, setName] = useState(initial.name)
   const [address, setAddress] = useState(initial.address ?? '')
-  const { errors, report, clear, fieldRef } = useFormErrors(['name'] as const)
+  const { errors, report, clear, fieldRef } = useFormErrors(NAME_ORDER)
   const save = useMutation({
     mutationFn: () => adminApi.saveSchool({ name: name.trim(), address: address.trim() || null }),
     onSuccess: () => {

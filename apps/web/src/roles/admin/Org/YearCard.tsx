@@ -18,6 +18,8 @@ import { Input } from '@/shared/components/ui/input'
 import type { YearAdmin } from '@/shared/types/admin'
 import { errMsg } from './errMsg'
 
+const NAME_ORDER = ['name'] as const
+
 function YearForm({ year }: { year: YearAdmin }) {
   const qc = useQueryClient()
   const [name, setName] = useState(year.name)
@@ -25,7 +27,7 @@ function YearForm({ year }: { year: YearAdmin }) {
   const [term2, setTerm2] = useState(year.term2_start ?? '')
   const [end, setEnd] = useState(year.end_date)
   const [problem, setProblem] = useState<string | null>(null)
-  const { errors, report, clear, fieldRef } = useFormErrors(['name'] as const)
+  const { errors, report, clear, fieldRef } = useFormErrors(NAME_ORDER)
   const save = useMutation({
     mutationFn: () =>
       adminApi.saveYear(year.id, {

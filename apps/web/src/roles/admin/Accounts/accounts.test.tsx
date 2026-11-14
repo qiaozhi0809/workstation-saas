@@ -475,9 +475,28 @@ it('role badges never wrap per character', async () => {
   expect(cell.className).toContain('min-w-[8rem]')
 })
 
-it('shows a frozen account with a status dot and a text label', async () => {
+it('shows a frozen account with a real status dot and a text label', async () => {
   renderPage()
   const row = await screen.findByRole('row', { name: /赵强/ })
-  expect(within(row).getByText('已冻结')).toBeInTheDocument()
-  expect(within(screen.getByRole('row', { name: /王芳/ })).getByText('在用')).toBeInTheDocument()
+  const dotOf = (r: HTMLElement, label: string) =>
+    within(r).getByText(label).parentElement?.querySelector('[aria-hidden="true"]')
+  const frozenDot = dotOf(row, '已冻结')
+  expect(frozenDot).not.toBeNull()
+  expect(frozenDot?.className).toContain('bg-destructive')
+  expect(frozenDot?.className).toContain('rounded-full')
+  const activeDot = dotOf(screen.getByRole('row', { name: /王芳/ }), '在用')
+  expect(activeDot?.className).toContain('bg-success')
+})
+
+it('new account form reports empty login and name in place and focuses the first', async () => {
+  renderPage()
+  fireEvent.click(await screen.findByRole('button', { name: '新建账号' }))
+  const dlg = await screen.findByRole('dialog')
+  const save = within(dlg).getByRole('button', { name: '保存' })
+  expect(save).toBeEnabled()
+  fireEvent.click(save)
+  expect(await within(dlg).findByText('请填写登录名')).toBeInTheDocument()
+  expect(within(dlg).getByText('请填写姓名')).toBeInTheDocument()
+  expect(within(dlg).getByLabelText('登录名')).toHaveFocus()
+  expect(adminApi.createAccount).not.toHaveBeenCalled()
 })

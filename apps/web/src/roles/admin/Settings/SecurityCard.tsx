@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { adminApi } from '@/shared/api/admin'
 import { ApiError } from '@/shared/api/client'
@@ -29,6 +29,8 @@ export default function SecurityCard() {
   const [draft, setDraft] = useState<SecuritySettings | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [showLenError, setShowLenError] = useState(false)
+  const lenRef = useRef<HTMLInputElement>(null)
 
   if (q.isPending) return <LoadingState />
   if (q.isError) {
@@ -48,6 +50,11 @@ export default function SecurityCard() {
     value.password_min_length <= 32
 
   const save = async () => {
+    if (!lenValid) {
+      setShowLenError(true)
+      lenRef.current?.focus()
+      return
+    }
     setBusy(true)
     setError('')
     try {
@@ -84,10 +91,19 @@ export default function SecurityCard() {
             min={8}
             max={32}
             className="w-28"
+            ref={lenRef}
             value={Number.isNaN(value.password_min_length) ? '' : value.password_min_length}
-            onChange={(e) => setDraft({ ...value, password_min_length: e.target.valueAsNumber })}
+            onChange={(e) => {
+              setShowLenError(false)
+              setDraft({ ...value, password_min_length: e.target.valueAsNumber })
+            }}
           />
           <p className="text-xs text-muted-foreground">8 到 32 位</p>
+          {showLenError && !lenValid && (
+            <p role="alert" className="text-xs text-destructive">
+              密码最短长度要在 8 到 32 之间的整数
+            </p>
+          )}
           {value.password_min_length > saved.password_min_length && (
             <p className="text-xs text-muted-foreground">已有密码不受影响,下次修改时生效</p>
           )}
@@ -123,7 +139,7 @@ export default function SecurityCard() {
         <Button
           type="button"
           variant={draft === null ? 'ghost' : 'default'}
-          disabled={busy || !lenValid}
+          disabled={busy}
           onClick={() => void save()}
         >
           保存安全设置

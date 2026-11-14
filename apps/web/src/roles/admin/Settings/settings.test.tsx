@@ -565,19 +565,26 @@ it('grading card validates', async () => {
   const save = card.getByRole('button', { name: '保存及格线' })
   expect(save).toBeDisabled() // 没改过
 
+  // 非法输入不禁用按钮:点保存时就地报错并聚焦出问题的那一格,不发请求
+  const tryInvalid = (expected: string, focus: string) => {
+    expect(save).toBeEnabled()
+    fireEvent.click(save)
+    expect(card.getByRole('alert')).toHaveTextContent(expected)
+    expect(card.getByLabelText(focus)).toHaveFocus()
+  }
   // 优秀线不高于及格线
   fireEvent.change(card.getByLabelText('及格线(%)'), { target: { value: '85' } })
-  expect(card.getByRole('alert')).toHaveTextContent('优秀线要高于及格线')
-  expect(save).toBeDisabled()
+  expect(card.queryByRole('alert')).toBeNull() // 没点保存之前不报
+  tryInvalid('优秀线要高于及格线', '优秀线(%)')
   // 越界
   fireEvent.change(card.getByLabelText('及格线(%)'), { target: { value: '20' } })
-  expect(card.getByRole('alert')).toHaveTextContent('及格线要在 30%–95% 之间的整数')
+  expect(card.queryByRole('alert')).toBeNull() // 再改就先收起旧提示
+  tryInvalid('及格线要在 30%–95% 之间的整数', '及格线(%)')
   fireEvent.change(card.getByLabelText('及格线(%)'), { target: { value: '70' } })
   fireEvent.change(card.getByLabelText('优秀线(%)'), { target: { value: '101' } })
-  expect(card.getByRole('alert')).toHaveTextContent('优秀线要在 40%–100% 之间的整数')
+  tryInvalid('优秀线要在 40%–100% 之间的整数', '优秀线(%)')
   fireEvent.change(card.getByLabelText('优秀线(%)'), { target: { value: '90.5' } })
-  expect(card.getByRole('alert')).toHaveTextContent('优秀线要在 40%–100% 之间的整数')
-  expect(save).toBeDisabled()
+  tryInvalid('优秀线要在 40%–100% 之间的整数', '优秀线(%)')
   expect(schoolApi.saveGrading).not.toHaveBeenCalled()
 
   // 合法:发两位小数的比例,保存后 PUT 的返回值直接进 ['school','grading'] 缓存
@@ -779,4 +786,18 @@ it('settings switches keep their switch role and use the shared Switch', async (
   expect(sw).toHaveAttribute('type', 'checkbox')
   expect(sw.closest('label')).not.toBeNull()
   expect(screen.getAllByRole('switch')).toHaveLength(9)
+})
+
+it('security card reports a bad min length in place on save instead of disabling it', async () => {
+  await renderPage()
+  const card = await screen.findByRole('group', { name: '账号安全' })
+  const input = within(card).getByLabelText('密码最短长度')
+  fireEvent.change(input, { target: { value: '4' } })
+  const save = within(card).getByRole('button', { name: '保存安全设置' })
+  expect(save).toBeEnabled()
+  expect(within(card).queryByRole('alert')).toBeNull()
+  fireEvent.click(save)
+  expect(within(card).getByRole('alert')).toHaveTextContent('8 到 32')
+  expect(input).toHaveFocus()
+  expect(adminApi.saveSecuritySettings).not.toHaveBeenCalled()
 })

@@ -106,7 +106,10 @@ export default function TimetableImportDialog({ onClose }: { onClose(): void }) 
             <p role="alert" className="text-destructive">
               {`有 ${result.errors.length} 行有问题,这次没有写入任何数据;修正后重新导入。`}
             </p>
-            <Table density="compact" containerClassName="max-h-72 overflow-auto">
+            <Table
+              density="compact"
+              containerClassName="max-h-72 overflow-auto bg-transparent shadow-none"
+            >
               <TableHead>
                 <TableRow>
                   <Th className="w-16">行</Th>

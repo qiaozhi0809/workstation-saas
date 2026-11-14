@@ -29,8 +29,10 @@ const PAGES: PageSpec[] = [
     open: async (page) => {
       await page.goto('/admin/org')
       await expect(page.getByRole('heading', { level: 1, name: '组织架构' })).toBeVisible()
-      await expect(page.getByRole('heading', { name: '年级与班级' })).toBeVisible()
+      await expect(page.getByText('年级与班级', { exact: true })).toBeVisible()
       await expect(page.locator('a[href^="/admin/org/classes/"]').first()).toBeVisible()
+      // 学年卡加载完才会有日期框;否则量到的是加载态
+      await expect(page.locator('input[type="date"]')).toHaveCount(3)
     },
   },
   {
@@ -58,6 +60,9 @@ const PAGES: PageSpec[] = [
       await page.goto('/admin/settings')
       await expect(page.getByRole('heading', { level: 1, name: '学校设置' })).toBeVisible()
       await expect(page.getByRole('list', { name: '标签池' })).toBeVisible()
+      // 最后几张卡都加载完再量
+      await expect(page.getByRole('button', { name: '保存安全设置' })).toBeVisible()
+      await expect(page.getByRole('button', { name: '保存开关' })).toBeVisible()
     },
   },
   {
@@ -65,6 +70,7 @@ const PAGES: PageSpec[] = [
     open: async (page) => {
       await page.goto('/admin/timetable')
       await expect(page.getByRole('heading', { level: 1, name: '作息与课表' })).toBeVisible()
+      await expect(page.getByTestId('timetable-grid')).toBeVisible()
     },
   },
   {
@@ -72,6 +78,8 @@ const PAGES: PageSpec[] = [
     open: async (page) => {
       await page.goto('/admin/upgrade')
       await expect(page.getByRole('heading', { level: 1, name: '学年升级' })).toBeVisible()
+      await expect(page.getByRole('button', { name: '生成建议' })).toBeVisible()
+      await expect(page.getByText('最近一次升级')).toBeVisible()
     },
   },
 ]
@@ -124,16 +132,20 @@ test('org year card date inputs do not overlap at 1280 with the sidebar open', a
   await page.setViewportSize({ width: 1280, height: 800 })
   await signInAs(page, 'admin')
   await page.goto('/admin/org')
+  // 1280 宽侧栏默认展开:先确认确实是展开态,再量
+  await expect(page.locator('aside[data-collapsed="false"]')).toBeVisible()
   const dates = page.locator('input[type="date"]')
   await expect(dates).toHaveCount(3)
-  // 侧栏展开(1280 宽默认展开):内容区变窄后三个日期框也不能互相压住
   const boxes = await dates.evaluateAll((els) =>
     els.map((el) => {
       const { x, y, width, height } = el.getBoundingClientRect()
-      return { x, y, width, height }
+      return { x, y, width, height, clipped: el.scrollWidth > el.clientWidth }
     }),
   )
-  for (const box of boxes) expect(box.width).toBeGreaterThan(0)
+  for (const [i, box] of boxes.entries()) {
+    expect(box.width, `日期框 ${i} 宽度`).toBeGreaterThanOrEqual(160)
+    expect(box.clipped, `日期框 ${i} 内容被截断`).toBe(false)
+  }
   for (let i = 0; i < boxes.length; i++) {
     for (let j = i + 1; j < boxes.length; j++) {
       const a = boxes[i]
@@ -144,3 +156,22 @@ test('org year card date inputs do not overlap at 1280 with the sidebar open', a
     }
   }
 })
+
+// 窄页:标题仍对齐 default 的左缘,正文块最宽 768(max-w-3xl,见 ui/page.tsx)
+for (const path of ['/admin/settings', '/admin/upgrade']) {
+  test(`narrow page body is capped at 768 on ${path}`, async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await signInAs(page, 'admin')
+    await page.goto(path)
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+    const widths = await page.evaluate(() =>
+      Array.from(
+        document.querySelectorAll<HTMLElement>(
+          '[data-page-container][data-width="narrow"] > :not([data-page-header])',
+        ),
+      ).map((el) => el.getBoundingClientRect().width),
+    )
+    expect(widths.length).toBeGreaterThan(0)
+    for (const w of widths) expect(w).toBeLessThanOrEqual(768.5)
+  })
+}

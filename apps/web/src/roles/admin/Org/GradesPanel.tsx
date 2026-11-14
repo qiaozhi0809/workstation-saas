@@ -11,6 +11,7 @@ import { toast } from '@/shared/components/Toast'
 import { Button } from '@/shared/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card'
 import { Field, useFormErrors } from '@/shared/components/ui/field'
+import { IconButton } from '@/shared/components/ui/icon-button'
 import { Input } from '@/shared/components/ui/input'
 import { NativeSelect } from '@/shared/components/ui/native-select'
 import { Table, TableBody, TableHead, TableRow, Td, Th } from '@/shared/components/ui/table'
@@ -18,6 +19,8 @@ import { cn } from '@/shared/lib/utils'
 import type { ClassAdmin, ClassInput, GradeAdmin, GradeInput, Stage } from '@/shared/types/admin'
 import ConfirmBox from './ConfirmBox'
 import { errMsg } from './errMsg'
+
+const NAME_ORDER = ['name'] as const
 
 type Dialog =
   | { kind: 'create' }
@@ -49,7 +52,7 @@ function GradeForm({
 }) {
   const [name, setName] = useState(initial.name)
   const [stage, setStage] = useState<Stage | ''>(initial.stage ?? '')
-  const { errors, report, clear, fieldRef } = useFormErrors(['name'] as const)
+  const { errors, report, clear, fieldRef } = useFormErrors(NAME_ORDER)
   const submit = () => {
     if (!report(name.trim() ? {} : { name: '请填写年级名' })) return
     onSubmit({ name: name.trim(), stage: stage || null })
@@ -107,7 +110,7 @@ function ClassForm({
 }) {
   const [name, setName] = useState('')
   const [room, setRoom] = useState('')
-  const { errors, report, clear, fieldRef } = useFormErrors(['name'] as const)
+  const { errors, report, clear, fieldRef } = useFormErrors(NAME_ORDER)
   const submit = () => {
     if (!report(name.trim() ? {} : { name: '请填写班级名称' })) return
     onSubmit({ name: name.trim(), room: room.trim() })
@@ -260,30 +263,27 @@ export default function GradesPanel() {
                   className="flex h-11 min-w-0 flex-1 flex-col justify-center text-left text-sm"
                   onClick={() => setSel(g.id)}
                 >
-                  <span className="font-medium">{g.name}</span>
-                  <span className="text-xs text-muted-foreground">{`${g.effective_stage} · ${g.class_count} 个班`}</span>
+                  <span className="truncate font-medium">{g.name}</span>
+                  <span className="truncate text-xs text-muted-foreground">{`${g.effective_stage} · ${g.class_count} 个班`}</span>
                 </button>
-                <Button
-                  variant="ghost"
-                  size="icon"
+                <IconButton
+                  size="sm"
+                  icon={ArrowUp}
                   aria-label={`上移 ${g.name}`}
                   disabled={i === 0 || move.isPending}
                   onClick={() => move.mutate({ i, j: i - 1 })}
-                >
-                  <ArrowUp />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
+                />
+                <IconButton
+                  size="sm"
+                  icon={ArrowDown}
                   aria-label={`下移 ${g.name}`}
                   disabled={i === list.length - 1 || move.isPending}
                   onClick={() => move.mutate({ i, j: i + 1 })}
-                >
-                  <ArrowDown />
-                </Button>
+                />
                 <Button
                   variant="link"
                   size="sm"
+                  className="px-1"
                   aria-label={`编辑年级 ${g.name}`}
                   onClick={() => setDialog({ kind: 'edit', g })}
                 >
@@ -292,6 +292,7 @@ export default function GradesPanel() {
                 <Button
                   variant="link"
                   size="sm"
+                  className="px-1"
                   aria-label={`删除年级 ${g.name}`}
                   onClick={() => setDialog({ kind: 'delete', g })}
                 >
