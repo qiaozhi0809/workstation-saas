@@ -28,7 +28,7 @@ export default function ThemeToggle({
     <Button
       variant="ghost"
       size={withLabel ? 'sm' : 'icon'}
-      className={cn('touch-target min-h-11 min-w-11', className)}
+      className={cn('touch-target', className)}
       aria-label={label}
       title={label}
       onClick={() => setMode(nextThemeMode(mode))}

@@ -104,7 +104,7 @@ export function Sidebar({
             <Button
               variant="ghost"
               size="icon"
-              className="touch-target h-10 w-10 text-muted-foreground"
+              className="touch-target text-muted-foreground"
               aria-label={collapsed ? '展开侧栏' : '折叠侧栏'}
               aria-expanded={!collapsed}
               aria-keyshortcuts="["
@@ -131,17 +131,16 @@ function SidebarLink({ item, collapsed }: { item: SidebarItem; collapsed: boolea
   const { to, label, icon: Icon } = item
   return (
     <RailTip label={label} disabled={!collapsed}>
+      // className 必须是字符串:RailTip 的 Tooltip.Trigger asChild 经 Slot 合并 props,函数式 className 会被拼成源码字符串。
+      // 当前页由 NavLink 写的 aria-current="page" 驱动样式
       <NavLink
         to={to}
-        className={({ isActive }) =>
-          cn(
-            'touch-target flex h-10 shrink-0 items-center gap-2 rounded-md text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-            collapsed ? 'w-10 justify-center' : 'w-full px-3',
-            isActive
-              ? 'bg-accent text-foreground'
-              : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
-          )
-        }
+        className={cn(
+          'touch-target flex h-10 shrink-0 items-center gap-2 rounded-md text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
+          'aria-[current=page]:bg-accent aria-[current=page]:text-foreground',
+          collapsed ? 'w-10 justify-center' : 'w-full px-3',
+        )}
       >
         <Icon
           className={cn('shrink-0', collapsed ? 'h-[18px] w-[18px]' : 'h-4 w-4')}

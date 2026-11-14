@@ -193,12 +193,18 @@ function ClassSwitcher({
     <span className="text-xs text-muted-foreground">{weekNo} 周</span>
   )
   const badge =
-    'flex h-10 w-10 items-center justify-center rounded-md bg-accent text-sm font-medium'
+    'bg-accent text-sm font-medium'
   return (
     <div className="flex flex-col items-center gap-1">
       {error}
       {classes.length === 1 && (
-        <span title={classes[0].name} className={badge}>
+        <span
+          title={classes[0].name}
+          className={cn(
+            badge,
+            'flex h-10 w-10 items-center justify-center rounded-md',
+          )}
+        >
           {initial}
         </span>
       )}
@@ -209,7 +215,8 @@ function ClassSwitcher({
           align="start"
           triggerProps={{
             variant: 'ghost',
-            className: cn(badge, 'p-0'),
+            size: 'icon',
+            className: badge,
             'aria-label': `切换班级,当前${current?.name ?? ''}`,
             title: current?.name,
           }}

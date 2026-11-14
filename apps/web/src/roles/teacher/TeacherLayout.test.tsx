@@ -615,7 +615,8 @@ it('other teacher pages show a breadcrumb and use the default scope', async () =
   expect(within(crumbs).getByText('成绩')).toHaveAttribute('aria-current', 'page')
   fireEvent.click(screen.getByRole('button', { name: '折叠侧栏' }))
   expect(localStorage.getItem('ws-sidebar')).toBe('1')
-  expect(localStorage.getItem('ws-sidebar:classroom')).toBe('0')
+  // 非教室页只写默认 scope,不碰教室页的记录(上面 clear() 之后它本来就没有)
+  expect(localStorage.getItem('ws-sidebar:classroom')).toBeNull()
 })
 
 describe('rail', () => {

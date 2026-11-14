@@ -83,7 +83,7 @@ export default function SidebarShell({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-10 w-10 shrink-0"
+                className="shrink-0"
                 aria-label="打开菜单"
                 aria-expanded={drawerOpen}
                 onClick={() => setDrawerOpen(true)}

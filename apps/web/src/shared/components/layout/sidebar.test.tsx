@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { useState } from 'react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { Building2, Sun } from 'lucide-react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -32,8 +33,11 @@ function mockWidth(width: number) {
   })
 }
 
+const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
 const Wrap = ({ children, at = '/admin/org' }: { children: ReactNode; at?: string }) => (
-  <MemoryRouter initialEntries={[at]}>{children}</MemoryRouter>
+  <QueryClientProvider client={queryClient}>
+    <MemoryRouter initialEntries={[at]}>{children}</MemoryRouter>
+  </QueryClientProvider>
 )
 
 beforeEach(() => {
@@ -100,6 +104,18 @@ describe('Sidebar', () => {
     sidebar()
     for (const link of screen.getAllByRole('link')) expect(link).toHaveClass('touch-target')
     expect(screen.getByRole('button', { name: '折叠侧栏' })).toHaveClass('touch-target')
+  })
+
+  it('link className is a plain string and the current page is styled by aria-current', () => {
+    sidebar()
+    const current = screen.getByRole('link', { name: '组织架构' })
+    const cls = current.getAttribute('class') ?? ''
+    expect(cls).not.toContain('=>')
+    expect(cls).toContain('aria-[current=page]:bg-accent')
+    expect(current).toHaveAttribute('aria-current', 'page')
+    cleanup()
+    sidebar({ collapsed: true })
+    expect(screen.getByRole('link', { name: '组织架构' }).getAttribute('class')).not.toContain('=>')
   })
 
   it('keeps keyboard focus on the toggle when collapsing', () => {

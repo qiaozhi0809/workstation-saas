@@ -43,9 +43,8 @@ export default function AccountMenu({
         align={placement === 'top' ? 'start' : 'end'}
         triggerProps={{
           variant: 'ghost',
-          className: compact
-            ? 'touch-target min-h-11 min-w-11 px-0'
-            : 'touch-target min-h-11 min-w-11 gap-1 px-1.5',
+          size: 'touch',
+          className: compact ? 'touch-target px-0' : 'touch-target gap-1 px-1.5',
           'aria-label': '账号菜单',
           title: name,
         }}
