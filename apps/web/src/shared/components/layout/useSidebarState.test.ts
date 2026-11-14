@@ -89,6 +89,17 @@ describe('useSidebarState', () => {
     expect(result.current.drawerOpen).toBe(true)
   })
 
+  it('re-reads the record when the scope changes', () => {
+    localStorage.setItem('ws-sidebar', '0')
+    localStorage.setItem('ws-sidebar:classroom', '1')
+    const { result, rerender } = renderHook(({ scope }) => useSidebarState(scope), {
+      initialProps: { scope: 'classroom' as 'default' | 'classroom' },
+    })
+    expect(result.current.collapsed).toBe(true)
+    rerender({ scope: 'default' })
+    expect(result.current.collapsed).toBe(false)
+  })
+
   it('panel from 1024', () => {
     mockWidth(1100)
     const { result } = renderHook(() => useSidebarState('default'))

@@ -15,6 +15,7 @@ export default function AccountMenu({
   switchTo,
   preferences = true,
   placement = 'bottom',
+  compact = false,
 }: {
   name: string | undefined
   onLogout(): void
@@ -23,6 +24,8 @@ export default function AccountMenu({
   preferences?: boolean
   /** 菜单弹出方向;侧栏底部用 'top' */
   placement?: 'top' | 'bottom'
+  /** 只显示头像、不画下拉箭头(侧栏 rail 里宽度只有 48) */
+  compact?: boolean
 }) {
   const navigate = useNavigate()
   const [pwOpen, setPwOpen] = useState(false)
@@ -40,7 +43,7 @@ export default function AccountMenu({
         align={placement === 'top' ? 'start' : 'end'}
         triggerProps={{
           variant: 'ghost',
-          className: 'min-h-11 min-w-11 gap-1 px-1.5',
+          className: compact ? 'min-h-11 min-w-11 px-0' : 'min-h-11 min-w-11 gap-1 px-1.5',
           'aria-label': '账号菜单',
           title: name,
         }}
@@ -49,7 +52,7 @@ export default function AccountMenu({
             <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-sm font-medium text-primary-foreground">
               {Array.from(name ?? '')[0] ?? <User className="h-4 w-4" aria-hidden="true" />}
             </span>
-            <ChevronDown className="h-4 w-4" aria-hidden="true" />
+            {!compact && <ChevronDown className="h-4 w-4" aria-hidden="true" />}
           </>
         }
       >

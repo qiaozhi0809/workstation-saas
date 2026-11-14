@@ -59,7 +59,7 @@ export default function AdminLayout({ pages = ADMIN_PAGES }: { pages?: AdminPage
             )}
           </Link>
         )}
-        footer={() => (
+        footer={(collapsed) => (
           <>
             <NoticeBell side="top" />
             <ThemeToggle compact />
@@ -69,6 +69,7 @@ export default function AdminLayout({ pages = ADMIN_PAGES }: { pages?: AdminPage
               switchTo={switchTargets(user?.contexts, 'admin')}
               preferences={false}
               placement="top"
+              compact={collapsed}
             />
           </>
         )}

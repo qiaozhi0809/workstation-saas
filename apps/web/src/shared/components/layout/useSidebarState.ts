@@ -64,14 +64,11 @@ export function useSidebarState(scope: SidebarScope): {
   setDrawerOpen(open: boolean): void
 } {
   const bucket = useBucket()
-  const [stored, setStored] = useState<boolean | null>(() => readStored(scope))
+  // 记录带着 scope 一起存:scope 变了(教师端进出教室页)的那一次渲染就读新 scope 自己的记录
+  const [record, setRecord] = useState(() => ({ scope, value: readStored(scope) }))
+  const stored = record.scope === scope ? record.value : readStored(scope)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const mode = bucket >= 1024 ? 'panel' : 'drawer'
-
-  // scope 变了(教师端进出教室页):换成新 scope 自己的记录
-  useEffect(() => {
-    setStored(readStored(scope))
-  }, [scope])
 
   const collapsed = mode === 'drawer' ? false : (stored ?? defaultCollapsed(bucket, scope))
 
@@ -82,7 +79,7 @@ export function useSidebarState(scope: SidebarScope): {
     }
     const next = !collapsed
     writeStored(scope, next)
-    setStored(next)
+    setRecord({ scope, value: next })
   }, [mode, collapsed, scope])
 
   // 回到宽屏时收起抽屉
