@@ -26,16 +26,19 @@ export interface ClassContext {
 
 /**
  * 教师端"按班级"页面的统一外壳:负责班级列表 / 概况的加载、出错重试、无班级状态与权限检查。
- * 标题只给读屏用(<h1 sr-only>);缺 need 权限时显示"你在本班没有这项权限"。
+ * 标题默认只给读屏用(<h1 sr-only>);titleMode="none" 时不输出 h1,由页面自己渲染 PageHeader。
+ * 缺 need 权限时显示"你在本班没有这项权限"。
  * 换班级时 children 整体重建(key = 班级 id)。
  */
 export default function ClassGate({
   title,
   need,
+  titleMode = 'sr-only',
   children,
 }: {
   title: string
   need?: ClassPerm
+  titleMode?: 'sr-only' | 'none'
   children(ctx: ClassContext): ReactNode
 }) {
   const classId = useTeacherStore((s) => s.classId)
@@ -71,7 +74,7 @@ export default function ClassGate({
 
   return (
     <>
-      <h1 className="sr-only">{title}</h1>
+      {titleMode === 'sr-only' && <h1 className="sr-only">{title}</h1>}
       {body}
     </>
   )
