@@ -10,6 +10,7 @@ import {
   Card,
   CardContent,
   CardDescription,
+  CardFooter,
   CardHeader,
   CardTitle,
 } from '@/shared/components/ui/card'
@@ -132,16 +133,17 @@ export default function GradingCard() {
             {problem || error}
           </p>
         )}
-        <div className="flex justify-end">
-          <Button
-            type="button"
-            disabled={busy || draft === null || problem !== ''}
-            onClick={() => void save()}
-          >
-            保存及格线
-          </Button>
-        </div>
       </CardContent>
+      <CardFooter className="justify-end">
+        <Button
+          type="button"
+          variant={draft === null ? 'ghost' : 'default'}
+          disabled={busy || draft === null || problem !== ''}
+          onClick={() => void save()}
+        >
+          保存及格线
+        </Button>
+      </CardFooter>
     </Card>
   )
 }

@@ -13,9 +13,12 @@ import {
   Card,
   CardContent,
   CardDescription,
+  CardFooter,
   CardHeader,
   CardTitle,
 } from '@/shared/components/ui/card'
+import { Checkbox } from '@/shared/components/ui/checkbox'
+import { IconButton } from '@/shared/components/ui/icon-button'
 import { Input } from '@/shared/components/ui/input'
 import { Label } from '@/shared/components/ui/label'
 import { PROTECTED_TAGS } from '@/shared/lib/tags'
@@ -143,26 +146,24 @@ export default function TagPoolCard() {
               <li
                 key={t}
                 data-tag={t}
-                className="flex items-center gap-0.5 rounded-full border bg-background py-0.5 pl-1 pr-1.5 text-sm"
+                className="flex items-center gap-0.5 rounded-sm bg-muted px-1 text-sm"
               >
-                <button
-                  type="button"
+                <IconButton
+                  size="sm"
+                  icon={ArrowUp}
                   aria-label={`上移 ${t}`}
                   disabled={i === 0}
                   onClick={() => move(i, -1)}
-                  className="rounded-full p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30"
-                >
-                  <ArrowUp className="h-3.5 w-3.5" aria-hidden="true" />
-                </button>
-                <button
-                  type="button"
+                  className="text-muted-foreground hover:text-foreground"
+                />
+                <IconButton
+                  size="sm"
+                  icon={ArrowDown}
                   aria-label={`下移 ${t}`}
                   disabled={i === tags.length - 1}
                   onClick={() => move(i, 1)}
-                  className="rounded-full p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30"
-                >
-                  <ArrowDown className="h-3.5 w-3.5" aria-hidden="true" />
-                </button>
+                  className="text-muted-foreground hover:text-foreground"
+                />
                 {locked ? (
                   <span title={PROTECTED_NOTE} className="flex items-center gap-1 px-1.5">
                     {t}
@@ -171,22 +172,22 @@ export default function TagPoolCard() {
                   </span>
                 ) : (
                   <>
-                    <button
+                    <Button
                       type="button"
+                      variant="ghost"
+                      size="sm"
                       aria-label={`改名 ${t}`}
                       onClick={() => openRename(t)}
-                      className="rounded px-1.5 hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     >
                       {t}
-                    </button>
-                    <button
-                      type="button"
+                    </Button>
+                    <IconButton
+                      size="sm"
+                      icon={X}
                       aria-label={`删除 ${t}`}
                       onClick={() => setDeleting(t)}
-                      className="rounded-full p-0.5 text-muted-foreground hover:text-destructive"
-                    >
-                      <X className="h-3.5 w-3.5" aria-hidden="true" />
-                    </button>
+                      className="text-muted-foreground hover:text-destructive"
+                    />
                   </>
                 )}
               </li>
@@ -229,12 +230,17 @@ export default function TagPoolCard() {
             {saveError}
           </p>
         )}
-        <div className="flex justify-end">
-          <Button type="button" disabled={!dirty || busy} onClick={() => void save()}>
-            保存标签池
-          </Button>
-        </div>
       </CardContent>
+      <CardFooter className="justify-end">
+        <Button
+          type="button"
+          variant={dirty ? 'default' : 'ghost'}
+          disabled={!dirty || busy}
+          onClick={() => void save()}
+        >
+          保存标签池
+        </Button>
+      </CardFooter>
 
       {renaming !== null && (
         <Modal
@@ -264,14 +270,11 @@ export default function TagPoolCard() {
                 }}
               />
             </div>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={alsoStudents}
-                onChange={(e) => setAlsoStudents(e.target.checked)}
-              />
-              同时修改已有学生的这个标签
-            </label>
+            <Checkbox
+              label="同时修改已有学生的这个标签"
+              checked={alsoStudents}
+              onChange={(e) => setAlsoStudents(e.target.checked)}
+            />
             {dialogError && (
               <p role="alert" className="text-sm text-destructive">
                 {dialogError}

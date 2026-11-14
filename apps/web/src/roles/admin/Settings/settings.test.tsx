@@ -361,9 +361,12 @@ it('alerts loudly when there has never been a backup', async () => {
   asAdmin(['settings.manage'])
   vi.mocked(adminApi.systemInfo).mockResolvedValue({ ...INFO, last_backup: null })
   await renderPage()
-  const alert = await screen.findByRole('alert')
-  expect(alert).toHaveTextContent('从未备份,请检查定时任务')
-  expect(alert).toHaveClass('border-destructive')
+  const alert = await screen.findByText('从未备份,请检查定时任务')
+  // 备份过期是警示不是错误:role=status + 警示色,不再是红色 alert
+  expect(alert).toHaveAttribute('role', 'status')
+  expect(alert).toHaveClass('text-warning')
+  expect(alert).not.toHaveClass('border-destructive')
+  expect(screen.queryByRole('alert')).toBeNull()
 })
 
 it('alerts when the last backup is older than 48 hours, with the age in days', async () => {
@@ -374,9 +377,10 @@ it('alerts when the last backup is older than 48 hours, with the age in days', a
     last_backup: { at, file: 'f', size_bytes: 1, caddy: null },
   })
   await renderPage()
-  const alert = await screen.findByRole('alert')
-  expect(alert).toHaveTextContent('上次备份是 5 天前,请检查定时任务')
-  expect(alert).toHaveClass('border-destructive')
+  const alert = await screen.findByText('上次备份是 5 天前,请检查定时任务')
+  expect(alert).toHaveAttribute('role', 'status')
+  expect(alert).toHaveClass('text-warning')
+  expect(screen.queryByRole('alert')).toBeNull()
 })
 
 it('does not alert at 30 hours, alerts just past 48 hours', async () => {
@@ -388,7 +392,6 @@ it('does not alert at 30 hours, alerts just past 48 hours', async () => {
   })
   await renderPage()
   await screen.findByText('0.7.0')
-  expect(screen.queryByRole('alert')).toBeNull()
   expect(screen.queryByText(/请检查定时任务/)).toBeNull()
   cleanup()
   vi.mocked(adminApi.systemInfo).mockResolvedValue({
@@ -396,7 +399,10 @@ it('does not alert at 30 hours, alerts just past 48 hours', async () => {
     last_backup: { at: ago(49), file: 'f', size_bytes: 1, caddy: null },
   })
   await renderPage()
-  expect(await screen.findByRole('alert')).toHaveTextContent('上次备份是 2 天前,请检查定时任务')
+  expect(await screen.findByText('上次备份是 2 天前,请检查定时任务')).toHaveAttribute(
+    'role',
+    'status',
+  )
 })
 
 // 审查 Minor 5:备份时间解析不了时不能显示"NaN 天前"
@@ -407,8 +413,8 @@ it('shows a neutral notice when the last backup time cannot be parsed', async ()
     last_backup: { at: 'not-a-date', file: 'f', size_bytes: 1, caddy: null },
   })
   await renderPage()
-  const alert = await screen.findByRole('alert')
-  expect(alert).toHaveTextContent('上次备份时间无法识别,请检查备份记录')
+  const alert = await screen.findByText('上次备份时间无法识别,请检查备份记录')
+  expect(alert).toHaveAttribute('role', 'status')
   expect(alert).not.toHaveTextContent('NaN')
 })
 
@@ -743,4 +749,34 @@ it('shows the backend message when saving the catalog fails', async () => {
   fireEvent.click(card.getByRole('button', { name: '删除 数学' }))
   fireEvent.click(card.getByRole('button', { name: '保存科目目录' }))
   expect(await card.findByText('科目名重复(后端)')).toBeInTheDocument()
+})
+
+it('tag pool buttons are real 32px icon buttons and chips are not pills', async () => {
+  await renderPage()
+  const chip = list().querySelector('[data-tag="近视"]') as HTMLElement
+  expect(chip.className).toContain('rounded-sm')
+  expect(chip.className).not.toContain('rounded-full')
+  for (const name of ['上移 近视', '下移 近视', '删除 近视']) {
+    const btn = within(chip).getByRole('button', { name })
+    expect(btn.className).toContain('h-8')
+    expect(btn.className).toContain('w-8')
+  }
+})
+
+it('save buttons are ghost until something changed, then primary', async () => {
+  await renderPage()
+  const save = screen.getByRole('button', { name: '保存标签池' })
+  expect(save.className).toContain('ghost')
+  expect(save).toBeDisabled()
+  fireEvent.click(screen.getByRole('button', { name: '下移 重点关注' }))
+  expect(screen.getByRole('button', { name: '保存标签池' }).className).toContain('primary')
+  expect(screen.getByRole('button', { name: '保存标签池' })).toBeEnabled()
+})
+
+it('settings switches keep their switch role and use the shared Switch', async () => {
+  await renderPage()
+  const sw = await screen.findByRole('switch', { name: '本周之星' })
+  expect(sw).toHaveAttribute('type', 'checkbox')
+  expect(sw.closest('label')).not.toBeNull()
+  expect(screen.getAllByRole('switch')).toHaveLength(9)
 })

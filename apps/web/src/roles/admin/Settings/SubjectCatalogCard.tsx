@@ -12,9 +12,11 @@ import {
   Card,
   CardContent,
   CardDescription,
+  CardFooter,
   CardHeader,
   CardTitle,
 } from '@/shared/components/ui/card'
+import { IconButton } from '@/shared/components/ui/icon-button'
 import { Input } from '@/shared/components/ui/input'
 import { Label } from '@/shared/components/ui/label'
 import { SegmentedTabs } from '@/shared/components/ui/segmented-tabs'
@@ -171,38 +173,35 @@ export default function SubjectCatalogCard() {
             setAddError('')
           }}
         />
-        <ul aria-label={`${STAGE_LABEL[stage]}科目`} className="grid gap-1.5">
+        <ul aria-label={`${STAGE_LABEL[stage]}科目`} className="divide-y divide-border/60">
           {list.map((x, i) => (
-            <li
-              key={x.name}
-              className="flex flex-wrap items-center gap-2 rounded-md border bg-background px-2 py-1 text-sm"
-            >
-              <button
-                type="button"
+            <li key={x.name} className="flex flex-wrap items-center gap-2 py-1 text-sm">
+              <IconButton
+                size="sm"
+                icon={ArrowUp}
                 aria-label={`上移 ${x.name}`}
                 disabled={i === 0}
                 onClick={() => move(i, -1)}
-                className="rounded-full p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30"
-              >
-                <ArrowUp className="h-3.5 w-3.5" aria-hidden="true" />
-              </button>
-              <button
-                type="button"
+                className="text-muted-foreground hover:text-foreground"
+              />
+              <IconButton
+                size="sm"
+                icon={ArrowDown}
                 aria-label={`下移 ${x.name}`}
                 disabled={i === list.length - 1}
                 onClick={() => move(i, 1)}
-                className="rounded-full p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30"
-              >
-                <ArrowDown className="h-3.5 w-3.5" aria-hidden="true" />
-              </button>
-              <button
+                className="text-muted-foreground hover:text-foreground"
+              />
+              <Button
                 type="button"
+                variant="ghost"
+                size="sm"
                 aria-label={`改名 ${x.name}`}
                 onClick={() => openRename(x.name)}
-                className="min-w-12 flex-1 rounded px-1 text-left hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className="min-w-12 flex-1 justify-start"
               >
                 {x.name}
-              </button>
+              </Button>
               <label className="flex items-center gap-1 text-xs text-muted-foreground">
                 满分
                 <Input
@@ -212,21 +211,21 @@ export default function SubjectCatalogCard() {
                   max={1000}
                   step={1}
                   aria-label={`${x.name} 满分`}
-                  className="h-8 w-20 text-sm text-foreground"
+                  controlSize="sm"
+                  className="w-20 text-sm text-foreground"
                   value={x.full}
                   onChange={(e) =>
                     setList(list.map((y, j) => (j === i ? { ...y, full: e.target.value } : y)))
                   }
                 />
               </label>
-              <button
-                type="button"
+              <IconButton
+                size="sm"
+                icon={X}
                 aria-label={`删除 ${x.name}`}
                 onClick={() => setList(list.filter((_, j) => j !== i))}
-                className="rounded-full p-0.5 text-muted-foreground hover:text-destructive"
-              >
-                <X className="h-3.5 w-3.5" aria-hidden="true" />
-              </button>
+                className="text-muted-foreground hover:text-destructive"
+              />
             </li>
           ))}
         </ul>
@@ -235,7 +234,8 @@ export default function SubjectCatalogCard() {
             aria-label="新科目名称"
             placeholder="科目名"
             maxLength={NAME_MAX}
-            className="h-8 w-32"
+            controlSize="sm"
+            className="w-32"
             value={newName}
             onChange={(e) => {
               setNewName(e.target.value)
@@ -254,7 +254,8 @@ export default function SubjectCatalogCard() {
             max={1000}
             step={1}
             aria-label="新科目满分"
-            className="h-8 w-20"
+            controlSize="sm"
+            className="w-20"
             value={newFull}
             onChange={(e) => {
               setNewFull(e.target.value)
@@ -278,12 +279,17 @@ export default function SubjectCatalogCard() {
             {saveError}
           </p>
         )}
-        <div className="flex justify-end">
-          <Button type="button" disabled={draft === null || busy} onClick={() => void save()}>
-            保存科目目录
-          </Button>
-        </div>
       </CardContent>
+      <CardFooter className="justify-end">
+        <Button
+          type="button"
+          variant={draft === null ? 'ghost' : 'default'}
+          disabled={draft === null || busy}
+          onClick={() => void save()}
+        >
+          保存科目目录
+        </Button>
+      </CardFooter>
 
       {renaming !== null && (
         <Modal

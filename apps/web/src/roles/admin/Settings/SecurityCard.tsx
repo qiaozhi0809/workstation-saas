@@ -6,10 +6,11 @@ import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { toast } from '@/shared/components/Toast'
 import { Button } from '@/shared/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card'
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/shared/components/ui/card'
 import { Input } from '@/shared/components/ui/input'
 import { Label } from '@/shared/components/ui/label'
 import { NativeSelect } from '@/shared/components/ui/native-select'
+import { Switch } from '@/shared/components/ui/switch'
 import type { SecuritySettings } from '@/shared/types/admin'
 
 const AGES: { value: SecuritySettings['password_max_age_days']; label: string }[] = [
@@ -68,21 +69,13 @@ export default function SecurityCard() {
         <CardTitle>账号安全</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex items-start gap-3">
-          <input
-            type="checkbox"
-            role="switch"
-            id="sec-totp-allowed"
-            aria-label="允许账号开启两步验证"
-            className="mt-1"
-            checked={value.totp_allowed}
-            onChange={(e) => setDraft({ ...value, totp_allowed: e.target.checked })}
-          />
-          <div className="text-sm">
-            <label htmlFor="sec-totp-allowed">允许账号开启两步验证</label>
-            <p className="text-xs text-muted-foreground">关闭后已开启的账号仍可正常登录和关闭</p>
-          </div>
-        </div>
+        <Switch
+          aria-label="允许账号开启两步验证"
+          label="允许账号开启两步验证"
+          description="关闭后已开启的账号仍可正常登录和关闭"
+          checked={value.totp_allowed}
+          onChange={(e) => setDraft({ ...value, totp_allowed: e.target.checked })}
+        />
         <div className="space-y-1">
           <Label htmlFor="sec-min-length">密码最短长度</Label>
           <Input
@@ -125,12 +118,17 @@ export default function SecurityCard() {
             {error}
           </p>
         )}
-        <div className="flex justify-end">
-          <Button type="button" disabled={busy || !lenValid} onClick={() => void save()}>
-            保存安全设置
-          </Button>
-        </div>
       </CardContent>
+      <CardFooter className="justify-end">
+        <Button
+          type="button"
+          variant={draft === null ? 'ghost' : 'default'}
+          disabled={busy || !lenValid}
+          onClick={() => void save()}
+        >
+          保存安全设置
+        </Button>
+      </CardFooter>
     </Card>
   )
 }
