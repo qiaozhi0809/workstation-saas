@@ -116,16 +116,64 @@ describe('发通知:编写', () => {
     ).toEqual(['三年级'])
   })
 
-  it('keeps 发送 disabled until title and body are filled', async () => {
+  it('reports missing title and body in place instead of disabling 发送 (Q12)', async () => {
     renderPage()
     const send = await screen.findByRole('button', { name: '发送' })
-    expect(send).toBeDisabled()
-    fireEvent.change(screen.getByLabelText('标题'), { target: { value: '放假' } })
-    expect(send).toBeDisabled()
-    fireEvent.change(screen.getByLabelText('正文'), { target: { value: '周五放假' } })
     expect(send).toBeEnabled()
+    fireEvent.click(send)
+    expect(await screen.findByText('请填写标题')).toBeInTheDocument()
+    expect(screen.getByText('请填写正文')).toBeInTheDocument()
+    // 焦点移到第一个出错的字段
+    expect(screen.getByLabelText('标题')).toHaveFocus()
+    expect(screen.getByLabelText('标题')).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.queryByRole('dialog', { name: '发送通知' })).toBeNull()
+    expect(adminApi.sendNotice).not.toHaveBeenCalled()
+    // 只填标题:只剩正文的错误,焦点到正文
+    fireEvent.change(screen.getByLabelText('标题'), { target: { value: '放假' } })
+    expect(screen.queryByText('请填写标题')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '发送' }))
+    expect(await screen.findByText('请填写正文')).toBeInTheDocument()
+    expect(screen.getByLabelText('正文')).toHaveFocus()
+    // 全空格也算没填
+    fireEvent.change(screen.getByLabelText('正文'), { target: { value: '周五放假' } })
     fireEvent.change(screen.getByLabelText('标题'), { target: { value: '   ' } })
-    expect(send).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: '发送' }))
+    expect(await screen.findByText('请填写标题')).toBeInTheDocument()
+  })
+
+  it('reports a missing target in place too (no class picked / nobody picked)', async () => {
+    renderPage()
+    await fill('class')
+    await screen.findByLabelText('班级')
+    clickSend()
+    expect(await screen.findByText('请选择班级')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: '发送通知' })).toBeNull()
+    fireEvent.change(screen.getByLabelText('发给'), { target: { value: 'users' } })
+    expect(screen.queryByText('请选择班级')).toBeNull()
+    clickSend()
+    expect(await screen.findByText('请选择要发送的人')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: '发送通知' })).toBeNull()
+  })
+
+  it('both panels are Cards and picked people are 6 px chips with a labelled remove button', async () => {
+    renderPage()
+    await fill('users')
+    expect(screen.getByRole('region', { name: '写通知' })).toHaveAttribute('data-slot', 'card')
+    expect(screen.getByRole('region', { name: '我发出的' })).toHaveAttribute('data-slot', 'card')
+    fireEvent.click(await screen.findByRole('button', { name: '添加 李明' }))
+    const chip = within(screen.getByRole('list', { name: '已选择的人' })).getAllByRole(
+      'listitem',
+    )[0]
+    expect(chip.className).toContain('rounded-sm')
+    expect(chip.className).not.toContain('rounded-full')
+    expect(within(chip).getByRole('button', { name: '移除 李明' })).toBeInTheDocument()
+  })
+
+  it('the sent title opens details through a link-style button that clamps long titles', async () => {
+    renderPage()
+    const btn = await screen.findByRole('button', { name: '通知1' })
+    expect(btn.className).toContain('underline-offset-4')
+    expect(btn.querySelector('.line-clamp-2')).not.toBeNull()
   })
 
   it('asks with the target text, then sends to the whole school and reports the head count', async () => {
@@ -191,7 +239,6 @@ describe('发通知:编写', () => {
           .map((o) => o.textContent),
       ).toEqual(['请选择班级', '三年一班', '三年二班']),
     )
-    expect(screen.getByRole('button', { name: '发送' })).toBeDisabled()
     fireEvent.change(classes, { target: { value: 'c32' } })
     clickSend()
     const dlg = await confirmDialog()
@@ -227,7 +274,6 @@ describe('发通知:编写', () => {
     expect(await screen.findByRole('button', { name: '添加 李明' })).toBeInTheDocument()
     expect(adminApi.noticePeople).toHaveBeenCalledWith('')
     expect(screen.getByText('三年一班班主任')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '发送' })).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: '添加 李明' }))
     expect(screen.getByRole('button', { name: '已选 李明' })).toBeDisabled()
     fireEvent.change(screen.getByLabelText('搜索姓名或登录名'), { target: { value: 'wang' } })

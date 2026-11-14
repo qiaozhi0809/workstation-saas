@@ -4,6 +4,7 @@ import { X } from 'lucide-react'
 import { adminApi } from '@/shared/api/admin'
 import { ApiError } from '@/shared/api/client'
 import { Button } from '@/shared/components/ui/button'
+import { IconButton } from '@/shared/components/ui/icon-button'
 import { Input } from '@/shared/components/ui/input'
 import { NativeSelect } from '@/shared/components/ui/native-select'
 import { cn } from '@/shared/lib/utils'
@@ -61,7 +62,10 @@ function PeoplePicker({
       ) : found.data.length === 0 ? (
         <p className="text-sm text-muted-foreground">没有符合条件的人</p>
       ) : (
-        <ul aria-label="搜索结果" className="max-h-48 divide-y overflow-y-auto rounded-md border">
+        <ul
+          aria-label="搜索结果"
+          className="max-h-48 divide-y divide-border/60 overflow-y-auto rounded-md bg-muted/50"
+        >
           {found.data.map((p) => {
             const on = chosen.has(p.user_id)
             return (
@@ -97,20 +101,18 @@ function PeoplePicker({
             <li
               key={u.user_id}
               className={cn(
-                'inline-flex items-center gap-1 rounded-full bg-muted py-0.5 pl-2.5 pr-1 text-sm',
+                'inline-flex items-center gap-1 rounded-sm bg-muted py-0 pl-2.5 pr-0.5 text-sm',
                 unavailable.has(u.user_id) && 'bg-destructive/10 text-destructive',
               )}
             >
               {u.name}
               {unavailable.has(u.user_id) && <span className="text-xs">已不可选</span>}
-              <button
-                type="button"
+              <IconButton
+                icon={X}
+                size="sm"
                 aria-label={`移除 ${u.name}`}
-                className="rounded-full p-0.5 hover:bg-background focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 onClick={() => onChange(users.filter((x) => x.user_id !== u.user_id))}
-              >
-                <X className="h-3.5 w-3.5" aria-hidden="true" />
-              </button>
+              />
             </li>
           ))}
         </ul>
