@@ -5,6 +5,7 @@ import { timetableApi } from '@/shared/api/timetable'
 import Modal from '@/shared/components/overlay/Modal'
 import { toast } from '@/shared/components/Toast'
 import { Button } from '@/shared/components/ui/button'
+import { Table, TableBody, TableHead, TableRow, Td, Th } from '@/shared/components/ui/table'
 import { downloadText } from '@/shared/lib/csv'
 import type { TimetableImportResult } from '@/shared/types/timetable'
 
@@ -19,15 +20,18 @@ export default function TimetableImportDialog({ onClose }: { onClose(): void }) 
   const [result, setResult] = useState<TimetableImportResult | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [fileError, setFileError] = useState('')
 
   const pick = (f: File | undefined) => {
     setFile(f ?? null)
     setResult(null)
     setError('')
+    setFileError('')
   }
 
   const submit = async () => {
-    if (!file || busy) return
+    if (busy) return
+    if (!file) return setFileError('请先选择文件')
     setBusy(true)
     setError('')
     setResult(null)
@@ -92,33 +96,32 @@ export default function TimetableImportDialog({ onClose }: { onClose(): void }) 
             {file ? file.name : '还没有选择文件'}
           </span>
         </div>
+        {fileError && (
+          <p role="alert" className="text-xs text-destructive">
+            {fileError}
+          </p>
+        )}
         {result && !result.ok && (
           <div className="space-y-2">
             <p role="alert" className="text-destructive">
               {`有 ${result.errors.length} 行有问题,这次没有写入任何数据;修正后重新导入。`}
             </p>
-            <div className="max-h-72 overflow-auto rounded-md border">
-              <table className="w-full text-sm">
-                <thead className="bg-muted text-left text-muted-foreground">
-                  <tr>
-                    <th scope="col" className="w-16 px-3 py-2 font-medium">
-                      行
-                    </th>
-                    <th scope="col" className="px-3 py-2 font-medium">
-                      问题
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {result.errors.map((e, i) => (
-                    <tr key={`${e.line}-${i}`} className="border-t">
-                      <td className="px-3 py-1.5">{e.line}</td>
-                      <td className="px-3 py-1.5">{e.message}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <Table density="compact" containerClassName="max-h-72 overflow-auto">
+              <TableHead>
+                <TableRow>
+                  <Th className="w-16">行</Th>
+                  <Th nowrap={false}>问题</Th>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {result.errors.map((e, i) => (
+                  <TableRow key={`${e.line}-${i}`}>
+                    <Td>{e.line}</Td>
+                    <Td nowrap={false}>{e.message}</Td>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </div>
         )}
         {error && (
@@ -130,7 +133,7 @@ export default function TimetableImportDialog({ onClose }: { onClose(): void }) 
           <Button type="button" variant="outline" onClick={onClose}>
             取消
           </Button>
-          <Button type="button" disabled={busy || !file} onClick={() => void submit()}>
+          <Button type="button" disabled={busy} onClick={() => void submit()}>
             导入
           </Button>
         </div>
