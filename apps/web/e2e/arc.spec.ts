@@ -49,14 +49,17 @@ test('dark mode reaches arc components', async ({ page }) => {
 
 test('dark card on /dev/ui is visible', async ({ page }) => {
   const luminanceOf = (selector: string) =>
-    page.locator(selector).first().evaluate((el) => {
-      const ctx = document.createElement('canvas').getContext('2d')!
-      ctx.fillStyle = getComputedStyle(el).backgroundColor
-      ctx.fillRect(0, 0, 1, 1)
-      const [r, g, b] = Array.from(ctx.getImageData(0, 0, 1, 1).data).map((v) => v / 255)
-      const lin = (c: number) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
-      return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
-    })
+    page
+      .locator(selector)
+      .first()
+      .evaluate((el) => {
+        const ctx = document.createElement('canvas').getContext('2d')!
+        ctx.fillStyle = getComputedStyle(el).backgroundColor
+        ctx.fillRect(0, 0, 1, 1)
+        const [r, g, b] = Array.from(ctx.getImageData(0, 0, 1, 1).data).map((v) => v / 255)
+        const lin = (c: number) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
+        return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+      })
 
   await page.goto('/dev/ui')
   await page.evaluate(() => localStorage.setItem('ws-theme', 'dark'))

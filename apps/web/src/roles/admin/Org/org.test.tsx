@@ -113,7 +113,7 @@ it('shows an empty state, not a spinner, when there is no academic year at all (
   api.years.mockResolvedValue([])
   renderPage()
   const empty = await screen.findByText('还没有学年记录')
-  const card = empty.closest('.rounded-xl') as HTMLElement
+  const card = empty.closest('[data-slot="card"]') as HTMLElement
   expect(within(card).getByText('学年')).toBeInTheDocument()
   expect(within(card).queryByRole('status')).toBeNull()
   expect(screen.queryByLabelText('学年名称')).toBeNull()
