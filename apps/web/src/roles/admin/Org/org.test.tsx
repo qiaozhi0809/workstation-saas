@@ -216,10 +216,10 @@ it.each([
   expect(await screen.findByText(title)).toBeInTheDocument()
 })
 
-it('wraps the class table in an overflow-x-auto container', async () => {
+it('wraps the class table in the shared table scroll container', async () => {
   renderPage()
   const table = await screen.findByRole('table')
-  expect(table.closest('.overflow-x-auto')).not.toBeNull()
+  expect(table.closest('[data-table-scroll]')).not.toBeNull()
   expect(within(table).getByText('三年二班')).toBeInTheDocument()
 })
 
@@ -239,4 +239,34 @@ it('starts both columns of 年级与班级 with the same toolbar row (L399)', as
   const gradeBtn = await screen.findByRole('button', { name: '新建年级' })
   const classBtn = screen.getByRole('button', { name: '新建班级' })
   expect(gradeBtn.parentElement?.className).toBe(classBtn.parentElement?.className)
+})
+
+it('new grade shows 请填写年级名 on empty submit', async () => {
+  renderPage()
+  fireEvent.click(await screen.findByRole('button', { name: '新建年级' }))
+  const submit = screen.getByRole('button', { name: '创建' })
+  expect(submit).toBeEnabled()
+  fireEvent.click(submit)
+  expect(await screen.findByText('请填写年级名')).toBeInTheDocument()
+  expect(screen.getByLabelText('年级名称')).toHaveFocus()
+  expect(api.createGrade).not.toHaveBeenCalled()
+})
+
+it('saving a school with an empty name reports it in place instead of disabling the button', async () => {
+  renderPage()
+  const name = await screen.findByLabelText('学校名称')
+  fireEvent.change(name, { target: { value: '  ' } })
+  const save = screen.getByRole('button', { name: '保存学校信息' })
+  expect(save).toBeEnabled()
+  fireEvent.click(save)
+  expect(await screen.findByText('请填写学校名称')).toBeInTheDocument()
+  expect(api.saveSchool).not.toHaveBeenCalled()
+})
+
+it('lays the three year dates out in an auto-fit grid so they wrap in a narrow card (G-A1-1)', async () => {
+  renderPage()
+  const start = await screen.findByLabelText('开学日期')
+  const grid = start.closest('.grid') as HTMLElement
+  expect(grid.className).toContain('auto-fit')
+  expect(grid.className).not.toMatch(/sm:grid-cols-3/)
 })

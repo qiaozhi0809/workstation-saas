@@ -35,8 +35,8 @@ export default function PersonPicker({
               type="button"
               aria-pressed={value?.user_id === a.user_id}
               className={cn(
-                'flex w-full flex-wrap items-center gap-x-3 rounded-md border px-3 py-2 text-left text-sm hover:bg-accent',
-                value?.user_id === a.user_id && 'border-primary bg-accent',
+                'flex min-h-10 w-full flex-wrap items-center gap-x-3 rounded-md px-3 py-2 text-left text-sm hover:bg-accent',
+                value?.user_id === a.user_id && 'bg-accent',
               )}
               onClick={() => onChange(a)}
             >
