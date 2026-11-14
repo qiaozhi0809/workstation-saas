@@ -1,6 +1,11 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { SIDEBAR_KEYS, defaultCollapsed, isSidebarShortcut, useSidebarState } from './useSidebarState'
+import {
+  SIDEBAR_KEYS,
+  defaultCollapsed,
+  isSidebarShortcut,
+  useSidebarState,
+} from './useSidebarState'
 
 /** 按宽度模拟 matchMedia('(min-width: Npx)') */
 function mockWidth(width: number) {
