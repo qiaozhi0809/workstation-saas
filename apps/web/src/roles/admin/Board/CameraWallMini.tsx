@@ -9,6 +9,9 @@ import { CameraPlayer } from '@/shared/components/camera/CameraPlayer'
 import { LiveWatermark } from '@/shared/components/camera/LiveWatermark'
 import Modal from '@/shared/components/overlay/Modal'
 import { Button } from '@/shared/components/ui/button'
+import { Card } from '@/shared/components/ui/card'
+import { Checkbox } from '@/shared/components/ui/checkbox'
+import { Switch } from '@/shared/components/ui/switch'
 import { cn } from '@/shared/lib/utils'
 import { useAuthStore } from '@/shared/stores/auth'
 import type { CameraBrief, CameraStatus, CameraWall } from '@/shared/types/camera'
@@ -264,14 +267,18 @@ export default function CameraWallMini({ gradeId }: { gradeId: string | null }) 
     const off = q.error instanceof ApiError && q.error.status === 404
     if (q.isPending) body = <p className="text-sm text-muted-foreground">加载中…</p>
     else if (q.isError)
-      body = (
+      body = off ? (
+        // 没开监控是学校的配置状态,不是错误
+        <div role="status" className="flex flex-col gap-1 text-sm text-muted-foreground">
+          <p>学校还没开启监控</p>
+          <p className="text-xs">在学校设置里开启监控</p>
+        </div>
+      ) : (
         <div role="alert" className="flex flex-col items-start gap-2 text-sm text-destructive">
-          {off ? '学校还没开启监控' : '监控列表加载失败'}
-          {!off && (
-            <Button variant="outline" size="sm" onClick={() => void q.refetch()}>
-              重试
-            </Button>
-          )}
+          监控列表加载失败
+          <Button variant="outline" size="sm" onClick={() => void q.refetch()}>
+            重试
+          </Button>
         </div>
       )
     else if (total === 0) body = <p className="text-sm text-muted-foreground">还没有登记摄像头</p>
@@ -344,20 +351,23 @@ export default function CameraWallMini({ gradeId }: { gradeId: string | null }) 
   }
 
   return (
-    <aside
+    <Card
       data-testid="camera-wall"
+      role="complementary"
       aria-label="监控"
-      className="flex flex-col gap-3 rounded-lg border bg-card p-3 text-card-foreground"
+      className="flex flex-col gap-3 p-4"
     >
       <div className="flex flex-wrap items-center gap-2">
         {wide ? (
-          <h2 className="text-base font-semibold">监控</h2>
+          <h2 className="text-base font-medium">监控</h2>
         ) : (
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="sm"
             aria-expanded={expanded}
             onClick={() => setExpanded((e) => !e)}
-            className="flex items-center gap-1 rounded-md text-base font-semibold focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            className="-ml-3 text-base"
           >
             {total > 0 ? `监控 · ${total} 路` : '监控'}
             {expanded ? (
@@ -365,20 +375,17 @@ export default function CameraWallMini({ gradeId }: { gradeId: string | null }) 
             ) : (
               <ChevronDown aria-hidden className="size-4" />
             )}
-          </button>
+          </Button>
         )}
         {shown && total > 0 && (
           <>
-            <label className="ml-auto flex items-center gap-1.5 text-sm">
-              <input
-                type="checkbox"
-                role="switch"
-                data-testid="camera-wall-rotate"
-                checked={rotate}
-                onChange={(e) => toggleRotate(e.target.checked)}
-              />
-              自动切换
-            </label>
+            <Switch
+              className="ml-auto"
+              label="自动切换"
+              data-testid="camera-wall-rotate"
+              checked={rotate}
+              onChange={(e) => toggleRotate(e.target.checked)}
+            />
             <Button variant="outline" size="sm" onClick={openGrid}>
               <LayoutGrid aria-hidden />
               九宫格
@@ -419,23 +426,29 @@ export default function CameraWallMini({ gradeId }: { gradeId: string | null }) 
                     {g.cameras.map((c) => {
                       const on = pick.includes(c.id)
                       return (
-                        <label key={c.id} className="flex items-center gap-2 py-0.5">
-                          <input
-                            type="checkbox"
-                            aria-label={`${g.name} ${c.name}`}
-                            checked={on}
-                            disabled={!on && pick.length >= GRID_MAX}
-                            onChange={() =>
-                              setPick(on ? pick.filter((id) => id !== c.id) : [...pick, c.id])
-                            }
-                          />
-                          <span className="min-w-0 flex-1 truncate">{c.name}</span>
-                          <span
-                            aria-hidden="true"
-                            title={STATUS_LABEL[c.status]}
-                            className={cn('h-2 w-2 shrink-0 rounded-full', STATUS_DOT[c.status])}
-                          />
-                        </label>
+                        <Checkbox
+                          key={c.id}
+                          aria-label={`${g.name} ${c.name}`}
+                          checked={on}
+                          disabled={!on && pick.length >= GRID_MAX}
+                          onChange={() =>
+                            setPick(on ? pick.filter((id) => id !== c.id) : [...pick, c.id])
+                          }
+                          className="w-full items-center"
+                          label={
+                            <span className="flex min-w-0 items-center gap-2">
+                              <span className="min-w-0 flex-1 truncate">{c.name}</span>
+                              <span
+                                aria-hidden="true"
+                                title={STATUS_LABEL[c.status]}
+                                className={cn(
+                                  'h-2 w-2 shrink-0 rounded-full',
+                                  STATUS_DOT[c.status],
+                                )}
+                              />
+                            </span>
+                          }
+                        />
                       )
                     })}
                   </div>
@@ -444,6 +457,6 @@ export default function CameraWallMini({ gradeId }: { gradeId: string | null }) 
           </div>
         </Modal>
       )}
-    </aside>
+    </Card>
   )
 }

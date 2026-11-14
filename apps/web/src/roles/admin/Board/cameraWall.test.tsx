@@ -180,8 +180,7 @@ describe('CameraWallMini', () => {
     // 侧栏在看板之后(窄屏时落在页面下方);有侧栏时看板少一列
     const grid = document.querySelector('[data-class-grid]')!
     expect(grid.compareDocumentPosition(wall) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(grid).toHaveClass('md:grid-cols-2', 'xl:grid-cols-3', '2xl:grid-cols-4')
-    expect(grid).not.toHaveClass('lg:grid-cols-3')
+    expect(grid).toHaveClass('grid-cols-[repeat(auto-fill,minmax(17rem,1fr))]')
   })
 
   it('grade head sees own grade only', async () => {
@@ -454,8 +453,7 @@ describe('CameraWallMini', () => {
     expect(screen.queryByTestId('camera-wall')).toBeNull()
     expect(camerasApi.wall).not.toHaveBeenCalled()
     const grid = card.closest('[data-class-grid]') as HTMLElement
-    for (const c of ['grid-cols-1', 'md:grid-cols-2', 'lg:grid-cols-3', 'xl:grid-cols-4'])
-      expect(grid).toHaveClass(c)
+    expect(grid).toHaveClass('grid-cols-[repeat(auto-fill,minmax(17rem,1fr))]')
     cleanup()
     setPerms(['camera.manage'])
     setup()
@@ -488,6 +486,27 @@ describe('CameraWallMini', () => {
     vi.mocked(camerasApi.wall).mockRejectedValue(new ApiError(404, 'NOT_FOUND', '没有找到'))
     setup()
     const wall = await screen.findByTestId('camera-wall')
-    expect(await within(wall).findByText('学校还没开启监控')).toBeInTheDocument()
+    const msg = await within(wall).findByText('学校还没开启监控')
+    expect(msg).toBeInTheDocument()
+    // 没开监控是学校配置状态,不是错误:status + 弱色,并告诉去哪里开
+    expect(within(wall).queryByRole('alert')).toBeNull()
+    expect(msg.closest('[role="status"]')).not.toBeNull()
+    expect(msg.closest('[role="status"]')!.className).not.toContain('text-destructive')
+    expect(within(wall).getByText('在学校设置里开启监控')).toBeInTheDocument()
+  })
+
+  it('keeps the alert for a real load failure', async () => {
+    vi.mocked(camerasApi.wall).mockRejectedValue(new ApiError(500, 'INTERNAL', '出错了'))
+    setup()
+    const wall = await screen.findByTestId('camera-wall')
+    expect(await within(wall).findByRole('alert')).toHaveTextContent('监控列表加载失败')
+  })
+
+  it('wall is a Card and the auto-rotate switch keeps its role and name', async () => {
+    const wall = await openWall()
+    expect(wall).toHaveAttribute('data-slot', 'card')
+    expect(within(wall).getByRole('switch', { name: '自动切换' })).toBe(
+      within(wall).getByTestId('camera-wall-rotate'),
+    )
   })
 })

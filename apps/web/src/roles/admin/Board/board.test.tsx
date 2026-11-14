@@ -101,11 +101,31 @@ describe('全校看板', () => {
     await waitFor(() => expect(screen.getByTestId('loc')).toHaveTextContent('/admin/classes/c2'))
   })
 
-  it('网格随宽度 1 / 2 / 3 / 4 列', async () => {
+  it('网格按最小卡宽自适应列数', async () => {
     setup()
     const grid = (await screen.findByText('三年一班')).closest('[data-class-grid]') as HTMLElement
-    for (const c of ['grid-cols-1', 'md:grid-cols-2', 'lg:grid-cols-3', 'xl:grid-cols-4'])
-      expect(grid).toHaveClass(c)
+    expect(grid).toHaveClass('grid-cols-[repeat(auto-fill,minmax(17rem,1fr))]')
+    expect(grid.className).not.toMatch(/(^|\s)(md|lg|xl|2xl):grid-cols-\d/)
+  })
+
+  it('班级卡是 Card;教室与班主任各占一行,班主任不截断', async () => {
+    setup()
+    const card = (await screen.findByText('三年一班')).closest('[data-class-card]') as HTMLElement
+    expect(card).toHaveAttribute('data-slot', 'card')
+    expect(within(card).getByText('教室 301')).toBeInTheDocument()
+    const teacher = within(card).getByText('班主任 赵老师')
+    expect(teacher).toHaveAttribute('data-homeroom')
+    expect(teacher.className).not.toContain('truncate')
+    // 没有班主任的班不渲染这一行
+    const other = screen.getByText('三年二班').closest('[data-class-card]') as HTMLElement
+    expect(other.querySelector('[data-homeroom]')).toBeNull()
+  })
+
+  it('年级切换放在页头操作区', async () => {
+    setup()
+    await screen.findByText('三年一班')
+    const header = screen.getByRole('heading', { level: 1, name: '全校看板' }).closest('header')!
+    expect(within(header as HTMLElement).getByRole('tab', { name: '三年级' })).toBeInTheDocument()
   })
 
   // L216:带监控侧栏时(≥ 1024)侧栏随滚动固定在 #main 顶部、不高于主区域(视口减 3.5rem 顶栏)并自己滚动;
@@ -115,16 +135,17 @@ describe('全校看板', () => {
     setup()
     await screen.findByText('三年一班')
     const side = screen.getByTestId('camera-wall').parentElement as HTMLElement
+    // 1280 宽侧栏壳占掉 264,监控放右侧会把班级卡挤成一列:2xl 才并排,更窄时落在班级卡下面
     expect(side).toHaveClass(
-      'lg:sticky',
-      'lg:top-0',
-      'lg:max-h-[calc(100dvh-3.5rem)]',
-      'lg:overflow-auto',
-      'lg:w-80',
+      '2xl:sticky',
+      '2xl:top-6',
+      '2xl:max-h-[calc(100dvh-1.5rem)]',
+      '2xl:overflow-auto',
+      '2xl:w-96',
     )
+    expect(side).not.toHaveClass('lg:sticky')
     const grid = screen.getByText('三年一班').closest('[data-class-grid]') as HTMLElement
-    expect(grid).toHaveClass('md:grid-cols-2', 'xl:grid-cols-3')
-    expect(grid).not.toHaveClass('lg:grid-cols-3')
+    expect(grid).toHaveClass('grid-cols-[repeat(auto-fill,minmax(17rem,1fr))]')
   })
 
   it('页面没有缩放按钮', async () => {

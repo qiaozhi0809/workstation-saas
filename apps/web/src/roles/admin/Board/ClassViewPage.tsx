@@ -10,11 +10,20 @@ import type { ClassroomMapProps } from '@/shared/components/ClassroomMap/types'
 import { EmptyState } from '@/shared/components/feedback/EmptyState'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
+import { Button } from '@/shared/components/ui/button'
+import { Card } from '@/shared/components/ui/card'
+import { PageContainer, PageHeader } from '@/shared/components/ui/page'
 import { groupOf } from '@/shared/lib/seats'
 import { TONE_TEXT, ATTENDANCE_TONE } from '@/shared/lib/tone'
 import { cn } from '@/shared/lib/utils'
 import { boardClassApi } from './api'
 import { STATUS_TEXT, attendanceViews } from './attendanceViews'
+
+const backLink = (
+  <Button asChild variant="outline" size="sm">
+    <Link to="/admin/board">← 全校看板</Link>
+  </Button>
+)
 
 export default function ClassViewPage() {
   const id = useParams().id ?? ''
@@ -49,18 +58,24 @@ export default function ClassViewPage() {
 
   if (q.isError) {
     const gone = q.error instanceof ApiError && (q.error.status === 404 || q.error.status === 403)
-    return gone ? (
-      <EmptyState title="未找到该班级" className="p-6" />
-    ) : (
-      <ErrorState
-        title="加载失败"
-        onRetry={() => void q.refetch()}
-        retrying={q.isFetching}
-        className="p-6"
-      />
+    return (
+      <PageContainer width="full">
+        <PageHeader title="班级" actions={backLink} />
+        {gone ? (
+          <EmptyState title="未找到该班级" />
+        ) : (
+          <ErrorState title="加载失败" onRetry={() => void q.refetch()} retrying={q.isFetching} />
+        )}
+      </PageContainer>
     )
   }
-  if (!cls) return <LoadingState />
+  if (!cls)
+    return (
+      <PageContainer width="full">
+        <PageHeader title="班级" actions={backLink} />
+        <LoadingState />
+      </PageContainer>
+    )
 
   const m = cls.metrics
   const reasonOf = new Map(cls.absentees.map((x) => [x.student_id, x.reason] as const))
@@ -73,18 +88,10 @@ export default function ClassViewPage() {
     .join(' · ')
 
   return (
-    <div className="flex flex-col gap-4 p-4 md:p-6">
-      <header className="flex flex-col gap-1">
-        <Link
-          to="/admin/board"
-          className="w-fit rounded-sm text-sm text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          ← 全校看板
-        </Link>
-        <h1 className="text-xl font-semibold">{title}</h1>
-      </header>
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="h-[60vh] min-h-[320px] overflow-hidden rounded-lg border">
+    <PageContainer width="full">
+      <PageHeader title={title} actions={backLink} />
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="h-[60vh] min-h-[320px] overflow-hidden rounded-lg shadow-surface">
           <ClassroomMap
             mode="daily"
             rows={cls.seat_rows}
@@ -106,43 +113,42 @@ export default function ClassViewPage() {
             onSeatClick={onSeatClick}
           />
         </div>
-        <section
-          aria-labelledby="class-att"
-          className="flex min-w-0 flex-col gap-2 rounded-lg border bg-card p-3"
-        >
+        <Card role="region" aria-labelledby="class-att" className="flex min-w-0 flex-col gap-2 p-4">
           <h2 id="class-att" className="sr-only">
             今日考勤
           </h2>
-          <p className="text-base font-semibold">{`出勤 ${m.present}/${m.students}`}</p>
+          <p className="text-base font-medium tabular-nums">{`出勤 ${m.present}/${m.students}`}</p>
           <p className="text-sm text-muted-foreground">
             {`请假 ${m.leave} · 缺勤 ${m.absent} · 迟到 ${m.late} · ${m.confirmed ? '考勤已确认' : '未确认考勤'}`}
           </p>
           {absent.length === 0 ? (
             <p className="text-sm text-muted-foreground">今天全员到齐</p>
           ) : (
-            <ul className="flex flex-col divide-y">
+            <ul className="flex flex-col divide-y divide-border/60">
               {absent.map(({ seat, status, reason }) => (
-                <li key={seat.enrollment_id} className="py-1.5">
-                  <button
+                <li key={seat.enrollment_id}>
+                  <Button
                     type="button"
+                    variant="link"
+                    size="sm"
                     onClick={() => open(seat.student_id)}
-                    className="flex w-full items-center justify-between gap-2 rounded-sm text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="w-full justify-between px-0"
                   >
-                    <span>
+                    <span className="min-w-0 truncate">
                       {seat.name}
                       {reason && <span className="ml-2 text-muted-foreground">{reason}</span>}
                     </span>
                     <span className={cn('font-medium', TONE_TEXT[ATTENDANCE_TONE[status]])}>
                       {STATUS_TEXT[status]}
                     </span>
-                  </button>
+                  </Button>
                 </li>
               ))}
             </ul>
           )}
-        </section>
+        </Card>
       </div>
       {studentId && <StudentProfileDrawer key={studentId} studentId={studentId} />}
-    </div>
+    </PageContainer>
   )
 }
