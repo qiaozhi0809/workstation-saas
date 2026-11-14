@@ -281,3 +281,54 @@ for (const theme of THEMES) {
     await walk(page, 'parent', PARENT_PAGES, theme)
   })
 }
+
+// 展开态侧栏(M6 S-4):教室页默认是 rail、管理端 < 1280 默认是 rail,都要单独看一眼展开的样子。
+// 只截浅色的 1024 与 1280 两档;文件名以 -expanded 结尾,不与上面的矩阵重名
+const EXPANDED_VIEWPORTS: readonly Viewport[] = [
+  [1024, 768],
+  [1280, 800],
+]
+// 教室页 < 1280 是抽屉、没有侧栏可展开,只截 1280 一档
+const CLASSROOM_EXPANDED_VIEWPORTS: readonly Viewport[] = [[1280, 800]]
+
+async function shootExpanded(
+  page: Page,
+  role: string,
+  slug: string,
+  viewports: readonly Viewport[] = EXPANDED_VIEWPORTS,
+) {
+  for (const [width, height] of viewports) {
+    await page.setViewportSize({ width, height })
+    await page.waitForTimeout(300)
+    await page.screenshot({
+      path: path.join(OUT, role, `${slug}-${width}x${height}-expanded.png`),
+      fullPage: true,
+      animations: 'disabled',
+    })
+  }
+}
+
+const expandSidebar = (page: Page) =>
+  page.addInitScript(() => {
+    localStorage.setItem('ws-sidebar', '0')
+    localStorage.setItem('ws-sidebar:classroom', '0')
+  })
+
+test('教师端展开侧栏', async ({ page }) => {
+  await guardReadOnly(page)
+  await expandSidebar(page)
+  await signIn(page, 'teacher01', /\/teacher\/classroom/)
+  const spec = TEACHER_PAGES[0]
+  await settle(page, spec.ready(page))
+  await shootExpanded(page, 'teacher', spec.slug, CLASSROOM_EXPANDED_VIEWPORTS)
+})
+
+test('管理端展开侧栏', async ({ page }) => {
+  await guardReadOnly(page)
+  await expandSidebar(page)
+  await signIn(page, 'principal01', /\/admin\/today/)
+  const spec = ADMIN_PAGES.find((p) => p.slug === 'org')!
+  await page.goto(spec.path)
+  await settle(page, spec.ready(page))
+  await shootExpanded(page, 'admin', spec.slug)
+})

@@ -169,14 +169,14 @@ describe('通知铃铛', () => {
     fireEvent.click(await screen.findByRole('button', { name: '通知,2 条未读' }))
     const list = await screen.findByRole('dialog', { name: '通知' })
     const row = within(list).getByRole('button', { name: /通知1/ })
-    expect(row).toHaveClass('font-semibold')
+    expect(row).toHaveClass('font-medium')
     expect(within(list).queryByText('正文1')).toBeNull()
     fireEvent.click(row)
     expect(within(list).getByText('正文1')).toBeInTheDocument()
     await waitFor(() => expect(noticesApi.read).toHaveBeenCalledWith('1'))
     expect(await screen.findByRole('button', { name: '通知,1 条未读' })).toBeInTheDocument()
     await waitFor(() =>
-      expect(within(list).getByRole('button', { name: /通知1/ })).not.toHaveClass('font-semibold'),
+      expect(within(list).getByRole('button', { name: /通知1/ })).not.toHaveClass('font-medium'),
     )
     // 已读就地写进缓存,不重取收件箱(L280)
     expect(noticesApi.inbox).toHaveBeenCalledTimes(1)
@@ -199,7 +199,7 @@ describe('通知铃铛', () => {
     await waitFor(() => expect(noticesApi.readAll).toHaveBeenCalledTimes(1))
     expect(await screen.findByRole('button', { name: '通知,0 条未读' })).toBeInTheDocument()
     // 每条都就地写成已读,不重取收件箱(L280)
-    expect(within(list).getByRole('button', { name: /通知1/ })).not.toHaveClass('font-semibold')
+    expect(within(list).getByRole('button', { name: /通知1/ })).not.toHaveClass('font-medium')
     expect(noticesApi.inbox).toHaveBeenCalledTimes(1)
   })
 

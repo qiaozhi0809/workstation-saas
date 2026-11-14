@@ -66,7 +66,10 @@ test('homeroom teacher sets triple desks with a podium seat and keeps them throu
   await dialog.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.getByText('已保存,座位已按新桌椅排好')).toBeVisible()
   await expect(dialog).toBeHidden()
-  await expect(page.getByText(/博学楼 301/).first()).toBeVisible()
+  // 教室页侧栏默认是 rail,「年级 · 教室 · 学年 第 N 周」收在班级按钮的菜单里:点开看一眼再关掉
+  await page.getByRole('button', { name: /班级,/ }).click()
+  await expect(page.getByRole('menu').getByText(/博学楼 301/)).toBeVisible()
+  await page.keyboard.press('Escape')
   await expect(page.locator('[data-seat]')).toHaveCount(37)
   // 学号最小的同学按学号横着排,坐在第 1 排第 1 个座位
   await expect(page.locator('[data-seat="1-1"]')).toContainText('王小一')

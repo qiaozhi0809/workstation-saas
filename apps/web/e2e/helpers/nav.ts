@@ -1,13 +1,7 @@
-import { expect, type Page } from '@playwright/test'
+import type { Page } from '@playwright/test'
 
-/** 管理端顶栏导航:宽屏(≥ 768)里分组的页面收在下拉里,先点开组再点项;不在组里的直接点链接。 */
+/** 管理端侧栏导航:所有页面都是侧栏里的链接,直接点。group 参数只为不改调用处而保留,不再使用。 */
 export async function openAdminPage(page: Page, item: string, group?: string): Promise<void> {
-  const nav = page.getByRole('navigation', { name: '主导航' })
-  if (!group) {
-    await nav.getByRole('link', { name: item }).click()
-    return
-  }
-  await nav.getByRole('button', { name: group }).click()
-  await page.getByRole('menu', { name: group }).getByRole('menuitem', { name: item }).click()
-  await expect(page.getByRole('menu')).toHaveCount(0)
+  void group
+  await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: item }).click()
 }

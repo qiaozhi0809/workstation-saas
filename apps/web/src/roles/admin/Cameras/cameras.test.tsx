@@ -7,10 +7,11 @@ import { adminApi } from '@/shared/api/admin'
 import { camerasApi } from '@/shared/api/cameras'
 import { ApiError } from '@/shared/api/client'
 import { toast } from '@/shared/components/Toast'
+import { Sidebar } from '@/shared/components/layout/Sidebar'
 import { useAuthStore } from '@/shared/stores/auth'
 import type { AdminPerm, ClassAdmin, Switches } from '@/shared/types/admin'
 import type { CameraOut, CameraTestResult, StreamProbe } from '@/shared/types/camera'
-import AdminNav from '../AdminNav'
+import { adminGroups } from '../AdminNav'
 import { ADMIN_PAGES } from '../pages'
 import CamerasPage from './CamerasPage'
 
@@ -464,6 +465,20 @@ const setPerms = (admin_perms: AdminPerm[]) =>
     },
   })
 
+/** 侧栏里的主导航(只渲染导航本身,不带外壳) */
+function AdminNav() {
+  const perms = useAuthStore((s) => s.user?.admin_perms)
+  return (
+    <Sidebar
+      groups={adminGroups(ADMIN_PAGES, perms)}
+      collapsed={false}
+      onToggle={() => {}}
+      header={null}
+      footer={null}
+    />
+  )
+}
+
 it('hidden without camera.manage', () => {
   const page = ADMIN_PAGES.find((p) => p.path === 'cameras')
   expect(page?.perm).toBe('camera.manage')
@@ -476,7 +491,8 @@ it('hidden without camera.manage', () => {
   )
   const nav = screen.getByRole('navigation', { name: '主导航' })
   expect(within(nav).queryByRole('link', { name: '摄像头' })).toBeNull()
-  expect(within(nav).queryByRole('button', { name: '系统' })).toBeNull()
+  // 系统组里只剩 AI 配置
+  expect(within(nav).getByRole('link', { name: 'AI 配置' })).toBeInTheDocument()
   unmount()
 
   setPerms(['org.manage', 'camera.manage'])

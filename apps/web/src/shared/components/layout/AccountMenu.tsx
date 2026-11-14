@@ -14,12 +14,18 @@ export default function AccountMenu({
   onLogout,
   switchTo,
   preferences = true,
+  placement = 'bottom',
+  compact = false,
 }: {
   name: string | undefined
   onLogout(): void
   switchTo?: { label: string; to: string; context: Context }[]
   /** 是否显示"我的偏好"(教师端专有),默认显示 */
   preferences?: boolean
+  /** 菜单弹出方向;侧栏底部用 'top' */
+  placement?: 'top' | 'bottom'
+  /** 只显示头像、不画下拉箭头(侧栏 rail 宽 72,放不下头像加箭头) */
+  compact?: boolean
 }) {
   const navigate = useNavigate()
   const [pwOpen, setPwOpen] = useState(false)
@@ -33,11 +39,12 @@ export default function AccountMenu({
     <>
       <Menu
         label="账号菜单"
-        side="bottom"
-        align="end"
+        side={placement}
+        align={placement === 'top' ? 'start' : 'end'}
         triggerProps={{
           variant: 'ghost',
-          className: 'min-h-11 min-w-11 gap-1 px-1.5',
+          size: 'touch',
+          className: compact ? 'touch-target px-0' : 'touch-target gap-1 px-1.5',
           'aria-label': '账号菜单',
           title: name,
         }}
@@ -46,7 +53,7 @@ export default function AccountMenu({
             <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-sm font-medium text-primary-foreground">
               {Array.from(name ?? '')[0] ?? <User className="h-4 w-4" aria-hidden="true" />}
             </span>
-            <ChevronDown className="h-4 w-4" aria-hidden="true" />
+            {!compact && <ChevronDown className="h-4 w-4" aria-hidden="true" />}
           </>
         }
       >

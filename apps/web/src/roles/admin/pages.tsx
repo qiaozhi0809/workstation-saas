@@ -62,13 +62,15 @@ export interface AdminPage {
   element: ReactNode
   /** 只注册路由,不进导航 */
   hidden?: boolean
-  /** 导航分组:同组的页面收进一个下拉;没标的直接显示成链接。组的名字与图标见 AdminNav */
+  /** 隐藏页的上级可见页(那一页的 path),面包屑据此补父级链接 */
+  parent?: string
+  /** 导航分组:同组的页面在侧栏里放进同一个有标题的组;没标的进最前面的无标题组。组的名字见 Breadcrumb 的 ADMIN_GROUP_LABELS */
   group?: AdminGroup
 }
 
 export type AdminGroup = 'manage' | 'reports' | 'system'
 
-// 导航顺序即数组顺序;标了 group 的页面按数组顺序收进同一个下拉(组放在它第一个页面的位置),按权限过滤后只剩一项的组退化成普通链接。
+// 导航顺序即数组顺序;标了 group 的页面按数组顺序放进同一个侧栏组,按权限过滤后一项都没有的组不出现。
 // 每段只在自己的锚点处追加(一个元素一行,末尾带逗号),不动别人的行。
 export const ADMIN_PAGES: AdminPage[] = [
   {
@@ -96,6 +98,7 @@ export const ADMIN_PAGES: AdminPage[] = [
     perm: 'school.view',
     element: <ClassViewPage />,
     hidden: true,
+    parent: 'board',
   },
   // ── board:追加在此行之上 ──
 
@@ -114,6 +117,7 @@ export const ADMIN_PAGES: AdminPage[] = [
     perm: 'org.manage',
     element: <ClassInfoPage />,
     hidden: true,
+    parent: 'org',
     group: 'manage',
   },
   {
@@ -250,6 +254,7 @@ export const ADMIN_PAGES: AdminPage[] = [
     perm: 'school.view',
     element: <HistoryClassPage />,
     hidden: true,
+    parent: 'history',
     group: 'manage',
   },
   // ── history:追加在此行之上 ──
