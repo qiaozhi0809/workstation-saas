@@ -74,13 +74,11 @@ test('dark card on /dev/ui is visible', async ({ page }) => {
   await page.evaluate(() => localStorage.removeItem('ws-theme'))
 })
 
-test('keyboard focus on admin nav menu items is visible', async ({ page }) => {
+test('keyboard focus on account menu items is visible', async ({ page }) => {
   await signIn(page, 'principal01')
   await expect(page).toHaveURL(/\/admin\/today/)
-  const group = page.getByRole('navigation', { name: '主导航' }).getByRole('button', {
-    name: '学校管理',
-  })
-  await group.focus()
+  const trigger = page.getByRole('button', { name: '账号菜单' })
+  await trigger.focus()
   await page.keyboard.press('Enter')
   await page.keyboard.press('ArrowDown')
   const item = page.locator('[role=menuitem]:focus')

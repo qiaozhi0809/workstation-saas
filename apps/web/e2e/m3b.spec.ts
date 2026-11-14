@@ -484,67 +484,52 @@ for (const [width, height] of [
     page,
   }) => {
     await page.setViewportSize({ width, height })
-    // 长校名:导航不能被压缩,校名自己截断(种子校名太短,区分不出)
-    if (width < 1280) {
-      await page.route('**/api/v1/admin/school', (route) =>
-        route.request().method() === 'GET'
-          ? route.fulfill({
-              json: { name: '北京市海淀区中关村第一实验小学教育集团', address: null },
-            })
-          : route.continue(),
-      )
-    }
     await signIn(page, 'principal01')
     await expect(page).toHaveURL(/\/admin\/today/)
-    const nav = page.getByRole('navigation', { name: '主导航' })
-    // 直接显示的:今日关注、全校看板、通知;其余都收在三个下拉里
-    for (const name of ['今日关注', '全校看板', '通知'])
-      await expect(nav.getByRole('link', { name })).toBeVisible()
-    const groups: Record<string, string[]> = {
-      学校管理: ['组织架构', '账号', '学校设置', '学年升级', '往年班级'],
-      联考与报表: ['年级联考', '成绩汇总', '考勤报告'],
-      系统: ['审计日志', 'AI 使用', 'AI 配置'],
+    // ≥ 1024 是侧栏(1280 展开、1024 默认 rail,链接靠可访问名定位);< 1024 要先打开抽屉
+    const openNav = async () => {
+      if (width < 1024) {
+        await page.getByRole('button', { name: '打开菜单' }).click()
+        return page.getByRole('dialog').getByRole('navigation', { name: '主导航' })
+      }
+      return page.getByRole('navigation', { name: '主导航' })
     }
-    for (const [group, items] of Object.entries(groups)) {
-      await nav.getByRole('button', { name: group }).click()
-      const menu = page.getByRole('menu', { name: group })
-      for (const item of items)
-        await expect(menu.getByRole('menuitem', { name: item })).toBeVisible()
-      await page.keyboard.press('Escape')
-      await expect(page.getByRole('menu')).toHaveCount(0)
-    }
-    await openAdminPage(page, '成绩汇总', '联考与报表')
-    await expect(page).toHaveURL(/\/admin\/reports\/scores/)
-    await expect(nav.getByRole('button', { name: '联考与报表' })).toHaveAttribute(
+    const entries = [
+      '今日关注',
+      '全校看板',
+      '通知',
+      '组织架构',
+      '账号',
+      '学校设置',
+      '学年升级',
+      '往年班级',
+      '年级联考',
+      '成绩汇总',
+      '考勤报告',
+      '审计日志',
+      'AI 使用',
+      'AI 配置',
+    ]
+    let nav = await openNav()
+    for (const name of entries) await expect(nav.getByRole('link', { name })).toBeVisible()
+    await expect(nav.getByRole('link', { name: '今日关注' })).toHaveAttribute(
       'aria-current',
-      'true',
+      'page',
     )
+    await expect(nav.getByRole('link', { name: '成绩汇总' })).not.toHaveAttribute('aria-current')
+
+    await nav.getByRole('link', { name: '成绩汇总' }).click()
+    await expect(page).toHaveURL(/\/admin\/reports\/scores/)
+    if (width < 1024) await expect(page.getByRole('dialog')).toHaveCount(0)
+    nav = await openNav()
+    await expect(nav.getByRole('link', { name: '成绩汇总' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+    await expect(nav.getByRole('link', { name: '今日关注' })).not.toHaveAttribute('aria-current')
+    if (width < 1024) await page.keyboard.press('Escape')
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth),
     ).toBeLessThanOrEqual(0)
-    // 文字标签:≥ 1024 显示,768–1023 只剩图标(sr-only,宽高 1px);导航不能压到右侧的铃铛 / 主题 / 账号按钮上
-    for (const label of ['今日关注', '联考与报表']) {
-      const box = await nav.getByText(label, { exact: true }).boundingBox()
-      if (width >= 1024) expect(box!.width).toBeGreaterThan(20)
-      else expect(box!.width).toBeLessThanOrEqual(1)
-    }
-    const navBox = (await nav.boundingBox())!
-    const bellBox = (await page.getByRole('button', { name: /^通知,\d+ 条未读$/ }).boundingBox())!
-    // 入口之间不重叠、最后一个不压到右侧按钮(导航被压缩时,下拉的外层 wrapper 会缩、里面的按钮溢出去盖住相邻入口)
-    const boxes = await nav.locator('a, button').evaluateAll((els) =>
-      els.map((el) => {
-        const r = el.getBoundingClientRect()
-        return [r.x, r.right]
-      }),
-    )
-    for (let i = 1; i < boxes.length; i++)
-      expect(boxes[i][0]).toBeGreaterThanOrEqual(boxes[i - 1][1] - 1)
-    expect(boxes[boxes.length - 1][1]).toBeLessThanOrEqual(bellBox.x)
-    expect(navBox.x + navBox.width).toBeLessThanOrEqual(bellBox.x + 1)
-    // 学校名在 1280 宽放得下,不被截成"示…"
-    if (width === 1280) {
-      const name = page.locator('header span.truncate').first()
-      expect(await name.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0)
-    }
   })
 }

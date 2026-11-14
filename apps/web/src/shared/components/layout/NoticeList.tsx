@@ -71,7 +71,7 @@ export default function NoticeList({
                     className={cn(
                       'flex w-full flex-col gap-1 rounded-sm px-3 py-2 text-left text-sm outline-none',
                       'hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground',
-                      isUnread && 'font-semibold',
+                      isUnread && 'font-medium',
                     )}
                   >
                     <span className="flex items-center gap-2">

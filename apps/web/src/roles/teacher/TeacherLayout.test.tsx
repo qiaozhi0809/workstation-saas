@@ -122,6 +122,9 @@ beforeEach(() => {
     onboarded: { teacher: '2026-11-01T01:00:00Z' },
   })
   useTeacherStore.setState({ classId: null, unsaved: { seating: false, scores: false } })
+  // 教室页的侧栏默认是 rail;下面大多数用例看的是展开态,先把教室页 scope 记成"展开"
+  localStorage.clear()
+  localStorage.setItem('ws-sidebar:classroom', '0')
   useAuthStore.setState({
     accessToken: 'at',
     refreshToken: 'rt',
@@ -545,7 +548,7 @@ it('opens no realtime connection on /change-password', async () => {
   expect(noticesApi.inbox).not.toHaveBeenCalled()
 })
 
-it('puts the notice bell before the theme toggle in the top bar', async () => {
+it('puts the notice bell before the theme toggle in the sidebar footer', async () => {
   vi.mocked(classesApi.mine).mockResolvedValue({
     items: [cls('a', '三年二班', 'homeroom_teacher')],
   })
@@ -586,4 +589,166 @@ it('passes the current class my_perms to the nav: 班级公告 only with class.n
     'href',
     '/teacher/notices',
   )
+})
+
+// ---- 侧栏(M6 S-4)----
+const TWO_CLASSES = () => ({
+  items: [cls('a', '三年二班', 'homeroom_teacher'), cls('b', '三年三班', 'subject_teacher')],
+})
+
+it('classroom route uses classroom scope and no breadcrumb', async () => {
+  vi.mocked(classesApi.mine).mockResolvedValue(TWO_CLASSES())
+  localStorage.clear() // 没有任何记录:教室页从 rail 开始
+  renderLayout()
+  const expand = await screen.findByRole('button', { name: '展开侧栏' })
+  expect(screen.queryByRole('navigation', { name: '面包屑' })).toBeNull()
+  fireEvent.click(expand)
+  expect(localStorage.getItem('ws-sidebar:classroom')).toBe('0')
+  expect(localStorage.getItem('ws-sidebar')).toBeNull()
+})
+
+it('other teacher pages show a breadcrumb and use the default scope', async () => {
+  vi.mocked(classesApi.mine).mockResolvedValue(TWO_CLASSES())
+  localStorage.clear()
+  renderAt('/teacher/scores')
+  const crumbs = await screen.findByRole('navigation', { name: '面包屑' })
+  expect(within(crumbs).getByText('成绩')).toHaveAttribute('aria-current', 'page')
+  fireEvent.click(screen.getByRole('button', { name: '折叠侧栏' }))
+  expect(localStorage.getItem('ws-sidebar')).toBe('1')
+  // 非教室页只写默认 scope,不碰教室页的记录(上面 clear() 之后它本来就没有)
+  expect(localStorage.getItem('ws-sidebar:classroom')).toBeNull()
+})
+
+describe('classroom below 1280', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('is a drawer with the class name and week line in the top bar', async () => {
+    vi.stubGlobal('matchMedia', (q: string) => {
+      const min = Number(/min-width:\s*(\d+)px/.exec(q)?.[1] ?? 0)
+      return {
+        matches: 1024 >= min,
+        media: q,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }
+    })
+    vi.mocked(classesApi.mine).mockResolvedValue(TWO_CLASSES())
+    renderLayout()
+    expect(await screen.findByText(/三年二班/)).toBeInTheDocument()
+    expect(await screen.findByText(/三年级 · 2026-2027 第 10 周/)).toBeInTheDocument()
+    expect(screen.queryByRole('complementary', { name: '侧栏' })).toBeNull()
+    // 抽屉里切班仍走 confirmLeave
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    useTeacherStore.getState().setUnsaved('seating', true)
+    fireEvent.click(screen.getByRole('button', { name: '打开菜单' }))
+    fireEvent.change(await screen.findByRole('combobox', { name: '切换班级' }), {
+      target: { value: 'b' },
+    })
+    expect(confirmSpy).toHaveBeenCalledWith('有未保存的座位修改,确定离开吗?')
+    expect(useTeacherStore.getState().classId).toBe('a')
+    confirmSpy.mockRestore()
+  })
+})
+
+describe('rail', () => {
+  beforeEach(() => localStorage.setItem('ws-sidebar:classroom', '1'))
+
+  it('switching class from the rail asks confirmLeave', async () => {
+    vi.mocked(classesApi.mine).mockResolvedValue(TWO_CLASSES())
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    renderLayout()
+    await waitFor(() => expect(useTeacherStore.getState().classId).toBe('a'))
+    useTeacherStore.getState().setUnsaved('seating', true)
+    fireEvent.click(await screen.findByRole('button', { name: /切换班级/ }))
+    const menu = screen.getByRole('menu', { name: '切换班级' })
+    fireEvent.click(within(menu).getByRole('menuitem', { name: '三年三班' }))
+    expect(confirmSpy).toHaveBeenCalledWith('有未保存的座位修改,确定离开吗?')
+    expect(useTeacherStore.getState().classId).toBe('a')
+    confirmSpy.mockReturnValue(true)
+    fireEvent.click(screen.getByRole('button', { name: /切换班级/ }))
+    fireEvent.click(
+      within(screen.getByRole('menu', { name: '切换班级' })).getByRole('menuitem', {
+        name: '三年三班',
+      }),
+    )
+    expect(useTeacherStore.getState().classId).toBe('b')
+    confirmSpy.mockRestore()
+  })
+
+  it('rail shows week under class button', async () => {
+    vi.mocked(classesApi.mine).mockResolvedValue(TWO_CLASSES())
+    renderLayout()
+    const f = summaryFixture()
+    expect(await screen.findByText(`${f.week_no} 周`)).toBeInTheDocument()
+    // 班名不整行显示,只有首字按钮;完整班名在按钮的名称里
+    expect(screen.getByRole('button', { name: /切换班级.*三年二班/ })).toHaveTextContent('三')
+    expect(screen.queryByRole('combobox')).toBeNull()
+  })
+
+  it('rail class menu carries the grade, room and week line and the hover hint', async () => {
+    vi.mocked(classesApi.mine).mockResolvedValue({
+      items: [
+        { ...cls('a', '三年二班', 'homeroom_teacher'), room: '求知楼 201' },
+        cls('b', '三年三班', 'subject_teacher'),
+      ],
+    })
+    renderLayout()
+    const trigger = await screen.findByRole('button', { name: /切换班级/ })
+    await screen.findByText('10 周')
+    expect(trigger).toHaveAttribute('title', '三年二班 · 三年级 · 求知楼 201 · 2026-2027 第 10 周')
+    fireEvent.click(trigger)
+    const menu = screen.getByRole('menu', { name: '切换班级' })
+    // 说明行不是菜单项,点不了
+    expect(within(menu).getByText('三年级 · 求知楼 201 · 2026-2027 第 10 周')).toBeInTheDocument()
+    expect(within(menu).getAllByRole('menuitem')).toHaveLength(2)
+  })
+
+  it('a single class still gets a menu in the rail, with the info line and one item', async () => {
+    vi.mocked(classesApi.mine).mockResolvedValue({
+      items: [cls('a', '三年二班', 'homeroom_teacher')],
+    })
+    renderLayout()
+    const trigger = await screen.findByRole('button', { name: '当前班级,三年二班' })
+    expect(trigger).toHaveTextContent('三')
+    await screen.findByText('10 周')
+    fireEvent.click(trigger)
+    const menu = screen.getByRole('menu', { name: '班级信息' })
+    expect(within(menu).getByText('三年级 · 2026-2027 第 10 周')).toBeInTheDocument()
+    expect(within(menu).getAllByRole('menuitem')).toHaveLength(1)
+  })
+
+  it('shows a short failure mark when classes fail to load', async () => {
+    vi.mocked(classesApi.mine).mockRejectedValue(new Error('boom'))
+    renderLayout()
+    expect(await screen.findByText('班级加载失败')).toBeInTheDocument()
+  })
+
+  it('keeps the account menu inside the rail without the chevron', async () => {
+    vi.mocked(classesApi.mine).mockResolvedValue(TWO_CLASSES())
+    renderLayout()
+    const trigger = await screen.findByRole('button', { name: '账号菜单' })
+    expect(trigger.querySelector('svg')).toBeNull()
+  })
+})
+
+it('[ does not toggle while profile drawer input is focused', async () => {
+  vi.mocked(classesApi.mine).mockResolvedValue({
+    items: [cls('a', '三年二班', 'homeroom_teacher')],
+  })
+  vi.mocked(studentsApi.detail).mockResolvedValue({
+    id: 's1',
+    enrollment_id: 'e1',
+    mk: 'S0001',
+    name: '王小一',
+    class_id: 'a',
+  })
+  renderAt('/teacher/scores?student=s1')
+  const dialog = await screen.findByRole('dialog', { name: '王小一' })
+  const input = document.createElement('input')
+  input.setAttribute('aria-label', '抽屉备注')
+  dialog.appendChild(input)
+  input.focus()
+  fireEvent.keyDown(input, { key: '[' })
+  expect(localStorage.getItem('ws-sidebar')).toBeNull()
+  expect(screen.getByRole('button', { name: '折叠侧栏', hidden: true })).toBeInTheDocument()
 })

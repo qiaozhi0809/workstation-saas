@@ -259,10 +259,37 @@ it('opens no realtime connection on /change-password', async () => {
   expect(noticesApi.inbox).not.toHaveBeenCalled()
 })
 
-it('puts the notice bell before the theme toggle in the top bar', async () => {
+it('puts the notice bell before the theme toggle in the sidebar footer', async () => {
   setUser(['admin'], ['org.manage'])
   renderAt('/admin')
   const bell = await screen.findByRole('button', { name: '通知,1 条未读' })
   const theme = screen.getByRole('button', { name: /^主题:/ })
   expect(bell.compareDocumentPosition(theme) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+})
+
+it('shows the breadcrumb for the current page above the content', async () => {
+  setUser(['admin'], ['org.manage'])
+  renderAt('/admin/org')
+  const crumbs = await screen.findByRole('navigation', { name: '面包屑' })
+  expect(within(crumbs).getByText('组织架构')).toHaveAttribute('aria-current', 'page')
+})
+
+it('keeps the brand, bell, theme and account menu in the sidebar, not a top bar', async () => {
+  setUser(['admin'], ['org.manage'])
+  renderAt('/admin/org')
+  const side = await screen.findByRole('complementary', { name: '侧栏' })
+  expect(within(side).getByRole('navigation', { name: '主导航' })).toBeInTheDocument()
+  expect(await within(side).findByText('虚构实验学校')).toBeInTheDocument()
+  expect(within(side).getByRole('button', { name: /^通知/ })).toHaveClass('touch-target')
+  expect(within(side).getByRole('button', { name: /^主题:/ })).toHaveClass('touch-target')
+  expect(within(side).getByRole('button', { name: '账号菜单' })).toHaveClass('touch-target')
+  expect(screen.queryByRole('banner')).toBeNull()
+})
+
+it('marks the current page in the sidebar and keeps the skip link', async () => {
+  setUser(['admin'], ['org.manage', 'account.manage'])
+  renderAt('/admin/accounts')
+  const nav = await screen.findByRole('navigation', { name: '主导航' })
+  expect(within(nav).getByRole('link', { name: '账号' })).toHaveAttribute('aria-current', 'page')
+  expect(screen.getByRole('link', { name: '跳到主要内容' })).toBeInTheDocument()
 })
