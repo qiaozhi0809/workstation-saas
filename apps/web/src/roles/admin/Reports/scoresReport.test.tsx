@@ -155,6 +155,43 @@ it('defaults to the most recent grade exam and can switch', async () => {
   await waitFor(() => expect(adminApi.scoreReport).toHaveBeenCalledWith('ge1'))
 })
 
+it('page header carries the exam picker (labelled) and the export button', async () => {
+  await renderPage()
+  const header = screen.getByRole('heading', { level: 1, name: '成绩汇总' }).closest('header')!
+  expect(
+    within(header as HTMLElement).getByRole('combobox', { name: '选择联考' }),
+  ).toBeInTheDocument()
+  expect(
+    within(header as HTMLElement).getByRole('button', { name: '导出 CSV' }),
+  ).toBeInTheDocument()
+})
+
+it('class table: score columns are right-aligned with their headers, table does not stretch', async () => {
+  await renderPage()
+  const table = screen.getByRole('table', { name: '班级成绩汇总' })
+  expect(table).toHaveClass('w-auto')
+  expect(table).not.toHaveClass('w-full')
+  const head = within(table).getAllByRole('columnheader')
+  expect(head[0]).toHaveClass('text-left')
+  for (const th of head.slice(1)) expect(th).toHaveClass('text-right')
+  for (const td of within(classRow('三年一班')).getAllByRole('cell'))
+    expect(td).toHaveClass('text-right', 'tabular-nums')
+})
+
+it('student table: id and name stay left, scores and ranks go right', async () => {
+  await renderPage()
+  fireEvent.click(within(classRow('三年一班')).getByRole('button', { name: '三年一班' }))
+  const table = await screen.findByRole('table', { name: '三年一班 学生成绩' })
+  const cells = within(within(table).getAllByRole('row')[1]).getAllByRole('cell')
+  expect(cells[0]).toHaveClass('text-left')
+  expect(cells[1]).toHaveClass('text-left')
+  for (const td of cells.slice(2)) expect(td).toHaveClass('text-right', 'tabular-nums')
+  const heads = within(table).getAllByRole('columnheader')
+  expect(heads[0]).toHaveClass('text-left')
+  expect(heads[1]).toHaveClass('text-left')
+  for (const th of heads.slice(2)) expect(th).toHaveClass('text-right')
+})
+
 it('shows averages with one decimal, dashes for null, and a grade total row', async () => {
   await renderPage()
   expect(cellTexts(classRow('三年一班'))).toEqual(['82.3', '—', '160.0'])

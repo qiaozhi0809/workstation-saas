@@ -7,7 +7,9 @@ import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { toast } from '@/shared/components/Toast'
 import { Button } from '@/shared/components/ui/button'
+import { IconButton } from '@/shared/components/ui/icon-button'
 import { NativeSelect } from '@/shared/components/ui/native-select'
+import { PageContainer, PageHeader } from '@/shared/components/ui/page'
 import { monthIn, useSchoolTz } from '@/shared/hooks/useSchoolTz'
 import { downloadBlob } from '@/shared/lib/download'
 import AttendanceClassTable from './AttendanceClassTable'
@@ -29,16 +31,22 @@ const PRINT_CSS = `
 @media print {
   @page { size: A4 landscape; margin: 10mm; }
   html, body, #root, #root > div, #main { height: auto !important; overflow: visible !important; }
-  body > #root header, body > #root a[href="#main"], [data-no-print] { display: none !important; }
-  [data-attendance-report] thead { display: table-header-group; }
-  [data-attendance-report] tr { break-inside: avoid; }
+  body > #root header:not([data-page-header]), body > #root aside, body > #root nav, body > #root a[href="#main"], [data-no-print] { display: none !important; }
+  [data-page-container] thead { display: table-header-group; }
+  [data-page-container] tr { break-inside: avoid; }
 }
 `
 
 /** 默认月份要按学校时区算(后端按学校时区算日界,L43),所以等拿到时区再初始化状态 */
 export default function AttendanceReportPage() {
   const school = useSchoolTz()
-  if (!school.ready) return <LoadingState />
+  if (!school.ready)
+    return (
+      <PageContainer width="default">
+        <PageHeader title="月度考勤报告" />
+        <LoadingState variant="table" />
+      </PageContainer>
+    )
   return <AttendanceReport tz={school.tz} />
 }
 
@@ -73,52 +81,52 @@ function AttendanceReport({ tz }: { tz: string }) {
   const grades = gradesQ.data ?? []
 
   return (
-    <div data-attendance-report className="flex flex-col gap-4 p-4 md:p-6">
+    <PageContainer width="default">
       <style>{PRINT_CSS}</style>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-xl font-semibold">月度考勤报告</h1>
-          <p className="text-sm text-muted-foreground">只统计班主任确认过考勤的日子;迟到算出勤</p>
-          {q.data && (
-            <p className="hidden text-sm print:block">{`${q.data.scope_label} · ${monthLabel(q.data.month)}`}</p>
-          )}
-        </div>
-        <div data-no-print className="flex gap-2">
-          <Button variant="outline" onClick={() => void exportCsv()} disabled={exporting}>
-            <Download aria-hidden="true" />
-            导出 CSV
-          </Button>
-          <Button variant="outline" onClick={() => window.print()}>
-            <Printer aria-hidden="true" />
-            打印
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="月度考勤报告"
+        description={
+          <>
+            只统计班主任确认过考勤的日子;迟到算出勤
+            {q.data && (
+              <span className="hidden print:block">{`${q.data.scope_label} · ${monthLabel(q.data.month)}`}</span>
+            )}
+          </>
+        }
+        actions={
+          <span data-no-print className="flex gap-2">
+            <Button variant="outline" onClick={() => void exportCsv()} disabled={exporting}>
+              <Download aria-hidden="true" />
+              导出 CSV
+            </Button>
+            <Button variant="outline" onClick={() => window.print()}>
+              <Printer aria-hidden="true" />
+              打印
+            </Button>
+          </span>
+        }
+      />
 
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-1">
-          <Button
+          <IconButton
             variant="outline"
-            size="icon"
+            icon={ChevronLeft}
             aria-label="上一月"
             data-no-print
             onClick={() => setMonth((m) => shiftMonth(m, -1))}
-          >
-            <ChevronLeft aria-hidden="true" />
-          </Button>
+          />
           <span className="min-w-24 text-center text-sm font-medium" aria-live="polite">
             {monthLabel(month)}
           </span>
-          <Button
+          <IconButton
             variant="outline"
-            size="icon"
+            icon={ChevronRight}
             aria-label="下一月"
             data-no-print
             disabled={isCurrent}
             onClick={() => setMonth((m) => shiftMonth(m, 1))}
-          >
-            <ChevronRight aria-hidden="true" />
-          </Button>
+          />
         </div>
         <label data-no-print className="flex items-center gap-2 text-sm">
           <span className="text-muted-foreground">年级</span>
@@ -147,7 +155,7 @@ function AttendanceReport({ tz }: { tz: string }) {
               type="button"
               variant="link"
               size="sm"
-              className="h-auto p-0 text-xs"
+              className="px-1 text-xs"
               aria-label="重试加载年级"
               disabled={gradesQ.isFetching}
               onClick={() => void gradesQ.refetch()}
@@ -163,12 +171,12 @@ function AttendanceReport({ tz }: { tz: string }) {
       ) : q.isError ? (
         <ErrorState title="加载失败" onRetry={() => void q.refetch()} retrying={q.isFetching} />
       ) : !q.data ? (
-        <LoadingState />
+        <LoadingState variant="table" />
       ) : q.data.classes.length === 0 ? (
         <EmptyState title="暂无班级" />
       ) : (
         <AttendanceClassTable month={month} report={q.data} />
       )}
-    </div>
+    </PageContainer>
   )
 }

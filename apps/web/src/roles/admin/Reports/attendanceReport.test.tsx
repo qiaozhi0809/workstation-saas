@@ -195,7 +195,41 @@ describe('月度考勤报告', () => {
     setup()
     const cell = (await screen.findByText('三年一班')).closest('td') as HTMLElement
     expect(cell).toHaveClass('whitespace-nowrap')
-    expect(cell.closest('table')?.parentElement).toHaveClass('overflow-x-auto')
+    expect(cell.closest('[data-table-scroll]')).not.toBeNull()
+  })
+
+  it('数字列右对齐且表头同侧,表格不铺满;合计行字重 500', async () => {
+    setup()
+    const table = (await screen.findByText('三年一班')).closest('table') as HTMLElement
+    expect(table).not.toHaveClass('w-full')
+    expect(table).toHaveClass('w-auto')
+    const head = within(table).getAllByRole('columnheader')
+    expect(head[0]).toHaveClass('text-left')
+    for (const th of head.slice(1)) expect(th).toHaveClass('text-right')
+    const row = (await screen.findByText('三年一班')).closest('tr') as HTMLElement
+    const cells = within(row).getAllByRole('cell')
+    expect(cells[0]).toHaveClass('text-left')
+    for (const td of cells.slice(1)) {
+      expect(td).toHaveClass('text-right')
+      expect(td).toHaveClass('tabular-nums')
+    }
+    const total = within(table).getByText('合计').closest('tr') as HTMLElement
+    expect(total.className).not.toContain('font-semibold')
+  })
+
+  it('页头:标题、说明在 PageHeader,导出与打印在操作区', async () => {
+    setup()
+    await screen.findByText('三年一班')
+    const header = screen
+      .getByRole('heading', { level: 1, name: '月度考勤报告' })
+      .closest('header')!
+    expect(
+      within(header as HTMLElement).getByText(/只统计班主任确认过考勤的日子/),
+    ).toBeInTheDocument()
+    expect(
+      within(header as HTMLElement).getByRole('button', { name: '导出 CSV' }),
+    ).toBeInTheDocument()
+    expect(within(header as HTMLElement).getByRole('button', { name: '打印' })).toBeInTheDocument()
   })
 
   it('403 时显示没有权限而不是可重试的通用错误(L41)', async () => {
