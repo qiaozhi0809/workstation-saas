@@ -18,7 +18,8 @@ const TABS = [
   { id: 'reviews', label: '点评' },
 ] as const
 type TabId = (typeof TABS)[number]['id']
-// 显式标注,免得 value 被推成 string(SegmentedTabs 的 T 会跟着变成 string)
+// items 标显式类型,免得 value 被放宽成 string;onChange 不能直接传 setTab:
+// 它的参数含函数形式(SetStateAction),会让 SegmentedTabs 的泛型 T 推断回退成 string
 const TABS_ITEMS: readonly { value: TabId; label: string }[] = TABS.map((t) => ({
   value: t.id,
   label: t.label,
@@ -71,7 +72,7 @@ function GrowthTabs({ sid }: { sid: string }) {
         label="成长分类"
         items={TABS_ITEMS}
         value={tab}
-        onChange={setTab}
+        onChange={(value) => setTab(value)}
         className="h-auto w-full [&>button]:min-h-11 [&>button]:flex-1"
       />
       <div role="tabpanel" tabIndex={0} aria-label={label}>
