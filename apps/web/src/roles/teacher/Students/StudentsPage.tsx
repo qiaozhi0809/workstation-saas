@@ -275,7 +275,7 @@ function Roster({ ctx: { cls, summary, perms } }: { ctx: ClassContext }) {
               label="筛选"
               items={FILTERS}
               value={filter}
-              onChange={setFilter}
+              onChange={(v) => setFilter(v)}
             />
           </div>
         </div>

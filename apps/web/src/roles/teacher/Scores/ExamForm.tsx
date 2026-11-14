@@ -285,7 +285,7 @@ function FormBody(p: Props & { catalog: SubjectFull[] }) {
           label="考试类型"
           items={examTypeItems}
           value={type}
-          onChange={setType}
+          onChange={(v) => setType(v)}
           size="sm"
           className="flex-wrap self-start"
         />
