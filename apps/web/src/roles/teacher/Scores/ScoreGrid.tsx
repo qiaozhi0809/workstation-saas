@@ -241,7 +241,7 @@ export default function ScoreGrid({
                       title={problem ?? undefined}
                       value={draft ?? show(v)}
                       className={cn(
-                        'h-8 w-20 rounded-md border border-transparent bg-transparent px-2 text-right focus:border-ring focus:outline-none',
+                        'h-8 w-20 border border-transparent rounded-md bg-transparent px-2 text-right focus:border-ring focus:outline-none',
                         readOnly && 'cursor-not-allowed text-muted-foreground',
                         problem ? STATE_CLASS.over : STATE_CLASS[cellState(v, sub.full, grading)],
                       )}
