@@ -5,7 +5,10 @@ import { toast } from '@/shared/components/Toast'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { Button } from '@/shared/components/ui/button'
+import { Card } from '@/shared/components/ui/card'
+import { PageHeader } from '@/shared/components/ui/page'
 import type { Contact } from '@/shared/types/student'
+import ParentPage from '../ParentPage'
 import { useChild } from '../useChild'
 import ContactsForm from './ContactsForm'
 
@@ -21,10 +24,10 @@ const Item = ({ label, value }: { label: string; value: string | null | undefine
   )
 }
 const Group = ({ title, children }: { title: string; children: ReactNode }) => (
-  <section className="rounded-xl border bg-card p-4 text-sm text-card-foreground">
+  <Card className="p-4 text-sm">
     <h2 className="mb-1 text-sm font-medium">{title}</h2>
     {children}
-  </section>
+  </Card>
 )
 
 export default function ProfilePage() {
@@ -44,9 +47,16 @@ export default function ProfilePage() {
   if (!child) return null
   if (q.isError)
     return (
-      <ErrorState title="档案加载失败" onRetry={() => void q.refetch()} retrying={q.isFetching} />
+      <ParentPage>
+        <ErrorState title="档案加载失败" onRetry={() => void q.refetch()} retrying={q.isFetching} />
+      </ParentPage>
     )
-  if (!q.data) return <LoadingState />
+  if (!q.data)
+    return (
+      <ParentPage>
+        <LoadingState variant="form" />
+      </ParentPage>
+    )
   const p = q.data
   const contacts: Contact[] = p.contacts ?? []
   const tags = p.tags ?? []
@@ -59,8 +69,8 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-3 p-4">
-      <h1 className="text-lg font-semibold">{p.name}的档案</h1>
+    <ParentPage>
+      <PageHeader title={`${p.name}的档案`} />
       <Group title="基本信息">
         <dl>
           <Item label="姓名" value={p.name} />
@@ -91,7 +101,7 @@ export default function ProfilePage() {
             ) : (
               <ul className="space-y-2">
                 {contacts.map((c, i) => (
-                  <li key={i} className="rounded-md border p-2">
+                  <li key={i} className="rounded-md bg-muted p-3">
                     <div className="flex flex-wrap items-center justify-between gap-x-2">
                       <span className="min-w-0 break-words">
                         <span className="font-medium">{c.name}</span>{' '}
@@ -107,7 +117,8 @@ export default function ProfilePage() {
             {p.can_edit_contacts && (
               <Button
                 variant="outline"
-                className="mt-3 h-11 min-w-[44px]"
+                size="touch"
+                className="mt-3"
                 onClick={() => setEditing(true)}
               >
                 编辑联系人
@@ -133,13 +144,13 @@ export default function ProfilePage() {
         ) : (
           <ul className="flex flex-wrap gap-2">
             {tags.map((t) => (
-              <li key={t} className="rounded-full bg-secondary px-3 py-1 text-secondary-foreground">
+              <li key={t} className="rounded-sm bg-secondary px-3 py-1 text-secondary-foreground">
                 {t}
               </li>
             ))}
           </ul>
         )}
       </Group>
-    </div>
+    </ParentPage>
   )
 }

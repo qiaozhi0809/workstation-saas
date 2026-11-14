@@ -1,10 +1,12 @@
-import { useRef, useState, type KeyboardEvent } from 'react'
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { parentApi } from '@/shared/api/parent'
 import { EmptyState } from '@/shared/components/feedback/EmptyState'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
-import { cn } from '@/shared/lib/utils'
+import { PageHeader } from '@/shared/components/ui/page'
+import { SegmentedTabs } from '@/shared/components/ui/segmented-tabs'
+import ParentPage from '../ParentPage'
 import { useChild } from '../useChild'
 import CommentList from './CommentList'
 import GrowthTimeline from './GrowthTimeline'
@@ -27,7 +29,7 @@ function GrowthTab({ sid }: { sid: string }) {
         retrying={q.isFetching}
       />
     )
-  if (!q.data) return <LoadingState />
+  if (!q.data) return <LoadingState variant="cards" />
   if (q.data.items.length === 0) return <EmptyState title="还没有成长记录" />
   return <GrowthTimeline records={q.data.items} />
 }
@@ -41,7 +43,7 @@ function CommentsTab({ sid }: { sid: string }) {
     return (
       <ErrorState title="评语加载失败" onRetry={() => void q.refetch()} retrying={q.isFetching} />
     )
-  if (!q.data) return <LoadingState />
+  if (!q.data) return <LoadingState variant="cards" />
   if (q.data.items.length === 0) return <EmptyState title="还没有评语" />
   return <CommentList comments={q.data.items} />
 }
@@ -55,53 +57,23 @@ export default function GrowthPage() {
 
 function GrowthTabs({ sid }: { sid: string }) {
   const [tab, setTab] = useState<TabId>('growth')
-  const refs = useRef<Record<string, HTMLButtonElement | null>>({})
-
-  const onKey = (e: KeyboardEvent, i: number) => {
-    const d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0
-    if (!d) return
-    e.preventDefault()
-    const next = TABS[(i + d + TABS.length) % TABS.length]
-    setTab(next.id)
-    refs.current[next.id]?.focus()
-  }
+  const label = TABS.find((t) => t.id === tab)?.label
 
   return (
-    <div className="mx-auto max-w-2xl space-y-3 p-4">
-      <h1 className="text-lg font-semibold">成长</h1>
-      <div
-        role="tablist"
-        aria-label="成长分类"
-        className="grid grid-cols-3 gap-1 rounded-xl bg-muted p-1"
-      >
-        {TABS.map((t, i) => (
-          <button
-            key={t.id}
-            ref={(el) => {
-              refs.current[t.id] = el
-            }}
-            id={`growth-tab-${t.id}`}
-            role="tab"
-            type="button"
-            aria-selected={tab === t.id}
-            aria-controls="growth-panel"
-            tabIndex={tab === t.id ? 0 : -1}
-            onClick={() => setTab(t.id)}
-            onKeyDown={(e) => onKey(e, i)}
-            className={cn(
-              'min-h-11 rounded-lg px-2 text-sm font-medium transition-colors',
-              tab === t.id ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground',
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-      <div role="tabpanel" tabIndex={0} id="growth-panel" aria-labelledby={`growth-tab-${tab}`}>
+    <ParentPage>
+      <PageHeader title="成长" />
+      <SegmentedTabs
+        label="成长分类"
+        items={TABS.map((t) => ({ value: t.id, label: t.label }))}
+        value={tab}
+        onChange={setTab}
+        className="h-auto w-full [&>button]:min-h-11 [&>button]:flex-1"
+      />
+      <div role="tabpanel" aria-label={label}>
         {tab === 'growth' && <GrowthTab sid={sid} />}
         {tab === 'comments' && <CommentsTab sid={sid} />}
         {tab === 'reviews' && <ReviewHistory sid={sid} />}
       </div>
-    </div>
+    </ParentPage>
   )
 }

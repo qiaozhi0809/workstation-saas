@@ -1,5 +1,6 @@
 import ClassroomMap from '@/shared/components/ClassroomMap'
 import { seatsFromMiniMap } from '@/shared/components/ClassroomMap/mini'
+import { Card } from '@/shared/components/ui/card'
 import type { MiniSeatMap, ParentChild } from '@/shared/types/parent'
 
 export default function MiniClassroom({
@@ -22,12 +23,15 @@ export default function MiniClassroom({
         )
       : null
   return (
-    <section aria-label="班级座位" className="rounded-xl border bg-card p-4 text-card-foreground">
+    <Card role="region" aria-label="班级座位" className="p-4">
       <h2 className="mb-2 text-sm text-muted-foreground">班级座位</h2>
       {empty || !built ? (
         <p className="py-6 text-center text-sm text-muted-foreground">老师还没排座位</p>
       ) : (
-        <div className="h-[40vh] min-h-[160px] overflow-hidden">
+        <div
+          data-testid="seat-frame"
+          className="aspect-[4/3] max-h-[50vh] w-full overflow-hidden rounded-md dark:bg-card dark:p-2"
+        >
           <ClassroomMap
             rows={map.rows}
             cols={map.cols}
@@ -39,6 +43,6 @@ export default function MiniClassroom({
           />
         </div>
       )}
-    </section>
+    </Card>
   )
 }

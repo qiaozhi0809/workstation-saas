@@ -7,7 +7,10 @@ import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { inboxItems, markInboxRead, useInbox } from '@/shared/components/notices/useInbox'
 import { toast } from '@/shared/components/Toast'
 import { Button } from '@/shared/components/ui/button'
+import { Card } from '@/shared/components/ui/card'
+import { PageHeader } from '@/shared/components/ui/page'
 import type { InboxItem } from '@/shared/types/admin'
+import ParentPage from '../ParentPage'
 import ParentNoticeItem from './ParentNoticeItem'
 
 /** 通知页:所有孩子的通知,不随当前孩子过滤;与底部页签徽标共用 ['notices','inbox'],按页加载(L90) */
@@ -38,22 +41,24 @@ export default function ParentNoticesPage() {
         retrying={inbox.isFetching}
       />
     )
-  } else if (!inbox.data) body = <LoadingState />
+  } else if (!inbox.data) body = <LoadingState variant="cards" />
   else if (items.length === 0)
-    body = <EmptyState title="还没有通知" className="justify-center p-6" />
+    body = <EmptyState title="还没有通知" align="center" className="p-6" />
   else {
     body = (
       <>
-        <ul className="flex flex-col divide-y rounded-lg border bg-card">
-          {items.map((it) => (
-            <ParentNoticeItem
-              key={it.id}
-              item={it}
-              open={openId === it.id}
-              onToggle={() => toggle(it)}
-            />
-          ))}
-        </ul>
+        <Card>
+          <ul className="flex flex-col divide-y">
+            {items.map((it) => (
+              <ParentNoticeItem
+                key={it.id}
+                item={it}
+                open={openId === it.id}
+                onToggle={() => toggle(it)}
+              />
+            ))}
+          </ul>
+        </Card>
         {isFetchNextPageError && (
           <p role="alert" className="text-center text-sm text-destructive">
             加载更多失败
@@ -64,7 +69,7 @@ export default function ParentNoticesPage() {
             <Button
               type="button"
               variant="outline"
-              className="min-h-11"
+              size="touch"
               disabled={isFetchingNextPage}
               onClick={() => void fetchNextPage()}
             >
@@ -77,9 +82,9 @@ export default function ParentNoticesPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-3 p-4">
-      <h1 className="text-lg font-semibold">通知</h1>
+    <ParentPage>
+      <PageHeader title="通知" />
       {body}
-    </div>
+    </ParentPage>
   )
 }

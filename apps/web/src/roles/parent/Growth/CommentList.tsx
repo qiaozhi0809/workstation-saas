@@ -1,3 +1,4 @@
+import { Card } from '@/shared/components/ui/card'
 import { useSchoolTz } from '@/shared/hooks/useSchoolTz'
 import { formatInTz } from '@/shared/lib/date'
 import type { ParentComment } from '@/shared/types/parent'
@@ -18,11 +19,13 @@ export default function CommentList({ comments }: { comments: ParentComment[] })
           <h3 className="text-sm font-medium text-muted-foreground">{g.semester}</h3>
           <ul className="space-y-2">
             {g.items.map((c) => (
-              <li key={c.id} className="rounded-xl border bg-card p-3 text-sm text-card-foreground">
-                <p className="break-words whitespace-pre-wrap">{c.content}</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {formatInTz(c.created_at, tz).slice(0, 10)}
-                </p>
+              <li key={c.id}>
+                <Card className="p-3 text-sm">
+                  <p className="break-words whitespace-pre-wrap">{c.content}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {formatInTz(c.created_at, tz).slice(0, 10)}
+                  </p>
+                </Card>
               </li>
             ))}
           </ul>

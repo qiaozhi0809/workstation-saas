@@ -44,6 +44,19 @@ it('shows the profile in read-only groups', async () => {
   expect(parentApi.profile).toHaveBeenCalledWith('s1')
 })
 
+it('draws groups as borderless cards with touch-size edit button and square-cornered tags (P1-2)', async () => {
+  vi.mocked(parentApi.profile).mockResolvedValue(full())
+  open()
+  const heading = await screen.findByRole('heading', { name: '基本信息' })
+  expect(heading.closest('[data-slot="card"]')).not.toBeNull()
+  expect(screen.getByRole('button', { name: '编辑联系人' }).className).toMatch(/min-h-11/)
+  const tag = screen.getByText('爱画画')
+  expect(tag).toHaveClass('rounded-sm')
+  expect(tag.className).not.toMatch(/rounded-full/)
+  // 联系人块不带边框
+  expect(screen.getByText('王妈妈').closest('li')!.className).not.toMatch(/\bborder\b/)
+})
+
 it('copes with null and missing fields from the backend', async () => {
   vi.mocked(parentApi.profile).mockResolvedValue({
     ...profile({ can_edit_contacts: false }),

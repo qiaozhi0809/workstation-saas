@@ -24,7 +24,7 @@ export default function ExamDetail({ sid, examId }: { sid: string; examId: strin
        * 第一行 科目 + 分数 / 满分,第二行 班级平均 + 班级最高,不再横向滚动。
        * 表头在窄屏收起,改由单元格里的行内标签说明;显式 role 让 display 改变后仍是一张表。
        */}
-      <div className="rounded-lg border" role="region" aria-label="各科成绩">
+      <div role="region" aria-label="各科成绩">
         <table role="table" className="block w-full text-left sm:table">
           <thead
             role="rowgroup"
@@ -34,13 +34,13 @@ export default function ExamDetail({ sid, examId }: { sid: string; examId: strin
               <th role="columnheader" scope="col" className="px-3 py-2 font-medium">
                 科目
               </th>
-              <th role="columnheader" scope="col" className="px-3 py-2 font-medium">
+              <th role="columnheader" scope="col" className="px-3 py-2 font-medium sm:text-right">
                 分数 / 满分
               </th>
-              <th role="columnheader" scope="col" className="px-3 py-2 font-medium">
+              <th role="columnheader" scope="col" className="px-3 py-2 font-medium sm:text-right">
                 班级平均
               </th>
-              <th role="columnheader" scope="col" className="px-3 py-2 font-medium">
+              <th role="columnheader" scope="col" className="px-3 py-2 font-medium sm:text-right">
                 班级最高
               </th>
             </tr>
@@ -59,14 +59,14 @@ export default function ExamDetail({ sid, examId }: { sid: string; examId: strin
                 >
                   {s.name}
                 </th>
-                <td className="block whitespace-nowrap text-right tabular-nums sm:table-cell sm:px-3 sm:py-2 sm:text-left">
+                <td className="block whitespace-nowrap text-right tabular-nums sm:table-cell sm:px-3 sm:py-2 sm:text-right">
                   {s.score == null ? '—' : `${s.score} / ${s.full}`}
                 </td>
-                <td className="block text-xs text-muted-foreground tabular-nums sm:table-cell sm:px-3 sm:py-2 sm:text-sm sm:text-foreground">
+                <td className="block text-xs text-muted-foreground tabular-nums sm:table-cell sm:px-3 sm:py-2 sm:text-right sm:text-sm sm:text-foreground">
                   <span className="sm:hidden">班级平均 </span>
                   <span>{num(s.class_avg)}</span>
                 </td>
-                <td className="block text-right text-xs text-muted-foreground tabular-nums sm:table-cell sm:px-3 sm:py-2 sm:text-left sm:text-sm sm:text-foreground">
+                <td className="block text-right text-xs text-muted-foreground tabular-nums sm:table-cell sm:px-3 sm:py-2 sm:text-right sm:text-sm sm:text-foreground">
                   <span className="sm:hidden">班级最高 </span>
                   <span>{num(s.class_max)}</span>
                 </td>
@@ -76,7 +76,7 @@ export default function ExamDetail({ sid, examId }: { sid: string; examId: strin
         </table>
       </div>
       <p className="text-xs text-muted-foreground">“—”表示暂无成绩</p>
-      <p className="font-semibold">总分 {d.total == null ? '—' : `${d.total} / ${d.total_full}`}</p>
+      <p className="font-medium">总分 {d.total == null ? '—' : `${d.total} / ${d.total_full}`}</p>
       {d.class_rank != null ? (
         <p data-testid="rank-line">
           班级第 {d.class_rank} 名 / 共 {d.ranked} 人

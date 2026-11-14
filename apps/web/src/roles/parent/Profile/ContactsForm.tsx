@@ -49,7 +49,7 @@ export default function ContactsForm({
   return (
     <form onSubmit={(e) => void submit(e)} className="space-y-3">
       {rows.map((c, i) => (
-        <div key={i} className="grid grid-cols-2 gap-2 rounded-md border p-2">
+        <div key={i} className="grid grid-cols-2 gap-2 rounded-md bg-muted p-3">
           <Input
             className={field}
             aria-label={`联系人${i + 1}姓名`}
@@ -91,10 +91,10 @@ export default function ContactsForm({
         </p>
       )}
       <div className="flex justify-end gap-2">
-        <Button type="button" variant="outline" className="h-11 min-w-[44px]" onClick={onCancel}>
+        <Button type="button" variant="outline" size="touch" onClick={onCancel}>
           取消
         </Button>
-        <Button type="submit" className="h-11 min-w-[44px]" disabled={busy}>
+        <Button type="submit" size="touch" disabled={busy}>
           保存
         </Button>
       </div>
