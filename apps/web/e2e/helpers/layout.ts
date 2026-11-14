@@ -21,7 +21,7 @@ export async function signInAs(page: Page, role: Role): Promise<void> {
 }
 
 /** 写 localStorage['ws-theme']:之后每次导航都先带上它;已经打开的页面立即重载生效。 */
-export async function useTheme(page: Page, theme: 'light' | 'dark'): Promise<void> {
+export async function applyTheme(page: Page, theme: 'light' | 'dark'): Promise<void> {
   await page.addInitScript((value) => {
     try {
       localStorage.setItem('ws-theme', value)
