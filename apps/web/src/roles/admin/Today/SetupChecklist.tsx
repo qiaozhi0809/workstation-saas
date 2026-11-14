@@ -6,6 +6,7 @@ import { adminApi } from '@/shared/api/admin'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { Button } from '@/shared/components/ui/button'
+import { Card } from '@/shared/components/ui/card'
 import { cn } from '@/shared/lib/utils'
 import { useAuthStore } from '@/shared/stores/auth'
 import type { SetupKey } from '@/shared/types/admin'
@@ -22,7 +23,7 @@ const SETUP_LABELS: Record<SetupKey, string> = {
   ai: 'AI 服务',
 }
 
-const CARD = 'flex flex-col gap-3 rounded-lg border bg-card p-4'
+const CARD = 'flex flex-col gap-3 p-4'
 
 const canSee = (perms: readonly string[] | undefined) =>
   perms?.some((p) => p === 'org.manage' || p === 'settings.manage') ?? false
@@ -44,7 +45,7 @@ export function SetupChecklist() {
   // 加载中 / 失败也占着同一张卡的位置,数据到了下面的 KPI 行不会跳
   if (!q.data)
     return (
-      <section aria-label="开学准备" className={CARD}>
+      <Card role="region" aria-label="开学准备" className={CARD}>
         {q.isError ? (
           <ErrorState
             title="开学准备清单加载失败"
@@ -55,7 +56,7 @@ export function SetupChecklist() {
         ) : (
           <LoadingState label="开学准备清单加载中…" className="justify-start py-2" />
         )}
-      </section>
+      </Card>
     )
 
   const items = q.data
@@ -64,9 +65,9 @@ export function SetupChecklist() {
   const pct = items.length > 0 ? Math.round((done / items.length) * 100) : 0
 
   return (
-    <section aria-label="开学准备" className={CARD}>
+    <Card role="region" aria-label="开学准备" className={CARD}>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-base font-semibold">{allDone ? '开学准备已完成' : '开学准备'}</h2>
+        <h2 className="text-base font-medium">{allDone ? '开学准备已完成' : '开学准备'}</h2>
         {allDone ? (
           <Button
             type="button"
@@ -123,6 +124,6 @@ export function SetupChecklist() {
           ))}
         </ul>
       )}
-    </section>
+    </Card>
   )
 }

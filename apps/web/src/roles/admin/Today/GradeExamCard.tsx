@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { Card } from '@/shared/components/ui/card'
 import type { TodayView } from '@/shared/types/admin'
 
 /** 可见范围内最近一场联考的录分进度;没有联考时不渲染 */
@@ -7,11 +8,12 @@ export function GradeExamCard({ exam }: { exam: TodayView['grade_exam'] }) {
   const pct =
     exam.expected > 0 ? Math.min(100, Math.round((exam.entered / exam.expected) * 100)) : 0
   return (
-    <section
+    <Card
+      role="region"
       aria-label="年级联考"
-      className="flex flex-col gap-3 rounded-lg border bg-card p-4 md:only:col-span-2"
+      className="flex flex-col gap-3 p-4 md:only:col-span-2"
     >
-      <h2 className="text-base font-semibold">年级联考</h2>
+      <h2 className="text-base font-medium">年级联考</h2>
       <div className="flex flex-wrap items-baseline gap-x-2">
         <span className="font-medium">{exam.name}</span>
         <span className="text-sm text-muted-foreground">{exam.grade_name}</span>
@@ -35,6 +37,6 @@ export function GradeExamCard({ exam }: { exam: TodayView['grade_exam'] }) {
       >
         查看成绩汇总
       </Link>
-    </section>
+    </Card>
   )
 }

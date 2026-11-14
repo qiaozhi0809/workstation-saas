@@ -104,9 +104,9 @@ afterEach(() => {
 describe('今日关注页', () => {
   it('标题、日期星期与 KPI 计算', async () => {
     setup(view())
-    expect(
-      await screen.findByRole('heading', { level: 1, name: '今日关注 · 全校' }),
-    ).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: '今日关注' })).toBeInTheDocument()
+    // 范围放在标题旁的标签里,不再拼进标题
+    expect(screen.getByText('全校')).toBeInTheDocument()
     expect(screen.getByText('2026-10-14 星期三')).toBeInTheDocument()
     const kpi = (name: string) =>
       screen
@@ -166,9 +166,30 @@ describe('今日关注页', () => {
 
   it('年级组长标题显示年级', async () => {
     setup(view({ scope_label: '三年级' }))
-    expect(
-      await screen.findByRole('heading', { level: 1, name: '今日关注 · 三年级' }),
-    ).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: '今日关注' })).toBeInTheDocument()
+    expect(screen.getByText('三年级')).toBeInTheDocument()
+  })
+
+  it('统计卡数值用等宽数字、字重 500', async () => {
+    setup(view())
+    const card = (await screen.findByText('在读')).closest('[data-kpi]') as HTMLElement
+    expect(card).toHaveAttribute('data-slot', 'card')
+    const value = within(card).getByText('22')
+    expect(value.className).toContain('tabular-nums')
+    expect(value.className).toContain('font-medium')
+    expect(value.className).not.toContain('font-semibold')
+  })
+
+  it('缺勤行的学生名是 link 变体的按钮', async () => {
+    setup(view())
+    const btn = await screen.findByRole('button', { name: '王小一' })
+    expect(btn.className).toContain('underline-offset-4')
+  })
+
+  it('空状态跟随区块标题左对齐', async () => {
+    setup(view({ absentees: [] }))
+    const title = await screen.findByText('今天全员到齐')
+    expect(title.parentElement?.className).toContain('items-start')
   })
 
   it('加载失败显示错误并可重试', async () => {
@@ -186,9 +207,7 @@ describe('今日关注页', () => {
     expect(await screen.findByRole('alert')).toBeInTheDocument()
     vi.mocked(adminApi.today).mockResolvedValue(view())
     fireEvent.click(screen.getByRole('button', { name: '重试' }))
-    expect(
-      await screen.findByRole('heading', { level: 1, name: '今日关注 · 全校' }),
-    ).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: '今日关注' })).toBeInTheDocument()
   })
 
   describe('开学准备清单', () => {
@@ -238,7 +257,7 @@ describe('今日关注页', () => {
     it('年级组长(只有 school.view)看不到清单,也不发请求', async () => {
       login(['school.view'])
       setup(view())
-      await screen.findByRole('heading', { level: 1, name: '今日关注 · 全校' })
+      await screen.findByRole('heading', { level: 1, name: '今日关注' })
       expect(screen.queryByRole('region', { name: '开学准备' })).toBeNull()
       expect(adminApi.setupChecklist).not.toHaveBeenCalled()
     })
@@ -292,12 +311,12 @@ describe('今日关注页', () => {
 
     it('字段缺失、为 null 或空数组时两张卡都不显示', async () => {
       const first = setup(view())
-      await screen.findByRole('heading', { level: 1, name: '今日关注 · 全校' })
+      await screen.findByRole('heading', { level: 1, name: '今日关注' })
       expect(screen.queryByRole('region', { name: '年级联考' })).toBeNull()
       expect(screen.queryByRole('region', { name: '我发出的通知' })).toBeNull()
       first.unmount()
       setup(view({ grade_exam: null, my_notices: [] }))
-      await screen.findByRole('heading', { level: 1, name: '今日关注 · 全校' })
+      await screen.findByRole('heading', { level: 1, name: '今日关注' })
       expect(screen.queryByRole('region', { name: '年级联考' })).toBeNull()
       expect(screen.queryByRole('region', { name: '我发出的通知' })).toBeNull()
       expect(screen.queryByRole('link', { name: '去发通知' })).toBeNull()
