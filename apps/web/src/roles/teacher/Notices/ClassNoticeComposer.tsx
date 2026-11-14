@@ -6,12 +6,15 @@ import AckSettings from '@/shared/components/notices/AckSettings'
 import { ackSpecError, normalizeAck } from '@/shared/components/notices/ackSpec'
 import { toast } from '@/shared/components/Toast'
 import { Button } from '@/shared/components/ui/button'
+import { Card } from '@/shared/components/ui/card'
+import { Field, useFormErrors } from '@/shared/components/ui/field'
 import { Input } from '@/shared/components/ui/input'
-import { Label } from '@/shared/components/ui/label'
 import { Textarea } from '@/shared/components/ui/textarea'
 import type { AckSpec, NoticeSent } from '@/shared/types/admin'
 
 /** 班级公告编写区。AckSettings 只在首次渲染取 props,发送成功后由上层换 key 重置 */
+const FIELD_ORDER = ['title', 'content'] as const
+
 export default function ClassNoticeComposer({
   classId,
   className,
@@ -27,6 +30,7 @@ export default function ClassNoticeComposer({
   const [ack, setAck] = useState<AckSpec>({ kind: 'none' })
   const [deadline, setDeadline] = useState<string | null>(null)
   const [error, setError] = useState('')
+  const { errors, report, clear, fieldRef } = useFormErrors(FIELD_ORDER)
 
   const send = useMutation({
     mutationFn: () => {
@@ -49,6 +53,11 @@ export default function ClassNoticeComposer({
 
   const submit = () => {
     if (send.isPending) return
+    // 空标题 / 空正文:就地报错并聚焦第一个出错的字段,不禁用发送按钮
+    const missing: { title?: string; content?: string } = {}
+    if (title.trim() === '') missing.title = '请填写标题'
+    if (content.trim() === '') missing.content = '请填写正文'
+    if (!report(missing)) return
     const bad = ackSpecError(ack, deadline)
     if (bad) {
       setError(bad)
@@ -59,47 +68,51 @@ export default function ClassNoticeComposer({
     send.mutate(undefined, { onSuccess: onSent })
   }
 
-  const canSend = title.trim() !== '' && content.trim() !== ''
-
   return (
-    <section aria-label="写公告" className="flex flex-col gap-4 rounded-lg border bg-card p-4">
-      <h2 className="text-base font-semibold">写公告</h2>
-      <p className="text-sm text-muted-foreground">{`${className}全体家长`}</p>
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="class-notice-title">标题</Label>
-        <Input
-          id="class-notice-title"
-          maxLength={50}
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
+    <Card className="p-4">
+      <section aria-label="写公告" className="flex flex-col gap-4">
+        <h2 className="text-base font-medium">写公告</h2>
+        <p className="text-sm text-muted-foreground">{`${className}全体家长`}</p>
+        <Field label="标题" error={errors.title}>
+          <Input
+            ref={fieldRef('title')}
+            maxLength={50}
+            value={title}
+            onChange={(e) => {
+              setTitle(e.target.value)
+              clear('title')
+            }}
+          />
+        </Field>
+        <Field label="正文" error={errors.content}>
+          <Textarea
+            ref={fieldRef('content')}
+            rows={6}
+            maxLength={2000}
+            value={content}
+            onChange={(e) => {
+              setContent(e.target.value)
+              clear('content')
+            }}
+          />
+        </Field>
+        <AckSettings
+          value={ack}
+          onChange={setAck}
+          deadline={deadline}
+          onDeadlineChange={setDeadline}
         />
-      </div>
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="class-notice-content">正文</Label>
-        <Textarea
-          id="class-notice-content"
-          rows={6}
-          maxLength={2000}
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-        />
-      </div>
-      <AckSettings
-        value={ack}
-        onChange={setAck}
-        deadline={deadline}
-        onDeadlineChange={setDeadline}
-      />
-      {error && (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      )}
-      <div className="flex items-center justify-end gap-3">
-        <Button type="button" disabled={!canSend || send.isPending} onClick={submit}>
-          发送
-        </Button>
-      </div>
-    </section>
+        {error && (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        )}
+        <div className="flex items-center justify-end gap-3">
+          <Button type="button" disabled={send.isPending} onClick={submit}>
+            发送
+          </Button>
+        </div>
+      </section>
+    </Card>
   )
 }

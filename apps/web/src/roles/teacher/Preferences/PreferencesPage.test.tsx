@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, expect, it, vi } from 'vitest'
@@ -139,4 +139,31 @@ it('groups settings under labelled fieldsets', async () => {
   renderPage()
   for (const name of ['老师形象', '教室', '点评理由'])
     expect(await screen.findByRole('group', { name })).toBeInTheDocument()
+})
+
+it('has a single h1 in a narrow page container', async () => {
+  const { container } = renderPage()
+  const h1 = await screen.findByRole('heading', { level: 1, name: '我的偏好' })
+  expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
+  expect(container.querySelector('[data-page-container]')).toHaveAttribute('data-width', 'narrow')
+  expect(h1.closest('[data-page-header]')).not.toBeNull()
+})
+
+it('uses a switch for the idle animation', async () => {
+  renderPage()
+  const idle = await screen.findByRole('switch', { name: '空闲小动画' })
+  expect(idle).toBeChecked()
+  fireEvent.click(idle)
+  expect(idle).not.toBeChecked()
+})
+
+it('puts save in the footer of the last card, right aligned', async () => {
+  renderPage()
+  const save = await screen.findByRole('button', { name: '保存' })
+  const footer = save.parentElement as HTMLElement
+  expect(footer).toHaveClass('justify-end')
+  const card = footer.closest('[data-slot="card"]') as HTMLElement
+  expect(card).not.toBeNull()
+  // 最后一张卡是点评理由
+  expect(within(card).getByRole('group', { name: '点评理由' })).toBeInTheDocument()
 })

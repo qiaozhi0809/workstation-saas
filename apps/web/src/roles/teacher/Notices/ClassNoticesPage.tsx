@@ -12,6 +12,8 @@ import AckStatsDialog from '@/shared/components/notices/AckStatsDialog'
 import { toast } from '@/shared/components/Toast'
 import { Badge } from '@/shared/components/ui/badge'
 import { Button } from '@/shared/components/ui/button'
+import { Card } from '@/shared/components/ui/card'
+import { PageContainer, PageHeader } from '@/shared/components/ui/page'
 import { formatInTz } from '@/shared/lib/date'
 import { localTz } from '@/shared/lib/time'
 import { useTeacherStore } from '@/shared/stores/teacher'
@@ -86,48 +88,50 @@ function SentList({ classId }: { classId: string }) {
   )
 
   return (
-    <section aria-label="我发出的" className="flex flex-col gap-3 rounded-lg border bg-card p-4">
-      <h2 className="text-base font-semibold">我发出的</h2>
-      {list.isPending ? (
-        <LoadingState />
-      ) : list.isError ? (
-        <ErrorState
-          title={list.error instanceof ApiError ? list.error.message : '加载失败,请重试'}
-          onRetry={() => void list.refetch()}
-          retrying={list.isFetching}
-        />
-      ) : list.data.items.length === 0 ? (
-        <EmptyState title="还没有发出过通知" />
-      ) : (
-        <ul className="flex flex-col divide-y">{list.data.items.map(row)}</ul>
-      )}
-      {total > PAGE_SIZE && (
-        <div className="flex items-center justify-end gap-2 text-sm">
-          <span className="text-muted-foreground">{`共 ${total} 条,第 ${page} / ${pages} 页`}</span>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={page <= 1}
-            onClick={() => setPage(page - 1)}
-          >
-            上一页
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={page >= pages}
-            onClick={() => setPage(page + 1)}
-          >
-            下一页
-          </Button>
-        </div>
-      )}
-      {statsId && (
-        <AckStatsDialog key={statsId} noticeId={statsId} onClose={() => setStatsId(null)} />
-      )}
-    </section>
+    <Card className="p-4">
+      <section aria-label="我发出的" className="flex flex-col gap-3">
+        <h2 className="text-base font-medium">我发出的</h2>
+        {list.isPending ? (
+          <LoadingState variant="table" rows={3} />
+        ) : list.isError ? (
+          <ErrorState
+            title={list.error instanceof ApiError ? list.error.message : '加载失败,请重试'}
+            onRetry={() => void list.refetch()}
+            retrying={list.isFetching}
+          />
+        ) : list.data.items.length === 0 ? (
+          <EmptyState title="还没有发出过通知" />
+        ) : (
+          <ul className="flex flex-col divide-y divide-border/60">{list.data.items.map(row)}</ul>
+        )}
+        {total > PAGE_SIZE && (
+          <div className="flex items-center justify-end gap-2 text-sm">
+            <span className="text-muted-foreground">{`共 ${total} 条,第 ${page} / ${pages} 页`}</span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={page <= 1}
+              onClick={() => setPage(page - 1)}
+            >
+              上一页
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={page >= pages}
+              onClick={() => setPage(page + 1)}
+            >
+              下一页
+            </Button>
+          </div>
+        )}
+        {statsId && (
+          <AckStatsDialog key={statsId} noticeId={statsId} onClose={() => setStatsId(null)} />
+        )}
+      </section>
+    </Card>
   )
 }
 
@@ -150,8 +154,8 @@ export default function ClassNoticesPage() {
   const [composerKey, setComposerKey] = useState(0)
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-4 p-4 md:p-6">
-      <h1 className="text-xl font-semibold">班级公告</h1>
+    <PageContainer>
+      <PageHeader title="班级公告" />
       {classes.isError && !classes.data ? (
         <ErrorState
           title="班级加载失败"
@@ -165,9 +169,9 @@ export default function ClassNoticesPage() {
           title="这个班不在你的班级列表里"
           className="justify-center p-6"
           action={
-            <Link to="/teacher/classroom" className="text-sm text-primary underline">
-              ← 返回教室
-            </Link>
+            <Button asChild variant="link" size="sm" className="px-0">
+              <Link to="/teacher/classroom">← 返回教室</Link>
+            </Button>
           }
         />
       ) : !cls || summary.isPending ? (
@@ -181,7 +185,7 @@ export default function ClassNoticesPage() {
       ) : !summary.data?.my_perms.includes('class.notice') ? (
         <EmptyState title="只有本班班主任可以发班级公告" className="justify-center p-6" />
       ) : (
-        <div className="grid items-start gap-4 md:grid-cols-2">
+        <div className="grid items-start gap-6 md:grid-cols-2">
           <ClassNoticeComposer
             key={`${cls.id}-${composerKey}`}
             classId={cls.id}
@@ -191,6 +195,6 @@ export default function ClassNoticesPage() {
           <SentList key={cls.id} classId={cls.id} />
         </div>
       )}
-    </div>
+    </PageContainer>
   )
 }
