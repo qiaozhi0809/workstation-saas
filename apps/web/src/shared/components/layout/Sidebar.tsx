@@ -131,8 +131,8 @@ function SidebarLink({ item, collapsed }: { item: SidebarItem; collapsed: boolea
   const { to, label, icon: Icon } = item
   return (
     <RailTip label={label} disabled={!collapsed}>
-      // className 必须是字符串:RailTip 的 Tooltip.Trigger asChild 经 Slot 合并 props,函数式 className 会被拼成源码字符串。
-      // 当前页由 NavLink 写的 aria-current="page" 驱动样式
+      // className 必须是字符串:RailTip 的 Tooltip.Trigger asChild 经 Slot 合并 props,函数式
+      className 会被拼成源码字符串。 // 当前页由 NavLink 写的 aria-current="page" 驱动样式
       <NavLink
         to={to}
         className={cn(

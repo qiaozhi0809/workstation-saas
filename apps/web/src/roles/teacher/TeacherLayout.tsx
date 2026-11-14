@@ -192,18 +192,14 @@ function ClassSwitcher({
   const week = weekNo !== undefined && (
     <span className="text-xs text-muted-foreground">{weekNo} 周</span>
   )
-  const badge =
-    'bg-accent text-sm font-medium'
+  const badge = 'bg-accent text-sm font-medium'
   return (
     <div className="flex flex-col items-center gap-1">
       {error}
       {classes.length === 1 && (
         <span
           title={classes[0].name}
-          className={cn(
-            badge,
-            'flex h-10 w-10 items-center justify-center rounded-md',
-          )}
+          className={cn(badge, 'flex h-10 w-10 items-center justify-center rounded-md')}
         >
           {initial}
         </span>
