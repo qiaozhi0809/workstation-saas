@@ -72,4 +72,13 @@ describe('SegmentedTabs', () => {
     expect(tabs[0]).toHaveClass('border-primary')
     expect(tabs[0]).not.toHaveClass('border-transparent')
   })
+
+  it('pill variant is 40 high with 12 radius, 32 when small', () => {
+    const { rerender } = render(
+      <SegmentedTabs label="x" value="a" onChange={() => {}} items={items} />,
+    )
+    expect(screen.getByRole('tablist')).toHaveClass('h-10', 'rounded-md')
+    rerender(<SegmentedTabs label="x" size="sm" value="a" onChange={() => {}} items={items} />)
+    expect(screen.getByRole('tablist')).toHaveClass('h-8')
+  })
 })

@@ -84,3 +84,11 @@ for (const theme of ['light', 'dark'] as const) {
     })
   })
 }
+
+describe('dark surfaces', () => {
+  const t = parseTheme(css, 'dark')
+  // 去边框以后,卡片靠底色和轮廓阴影与页面区分(计划 Review Focus 1)
+  it('dark card stands off the page', () => {
+    expect(contrast(t.card, t.background)).toBeGreaterThanOrEqual(1.15)
+  })
+})

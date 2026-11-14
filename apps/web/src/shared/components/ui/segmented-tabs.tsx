@@ -9,6 +9,7 @@ interface SegmentedTabsProps<T extends string> {
   value: T
   onChange(value: T): void
   variant?: 'pill' | 'underline'
+  size?: 'md' | 'sm'
   className?: string
 }
 
@@ -18,6 +19,7 @@ export function SegmentedTabs<T extends string>({
   value,
   onChange,
   variant = 'pill',
+  size = 'md',
   className,
 }: SegmentedTabsProps<T>) {
   const hasSelection = items.some((item) => item.value === value)
@@ -53,7 +55,9 @@ export function SegmentedTabs<T extends string>({
       role="tablist"
       aria-label={label}
       className={cn(
-        variant === 'pill' ? 'inline-flex rounded-lg bg-muted p-1' : 'flex gap-4 border-b',
+        variant === 'pill'
+          ? cn('inline-flex rounded-md bg-muted p-1', size === 'sm' ? 'h-8' : 'h-10')
+          : 'flex gap-4 border-b',
         className,
       )}
     >
@@ -76,7 +80,7 @@ export function SegmentedTabs<T extends string>({
             className={cn(
               'text-sm text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
               variant === 'pill'
-                ? cn('rounded-md px-3 py-1', selected && 'bg-background text-foreground shadow-sm')
+                ? cn('rounded-md px-3', selected && 'bg-background text-foreground shadow-sm')
                 : cn(
                     '-mb-px border-b-2 border-transparent px-1 pb-2',
                     selected && 'border-primary font-medium text-foreground',

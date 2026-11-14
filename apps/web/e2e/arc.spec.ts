@@ -47,6 +47,33 @@ test('dark mode reaches arc components', async ({ page }) => {
   await page.evaluate(() => localStorage.removeItem('ws-theme'))
 })
 
+test('dark card on /dev/ui is visible', async ({ page }) => {
+  const luminanceOf = (selector: string) =>
+    page
+      .locator(selector)
+      .first()
+      .evaluate((el) => {
+        const ctx = document.createElement('canvas').getContext('2d')!
+        ctx.fillStyle = getComputedStyle(el).backgroundColor
+        ctx.fillRect(0, 0, 1, 1)
+        const [r, g, b] = Array.from(ctx.getImageData(0, 0, 1, 1).data).map((v) => v / 255)
+        const lin = (c: number) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
+        return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+      })
+
+  await page.goto('/dev/ui')
+  await page.evaluate(() => localStorage.setItem('ws-theme', 'dark'))
+  await page.reload()
+  await expect(page.locator('html')).toHaveClass(/dark/)
+  // UiGallery 归 C 段,没有 card-sample 钩子;用 Card 的 data-slot 定位陈列页里的卡片
+  await expect(page.locator('[data-slot="card"]').first()).toBeVisible()
+  const card = await luminanceOf('[data-slot="card"]')
+  const body = await luminanceOf('body')
+  const [hi, lo] = [card, body].sort((a, b) => b - a)
+  expect((hi + 0.05) / (lo + 0.05)).toBeGreaterThanOrEqual(1.15)
+  await page.evaluate(() => localStorage.removeItem('ws-theme'))
+})
+
 test('keyboard focus on admin nav menu items is visible', async ({ page }) => {
   await signIn(page, 'principal01')
   await expect(page).toHaveURL(/\/admin\/today/)

@@ -113,7 +113,7 @@ it('shows an empty state, not a spinner, when there is no academic year at all (
   api.years.mockResolvedValue([])
   renderPage()
   const empty = await screen.findByText('还没有学年记录')
-  const card = empty.closest('.rounded-xl') as HTMLElement
+  const card = empty.closest('[data-slot="card"]') as HTMLElement
   expect(within(card).getByText('学年')).toBeInTheDocument()
   expect(within(card).queryByRole('status')).toBeNull()
   expect(screen.queryByLabelText('学年名称')).toBeNull()
@@ -231,7 +231,7 @@ it('puts the add button next to the role name and shows the end-term button as a
   expect(row).toContainElement(screen.getByRole('button', { name: '添加信息中心' }))
   expect(row.className).not.toMatch(/justify-between/)
   // 卸任是带边框的按钮样式,不是裸文字
-  expect(screen.getByRole('button', { name: '卸任 周信息' }).className).toMatch(/border/)
+  expect(screen.getByRole('button', { name: '卸任 周信息' }).className).toMatch(/secondary/)
 })
 
 it('starts both columns of 年级与班级 with the same toolbar row (L399)', async () => {
