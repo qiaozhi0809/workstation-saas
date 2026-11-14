@@ -22,6 +22,13 @@ describe('PageHeader', () => {
     expect(screen.getByText('期中')).toBeInTheDocument()
   })
 
+  it('header has no own bottom margin and description accepts block content', () => {
+    render(<PageHeader title="学生管理" description={<div>块级说明</div>} />)
+    const header = screen.getByRole('heading', { level: 1 }).closest('[data-page-header]')
+    expect(header?.className).not.toContain('mb-')
+    expect(screen.getByText('块级说明').closest('p')).toBeNull()
+  })
+
   it('title is 24px on phones and 30px from 640 wide, weight 500', () => {
     render(<PageHeader title="学生管理" />)
     const h1 = screen.getByRole('heading', { level: 1 })
@@ -72,6 +79,19 @@ describe('PageContainer', () => {
       </PageContainer>,
     )
     expect(container.querySelector('[data-page-container]')).toHaveClass('px-4', 'lg:px-8', 'py-6')
+  })
+
+  it('children are spaced 24 apart by the container', () => {
+    const { container } = render(
+      <PageContainer>
+        <p>正文</p>
+      </PageContainer>,
+    )
+    expect(container.querySelector('[data-page-container]')).toHaveClass(
+      'flex',
+      'flex-col',
+      'gap-6',
+    )
   })
 
   it('test hook', () => {

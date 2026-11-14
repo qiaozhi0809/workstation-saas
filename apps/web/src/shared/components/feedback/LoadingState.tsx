@@ -21,7 +21,7 @@ export function LoadingState({
   className?: string
 }) {
   const reduced = useReducedMotion()
-  const bar = cn('rounded-md bg-muted', !reduced && 'animate-pulse')
+  const bar = cn('bg-muted', !reduced && 'animate-pulse')
 
   if (variant === 'inline') {
     return (
@@ -46,6 +46,7 @@ export function LoadingState({
     return (
       <div
         role="status"
+        aria-busy="true"
         aria-label={label}
         className={cn('grid gap-6 sm:grid-cols-2 lg:grid-cols-3', className)}
       >
@@ -64,11 +65,12 @@ export function LoadingState({
   return (
     <div
       role="status"
+      aria-busy="true"
       aria-label={label}
       className={cn('rounded-lg bg-card shadow-surface', className)}
     >
       <div aria-hidden="true" className="flex h-10 items-center px-3">
-        <div className={cn('h-3 w-24', bar)} />
+        <div className={cn('h-3 w-24 rounded-md', bar)} />
       </div>
       {Array.from({ length: rows }, (_, i) => (
         <div
@@ -77,9 +79,9 @@ export function LoadingState({
           aria-hidden="true"
           className="flex h-11 items-center gap-6 px-3"
         >
-          <div className={cn('h-3 w-24', bar)} />
-          <div className={cn('h-3 w-40', bar)} />
-          <div className={cn('h-3 w-16', bar)} />
+          <div className={cn('h-3 w-24 rounded-md', bar)} />
+          <div className={cn('h-3 w-40 rounded-md', bar)} />
+          <div className={cn('h-3 w-16 rounded-md', bar)} />
         </div>
       ))}
     </div>

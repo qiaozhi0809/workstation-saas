@@ -24,13 +24,18 @@ describe('LoadingState variants', () => {
   it('table skeleton keeps row slots', () => {
     const { container } = render(<LoadingState variant="table" rows={5} label="读取成绩" />)
     expect(container.querySelectorAll('[data-skeleton-row]')).toHaveLength(5)
-    expect(screen.getByRole('status', { name: '读取成绩' })).toBeInTheDocument()
+    expect(screen.getByRole('status', { name: '读取成绩' })).toHaveAttribute('aria-busy', 'true')
   })
 
   it('cards skeleton renders three blocks', () => {
     const { container } = render(<LoadingState variant="cards" />)
-    expect(container.querySelectorAll('[data-skeleton-card]')).toHaveLength(3)
-    expect(screen.getByRole('status')).toBeInTheDocument()
+    const cards = container.querySelectorAll('[data-skeleton-card]')
+    expect(cards).toHaveLength(3)
+    for (const card of cards) {
+      expect(card).toHaveClass('rounded-lg')
+      expect(card.className).not.toContain('rounded-md')
+    }
+    expect(screen.getByRole('status')).toHaveAttribute('aria-busy', 'true')
   })
 
   it('form skeleton uses arc skeleton', () => {

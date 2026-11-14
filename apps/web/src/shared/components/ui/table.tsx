@@ -10,12 +10,15 @@ export interface TableProps extends React.TableHTMLAttributes<HTMLTableElement> 
   /** 设了就包一层横向滚动容器,table 的 min-width 用这个值(px) */
   minWidth?: number
   caption?: string
+  /** 落在外层容器上(className 落在 <table> 上) */
+  containerClassName?: string
 }
 
 export function Table({
   density = 'default',
   minWidth,
   caption,
+  containerClassName,
   className,
   style,
   children,
@@ -33,7 +36,10 @@ export function Table({
   )
   return (
     <DensityContext.Provider value={density}>
-      <div data-slot="table-container" className="rounded-lg bg-card shadow-surface">
+      <div
+        data-slot="table-container"
+        className={cn('overflow-x-auto rounded-lg bg-card shadow-surface', containerClassName)}
+      >
         {minWidth ? (
           <div data-table-scroll className="overflow-x-auto rounded-lg">
             {table}

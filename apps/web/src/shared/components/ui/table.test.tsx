@@ -70,6 +70,12 @@ describe('Table', () => {
     expect((screen.getByRole('table') as HTMLElement).style.minWidth).toBe('896px')
   })
 
+  it('container always scrolls horizontally and takes containerClassName', () => {
+    const { container } = render(<Sample containerClassName="my-box" />)
+    expect(container.firstElementChild).toHaveClass('overflow-x-auto', 'my-box')
+    expect(screen.getByRole('table')).not.toHaveClass('my-box')
+  })
+
   it('has no scroller without minWidth', () => {
     const { container } = render(<Sample />)
     expect(container.querySelector('[data-table-scroll]')).toBeNull()

@@ -134,6 +134,7 @@ export async function expectBaselineLayout(
         return (hi + 0.05) / (lo + 0.05)
       })
     })
+    expect(ratios.length, '深色下应有卡片可量').toBeGreaterThan(0)
     for (const ratio of ratios) expect(ratio).toBeGreaterThanOrEqual(1.15)
   }
 }

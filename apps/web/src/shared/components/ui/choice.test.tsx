@@ -48,6 +48,14 @@ describe('Checkbox', () => {
     expect(box).toBeChecked()
   })
 
+  it('indeterminate sets the DOM property and keeps the outer ref', () => {
+    const ref = { current: null as HTMLInputElement | null }
+    render(<Checkbox label="全选" indeterminate ref={ref} />)
+    const box = screen.getByRole('checkbox', { name: '全选' }) as HTMLInputElement
+    expect(box.indeterminate).toBe(true)
+    expect(ref.current).toBe(box)
+  })
+
   it('hit area is at least 32', () => {
     render(<Checkbox label="全选" />)
     expect(screen.getByRole('checkbox').closest('label')).toHaveClass('min-h-8')

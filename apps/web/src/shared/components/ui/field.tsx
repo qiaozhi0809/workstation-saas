@@ -16,6 +16,7 @@ type ControlProps = {
   id?: string
   'aria-describedby'?: string
   'aria-invalid'?: boolean
+  'aria-required'?: boolean
 }
 
 /** label 12 → 控件 4 → 说明 / 错误。错误 role="alert"。必填标记只用样式画,不进 label 文本。 */
@@ -40,6 +41,7 @@ export function Field({ label, description, error, required, className, children
         id,
         'aria-describedby': describedBy,
         ...(error ? { 'aria-invalid': true } : {}),
+        ...(required ? { 'aria-required': true } : {}),
       })}
       {description && (
         <p id={descId} className="text-xs text-muted-foreground">
@@ -67,10 +69,10 @@ export function useFormErrors<K extends string>(order: readonly K[]) {
   const report = React.useCallback(
     (next: Partial<Record<K, string>>) => {
       setErrors(next)
+      const has = Object.values(next).some(Boolean)
       const first = order.find((key) => next[key])
-      if (first === undefined) return true
-      elements.current.get(first)?.focus()
-      return false
+      if (first !== undefined) elements.current.get(first)?.focus()
+      return !has
     },
     [order],
   )

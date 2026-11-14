@@ -32,6 +32,17 @@ describe('Field', () => {
     expect(screen.getByLabelText('标题')).not.toHaveAttribute('aria-invalid')
   })
 
+  it('required sets aria-required, not native required', () => {
+    render(
+      <Field label="标题" required>
+        <Input />
+      </Field>,
+    )
+    const input = screen.getByLabelText('标题')
+    expect(input).toHaveAttribute('aria-required', 'true')
+    expect(input).not.toBeRequired()
+  })
+
   it('keeps an explicit id on the control', () => {
     render(
       <Field label="标题">
@@ -78,6 +89,15 @@ describe('useFormErrors', () => {
     })
     expect(ok).toBe(true)
     expect(result.current.errors).toEqual({})
+  })
+
+  it('report with a key outside order still returns false', () => {
+    const { result } = renderHook(() => useFormErrors(['a']))
+    let ok = true
+    act(() => {
+      ok = result.current.report({ zzz: '错' } as never)
+    })
+    expect(ok).toBe(false)
   })
 
   it('clear removes one error', () => {

@@ -65,7 +65,7 @@ function FieldDemo() {
 export default function UiGallery() {
   return (
     <main>
-      <PageContainer className="flex flex-col gap-6">
+      <PageContainer>
         <PageHeader
           title="界面件陈列"
           description="Arc 件、项目适配层与骨架件并排陈列,浅色与深色都在这里看。"
@@ -260,6 +260,17 @@ export default function UiGallery() {
           </div>
         </section>
       </PageContainer>
+      <div data-testid="narrow-sample">
+        <PageContainer width="narrow">
+          <div data-page-header data-testid="narrow-title" className="text-lg font-medium">
+            窄页样例标题
+          </div>
+          <p data-testid="narrow-body" className="text-sm text-muted-foreground">
+            窄页的正文最大宽 768,标题仍然左对齐到默认页的左缘。这一段文字故意写得长一些,
+            用来在宽屏下撑满正文列,方便量宽度。
+          </p>
+        </PageContainer>
+      </div>
     </main>
   )
 }

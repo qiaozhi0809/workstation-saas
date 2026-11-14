@@ -24,3 +24,14 @@ test('caller className wins over arc styles', async ({ page }) => {
   expect(await height('btn-override-minh')).toBeGreaterThanOrEqual(44)
   expect(await height('btn-override-h')).toBeGreaterThanOrEqual(44)
 })
+
+test('narrow page body is capped at 768 and the title stays on the left edge', async ({ page }) => {
+  await page.goto('/dev/ui')
+  const h1 = await page.getByRole('heading', { level: 1 }).boundingBox()
+  const title = await page.getByTestId('narrow-title').boundingBox()
+  const body = await page.getByTestId('narrow-body').boundingBox()
+  expect(h1 && title && body).toBeTruthy()
+  expect(Math.abs(title!.x - h1!.x)).toBeLessThanOrEqual(1)
+  expect(body!.width).toBeGreaterThan(0)
+  expect(body!.width).toBeLessThanOrEqual(768)
+})
