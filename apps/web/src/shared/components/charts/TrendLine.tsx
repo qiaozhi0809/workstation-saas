@@ -48,7 +48,7 @@ export function TrendLine({
   format?: (v: number) => string
   endLabel?: boolean
   yAxisWidth?: number
-  /** 主系列有效点数少于它时不画图,改渲染 summary(默认「数据不足」);默认 1,行为同以前 */
+  /** 主系列有效点数少于它时不画图,改渲染 summary(默认「数据不足」);默认 1:至少有一个有效点时行为不变,零个有效点时不再画空坐标图,改显示摘要 */
   minPoints?: number
   summary?: (points: ChartPoint[]) => ReactNode
 }) {
