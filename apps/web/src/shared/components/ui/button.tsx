@@ -94,7 +94,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
           variant={ARC_VARIANT[variant]}
           size={ARC_SIZE[size as keyof typeof ARC_SIZE]}
           loading={loading}
-          className={className}
+          className={cn('ws-btn', className)}
           type={type ?? 'button'}
           onClick={onClick}
           {...props}
