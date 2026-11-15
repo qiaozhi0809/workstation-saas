@@ -73,12 +73,17 @@ describe('SegmentedTabs', () => {
     expect(tabs[0]).not.toHaveClass('border-transparent')
   })
 
-  it('pill variant is 40 high with 12 radius, 32 when small', () => {
-    const { rerender } = render(
-      <SegmentedTabs label="x" value="a" onChange={() => {}} items={items} />,
-    )
+  it('pill variant is 40 high with 12 radius and its tabs are 32 high', () => {
+    render(<SegmentedTabs label="x" value="a" onChange={() => {}} items={items} />)
     expect(screen.getByRole('tablist')).toHaveClass('h-10', 'rounded-md')
-    rerender(<SegmentedTabs label="x" size="sm" value="a" onChange={() => {}} items={items} />)
-    expect(screen.getByRole('tablist')).toHaveClass('h-8')
+    // 容器 40 - 内边距 8 = 按钮 32,落在允许的控件高度里;不再有 24 高的 sm
+    expect(screen.getByRole('tablist')).toHaveClass('p-1')
+  })
+
+  it('underline tabs are 32 high', () => {
+    render(
+      <SegmentedTabs label="x" variant="underline" value="a" onChange={() => {}} items={items} />,
+    )
+    for (const tab of screen.getAllByRole('tab')) expect(tab).toHaveClass('h-8')
   })
 })
