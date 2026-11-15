@@ -74,6 +74,10 @@ describe('ErrorState', () => {
     render(<ErrorState title="出错了" onRetry={() => {}} retrying />)
     expect(screen.getByRole('button', { name: '重试' })).toBeDisabled()
   })
+  it('retry button has the touch-target class so touch screens get 44', () => {
+    render(<ErrorState title="出错了" onRetry={() => {}} />)
+    expect(screen.getByRole('button', { name: '重试' })).toHaveClass('touch-target')
+  })
   it('has no button without onRetry', () => {
     render(<ErrorState title="出错了" />)
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
