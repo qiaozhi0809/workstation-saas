@@ -21,16 +21,16 @@ export default function StatTip({ text, tip }: { text: string; tip: string }) {
     >
       <Button
         type="button"
-        variant="ghost"
+        variant="link"
         size="sm"
         aria-describedby={id}
         onClick={() => setPinned((p) => !p)}
         onKeyDown={(e) => {
           if (e.key === 'Escape') setPinned(false)
         }}
-        className="peer -mr-2 px-2 font-normal tabular-nums"
+        className="peer -mr-2 px-2 font-normal tabular-nums text-foreground hover:no-underline"
       >
-        <>{text}</>
+        {text}
       </Button>
       <span
         id={id}

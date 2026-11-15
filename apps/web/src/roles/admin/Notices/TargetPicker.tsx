@@ -81,7 +81,7 @@ function PeoplePicker({
                 </span>
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="link"
                   size="sm"
                   disabled={on || full}
                   aria-label={`${on ? '已选' : '添加'} ${p.name}`}

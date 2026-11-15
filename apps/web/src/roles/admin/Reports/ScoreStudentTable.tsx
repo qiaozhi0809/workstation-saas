@@ -69,11 +69,11 @@ export default function ScoreStudentTable({
       >
         <Button
           type="button"
-          variant="ghost"
+          variant="link"
           size="sm"
           onClick={() => toggle(key)}
           className={cn(
-            'gap-1 px-2 font-medium text-muted-foreground',
+            'gap-1 px-2 font-medium text-muted-foreground hover:no-underline',
             numeric ? '-mr-2' : '-ml-2',
           )}
         >

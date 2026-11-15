@@ -98,7 +98,7 @@ function SentList({ page, setPage }: { page: number; setPage(p: number): void })
               ) : (
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant="link"
                   size="sm"
                   aria-label={`撤回 ${n.title}`}
                   onClick={() => {

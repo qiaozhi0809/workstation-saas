@@ -116,11 +116,11 @@ export default function AttendanceClassTable({
                 <Td>
                   <Button
                     type="button"
-                    variant="ghost"
+                    variant="link"
                     size="sm"
                     aria-expanded={expanded}
                     onClick={() => setOpen(expanded ? null : c.class_id)}
-                    className="-ml-3 gap-1 font-medium"
+                    className="-ml-3 gap-1 font-medium text-foreground hover:no-underline"
                   >
                     <Icon
                       className="h-4 w-4 shrink-0 text-muted-foreground print:hidden"
