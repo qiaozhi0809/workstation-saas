@@ -96,7 +96,7 @@ export default function LoginPage() {
     return <Navigate to={homeFor(signedInUser, lastContext)} replace />
 
   return (
-    <div className="relative grid min-h-full place-items-center bg-muted/40 px-4 pb-8 pt-16">
+    <div className="relative grid min-h-full place-items-center bg-muted/40 px-4 py-16">
       <ThemeToggle className="absolute right-4 top-4" />
       <Card className="w-full max-w-sm">
         {mfaToken ? (
@@ -110,7 +110,7 @@ export default function LoginPage() {
           <form onSubmit={onSubmit}>
             <CardHeader>
               <GraduationCap className="h-8 w-8 text-primary" aria-hidden="true" />
-              <h1 className="text-xl font-semibold tracking-tight">班级工作台</h1>
+              <h1 className="text-xl font-medium">班级工作台</h1>
               <CardDescription>使用学校分配的账号登录</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
