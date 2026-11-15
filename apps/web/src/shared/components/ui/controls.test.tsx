@@ -35,3 +35,15 @@ it('Textarea has 12 radius', () => {
   render(<Textarea aria-label="t" />)
   expect(screen.getByLabelText('t')).toHaveClass('rounded-md')
 })
+
+it('NativeSelect and Input share the same transparent background (dark mode matches)', () => {
+  render(
+    <>
+      <Input aria-label="i" />
+      <NativeSelect aria-label="s" />
+    </>,
+  )
+  expect(screen.getByLabelText('i')).toHaveClass('bg-transparent')
+  expect(screen.getByRole('combobox')).toHaveClass('bg-transparent')
+  expect(screen.getByRole('combobox')).not.toHaveClass('bg-background')
+})
