@@ -160,7 +160,7 @@ Step N+(1-k): Commit          → git add && git commit
 | TypeScript | 5 |
 | Vite | 5 |
 | Tailwind | 3 |
-| Arc(UI 组件库) | vendored 在 `apps/web/src/shared/components/arc/`,只经 `npx shadcn@latest add` 写入、不手改;页面只经 `shared/components/ui/*` 适配层使用;`ARC_PRO_TOKEN` 只放 `apps/web/.env.local`,不进仓库。界面约定见 [`docs/ui-overlay.md`](docs/ui-overlay.md) |
+| Arc(UI 组件库) | vendored 在 `apps/web/src/shared/components/arc/`,Arc 的 registry 组件(`@uiarc/…`、`@uiarc-pro/…`)只经 `npx shadcn@latest add` 写入、不手改(项目自带的 shadcn 组件仍用 `npx shadcn@2.3.0 add`,那是最后支持 Tailwind 3 的版本,见 `apps/web/README.md`);页面只经 `shared/components/ui/*` 适配层使用;`ARC_PRO_TOKEN` 只放 `apps/web/.env.local`,不进仓库。界面约定见 [`docs/ui-overlay.md`](docs/ui-overlay.md) |
 | shadcn CLI | 2.3.0(最后支持 Tailwind 3) |
 | tailwind-merge | 2.x(3.x 只支持 Tailwind 4) |
 | Docker Compose | v2 |
@@ -175,7 +175,7 @@ Step N+(1-k): Commit          → git add && git commit
 |---|---|---|
 | 后端单元/集成 | pytest + testcontainers(真 Postgres / 真 Redis) | `cd server && uv run pytest` |
 | 前端单元 | Vitest + Testing Library(CI `frontend` job 跑 ESLint / Prettier 检查 / `tsc -b` / vitest / `vite build`(台账 L334 已结案);`apps/web/src/test/uiRules.test.ts` 是扫描源码的界面守卫,规则与例外见 [`docs/ui-overlay.md`](docs/ui-overlay.md)) | `cd apps/web && npm run test`;只跑一部分并限制并发时写 `npx vitest run <目录> --maxWorkers=2 --minWorkers=1`(本机 vitest 2.1.9 只给 `--maxWorkers` 会报 minThreads 冲突) |
-| 前端 E2E | Playwright(浏览器按 `zh-CN` 起,启动参数 `--lang=zh-CN`,走查截图的中文字体才真实;界面布局用 `e2e/layout-*.spec.ts` 按段断言,共用 `e2e/helpers/layout.ts` 的 `expectBaselineLayout`;project 链 mutating → … → admin → m3b → m4a → m4b → m5b → m5c → readonly → walkthrough(只读走查截图,产物 `walkthrough-<sha>`);`m5c` 的三条真流用例要系统 Chrome(Playwright 自带的 Chromium 不解 H.264):设 `WS_CHROME=1` 时 m5c 用 `channel: 'chrome'`,不设则用 Chromium 并 skip 这三条,其余照跑;需先起下一行的假摄像头与 `python -m app.stream`。CI e2e job 探测到 Chrome 才设 `WS_CHROME=1`,探测不到直接红;CI 分两步:`npm run e2e -- --project readonly`(整条改数据链,不含 walkthrough),再单独一步 `npx playwright test --project walkthrough --no-deps`(`continue-on-error`,零截图则上传步骤红) | `cd apps/web && npm run e2e`(本机整条链含 walkthrough) |
+| 前端 E2E | Playwright(只有 `walkthrough` 这个 project 设了 `locale: 'zh-CN'`、`--lang=zh-CN` 和 `LANG` / `LANGUAGE` 环境变量,走查截图才用中文字体,其余 project 不变,见 `apps/web/playwright.config.ts`;界面布局用 `e2e/layout-*.spec.ts` 按段断言,共用 `e2e/helpers/layout.ts` 的 `expectBaselineLayout`;project 链 mutating → … → admin → m3b → m4a → m4b → m5b → m5c → readonly → walkthrough(只读走查截图,产物 `walkthrough-<sha>`);`m5c` 的三条真流用例要系统 Chrome(Playwright 自带的 Chromium 不解 H.264):设 `WS_CHROME=1` 时 m5c 用 `channel: 'chrome'`,不设则用 Chromium 并 skip 这三条,其余照跑;需先起下一行的假摄像头与 `python -m app.stream`。CI e2e job 探测到 Chrome 才设 `WS_CHROME=1`,探测不到直接红;CI 分两步:`npm run e2e -- --project readonly`(整条改数据链,不含 walkthrough),再单独一步 `npx playwright test --project walkthrough --no-deps`(`continue-on-error`,零截图则上传步骤红) | `cd apps/web && npm run e2e`(本机整条链含 walkthrough) |
 | 假摄像头 / 真流测试 | mediamtx + ffmpeg 推流(`cam1` H.264、`cam2` H.265)+ pytest `ffmpeg` / `perf` 标记 | `docker compose -f deploy/docker-compose.dev.yml --profile camera up -d` → `cd server && uv run pytest -m "ffmpeg and not perf" -q`(本机需装 ffmpeg / ffprobe,缺了或假摄像头连不上时自动 skip);性能冒烟 `uv run pytest -m perf -q -s`(3 路 copy + 1 路转码 30 秒,只在 CI e2e job 单独一步跑,结果上传 `stream-perf` 产物) |
 | 后端 Lint | ruff | `uv run ruff check . && uv run ruff format --check .` |
 | 前端 Lint | ESLint + Prettier | `npm run lint` |

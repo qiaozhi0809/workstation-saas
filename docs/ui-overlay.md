@@ -6,11 +6,11 @@
 
 ## 1. 与基线不同的八处
 
-1. **家长端是手机优先**。底部固定页签栏,触控目标 44 px,内容容器 `max-w-2xl`(不是管理端、教师端的宽版容器)。详见第 4 节「家长端例外」。
-2. **教室插画与投屏 / 全屏不受圆角和表面规则约束**。教室场景(`shared/components/ClassroomMap/**`)是自绘的 SVG,座位、讲台、黑板按教室的样子画;守卫和 e2e 都不扫它。
+1. **家长端是手机优先**。手机上(< 768)是底部固定页签栏,触控目标 44 px;768–1023 的导航是顶栏下方的第二行,≥ 1024 在顶栏里。内容容器 `max-w-2xl`(不是管理端、教师端的宽版容器)。详见第 3 节「家长端例外」。
+2. **教室插画与投屏 / 全屏不受圆角和表面规则约束**。教室场景(`shared/components/ClassroomMap/**`)是自绘的 SVG,座位、讲台、黑板按教室的样子画;`uiRules` 守卫排除这个目录,`e2e/helpers/layout.ts` 只量页面里的按钮、输入框、卡片和表格容器,场景里的 SVG 不在其中。
 3. **中文系统字体栈**,不用 Geist / Inter。`tailwind.config` 的 `fontFamily.sans` 以苹方、鸿蒙黑体、MiSans 等系统中文字体开头:学校机器不一定能联网拉字体,中文字形也不能回退到西文字体。
 4. **数字列对齐按 Q2**:量值列(分数、人数、百分比)**右对齐**,编号和文字列左对齐,表头和数据同一边缘。基线文字写的是「数字列左对齐」,与此不一致,以本项目为准:右对齐能让个位、十位上下对齐,93 和 100 一眼比出大小;编号不用比大小,和文本一样左对齐。
-5. **教室页的侧栏默认 rail**(只显示图标),并且 < 1280 宽一律是抽屉,让舞台尽量宽。其他页面 ≥ 1280 默认展开,1024–1279 默认 rail,< 1024 是抽屉。
+5. **教室页的侧栏默认 rail(窄栏,只显示图标)**,并且 < 1280 宽一律是抽屉,让舞台尽量宽。其他页面 ≥ 1280 默认展开,1024–1279 默认 rail,< 1024 是抽屉。
 6. **下拉、复选框、开关用原生控件**(基线「有 Arc 优先 Arc」的例外)。原生 `<select>` 在平板上弹系统选择器,手感最好;换成自绘控件要重写大量既有测试。理由完整版见 M6 计划 §2.2。输入框边框保留(与 `Input` 同一约定)。
 7. **数据语义的红绿保留**。分数涨跌、考勤出勤 / 缺勤、成绩状态色等表达数据含义的颜色不按「中性色板」去色;装饰性的彩色一律去掉。
 8. **聊天发送按钮在消息为空时禁用**。基线要求表单「空提交就地报错」,聊天输入框是例外:空消息禁用发送比提示更干净。
@@ -25,13 +25,13 @@
 
 ### 2.2 页面骨架
 
-- `PageContainer` 自带 `flex flex-col gap-6`;`PageHeader` 和各块内容作为它的**直接子节点**依次放,不要再加 `space-y-*` / `mb-*`。窄页 `width="narrow"` 的内容也必须是直接子节点,子节点自己的 `max-w-*` 会被压过。
+- `PageContainer` 自带 `flex flex-col gap-6`,并透传 `data-*` 等其余 div 属性(盖不掉它自己的 `data-page-container` / `data-width`);`PageHeader` 和各块内容作为它的**直接子节点**依次放,不要再加 `space-y-*` / `mb-*`。窄页 `width="narrow"` 的内容也必须是直接子节点,子节点自己的 `max-w-*` 会被压过。
 - 页面标题统一用 `PageHeader`(守卫 `raw-h1` 禁止裸 `<h1>`)。加载分支如果也渲染 `PageHeader`,单测里 `findByRole('heading')` 会在数据到达前就返回,断言正文前先等一个只有正文才有的元素。
 
 ### 2.3 表格
 
 - 量值列右对齐,编号和文字列左对齐(Q2)。
-- 表比容器窄时传 `containerClassName="w-fit max-w-full"`,否则白色容器满宽、表头底色到一半截断。分页条和表格**包在同一个容器里右对齐**,不要把分页条放在容器外。
+- 表比容器窄时传 `containerClassName="w-fit max-w-full"`,否则白色容器满宽,而行分隔线只画到表格宽度,右边一截空白。分页条和表格**包在同一个容器里右对齐**,不要把分页条放在容器外。
 - 放在卡片里的表传 `containerClassName="bg-transparent shadow-none"`,不要在卡片里再套一圈框。
 - `Td` / `Th` 默认**不换行**;备注、内容、原因这类长文本列要传 `nowrap={false}`(G-C4)。
 - 行内可选的前置按钮(例如「展开」)要给没有按钮的行留**等宽占位**;包裹元素用块级 `flex`。行内 `inline-flex` 会因基线不同让文字上下错 2 px。
@@ -39,35 +39,46 @@
 
 ### 2.4 控件
 
-- `SegmentedTabs` 的 `onChange` 写成 `(v) => setX(v)`,不要直接传 `setState`:直接传会让泛型回退成 `string`,`tsc` 报 TS2322(G-W2-2)。`size="sm"` 的页签按钮只有 24 高,过不了基线,用默认的 md。
+- `SegmentedTabs` 的 `onChange` 写成 `(v) => setX(v)`,不要直接传 `setState`:直接传会让泛型回退成 `string`,`tsc` 报 TS2322(G-W2-2)。`size` 入参已删(`sm` 的页签只有 24 高,过不了基线):pill 容器 40 高、页签 32 高,underline 页签 32 高。
 - 不允许给 `<Button>` 写 `h-*`(守卫 `button-height`):要 44 高用 `size="touch"`,图标按钮用 `IconButton`。
-- **触屏目标**:`touch-target` 类只在 `pointer: coarse` 下把最小尺寸撑到 44;鼠标下尺寸不变,桌面布局不受影响。侧栏的链接与按钮、抽屉的「打开菜单」按钮、回执表单按钮都挂它。
+- **触屏目标**:`touch-target` 类只在 `pointer: coarse` 下把最小尺寸撑到 44;鼠标下尺寸不变,桌面布局不受影响。侧栏的链接与按钮、抽屉的「打开菜单」按钮、回执表单按钮、`ErrorState` 的「重试」都挂它。
+- **按钮里的图标**统一 16 px:Arc `Button` 不管子 svg 的尺寸,所以 `ui/button` 的 Arc 路径给按钮挂 `ws-btn`,`theme/arc-overrides.css` 用零特异性规则 `:where(.ws-btn) svg` 定成 16 px;调用处自己写了 `h-*` / `size-*` 的仍然生效。
+- 深色下原生 `<select>` 与 `Input` 同为 `bg-transparent`(不是 `bg-background`),在卡片里才不会比周围深。
+- 错误提示框用无边框的 `bg-destructive/10`(明暗都要看得清),不画边框(守卫 `bordered-card`)。
 - `Switch` 的原生 input 盖在轨道上(不是 `sr-only`),Playwright 的 `check()` / `uncheck()` 可以直接点。
 
 ### 2.5 浮层
 
 - `Menu` / `Popover` 用 `rounded-lg shadow-overlay`,**无边框**;`side` 支持 `top | bottom | right`。
 - 浮层**不走 portal**,是纯 CSS 定位:放进带 `overflow` 的祖先(例如侧栏的导航区)会被裁掉(G-X-1)。需要从侧栏弹出的菜单,放在不裁剪的容器里,或像账号菜单那样挂在侧栏底部。
-- `MenuItem` 目前不透传 `title` / `aria-describedby`,禁用原因只能并进菜单项名称(G-CR-1)。
+- `MenuItem` 有 `description` 入参:显示在名称下面,并用 `aria-describedby` 关联,名称只取 children。菜单项被禁用时,把禁用原因写成 `description`,不要拼进名称(教室紧凑菜单的「桌椅排列」就是这样)。
+- 侧栏 rail(窄栏)下的账号菜单和通知面板用 `side="right"` 向右弹出;展开和抽屉形态不变。它们能这样用,是因为侧栏的 footer、`aside` 和 `SidebarShell` 根都没有 `overflow`(带 `overflow-y-auto` 的 nav 与 footer 是兄弟)。
 
 ### 2.6 图表
 
-- `TrendLine` / `Sparkline` 有 `minPoints`(默认 1)和 `summary`:有效点数不足时显示「数据不足」而不是画一条线或空图(M17)。教师端的趋势图调用点要显式传 `minPoints`。
+- `TrendLine` / `Sparkline` 有 `minPoints`(默认 1)和 `summary`:有效点数不足 `minPoints` 时不画线。教师端三处调用点(`Analysis/TrendGrid.tsx`、`OverviewTab`、`ScoresTab`)传 `minPoints={2}` 并给 `summary`:一条线只有 1 个有效点时显示一句单次摘要(不再画孤点),没有有效点时显示「数据不足」(学生档案成绩页签没有名次时显示「暂无名次」)(M17)。其他调用点默认 `minPoints=1`,零有效点同样显示「数据不足」。
 
 ### 2.7 教室页
 
 - 教室操作台按**容器宽度**进入紧凑形态,阈值 `DOCK_COMPACT_BELOW`(1040 px,见 `roles/teacher/Classroom/dockCompact.ts`),不看视口宽度:侧栏展开时舞台变窄,同一视口宽度下舞台宽度会变。紧凑形态里次要按钮收进「⋯」菜单,保持一行。
 
-## 3. 家长端例外
+## 3. 家长端例外与守卫的放行清单
 
-守卫 `uiRules` 与 e2e 对家长端放过以下几处(G-P1-1、G-P1-2):
+`uiRules.test.ts` 的 `BASELINE` 全部是 0,以下是 `src/test/uiRules.ts` 里 `allow` 放行的文件和理由,别处命中一律要改:
 
-- 容器 `max-w-2xl`:手机阅读宽度,不用宽版容器。
-- 768–1023 宽的导航条:`AppShell` 顶栏固定一行(`h-14`),放不下导航,现状是 `main` 顶部的 sticky 条(`ParentLayout.tsx` 里的临时方案)。≥ 1024 导航在顶栏,< 768 是底部页签栏。
-- `ExamDetail` 保留原生 `<table>`:窄屏要卡片化,Table 组件不覆盖这种形态。
-- 导航页签上的圆形未读计数徽标(`ParentNav`)命中 `pill-chip`,保留。
+| 规则 | 放行 | 理由 |
+|---|---|---|
+| `raw-table` | `ui/table.tsx`、`roles/parent/Grades/ExamDetail.tsx` | 前者是 `Table` 自己;后者窄屏要把每科渲染成两行卡片,原生 table + display 切换,共享 `Table` 做不到(G-P1-2) |
+| `pill-chip` | `roles/parent/ParentNav.tsx`、`shared/components/layout/NoticeBell.tsx` | 导航项上的圆形未读计数角标必须是圆的,不是药丸标签 |
+| `big-radius` | `ui/chart.tsx` | 图例 2px 色块,是数据标记不是卡片圆角 |
+| `raw-h1` | `ui/page.tsx`、`roles/teacher/ClassGate.tsx`、`src/auth/` 下的登录、两步验证、改密三个页面 | 前两个是 `PageHeader` 自己和教师端的选班门;认证三页是没有侧栏和 `PageContainer` 的独立居中卡片,标题就是卡片标题 |
+| `bordered-card` | `ui/` 目录 | 输入框等控件本体有边框(见 §1 第 6 条) |
+| `arc-import-in-pages` | `ui/`、`layout/`、`feedback/` | 适配层与骨架件可以直接引 Arc,页面不行 |
 
-> 以上若有改动(例如 Z1 给 `AppShell` 加了第二行槽并删掉 sticky 条),以最终合并的代码为准,并回来改本节。
+家长端另有两处不在守卫里、也要知道:
+
+- 容器 `max-w-2xl`:手机阅读宽度。`e2e/helpers/layout.ts` 因此对家长端用 `PARENT_MAX_WIDTH = 672` 算标题位置,这是 e2e 对家长端唯一的不同;表格、徽标的豁免只在守卫里,e2e 没有。
+- 导航三档:< 768 底部页签栏;768–1023 是 `AppShell` 顶栏下方的第二行(`subNav` 槽,不随 `main` 滚动);≥ 1024 在顶栏里。`AppShell` 的 `subNav` 有值时,顶栏本身不画底线,分隔线画在第二行下面。
 
 ## 4. e2e 约定
 
