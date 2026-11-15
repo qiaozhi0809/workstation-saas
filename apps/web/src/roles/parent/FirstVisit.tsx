@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Sparkles } from 'lucide-react'
 import { ApiError } from '@/shared/api/client'
 import { preferencesApi } from '@/shared/api/preferences'
 import { toast } from '@/shared/components/Toast'
 import { Button } from '@/shared/components/ui/button'
+import { Card } from '@/shared/components/ui/card'
 
 /**
  * 家长首次进入时页面顶部的说明卡。状态存后端 preferences.onboarded.parent(与老师那边各自只出现一次),
@@ -39,25 +39,19 @@ export default function FirstVisit() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-2xl px-4 pt-4">
-      <section
+    <div className="mx-auto w-full max-w-2xl px-4 pt-6 lg:px-8">
+      <Card
+        role="region"
         aria-label="首次使用提示"
-        className="flex flex-col gap-3 rounded-xl border border-primary/30 bg-primary/5 p-4 text-sm text-card-foreground sm:flex-row sm:items-center"
+        className="flex flex-col gap-3 bg-muted p-4 text-sm sm:flex-row sm:items-center"
       >
-        <Sparkles className="hidden h-5 w-5 shrink-0 text-primary sm:block" aria-hidden="true" />
         <p className="min-w-0 flex-1 leading-relaxed">
           这里可以看到孩子的今日出勤、点评、成绩和成长记录;学校的通知会出现在「通知」里
         </p>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="min-h-[44px] shrink-0 sm:min-h-0"
-          onClick={dismiss}
-        >
+        <Button type="button" variant="outline" size="touch" className="shrink-0" onClick={dismiss}>
           知道了
         </Button>
-      </section>
+      </Card>
     </div>
   )
 }

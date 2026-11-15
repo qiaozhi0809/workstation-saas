@@ -137,6 +137,22 @@ it('lays each subject out as a two-line card below sm and as a table row from sm
   )
 })
 
+it('right-aligns the four numeric columns from sm and drops the outer border (P1-2)', async () => {
+  open()
+  await openExam()
+  const wrap = await screen.findByRole('region', { name: '各科成绩' })
+  expect(wrap.className).not.toMatch(/\bborder\b/)
+  expect(wrap.className).not.toMatch(/rounded-/)
+  for (const name of ['分数 / 满分', '班级平均', '班级最高'])
+    expect(within(wrap).getByRole('columnheader', { name })).toHaveClass('sm:text-right')
+  const math = within(wrap).getByRole('row', { name: /数学/ })
+  for (const c of within(math).getAllByRole('cell')) {
+    expect(c).toHaveClass('tabular-nums', 'sm:text-right')
+    expect(c.className).not.toMatch(/sm:text-left/)
+  }
+  expect(screen.getByText(/^总分 /).className).not.toMatch(/font-semibold/)
+})
+
 it('shows the class rank when given', async () => {
   vi.mocked(parentApi.exam).mockResolvedValue(detail({ class_rank: 3, ranked: 30 }))
   open()

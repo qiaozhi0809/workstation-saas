@@ -1,4 +1,5 @@
 import { useSchoolTz } from '@/shared/hooks/useSchoolTz'
+import { Card } from '@/shared/components/ui/card'
 import { formatInTz } from '@/shared/lib/date'
 import { cn } from '@/shared/lib/utils'
 import type { ParentReview } from '@/shared/types/parent'
@@ -14,12 +15,11 @@ export default function ReviewList({
   const { tz } = useSchoolTz()
   const items = reviews ?? []
   return (
-    <section aria-label="今日点评" className="rounded-xl border bg-card p-4 text-card-foreground">
+    <Card role="region" aria-label="今日点评" className="p-4">
       <div className="flex items-baseline justify-between gap-2">
         <h2 className="text-sm text-muted-foreground">今日点评</h2>
         <p className="text-sm text-muted-foreground">
-          本周积分{' '}
-          <span className="text-base font-semibold text-foreground">{weekPoints ?? 0}</span>
+          本周积分 <span className="text-base font-medium text-foreground">{weekPoints ?? 0}</span>
         </p>
       </div>
       {items.length === 0 ? (
@@ -30,7 +30,7 @@ export default function ReviewList({
             <li key={r.id} className="flex items-start gap-3 py-2">
               <span
                 className={cn(
-                  'min-w-10 shrink-0 text-base font-semibold tabular-nums',
+                  'min-w-10 shrink-0 text-base font-medium tabular-nums',
                   r.score_delta > 0 && 'text-success',
                   r.score_delta < 0 && 'text-destructive',
                   r.score_delta === 0 && 'text-muted-foreground',
@@ -50,6 +50,6 @@ export default function ReviewList({
           ))}
         </ul>
       )}
-    </section>
+    </Card>
   )
 }

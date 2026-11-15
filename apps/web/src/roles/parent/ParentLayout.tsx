@@ -23,18 +23,19 @@ import ParentNav from './ParentNav'
 import { ChildContext, useChild, useChildState } from './useChild'
 
 const QUERY = '(min-width: 768px)'
+const QUERY_LG = '(min-width: 1024px)'
 
-function useWide(): boolean {
-  const [wide, setWide] = useState(() => window.matchMedia?.(QUERY).matches ?? true)
+function useMedia(query: string): boolean {
+  const [on, setOn] = useState(() => window.matchMedia?.(query).matches ?? true)
   useEffect(() => {
-    const mq = window.matchMedia?.(QUERY)
+    const mq = window.matchMedia?.(query)
     if (!mq) return
-    const on = () => setWide(mq.matches)
-    on()
-    mq.addEventListener('change', on)
-    return () => mq.removeEventListener('change', on)
-  }, [])
-  return wide
+    const sync = () => setOn(mq.matches)
+    sync()
+    mq.addEventListener('change', sync)
+    return () => mq.removeEventListener('change', sync)
+  }, [query])
+  return on
 }
 
 export default function ParentLayout() {
@@ -58,7 +59,9 @@ function ParentShell() {
   useRealtimeEvent('reconnected', refresh)
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
-  const wide = useWide()
+  const wide = useMedia(QUERY)
+  // ≥ 1024 导航和上下文同在顶栏一行;768–1023 放不下,导航单独成第二行(顶栏本身固定一行高)
+  const oneRow = useMedia(QUERY_LG)
   const meta = useMeta()
   const state = useChildState()
   const { list, children, child, select } = state
@@ -83,7 +86,7 @@ function ParentShell() {
     body = list.isPending ? (
       <LoadingState />
     ) : (
-      <EmptyState title="还没有绑定孩子,请联系班主任" className="justify-center p-6" />
+      <EmptyState title="还没有绑定孩子,请联系班主任" align="center" className="p-6" />
     )
   } else
     body = (
@@ -99,11 +102,12 @@ function ParentShell() {
         child && (
           <>
             {/* 校名来自 /meta(L74)。窄屏放不下"校名 + 孩子下拉 + 档案"三样:多个孩子时校名只在 ≥ sm 显示,
-                孩子切换器优先;一个孩子只有一行姓名,校名限宽截断后放得下 */}
+                孩子切换器优先;校名自己单行截断(min-w-0 truncate),孩子下拉不收缩 */}
             {meta.data && (
               <span
+                title={meta.data.school_name}
                 className={cn(
-                  'max-w-[28vw] truncate text-sm text-muted-foreground sm:max-w-none',
+                  'min-w-0 truncate text-sm text-muted-foreground',
                   children.length > 1 && 'hidden sm:inline',
                 )}
               >
@@ -125,7 +129,11 @@ function ParentShell() {
           </>
         )
       }
-      nav={child && wide ? <ParentNav placement="top" childId={child.student_id} /> : undefined}
+      nav={
+        child && wide && oneRow ? (
+          <ParentNav placement="top" childId={child.student_id} />
+        ) : undefined
+      }
       actions={
         <>
           <ThemeToggle />
@@ -144,6 +152,13 @@ function ParentShell() {
         </>
       }
     >
+      {/* 临时方案:AppShell 顶栏固定一行高,768–1023 宽放不下第二行导航,先放进 main 顶部的 sticky 条;
+          AppShell 有第二行槽后删掉这里(缺口记给收尾段) */}
+      {child && wide && !oneRow && (
+        <div className="sticky top-0 z-10 border-b bg-background px-4">
+          <ParentNav placement="top" childId={child.student_id} />
+        </div>
+      )}
       <FirstVisit />
       {body}
     </AppShell>

@@ -85,6 +85,17 @@ it('exposes three tabs and selects the growth tab first', async () => {
   expect(screen.getByRole('tablist')).toBeInTheDocument()
 })
 
+it('uses touch-height segmented tabs and card records (P1-2)', async () => {
+  vi.mocked(parentApi.growth).mockResolvedValue({
+    items: [rec('b', '2026-05-01', '2025-2026学年')],
+  })
+  open()
+  const tabs = await screen.findAllByRole('tab')
+  for (const t of tabs) expect(t.parentElement).toHaveClass('[&>button]:min-h-11')
+  const card = (await screen.findByText('内容b')).closest('[data-slot="card"]')
+  expect(card).not.toBeNull()
+})
+
 it('lists growth records by date descending with a year divider where the year changes', async () => {
   vi.mocked(parentApi.growth).mockResolvedValue({
     items: [

@@ -90,3 +90,15 @@ test('dark table-only page has a table container to measure', async ({ page }) =
   await expect(page.locator('[data-slot=table-container]')).toHaveCount(1)
   await expectBaselineLayout(page)
 })
+
+test('dark baseline skips transparent table containers inside a card', async ({ page }) => {
+  await applyTheme(page, 'dark')
+  await page.goto('/dev/ui?scene=card-table')
+  await expect(page.locator('html')).toHaveClass(/dark/)
+  await expect(page.locator('[data-slot=card]')).toHaveCount(1)
+  const bg = await page
+    .locator('[data-slot=table-container]')
+    .evaluate((el) => getComputedStyle(el).backgroundColor)
+  expect(bg).toMatch(/^(transparent|rgba\(0, 0, 0, 0\)|rgb\(0 0 0 \/ 0\))$/)
+  await expectBaselineLayout(page)
+})
