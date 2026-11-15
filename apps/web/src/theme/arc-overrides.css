@@ -12,3 +12,14 @@
   --font-display:
     'PingFang SC', 'HarmonyOS Sans SC', 'MiSans', 'Microsoft YaHei', system-ui, sans-serif;
 }
+
+/*
+ * Arc 按钮里的图标:没写尺寸的 svg 一律 16px(lucide 默认 24,Arc Button 自己不管子图标)。
+ * :where() 让这条规则零特异性,调用处写了 h-* / w-* / size-* 的图标照旧生效。
+ * 经 ui/button 的 Arc 路径都带 ws-btn;原生分支(asChild、link、icon)已有 [&_svg]:size-4。
+ */
+:where(.ws-btn) svg {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+}

@@ -244,10 +244,10 @@ it('keeps the layout entry disabled in the menu while the draft is dirty', () =>
   })
   resizeTo(900)
   fireEvent.click(screen.getByRole('button', { name: '更多操作' }))
-  // MenuItem 不透传 title / aria-describedby:不可用原因以读屏文字并进菜单项名称
-  const item = screen.getByRole('menuitem', { name: /^桌椅排列/ })
+  // 不可用原因是菜单项的描述,不并进名称:能按 '桌椅排列' 精确查到
+  const item = screen.getByRole('menuitem', { name: '桌椅排列' })
   expect(item).toHaveAttribute('aria-disabled', 'true')
-  expect(item).toHaveTextContent('先保存或放弃当前的座位修改')
+  expect(item).toHaveAccessibleDescription('先保存或放弃当前的座位修改')
 })
 
 it('turns the 还没有考试成绩 hint into screen-reader text only in the compact dock, and keeps the boundary at 1040', () => {

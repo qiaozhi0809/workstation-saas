@@ -18,7 +18,9 @@ import { useRealtimeEvent } from '@/shared/realtime/useRealtimeEvent'
 import NoticeList from './NoticeList'
 
 /** 顶栏铃铛:未读数徽标(全量)+ 收件箱按页加载(L90);必须在 RealtimeProvider 与 router 之内 */
-export default function NoticeBell({ side = 'bottom' }: { side?: 'top' | 'bottom' } = {}) {
+export default function NoticeBell({
+  side = 'bottom',
+}: { side?: 'top' | 'bottom' | 'right' } = {}) {
   const qc = useQueryClient()
   const inbox = useInbox()
   const refresh = () => void qc.invalidateQueries({ queryKey: INBOX_KEY })
@@ -49,7 +51,9 @@ export default function NoticeBell({ side = 'bottom' }: { side?: 'top' | 'bottom
       label="通知"
       side={side}
       align={side === 'top' ? 'start' : 'end'}
-      className="p-0"
+      // rail 下的间距:内容区 48,通知按钮 40 宽居中,右缘离侧栏右缘 12 + 4 = 16px;
+      // 默认 ml-2 推不出侧栏,ml-6(24px)让浮层左缘落在侧栏外 8px
+      className={side === 'right' ? 'p-0 ml-6' : 'p-0'}
       triggerProps={{
         variant: 'ghost',
         size: 'icon',
@@ -63,7 +67,7 @@ export default function NoticeBell({ side = 'bottom' }: { side?: 'top' | 'bottom
           {unread > 0 && (
             <span
               aria-hidden="true"
-              className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-destructive-foreground"
+              className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-medium leading-none text-destructive-foreground"
             >
               {unread > 99 ? '99+' : unread}
             </span>

@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react'
-import { NavLink } from 'react-router-dom'
-import { Button } from '@/shared/components/ui/button'
+import { Link, matchPath, useLocation } from 'react-router-dom'
+import { IconButton } from '@/shared/components/ui/icon-button'
 import { cn } from '@/shared/lib/utils'
 import { RailTip } from './RailTip'
 
@@ -10,6 +10,8 @@ export interface SidebarItem {
   to: string
   label: string
   icon: LucideIcon
+  /** 也算「当前页」的路径模式(react-router 写法,如 `/admin/classes/:id`):导航里没有入口的子页挂在这一项下 */
+  alsoActive?: string[]
 }
 /** 没有 label = 不显示组标题 */
 export interface SidebarGroup {
@@ -65,7 +67,9 @@ export function Sidebar({
         aria-label="主导航"
         aria-busy={navLoading || undefined}
         className={cn(
-          'flex min-h-0 flex-1 flex-col overflow-y-auto px-3',
+          // 导航超过一屏时在这里滚动:底部留 16 的内边距、再用渐隐遮住贴着底部按钮区的那一截,
+          // 既不会让最后一项被压在按钮区下面,也提示下面还有内容(滚到底时渐隐只落在空白内边距上)
+          'flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pb-4 [mask-image:linear-gradient(to_bottom,#000_calc(100%-1rem),transparent)]',
           collapsed && 'items-center',
         )}
       >
@@ -101,17 +105,14 @@ export function Sidebar({
       {variant === 'floating' && (
         <div className={cn('flex shrink-0 px-3 pt-2', collapsed && 'justify-center')}>
           <RailTip label={collapsed ? '展开侧栏' : '折叠侧栏'} disabled={!collapsed}>
-            <Button
-              variant="ghost"
-              size="icon"
+            <IconButton
+              icon={ToggleIcon}
               className="touch-target text-muted-foreground"
               aria-label={collapsed ? '展开侧栏' : '折叠侧栏'}
               aria-expanded={!collapsed}
               aria-keyshortcuts="["
               onClick={onToggle}
-            >
-              <ToggleIcon className="h-4 w-4" aria-hidden="true" />
-            </Button>
+            />
           </RailTip>
         </div>
       )}
@@ -128,13 +129,20 @@ export function Sidebar({
 }
 
 function SidebarLink({ item, collapsed }: { item: SidebarItem; collapsed: boolean }) {
-  const { to, label, icon: Icon } = item
+  const { to, label, icon: Icon, alsoActive } = item
+  const { pathname } = useLocation()
+  // 前提:侧栏没有根路径(`to="/"`)项。matchPath({ end: false }) 对 "/" 会匹配所有路径,
+  // 将来要加根路径项,得对它单独用 end: true
+  const current =
+    matchPath({ path: to, end: false }, pathname) !== null ||
+    (alsoActive ?? []).some((p) => matchPath({ path: p, end: false }, pathname) !== null)
   // className 必须是字符串:RailTip 的 Tooltip.Trigger asChild 经 Slot 合并 props,
-  // 函数式 className 会被拼成源码字符串;当前页由 NavLink 写的 aria-current="page" 驱动样式
+  // 函数式 className 会被拼成源码字符串;当前页由 aria-current="page" 驱动样式
   return (
     <RailTip label={label} disabled={!collapsed}>
-      <NavLink
+      <Link
         to={to}
+        aria-current={current ? 'page' : undefined}
         className={cn(
           'touch-target flex h-10 shrink-0 items-center gap-2 rounded-md text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
           'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
@@ -147,7 +155,7 @@ function SidebarLink({ item, collapsed }: { item: SidebarItem; collapsed: boolea
           aria-hidden="true"
         />
         <span className={cn('truncate', collapsed && 'sr-only')}>{label}</span>
-      </NavLink>
+      </Link>
     </RailTip>
   )
 }

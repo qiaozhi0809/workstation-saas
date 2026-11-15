@@ -11,7 +11,7 @@ import { NativeSelect } from '@/shared/components/ui/native-select'
 import type { AdminRole, AdminRoleInput, AdminRoleType } from '@/shared/types/admin'
 import ConfirmBox from './ConfirmBox'
 import { errMsg } from './errMsg'
-import Field from './Field'
+import { Field } from '@/shared/components/ui/field'
 import PersonPicker from './PersonPicker'
 import type { OrgPerson } from './orgApi'
 

@@ -115,179 +115,176 @@ export default function CamerasPage() {
   const publicHosts = health.data?.public_hosts ?? []
 
   return (
-    // m5c.spec 按 cameras-page 找页面;PageContainer 不透传 data-*,外面套一层
-    <div data-testid="cameras-page">
-      <PageContainer width="default">
-        <PageHeader
-          title="摄像头"
-          actions={
-            <Button type="button" disabled={off} onClick={() => setDialog({ kind: 'form' })}>
-              新建摄像头
-            </Button>
-          }
+    <PageContainer width="default" data-testid="cameras-page">
+      <PageHeader
+        title="摄像头"
+        actions={
+          <Button type="button" disabled={off} onClick={() => setDialog({ kind: 'form' })}>
+            新建摄像头
+          </Button>
+        }
+      />
+
+      {off && (
+        <div
+          role="status"
+          data-testid="camera-monitor-off-notice"
+          className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-warning/10 p-3 text-sm"
+        >
+          <span>学校设置里的"监控"开关是关的,老师和校领导看不到画面。</span>
+          <Link
+            to="/admin/settings"
+            className="font-medium text-primary underline-offset-4 hover:underline"
+          >
+            去学校设置打开
+          </Link>
+        </div>
+      )}
+
+      {!off && health.isError && (
+        // 内网地址检查失败不能静默:否则不在内网的地址不会有任何提示(L215)
+        <div
+          role="alert"
+          data-testid="camera-health-error"
+          className="flex flex-wrap items-center gap-2 rounded-md bg-destructive/10 p-3 text-sm text-destructive"
+        >
+          <span className="mr-auto">摄像头地址检查失败,暂时看不到"不在校园内网"的提示。</span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={health.isFetching}
+            onClick={() => void health.refetch()}
+          >
+            重试
+          </Button>
+        </div>
+      )}
+
+      {publicHosts.length > 0 && (
+        <div
+          role="status"
+          data-testid="camera-public-host-warning"
+          className="rounded-md bg-warning/10 p-3 text-sm text-warning"
+        >
+          <p className="font-medium">以下摄像头地址不在校园内网,已拒绝拉流:</p>
+          <ul className="mt-1 list-inside list-disc break-all">
+            {publicHosts.map((h) => (
+              <li key={h}>{h}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {off ? (
+        <EmptyState title={'打开"监控"开关后,这里才能添加和管理摄像头'} />
+      ) : list.isPending ? (
+        <LoadingState variant="table" />
+      ) : list.isError ? (
+        <ErrorState
+          title={list.error instanceof ApiError ? list.error.message : '加载失败,请重试'}
+          onRetry={() => void list.refetch()}
+          retrying={list.isFetching}
         />
+      ) : list.data.length === 0 ? (
+        <EmptyState
+          title="还没有登记摄像头"
+          description={'点右上角"新建摄像头",填入校园内网里的 RTSP 地址'}
+        />
+      ) : (
+        <Table data-testid="camera-list" minWidth={832} containerClassName="w-fit max-w-full">
+          <TableHead>
+            <TableRow>
+              {['名称', '班级 / 公共区域', '位置', '状态', '启用'].map((h) => (
+                <Th key={h}>{h}</Th>
+              ))}
+              <Th align="end">操作</Th>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {list.data.map((c) => (
+              <TableRow key={c.id} className={cn(!c.enabled && 'text-muted-foreground')}>
+                <Td className="font-medium">{c.name}</Td>
+                <Td>{c.class_name ?? '公共区域'}</Td>
+                <Td>{c.location}</Td>
+                <Td nowrap={false}>
+                  <StatusCell camera={c} />
+                </Td>
+                <Td>
+                  <Switch
+                    aria-label={`启用 ${c.name}`}
+                    checked={c.enabled}
+                    disabled={togglingId !== null}
+                    onChange={() => void toggle(c)}
+                  />
+                </Td>
+                <Td align="end">
+                  <div className="flex justify-end gap-1 whitespace-nowrap">
+                    <Button
+                      type="button"
+                      variant="link"
+                      size="sm"
+                      onClick={() => setDialog({ kind: 'test', camera: c })}
+                    >
+                      测试连接
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="link"
+                      size="sm"
+                      onClick={() => setDialog({ kind: 'form', camera: c })}
+                    >
+                      编辑
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="link"
+                      size="sm"
+                      className="text-destructive"
+                      onClick={() => {
+                        setDeleteError('')
+                        setDialog({ kind: 'delete', camera: c })
+                      }}
+                    >
+                      删除
+                    </Button>
+                  </div>
+                </Td>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
 
-        {off && (
-          <div
-            role="status"
-            data-testid="camera-monitor-off-notice"
-            className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-warning/10 p-3 text-sm"
-          >
-            <span>学校设置里的"监控"开关是关的,老师和校领导看不到画面。</span>
-            <Link
-              to="/admin/settings"
-              className="font-medium text-primary underline-offset-4 hover:underline"
-            >
-              去学校设置打开
-            </Link>
-          </div>
-        )}
-
-        {!off && health.isError && (
-          // 内网地址检查失败不能静默:否则不在内网的地址不会有任何提示(L215)
-          <div
-            role="alert"
-            data-testid="camera-health-error"
-            className="flex flex-wrap items-center gap-2 rounded-md bg-destructive/10 p-3 text-sm text-destructive"
-          >
-            <span className="mr-auto">摄像头地址检查失败,暂时看不到"不在校园内网"的提示。</span>
+      {dialog?.kind === 'form' && (
+        <CameraForm camera={dialog.camera} onClose={() => setDialog(null)} />
+      )}
+      {dialog?.kind === 'test' && (
+        <CameraTestDialog camera={dialog.camera} onClose={() => setDialog(null)} />
+      )}
+      {dialog?.kind === 'delete' && (
+        <Modal open onClose={() => setDialog(null)} title="删除摄像头" className="max-w-md">
+          <p className="text-sm">{`删除后 ${dialog.camera.name} 的画面立即不可看,登记信息不保留。`}</p>
+          {deleteError && (
+            <p role="alert" className="mt-2 text-sm text-destructive">
+              {deleteError}
+            </p>
+          )}
+          <div className="mt-4 flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setDialog(null)}>
+              取消
+            </Button>
             <Button
               type="button"
-              variant="outline"
-              size="sm"
-              disabled={health.isFetching}
-              onClick={() => void health.refetch()}
+              variant="destructive"
+              disabled={deleting}
+              onClick={() => void remove()}
             >
-              重试
+              确认删除
             </Button>
           </div>
-        )}
-
-        {publicHosts.length > 0 && (
-          <div
-            role="status"
-            data-testid="camera-public-host-warning"
-            className="rounded-md bg-warning/10 p-3 text-sm text-warning"
-          >
-            <p className="font-medium">以下摄像头地址不在校园内网,已拒绝拉流:</p>
-            <ul className="mt-1 list-inside list-disc break-all">
-              {publicHosts.map((h) => (
-                <li key={h}>{h}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {off ? (
-          <EmptyState title={'打开"监控"开关后,这里才能添加和管理摄像头'} />
-        ) : list.isPending ? (
-          <LoadingState variant="table" />
-        ) : list.isError ? (
-          <ErrorState
-            title={list.error instanceof ApiError ? list.error.message : '加载失败,请重试'}
-            onRetry={() => void list.refetch()}
-            retrying={list.isFetching}
-          />
-        ) : list.data.length === 0 ? (
-          <EmptyState
-            title="还没有登记摄像头"
-            description={'点右上角"新建摄像头",填入校园内网里的 RTSP 地址'}
-          />
-        ) : (
-          <Table data-testid="camera-list" minWidth={832} containerClassName="w-fit max-w-full">
-            <TableHead>
-              <TableRow>
-                {['名称', '班级 / 公共区域', '位置', '状态', '启用'].map((h) => (
-                  <Th key={h}>{h}</Th>
-                ))}
-                <Th align="end">操作</Th>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {list.data.map((c) => (
-                <TableRow key={c.id} className={cn(!c.enabled && 'text-muted-foreground')}>
-                  <Td className="font-medium">{c.name}</Td>
-                  <Td>{c.class_name ?? '公共区域'}</Td>
-                  <Td>{c.location}</Td>
-                  <Td nowrap={false}>
-                    <StatusCell camera={c} />
-                  </Td>
-                  <Td>
-                    <Switch
-                      aria-label={`启用 ${c.name}`}
-                      checked={c.enabled}
-                      disabled={togglingId !== null}
-                      onChange={() => void toggle(c)}
-                    />
-                  </Td>
-                  <Td align="end">
-                    <div className="flex justify-end gap-1 whitespace-nowrap">
-                      <Button
-                        type="button"
-                        variant="link"
-                        size="sm"
-                        onClick={() => setDialog({ kind: 'test', camera: c })}
-                      >
-                        测试连接
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="link"
-                        size="sm"
-                        onClick={() => setDialog({ kind: 'form', camera: c })}
-                      >
-                        编辑
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="link"
-                        size="sm"
-                        className="text-destructive"
-                        onClick={() => {
-                          setDeleteError('')
-                          setDialog({ kind: 'delete', camera: c })
-                        }}
-                      >
-                        删除
-                      </Button>
-                    </div>
-                  </Td>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-
-        {dialog?.kind === 'form' && (
-          <CameraForm camera={dialog.camera} onClose={() => setDialog(null)} />
-        )}
-        {dialog?.kind === 'test' && (
-          <CameraTestDialog camera={dialog.camera} onClose={() => setDialog(null)} />
-        )}
-        {dialog?.kind === 'delete' && (
-          <Modal open onClose={() => setDialog(null)} title="删除摄像头" className="max-w-md">
-            <p className="text-sm">{`删除后 ${dialog.camera.name} 的画面立即不可看,登记信息不保留。`}</p>
-            {deleteError && (
-              <p role="alert" className="mt-2 text-sm text-destructive">
-                {deleteError}
-              </p>
-            )}
-            <div className="mt-4 flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setDialog(null)}>
-                取消
-              </Button>
-              <Button
-                type="button"
-                variant="destructive"
-                disabled={deleting}
-                onClick={() => void remove()}
-              >
-                确认删除
-              </Button>
-            </div>
-          </Modal>
-        )}
-      </PageContainer>
-    </div>
+        </Modal>
+      )}
+    </PageContainer>
   )
 }

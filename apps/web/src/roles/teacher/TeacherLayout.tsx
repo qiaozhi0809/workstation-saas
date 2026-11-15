@@ -75,6 +75,8 @@ export default function TeacherLayout() {
       : ''
 
   const onPick = (id: string) => {
+    // 选中当前班不是切换:不弹「有未保存内容」确认(单班老师的班级项也能点)
+    if (id === classId) return
     if (confirmLeave()) setClass(id)
   }
 
@@ -107,13 +109,13 @@ export default function TeacherLayout() {
         )}
         footer={(collapsed) => (
           <>
-            <NoticeBell side="top" />
+            <NoticeBell side={collapsed ? 'right' : 'top'} />
             <ThemeToggle compact />
             <AccountMenu
               name={user?.display_name}
               onLogout={logout}
               switchTo={switchTargets(user?.contexts, 'teacher')}
-              placement="top"
+              placement={collapsed ? 'right' : 'top'}
               compact={collapsed}
             />
           </>

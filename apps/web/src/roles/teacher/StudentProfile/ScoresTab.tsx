@@ -11,7 +11,6 @@ import { Table, TableBody, TableHead, TableRow, Td, Th } from '@/shared/componen
 import { useGrading } from '@/shared/hooks/useGrading'
 import { cellState, examTable, studentTrend } from '@/shared/lib/grades'
 import type { StudentProfile } from '@/shared/types/student'
-import SingleExamSummary from './SingleExamSummary'
 
 export default function ScoresTab({ profile }: { profile: StudentProfile }) {
   const grading = useGrading()
@@ -93,20 +92,22 @@ export default function ScoresTab({ profile }: { profile: StudentProfile }) {
       </div>
       <section>
         <h3 className="mb-1 text-sm font-medium">排名变化</h3>
-        {trend.length < 2 ? (
-          <SingleExamSummary
-            text={`只有 1 次考试:${trend[0]?.rank == null ? '暂无名次' : `第 ${trend[0].rank} 名`}`}
-          />
-        ) : (
-          <TrendLine
-            label="排名变化"
-            reversed
-            labels={trend.map((p) => p.name)}
-            series={[{ key: 'rank', label: '排名', values: trend.map((p) => p.rank) }]}
-            format={(v) => `第 ${v} 名`}
-            yAxisWidth={64}
-          />
-        )}
+        <TrendLine
+          label="排名变化"
+          reversed
+          labels={trend.map((p) => p.name)}
+          series={[{ key: 'rank', label: '排名', values: trend.map((p) => p.rank) }]}
+          format={(v) => `第 ${v} 名`}
+          yAxisWidth={64}
+          minPoints={2}
+          summary={(points) =>
+            points.length === 1
+              ? `只有 1 次考试有名次:第 ${points[0].value} 名`
+              : points.length === 0
+                ? '暂无名次'
+                : undefined
+          }
+        />
       </section>
     </div>
   )

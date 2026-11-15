@@ -22,8 +22,8 @@ export default function AccountMenu({
   switchTo?: { label: string; to: string; context: Context }[]
   /** 是否显示"我的偏好"(教师端专有),默认显示 */
   preferences?: boolean
-  /** 菜单弹出方向;侧栏底部用 'top' */
-  placement?: 'top' | 'bottom'
+  /** 菜单弹出方向;侧栏展开时在底部用 'top',rail 下用 'right'(从底部往上、在侧栏右边展开) */
+  placement?: 'top' | 'bottom' | 'right'
   /** 只显示头像、不画下拉箭头(侧栏 rail 宽 72,放不下头像加箭头) */
   compact?: boolean
 }) {
@@ -41,6 +41,9 @@ export default function AccountMenu({
         label="账号菜单"
         side={placement}
         align={placement === 'top' ? 'start' : 'end'}
+        // rail 下的间距:aside 72 宽、footer 内边距 12,内容区 48;账号按钮 44 宽居中,右缘离侧栏右缘
+        // 12 + 2 = 14px。默认的 ml-2(8px)推不出侧栏,所以用 ml-6(24px):24 - 14 = 浮层左缘在侧栏外 10px
+        className={placement === 'right' ? 'ml-6' : undefined}
         triggerProps={{
           variant: 'ghost',
           size: 'touch',

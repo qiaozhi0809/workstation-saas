@@ -71,6 +71,67 @@ test('[ toggles the sidebar', async ({ page }) => {
   await expect.poll(() => asideWidth(page)).toBeCloseTo(264, 0)
 })
 
+// G-X-1:rail 只有 72 宽,账号菜单和通知面板必须在侧栏右边整块展开,不被侧栏或祖先裁掉
+for (const [name, trigger, layer] of [
+  ['account menu', { name: '账号菜单' }, { role: 'menu', name: '账号菜单' }],
+  ['notice panel', { name: /^通知/ }, { role: 'dialog', name: '通知' }],
+] as const) {
+  test(`rail ${name} opens to the right and stays inside the viewport`, async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await signIn(page, 'principal01', /\/admin\/today/)
+    await page.getByRole('button', { name: '折叠侧栏' }).click()
+    await expect.poll(() => asideWidth(page)).toBeCloseTo(72, 0)
+    await aside(page).getByRole('button', trigger).click()
+    const box = page.getByRole(layer.role, { name: layer.name })
+    await expect(box).toBeVisible()
+    const side = (await aside(page).boundingBox())!
+    const b = (await box.boundingBox())!
+    const vp = page.viewportSize()!
+    expect(b.x, '在侧栏右边').toBeGreaterThanOrEqual(side.x + side.width + 4)
+    expect(b.y).toBeGreaterThanOrEqual(0)
+    expect(b.y + b.height).toBeLessThanOrEqual(vp.height + 1)
+    expect(b.x + b.width).toBeLessThanOrEqual(vp.width + 1)
+    // 没被裁:四条边的中点和中心点(各向内缩 2px,避开 16px 圆角)真的命中浮层自己,
+    // 而不是被祖先裁掉后露出下面的页面
+    const hit = await box.evaluate((el) => {
+      const r = el.getBoundingClientRect()
+      const cx = r.left + r.width / 2
+      const cy = r.top + r.height / 2
+      return [
+        [cx, r.top + 2],
+        [cx, r.bottom - 2],
+        [r.left + 2, cy],
+        [r.right - 2, cy],
+        [cx, cy],
+      ].every(([x, y]) => el.contains(document.elementFromPoint(x, y)))
+    })
+    expect(hit).toBe(true)
+  })
+}
+
+test('admin nav scrolls fully above the footer buttons at 1280×800', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await signIn(page, 'principal01', /\/admin\/today/)
+  const nav = aside(page).getByRole('navigation', { name: '主导航' })
+  const last = nav.getByRole('link').last()
+  // 滚到底:最后一项的底边在导航区底边上方,至少留出 pb-4 的 16px 内边距
+  await nav.evaluate((el) => {
+    el.scrollTop = el.scrollHeight
+  })
+  await expect(async () => {
+    const n = (await nav.boundingBox())!
+    const l = (await last.boundingBox())!
+    expect(l.y).toBeGreaterThanOrEqual(n.y - 1)
+    expect(l.y + l.height).toBeLessThanOrEqual(n.y + n.height - 16 + 1)
+  }).toPass()
+  // 最后一项与底部按钮区(折叠按钮、通知 / 主题 / 账号)的盒子不相交
+  const l = (await last.boundingBox())!
+  const toggle = (await aside(page).getByRole('button', { name: '折叠侧栏' }).boundingBox())!
+  const account = (await aside(page).getByRole('button', { name: '账号菜单' }).boundingBox())!
+  for (const b of [toggle, account])
+    expect(l.y + l.height, '不与底部按钮区相交').toBeLessThanOrEqual(b.y + 1)
+})
+
 test('classroom defaults to rail', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 })
   await signInTeacher(page)

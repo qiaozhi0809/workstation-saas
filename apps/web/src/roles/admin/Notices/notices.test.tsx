@@ -701,6 +701,22 @@ describe('发通知:我发出的', () => {
     expect(adminApi.sentNotices).toHaveBeenCalledWith(1)
   })
 
+  it('shows a skeleton, not the bare spinner line, while the list and the recipients load', async () => {
+    vi.mocked(adminApi.sentNotices)
+      .mockImplementationOnce(() => new Promise(() => {}))
+      .mockResolvedValue({ items: [sent('1')], total: 1 })
+    const first = renderPage()
+    const loading = await screen.findAllByRole('status', { name: '加载中…' })
+    expect(loading.some((el) => el.getAttribute('aria-busy') === 'true')).toBe(true)
+    first.unmount()
+
+    vi.mocked(adminApi.noticeRecipients).mockImplementation(() => new Promise(() => {}))
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: '通知1' }))
+    const dlg = within(await screen.findByRole('dialog', { name: '通知1' }))
+    expect(dlg.getByRole('status', { name: '加载中…' })).toHaveAttribute('aria-busy', 'true')
+  })
+
   it('shows an empty state', async () => {
     vi.mocked(adminApi.sentNotices).mockResolvedValue({ items: [], total: 0 })
     renderPage()

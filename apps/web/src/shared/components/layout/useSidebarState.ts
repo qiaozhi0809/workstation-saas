@@ -7,19 +7,26 @@ export const SIDEBAR_KEYS = {
   classroom: 'ws-sidebar:classroom',
 } as const
 
-const DRAWER_QUERY = '(min-width: 1024px)'
-const EXPAND_QUERY = '(min-width: 1280px)'
+/** 断点只在这里定义一份:媒体查询、抽屉判断、默认折叠都从这两个数算 */
+const NARROW_AT = 1024
+const WIDE_AT = 1280
+
+const DRAWER_QUERY = `(min-width: ${NARROW_AT}px)`
+const EXPAND_QUERY = `(min-width: ${WIDE_AT}px)`
 
 /**
  * 低于这个宽度侧栏改成抽屉(顶部条里放打开菜单的按钮,主区占满宽度)。
  * 教室页要尽量留出舞台宽度,所以 1280 以下一律抽屉;其余页面 1024 以下
  */
-export const DRAWER_BREAKPOINT: Record<SidebarScope, number> = { default: 1024, classroom: 1280 }
+export const DRAWER_BREAKPOINT: Record<SidebarScope, number> = {
+  default: NARROW_AT,
+  classroom: WIDE_AT,
+}
 
 /** 没有用户记录时的默认:教室页永远从 rail 开始;其他页 < 1280 宽收成 rail */
 export function defaultCollapsed(width: number, scope: SidebarScope): boolean {
   if (scope === 'classroom') return true
-  return width < 1280
+  return width < WIDE_AT
 }
 
 function readStored(scope: SidebarScope): boolean | null {
@@ -44,8 +51,8 @@ const matches = (query: string) => window.matchMedia?.(query).matches ?? true
 
 /** 当前宽度折成断点代表值,只用来取默认值 */
 function widthBucket(): number {
-  if (matches(EXPAND_QUERY)) return 1280
-  if (matches(DRAWER_QUERY)) return 1024
+  if (matches(EXPAND_QUERY)) return WIDE_AT
+  if (matches(DRAWER_QUERY)) return NARROW_AT
   return 0
 }
 
@@ -61,6 +68,9 @@ function useBucket(): number {
   }, [])
   return bucket
 }
+
+/** 测试用:两个媒体查询字符串 */
+export const SIDEBAR_QUERIES = [DRAWER_QUERY, EXPAND_QUERY] as const
 
 export function useSidebarState(scope: SidebarScope): {
   mode: 'panel' | 'drawer'

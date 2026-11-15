@@ -134,6 +134,11 @@ function ParentShell() {
           <ParentNav placement="top" childId={child.student_id} />
         ) : undefined
       }
+      subNav={
+        child && wide && !oneRow ? (
+          <ParentNav placement="top" childId={child.student_id} />
+        ) : undefined
+      }
       actions={
         <>
           <ThemeToggle />
@@ -152,13 +157,6 @@ function ParentShell() {
         </>
       }
     >
-      {/* 临时方案:AppShell 顶栏固定一行高,768–1023 宽放不下第二行导航,先放进 main 顶部的 sticky 条;
-          AppShell 有第二行槽后删掉这里(缺口记给收尾段) */}
-      {child && wide && !oneRow && (
-        <div className="sticky top-0 z-10 border-b bg-background px-4">
-          <ParentNav placement="top" childId={child.student_id} />
-        </div>
-      )}
       <FirstVisit />
       {body}
     </AppShell>

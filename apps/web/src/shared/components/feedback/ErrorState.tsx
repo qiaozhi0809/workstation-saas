@@ -22,7 +22,13 @@ export function ErrorState({
       <p className="text-sm font-medium text-destructive">{title}</p>
       {description && <p className="text-sm text-muted-foreground">{description}</p>}
       {onRetry && (
-        <Button variant="outline" size="sm" onClick={onRetry} disabled={retrying}>
+        <Button
+          variant="outline"
+          size="sm"
+          className="touch-target"
+          onClick={onRetry}
+          disabled={retrying}
+        >
           重试
         </Button>
       )}

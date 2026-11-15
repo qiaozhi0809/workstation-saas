@@ -104,4 +104,15 @@ describe('PageContainer', () => {
     expect(root).not.toBeNull()
     expect(root).toHaveClass('extra')
   })
+
+  it('passes data-* attributes through without overriding its own', () => {
+    const { container } = render(
+      <PageContainer width="narrow" data-testid="my-page" data-width="full">
+        <p>正文</p>
+      </PageContainer>,
+    )
+    const root = container.querySelector('[data-page-container]')
+    expect(root).toHaveAttribute('data-testid', 'my-page')
+    expect(root).toHaveAttribute('data-width', 'narrow')
+  })
 })

@@ -10,7 +10,7 @@ const NativeSelect = React.forwardRef<
     <select
       className={cn(
         controlSize === 'sm' ? 'h-8' : 'h-10',
-        'rounded-md border border-input bg-background px-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50',
+        'rounded-md border border-input bg-transparent px-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50',
         className,
       )}
       ref={ref}

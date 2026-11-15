@@ -299,10 +299,10 @@ export default function ClassTimetableGrid({
                           cell ? `${cell.subject} ${cell.teacher?.name ?? '未指定老师'}` : '空'
                         }`}
                         className={cn(
-                          'flex h-12 w-full min-w-0 flex-col items-center justify-center rounded-md border px-1 py-1 text-center focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
+                          'flex h-12 w-full min-w-0 flex-col items-center justify-center rounded-md px-1 py-1 text-center focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
                           cell
-                            ? 'border-transparent bg-primary/10 hover:bg-primary/20'
-                            : 'border-dashed text-muted-foreground hover:bg-accent',
+                            ? 'bg-primary/10 hover:bg-primary/20'
+                            : 'border border-dashed text-muted-foreground hover:bg-accent',
                         )}
                         onClick={() => {
                           setError('')

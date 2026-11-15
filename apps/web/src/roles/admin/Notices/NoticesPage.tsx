@@ -59,7 +59,7 @@ function SentList({ page, setPage }: { page: number; setPage(p: number): void })
     <Card role="region" aria-label="我发出的" className="flex flex-col gap-3 p-4">
       <h2 className="text-base font-medium">我发出的</h2>
       {list.isPending ? (
-        <LoadingState />
+        <LoadingState variant="form" />
       ) : list.isError ? (
         <ErrorState
           title={list.error instanceof ApiError ? list.error.message : '加载失败,请重试'}

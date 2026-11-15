@@ -129,7 +129,9 @@ it('puts the tabs on a second row under the top bar between 768 and 1023', async
   await screen.findByText('三年二班')
   const nav = screen.getByRole('navigation', { name: '主导航' })
   expect(topBar()).not.toContainElement(nav)
-  expect(screen.getByRole('main')).toContainElement(nav)
+  // 在 AppShell 的第二行槽里(顶栏与 main 之间),不再是 main 里的 sticky 条
+  expect(screen.getByRole('main')).not.toContainElement(nav)
+  expect(screen.getByRole('main').previousElementSibling).toContainElement(nav)
   // 第一行:校名、切换孩子、档案、主题、账号
   expect(within(topBar()).getByRole('combobox', { name: '切换孩子' })).toBeTruthy()
 })

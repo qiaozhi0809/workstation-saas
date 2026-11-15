@@ -1,4 +1,5 @@
 import { forwardRef, type ButtonHTMLAttributes } from 'react'
+import { readFileSync } from 'node:fs'
 import { render, screen } from '@testing-library/react'
 import { expect, it, vi } from 'vitest'
 
@@ -82,4 +83,19 @@ it('asChild never reaches arc', () => {
     </Button>,
   )
   expect(screen.getByRole('link', { name: '去' })).not.toHaveAttribute('data-arc-variant')
+})
+
+// G-CR-2:Arc Button 不管子图标尺寸,lucide 默认 24px。适配层给 Arc 路径挂 ws-btn,
+// arc-overrides.css 用零特异性规则把没写尺寸的图标收到 16px(vitest 不加载 CSS,直接读文件)
+it('arc path buttons carry ws-btn so their icons are scaled to 16px', () => {
+  render(
+    <Button className="extra">
+      <svg data-testid="icon" aria-hidden="true" />
+      按钮
+    </Button>,
+  )
+  const btn = screen.getByRole('button', { name: '按钮' })
+  expect(btn).toHaveClass('ws-btn', 'extra')
+  const css = readFileSync('src/theme/arc-overrides.css', 'utf8')
+  expect(css).toMatch(/:where\(\.ws-btn\) svg\s*\{[^}]*width: 1rem;[^}]*height: 1rem;/)
 })

@@ -7,7 +7,7 @@ import { Building2, Sun } from 'lucide-react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AccountMenu from './AccountMenu'
 import { Sidebar, type SidebarGroup } from './Sidebar'
-import { DRAWER_BREAKPOINT } from './useSidebarState'
+import { DRAWER_BREAKPOINT, SIDEBAR_QUERIES } from './useSidebarState'
 import SidebarShell from './SidebarShell'
 import { Breadcrumb } from './Breadcrumb'
 import { adminCrumbs, teacherCrumbs } from './crumbs'
@@ -81,6 +81,42 @@ describe('Sidebar', () => {
     sidebar()
     expect(screen.getByRole('link', { name: '组织架构' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('link', { name: '今日关注' })).not.toHaveAttribute('aria-current')
+  })
+
+  it('highlights the parent item on a sub page listed in alsoActive', () => {
+    render(
+      <Wrap at="/admin/classes/c1">
+        <Sidebar
+          groups={[
+            {
+              key: 'top',
+              items: [
+                {
+                  to: '/admin/board',
+                  label: '全校看板',
+                  icon: Sun,
+                  alsoActive: ['/admin/classes/:id'],
+                },
+                { to: '/admin/today', label: '今日关注', icon: Sun },
+              ],
+            },
+          ]}
+          collapsed={false}
+          onToggle={() => {}}
+          header={null}
+          footer={null}
+        />
+      </Wrap>,
+    )
+    expect(screen.getByRole('link', { name: '全校看板' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: '今日关注' })).not.toHaveAttribute('aria-current')
+  })
+
+  it('nav scrolls on its own with a bottom inset and a fade so the last item is never pinned under the footer', () => {
+    sidebar()
+    const nav = screen.getByRole('navigation', { name: '主导航' })
+    expect(nav).toHaveClass('overflow-y-auto', 'min-h-0', 'flex-1', 'pb-4')
+    expect(nav.className).toContain('mask-image:linear-gradient(to_bottom')
   })
 
   it('rail hides labels but keeps names', () => {
@@ -211,6 +247,34 @@ describe('SidebarShell', () => {
     expect(DRAWER_BREAKPOINT).toEqual({ default: 1024, classroom: 1280 })
   })
 
+  it('media queries are built from the same breakpoints', () => {
+    expect(SIDEBAR_QUERIES).toEqual([
+      `(min-width: ${DRAWER_BREAKPOINT.default}px)`,
+      `(min-width: ${DRAWER_BREAKPOINT.classroom}px)`,
+    ])
+  })
+
+  it('the drawer menu button is a touch target', () => {
+    mockWidth(800)
+    shell(null)
+    expect(screen.getByRole('button', { name: '打开菜单' })).toHaveClass('touch-target')
+  })
+
+  // G-S14:侧栏自己的图标按钮是 ui/icon-button(40 方、不走 Arc Button)
+  it('the sidebar icon buttons are IconButtons, not Arc buttons', () => {
+    mockWidth(800)
+    const { unmount } = shell(null)
+    const menu = screen.getByRole('button', { name: '打开菜单' })
+    expect(menu).toHaveClass('h-10', 'w-10')
+    expect(menu).not.toHaveClass('ws-btn')
+    unmount()
+    mockWidth(1440)
+    shell(null)
+    const toggle = screen.getByRole('button', { name: '折叠侧栏' })
+    expect(toggle).toHaveClass('h-10', 'w-10')
+    expect(toggle).not.toHaveClass('ws-btn')
+  })
+
   it('classroom scope is a drawer at 1024 and a rail at 1280', () => {
     mockWidth(1024)
     const first = shell(null, '/teacher/classroom', 'classroom')
@@ -286,6 +350,21 @@ describe('AccountMenu in the sidebar', () => {
     )
     fireEvent.click(screen.getByRole('button', { name: '账号菜单' }))
     expect(screen.getByRole('menu', { name: '账号菜单' })).toHaveClass('bottom-full')
+  })
+
+  it('opens to the right of the trigger in a rail', () => {
+    render(
+      <Wrap>
+        <AccountMenu name="王老师" onLogout={() => {}} placement="right" compact />
+      </Wrap>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: '账号菜单' }))
+    // 向右弹出、底边与触发按钮对齐(往上展开):不落在 72 宽的侧栏里
+    expect(screen.getByRole('menu', { name: '账号菜单' })).toHaveClass(
+      'left-full',
+      'ml-6',
+      'bottom-0',
+    )
   })
 
   it('defaults to opening downward', () => {

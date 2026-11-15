@@ -64,7 +64,7 @@ export default function TodayPage() {
       <PageHeader
         title="今日关注"
         description={`${d.date} ${weekdayCN(d.date)}`}
-        meta={<Badge variant="secondary">{d.scope_label}</Badge>}
+        meta={<Badge variant="neutral">{d.scope_label}</Badge>}
       />
       {/* 开学准备清单:只有 org.manage / settings.manage 看得到,全部完成后折叠成一行 */}
       <SetupChecklist />

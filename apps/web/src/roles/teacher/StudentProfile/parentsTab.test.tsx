@@ -225,6 +225,30 @@ it('reports missing phone and name in place instead of disabling add', async () 
   expect(parentLinksApi.create).not.toHaveBeenCalled()
 })
 
+it('clears the phone error as soon as the phone is typed, leaving the name error', async () => {
+  mount(<ParentsTab profile={profile} />)
+  await screen.findByText('王妈妈')
+  fireEvent.click(screen.getByRole('button', { name: '添加家长' }))
+  expect(await screen.findByText('请填写手机号')).toBeInTheDocument()
+  fireEvent.change(screen.getByLabelText('手机号'), { target: { value: '13800000009' } })
+  expect(screen.queryByText('请填写手机号')).not.toBeInTheDocument()
+  expect(screen.getByText('请填写称呼')).toBeInTheDocument()
+  fireEvent.change(screen.getByLabelText('称呼'), { target: { value: '王爸爸' } })
+  expect(screen.queryByText('请填写称呼')).not.toBeInTheDocument()
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+})
+
+it('focuses the name field when only the phone is filled', async () => {
+  mount(<ParentsTab profile={profile} />)
+  await screen.findByText('王妈妈')
+  fireEvent.change(screen.getByLabelText('手机号'), { target: { value: '13800000009' } })
+  fireEvent.click(screen.getByRole('button', { name: '添加家长' }))
+  expect(await screen.findByText('请填写称呼')).toBeInTheDocument()
+  expect(screen.queryByText('请填写手机号')).not.toBeInTheDocument()
+  expect(screen.getByLabelText('称呼')).toHaveFocus()
+  expect(parentLinksApi.create).not.toHaveBeenCalled()
+})
+
 it('disables adding at 4 parents and says why', async () => {
   vi.mocked(parentLinksApi.list).mockResolvedValue(
     [1, 2, 3, 4].map((i) => pr({ link_id: `l${i}`, is_primary: i === 1, name: `家长${i}` })),

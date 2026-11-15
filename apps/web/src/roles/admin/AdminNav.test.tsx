@@ -81,6 +81,12 @@ describe('adminGroups', () => {
     }
   })
 
+  it('keeps the parent item active on hidden sub pages', () => {
+    const items = adminGroups(ADMIN_PAGES, PERMS.principal).flatMap((g) => g.items)
+    expect(items.find((i) => i.to === '/admin/board')?.alsoActive).toEqual(['/admin/classes/:id'])
+    expect(items.find((i) => i.to === '/admin/org')?.alsoActive).toContain('/admin/org/classes/:id')
+  })
+
   it('hidden and unauthorized pages are excluded', () => {
     const all = adminGroups(ADMIN_PAGES, PERMS.principal).flatMap((g) => g.items.map((i) => i.to))
     // hidden 的子页不进导航

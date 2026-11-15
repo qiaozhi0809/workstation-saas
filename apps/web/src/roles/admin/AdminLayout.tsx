@@ -62,14 +62,14 @@ export default function AdminLayout({ pages = ADMIN_PAGES }: { pages?: AdminPage
         )}
         footer={(collapsed) => (
           <>
-            <NoticeBell side="top" />
+            <NoticeBell side={collapsed ? 'right' : 'top'} />
             <ThemeToggle compact />
             <AccountMenu
               name={user?.display_name}
               onLogout={logout}
               switchTo={switchTargets(user?.contexts, 'admin')}
               preferences={false}
-              placement="top"
+              placement={collapsed ? 'right' : 'top'}
               compact={collapsed}
             />
           </>

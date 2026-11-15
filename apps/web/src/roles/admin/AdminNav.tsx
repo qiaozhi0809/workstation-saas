@@ -19,7 +19,16 @@ export function adminGroups(
   perms: readonly string[] | undefined,
 ): SidebarGroup[] {
   const visible = pages.filter((p) => !p.hidden && hasPagePerm(perms, p.perm))
-  const toItem = (p: AdminPage) => ({ to: `/admin/${p.path}`, label: p.label, icon: p.icon })
+  // 没有导航入口的子页(班级详情等)挂在父页那一项下面,侧栏照样高亮父页
+  const toItem = (p: AdminPage) => {
+    const subPages = pages.filter((h) => h.hidden && h.parent === p.path)
+    return {
+      to: `/admin/${p.path}`,
+      label: p.label,
+      icon: p.icon,
+      ...(subPages.length > 0 ? { alsoActive: subPages.map((h) => `/admin/${h.path}`) } : {}),
+    }
+  }
   const groups: SidebarGroup[] = [
     { key: 'top', items: visible.filter((p) => !p.group).map(toItem) },
     ...GROUPS.map((g) => ({

@@ -15,19 +15,18 @@ const files = Object.fromEntries(
   Object.entries(sources).map(([path, source]) => [path.replace(/^\//, ''), source]),
 )
 
-// 棘轮:命中数只许下降。数字是 M6 段 T 开工时在 main 上实测的(见 PR 正文的计数命令);
-// 页面段改掉一处就把对应数字往下调,Z 段全部收成 0。
+// 棘轮已收紧到 0:新代码不许再出现这些写法。确属例外的写进 uiRules.ts 对应规则的 allow(带理由)。
 const BASELINE: Record<string, number> = {
-  semibold: 89,
-  'big-radius': 2,
-  'raw-table': 25,
-  'raw-h1': 30,
-  'button-height': 2,
-  'tracking-tight': 5,
-  'transition-all': 1,
+  semibold: 0,
+  'big-radius': 0,
+  'raw-table': 0,
+  'raw-h1': 0,
+  'button-height': 0,
+  'tracking-tight': 0,
+  'transition-all': 0,
   'arc-import-in-pages': 0,
-  'bordered-card': 107,
-  'pill-chip': 12,
+  'bordered-card': 0,
+  'pill-chip': 0,
 }
 
 describe('ui rules ratchet', () => {

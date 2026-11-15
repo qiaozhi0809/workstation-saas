@@ -2,7 +2,7 @@ import { useEffect, useRef, type MouseEvent, type ReactNode } from 'react'
 import { Menu as MenuIcon } from 'lucide-react'
 import { useLocation } from 'react-router-dom'
 import SidePanel from '@/shared/components/overlay/SidePanel'
-import { Button } from '@/shared/components/ui/button'
+import { IconButton } from '@/shared/components/ui/icon-button'
 import { Sidebar, type SidebarGroup } from './Sidebar'
 import { isSidebarShortcut, useSidebarState, type SidebarScope } from './useSidebarState'
 
@@ -83,16 +83,13 @@ export default function SidebarShell({
         {showBar && (
           <div className="flex h-12 shrink-0 items-center gap-2 px-4 lg:px-8">
             {drawer && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="shrink-0"
+              <IconButton
+                icon={MenuIcon}
+                className="touch-target"
                 aria-label="打开菜单"
                 aria-expanded={drawerOpen}
                 onClick={() => setDrawerOpen(true)}
-              >
-                <MenuIcon className="h-5 w-5" aria-hidden="true" />
-              </Button>
+              />
             )}
             {breadcrumb ?? drawerBar}
           </div>

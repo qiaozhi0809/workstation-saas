@@ -29,14 +29,11 @@ vi.mock('@/shared/components/arc/badge/badge', () => ({
 import { Badge } from './badge'
 
 it.each([
-  ['default', 'neutral'],
-  ['secondary', 'neutral'],
   ['neutral', 'neutral'],
   ['success', 'success'],
   ['warning', 'warning'],
   ['info', 'info'],
   ['danger', 'danger'],
-  ['destructive', 'danger'],
 ] as const)('maps %s to arc tone %s, not outlined', (variant, tone) => {
   render(<Badge variant={variant}>状态</Badge>)
   const el = screen.getByText('状态')
