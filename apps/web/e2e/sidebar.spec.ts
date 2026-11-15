@@ -71,6 +71,40 @@ test('[ toggles the sidebar', async ({ page }) => {
   await expect.poll(() => asideWidth(page)).toBeCloseTo(264, 0)
 })
 
+// G-X-1:rail 只有 72 宽,账号菜单和通知面板必须在侧栏右边整块展开,不被侧栏或祖先裁掉
+for (const [name, trigger, layer] of [
+  ['account menu', { name: '账号菜单' }, { role: 'menu', name: '账号菜单' }],
+  ['notice panel', { name: /^通知/ }, { role: 'dialog', name: '通知' }],
+] as const) {
+  test(`rail ${name} opens to the right and stays inside the viewport`, async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await signIn(page, 'principal01', /\/admin\/today/)
+    await page.getByRole('button', { name: '折叠侧栏' }).click()
+    await expect.poll(() => asideWidth(page)).toBeCloseTo(72, 0)
+    await aside(page).getByRole('button', trigger).click()
+    const box = page.getByRole(layer.role, { name: layer.name })
+    await expect(box).toBeVisible()
+    const side = (await aside(page).boundingBox())!
+    const b = (await box.boundingBox())!
+    const vp = page.viewportSize()!
+    expect(b.x, '在侧栏右边').toBeGreaterThanOrEqual(side.x + side.width - 1)
+    expect(b.y).toBeGreaterThanOrEqual(0)
+    expect(b.y + b.height).toBeLessThanOrEqual(vp.height + 1)
+    expect(b.x + b.width).toBeLessThanOrEqual(vp.width + 1)
+    // 没被裁:浮层四角附近的点真的命中浮层自己(而不是被祖先裁掉后露出下面的页面)
+    const hit = await box.evaluate((el) => {
+      const r = el.getBoundingClientRect()
+      return [
+        [r.left + 4, r.top + 4],
+        [r.right - 4, r.top + 4],
+        [r.left + 4, r.bottom - 4],
+        [r.right - 4, r.bottom - 4],
+      ].every(([x, y]) => el.contains(document.elementFromPoint(x, y)))
+    })
+    expect(hit).toBe(true)
+  })
+}
+
 test('classroom defaults to rail', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 })
   await signInTeacher(page)

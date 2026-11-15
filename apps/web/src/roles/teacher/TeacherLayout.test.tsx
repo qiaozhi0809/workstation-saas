@@ -743,6 +743,15 @@ describe('rail', () => {
     const trigger = await screen.findByRole('button', { name: '账号菜单' })
     expect(trigger.querySelector('svg')).toBeNull()
   })
+
+  it('opens the account menu and the notice panel to the right in the rail', async () => {
+    vi.mocked(classesApi.mine).mockResolvedValue(TWO_CLASSES())
+    renderLayout()
+    fireEvent.click(await screen.findByRole('button', { name: '账号菜单' }))
+    expect(screen.getByRole('menu', { name: '账号菜单' })).toHaveClass('left-full')
+    fireEvent.click(screen.getByRole('button', { name: /^通知/ }))
+    expect(await screen.findByRole('dialog', { name: '通知' })).toHaveClass('left-full')
+  })
 })
 
 it('[ does not toggle while profile drawer input is focused', async () => {

@@ -109,13 +109,13 @@ export default function TeacherLayout() {
         )}
         footer={(collapsed) => (
           <>
-            <NoticeBell side="top" />
+            <NoticeBell side={collapsed ? 'right' : 'top'} />
             <ThemeToggle compact />
             <AccountMenu
               name={user?.display_name}
               onLogout={logout}
               switchTo={switchTargets(user?.contexts, 'teacher')}
-              placement="top"
+              placement={collapsed ? 'right' : 'top'}
               compact={collapsed}
             />
           </>

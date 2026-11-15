@@ -330,6 +330,17 @@ describe('AccountMenu in the sidebar', () => {
     expect(screen.getByRole('menu', { name: '账号菜单' })).toHaveClass('bottom-full')
   })
 
+  it('opens to the right of the trigger in a rail', () => {
+    render(
+      <Wrap>
+        <AccountMenu name="王老师" onLogout={() => {}} placement="right" compact />
+      </Wrap>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: '账号菜单' }))
+    // 向右弹出、底边与触发按钮对齐(往上展开):不落在 72 宽的侧栏里
+    expect(screen.getByRole('menu', { name: '账号菜单' })).toHaveClass('left-full', 'bottom-0')
+  })
+
   it('defaults to opening downward', () => {
     render(
       <Wrap>

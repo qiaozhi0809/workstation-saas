@@ -22,8 +22,8 @@ export default function AccountMenu({
   switchTo?: { label: string; to: string; context: Context }[]
   /** 是否显示"我的偏好"(教师端专有),默认显示 */
   preferences?: boolean
-  /** 菜单弹出方向;侧栏底部用 'top' */
-  placement?: 'top' | 'bottom'
+  /** 菜单弹出方向;侧栏展开时在底部用 'top',rail 下用 'right'(从底部往上、在侧栏右边展开) */
+  placement?: 'top' | 'bottom' | 'right'
   /** 只显示头像、不画下拉箭头(侧栏 rail 宽 72,放不下头像加箭头) */
   compact?: boolean
 }) {
