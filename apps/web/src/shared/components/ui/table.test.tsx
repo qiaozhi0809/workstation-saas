@@ -76,6 +76,12 @@ describe('Table', () => {
     expect(screen.getByRole('table')).not.toHaveClass('my-box')
   })
 
+  it('scroll containers are positioned so sr-only descendants stay clipped inside', () => {
+    const { container } = render(<Sample minWidth={896} />)
+    expect(container.firstElementChild).toHaveClass('relative')
+    expect(container.querySelector('[data-table-scroll]')).toHaveClass('relative')
+  })
+
   it('has no scroller without minWidth', () => {
     const { container } = render(<Sample />)
     expect(container.querySelector('[data-table-scroll]')).toBeNull()
