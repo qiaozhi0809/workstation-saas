@@ -114,6 +114,9 @@ it('reports an empty record in place instead of disabling add', async () => {
   expect(await screen.findByText('请填写记录内容')).toBeInTheDocument()
   expect(input).toHaveFocus()
   expect(growthApi.create).not.toHaveBeenCalled()
+  // 开始输入后错误就地消失
+  fireEvent.change(input, { target: { value: '家访' } })
+  await waitFor(() => expect(screen.queryByText('请填写记录内容')).toBeNull())
 })
 
 it('adds a record with Enter and keeps composition input', async () => {

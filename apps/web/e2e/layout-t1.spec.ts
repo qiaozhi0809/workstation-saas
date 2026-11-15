@@ -100,10 +100,11 @@ for (const variant of VARIANTS) {
 test('profile charts with one exam show a summary', async ({ page }) => {
   await guardReadOnly(page)
   await patchJson(page, /\/api\/v1\/classes\/[^/]+\/gradebook$/, (json) => {
-    const mine = json.exams.filter(
-      (e: { scores: Record<string, unknown> }) => Object.keys(e.scores).length > 0,
-    )
-    json.exams = mine.slice(0, 1)
+    // 只留一场:分数条数最多的(并列取最新),种子里这样的考试含王小一的分数
+    const count = (e: { scores: Record<string, unknown> }) => Object.keys(e.scores).length
+    let best = json.exams[0]
+    for (const e of json.exams) if (count(e) >= count(best)) best = e
+    json.exams = [best]
   })
   await signInAs(page, 'teacher')
   await openStudentDrawer(page)
