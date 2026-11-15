@@ -51,7 +51,9 @@ export default function NoticeBell({
       label="通知"
       side={side}
       align={side === 'top' ? 'start' : 'end'}
-      className="p-0"
+      // rail 下的间距:内容区 48,通知按钮 40 宽居中,右缘离侧栏右缘 12 + 4 = 16px;
+      // 默认 ml-2 推不出侧栏,ml-6(24px)让浮层左缘落在侧栏外 8px
+      className={side === 'right' ? 'p-0 ml-6' : 'p-0'}
       triggerProps={{
         variant: 'ghost',
         size: 'icon',

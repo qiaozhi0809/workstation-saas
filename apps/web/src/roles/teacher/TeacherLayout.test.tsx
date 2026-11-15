@@ -748,9 +748,9 @@ describe('rail', () => {
     vi.mocked(classesApi.mine).mockResolvedValue(TWO_CLASSES())
     renderLayout()
     fireEvent.click(await screen.findByRole('button', { name: '账号菜单' }))
-    expect(screen.getByRole('menu', { name: '账号菜单' })).toHaveClass('left-full')
+    expect(screen.getByRole('menu', { name: '账号菜单' })).toHaveClass('left-full', 'ml-6')
     fireEvent.click(screen.getByRole('button', { name: /^通知/ }))
-    expect(await screen.findByRole('dialog', { name: '通知' })).toHaveClass('left-full')
+    expect(await screen.findByRole('dialog', { name: '通知' })).toHaveClass('left-full', 'ml-6')
   })
 })
 

@@ -87,7 +87,7 @@ for (const [name, trigger, layer] of [
     const side = (await aside(page).boundingBox())!
     const b = (await box.boundingBox())!
     const vp = page.viewportSize()!
-    expect(b.x, '在侧栏右边').toBeGreaterThanOrEqual(side.x + side.width - 1)
+    expect(b.x, '在侧栏右边').toBeGreaterThanOrEqual(side.x + side.width + 4)
     expect(b.y).toBeGreaterThanOrEqual(0)
     expect(b.y + b.height).toBeLessThanOrEqual(vp.height + 1)
     expect(b.x + b.width).toBeLessThanOrEqual(vp.width + 1)

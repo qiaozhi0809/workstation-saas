@@ -360,7 +360,11 @@ describe('AccountMenu in the sidebar', () => {
     )
     fireEvent.click(screen.getByRole('button', { name: '账号菜单' }))
     // 向右弹出、底边与触发按钮对齐(往上展开):不落在 72 宽的侧栏里
-    expect(screen.getByRole('menu', { name: '账号菜单' })).toHaveClass('left-full', 'bottom-0')
+    expect(screen.getByRole('menu', { name: '账号菜单' })).toHaveClass(
+      'left-full',
+      'ml-6',
+      'bottom-0',
+    )
   })
 
   it('defaults to opening downward', () => {

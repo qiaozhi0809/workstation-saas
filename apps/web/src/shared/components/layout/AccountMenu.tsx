@@ -41,6 +41,9 @@ export default function AccountMenu({
         label="账号菜单"
         side={placement}
         align={placement === 'top' ? 'start' : 'end'}
+        // rail 下的间距:aside 72 宽、footer 内边距 12,内容区 48;账号按钮 44 宽居中,右缘离侧栏右缘
+        // 12 + 2 = 14px。默认的 ml-2(8px)推不出侧栏,所以用 ml-6(24px):24 - 14 = 浮层左缘在侧栏外 10px
+        className={placement === 'right' ? 'ml-6' : undefined}
         triggerProps={{
           variant: 'ghost',
           size: 'touch',
