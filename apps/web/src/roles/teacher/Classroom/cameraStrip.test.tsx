@@ -462,3 +462,12 @@ it('shows the error inside the strip when the camera list fails', async () => {
   expect(await within(strip).findByRole('alert')).toHaveTextContent('现在不能看这个班的摄像头')
   expect(FakeHls.instances).toHaveLength(0)
 })
+
+it('draws the strip as a surface card and the thumbnails without borders', async () => {
+  const { strip } = await openStrip()
+  expect(strip.classList.contains('rounded-lg')).toBe(true)
+  expect(strip.classList.contains('shadow-surface')).toBe(true)
+  expect(strip.classList.contains('border')).toBe(false)
+  const tile = within(strip).getByLabelText('讲台机位').closest('.bg-muted')!
+  expect(tile.classList.contains('border')).toBe(false)
+})

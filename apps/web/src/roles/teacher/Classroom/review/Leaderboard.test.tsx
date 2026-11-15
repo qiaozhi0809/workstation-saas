@@ -78,3 +78,26 @@ it('讲台左边计第 1 组、右边计最后一组,不出现第 0 组', () => 
   expect(groupTotal(1)).toHaveTextContent('101')
   expect(groupTotal(2)).toHaveTextContent('1010')
 })
+
+it('积分榜用紧凑 Table,三个数字列右对齐', () => {
+  render(
+    <Leaderboard
+      roster={[1, 2].map((c) => seat(c, { seat_col: c }))}
+      summary={summary([3, 1])}
+      groupOf={mk(2, 4)}
+      onClose={() => {}}
+    />,
+  )
+  const table = screen.getByRole('table')
+  expect(table.closest('[data-slot="table-container"]')).not.toBeNull()
+  const body = table.querySelector('tbody tr')!
+  expect(body.classList.contains('h-9')).toBe(true)
+  for (const name of ['积分', '加分次数', '扣分次数']) {
+    const th = screen.getByRole('columnheader', { name })
+    expect(th.classList.contains('text-right')).toBe(true)
+    expect(th.classList.contains('tabular-nums')).toBe(true)
+  }
+  expect(screen.getByRole('columnheader', { name: '姓名' }).classList.contains('text-left')).toBe(
+    true,
+  )
+})
