@@ -23,7 +23,22 @@ import {
   Td,
   Th,
 } from '@/shared/components/ui/table'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/shared/components/ui/dialog'
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/shared/components/ui/sheet'
 import { Bell, Inbox, Pencil } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
 
 const VARIANTS = ['primary', 'secondary', 'ghost', 'danger'] as const
 const SIZES = ['sm', 'md', 'lg'] as const
@@ -62,8 +77,38 @@ function FieldDemo() {
   )
 }
 
+/** ?scene=full:满宽页,只有标题和表格、没有卡片,给 e2e 量满宽标题位置与深色下纯表格页。 */
+function FullWidthScene() {
+  return (
+    <main>
+      <PageContainer width="full">
+        <PageHeader title="满宽页样例" description="只有表格,没有卡片。" />
+        <Table caption="成绩示例">
+          <TableHead>
+            <TableRow>
+              <Th>姓名</Th>
+              <Th numeric>总分</Th>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {SCORES.map((r) => (
+              <TableRow key={r.no}>
+                <Td>{r.name}</Td>
+                <Td numeric>{r.score}</Td>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </PageContainer>
+    </main>
+  )
+}
+
 /** /dev/ui:Arc 件与项目现有件并排陈列(仅开发环境注册),给 e2e 量尺寸、给人眼对照。 */
 export default function UiGallery() {
+  const [params] = useSearchParams()
+  const scene = params.get('scene')
+  if (scene === 'full') return <FullWidthScene />
   return (
     <main>
       <PageContainer>
@@ -285,6 +330,22 @@ export default function UiGallery() {
           </p>
         </PageContainer>
       </div>
+      <Dialog open={scene === 'dialog'}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>示例弹窗</DialogTitle>
+            <DialogDescription>打开时页面根节点带 aria-hidden。</DialogDescription>
+          </DialogHeader>
+        </DialogContent>
+      </Dialog>
+      <Sheet open={scene === 'sheet'}>
+        <SheetContent>
+          <SheetHeader>
+            <SheetTitle>示例抽屉</SheetTitle>
+            <SheetDescription>打开时页面根节点带 aria-hidden。</SheetDescription>
+          </SheetHeader>
+        </SheetContent>
+      </Sheet>
     </main>
   )
 }
