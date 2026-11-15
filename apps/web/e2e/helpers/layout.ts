@@ -40,17 +40,26 @@ const PAGE_MAX_WIDTH = 1320
 
 /**
  * 页面标题 h1 左缘应该在的 x:
- * main 的 left + max(0, (main.width − 最大宽) / 2) + (视口 ≥ 1024 ? 32 : 16);家长端最大宽 672。
+ * - default / narrow 页(没有 [data-page-container] 时同):容器最大宽 1320 并居中,
+ *   narrow 只限制标题区之外内容的宽度、外框与 default 相同,所以 =
+ *   main 的 left + max(0, (main.width − 最大宽) / 2) + (视口 ≥ 1024 ? 32 : 16);
+ * - full 页(data-width="full"):容器不限宽,= main 的 left + 内边距;
+ * - 家长端(路径以 /parent 开头)最大宽 672。
  */
 export async function expectedTitleX(page: Page): Promise<number> {
   const main = await page.locator('main').first().boundingBox()
   if (!main) throw new Error('main not found')
   const viewport = page.viewportSize()
   if (!viewport) throw new Error('no viewport')
-  const maxWidth = new URL(page.url()).pathname.startsWith('/parent')
-    ? PARENT_MAX_WIDTH
-    : PAGE_MAX_WIDTH
   const pad = viewport.width >= 1024 ? 32 : 16
+  const isParent = new URL(page.url()).pathname.startsWith('/parent')
+  const width = await page
+    .locator('[data-page-container]')
+    .first()
+    .getAttribute('data-width', { timeout: 1000 })
+    .catch(() => null)
+  if (!isParent && width === 'full') return main.x + pad
+  const maxWidth = isParent ? PARENT_MAX_WIDTH : PAGE_MAX_WIDTH
   return main.x + Math.max(0, (main.width - maxWidth) / 2) + pad
 }
 
@@ -62,16 +71,17 @@ const CONTROL_HEIGHTS = [32, 40, 44, 48]
  * 2) main 内可见的 button / input(非复选、单选)/ select 高度 ∈ {32, 40, 44, 48},跳过 [data-layout-exempt] 及后代;
  * 3) [data-slot=card] 无边框、圆角 ∈ {6, 12, 16};
  * 4) 没有横向溢出;
- * 5) 深色下 [data-slot=card] 背景与 body 背景的 WCAG 对比 ≥ 1.15。
+ * 5) 深色下 [data-slot=card] 与 [data-slot=table-container](纯表格页没有卡片)背景与 body 背景的 WCAG 对比 ≥ 1.15。
  */
 export async function expectBaselineLayout(
   page: Page,
   opts: { checkTitleX?: boolean } = {},
 ): Promise<void> {
-  await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
+  // 不用 role 选择器:Radix 模态打开时 #root 带 aria-hidden,role 查询看不到页面 h1
+  await expect(page.locator('h1')).toHaveCount(1)
 
   if (opts.checkTitleX) {
-    const h1 = await page.getByRole('heading', { level: 1 }).boundingBox()
+    const h1 = await page.locator('h1').boundingBox()
     expect(h1).not.toBeNull()
     expect(Math.abs((h1?.x ?? 0) - (await expectedTitleX(page)))).toBeLessThanOrEqual(1)
   }
@@ -128,13 +138,16 @@ export async function expectBaselineLayout(
         return 0.2126 * r + 0.7152 * g + 0.0722 * b
       }
       const body = luminance(getComputedStyle(document.body).backgroundColor)
-      return Array.from(document.querySelectorAll<HTMLElement>('[data-slot=card]')).map((el) => {
+      const surfaces = document.querySelectorAll<HTMLElement>(
+        '[data-slot=card], [data-slot=table-container]',
+      )
+      return Array.from(surfaces).map((el) => {
         const card = luminance(getComputedStyle(el).backgroundColor)
         const [hi, lo] = card > body ? [card, body] : [body, card]
         return (hi + 0.05) / (lo + 0.05)
       })
     })
-    expect(ratios.length, '深色下应有卡片可量').toBeGreaterThan(0)
+    expect(ratios.length, '深色下应有卡片或表格容器可量').toBeGreaterThan(0)
     for (const ratio of ratios) expect(ratio).toBeGreaterThanOrEqual(1.15)
   }
 }

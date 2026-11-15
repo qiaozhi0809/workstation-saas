@@ -61,3 +61,32 @@ test('arc buttons keep their own surface', async ({ page }) => {
     .evaluate((el) => getComputedStyle(el).borderTopWidth)
   expect(border).toBe('1px')
 })
+
+test('baseline counts the page h1 while a dialog or sheet is open', async ({ page }) => {
+  for (const scene of ['dialog', 'sheet']) {
+    await page.goto(`/dev/ui?scene=${scene}`)
+    await expect(page.getByRole('dialog')).toBeVisible()
+    await expect(page.locator('#root')).toHaveAttribute('aria-hidden', 'true')
+    await expectBaselineLayout(page, { checkTitleX: true })
+  }
+})
+
+test('full-width page title sits at main left plus padding', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 900 })
+  await page.goto('/dev/ui?scene=full')
+  await expect(page.locator('[data-page-container]')).toHaveAttribute('data-width', 'full')
+  const main = await page.locator('main').first().boundingBox()
+  const h1 = await page.locator('h1').boundingBox()
+  expect(main && h1).toBeTruthy()
+  expect(Math.abs(h1!.x - (main!.x + 32))).toBeLessThanOrEqual(1)
+  await expectBaselineLayout(page, { checkTitleX: true })
+})
+
+test('dark table-only page has a table container to measure', async ({ page }) => {
+  await applyTheme(page, 'dark')
+  await page.goto('/dev/ui?scene=full')
+  await expect(page.locator('html')).toHaveClass(/dark/)
+  await expect(page.locator('[data-slot=card]')).toHaveCount(0)
+  await expect(page.locator('[data-slot=table-container]')).toHaveCount(1)
+  await expectBaselineLayout(page)
+})
