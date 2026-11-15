@@ -1,5 +1,7 @@
 import { Badge } from '@/shared/components/ui/badge'
 import { Button } from '@/shared/components/ui/button'
+import { StatusDot } from '@/shared/components/ui/status-dot'
+import { TableRow, Td } from '@/shared/components/ui/table'
 import type { Account } from '@/shared/types/admin'
 
 const SELF_HINT = '不能冻结自己的账号'
@@ -31,17 +33,18 @@ export default function AccountRow({
   const totp = a.totp_enabled === true
   const frozen = a.status === 'frozen'
   return (
-    <tr className="border-t align-middle">
-      <td className="whitespace-nowrap px-3 py-2 font-medium">
+    <TableRow>
+      <Td className="font-medium">
         {a.display_name}
         {totp && (
           <Badge variant="info" className="ml-1.5 align-middle">
             两步验证
           </Badge>
         )}
-      </td>
-      <td className="whitespace-nowrap px-3 py-2">{a.login_name}</td>
-      <td className="px-3 py-2">
+      </Td>
+      <Td>{a.login_name}</Td>
+      {/* 身份列至少 8rem 宽:徽章不逐字竖排(重审 P2-2) */}
+      <Td className="min-w-[8rem]">
         {a.roles.length === 0 ? (
           '—'
         ) : (
@@ -53,48 +56,44 @@ export default function AccountRow({
             ))}
           </div>
         )}
-      </td>
-      <td className="whitespace-nowrap px-3 py-2">{a.employee_no ?? '—'}</td>
-      <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
-        {fmtTime(a.last_login_at)}
-      </td>
-      <td className="whitespace-nowrap px-3 py-2">
-        <Badge variant={frozen ? 'danger' : 'success'}>{frozen ? '已冻结' : '在用'}</Badge>
-      </td>
-      <td className="whitespace-nowrap px-3 py-2">
-        <div className="flex flex-col items-start gap-0.5">
+      </Td>
+      <Td>{a.employee_no ?? '—'}</Td>
+      <Td className="text-muted-foreground">{fmtTime(a.last_login_at)}</Td>
+      <Td>
+        <StatusDot tone={frozen ? 'danger' : 'success'}>{frozen ? '已冻结' : '在用'}</StatusDot>
+      </Td>
+      <Td align="end">
+        <div className="flex flex-col items-end gap-0.5">
           <div className="flex gap-1">
-            <Button type="button" variant="ghost" size="sm" onClick={onEdit}>
+            <Button type="button" variant="link" size="sm" onClick={onEdit}>
               编辑
             </Button>
             {!isSelf && (
-              <Button type="button" variant="ghost" size="sm" onClick={onReset}>
+              <Button type="button" variant="link" size="sm" onClick={onReset}>
                 重置密码
               </Button>
             )}
             {totp && !isSelf && (
-              <Button type="button" variant="ghost" size="sm" onClick={onResetTotp}>
+              <Button type="button" variant="link" size="sm" onClick={onResetTotp}>
                 重置两步验证
               </Button>
             )}
             {frozen ? (
-              <Button type="button" variant="ghost" size="sm" onClick={onUnfreeze}>
+              <Button type="button" variant="link" size="sm" onClick={onUnfreeze}>
                 解冻
               </Button>
             ) : (
-              <>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  disabled={isSelf}
-                  title={isSelf ? SELF_HINT : undefined}
-                  aria-describedby={isSelf ? `self-hint-${a.id}` : undefined}
-                  onClick={onFreeze}
-                >
-                  冻结
-                </Button>
-              </>
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
+                disabled={isSelf}
+                title={isSelf ? SELF_HINT : undefined}
+                aria-describedby={isSelf ? `self-hint-${a.id}` : undefined}
+                onClick={onFreeze}
+              >
+                冻结
+              </Button>
             )}
           </div>
           {isSelf && !frozen && (
@@ -103,7 +102,7 @@ export default function AccountRow({
             </span>
           )}
         </div>
-      </td>
-    </tr>
+      </Td>
+    </TableRow>
   )
 }

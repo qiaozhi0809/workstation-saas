@@ -10,13 +10,17 @@ import Modal from '@/shared/components/overlay/Modal'
 import { toast } from '@/shared/components/Toast'
 import { Button } from '@/shared/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card'
+import { Field, useFormErrors } from '@/shared/components/ui/field'
+import { IconButton } from '@/shared/components/ui/icon-button'
 import { Input } from '@/shared/components/ui/input'
 import { NativeSelect } from '@/shared/components/ui/native-select'
+import { Table, TableBody, TableHead, TableRow, Td, Th } from '@/shared/components/ui/table'
 import { cn } from '@/shared/lib/utils'
 import type { ClassAdmin, ClassInput, GradeAdmin, GradeInput, Stage } from '@/shared/types/admin'
 import ConfirmBox from './ConfirmBox'
 import { errMsg } from './errMsg'
-import Field from './Field'
+
+const NAME_ORDER = ['name'] as const
 
 type Dialog =
   | { kind: 'create' }
@@ -48,10 +52,23 @@ function GradeForm({
 }) {
   const [name, setName] = useState(initial.name)
   const [stage, setStage] = useState<Stage | ''>(initial.stage ?? '')
+  const { errors, report, clear, fieldRef } = useFormErrors(NAME_ORDER)
+  const submit = () => {
+    if (!report(name.trim() ? {} : { name: '请填写年级名' })) return
+    onSubmit({ name: name.trim(), stage: stage || null })
+  }
   return (
     <div className="grid gap-3">
-      <Field label="年级名称">
-        <Input value={name} maxLength={20} onChange={(e) => setName(e.target.value)} />
+      <Field label="年级名称" error={errors.name}>
+        <Input
+          ref={fieldRef('name')}
+          value={name}
+          maxLength={20}
+          onChange={(e) => {
+            setName(e.target.value)
+            clear('name')
+          }}
+        />
       </Field>
       <Field label="学段">
         <NativeSelect value={stage} onChange={(e) => setStage(e.target.value as Stage | '')}>
@@ -72,10 +89,7 @@ function GradeForm({
         <Button variant="outline" onClick={onClose}>
           取消
         </Button>
-        <Button
-          disabled={!name.trim() || busy}
-          onClick={() => onSubmit({ name: name.trim(), stage: stage || null })}
-        >
+        <Button disabled={busy} onClick={submit}>
           {submitLabel}
         </Button>
       </div>
@@ -96,10 +110,23 @@ function ClassForm({
 }) {
   const [name, setName] = useState('')
   const [room, setRoom] = useState('')
+  const { errors, report, clear, fieldRef } = useFormErrors(NAME_ORDER)
+  const submit = () => {
+    if (!report(name.trim() ? {} : { name: '请填写班级名称' })) return
+    onSubmit({ name: name.trim(), room: room.trim() })
+  }
   return (
     <div className="grid gap-3">
-      <Field label="班级名称">
-        <Input value={name} maxLength={20} onChange={(e) => setName(e.target.value)} />
+      <Field label="班级名称" error={errors.name}>
+        <Input
+          ref={fieldRef('name')}
+          value={name}
+          maxLength={20}
+          onChange={(e) => {
+            setName(e.target.value)
+            clear('name')
+          }}
+        />
       </Field>
       <Field label="教室">
         <Input value={room} maxLength={30} onChange={(e) => setRoom(e.target.value)} />
@@ -113,10 +140,7 @@ function ClassForm({
         <Button variant="outline" onClick={onClose}>
           取消
         </Button>
-        <Button
-          disabled={!name.trim() || busy}
-          onClick={() => onSubmit({ name: name.trim(), room: room.trim() })}
-        >
+        <Button disabled={busy} onClick={submit}>
           创建
         </Button>
       </div>
@@ -229,48 +253,46 @@ export default function GradesPanel() {
               <li
                 key={g.id}
                 className={cn(
-                  'flex h-[3.25rem] items-center gap-1 rounded-md border px-2',
-                  g.id === gradeId && 'border-primary bg-accent',
+                  'flex h-[3.25rem] items-center gap-1 rounded-md px-2',
+                  g.id === gradeId && 'bg-accent',
                 )}
               >
                 <button
                   type="button"
                   aria-pressed={g.id === gradeId}
-                  className="flex min-w-0 flex-1 flex-col text-left text-sm"
+                  className="flex h-11 min-w-0 flex-1 flex-col justify-center text-left text-sm"
                   onClick={() => setSel(g.id)}
                 >
-                  <span className="font-medium">{g.name}</span>
-                  <span className="text-xs text-muted-foreground">{`${g.effective_stage} · ${g.class_count} 个班`}</span>
+                  <span className="truncate font-medium">{g.name}</span>
+                  <span className="truncate text-xs text-muted-foreground">{`${g.effective_stage} · ${g.class_count} 个班`}</span>
                 </button>
-                <Button
-                  variant="ghost"
-                  size="icon"
+                <IconButton
+                  size="sm"
+                  icon={ArrowUp}
                   aria-label={`上移 ${g.name}`}
                   disabled={i === 0 || move.isPending}
                   onClick={() => move.mutate({ i, j: i - 1 })}
-                >
-                  <ArrowUp />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
+                />
+                <IconButton
+                  size="sm"
+                  icon={ArrowDown}
                   aria-label={`下移 ${g.name}`}
                   disabled={i === list.length - 1 || move.isPending}
                   onClick={() => move.mutate({ i, j: i + 1 })}
-                >
-                  <ArrowDown />
-                </Button>
+                />
                 <Button
-                  variant="ghost"
+                  variant="link"
                   size="sm"
+                  className="px-1"
                   aria-label={`编辑年级 ${g.name}`}
                   onClick={() => setDialog({ kind: 'edit', g })}
                 >
                   编辑
                 </Button>
                 <Button
-                  variant="ghost"
+                  variant="link"
                   size="sm"
+                  className="px-1"
                   aria-label={`删除年级 ${g.name}`}
                   onClick={() => setDialog({ kind: 'delete', g })}
                 >
@@ -302,48 +324,50 @@ export default function GradesPanel() {
           )}
           {classes.data && classes.data.length === 0 && <EmptyState title="这个年级还没有班级" />}
           {classes.data && classes.data.length > 0 && (
-            <div className="relative overflow-x-auto">
-              <table className="w-full min-w-[32rem] text-sm">
-                <thead>
-                  <tr className="border-b text-left text-muted-foreground">
-                    <th className="h-10 pr-3 font-medium">班名</th>
-                    <th className="h-10 pr-3 font-medium">教室</th>
-                    <th className="h-10 pr-3 font-medium">班主任</th>
-                    <th className="h-10 pr-3 font-medium">学生数</th>
-                    <th className="h-10 font-medium">
-                      <span className="sr-only">操作</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {classes.data.map((c) => (
-                    <tr key={c.id} className="h-[calc(3.25rem+0.25rem)] border-b">
-                      <td className="py-2 pr-3">
-                        <Link
-                          to={`/admin/org/classes/${c.id}`}
-                          className="text-primary underline-offset-4 hover:underline"
-                        >
-                          {c.name}
-                        </Link>
-                      </td>
-                      <td className="py-2 pr-3">{c.room || '—'}</td>
-                      <td className="py-2 pr-3">{c.homeroom?.display_name ?? '未任命'}</td>
-                      <td className="py-2 pr-3">{c.student_count}</td>
-                      <td className="py-2 text-right">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          aria-label={`删除班级 ${c.name}`}
-                          onClick={() => setDialog({ kind: 'delclass', c })}
-                        >
-                          删除
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <Table
+              minWidth={512}
+              containerClassName="rounded-none bg-transparent shadow-none"
+              className="w-full"
+            >
+              <TableHead>
+                <TableRow>
+                  <Th>班名</Th>
+                  <Th>教室</Th>
+                  <Th>班主任</Th>
+                  <Th numeric>学生数</Th>
+                  <Th align="end">
+                    <span className="sr-only">操作</span>
+                  </Th>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {classes.data.map((c) => (
+                  <TableRow key={c.id} className="h-[calc(3.25rem+0.25rem)]">
+                    <Td>
+                      <Link
+                        to={`/admin/org/classes/${c.id}`}
+                        className="text-primary underline-offset-4 hover:underline"
+                      >
+                        {c.name}
+                      </Link>
+                    </Td>
+                    <Td>{c.room || '—'}</Td>
+                    <Td>{c.homeroom?.display_name ?? '未任命'}</Td>
+                    <Td numeric>{c.student_count}</Td>
+                    <Td align="end">
+                      <Button
+                        variant="link"
+                        size="sm"
+                        aria-label={`删除班级 ${c.name}`}
+                        onClick={() => setDialog({ kind: 'delclass', c })}
+                      >
+                        删除
+                      </Button>
+                    </Td>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           )}
         </div>
       </CardContent>

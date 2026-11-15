@@ -85,14 +85,17 @@ export default function StepPreview({
           </p>
           <ul className="grid gap-2">
             {(pv.classes ?? []).map((c, i) => (
-              <li key={i} className="grid gap-0.5 rounded-md border px-3 py-2 text-sm">
+              <li key={i} className="grid gap-0.5 rounded-md bg-muted p-3 text-sm">
                 <span>{describeClass(c)}</span>
                 <Counts c={c} />
               </li>
             ))}
           </ul>
           {(pv.warnings ?? []).length > 0 && (
-            <ul className="grid gap-1 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm">
+            <ul
+              role="status"
+              className="grid gap-1 rounded-md bg-warning/10 p-3 text-sm text-warning"
+            >
               {pv.warnings.map((w, i) => (
                 <li key={i}>警告:{w}</li>
               ))}

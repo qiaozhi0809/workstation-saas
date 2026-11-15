@@ -123,8 +123,8 @@ export default function StepStudents({
               key={s.enrollment_id}
               data-invalid={bad || undefined}
               className={cn(
-                'flex flex-wrap items-center gap-3 rounded-md border px-3 py-2',
-                bad && 'border-destructive',
+                'flex flex-wrap items-center gap-3 rounded-md bg-muted px-3 py-2',
+                bad && 'bg-destructive/10',
               )}
             >
               <span className="min-w-20 text-sm font-medium">{s.name}</span>
@@ -176,8 +176,8 @@ export default function StepStudents({
                   key={s.enrollment_id}
                   data-invalid={bad || undefined}
                   className={cn(
-                    'flex flex-wrap items-center gap-3 rounded-md border px-3 py-2 text-sm',
-                    bad && 'border-destructive',
+                    'flex flex-wrap items-center gap-3 rounded-md bg-muted px-3 py-2 text-sm',
+                    bad && 'bg-destructive/10',
                   )}
                 >
                   <span className="font-medium">{label}</span>
@@ -185,7 +185,7 @@ export default function StepStudents({
                     {s.action === 'repeat' ? '留级' : '离校'}
                   </span>
                   <Button
-                    variant="ghost"
+                    variant="link"
                     size="sm"
                     aria-label={`移除 ${label}`}
                     onClick={() =>

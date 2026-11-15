@@ -318,7 +318,7 @@ it('shows weekend columns when the class has weekend lessons and switches class'
   expect(sat).toHaveTextContent('语文')
   expect(sat).toHaveTextContent('未指定老师')
   // 格子容器自己横向滚动,页面不溢出
-  expect(screen.getByTestId('timetable-grid')).toHaveClass('overflow-x-auto')
+  expect(screen.getByTestId('timetable-grid').querySelector('[data-table-scroll]')).not.toBeNull()
 })
 
 it('import shows row errors', async () => {
@@ -333,7 +333,11 @@ it('import shows row errors', async () => {
   renderPage()
   fireEvent.click(await screen.findByRole('button', { name: '导入 CSV' }))
   const dlg = await screen.findByTestId('timetable-import-dialog')
-  expect(within(dlg).getByRole('button', { name: '导入' })).toBeDisabled()
+  // 没选文件时按钮仍可点,点了就地报错(Q12)
+  expect(within(dlg).getByRole('button', { name: '导入' })).toBeEnabled()
+  fireEvent.click(within(dlg).getByRole('button', { name: '导入' }))
+  expect(await within(dlg).findByText('请先选择文件')).toBeInTheDocument()
+  expect(timetableApi.importCsv).not.toHaveBeenCalled()
   const file = new File(['班级,星期,节次,科目,工号\n三年九班,周一,1,语文,\n'], '课表.csv', {
     type: 'text/csv',
   })
@@ -391,4 +395,25 @@ it('asks for periods first when none are set', async () => {
   renderPage()
   expect(await screen.findByText('先在上面设置作息时间,再排课表')).toBeInTheDocument()
   expect(screen.queryByTestId('timetable-grid')).toBeNull()
+})
+
+it('saving a cell without a subject reports 请选择科目 in place and focuses the select', async () => {
+  renderPage()
+  fireEvent.click(await screen.findByTestId('timetable-cell-1-2'))
+  const dlg = await screen.findByRole('dialog', { name: '周一 第 2 节' })
+  const save = within(dlg).getByRole('button', { name: '保存' })
+  expect(save).toBeEnabled()
+  fireEvent.click(save)
+  expect(await within(dlg).findByText('请选择科目')).toBeInTheDocument()
+  expect(within(dlg).getByLabelText('科目')).toHaveFocus()
+  expect(timetableApi.saveClassTimetable).not.toHaveBeenCalled()
+})
+
+it('timetable columns are real table headers and the weekend toggle is a shared checkbox', async () => {
+  renderPage()
+  await screen.findByTestId('timetable-cell-2-1')
+  expect(screen.getByRole('rowheader', { name: /第 1 节/ })).toBeInTheDocument()
+  const toggle = screen.getByLabelText('显示周六日')
+  expect(toggle).toHaveAttribute('type', 'checkbox')
+  expect(toggle.closest('label')?.className).toContain('min-h-8')
 })

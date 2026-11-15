@@ -1214,3 +1214,70 @@ describe('final review polish', () => {
     expect(lastPreviewBody().students).toEqual([])
   })
 })
+
+describe('m6-a1: narrow page, inline hints and warnings', () => {
+  it('uses the narrow page container with a single h1', async () => {
+    const { container } = renderPage()
+    expect(await screen.findByRole('heading', { level: 1, name: '学年升级' })).toBeInTheDocument()
+    expect(container.querySelector('[data-page-container]')).toHaveAttribute('data-width', 'narrow')
+  })
+
+  it('reports an empty year form in place on 生成建议 and focuses the first bad field', async () => {
+    renderPage()
+    const submit = await screen.findByRole('button', { name: '生成建议' })
+    expect(submit).toBeEnabled()
+    fireEvent.click(submit)
+    expect(await screen.findByText('请填写学年名称')).toBeInTheDocument()
+    expect(screen.getByText('请选择开学日期')).toBeInTheDocument()
+    expect(screen.getByText('请选择结束日期')).toBeInTheDocument()
+    expect(screen.getByLabelText('学年名称')).toHaveFocus()
+    expect(api.upgradeSuggest).not.toHaveBeenCalled()
+  })
+
+  it('rejects an end date that is not after the start date in place', async () => {
+    renderPage()
+    fireEvent.change(await screen.findByLabelText('学年名称'), {
+      target: { value: '2027-2028学年' },
+    })
+    fireEvent.change(screen.getByLabelText('开学日期'), { target: { value: '2028-09-01' } })
+    fireEvent.change(screen.getByLabelText('结束日期'), { target: { value: '2028-07-10' } })
+    fireEvent.click(screen.getByRole('button', { name: '生成建议' }))
+    expect(await screen.findByText('结束日期须晚于开学日期')).toBeInTheDocument()
+    expect(api.upgradeSuggest).not.toHaveBeenCalled()
+  })
+
+  it('shows the stale-plan banner as a warning status, not a red alert', async () => {
+    api.upgradeApply.mockRejectedValue(new ApiError(409, 'UPGRADE_PLAN_STALE', '过期'))
+    renderPage()
+    await generate()
+    step('预览')
+    fireEvent.click(await screen.findByRole('button', { name: '执行升级' }))
+    fireEvent.click(screen.getByRole('button', { name: '确认执行' }))
+    const banner = (await screen.findByText('方案已过期,请重新生成')).closest(
+      '[role]',
+    ) as HTMLElement
+    expect(banner).toHaveAttribute('role', 'status')
+    expect(banner.className).toContain('text-warning')
+    expect(banner.className).not.toContain('border')
+  })
+
+  it('keeps the previous / next buttons in the card footer, 放弃草稿 on the left', async () => {
+    renderPage()
+    await generate()
+    const next = screen.getByRole('button', { name: '下一步' })
+    const discard = screen.getByRole('button', { name: '放弃草稿' })
+    const card = next.closest('[data-slot="card"]') as HTMLElement
+    expect(card).not.toBeNull()
+    expect(card).toContainElement(discard)
+    expect(discard.compareDocumentPosition(next) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('uses a shared checkbox for keeping subject teachers', async () => {
+    renderPage()
+    await generate()
+    const box = screen.getByLabelText('三年一班 保留任课老师')
+    expect(box).toHaveAttribute('type', 'checkbox')
+    expect(box.closest('li')).toHaveAttribute('class', expect.stringContaining('bg-muted'))
+    expect(box.closest('li')?.className).not.toContain('border')
+  })
+})

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -168,8 +168,9 @@ it('keeps other end-staff errors inside the confirm dialog', async () => {
 
 it('titles the page with the class name only and shows the grade as subtitle', async () => {
   renderPage()
-  expect(await screen.findByRole('heading', { level: 1, name: '三年二班' })).toBeInTheDocument()
-  expect(screen.getByText('三年级', { selector: 'span.text-muted-foreground' })).toBeInTheDocument()
+  const h1 = await screen.findByRole('heading', { level: 1, name: '三年二班' })
+  const header = h1.closest('header') as HTMLElement
+  expect(within(header).getByText('三年级')).toBeInTheDocument()
 })
 
 it('searches people via the org lookup (debounced) and submits the picked user_id', async () => {
@@ -188,4 +189,15 @@ it('searches people via the org lookup (debounced) and submits the picked user_i
       subject: '数学',
     }),
   )
+})
+
+it('reports an empty class name in place instead of disabling 保存', async () => {
+  renderPage()
+  const name = await screen.findByLabelText('班级名称')
+  fireEvent.change(name, { target: { value: ' ' } })
+  const save = screen.getByRole('button', { name: '保存' })
+  expect(save).toBeEnabled()
+  fireEvent.click(save)
+  expect(await screen.findByText('请填写班级名称')).toBeInTheDocument()
+  expect(api.updateClass).not.toHaveBeenCalled()
 })

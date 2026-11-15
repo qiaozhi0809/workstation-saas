@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ApiError } from '@/shared/api/client'
 import { schoolApi } from '@/shared/api/school'
@@ -10,6 +10,7 @@ import {
   Card,
   CardContent,
   CardDescription,
+  CardFooter,
   CardHeader,
   CardTitle,
 } from '@/shared/components/ui/card'
@@ -53,6 +54,10 @@ export default function GradingCard() {
   const [draft, setDraft] = useState<Draft | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  // 校验问题只在点了保存之后才显示,并把焦点交给出问题的那一格
+  const [showProblem, setShowProblem] = useState(false)
+  const passRef = useRef<HTMLInputElement>(null)
+  const goodRef = useRef<HTMLInputElement>(null)
 
   if (q.isPending) return <LoadingState />
   if (q.isError) {
@@ -67,7 +72,17 @@ export default function GradingCard() {
   const value = draft ?? toDraft(q.data)
   const problem = validate(value)
 
+  const passBad = value.pass.trim() === '' || !inRange(Number(value.pass), PASS)
+  const shownProblem = showProblem && problem !== ''
+  const passInvalid = shownProblem && passBad
+  const goodInvalid = shownProblem && !passBad
+
   const save = async () => {
+    if (problem) {
+      setShowProblem(true)
+      ;(passBad ? passRef : goodRef).current?.focus()
+      return
+    }
     setBusy(true)
     setError('')
     try {
@@ -106,8 +121,14 @@ export default function GradingCard() {
               max={PASS.max}
               step={1}
               className="w-28"
+              ref={passRef}
+              aria-invalid={passInvalid || undefined}
+              aria-describedby={passInvalid ? 'grading-problem' : undefined}
               value={value.pass}
-              onChange={(e) => setDraft({ ...value, pass: e.target.value })}
+              onChange={(e) => {
+                setShowProblem(false)
+                setDraft({ ...value, pass: e.target.value })
+              }}
             />
             <p className="text-xs text-muted-foreground">{`${PASS.min}–${PASS.max},满分 100 分时 60 就是 60 分及格`}</p>
           </div>
@@ -121,27 +142,34 @@ export default function GradingCard() {
               max={GOOD.max}
               step={1}
               className="w-28"
+              ref={goodRef}
+              aria-invalid={goodInvalid || undefined}
+              aria-describedby={goodInvalid ? 'grading-problem' : undefined}
               value={value.good}
-              onChange={(e) => setDraft({ ...value, good: e.target.value })}
+              onChange={(e) => {
+                setShowProblem(false)
+                setDraft({ ...value, good: e.target.value })
+              }}
             />
             <p className="text-xs text-muted-foreground">{`${GOOD.min}–${GOOD.max},要高于及格线`}</p>
           </div>
         </div>
-        {(problem || error) && (
-          <p role="alert" className="text-sm text-destructive">
-            {problem || error}
+        {((showProblem && problem) || error) && (
+          <p id="grading-problem" role="alert" className="text-xs text-destructive">
+            {(showProblem && problem) || error}
           </p>
         )}
-        <div className="flex justify-end">
-          <Button
-            type="button"
-            disabled={busy || draft === null || problem !== ''}
-            onClick={() => void save()}
-          >
-            保存及格线
-          </Button>
-        </div>
       </CardContent>
+      <CardFooter className="justify-end">
+        <Button
+          type="button"
+          variant={draft === null ? 'ghost' : 'default'}
+          disabled={busy || draft === null}
+          onClick={() => void save()}
+        >
+          保存及格线
+        </Button>
+      </CardFooter>
     </Card>
   )
 }
