@@ -12,6 +12,8 @@ import { cn } from '@/shared/lib/utils'
 import type { ImportRow } from '@/shared/types/admin'
 import type { TempPassword } from './TempPasswordDialog'
 
+const CSV_ORDER = ['csv'] as const
+
 const TEMPLATE = '登录名,姓名,工号,科目,手机\nteacher21,示例老师,T021,语文、数学,13800000021\n'
 
 export default function ImportAccountsDialog({
@@ -28,7 +30,7 @@ export default function ImportAccountsDialog({
   const [rows, setRows] = useState<ImportRow[] | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const { errors, report, clear, fieldRef } = useFormErrors(['csv'] as const)
+  const { errors, report, clear, fieldRef } = useFormErrors(CSV_ORDER)
 
   const edit = (text: string) => {
     seq.current++

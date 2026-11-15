@@ -92,6 +92,8 @@ export default function SecurityCard() {
             max={32}
             className="w-28"
             ref={lenRef}
+            aria-invalid={showLenError && !lenValid ? true : undefined}
+            aria-describedby={showLenError && !lenValid ? 'sec-len-error' : undefined}
             value={Number.isNaN(value.password_min_length) ? '' : value.password_min_length}
             onChange={(e) => {
               setShowLenError(false)
@@ -100,7 +102,7 @@ export default function SecurityCard() {
           />
           <p className="text-xs text-muted-foreground">8 到 32 位</p>
           {showLenError && !lenValid && (
-            <p role="alert" className="text-xs text-destructive">
+            <p id="sec-len-error" role="alert" className="text-xs text-destructive">
               密码最短长度要在 8 到 32 之间的整数
             </p>
           )}
@@ -130,7 +132,7 @@ export default function SecurityCard() {
           </NativeSelect>
         </div>
         {error && (
-          <p role="alert" className="text-sm text-destructive">
+          <p role="alert" className="text-xs text-destructive">
             {error}
           </p>
         )}

@@ -72,10 +72,14 @@ export default function GradingCard() {
   const value = draft ?? toDraft(q.data)
   const problem = validate(value)
 
+  const passBad = value.pass.trim() === '' || !inRange(Number(value.pass), PASS)
+  const shownProblem = showProblem && problem !== ''
+  const passInvalid = shownProblem && passBad
+  const goodInvalid = shownProblem && !passBad
+
   const save = async () => {
     if (problem) {
       setShowProblem(true)
-      const passBad = value.pass.trim() === '' || !inRange(Number(value.pass), PASS)
       ;(passBad ? passRef : goodRef).current?.focus()
       return
     }
@@ -118,6 +122,8 @@ export default function GradingCard() {
               step={1}
               className="w-28"
               ref={passRef}
+              aria-invalid={passInvalid || undefined}
+              aria-describedby={passInvalid ? 'grading-problem' : undefined}
               value={value.pass}
               onChange={(e) => {
                 setShowProblem(false)
@@ -137,6 +143,8 @@ export default function GradingCard() {
               step={1}
               className="w-28"
               ref={goodRef}
+              aria-invalid={goodInvalid || undefined}
+              aria-describedby={goodInvalid ? 'grading-problem' : undefined}
               value={value.good}
               onChange={(e) => {
                 setShowProblem(false)
@@ -147,7 +155,7 @@ export default function GradingCard() {
           </div>
         </div>
         {((showProblem && problem) || error) && (
-          <p role="alert" className="text-sm text-destructive">
+          <p id="grading-problem" role="alert" className="text-xs text-destructive">
             {(showProblem && problem) || error}
           </p>
         )}

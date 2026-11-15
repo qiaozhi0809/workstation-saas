@@ -569,8 +569,12 @@ it('grading card validates', async () => {
   const tryInvalid = (expected: string, focus: string) => {
     expect(save).toBeEnabled()
     fireEvent.click(save)
-    expect(card.getByRole('alert')).toHaveTextContent(expected)
-    expect(card.getByLabelText(focus)).toHaveFocus()
+    const alert = card.getByRole('alert')
+    expect(alert).toHaveTextContent(expected)
+    const field = card.getByLabelText(focus)
+    expect(field).toHaveFocus()
+    expect(field).toHaveAttribute('aria-invalid', 'true')
+    expect(field).toHaveAttribute('aria-describedby', alert.id)
   }
   // 优秀线不高于及格线
   fireEvent.change(card.getByLabelText('及格线(%)'), { target: { value: '85' } })
@@ -797,7 +801,10 @@ it('security card reports a bad min length in place on save instead of disabling
   expect(save).toBeEnabled()
   expect(within(card).queryByRole('alert')).toBeNull()
   fireEvent.click(save)
-  expect(within(card).getByRole('alert')).toHaveTextContent('8 到 32')
+  const alert = within(card).getByRole('alert')
+  expect(alert).toHaveTextContent('8 到 32')
   expect(input).toHaveFocus()
+  expect(input).toHaveAttribute('aria-invalid', 'true')
+  expect(input).toHaveAttribute('aria-describedby', alert.id)
   expect(adminApi.saveSecuritySettings).not.toHaveBeenCalled()
 })

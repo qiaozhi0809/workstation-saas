@@ -23,6 +23,8 @@ import type {
 } from '@/shared/types/timetable'
 import { ALL_DAYS, WEEKDAY_LABEL, WORKDAYS, type Weekday } from './weekdays'
 
+const SUBJECT_ORDER = ['subject'] as const
+
 type Slot = { weekday: Weekday; period_no: number }
 const sameSlot = (a: Slot, b: Slot) => a.weekday === b.weekday && a.period_no === b.period_no
 const slotLabel = (s: Slot) => `${WEEKDAY_LABEL[s.weekday]} 第 ${s.period_no} 节`
@@ -78,7 +80,7 @@ function CellEditor({
 }) {
   const [subject, setSubject] = useState(cell?.subject ?? '')
   const [teacherId, setTeacherId] = useState(cell?.teacher?.id ?? '')
-  const { errors, report, clear, fieldRef } = useFormErrors(['subject'] as const)
+  const { errors, report, clear, fieldRef } = useFormErrors(SUBJECT_ORDER)
   // 科目候选 = 组织架构里本班有在任老师的科目 ∪ 课表里已出现的科目
   const subjects = [
     ...new Set([...(cls?.subjects.map((s) => s.subject) ?? []), ...cells.map((c) => c.subject)]),
