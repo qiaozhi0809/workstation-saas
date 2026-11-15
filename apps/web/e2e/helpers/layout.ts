@@ -82,9 +82,12 @@ export async function expectBaselineLayout(
   await expect(page.locator('h1')).toHaveCount(1)
 
   if (opts.checkTitleX) {
-    const h1 = await page.locator('h1').boundingBox()
-    expect(h1).not.toBeNull()
-    expect(Math.abs((h1?.x ?? 0) - (await expectedTitleX(page)))).toBeLessThanOrEqual(1)
+    // 页头可能在数据到达时重新挂载,瞬间拿不到框:整段取框 + 比较一起重试
+    await expect(async () => {
+      const h1 = await page.locator('h1').boundingBox()
+      expect(h1).not.toBeNull()
+      expect(Math.abs((h1?.x ?? 0) - (await expectedTitleX(page)))).toBeLessThanOrEqual(1)
+    }).toPass({ timeout: 5000 })
   }
 
   const badHeights = await page.evaluate((allowed) => {

@@ -44,6 +44,9 @@ const PAGES: PageSpec[] = [
       await first.click()
       await expect(page).toHaveURL(/\/admin\/org\/classes\//)
       await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+      // 班级数据到达后才有名称框的值;加载态的页头会在数据到达时重新渲染,必须等正文出来再量
+      await expect(page.getByLabel('班级名称')).not.toHaveValue('')
+      await expect(page.locator('[aria-busy="true"]')).toHaveCount(0)
     },
   },
   {
