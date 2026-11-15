@@ -7,9 +7,11 @@ import type { Preferences } from '@/shared/types/preferences'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { Button } from '@/shared/components/ui/button'
-import { Card, CardContent } from '@/shared/components/ui/card'
+import { Card, CardContent, CardFooter } from '@/shared/components/ui/card'
 import { Input } from '@/shared/components/ui/input'
 import { Label } from '@/shared/components/ui/label'
+import { PageContainer, PageHeader } from '@/shared/components/ui/page'
+import { Switch } from '@/shared/components/ui/switch'
 
 const MAX_REASONS = 20
 
@@ -53,14 +55,24 @@ export default function PreferencesPage() {
   // 后台刷新失败时保留正在编辑的表单,只有从没加载成功过才显示错误
   if (query.isError && !query.data) {
     return (
-      <ErrorState
-        title="偏好加载失败"
-        onRetry={() => void query.refetch()}
-        retrying={query.isFetching}
-      />
+      <PageContainer width="narrow">
+        <PageHeader title="我的偏好" />
+        <ErrorState
+          title="偏好加载失败"
+          onRetry={() => void query.refetch()}
+          retrying={query.isFetching}
+        />
+      </PageContainer>
     )
   }
-  if (!query.data) return <LoadingState />
+  if (!query.data) {
+    return (
+      <PageContainer width="narrow">
+        <PageHeader title="我的偏好" />
+        <LoadingState variant="form" />
+      </PageContainer>
+    )
+  }
   // 表单只用首次加载的数据初始化,之后的重新拉取不覆盖正在编辑的内容
   return <PreferencesForm initial={query.data} />
 }
@@ -96,10 +108,10 @@ function PreferencesForm({ initial }: { initial: Preferences }) {
 
   const legend = 'mb-3 text-sm font-medium text-muted-foreground'
   return (
-    <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-4 md:p-6">
-      <h2 className="text-xl font-semibold tracking-tight">我的偏好</h2>
+    <PageContainer width="narrow">
+      <PageHeader title="我的偏好" />
       <Card>
-        <CardContent className="pt-6">
+        <CardContent className="p-4">
           <fieldset className="flex flex-wrap items-center gap-4">
             <legend className={legend}>老师形象</legend>
             {(
@@ -122,22 +134,19 @@ function PreferencesForm({ initial }: { initial: Preferences }) {
         </CardContent>
       </Card>
       <Card>
-        <CardContent className="pt-6">
+        <CardContent className="p-4">
           <fieldset>
             <legend className={legend}>教室</legend>
-            <Label className="flex items-center gap-2 font-normal">
-              <input
-                type="checkbox"
-                checked={form.idle}
-                onChange={(e) => setForm((f) => ({ ...f, idle: e.target.checked }))}
-              />
-              空闲小动画
-            </Label>
+            <Switch
+              label="空闲小动画"
+              checked={form.idle}
+              onChange={(e) => setForm((f) => ({ ...f, idle: e.target.checked }))}
+            />
           </fieldset>
         </CardContent>
       </Card>
       <Card>
-        <CardContent className="pt-6">
+        <CardContent className="p-4">
           <fieldset className="flex flex-col gap-2">
             <legend className={legend}>点评理由</legend>
             {form.rows.map((r) => (
@@ -185,18 +194,18 @@ function PreferencesForm({ initial }: { initial: Preferences }) {
               </Button>
             </div>
           </fieldset>
+          {error && (
+            <p role="alert" className="mt-3 text-sm text-destructive">
+              {error}
+            </p>
+          )}
         </CardContent>
+        <CardFooter className="justify-end p-4 pt-0">
+          <Button type="button" disabled={saving} onClick={() => void save()}>
+            保存
+          </Button>
+        </CardFooter>
       </Card>
-      {error && (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      )}
-      <div>
-        <Button type="button" disabled={saving} onClick={() => void save()}>
-          保存
-        </Button>
-      </div>
-    </div>
+    </PageContainer>
   )
 }

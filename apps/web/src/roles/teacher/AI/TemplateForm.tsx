@@ -9,6 +9,7 @@ import { studentsApi } from '@/shared/api/students'
 import Modal from '@/shared/components/overlay/Modal'
 import { toast } from '@/shared/components/Toast'
 import { Button } from '@/shared/components/ui/button'
+import { Checkbox } from '@/shared/components/ui/checkbox'
 import { Input } from '@/shared/components/ui/input'
 import { NativeSelect } from '@/shared/components/ui/native-select'
 import { Textarea } from '@/shared/components/ui/textarea'
@@ -222,14 +223,11 @@ export default function TemplateForm({
       case 'check':
         return (
           <div key={f.key} className="text-sm">
-            <label className="inline-flex items-center gap-1.5">
-              <input
-                type="checkbox"
-                checked={values[f.key] === true}
-                onChange={(e) => set(f.key, e.target.checked)}
-              />
-              {f.label}
-            </label>
+            <Checkbox
+              label={f.label}
+              checked={values[f.key] === true}
+              onChange={(e) => set(f.key, e.target.checked)}
+            />
           </div>
         )
       case 'student':
@@ -280,17 +278,15 @@ export default function TemplateForm({
             <div
               role="group"
               aria-label={f.label}
-              className="grid max-h-48 grid-cols-2 gap-1 overflow-y-auto rounded-md border border-border p-2 text-sm sm:grid-cols-3"
+              className="grid max-h-48 grid-cols-2 gap-1 overflow-y-auto rounded-md bg-muted/50 p-2 text-sm sm:grid-cols-3"
             >
               {roster.map((s) => (
-                <label key={s.student_id} className="inline-flex items-center gap-1.5">
-                  <input
-                    type="checkbox"
-                    checked={picked.includes(s.student_id)}
-                    onChange={(e) => toggle(s.student_id, e.target.checked)}
-                  />
-                  {s.name}
-                </label>
+                <Checkbox
+                  key={s.student_id}
+                  label={s.name}
+                  checked={picked.includes(s.student_id)}
+                  onChange={(e) => toggle(s.student_id, e.target.checked)}
+                />
               ))}
             </div>
           </div>,

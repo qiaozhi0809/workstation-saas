@@ -85,7 +85,7 @@ export default function BatchView({ chat, classId, perms }: Props) {
           className="h-2 min-w-32 flex-1 overflow-hidden rounded-full bg-muted"
         >
           <div
-            className="h-full bg-primary transition-all"
+            className="h-full bg-primary transition-[width]"
             style={{ width: items.length ? `${(done.length / items.length) * 100}%` : '0%' }}
           />
         </div>
@@ -178,7 +178,7 @@ function ItemCard({
   })
   const { label, variant } = STATUS[status]
   return (
-    <li className="space-y-1 rounded-lg border border-border p-3">
+    <li className="flex flex-col gap-1 rounded-lg bg-card p-4 shadow-surface">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm font-medium text-foreground">{item.student_name}</span>
         {item.note && <span className="text-xs text-muted-foreground">{item.note}</span>}

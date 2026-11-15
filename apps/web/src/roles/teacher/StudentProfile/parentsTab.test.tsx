@@ -212,6 +212,19 @@ it('disables reset for shared accounts with a hint', async () => {
   expect(screen.getByText('该账号也是教职工账号,请联系信息中心重置')).toBeInTheDocument()
 })
 
+it('reports missing phone and name in place instead of disabling add', async () => {
+  vi.mocked(parentLinksApi.list).mockResolvedValue([pr({})])
+  mount(<ParentsTab profile={profile} />)
+  await screen.findByText('王妈妈')
+  const add = screen.getByRole('button', { name: '添加家长' })
+  expect(add).toBeEnabled()
+  fireEvent.click(add)
+  expect(await screen.findByText('请填写手机号')).toBeInTheDocument()
+  expect(screen.getByText('请填写称呼')).toBeInTheDocument()
+  expect(screen.getByLabelText('手机号')).toHaveFocus()
+  expect(parentLinksApi.create).not.toHaveBeenCalled()
+})
+
 it('disables adding at 4 parents and says why', async () => {
   vi.mocked(parentLinksApi.list).mockResolvedValue(
     [1, 2, 3, 4].map((i) => pr({ link_id: `l${i}`, is_primary: i === 1, name: `家长${i}` })),

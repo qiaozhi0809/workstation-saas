@@ -105,6 +105,20 @@ beforeEach(() => {
   vi.mocked(reviewsApi.summary).mockResolvedValue({ week_start: '2026-10-26', items: [] })
 })
 
+it('reports an empty record in place instead of disabling add', async () => {
+  setup(<GrowthTab profile={profile} />, ['growth.read', 'growth.write'])
+  const input = await screen.findByLabelText('记录内容')
+  const add = screen.getByRole('button', { name: '添加' })
+  expect(add).toBeEnabled()
+  fireEvent.click(add)
+  expect(await screen.findByText('请填写记录内容')).toBeInTheDocument()
+  expect(input).toHaveFocus()
+  expect(growthApi.create).not.toHaveBeenCalled()
+  // 开始输入后错误就地消失
+  fireEvent.change(input, { target: { value: '家访' } })
+  await waitFor(() => expect(screen.queryByText('请填写记录内容')).toBeNull())
+})
+
 it('adds a record with Enter and keeps composition input', async () => {
   const { invalidate } = setup(<GrowthTab profile={profile} />, ['growth.read', 'growth.write'])
   const input = await screen.findByLabelText('记录内容')

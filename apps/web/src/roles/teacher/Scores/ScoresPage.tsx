@@ -10,6 +10,8 @@ import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { toast } from '@/shared/components/Toast'
 import { Badge } from '@/shared/components/ui/badge'
 import { Button } from '@/shared/components/ui/button'
+import { Card } from '@/shared/components/ui/card'
+import { PageContainer, PageHeader } from '@/shared/components/ui/page'
 import { useGrading } from '@/shared/hooks/useGrading'
 import type { Exam } from '@/shared/types/grades'
 import ClassGate, { type ClassContext } from '../ClassGate'
@@ -23,7 +25,7 @@ import { useScoreAutosave, type SaveStatus } from './useScoreAutosave'
 
 export default function ScoresPage() {
   return (
-    <ClassGate title="成绩录入" need="exam.read">
+    <ClassGate title="成绩录入" need="exam.read" titleMode="none">
       {(ctx) => <ScoresBody ctx={ctx} />}
     </ClassGate>
   )
@@ -51,14 +53,24 @@ function ScoresBody({ ctx }: { ctx: ClassContext }) {
       { replace: true },
     )
 
-  if (exams.isLoading) return <LoadingState />
+  if (exams.isLoading) {
+    return (
+      <PageContainer>
+        <PageHeader title="成绩录入" />
+        <LoadingState variant="table" />
+      </PageContainer>
+    )
+  }
   if (!exams.data) {
     return (
-      <ErrorState
-        title="考试加载失败"
-        onRetry={() => void exams.refetch()}
-        retrying={exams.isFetching}
-      />
+      <PageContainer>
+        <PageHeader title="成绩录入" />
+        <ErrorState
+          title="考试加载失败"
+          onRetry={() => void exams.refetch()}
+          retrying={exams.isFetching}
+        />
+      </PageContainer>
     )
   }
 
@@ -88,25 +100,25 @@ function ScoresBody({ ctx }: { ctx: ClassContext }) {
 
   if (items.length === 0) {
     return (
-      <>
+      <PageContainer>
+        <PageHeader title="成绩录入" />
         <EmptyState
           title="还没有考试"
           action={canWrite ? <Button onClick={() => setForm('new')}>新建考试</Button> : undefined}
         />
         {modal}
-      </>
+      </PageContainer>
     )
   }
 
   return (
-    <div className="flex flex-col gap-4 p-4">
+    <PageContainer>
+      <PageHeader
+        title="成绩录入"
+        actions={canWrite ? <Button onClick={() => setForm('new')}>新建考试</Button> : undefined}
+      />
       <GradingFallback grading={grading} />
-      {canWrite && (
-        <div className="flex justify-end">
-          <Button onClick={() => setForm('new')}>新建考试</Button>
-        </div>
-      )}
-      <div className="grid gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
+      <div className="grid gap-6 lg:grid-cols-[18rem_minmax(0,1fr)]">
         {/* ≥ lg 是左栏列表;窄屏同一组件渲染成顶部的下拉选择 */}
         <aside>
           <ExamList exams={items} currentId={current.id} onSelect={select} />
@@ -119,7 +131,7 @@ function ScoresBody({ ctx }: { ctx: ClassContext }) {
         />
       </div>
       {modal}
-    </div>
+    </PageContainer>
   )
 }
 
@@ -176,7 +188,7 @@ function ExamSection({
   }
 
   let body
-  if (sheet.isLoading || roster.isLoading) body = <LoadingState />
+  if (sheet.isLoading || roster.isLoading) body = <LoadingState variant="table" />
   else if (!sheet.data || !roster.data) {
     body = (
       <ErrorState
@@ -202,24 +214,24 @@ function ExamSection({
   }
 
   return (
-    <section aria-label="当前考试" className="flex min-w-0 flex-col gap-4">
-      <header className="flex flex-wrap items-center gap-3">
-        <h2 className="text-lg font-semibold">{exam.name}</h2>
+    <section aria-label="当前考试" className="flex min-w-0 flex-col gap-6">
+      <Card className="flex flex-wrap items-center gap-x-3 gap-y-2 p-4">
+        <h2 className="text-base font-medium">{exam.name}</h2>
         <Badge variant="neutral">{exam.exam_type}</Badge>
         {exam.grade_exam_id && <Badge variant="info">{GRADE_EXAM_LABEL}</Badge>}
         <span className="text-sm text-muted-foreground">{exam.date}</span>
         {exam.grade_exam_id && (
           <span className="text-sm text-muted-foreground">{GRADE_EXAM_MANAGED}</span>
         )}
-        <div role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
-          {save.status !== 'idle' && <span>{STATUS_TEXT[save.status]}</span>}
-          {save.status === 'error' && (
-            <Button variant="outline" size="sm" onClick={save.retry}>
-              重试
-            </Button>
-          )}
-        </div>
-        <div className="ml-auto flex flex-wrap items-center gap-2">
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+          <div role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
+            {save.status !== 'idle' && <span>{STATUS_TEXT[save.status]}</span>}
+            {save.status === 'error' && (
+              <Button variant="outline" size="sm" onClick={save.retry}>
+                重试
+              </Button>
+            )}
+          </div>
           {canImport && (
             <Button variant="outline" size="sm" onClick={() => setImporting(true)}>
               按表头导入
@@ -244,7 +256,7 @@ function ExamSection({
             </Button>
           )}
         </div>
-      </header>
+      </Card>
       {body}
       {importing && sheet.data && roster.data && (
         <HeaderImport

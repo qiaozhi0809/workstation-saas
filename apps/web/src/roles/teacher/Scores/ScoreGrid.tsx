@@ -10,6 +10,7 @@ import { toast } from '@/shared/components/Toast'
 import { useGrading } from '@/shared/hooks/useGrading'
 import { cellState, examTable, parseScore, type CellState } from '@/shared/lib/grades'
 import { parseTable } from '@/shared/lib/table'
+import { Table, TableBody, TableHead, TableRow, Td, Th } from '@/shared/components/ui/table'
 import { cn } from '@/shared/lib/utils'
 import type { Exam, ScoreCell, ScoreSheet, ScoreValue } from '@/shared/types/grades'
 import type { StudentSeat } from '@/shared/types/student'
@@ -199,86 +200,74 @@ export default function ScoreGrid({
   }
 
   return (
-    <div className="overflow-x-auto rounded-md border border-border">
-      <table className="w-full border-collapse text-sm">
-        <thead className="bg-muted text-left text-muted-foreground">
-          <tr>
-            <th scope="col" className="whitespace-nowrap px-3 py-2 font-medium">
-              学号
-            </th>
-            <th scope="col" className="whitespace-nowrap px-3 py-2 font-medium">
-              姓名
-            </th>
-            {subjects.map((s) => (
-              <th key={s.name} scope="col" className="whitespace-nowrap px-3 py-2 font-medium">
-                {s.name} /{s.full}
-              </th>
-            ))}
-            <th scope="col" className="whitespace-nowrap px-3 py-2 font-medium">
-              总分
-            </th>
-            <th scope="col" className="whitespace-nowrap px-3 py-2 font-medium">
-              排名
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {students.map((s, r) => {
-            const row = table.get(s.enrollment_id)
-            return (
-              <tr key={s.enrollment_id} className="border-t border-border">
-                <td className="whitespace-nowrap px-3 py-1 text-muted-foreground">
-                  {s.student_no ?? ''}
-                </td>
-                <td className="whitespace-nowrap px-3 py-1">{s.name}</td>
-                {subjects.map((sub, c) => {
-                  const key = keyOf(s.enrollment_id, sub.name)
-                  const draft = drafts[key]
-                  const bad = draft === undefined ? null : interpret(draft, sub.full)
-                  const problem = bad && 'problem' in bad ? bad.problem : null
-                  const v = valueAt(s.enrollment_id, sub.name)
-                  const readOnly = !canWrite(sub.name)
-                  return (
-                    <td key={sub.name} className="px-1 py-1">
-                      <input
-                        ref={(el) => {
-                          if (el) refs.current.set(`${r}:${c}`, el)
-                          else refs.current.delete(`${r}:${c}`)
-                        }}
-                        inputMode="decimal"
-                        aria-label={`${s.name} ${sub.name}`}
-                        readOnly={readOnly}
-                        title={problem ?? undefined}
-                        value={draft ?? show(v)}
-                        className={cn(
-                          'w-20 rounded border border-transparent bg-transparent px-2 py-1 text-right focus:border-ring focus:outline-none',
-                          readOnly && 'cursor-not-allowed text-muted-foreground',
-                          problem ? STATE_CLASS.over : STATE_CLASS[cellState(v, sub.full, grading)],
-                        )}
-                        onFocus={(e) => e.currentTarget.select()}
-                        onBlur={() => {
-                          if (!problem) setDrafts((d) => without(d, key))
-                        }}
-                        onChange={(e) => {
-                          if (!readOnly) change(s.enrollment_id, sub.name, sub.full, e.target.value)
-                        }}
-                        onKeyDown={(e) => onKeyDown(e, r, c)}
-                        onPaste={(e) => onPaste(e, r, c)}
-                      />
-                    </td>
-                  )
-                })}
-                <td data-testid="total" className="whitespace-nowrap px-3 py-1 tabular-nums">
-                  {row?.total ?? '—'}
-                </td>
-                <td data-testid="rank" className="whitespace-nowrap px-3 py-1 tabular-nums">
-                  {row?.rank ?? '—'}
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-    </div>
+    <Table containerClassName="w-fit max-w-full">
+      <TableHead className="bg-muted/50">
+        <TableRow>
+          <Th>学号</Th>
+          <Th>姓名</Th>
+          {subjects.map((s) => (
+            <Th key={s.name} numeric>
+              {s.name} /{s.full}
+            </Th>
+          ))}
+          <Th numeric>总分</Th>
+          <Th numeric>排名</Th>
+        </TableRow>
+      </TableHead>
+      <TableBody>
+        {students.map((s, r) => {
+          const row = table.get(s.enrollment_id)
+          return (
+            <TableRow key={s.enrollment_id}>
+              <Td className="text-muted-foreground">{s.student_no ?? ''}</Td>
+              <Td>{s.name}</Td>
+              {subjects.map((sub, c) => {
+                const key = keyOf(s.enrollment_id, sub.name)
+                const draft = drafts[key]
+                const bad = draft === undefined ? null : interpret(draft, sub.full)
+                const problem = bad && 'problem' in bad ? bad.problem : null
+                const v = valueAt(s.enrollment_id, sub.name)
+                const readOnly = !canWrite(sub.name)
+                return (
+                  <Td key={sub.name} numeric nowrap={false} className="px-1">
+                    <input
+                      ref={(el) => {
+                        if (el) refs.current.set(`${r}:${c}`, el)
+                        else refs.current.delete(`${r}:${c}`)
+                      }}
+                      inputMode="decimal"
+                      aria-label={`${s.name} ${sub.name}`}
+                      readOnly={readOnly}
+                      title={problem ?? undefined}
+                      value={draft ?? show(v)}
+                      className={cn(
+                        'h-8 w-20 border border-transparent rounded-md bg-transparent px-2 text-right focus:border-ring focus:outline-none',
+                        readOnly && 'cursor-not-allowed text-muted-foreground',
+                        problem ? STATE_CLASS.over : STATE_CLASS[cellState(v, sub.full, grading)],
+                      )}
+                      onFocus={(e) => e.currentTarget.select()}
+                      onBlur={() => {
+                        if (!problem) setDrafts((d) => without(d, key))
+                      }}
+                      onChange={(e) => {
+                        if (!readOnly) change(s.enrollment_id, sub.name, sub.full, e.target.value)
+                      }}
+                      onKeyDown={(e) => onKeyDown(e, r, c)}
+                      onPaste={(e) => onPaste(e, r, c)}
+                    />
+                  </Td>
+                )
+              })}
+              <Td data-testid="total" numeric>
+                {row?.total ?? '—'}
+              </Td>
+              <Td data-testid="rank" numeric>
+                {row?.rank ?? '—'}
+              </Td>
+            </TableRow>
+          )
+        })}
+      </TableBody>
+    </Table>
   )
 }

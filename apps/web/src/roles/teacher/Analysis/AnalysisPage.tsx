@@ -8,6 +8,7 @@ import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { Button } from '@/shared/components/ui/button'
 import { NativeSelect } from '@/shared/components/ui/native-select'
+import { PageContainer, PageHeader } from '@/shared/components/ui/page'
 import { useGrading } from '@/shared/hooks/useGrading'
 import { aiLink } from '@/shared/lib/aiLink'
 import type { ClassPerm } from '@/shared/types/classroom'
@@ -111,29 +112,42 @@ function AnalysisBody({
     }
   }, [scored, ids, examParam, cmpParam, grading])
 
-  if (book.isLoading || roster.isLoading) return <LoadingState />
+  if (book.isLoading || roster.isLoading) {
+    return (
+      <PageContainer>
+        <PageHeader title="成绩分析" />
+        <LoadingState variant="cards" />
+      </PageContainer>
+    )
+  }
   if (!book.data || !roster.data) {
     return (
-      <ErrorState
-        title="成绩加载失败"
-        retrying={book.isFetching || roster.isFetching}
-        onRetry={() => {
-          void book.refetch()
-          void roster.refetch()
-        }}
-      />
+      <PageContainer>
+        <PageHeader title="成绩分析" />
+        <ErrorState
+          title="成绩加载失败"
+          retrying={book.isFetching || roster.isFetching}
+          onRetry={() => {
+            void book.refetch()
+            void roster.refetch()
+          }}
+        />
+      </PageContainer>
     )
   }
   if (!view) {
     return (
-      <EmptyState
-        title="还没有考试成绩"
-        action={
-          <Link to="/teacher/scores" className="text-sm text-primary underline">
-            去录入成绩
-          </Link>
-        }
-      />
+      <PageContainer>
+        <PageHeader title="成绩分析" />
+        <EmptyState
+          title="还没有考试成绩"
+          action={
+            <Button asChild variant="link" size="sm" className="px-0">
+              <Link to="/teacher/scores">去录入成绩</Link>
+            </Button>
+          }
+        />
+      </PageContainer>
     )
   }
   const { current, cmpExam, cur, cmp, rows, changes, subjectNow, subjectPrev, attn } = view
@@ -150,7 +164,38 @@ function AnalysisBody({
   }
 
   return (
-    <div className="flex flex-col gap-4 p-4">
+    <PageContainer>
+      <PageHeader
+        title="成绩分析"
+        actions={
+          <>
+            {perms.includes('ai.use') && (
+              <Button
+                variant="outline"
+                onClick={() =>
+                  navigate(
+                    aiLink({ tpl: 'report', examId: current.id, compareExamId: cmpExam?.id }),
+                  )
+                }
+              >
+                AI 写分析报告
+              </Button>
+            )}
+            {perms.includes('ai.class') && cmpExam && (
+              <Button
+                variant="outline"
+                onClick={() =>
+                  navigate(
+                    aiLink({ tpl: 'parent-batch', examId: current.id, compareExamId: cmpExam.id }),
+                  )
+                }
+              >
+                给退步同学家长写沟通消息
+              </Button>
+            )}
+          </>
+        }
+      />
       <GradingFallback grading={grading} />
       {unscoredPick && (
         <p role="status" className="text-sm text-muted-foreground">
@@ -162,7 +207,7 @@ function AnalysisBody({
           这场考试已不存在,已切到最近一场
         </p>
       )}
-      <div className="flex flex-wrap gap-4">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
         <label className="flex items-center gap-2 text-sm">
           考试
           <NativeSelect
@@ -199,43 +244,16 @@ function AnalysisBody({
         </label>
         {/* 没手动选对比时说明默认口径;文案与 previousExam 的计算同出一处(放在 label 外,不混进它的名字) */}
         {cmpParam === null && cmpExam && (
-          <span className="self-center text-xs text-muted-foreground">默认{RANK_CHANGE_BASIS}</span>
+          <span className="text-xs text-muted-foreground">默认{RANK_CHANGE_BASIS}</span>
         )}
-        {/* AI 快捷入口:跟随选择器换行;不对比时链接不带对比考试 */}
-        <div className="ml-auto flex flex-wrap gap-2">
-          {perms.includes('ai.use') && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                navigate(aiLink({ tpl: 'report', examId: current.id, compareExamId: cmpExam?.id }))
-              }
-            >
-              AI 写分析报告
-            </Button>
-          )}
-          {perms.includes('ai.class') && cmpExam && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                navigate(
-                  aiLink({ tpl: 'parent-batch', examId: current.id, compareExamId: cmpExam.id }),
-                )
-              }
-            >
-              给退步同学家长写沟通消息
-            </Button>
-          )}
-        </div>
       </div>
       <KpiRow cur={cur} cmp={cmp} cmpName={cmpExam?.name ?? ''} names={names} />
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-6 lg:grid-cols-2">
         <SubjectRateChart stats={cur} width={chartWidth} ratios={grading} />
         <BandChart stats={cur} width={chartWidth} ratios={grading} />
       </div>
       <TrendGrid book={scored} ids={ids} width={chartWidth} ratios={grading} />
-      <div className="grid items-start gap-4 lg:grid-cols-[2fr_1fr]">
+      <div className="grid items-start gap-6 lg:grid-cols-[2fr_1fr]">
         <RankTable
           subjects={current.subjects}
           rows={rows}
@@ -252,14 +270,14 @@ function AnalysisBody({
         />
       </div>
       <SubjectTable stats={subjectNow} prev={subjectPrev} ratios={grading} />
-    </div>
+    </PageContainer>
   )
 }
 
 /** chartWidth 仅供测试:jsdom 量不出容器宽度,给定后图表按固定宽度渲染 */
 export default function AnalysisPage({ chartWidth }: { chartWidth?: number } = {}) {
   return (
-    <ClassGate title="成绩分析" need="exam.read">
+    <ClassGate title="成绩分析" need="exam.read" titleMode="none">
       {(ctx) => <AnalysisBody classId={ctx.cls.id} perms={ctx.perms} chartWidth={chartWidth} />}
     </ClassGate>
   )

@@ -1,3 +1,4 @@
+import { Card } from '@/shared/components/ui/card'
 import type { ExamStats } from '@/shared/lib/grades'
 import { cn } from '@/shared/lib/utils'
 import { round1 } from './round1'
@@ -14,7 +15,7 @@ function Delta({ diff, cmpName }: { diff: number | null; cmpName: string }) {
   )
 }
 
-function Card({
+function KpiCard({
   title,
   children,
   delta,
@@ -24,14 +25,11 @@ function Card({
   delta: React.ReactNode
 }) {
   return (
-    <div
-      data-kpi
-      className="flex flex-col gap-1 rounded-lg border bg-card p-3 text-card-foreground"
-    >
+    <Card data-kpi className="flex flex-col gap-1 p-4">
       <div className="text-sm text-muted-foreground">{title}</div>
       {children}
       {delta}
-    </div>
+    </Card>
   )
 }
 
@@ -50,32 +48,38 @@ export function KpiRow({
   const diff = (f: (s: ExamStats) => number) => (cmp ? f(cur) - f(cmp) : null)
   const winners = cur.maxIds.map((id) => names.get(id) ?? id).join('、')
   return (
-    <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-      <Card title="平均分" delta={<Delta diff={diff((s) => s.rate)} cmpName={cmpName} />}>
-        <div className="text-2xl font-semibold">
+    <div className="grid grid-cols-2 gap-6 md:grid-cols-5">
+      <KpiCard title="平均分" delta={<Delta diff={diff((s) => s.rate)} cmpName={cmpName} />}>
+        <div className="text-2xl font-medium tabular-nums">
           {round1(cur.avg)}{' '}
           <span className="text-sm font-normal text-muted-foreground">/ {cur.full}</span>
         </div>
-      </Card>
-      <Card
+      </KpiCard>
+      <KpiCard
         title="最高分"
         delta={<Delta diff={diff((s) => (s.max / s.full) * 100)} cmpName={cmpName} />}
       >
-        <div className="text-2xl font-semibold">{cur.max}</div>
+        <div className="text-2xl font-medium tabular-nums">{cur.max}</div>
         <div className="text-xs text-muted-foreground">{winners}</div>
-      </Card>
-      <Card title="及格率" delta={<Delta diff={diff((s) => s.passRate * 100)} cmpName={cmpName} />}>
-        <div className="text-2xl font-semibold">{round1(cur.passRate * 100)}%</div>
-      </Card>
-      <Card title="优秀率" delta={<Delta diff={diff((s) => s.goodRate * 100)} cmpName={cmpName} />}>
-        <div className="text-2xl font-semibold">{round1(cur.goodRate * 100)}%</div>
-      </Card>
-      <Card
+      </KpiCard>
+      <KpiCard
+        title="及格率"
+        delta={<Delta diff={diff((s) => s.passRate * 100)} cmpName={cmpName} />}
+      >
+        <div className="text-2xl font-medium tabular-nums">{round1(cur.passRate * 100)}%</div>
+      </KpiCard>
+      <KpiCard
+        title="优秀率"
+        delta={<Delta diff={diff((s) => s.goodRate * 100)} cmpName={cmpName} />}
+      >
+        <div className="text-2xl font-medium tabular-nums">{round1(cur.goodRate * 100)}%</div>
+      </KpiCard>
+      <KpiCard
         title="标准差"
         delta={<div className="text-xs text-muted-foreground">越小说明分数越集中</div>}
       >
-        <div className="text-2xl font-semibold">{round1(cur.sd)}</div>
-      </Card>
+        <div className="text-2xl font-medium tabular-nums">{round1(cur.sd)}</div>
+      </KpiCard>
     </div>
   )
 }

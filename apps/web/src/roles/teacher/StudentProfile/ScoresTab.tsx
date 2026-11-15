@@ -7,9 +7,11 @@ import { EmptyState } from '@/shared/components/feedback/EmptyState'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { Badge } from '@/shared/components/ui/badge'
+import { Table, TableBody, TableHead, TableRow, Td, Th } from '@/shared/components/ui/table'
 import { useGrading } from '@/shared/hooks/useGrading'
 import { cellState, examTable, studentTrend } from '@/shared/lib/grades'
 import type { StudentProfile } from '@/shared/types/student'
+import SingleExamSummary from './SingleExamSummary'
 
 export default function ScoresTab({ profile }: { profile: StudentProfile }) {
   const grading = useGrading()
@@ -40,39 +42,33 @@ export default function ScoresTab({ profile }: { profile: StudentProfile }) {
 
   return (
     <div className="space-y-4">
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm" aria-label="历次成绩">
-          <thead>
-            <tr className="text-left text-muted-foreground">
-              <th scope="col" className="py-1 pr-2 font-normal">
-                考试
-              </th>
+      <div>
+        <Table density="compact" aria-label="历次成绩" containerClassName="w-fit max-w-full">
+          <TableHead>
+            <TableRow>
+              <Th>考试</Th>
               {subjectNames.map((n) => (
-                <th key={n} scope="col" className="px-2 py-1 font-normal">
+                <Th key={n} numeric>
                   {n}
-                </th>
+                </Th>
               ))}
-              <th scope="col" className="px-2 py-1 font-normal">
-                总分
-              </th>
-              <th scope="col" className="py-1 pl-2 font-normal">
-                排名
-              </th>
-            </tr>
-          </thead>
-          <tbody>
+              <Th numeric>总分</Th>
+              <Th numeric>排名</Th>
+            </TableRow>
+          </TableHead>
+          <TableBody>
             {rows.map(({ exam, row }) => (
-              <tr key={exam.id} className="border-t">
-                <td className="py-1 pr-2">
+              <TableRow key={exam.id}>
+                <Td nowrap={false}>
                   <div>{exam.name}</div>
                   <div className="text-xs text-muted-foreground">{exam.date}</div>
-                </td>
+                </Td>
                 {subjectNames.map((n) => {
                   const full = exam.subjects.find((s) => s.name === n)?.full ?? 0
                   const v = row?.subs[n]
                   const state = cellState(v, full, grading)
                   return (
-                    <td key={n} className="px-2 py-1">
+                    <Td key={n} numeric>
                       {state === 'absent' ? (
                         <Badge variant="warning">缺考</Badge>
                       ) : state === 'empty' ? (
@@ -80,29 +76,37 @@ export default function ScoresTab({ profile }: { profile: StudentProfile }) {
                       ) : (
                         <span className={state === 'ok' ? undefined : 'text-destructive'}>{v}</span>
                       )}
-                    </td>
+                    </Td>
                   )
                 })}
-                <td className="px-2 py-1 font-semibold">{row?.total ?? '—'}</td>
-                <td className="py-1 pl-2">{row?.rank ?? '—'}</td>
-              </tr>
+                <Td numeric className="font-medium">
+                  {row?.total ?? '—'}
+                </Td>
+                <Td numeric>{row?.rank ?? '—'}</Td>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
         <p className="mt-2 text-xs text-muted-foreground">
           红色为不及格(低于满分的 {Math.round(grading.pass_ratio * 100)}%)
         </p>
       </div>
       <section>
         <h3 className="mb-1 text-sm font-medium">排名变化</h3>
-        <TrendLine
-          label="排名变化"
-          reversed
-          labels={trend.map((p) => p.name)}
-          series={[{ key: 'rank', label: '排名', values: trend.map((p) => p.rank) }]}
-          format={(v) => `第 ${v} 名`}
-          yAxisWidth={64}
-        />
+        {trend.length < 2 ? (
+          <SingleExamSummary
+            text={`只有 1 次考试:${trend[0]?.rank == null ? '暂无名次' : `第 ${trend[0].rank} 名`}`}
+          />
+        ) : (
+          <TrendLine
+            label="排名变化"
+            reversed
+            labels={trend.map((p) => p.name)}
+            series={[{ key: 'rank', label: '排名', values: trend.map((p) => p.rank) }]}
+            format={(v) => `第 ${v} 名`}
+            yAxisWidth={64}
+          />
+        )}
       </section>
     </div>
   )

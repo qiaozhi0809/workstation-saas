@@ -10,6 +10,7 @@ import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { toast } from '@/shared/components/Toast'
 import { Badge } from '@/shared/components/ui/badge'
 import { Button } from '@/shared/components/ui/button'
+import { Field, useFormErrors } from '@/shared/components/ui/field'
 import { Input } from '@/shared/components/ui/input'
 import { NativeSelect } from '@/shared/components/ui/native-select'
 import type { Tone } from '@/shared/lib/tone'
@@ -33,6 +34,7 @@ function AddForm({ profile, today }: { profile: StudentProfile; today: string })
   const [type, setType] = useState<GrowthType>('表扬')
   const [date, setDate] = useState('')
   const [content, setContent] = useState('')
+  const { errors, report, clear, fieldRef } = useFormErrors(['content'] as const)
   const add = useMutation({
     mutationFn: () =>
       growthApi.create(profile.id, { type, date: date || today, content: content.trim() }),
@@ -43,46 +45,55 @@ function AddForm({ profile, today }: { profile: StudentProfile; today: string })
     onError: (err) => toast(err instanceof ApiError ? err.message : '添加失败,请重试'),
   })
   const submit = () => {
-    if (!content.trim() || add.isPending) return
+    if (add.isPending) return
+    if (!report(content.trim() ? {} : { content: '请填写记录内容' })) return
     add.mutate()
   }
 
   return (
-    <div className="mb-4 flex flex-wrap items-center gap-2">
-      <NativeSelect
-        aria-label="记录类型"
-        className="h-8"
-        value={type}
-        onChange={(e) => setType(e.target.value as GrowthType)}
-      >
-        {GROWTH_TYPES.map((t) => (
-          <option key={t} value={t}>
-            {t}
-          </option>
-        ))}
-      </NativeSelect>
-      <Input
-        type="date"
-        aria-label="记录日期"
-        className="h-8 w-36"
-        value={date || today}
-        onChange={(e) => setDate(e.target.value)}
-      />
-      <Input
-        aria-label="记录内容"
-        maxLength={500}
-        placeholder="记录内容"
-        className="h-8 min-w-40 flex-1"
-        value={content}
-        onChange={(e) => setContent(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-            e.preventDefault()
-            submit()
-          }
-        }}
-      />
-      <Button type="button" size="sm" disabled={add.isPending || !content.trim()} onClick={submit}>
+    <div className="mb-4 flex flex-wrap items-start gap-2">
+      <Field label="记录类型">
+        <NativeSelect
+          controlSize="sm"
+          value={type}
+          onChange={(e) => setType(e.target.value as GrowthType)}
+        >
+          {GROWTH_TYPES.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </NativeSelect>
+      </Field>
+      <Field label="记录日期">
+        <Input
+          type="date"
+          controlSize="sm"
+          className="w-36"
+          value={date || today}
+          onChange={(e) => setDate(e.target.value)}
+        />
+      </Field>
+      <Field label="记录内容" error={errors.content} className="min-w-40 flex-1">
+        <Input
+          ref={fieldRef('content')}
+          maxLength={500}
+          placeholder="记录内容"
+          controlSize="sm"
+          value={content}
+          onChange={(e) => {
+            setContent(e.target.value)
+            clear('content')
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+              e.preventDefault()
+              submit()
+            }
+          }}
+        />
+      </Field>
+      <Button type="button" size="sm" className="mt-5" disabled={add.isPending} onClick={submit}>
         添加
       </Button>
     </div>
@@ -125,7 +136,7 @@ function Timeline({ profile, canWrite }: { profile: StudentProfile; canWrite: bo
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="ml-auto h-7 px-2"
+                className="ml-auto"
                 disabled={remove.isPending}
                 onClick={() => {
                   if (window.confirm('删除这条成长记录?')) remove.mutate(r.id)

@@ -25,7 +25,7 @@ export default function CopyPromptDialog({
       <div className="space-y-3">
         <Textarea readOnly aria-label="提示词内容" value={prompt.prompt} className="h-72" />
         {prompt.mapping.length > 0 && (
-          <details className="rounded-md border border-border p-2 text-sm">
+          <details className="rounded-md bg-muted p-3 text-sm">
             <summary className="cursor-pointer">编号对照表</summary>
             <ul className="mt-2 space-y-1">
               {prompt.mapping.map((m) => (

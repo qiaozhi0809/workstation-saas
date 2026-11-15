@@ -96,6 +96,39 @@ it('sends, refreshes the list, resets the composer and warns about students with
   expect(screen.getByRole('radio', { name: '不要回执' })).toBeChecked()
 })
 
+it('reports a missing title and body in place instead of disabling send', async () => {
+  renderPage()
+  await screen.findByText('三年二班全体家长')
+  const send = screen.getByRole('button', { name: '发送' })
+  expect(send).toBeEnabled()
+  fireEvent.click(send)
+  expect(await screen.findByText('请填写标题')).toBeInTheDocument()
+  expect(screen.getByText('请填写正文')).toBeInTheDocument()
+  const title = screen.getByLabelText('标题')
+  expect(title).toHaveAttribute('aria-invalid', 'true')
+  expect(title).toHaveFocus()
+  expect(classNoticesApi.send).not.toHaveBeenCalled()
+  // 只填标题:正文仍然就地报错,焦点落到正文
+  fireEvent.change(title, { target: { value: '周五春游' } })
+  fireEvent.click(screen.getByRole('button', { name: '发送' }))
+  await waitFor(() => expect(screen.queryByText('请填写标题')).toBeNull())
+  expect(screen.getByText('请填写正文')).toBeInTheDocument()
+  expect(screen.getByLabelText('正文')).toHaveFocus()
+})
+
+it('lays out in the shared page container with one visible heading and card panels', async () => {
+  renderPage()
+  const h1 = await screen.findByRole('heading', { level: 1, name: '班级公告' })
+  expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
+  expect(h1.closest('[data-page-container]')).toHaveAttribute('data-width', 'default')
+  const composer = await screen.findByRole('region', { name: '写公告' })
+  expect(composer.closest('[data-slot="card"]')).not.toBeNull()
+  expect(
+    screen.getByRole('region', { name: '我发出的' }).closest('[data-slot="card"]'),
+  ).not.toBeNull()
+  expect(screen.getByRole('heading', { level: 2, name: '写公告' })).toHaveClass('font-medium')
+})
+
 it('does not warn when every student has a parent', async () => {
   vi.mocked(classNoticesApi.send).mockResolvedValue(sent())
   renderPage()

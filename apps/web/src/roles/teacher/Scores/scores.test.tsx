@@ -288,10 +288,39 @@ it('shows grading fallback banner', async () => {
   expect(schoolApi.grading).toHaveBeenCalledTimes(before + 1)
 })
 
-it('pads the page like the other teacher pages', async () => {
+it('lays the page out in the shared page container with a visible header', async () => {
   setup()
   const nav = await screen.findByRole('navigation', { name: '考试列表' })
-  expect(nav.closest('.flex.flex-col.gap-4')).toHaveClass('p-4')
+  const root = nav.closest('[data-page-container]') as HTMLElement
+  expect(root).not.toBeNull()
+  const h1 = within(root).getByRole('heading', { level: 1, name: '成绩录入' })
+  expect(h1).not.toHaveClass('sr-only')
+  // 「新建考试」进页头操作区
+  expect(h1.closest('[data-page-header]')).toContainElement(
+    within(root).getAllByRole('button', { name: '新建考试' })[0],
+  )
+})
+
+it('reports an empty exam name in place instead of disabling save', async () => {
+  setup()
+  fireEvent.click(await screen.findByRole('button', { name: '新建考试' }))
+  const name = await screen.findByLabelText('考试名称')
+  const save = screen.getByRole('button', { name: '保存' })
+  expect(save).toBeEnabled()
+  fireEvent.click(save)
+  expect(await screen.findByText('请填写考试名称')).toBeInTheDocument()
+  expect(name).toHaveAttribute('aria-invalid', 'true')
+  expect(name).toHaveFocus()
+  expect(examsApi.create).not.toHaveBeenCalled()
+})
+
+it('picks the exam type with tabs', async () => {
+  setup()
+  fireEvent.click(await screen.findByRole('button', { name: '新建考试' }))
+  const tabs = within(await screen.findByRole('tablist', { name: '考试类型' }))
+  expect(tabs.getByRole('tab', { name: '月考', selected: true })).toBeInTheDocument()
+  fireEvent.click(tabs.getByRole('tab', { name: '期中' }))
+  expect(tabs.getByRole('tab', { name: '期中', selected: true })).toBeInTheDocument()
 })
 
 it('shows an empty state with a create action when there are no exams', async () => {

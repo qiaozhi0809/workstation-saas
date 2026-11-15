@@ -30,13 +30,14 @@ const cls: ClassView = {
 const renderGate = (
   need?: 'exam.read',
   children: (ctx: ClassContext) => React.ReactNode = () => <p>内容</p>,
+  titleMode?: 'sr-only' | 'none',
 ) =>
   render(
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
     >
       <MemoryRouter>
-        <ClassGate title="成绩录入" need={need}>
+        <ClassGate title="成绩录入" need={need} titleMode={titleMode}>
           {children}
         </ClassGate>
       </MemoryRouter>
@@ -76,6 +77,25 @@ it('passes class, summary, perms and subjects to children', async () => {
   expect(ctx.subjects).toEqual(['数学'])
   expect(screen.getByRole('heading', { level: 1, name: '成绩录入' })).toBeInTheDocument()
   expect(classroomApi.summary).toHaveBeenCalledWith('c1')
+})
+
+it('titleMode none leaves the heading to the page', async () => {
+  renderGate(undefined, () => <h1>页面自己的标题</h1>, 'none')
+  expect(
+    await screen.findByRole('heading', { level: 1, name: '页面自己的标题' }),
+  ).toBeInTheDocument()
+  expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
+  expect(screen.queryByRole('heading', { level: 1, name: '成绩录入' })).toBeNull()
+})
+
+it('titleMode none still gives the non-content states a single visible heading', async () => {
+  vi.mocked(classroomApi.summary).mockResolvedValue(
+    summaryFixture({ my_perms: ['attendance.read'] }),
+  )
+  renderGate('exam.read', undefined, 'none')
+  expect(await screen.findByText('你在本班没有这项权限')).toBeInTheDocument()
+  const h1 = screen.getByRole('heading', { level: 1, name: '成绩录入' })
+  expect(h1).not.toHaveClass('sr-only')
 })
 
 it('renders children without any perm check when need is omitted', async () => {

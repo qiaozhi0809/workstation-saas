@@ -171,6 +171,46 @@ describe('RankTable', () => {
   })
 })
 
+describe('table alignment', () => {
+  it('right-aligns numeric rank columns and left-aligns rank number and name', async () => {
+    setup([first, second], '/teacher/analysis?exam=x2&cmp=x1')
+    const table = await rankRegion()
+    for (const h of ['名次', '姓名'])
+      expect(table.getByRole('columnheader', { name: h })).toHaveClass('text-left')
+    for (const h of ['语文', '数学', '总分', '进退'])
+      expect(table.getByRole('columnheader', { name: h })).toHaveClass('text-right', 'tabular-nums')
+    const row = table.getAllByRole('row')[1]
+    expect(within(row).getByText('180')).toHaveClass('text-right')
+  })
+
+  it('right-aligns the subject detail numbers and keeps the subject name left', async () => {
+    setup([first, second], '/teacher/analysis?exam=x2&cmp=x1')
+    const region = within(await screen.findByRole('region', { name: '各科明细' }))
+    expect(region.getByRole('columnheader', { name: '科目' })).toHaveClass('text-left')
+    for (const h of ['满分', '平均分', '得分率', '及格率', '不及格人数', '得分率变化'])
+      expect(region.getByRole('columnheader', { name: h })).toHaveClass('text-right')
+    const chinese = region.getByRole('row', { name: /语文/ })
+    expect(within(chinese).getByText('76.7%')).toHaveClass('text-right', 'tabular-nums')
+  })
+
+  it('draws both tables flat inside their cards, without their own surface outline', async () => {
+    setup([first, second], '/teacher/analysis?exam=x2&cmp=x1')
+    const rank = await rankRegion()
+    const detail = within(await screen.findByRole('region', { name: '各科明细' }))
+    for (const region of [rank, detail]) {
+      const container = region.getByRole('table').closest('[data-slot="table-container"]')
+      expect(container).toHaveClass('shadow-none', 'bg-transparent')
+      expect(container).not.toHaveClass('shadow-surface')
+    }
+  })
+
+  it('opens a student from a link-styled name button', async () => {
+    setup([first, second], '/teacher/analysis?exam=x2&cmp=x1')
+    const table = await rankRegion()
+    expect(table.getByRole('button', { name: '王小一' }).className).toContain('primary')
+  })
+})
+
 describe('AttentionPanel', () => {
   it('groups risers, fallers and students failing two subjects', async () => {
     setup([prev7, cur7], '/teacher/analysis?exam=p2&cmp=p1', roster7)

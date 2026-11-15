@@ -1,3 +1,4 @@
+import { Card } from '@/shared/components/ui/card'
 import { ScoreBars, type BarDatum } from '@/shared/components/charts/ScoreBars'
 import type { ExamStats } from '@/shared/lib/grades'
 import type { Grading } from '@/shared/types/school'
@@ -29,8 +30,8 @@ export function SubjectRateChart({
     ],
   }))
   return (
-    <section className="rounded-lg border bg-card p-3">
-      <h2 className="mb-2 text-sm font-medium">各科平均得分率</h2>
+    <Card className="p-4">
+      <h2 className="mb-2 text-base font-medium">各科平均得分率</h2>
       <ScoreBars
         label="各科平均得分率"
         width={width}
@@ -39,6 +40,6 @@ export function SubjectRateChart({
         format={(v) => `${v}%`}
         refLine={{ value: passPct, label: '及格' }}
       />
-    </section>
+    </Card>
   )
 }

@@ -5,7 +5,9 @@ import { examsApi } from '@/shared/api/exams'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import Modal from '@/shared/components/overlay/Modal'
 import { Button } from '@/shared/components/ui/button'
+import { Field, useFormErrors } from '@/shared/components/ui/field'
 import { Input } from '@/shared/components/ui/input'
+import { SegmentedTabs } from '@/shared/components/ui/segmented-tabs'
 import { cn } from '@/shared/lib/utils'
 import {
   EXAM_TYPES,
@@ -45,6 +47,11 @@ function errorText(e: unknown): string {
 }
 
 const FULL_MSG = '满分须为 1–1000 的整数'
+const FIELD_ORDER = ['name', 'date', 'subjects'] as const
+const examTypeItems: readonly { value: ExamType; label: string }[] = EXAM_TYPES.map((t) => ({
+  value: t,
+  label: t,
+}))
 const validFull = (n: number) => Number.isInteger(n) && n >= 1 && n <= 1000
 
 export const GRADE_EXAM_MANAGED = '这是年级联考,由教导处修改'
@@ -130,6 +137,7 @@ function FormBody(p: Props & { catalog: SubjectFull[] }) {
   const [confirming, setConfirming] = useState(false)
   const [dropAck, setDropAck] = useState(false)
   const [filled, setFilled] = useState<string | null>(null)
+  const { errors, report, clear, fieldRef } = useFormErrors(FIELD_ORDER)
 
   const invalidate = () =>
     Promise.all(
@@ -217,26 +225,13 @@ function FormBody(p: Props & { catalog: SubjectFull[] }) {
   const submit = () => {
     const n = name.trim()
     const picked = chips.filter((c) => c.selected)
-    if (!n) {
-      setError('请填写考试名称')
-      return
-    }
-    if (n.length > NAME_MAX) {
-      setError(`考试名称不能超过 ${NAME_MAX} 个字`)
-      return
-    }
-    if (!date) {
-      setError('请选择日期')
-      return
-    }
-    if (picked.length === 0) {
-      setError('至少选择一个科目')
-      return
-    }
-    if (picked.some((c) => !validFull(Number(c.full)))) {
-      setError(FULL_MSG)
-      return
-    }
+    const next: { name?: string; date?: string; subjects?: string } = {}
+    if (!n) next.name = '请填写考试名称'
+    else if (n.length > NAME_MAX) next.name = `考试名称不能超过 ${NAME_MAX} 个字`
+    if (!date) next.date = '请选择日期'
+    if (picked.length === 0) next.subjects = '至少选择一个科目'
+    else if (picked.some((c) => !validFull(Number(c.full)))) next.subjects = FULL_MSG
+    if (!report(next)) return
     setError(null)
     if (dropped.length > 0 && !dropAck) {
       setDropAck(true)
@@ -261,42 +256,53 @@ function FormBody(p: Props & { catalog: SubjectFull[] }) {
         submit()
       }}
     >
-      <label className="flex flex-col gap-1 text-sm">
-        <span className="font-medium">考试名称</span>
-        <Input value={name} maxLength={NAME_MAX} onChange={(e) => setName(e.target.value)} />
-      </label>
-      <label className="flex flex-col gap-1 text-sm">
-        <span className="font-medium">日期</span>
-        <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-      </label>
+      <Field label="考试名称" error={errors.name}>
+        <Input
+          ref={fieldRef('name')}
+          value={name}
+          maxLength={NAME_MAX}
+          onChange={(e) => {
+            setName(e.target.value)
+            clear('name')
+          }}
+        />
+      </Field>
+      <Field label="日期" error={errors.date}>
+        <Input
+          ref={fieldRef('date')}
+          type="date"
+          value={date}
+          onChange={(e) => {
+            setDate(e.target.value)
+            clear('date')
+          }}
+        />
+      </Field>
 
-      <div role="group" aria-label="考试类型" className="flex flex-col gap-1 text-sm">
-        <span className="font-medium">类型</span>
-        <div className="flex flex-wrap gap-2">
-          {EXAM_TYPES.map((t) => (
-            <button
-              key={t}
-              type="button"
-              aria-pressed={t === type}
-              onClick={() => setType(t)}
-              className={chipClass(t === type)}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
+      <div className="flex flex-col gap-1 text-sm">
+        <span className="text-xs font-medium">类型</span>
+        <SegmentedTabs
+          label="考试类型"
+          items={examTypeItems}
+          value={type}
+          onChange={(v) => setType(v)}
+          size="sm"
+          className="flex-wrap self-start"
+        />
       </div>
 
       <div role="group" aria-label="科目" className="flex flex-col gap-2 text-sm">
         <span className="font-medium">科目与满分</span>
         <div className="flex flex-wrap gap-2">
-          {chips.map((c) => (
+          {chips.map((c, index) => (
             <span key={c.name} className="flex items-center gap-1">
               <button
+                ref={index === 0 ? fieldRef('subjects') : undefined}
                 type="button"
                 aria-pressed={c.selected}
                 onClick={() => {
                   setDropAck(false)
+                  clear('subjects')
                   patch(c.name, { selected: !c.selected })
                 }}
                 className={chipClass(c.selected)}
@@ -309,10 +315,14 @@ function FormBody(p: Props & { catalog: SubjectFull[] }) {
                 max={1000}
                 step={1}
                 aria-label={`${c.name} 满分`}
-                className="h-8 w-20"
+                controlSize="sm"
+                className="w-20"
                 value={c.full}
                 disabled={!c.selected}
-                onChange={(e) => patch(c.name, { full: e.target.value })}
+                onChange={(e) => {
+                  clear('subjects')
+                  patch(c.name, { full: e.target.value })
+                }}
               />
             </span>
           ))}
@@ -322,7 +332,8 @@ function FormBody(p: Props & { catalog: SubjectFull[] }) {
             aria-label="新科目名称"
             maxLength={10}
             placeholder="添加科目"
-            className="h-8 w-32"
+            controlSize="sm"
+            className="w-32"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             onKeyDown={(e) => {
@@ -338,7 +349,8 @@ function FormBody(p: Props & { catalog: SubjectFull[] }) {
             max={1000}
             step={1}
             aria-label="新科目满分"
-            className="h-8 w-20"
+            controlSize="sm"
+            className="w-20"
             value={newFull}
             onChange={(e) => setNewFull(e.target.value)}
             onKeyDown={(e) => {
@@ -352,6 +364,11 @@ function FormBody(p: Props & { catalog: SubjectFull[] }) {
             添加
           </Button>
         </div>
+        {errors.subjects && (
+          <p role="alert" className="text-xs text-destructive">
+            {errors.subjects}
+          </p>
+        )}
         {p.canAllSubjects && (
           <div className="flex flex-wrap items-center gap-2">
             <Button
@@ -439,9 +456,9 @@ function FormBody(p: Props & { catalog: SubjectFull[] }) {
 
 function chipClass(on: boolean) {
   return cn(
-    'rounded-full border px-3 py-1 text-sm transition-colors',
+    'h-8 rounded-sm px-3 text-sm transition-colors',
     on
-      ? 'border-primary bg-primary text-primary-foreground'
-      : 'border-input bg-background text-foreground hover:bg-accent',
+      ? 'bg-accent font-medium text-accent-foreground shadow-[inset_0_0_0_1px_hsl(var(--ws-foreground)/0.35)]'
+      : 'bg-background text-muted-foreground shadow-[inset_0_0_0_1px_hsl(var(--ws-input))] hover:bg-accent/50',
   )
 }

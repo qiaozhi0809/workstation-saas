@@ -14,7 +14,7 @@ export default function TemplateGrid({
   const [cat, setCat] = useState<AiCategory>('rec')
   const shown = templates.items.filter((t) => !t.hidden && (cat === 'rec' ? t.rec : t.cat === cat))
   return (
-    <section className="space-y-3">
+    <section className="flex flex-col gap-3">
       <SegmentedTabs
         label="模板分类"
         items={templates.categories.map((c) => ({ value: c.id, label: c.label }))}
@@ -25,15 +25,16 @@ export default function TemplateGrid({
       {shown.length === 0 && (
         <p className="text-sm text-muted-foreground">这个分类下还没有可用的模板</p>
       )}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {shown.map((t) => (
           <button
             key={t.id}
             type="button"
+            data-layout-exempt
             disabled={!t.available}
             onClick={() => onPick(t)}
             className={cn(
-              'rounded-lg border border-border bg-card p-3 text-left transition-colors',
+              'rounded-lg bg-card p-4 text-left shadow-surface transition-colors',
               'hover:bg-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
               'disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-card',
             )}
@@ -41,7 +42,9 @@ export default function TemplateGrid({
             <span className="block text-sm font-medium text-foreground">{t.title}</span>
             <span className="mt-1 block text-xs text-muted-foreground">{t.desc}</span>
             {!t.available && t.unavailable_reason && (
-              <span className="mt-1 block text-xs text-destructive">{t.unavailable_reason}</span>
+              <span className="mt-1 block text-xs text-muted-foreground">
+                {t.unavailable_reason}
+              </span>
             )}
           </button>
         ))}

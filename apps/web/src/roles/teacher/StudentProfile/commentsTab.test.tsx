@@ -97,7 +97,12 @@ it('saves a handwritten comment', async () => {
   const box = await screen.findByLabelText('评语内容')
   expect(box).toHaveAttribute('maxlength', '1000')
   const save = screen.getByRole('button', { name: '保存评语' })
-  expect(save).toBeDisabled()
+  // 空内容不禁用按钮:点保存就地报错并聚焦
+  expect(save).toBeEnabled()
+  fireEvent.click(save)
+  expect(await screen.findByText('请填写评语内容')).toBeInTheDocument()
+  expect(box).toHaveFocus()
+  expect(commentsApi.create).not.toHaveBeenCalled()
   fireEvent.change(box, { target: { value: ' 本学期表现优秀 ' } })
   fireEvent.click(save)
   await waitFor(() =>
@@ -234,6 +239,15 @@ it('header: AI 写评语 jumps to the comment template', async () => {
   setup(<ProfileActions profile={profile} />, ['ai.class', 'comment.write'])
   fireEvent.click(await screen.findByRole('button', { name: 'AI 写评语' }))
   expect(screen.getByTestId('loc')).toHaveTextContent('/teacher/ai?tpl=comment1&stu=s1')
+})
+
+it('renders 给家长看 with the shared switch control', async () => {
+  vi.mocked(commentsApi.list).mockResolvedValue({ items: [cm({ parent_visible: false })] })
+  setup(<CommentsTab profile={profile} />, ['comment.read', 'comment.write'])
+  const sw = await screen.findByRole('switch', { name: '给家长看' })
+  expect(sw.tagName).toBe('INPUT')
+  expect(sw).toHaveAttribute('type', 'checkbox')
+  expect(sw.closest('label')).toHaveClass('min-h-8')
 })
 
 it('toggles 给家长看 via setParentVisible and updates the display', async () => {

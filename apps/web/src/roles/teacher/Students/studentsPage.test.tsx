@@ -180,6 +180,47 @@ it('keeps cells and headers on one line and the filter tabs unsqueezed on narrow
   )
 })
 
+it('puts the title and the toolbar buttons in the page header', async () => {
+  setup([...ALL, ...MANAGE])
+  renderPage()
+  // 等正文(搜索框)出现,加载态页头里还没有按钮
+  await screen.findByLabelText('搜索学生')
+  const h1 = await screen.findByRole('heading', { level: 1, name: '学生' })
+  expect(h1).not.toHaveClass('sr-only')
+  const header = h1.closest('[data-page-header]') as HTMLElement
+  for (const n of ['导出名单', '批量导入', '添加学生'])
+    expect(within(header).getByRole('button', { name: n })).toBeInTheDocument()
+  // 搜索和筛选在页头下面
+  expect(header).not.toContainElement(screen.getByLabelText('搜索学生'))
+  // 主按钮(添加学生)放最后
+  const buttons = within(header).getAllByRole('button')
+  expect(buttons[buttons.length - 1]).toHaveAccessibleName('添加学生')
+})
+
+it('right-aligns rank and points and keeps ids and names on the left', async () => {
+  setup(ALL)
+  renderPage()
+  await screen.findByText('张三')
+  for (const h of [/排名/, /积分/])
+    expect(screen.getByRole('columnheader', { name: h })).toHaveClass('text-right', 'tabular-nums')
+  for (const h of [/学号/, /姓名/, /生日/])
+    expect(screen.getByRole('columnheader', { name: h })).toHaveClass('text-left')
+  const row1 = screen.getByText('张三').closest('tr')!
+  const cells = within(row1).getAllByRole('cell')
+  expect(cells[cells.length - 1]).toHaveClass('text-right', 'tabular-nums')
+})
+
+it('does not render the contacts and tags columns when no row has any', async () => {
+  const bare = records.map((r) => ({ ...r, contacts: [], tags: [] }))
+  setup(ALL, bare)
+  renderPage()
+  await screen.findByText('张三')
+  expect(screen.queryByRole('columnheader', { name: '主要联系人' })).toBeNull()
+  expect(screen.queryByRole('columnheader', { name: '标签' })).toBeNull()
+  // 其他列照常
+  expect(screen.getByRole('columnheader', { name: /姓名/ })).toBeInTheDocument()
+})
+
 it('filters by search and chips', async () => {
   setup(ALL)
   renderPage()
@@ -344,11 +385,12 @@ it('N5: table scrolls on its own and keeps contacts and tags columns on wide scr
   setup(ALL)
   renderPage()
   const table = await screen.findByRole('table')
-  expect(table.parentElement).toHaveClass('overflow-x-auto')
+  const scroll = table.closest('[data-slot="table-container"]')
+  expect(scroll).toHaveClass('overflow-x-auto')
   // relative:表头 sr-only(绝对定位)必须被这个滚动容器裁剪,否则撑宽整页
-  expect(table.parentElement).toHaveClass('relative')
+  expect(scroll).toHaveClass('relative')
   // 根容器 min-w-0:否则 flex 子项撑开页面,横向滚动落到整页而不是表格自己
-  expect(table.closest('.space-y-3')).toHaveClass('min-w-0')
+  expect(table.closest('[data-page-container]')).toHaveClass('min-w-0')
   expect(screen.getByRole('columnheader', { name: '主要联系人' })).toBeInTheDocument()
   expect(screen.getByRole('columnheader', { name: '标签' })).toBeInTheDocument()
 })

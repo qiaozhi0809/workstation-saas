@@ -67,7 +67,6 @@ export default function ReviewDetail({ profile }: { profile: StudentProfile }) {
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="h-7 px-2"
                   disabled={revoke.isPending}
                   onClick={() => revoke.mutate(r.id)}
                 >

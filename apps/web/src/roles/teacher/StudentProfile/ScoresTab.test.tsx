@@ -125,6 +125,27 @@ it('names the scores table and marks every header cell as a column header', asyn
   for (const h of headers) expect(h).toHaveAttribute('scope', 'col')
 })
 
+it('right-aligns the numeric columns and keeps the exam column left in a compact table', async () => {
+  renderTab()
+  const table = await screen.findByRole('table', { name: '历次成绩' })
+  const headers = within(table).getAllByRole('columnheader')
+  expect(headers[0]).toHaveClass('text-left')
+  for (const h of headers.slice(1)) expect(h).toHaveClass('text-right', 'tabular-nums')
+  const rows = within(table).getAllByRole('row')
+  expect(rows[1]).toHaveClass('h-9')
+  const cells = within(rows[1]).getAllByRole('cell')
+  for (const c of cells.slice(1)) expect(c).toHaveClass('text-right')
+  expect(cells[cells.length - 2]).toHaveClass('font-medium')
+  expect(cells[cells.length - 2]).not.toHaveClass('font-semibold')
+})
+
+it('says there is only one exam instead of drawing a lone rank point', async () => {
+  vi.mocked(examsApi.gradebook).mockResolvedValue({ exams: [book.exams[1]] })
+  renderTab()
+  expect(await screen.findByText(/只有 1 次考试/)).toBeInTheDocument()
+  expect(screen.queryByRole('img', { name: '排名变化' })).toBeNull()
+})
+
 it('draws the rank curve reversed', async () => {
   renderTab()
   await screen.findByRole('img', { name: '排名变化' })

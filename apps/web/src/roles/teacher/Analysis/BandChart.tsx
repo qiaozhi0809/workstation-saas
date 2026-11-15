@@ -1,3 +1,4 @@
+import { Card } from '@/shared/components/ui/card'
 import { ScoreBars, type BarDatum } from '@/shared/components/charts/ScoreBars'
 import { scoreBands, type ExamStats } from '@/shared/lib/grades'
 import type { Grading } from '@/shared/types/school'
@@ -31,9 +32,9 @@ export function BandChart({
     tip: [`${b.count} 人`],
   }))
   return (
-    <section className="rounded-lg border bg-card p-3">
+    <Card className="p-4">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm font-medium">总分分数段</h2>
+        <h2 className="text-base font-medium">总分分数段</h2>
         <ul className="flex gap-3 text-xs text-muted-foreground">
           {LEGEND.map((l) => (
             <li key={l.text} className="flex items-center gap-1">
@@ -44,6 +45,6 @@ export function BandChart({
         </ul>
       </div>
       <ScoreBars label="总分分数段" width={width} data={data} valueLabels />
-    </section>
+    </Card>
   )
 }

@@ -208,10 +208,33 @@ describe('AnalysisPage', () => {
     expect(screen.queryByText('默认与上一场有分数的考试比')).toBeNull()
   })
 
-  it('hides trends with fewer than two scored exams', async () => {
+  it('shows a summary instead of a lone point with fewer than two scored exams', async () => {
     setup([first, unscored])
     await avgCard()
     expect(screen.queryByText(/纵轴/)).not.toBeInTheDocument()
+    expect(screen.getByText(/总分 只有 1 次考试/)).toBeInTheDocument()
+    expect(screen.getByText(/语文 只有 1 次考试/)).toBeInTheDocument()
+    const card = screen.getByText(/总分 只有 1 次考试/).closest('[data-slot="card"]') as HTMLElement
+    expect(card.querySelector('.recharts-surface')).toBeNull()
+  })
+
+  it('puts the title and the AI shortcuts in the page header', async () => {
+    setup([first, second])
+    // 等正文(KPI 卡片)出现,加载态页头也有 h1
+    await avgCard()
+    const h1 = await screen.findByRole('heading', { level: 1, name: '成绩分析' })
+    expect(h1).not.toHaveClass('sr-only')
+    expect(h1.closest('[data-page-container]')).not.toBeNull()
+    // 考试、对比选择在页头下的筛选行,不在页头里
+    expect(h1.closest('[data-page-header]')).not.toContainElement(screen.getByLabelText('考试'))
+  })
+
+  it('renders KPI values in medium weight with tabular numbers', async () => {
+    setup([first, second])
+    const card = await avgCard()
+    const value = card.querySelector('.text-2xl') as HTMLElement
+    expect(value).toHaveClass('font-medium', 'tabular-nums')
+    expect(value).not.toHaveClass('font-semibold')
   })
 
   it('shows the empty state without scores', async () => {
@@ -263,7 +286,7 @@ describe('AnalysisPage', () => {
       e3: { 语文: 85, 数学: 85 },
     })
     const bandFills = () => {
-      const section = screen.getByText('总分分数段').closest('section') as HTMLElement
+      const section = screen.getByText('总分分数段').closest('[data-slot="card"]') as HTMLElement
       return Array.from(section.querySelectorAll('path.recharts-rectangle')).map((p) =>
         p.getAttribute('fill'),
       )
@@ -286,7 +309,8 @@ describe('AnalysisPage', () => {
 
   it('draws the subject rate chart against the school pass line, not a fixed 60%', async () => {
     // 第一次月考两科平均得分率都是 60%
-    const chart = () => screen.getByText('各科平均得分率').closest('section') as HTMLElement
+    const chart = () =>
+      screen.getByText('各科平均得分率').closest('[data-slot="card"]') as HTMLElement
     const fills = () =>
       Array.from(chart().querySelectorAll('path.recharts-rectangle')).map((p) =>
         p.getAttribute('fill'),

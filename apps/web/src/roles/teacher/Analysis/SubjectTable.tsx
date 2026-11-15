@@ -1,3 +1,5 @@
+import { Card } from '@/shared/components/ui/card'
+import { Table, TableBody, TableHead, TableRow, Td, Th } from '@/shared/components/ui/table'
 import type { SubjectStats } from '@/shared/lib/grades'
 import { cn } from '@/shared/lib/utils'
 import type { Grading } from '@/shared/types/school'
@@ -38,45 +40,45 @@ export function SubjectTable({
     ...(prev ? ['得分率变化'] : []),
   ]
   return (
-    <section aria-label="各科明细" className="rounded-lg border bg-card text-card-foreground">
-      <h2 className="px-3 pt-3 text-base font-semibold">各科明细</h2>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-muted-foreground">
-              {heads.map((h) => (
-                <th key={h} scope="col" className="px-3 py-2 font-medium">
+    <Card>
+      <section aria-label="各科明细">
+        <h2 className="px-3 pt-4 text-base font-medium">各科明细</h2>
+        <Table className="mt-2" containerClassName="rounded-none bg-transparent shadow-none">
+          <TableHead>
+            <TableRow>
+              {heads.map((h, i) => (
+                <Th key={h} numeric={i > 0}>
                   {h}
-                </th>
+                </Th>
               ))}
-            </tr>
-          </thead>
-          <tbody>
+            </TableRow>
+          </TableHead>
+          <TableBody>
             {stats.map((s) => (
-              <tr key={s.name} className="border-t">
-                <td className="px-3 py-2 font-medium">{s.name}</td>
-                <td className="px-3 py-2">{s.full}</td>
-                <td className="px-3 py-2">{round1(s.avg)}</td>
-                <td className="px-3 py-2">{round1(s.rate)}%</td>
-                <td className="px-3 py-2">{s.max}</td>
-                <td className="px-3 py-2">{s.min}</td>
-                <td className="px-3 py-2">{round1(s.passRate * 100)}%</td>
-                <td className="px-3 py-2">{round1(s.goodRate * 100)}%</td>
-                <td className="px-3 py-2">{s.low}</td>
+              <TableRow key={s.name}>
+                <Td className="font-medium">{s.name}</Td>
+                <Td numeric>{s.full}</Td>
+                <Td numeric>{round1(s.avg)}</Td>
+                <Td numeric>{round1(s.rate)}%</Td>
+                <Td numeric>{s.max}</Td>
+                <Td numeric>{s.min}</Td>
+                <Td numeric>{round1(s.passRate * 100)}%</Td>
+                <Td numeric>{round1(s.goodRate * 100)}%</Td>
+                <Td numeric>{s.low}</Td>
                 {prev && (
-                  <td className="px-3 py-2">
+                  <Td numeric>
                     <RateChange cur={s} prev={prev.find((p) => p.name === s.name)} />
-                  </td>
+                  </Td>
                 )}
-              </tr>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
-      </div>
-      <p className="px-3 pb-3 text-xs text-muted-foreground">
-        及格 = 满分 {Math.round(ratios.pass_ratio * 100)}%,优秀 = 满分{' '}
-        {Math.round(ratios.good_ratio * 100)}%
-      </p>
-    </section>
+          </TableBody>
+        </Table>
+        <p className="px-3 pb-4 pt-2 text-xs text-muted-foreground">
+          及格 = 满分 {Math.round(ratios.pass_ratio * 100)}%,优秀 = 满分{' '}
+          {Math.round(ratios.good_ratio * 100)}%
+        </p>
+      </section>
+    </Card>
   )
 }

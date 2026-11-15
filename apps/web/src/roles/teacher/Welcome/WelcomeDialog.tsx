@@ -118,10 +118,10 @@ export default function WelcomeDialog() {
               aria-pressed={selected}
               onClick={() => pick(value)}
               className={cn(
-                'flex min-w-0 flex-col items-center gap-2 rounded-xl border-2 p-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+                'flex min-w-0 flex-col items-center gap-2 rounded-lg p-2 text-sm font-medium shadow-surface transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                 selected
-                  ? 'border-primary bg-primary/10 text-foreground'
-                  : 'border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+                  ? 'bg-accent text-foreground ring-2 ring-ring'
+                  : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
               )}
             >
               <FigurePreview figure={value} label={name} />
@@ -130,14 +130,10 @@ export default function WelcomeDialog() {
           )
         })}
       </div>
-      <ul className="space-y-1.5 text-sm leading-relaxed text-foreground">
+      <ul className="list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-foreground">
         {INTRO.map((line) => (
-          <li key={line} className="flex gap-2">
-            <span
-              aria-hidden="true"
-              className="mt-[0.55em] h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
-            />
-            <span className="min-w-0">{line}</span>
+          <li key={line} className="min-w-0">
+            {line}
           </li>
         ))}
       </ul>

@@ -222,20 +222,22 @@ function Thread({ ctx, chat, chatId }: { ctx: ClassContext; chat: AiChat; chatId
         <h2 className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
           {chat.title}
         </h2>
-        <StatusPill status={status.data} />
-        <Button size="sm" variant="outline" onClick={exportAll}>
-          导出 Word
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={remove.isPending}
-          onClick={() => {
-            if (window.confirm('删除这个对话?')) remove.mutate()
-          }}
-        >
-          删除
-        </Button>
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+          <StatusPill status={status.data} />
+          <Button size="sm" variant="outline" onClick={exportAll}>
+            导出 Word
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={remove.isPending}
+            onClick={() => {
+              if (window.confirm('删除这个对话?')) remove.mutate()
+            }}
+          >
+            删除
+          </Button>
+        </div>
       </header>
 
       <div

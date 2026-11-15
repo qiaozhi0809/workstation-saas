@@ -5,6 +5,7 @@ import { studentsApi } from '@/shared/api/students'
 import Modal from '@/shared/components/overlay/Modal'
 import { toast } from '@/shared/components/Toast'
 import { Button } from '@/shared/components/ui/button'
+import { Checkbox } from '@/shared/components/ui/checkbox'
 import { Textarea } from '@/shared/components/ui/textarea'
 import { STUDENT_TEMPLATE_CSV, toImportRows } from '@/shared/lib/columns'
 import { downloadText } from '@/shared/lib/csv'
@@ -111,17 +112,14 @@ export default function ImportDialog({ cls, onClose }: { cls: ClassView; onClose
         {tooMany && (
           <p className="text-sm text-destructive">{`一次最多导入 ${MAX_ROWS} 人,请分批导入`}</p>
         )}
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={autoSeat}
-            onChange={(e) => {
-              setAutoSeat(e.target.checked)
-              setError('')
-            }}
-          />
-          自动安排到空座位
-        </label>
+        <Checkbox
+          label="自动安排到空座位"
+          checked={autoSeat}
+          onChange={(e) => {
+            setAutoSeat(e.target.checked)
+            setError('')
+          }}
+        />
         {error && (
           <p role="alert" className="text-sm text-destructive">
             {error}

@@ -8,7 +8,9 @@ import { examsApi } from '@/shared/api/exams'
 import { studentsApi } from '@/shared/api/students'
 import { toast } from '@/shared/components/Toast'
 import { Button } from '@/shared/components/ui/button'
+import { Card } from '@/shared/components/ui/card'
 import { NativeSelect } from '@/shared/components/ui/native-select'
+import { Switch } from '@/shared/components/ui/switch'
 import { Textarea } from '@/shared/components/ui/textarea'
 import type { AiPrompt, AiRequest, AiStatus } from '@/shared/types/ai'
 import CopyPromptDialog from './CopyPromptDialog'
@@ -83,7 +85,7 @@ export default function Composer({
   }
 
   return (
-    <div className="space-y-3 rounded-lg border border-border bg-card p-3">
+    <Card className="flex flex-col gap-3 p-4">
       <Textarea
         aria-label="要做什么"
         placeholder="直接说要做什么,比如:帮我写一份期中考试后的家长会发言稿"
@@ -94,14 +96,11 @@ export default function Composer({
         onKeyDown={onKeyDown}
       />
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
-        <label className="inline-flex items-center gap-1.5">
-          <input
-            type="checkbox"
-            checked={withClass}
-            onChange={(e) => setWithClass(e.target.checked)}
-          />
-          班级概况
-        </label>
+        <Switch
+          label="班级概况"
+          checked={withClass}
+          onChange={(e) => setWithClass(e.target.checked)}
+        />
         <label className="inline-flex items-center gap-1.5">
           <span className="text-muted-foreground">+ 学生档案</span>
           <NativeSelect
@@ -140,6 +139,6 @@ export default function Composer({
         </Button>
       </div>
       {prompt && <CopyPromptDialog prompt={prompt} onClose={() => setPrompt(null)} />}
-    </div>
+    </Card>
   )
 }

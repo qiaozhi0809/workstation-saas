@@ -85,6 +85,16 @@ it('lists contacts with copy buttons', async () => {
   expect(await screen.findByText('已复制电话')).toBeInTheDocument()
 })
 
+it('draws contacts without a border', () => {
+  renderTab({
+    ...bare,
+    contacts: [{ name: '李大', relation: '父亲', phone: '13800000011', job: '' }],
+  })
+  const item = screen.getByText('李大').closest('li') as HTMLElement
+  expect(item).not.toHaveClass('border')
+  expect(item).toHaveClass('bg-muted/50')
+})
+
 it('shows my notes for the homeroom teacher of the class', async () => {
   vi.mocked(classesApi.mine).mockResolvedValue({ items: [klass('homeroom_teacher')] })
   renderTab({

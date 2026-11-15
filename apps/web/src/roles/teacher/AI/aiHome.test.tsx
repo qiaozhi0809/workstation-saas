@@ -33,6 +33,37 @@ describe('AiHomePage', () => {
     expect(screen.getByText(/只有点击发送或生成时/)).toBeInTheDocument()
   })
 
+  it('puts the title and greeting in a narrow page header', async () => {
+    home()
+    // 等正文(输入框)出现,ClassGate 的加载态也有 h1(default 宽度)
+    await box()
+    const h1 = await screen.findByRole('heading', { level: 1, name: 'AI 助手' })
+    expect(h1).not.toHaveClass('sr-only')
+    const root = h1.closest('[data-page-container]') as HTMLElement
+    expect(root).toHaveAttribute('data-width', 'narrow')
+    expect(h1.closest('[data-page-header]')).toHaveTextContent('你好,王老师,今天想做点什么?')
+    // 状态标签是 chip,不是药丸
+    const pill = await screen.findByText('DeepSeek · deepseek-flash')
+    expect(pill).not.toHaveClass('rounded-full')
+  })
+
+  it('uses switches for the class overview and the name mask', async () => {
+    home()
+    const overview = await screen.findByRole('switch', { name: '班级概况' })
+    expect(overview).not.toBeChecked()
+    click(overview)
+    expect(overview).toBeChecked()
+    expect(await screen.findByRole('switch', { name: '隐去学生姓名' })).toBeChecked()
+  })
+
+  it('shows the teacher-only note in muted text, not as an error', async () => {
+    home()
+    const parent = await screen.findByRole('button', { name: /家长沟通话术/ })
+    const note = within(parent).getByText('仅班主任可用')
+    expect(note).toHaveClass('text-muted-foreground')
+    expect(note).not.toHaveClass('text-destructive')
+  })
+
   it('renders nothing for an undefined status and the hint when unconfigured', () => {
     const { rerender, container } = render2(undefined)
     expect(container).toBeEmptyDOMElement()

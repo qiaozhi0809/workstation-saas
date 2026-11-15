@@ -39,11 +39,12 @@ export default function ExamList({
               <li key={x.id}>
                 <button
                   type="button"
+                  data-layout-exempt
                   aria-current={current ? 'true' : undefined}
                   onClick={() => onSelect(x.id)}
                   className={cn(
-                    'flex w-full flex-col gap-1.5 rounded-md border p-3 text-left text-sm transition-colors hover:bg-accent',
-                    current ? 'border-primary bg-accent' : 'border-border bg-background',
+                    'flex w-full flex-col gap-1.5 rounded-lg p-3 text-left text-sm shadow-surface transition-colors',
+                    current ? 'bg-accent' : 'bg-card hover:bg-accent/50',
                   )}
                 >
                   <span className="flex items-center justify-between gap-2">
