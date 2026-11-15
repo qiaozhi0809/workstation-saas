@@ -76,10 +76,12 @@ export function SeatingMenuItems(
   return (
     <>
       {compact && p.onOpenLayout && (
-        <MenuItem disabled={p.busy || p.layoutBlocked} onSelect={p.onOpenLayout}>
+        <MenuItem
+          disabled={p.busy || p.layoutBlocked}
+          description={p.layoutBlocked ? LAYOUT_BLOCKED : undefined}
+          onSelect={p.onOpenLayout}
+        >
           桌椅排列
-          {/* MenuItem 没有 title:不可用原因写成读屏文字,与操作条按钮的 title 对应 */}
-          {p.layoutBlocked && <span className="sr-only">{LAYOUT_BLOCKED}</span>}
         </MenuItem>
       )}
       <MenuItem disabled={p.busy || !p.dirty} onSelect={p.onDiscard}>

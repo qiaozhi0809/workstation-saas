@@ -1,4 +1,4 @@
-import { createContext, useContext } from 'react'
+import { createContext, useContext, useId } from 'react'
 import type { KeyboardEvent, ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { Button } from '@/shared/components/ui/button'
@@ -114,19 +114,27 @@ export default function Menu({
 export function MenuItem({
   onSelect,
   disabled,
+  description,
   children,
 }: {
   onSelect(): void
   disabled?: boolean
+  /** 第二行说明(如不可用的原因):显示在名称下面,经 aria-describedby 关联;菜单项的名称仍只是 children */
+  description?: ReactNode
   children: ReactNode
 }) {
   const closeMenu = useContext(CloseMenu)
+  const uid = useId()
+  const labelId = `${uid}-label`
+  const descId = `${uid}-desc`
   return (
     <button
       type="button"
       role="menuitem"
       tabIndex={-1}
       aria-disabled={disabled || undefined}
+      aria-labelledby={description ? labelId : undefined}
+      aria-describedby={description ? descId : undefined}
       className={ITEM}
       onClick={() => {
         // aria-disabled 而非 disabled:仍可用方向键聚焦,点了不执行、菜单不关
@@ -137,7 +145,18 @@ export function MenuItem({
         onSelect()
       }}
     >
-      {children}
+      {description ? (
+        <span className="flex min-w-0 flex-col">
+          <span id={labelId} className="flex items-center">
+            {children}
+          </span>
+          <span id={descId} className="max-w-56 text-xs font-normal text-muted-foreground">
+            {description}
+          </span>
+        </span>
+      ) : (
+        children
+      )}
     </button>
   )
 }

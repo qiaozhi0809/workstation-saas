@@ -79,3 +79,21 @@ it('space activates a link item: navigates, closes and returns focus to the trig
   expect(screen.queryByRole('menu')).toBeNull()
   expect(trigger()).toHaveFocus()
 })
+
+it('MenuItem description is shown, linked by aria-describedby and kept out of the name', () => {
+  render(
+    <MemoryRouter>
+      <Menu label="更多操作" trigger="⋯" triggerProps={{ 'aria-label': '更多操作' }}>
+        <MenuItem disabled description="先保存再操作" onSelect={vi.fn()}>
+          桌椅排列
+        </MenuItem>
+        <MenuItem onSelect={vi.fn()}>打印</MenuItem>
+      </Menu>
+    </MemoryRouter>,
+  )
+  fireEvent.click(trigger())
+  const item = screen.getByRole('menuitem', { name: '桌椅排列' })
+  expect(item).toHaveAccessibleDescription('先保存再操作')
+  expect(item).toHaveAttribute('aria-disabled', 'true')
+  expect(screen.getByRole('menuitem', { name: '打印' })).not.toHaveAttribute('aria-describedby')
+})
