@@ -52,7 +52,7 @@
 - `Menu` / `Popover` 用 `rounded-lg shadow-overlay`,**无边框**;`side` 支持 `top | bottom | right`。
 - 浮层**不走 portal**,是纯 CSS 定位:放进带 `overflow` 的祖先(例如侧栏的导航区)会被裁掉(G-X-1)。需要从侧栏弹出的菜单,放在不裁剪的容器里,或像账号菜单那样挂在侧栏底部。
 - `MenuItem` 有 `description` 入参:显示在名称下面,并用 `aria-describedby` 关联,名称只取 children。菜单项被禁用时,把禁用原因写成 `description`,不要拼进名称(教室紧凑菜单的「桌椅排列」就是这样)。
-- 侧栏 rail(窄栏)下的账号菜单和通知面板用 `side="right"` 向右弹出;展开和抽屉形态不变。它们能这样用,是因为侧栏的 footer、`aside` 和 `SidebarShell` 根都没有 `overflow`(带 `overflow-y-auto` 的 nav 与 footer 是兄弟)。
+- 侧栏 rail(窄栏)下的账号菜单和通知面板用 `side="right"` 向右弹出;展开和抽屉形态不变;浮层落在侧栏右缘之外约 8–10 px(这两处在 `side='right'` 时额外加了 `ml-6`)。`side="right"` 的默认间距是相对触发按钮的 8 px,触发按钮离容器边缘有内边距时,调用方要自己加间距。它们能这样用,是因为侧栏的 footer、`aside` 和 `SidebarShell` 根都没有 `overflow`(带 `overflow-y-auto` 的 nav 与 footer 是兄弟)。
 
 ### 2.6 图表
 
@@ -71,7 +71,7 @@
 | `raw-table` | `ui/table.tsx`、`roles/parent/Grades/ExamDetail.tsx` | 前者是 `Table` 自己;后者窄屏要把每科渲染成两行卡片,原生 table + display 切换,共享 `Table` 做不到(G-P1-2) |
 | `pill-chip` | `roles/parent/ParentNav.tsx`、`shared/components/layout/NoticeBell.tsx` | 导航项上的圆形未读计数角标必须是圆的,不是药丸标签 |
 | `big-radius` | `ui/chart.tsx` | 图例 2px 色块,是数据标记不是卡片圆角 |
-| `raw-h1` | `ui/page.tsx`、`roles/teacher/ClassGate.tsx`、`src/auth/` 下的登录、两步验证、改密三个页面 | 前两个是 `PageHeader` 自己和教师端的选班门;认证三页是没有侧栏和 `PageContainer` 的独立居中卡片,标题就是卡片标题 |
+| `raw-h1` | `ui/page.tsx`、`roles/teacher/ClassGate.tsx`、`src/auth/LoginPage.tsx`、`TotpStep.tsx`、`ChangePasswordPage.tsx` | 前两个是 `PageHeader` 自己和教师端的选班门;认证三页是没有侧栏和 `PageContainer` 的独立居中卡片,标题就是卡片标题 |
 | `bordered-card` | `ui/` 目录 | 输入框等控件本体有边框(见 §1 第 6 条) |
 | `arc-import-in-pages` | `ui/`、`layout/`、`feedback/` | 适配层与骨架件可以直接引 Arc,页面不行 |
 
