@@ -67,7 +67,8 @@ jobs:
 
   backend:
     needs: changes
-    if: needs.changes.outputs.web_only != 'true'
+    # !cancelled():changes 失败时输出为空,仍按全量跑
+    if: ${{ !cancelled() && needs.changes.outputs.web_only != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -443,7 +444,8 @@ jobs:
   # (真实 docker compose,端口 18080/18443,固定子网 172.30.0.0/24 → 脚本必须逐个跑,不能并行)
   deploy:
     needs: changes
-    if: needs.changes.outputs.web_only != 'true'
+    # !cancelled():changes 失败时输出为空,仍按全量跑
+    if: ${{ !cancelled() && needs.changes.outputs.web_only != 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     # 显式 bash:-eo pipefail。默认的 `bash -e` 没有 pipefail,`脚本 | tee` 会吞掉脚本的退出码
@@ -526,7 +528,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     needs: changes
-    if: (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'pull_request') && needs.changes.outputs.web_only != 'true'
+    # !cancelled():changes 失败时输出为空,仍按全量跑
+    if: ${{ !cancelled() && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'pull_request') && needs.changes.outputs.web_only != 'true' }}
     defaults:
       run:
         shell: bash
