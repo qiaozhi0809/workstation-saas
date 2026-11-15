@@ -131,6 +131,8 @@ export function Sidebar({
 function SidebarLink({ item, collapsed }: { item: SidebarItem; collapsed: boolean }) {
   const { to, label, icon: Icon, alsoActive } = item
   const { pathname } = useLocation()
+  // 前提:侧栏没有根路径(`to="/"`)项。matchPath({ end: false }) 对 "/" 会匹配所有路径,
+  // 将来要加根路径项,得对它单独用 end: true
   const current =
     matchPath({ path: to, end: false }, pathname) !== null ||
     (alsoActive ?? []).some((p) => matchPath({ path: p, end: false }, pathname) !== null)

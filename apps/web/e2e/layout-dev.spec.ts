@@ -102,3 +102,16 @@ test('dark baseline skips transparent table containers inside a card', async ({ 
   expect(bg).toMatch(/^(transparent|rgba\(0, 0, 0, 0\)|rgb\(0 0 0 \/ 0\))$/)
   await expectBaselineLayout(page)
 })
+
+test('segmented tabs: pill container 40 with 32 tabs, underline tabs 32', async ({ page }) => {
+  await page.goto('/dev/ui')
+  const sample = page.getByTestId('tabs-sample')
+  const pill = sample.getByRole('tablist', { name: '胶囊页签' })
+  await expect(pill).toBeVisible()
+  expect((await pill.boundingBox())!.height).toBeCloseTo(40, 0)
+  for (const tab of await pill.getByRole('tab').all())
+    expect((await tab.boundingBox())!.height).toBeCloseTo(32, 0)
+  const underline = sample.getByRole('tablist', { name: '下划线页签' })
+  for (const tab of await underline.getByRole('tab').all())
+    expect((await tab.boundingBox())!.height).toBeCloseTo(32, 0)
+})

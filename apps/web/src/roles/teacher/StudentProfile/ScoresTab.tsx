@@ -101,7 +101,11 @@ export default function ScoresTab({ profile }: { profile: StudentProfile }) {
           yAxisWidth={64}
           minPoints={2}
           summary={(points) =>
-            points.length === 1 ? `只有 1 次考试有名次:第 ${points[0].value} 名` : undefined
+            points.length === 1
+              ? `只有 1 次考试有名次:第 ${points[0].value} 名`
+              : points.length === 0
+                ? '暂无名次'
+                : undefined
           }
         />
       </section>

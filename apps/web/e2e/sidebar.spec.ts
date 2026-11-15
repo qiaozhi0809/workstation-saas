@@ -91,14 +91,18 @@ for (const [name, trigger, layer] of [
     expect(b.y).toBeGreaterThanOrEqual(0)
     expect(b.y + b.height).toBeLessThanOrEqual(vp.height + 1)
     expect(b.x + b.width).toBeLessThanOrEqual(vp.width + 1)
-    // 没被裁:浮层四角附近的点真的命中浮层自己(而不是被祖先裁掉后露出下面的页面)
+    // 没被裁:四条边的中点和中心点(各向内缩 2px,避开 16px 圆角)真的命中浮层自己,
+    // 而不是被祖先裁掉后露出下面的页面
     const hit = await box.evaluate((el) => {
       const r = el.getBoundingClientRect()
+      const cx = r.left + r.width / 2
+      const cy = r.top + r.height / 2
       return [
-        [r.left + 4, r.top + 4],
-        [r.right - 4, r.top + 4],
-        [r.left + 4, r.bottom - 4],
-        [r.right - 4, r.bottom - 4],
+        [cx, r.top + 2],
+        [cx, r.bottom - 2],
+        [r.left + 2, cy],
+        [r.right - 2, cy],
+        [cx, cy],
       ].every(([x, y]) => el.contains(document.elementFromPoint(x, y)))
     })
     expect(hit).toBe(true)
@@ -110,17 +114,22 @@ test('admin nav scrolls fully above the footer buttons at 1280×800', async ({ p
   await signIn(page, 'principal01', /\/admin\/today/)
   const nav = aside(page).getByRole('navigation', { name: '主导航' })
   const last = nav.getByRole('link').last()
-  await last.scrollIntoViewIfNeeded()
-  // 滚到底后最后一项整个落在导航区里,不被下面的折叠按钮、通知 / 账号区压住
+  // 滚到底:最后一项的底边在导航区底边上方,至少留出 pb-4 的 16px 内边距
+  await nav.evaluate((el) => {
+    el.scrollTop = el.scrollHeight
+  })
   await expect(async () => {
     const n = (await nav.boundingBox())!
     const l = (await last.boundingBox())!
     expect(l.y).toBeGreaterThanOrEqual(n.y - 1)
-    expect(l.y + l.height).toBeLessThanOrEqual(n.y + n.height + 1)
+    expect(l.y + l.height).toBeLessThanOrEqual(n.y + n.height - 16 + 1)
   }).toPass()
-  const toggle = (await aside(page).getByRole('button', { name: '折叠侧栏' }).boundingBox())!
+  // 最后一项与底部按钮区(折叠按钮、通知 / 主题 / 账号)的盒子不相交
   const l = (await last.boundingBox())!
-  expect(l.y + l.height).toBeLessThanOrEqual(toggle.y + 1)
+  const toggle = (await aside(page).getByRole('button', { name: '折叠侧栏' }).boundingBox())!
+  const account = (await aside(page).getByRole('button', { name: '账号菜单' }).boundingBox())!
+  for (const b of [toggle, account])
+    expect(l.y + l.height, '不与底部按钮区相交').toBeLessThanOrEqual(b.y + 1)
 })
 
 test('classroom defaults to rail', async ({ page }) => {

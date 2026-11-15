@@ -28,11 +28,13 @@ export const UI_RULES: readonly UiRule[] = [
   {
     id: 'raw-h1',
     re: /<h1\b/,
-    // auth/:登录、改密、两步验证是没有侧栏和 PageContainer 的独立居中卡片,标题就是卡片标题
+    // 登录、改密、两步验证三页是没有侧栏和 PageContainer 的独立居中卡片,标题就是卡片标题
     allow: (p) =>
       p === 'src/shared/components/ui/page.tsx' ||
       p === 'src/roles/teacher/ClassGate.tsx' ||
-      p.startsWith('src/auth/'),
+      p === 'src/auth/LoginPage.tsx' ||
+      p === 'src/auth/TotpStep.tsx' ||
+      p === 'src/auth/ChangePasswordPage.tsx',
   },
   { id: 'button-height', re: /<Button[^>]*className="[^"]*\bh-\d/ },
   { id: 'tracking-tight', re: /\btracking-tight\b/ },

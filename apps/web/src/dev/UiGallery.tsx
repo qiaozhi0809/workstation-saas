@@ -12,6 +12,7 @@ import { IconButton } from '@/shared/components/ui/icon-button'
 import { Input } from '@/shared/components/ui/input'
 import { NativeSelect } from '@/shared/components/ui/native-select'
 import { PageContainer, PageHeader } from '@/shared/components/ui/page'
+import { SegmentedTabs } from '@/shared/components/ui/segmented-tabs'
 import { StatusDot } from '@/shared/components/ui/status-dot'
 import { Switch } from '@/shared/components/ui/switch'
 import {
@@ -43,6 +44,10 @@ import { useSearchParams } from 'react-router-dom'
 const VARIANTS = ['primary', 'secondary', 'ghost', 'danger'] as const
 const SIZES = ['sm', 'md', 'lg'] as const
 const TONES = ['neutral', 'success', 'info', 'warning', 'danger'] as const
+const TAB_ITEMS = [
+  { value: 'a', label: '概览' },
+  { value: 'b', label: '明细' },
+] as const
 
 const SCORES = [
   { name: '王小一', no: '01', score: 95.5 },
@@ -310,6 +315,16 @@ export default function UiGallery() {
             <StatusDot tone="warning">待处理</StatusDot>
             <StatusDot tone="danger">异常</StatusDot>
             <StatusDot tone="info">进行中</StatusDot>
+          </div>
+          <div data-testid="tabs-sample" className="flex flex-wrap items-start gap-6">
+            <SegmentedTabs label="胶囊页签" items={TAB_ITEMS} value="a" onChange={() => {}} />
+            <SegmentedTabs
+              label="下划线页签"
+              variant="underline"
+              items={TAB_ITEMS}
+              value="a"
+              onChange={() => {}}
+            />
           </div>
         </section>
 

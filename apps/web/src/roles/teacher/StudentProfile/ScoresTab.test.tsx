@@ -162,6 +162,16 @@ it('says there is only one exam instead of drawing a lone rank point', async () 
   expect(trendLine.mock.calls.at(-1)![0].minPoints).toBe(2)
 })
 
+it('says 暂无名次 when the student has no rank in the only exam', async () => {
+  const x = book.exams[0]
+  vi.mocked(examsApi.gradebook).mockResolvedValue({
+    exams: [{ ...x, scores: { ...x.scores, e1: { 语文: null, 数学: null } } }],
+  })
+  renderTab()
+  expect(await screen.findByText('暂无名次')).toBeInTheDocument()
+  expect(screen.queryByRole('img', { name: '排名变化' })).toBeNull()
+})
+
 it('draws the rank curve reversed', async () => {
   renderTab()
   await screen.findByRole('img', { name: '排名变化' })
