@@ -1,7 +1,10 @@
 name: CI
 
-# 纯文档改动不跑 CI。main 目前没开分支保护;以后若把 CI 设为必须通过的检查,
-# 要改成任务级跳过(否则纯文档 PR 会一直等待检查)。
+# 纯文档改动不跑 CI。纯前端 PR(改动文件全在 apps/web/src/ 或 apps/web/e2e/ 下)由 changes 任务判定,
+# 跳过 backend、deploy、deploy-upgrade-path,e2e 在 frontend 通过后直接开始;
+# PR 里有任何别的文件、push 到 main、tag 都仍跑全量,判定出错也按全量处理。
+# main 目前没开分支保护,被跳过的检查不会挡合并;以后若把 CI 设为必须通过的检查,
+# 要改成任务级跳过(否则纯文档 PR 会一直等待检查),并确认被跳过的任务不会让必过检查一直 pending。
 on:
   pull_request:
     paths-ignore:
@@ -23,7 +26,48 @@ permissions:
   contents: read
 
 jobs:
+  # 判定是否纯前端 PR:输出 web_only。任何异常都落到 false(宁可多跑,不能少跑)
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      web_only: ${{ steps.detect.outputs.web_only }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Detect web-only PR
+        id: detect
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -u
+          web_only=false
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            if ! git rev-parse -q --verify "refs/remotes/origin/$BASE_REF^{commit}" >/dev/null; then
+              git fetch --no-tags origin "$BASE_REF:refs/remotes/origin/$BASE_REF" || true
+            fi
+            if files=$(git diff --name-only "origin/$BASE_REF...HEAD"); then
+              count=$(grep -c . <<<"$files" || true)
+              echo "改动文件数: $count"
+              if [ "$count" -gt 0 ] && ! grep -qvE '^apps/web/(src|e2e)/' <<<"$files"; then
+                web_only=true
+              fi
+            else
+              echo "::warning::取不到改动文件列表,按全量处理"
+            fi
+          else
+            echo "事件 $EVENT_NAME 不是 pull_request,按全量处理"
+          fi
+          echo "web_only=$web_only"
+          echo "web_only=$web_only" >> "$GITHUB_OUTPUT"
+
   backend:
+    needs: changes
+    if: needs.changes.outputs.web_only != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -92,7 +136,9 @@ jobs:
   # Playwright e2e 冒烟:真实 Postgres/Redis + 后端 + Vite dev server(/api 代理到 8080)
   # + 假摄像头(mediamtx + H.264 / H.265 推流)+ stream worker:m5c 的监控用例与 pytest 真 ffmpeg 组在这里跑
   e2e:
-    needs: [backend, frontend]
+    # 纯前端 PR 时 backend 被跳过(skipped),e2e 仍跑;backend 失败则不跑
+    needs: [changes, backend, frontend]
+    if: ${{ !cancelled() && needs.frontend.result == 'success' && (needs.backend.result == 'success' || needs.backend.result == 'skipped') }}
     runs-on: ubuntu-latest
     # 比只跑 Playwright 时多了装 ffmpeg、拉假摄像头镜像、两次 testcontainers 的 pytest 与真流用例
     timeout-minutes: 30
@@ -351,19 +397,21 @@ jobs:
       # 它和 Playwright 的真流用例都要起 ffmpeg 拉同一路 cam1,先跑完浏览器用例再跑它,互不抢 CPU;
       # 仍是必过步骤(没有 continue-on-error)。性能冒烟另起一步
       - name: Pytest ffmpeg group
+        if: needs.changes.outputs.web_only != 'true'
         working-directory: server
         run: uv run pytest -m "ffmpeg and not perf" -q
 
       # L176:3 路 copy + 1 路转码跑 30 秒,PERF 一行进 perf.txt 作为 artifact;只给数字、不拦截 job。
       # 显式 bash 带 pipefail,pytest 的退出码不会被 tee 吞掉(失败在这一步显示为告警)
       - name: Stream perf smoke
+        if: needs.changes.outputs.web_only != 'true'
         working-directory: server
         shell: bash
         continue-on-error: true
         run: uv run pytest -m perf -q -s | tee "$RUNNER_TEMP/perf.txt"
 
       - name: Upload stream perf result
-        if: always()
+        if: always() && needs.changes.outputs.web_only != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: stream-perf
@@ -394,6 +442,8 @@ jobs:
   # 离线包 + 部署冒烟:构建 0.0.0-ci 离线包,解开后对解开的目录逐个跑部署测试
   # (真实 docker compose,端口 18080/18443,固定子网 172.30.0.0/24 → 脚本必须逐个跑,不能并行)
   deploy:
+    needs: changes
+    if: needs.changes.outputs.web_only != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     # 显式 bash:-eo pipefail。默认的 `bash -e` 没有 pipefail,`脚本 | tee` 会吞掉脚本的退出码
@@ -475,7 +525,8 @@ jobs:
   deploy-upgrade-path:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'pull_request'
+    needs: changes
+    if: (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'pull_request') && needs.changes.outputs.web_only != 'true'
     defaults:
       run:
         shell: bash
