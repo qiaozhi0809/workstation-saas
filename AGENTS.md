@@ -9,7 +9,7 @@
 **班级三角色协作平台**(workstation-saas),一个面向中小学的 **B 端 SaaS**(单校整体采购)。
 
 - **三角色**:教师 / 管理 / 家长 — 共享一个 Web 应用的三种视图(**不是三个独立前端项目**)
-- **技术栈**:前端 React 18 + TypeScript + Vite + Tailwind + shadcn/ui + TanStack Query;后端 Python 3.12 + FastAPI + SQLAlchemy 2(同步)+ Alembic + PostgreSQL 16 + Redis 7
+- **技术栈**:前端 React 19 + TypeScript + Vite + Tailwind + shadcn/ui + Arc(vendored 组件库)+ TanStack Query;后端 Python 3.12 + FastAPI + SQLAlchemy 2(同步)+ Alembic + PostgreSQL 16 + Redis 7
 - **部署**:v1 单校定制化,Docker Compose 一键起,数据不出校
 
 ---
@@ -76,6 +76,7 @@
 | M4a 家长账号与看孩子 | ✅ 已完成(tag `v0.6.0-m4a-parent-view`,合并后由协调会话打) | 11 task:班主任建家长账号(登录名 = 手机号)、家长手机端今日 / 成长 / 成绩 / 档案、迷你教室、评语给家长看、毕业后只读 365 天再归档、台账 L12 前半 / L32 / L50;文件:[M4a 计划](docs/superpowers/plans/2026-11-04-M4a-家长账号与看孩子.md) |
 | M4b 通知到家长与回执 | ✅ 已完成(tag `v0.6.1-m4b-parent-notify`,合并后由协调会话打) | 8 task:班级公告、管理端发家长、结构化回执与统计导出、家长端通知页签与实时推送、家长绑定口径(L62 / L67 / L75)、E2E 与走查;文件:[M4b 计划](docs/superpowers/plans/2026-11-04-M4b-通知到家长与回执.md);M4 整体范围:[范围清单](docs/superpowers/plans/2026-11-04-M4-范围清单.md) |
 | M5 监控 + 部署 = v1 发布 | ⏳ M5a ✅ 已完成(tag `v0.7.0-m5a-deploy`,合并后由协调会话打;离线包 + 四个脚本 + 诊断包 + 定时任务 + D13 评估,本机 Mac(arm64,`--force`)按 `deploy/README.md` 验收;x86_64 Ubuntu 与 systemd 定时器的真机验收见台账 L125),M5b ✅ 已完成(tag `v0.7.1-m5b-security`,合并后由协调会话打;可选两步验证 TOTP、登录日志与异常登录提醒、密码长度与有效期可配、改 / 重置密码即下线、多标签页同步、账号与家长绑定遗留、加密附加数据;本机 Mac 从 `init-school` 空库 `upgrade.sh` 升级与 `restore.sh` 降级验收通过),M5c ✅ 已完成(tag `v0.7.2-m5c-cameras`,合并后由协调会话打;PR #98–#107:作息与课表、摄像头管理(加密凭据、内网校验、测试连接带编码探测)、`stream-worker` RTSP→HLS(资源限额、停更看门狗、H.265 提示)、`CameraStrip` / `CameraWallMini`、假摄像头 E2E 与 CI 真流;升级验收与性能实测改为 CI 冒烟 + 用户真机,见台账 L176 / L202),M5d ✅ 已完成(tag `v1.0.0-rc.1`,PR #108–#128);v1.1 低危收口 ✅ 已合并(PR #133–#142,计划 PR #132,台账 96 行 + 新增已知缺口 §1.1;合并后由协调会话打 `v1.0.0-rc.2`,用户真机验收以 rc.2 为准) | 拆四段串行:[M5a 部署与运维](docs/superpowers/plans/2026-11-05-M5a-部署与运维.md)(`v0.7.0-m5a-deploy`,12 task)→ [M5b 账号安全](docs/superpowers/plans/2026-11-05-M5b-账号安全.md)(`v0.7.1-m5b-security`,10 task)→ [M5c 监控与课表](docs/superpowers/plans/2026-11-05-M5c-监控与课表.md)(`v0.7.2-m5c-cameras`,10 task)→ [M5d 学校设置、引导与打磨](docs/superpowers/plans/2026-11-05-M5d-学校设置引导与打磨.md)(`v1.0.0-rc.1`,12 task;用户验收后打 `v1.0.0`)→ [v1.1 低危收口](docs/superpowers/plans/2026-11-06-v1.1-低危收口.md)(`v1.0.0-rc.2`,10 段);M5 整体范围与台账对账:[范围清单](docs/superpowers/plans/2026-11-05-M5-范围清单.md) |
+| **M6 界面统一(v1.2.0)** | ⏳ 收尾中(代码与文档收尾段并行);main CI 全绿后由协调会话打 tag `v1.2.0` | 管理端、教师端换成浮动侧栏(可折叠为 rail、`[` 快捷键、< 1024 抽屉,教室页默认 rail 且 < 1280 即抽屉);三端统一页面骨架、表面、圆角、控件尺寸与表格规格,对齐 private-style 基线;React 升到 19,接入 Arc(只做适配层,页面不直接用);`uiRules` 守卫与 `layout-*.spec.ts` 防回退。与基线的差异和实施约定见 [`docs/ui-overlay.md`](docs/ui-overlay.md);文件:[M6 计划](docs/superpowers/plans/2026-11-08-M6-界面统一.md) |
 
 
 v1.1 新增的两个只读接口(契约见 [M5d 计划](docs/superpowers/plans/2026-11-05-M5d-学校设置引导与打磨.md)「HTTP 契约」):
@@ -155,10 +156,11 @@ Step N+(1-k): Commit          → git add && git commit
 | Node | ≥ 20 |
 | PostgreSQL | 16 |
 | Redis | 7 |
-| React | 18 |
+| React | 19(M6 起;Recharts 需要 `overrides.react-is`) |
 | TypeScript | 5 |
 | Vite | 5 |
 | Tailwind | 3 |
+| Arc(UI 组件库) | vendored 在 `apps/web/src/shared/components/arc/`,Arc 的 registry 组件(`@uiarc/…`、`@uiarc-pro/…`)只经 `npx shadcn@latest add` 写入、不手改(项目自带的 shadcn 组件仍用 `npx shadcn@2.3.0 add`,那是最后支持 Tailwind 3 的版本,见 `apps/web/README.md`);页面只经 `shared/components/ui/*` 适配层使用;`ARC_PRO_TOKEN` 只放 `apps/web/.env.local`,不进仓库。界面约定见 [`docs/ui-overlay.md`](docs/ui-overlay.md) |
 | shadcn CLI | 2.3.0(最后支持 Tailwind 3) |
 | tailwind-merge | 2.x(3.x 只支持 Tailwind 4) |
 | Docker Compose | v2 |
@@ -172,8 +174,8 @@ Step N+(1-k): Commit          → git add && git commit
 | 层 | 工具 | 命令 |
 |---|---|---|
 | 后端单元/集成 | pytest + testcontainers(真 Postgres / 真 Redis) | `cd server && uv run pytest` |
-| 前端单元 | Vitest + Testing Library(CI `frontend` job 只跑 lint / format / `tsc -b` / vitest,不跑 `vite build`;生产构建只在 `deploy` job 构建 web 镜像时跑,见台账 L334) | `cd apps/web && npm run test`;只跑一部分并限制并发时写 `npx vitest run <目录> --maxWorkers=2 --minWorkers=1`(本机 vitest 2.1.9 只给 `--maxWorkers` 会报 minThreads 冲突) |
-| 前端 E2E | Playwright(project 链 mutating → … → admin → m3b → m4a → m4b → m5b → m5c → readonly → walkthrough(只读走查截图,产物 `walkthrough-<sha>`);`m5c` 的三条真流用例要系统 Chrome(Playwright 自带的 Chromium 不解 H.264):设 `WS_CHROME=1` 时 m5c 用 `channel: 'chrome'`,不设则用 Chromium 并 skip 这三条,其余照跑;需先起下一行的假摄像头与 `python -m app.stream`。CI e2e job 探测到 Chrome 才设 `WS_CHROME=1`,探测不到直接红;CI 分两步:`npm run e2e -- --project readonly`(整条改数据链,不含 walkthrough),再单独一步 `npx playwright test --project walkthrough --no-deps`(`continue-on-error`,零截图则上传步骤红) | `cd apps/web && npm run e2e`(本机整条链含 walkthrough) |
+| 前端单元 | Vitest + Testing Library(CI `frontend` job 跑 ESLint / Prettier 检查 / `tsc -b` / vitest / `vite build`(台账 L334 已结案);`apps/web/src/test/uiRules.test.ts` 是扫描源码的界面守卫,规则与例外见 [`docs/ui-overlay.md`](docs/ui-overlay.md)) | `cd apps/web && npm run test`;只跑一部分并限制并发时写 `npx vitest run <目录> --maxWorkers=2 --minWorkers=1`(本机 vitest 2.1.9 只给 `--maxWorkers` 会报 minThreads 冲突) |
+| 前端 E2E | Playwright(只有 `walkthrough` 这个 project 设了 `locale: 'zh-CN'`、`--lang=zh-CN` 和 `LANG` / `LANGUAGE` 环境变量,走查截图才用中文字体,其余 project 不变,见 `apps/web/playwright.config.ts`;界面布局用 `e2e/layout-*.spec.ts` 按段断言,共用 `e2e/helpers/layout.ts` 的 `expectBaselineLayout`;project 链 mutating → … → admin → m3b → m4a → m4b → m5b → m5c → readonly → walkthrough(只读走查截图,产物 `walkthrough-<sha>`);`m5c` 的三条真流用例要系统 Chrome(Playwright 自带的 Chromium 不解 H.264):设 `WS_CHROME=1` 时 m5c 用 `channel: 'chrome'`,不设则用 Chromium 并 skip 这三条,其余照跑;需先起下一行的假摄像头与 `python -m app.stream`。CI e2e job 探测到 Chrome 才设 `WS_CHROME=1`,探测不到直接红;CI 分两步:`npm run e2e -- --project readonly`(整条改数据链,不含 walkthrough),再单独一步 `npx playwright test --project walkthrough --no-deps`(`continue-on-error`,零截图则上传步骤红) | `cd apps/web && npm run e2e`(本机整条链含 walkthrough) |
 | 假摄像头 / 真流测试 | mediamtx + ffmpeg 推流(`cam1` H.264、`cam2` H.265)+ pytest `ffmpeg` / `perf` 标记 | `docker compose -f deploy/docker-compose.dev.yml --profile camera up -d` → `cd server && uv run pytest -m "ffmpeg and not perf" -q`(本机需装 ffmpeg / ffprobe,缺了或假摄像头连不上时自动 skip);性能冒烟 `uv run pytest -m perf -q -s`(3 路 copy + 1 路转码 30 秒,只在 CI e2e job 单独一步跑,结果上传 `stream-perf` 产物) |
 | 后端 Lint | ruff | `uv run ruff check . && uv run ruff format --check .` |
 | 前端 Lint | ESLint + Prettier | `npm run lint` |
