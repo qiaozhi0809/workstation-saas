@@ -150,7 +150,7 @@ function AuditLog({ tz }: { tz: string }) {
                       <Td>{formatInTz(r.at, tz)}</Td>
                       <Td>{r.user_name ?? '—'}</Td>
                       <Td nowrap={false}>
-                        <span className="inline-flex items-center gap-1">
+                        <span className="flex items-center gap-1">
                           {hasExtra ? (
                             <IconButton
                               size="sm"
@@ -161,7 +161,7 @@ function AuditLog({ tz }: { tz: string }) {
                             />
                           ) : (
                             // 与展开按钮同宽的占位:让整列操作文字左缘一致
-                            <span aria-hidden="true" className="inline-block h-8 w-8 shrink-0" />
+                            <span aria-hidden="true" className="h-8 w-8 shrink-0" />
                           )}
                           {r.action_label}
                         </span>
