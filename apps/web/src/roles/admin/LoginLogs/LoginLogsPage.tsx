@@ -8,7 +8,11 @@ import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { toast } from '@/shared/components/Toast'
 import { Badge } from '@/shared/components/ui/badge'
 import { Button } from '@/shared/components/ui/button'
+import { Checkbox } from '@/shared/components/ui/checkbox'
 import { Input } from '@/shared/components/ui/input'
+import { PageContainer, PageHeader } from '@/shared/components/ui/page'
+import { StatusDot } from '@/shared/components/ui/status-dot'
+import { Table, TableBody, TableHead, TableRow, Td, Th } from '@/shared/components/ui/table'
 import { todayIn, useSchoolTz } from '@/shared/hooks/useSchoolTz'
 import { addDays, formatInTz } from '@/shared/lib/date'
 import { downloadBlob } from '@/shared/lib/download'
@@ -113,70 +117,75 @@ export default function LoginLogsPage() {
   const pages = Math.min(MAX_PAGE, Math.max(1, Math.ceil(total / PAGE_SIZE)))
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-4 p-4 md:p-6">
-      <div className="flex flex-wrap items-center gap-2">
-        <h1 className="mr-auto text-lg font-semibold">登录日志</h1>
-        <Button
-          type="button"
-          variant="outline"
-          disabled={exporting || range === null}
-          onClick={() => void exportCsv()}
-        >
-          导出 CSV
-        </Button>
-      </div>
+    <PageContainer width="default">
+      <PageHeader
+        title="登录日志"
+        actions={
+          <Button
+            type="button"
+            variant="outline"
+            disabled={exporting || range === null}
+            onClick={() => void exportCsv()}
+          >
+            导出 CSV
+          </Button>
+        }
+      />
 
-      <div className="flex flex-wrap items-center gap-3 text-sm">
-        {/* 时区未知时默认区间还没算出来,日期框先禁用:否则改一头就丢掉另一头,发出单边区间 */}
-        <label className="flex items-center gap-1.5">
-          从
+      {/* 一个筛选区,两行:日期 / 搜索 / 只看可疑,结果多选;各行底部对齐 */}
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-end gap-x-4 gap-y-3 text-sm">
+          {/* 时区未知时默认区间还没算出来,日期框先禁用:否则改一头就丢掉另一头,发出单边区间 */}
+          <label className="flex items-center gap-1.5">
+            开始
+            <Input
+              type="date"
+              aria-label="开始日期"
+              className="w-40"
+              disabled={range === null}
+              value={range?.from ?? ''}
+              onChange={(e) => editRange({ from: e.target.value })}
+            />
+          </label>
+          <label className="flex items-center gap-1.5">
+            结束
+            <Input
+              type="date"
+              aria-label="结束日期"
+              className="w-40"
+              disabled={range === null}
+              value={range?.to ?? ''}
+              onChange={(e) => editRange({ to: e.target.value })}
+            />
+          </label>
           <Input
-            type="date"
-            aria-label="开始日期"
-            className="w-40"
-            disabled={range === null}
-            value={range?.from ?? ''}
-            onChange={(e) => editRange({ from: e.target.value })}
+            aria-label="搜索登录名或姓名"
+            placeholder="搜索登录名或姓名"
+            maxLength={50}
+            className="w-56"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
           />
-        </label>
-        <label className="flex items-center gap-1.5">
-          到
-          <Input
-            type="date"
-            aria-label="结束日期"
-            className="w-40"
-            disabled={range === null}
-            value={range?.to ?? ''}
-            onChange={(e) => editRange({ to: e.target.value })}
-          />
-        </label>
-        <Input
-          aria-label="搜索登录名或姓名"
-          placeholder="搜索登录名或姓名"
-          maxLength={50}
-          className="w-56"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        <label className="flex items-center gap-1.5">
-          <input
-            type="checkbox"
+          <Checkbox
+            label="只看可疑"
+            className="h-10 items-center"
             checked={suspicious}
             onChange={(e) => change(() => setSuspicious(e.target.checked))}
           />
-          只看可疑
-        </label>
+        </div>
+        <fieldset className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+          <legend className="sr-only">结果</legend>
+          <span className="text-muted-foreground">结果</span>
+          {RESULTS.map(([k, label]) => (
+            <Checkbox
+              key={k}
+              label={label}
+              checked={results.includes(k)}
+              onChange={() => toggleResult(k)}
+            />
+          ))}
+        </fieldset>
       </div>
-      <fieldset className="flex flex-wrap items-center gap-3 text-sm">
-        <legend className="sr-only">结果</legend>
-        <span className="text-muted-foreground">结果</span>
-        {RESULTS.map(([k, label]) => (
-          <label key={k} className="flex items-center gap-1.5">
-            <input type="checkbox" checked={results.includes(k)} onChange={() => toggleResult(k)} />
-            {label}
-          </label>
-        ))}
-      </fieldset>
 
       {list.isError ? (
         <ErrorState
@@ -185,48 +194,44 @@ export default function LoginLogsPage() {
           retrying={list.isFetching}
         />
       ) : !list.data ? (
-        <LoadingState />
+        <LoadingState variant="table" />
       ) : list.data.items.length === 0 ? (
         <EmptyState title="没有符合条件的记录" />
       ) : (
-        <div className="overflow-x-auto rounded-md border">
-          <table className="w-full min-w-[56rem] text-sm">
-            <thead className="bg-muted text-left text-muted-foreground">
-              <tr>
-                {HEADS.map((h) => (
-                  <th key={h} scope="col" className="whitespace-nowrap px-3 py-2 font-medium">
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {list.data.items.map((r) => (
-                <tr key={r.id} className="border-t align-middle">
-                  <td className="whitespace-nowrap px-3 py-2">{formatInTz(r.at, school.tz)}</td>
-                  <td className="whitespace-nowrap px-3 py-2">{r.login_name}</td>
-                  <td className="whitespace-nowrap px-3 py-2">{r.user?.display_name ?? '—'}</td>
-                  <td className="whitespace-nowrap px-3 py-2">
-                    <Badge variant={r.result === 'success' ? 'success' : 'danger'}>
-                      {RESULT_LABEL[r.result] ?? r.result}
-                    </Badge>
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2">{r.ip ?? '—'}</td>
-                  <td className="whitespace-nowrap px-3 py-2">{browserSummary(r.user_agent)}</td>
-                  <td className="px-3 py-2">
-                    <div className="flex flex-wrap gap-1">
-                      {r.suspicious.map((s) => (
-                        <Badge key={s} variant="warning">
-                          {SUSPICION_LABEL[s] ?? s}
-                        </Badge>
-                      ))}
-                    </div>
-                  </td>
-                </tr>
+        <Table minWidth={896}>
+          <TableHead>
+            <TableRow>
+              {HEADS.map((h) => (
+                <Th key={h}>{h}</Th>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {list.data.items.map((r) => (
+              <TableRow key={r.id}>
+                <Td>{formatInTz(r.at, school.tz)}</Td>
+                <Td>{r.login_name}</Td>
+                <Td>{r.user?.display_name ?? '—'}</Td>
+                <Td>
+                  <Badge variant={r.result === 'success' ? 'success' : 'danger'}>
+                    {RESULT_LABEL[r.result] ?? r.result}
+                  </Badge>
+                </Td>
+                <Td>{r.ip ?? '—'}</Td>
+                <Td>{browserSummary(r.user_agent)}</Td>
+                <Td nowrap={false}>
+                  <div className="flex flex-wrap gap-x-3 gap-y-1">
+                    {r.suspicious.map((s) => (
+                      <StatusDot key={s} tone="warning">
+                        {SUSPICION_LABEL[s] ?? s}
+                      </StatusDot>
+                    ))}
+                  </div>
+                </Td>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       )}
 
       {total > PAGE_SIZE && (
@@ -252,6 +257,6 @@ export default function LoginLogsPage() {
           </Button>
         </div>
       )}
-    </div>
+    </PageContainer>
   )
 }

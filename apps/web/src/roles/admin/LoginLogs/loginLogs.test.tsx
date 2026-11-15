@@ -93,6 +93,29 @@ it('lists logs with Chinese results, browser summary and suspicious tags', async
   expect(lastFilters()).toMatchObject({ from: '2026-10-29', to: '2026-11-04', page: 1 })
 })
 
+it('uses the page skeleton, merged filters 开始 / 结束, and marks suspicion with warning dots', async () => {
+  setup()
+  const ghost = await screen.findByRole('row', { name: /ghost/ })
+  expect(document.querySelector('[data-page-container]')).toHaveAttribute('data-width', 'default')
+  expect(
+    screen.getByRole('button', { name: '导出 CSV' }).closest('[data-page-header]'),
+  ).not.toBeNull()
+  expect(screen.getByRole('table').closest('[data-slot="table-container"]')).not.toBeNull()
+  // 前缀与审计页一致
+  expect(screen.getByText('开始')).toBeInTheDocument()
+  expect(screen.getByText('结束')).toBeInTheDocument()
+  expect(screen.queryByText('从')).toBeNull()
+  expect(screen.queryByText('到')).toBeNull()
+  // 可疑原因是 6 px 警示点 + 文字,不再是徽章
+  expect(ghost.querySelectorAll('span.bg-warning')).toHaveLength(2)
+  // 复选框都换成 Checkbox(外层 label 点击区 ≥ 32)
+  const suspicious = screen.getByLabelText('只看可疑')
+  expect(suspicious.closest('label')?.classList.contains('min-h-8')).toBe(true)
+  expect(screen.getByLabelText('密码错误').closest('label')?.classList.contains('min-h-8')).toBe(
+    true,
+  )
+})
+
 it('filters by suspicious and result', async () => {
   setup()
   await screen.findByText('teacher01')
