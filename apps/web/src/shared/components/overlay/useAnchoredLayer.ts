@@ -6,16 +6,21 @@ import { cn } from '@/shared/lib/utils'
 
 // Popover 与 Menu 共用:开关、点外面、焦点移出、Esc、打开时聚焦、关闭时还焦点。只供 overlay/ 内部使用。
 
-export type LayerSide = 'top' | 'bottom'
+export type LayerSide = 'top' | 'bottom' | 'right'
 export type LayerAlign = 'start' | 'end'
 
 /** 浮层的定位与外观类(设计稿 §9);w-max 防止被只有触发按钮宽的包裹元素挤成窄条 */
 export function layerClass(side: LayerSide, align: LayerAlign, className?: string) {
   return cn(
-    'absolute z-40 w-max max-w-[calc(100vw-2rem)] rounded-md border bg-popover p-1 text-popover-foreground shadow-md outline-none',
+    'absolute z-40 w-max max-w-[calc(100vw-2rem)] rounded-lg bg-popover p-1 text-popover-foreground shadow-overlay outline-none',
     'motion-safe:animate-in motion-safe:fade-in-0',
-    side === 'top' ? 'bottom-full mb-2' : 'top-full mt-2',
-    align === 'end' ? 'right-0' : 'left-0',
+    // right:在触发按钮右侧弹出(侧栏 rail 下的账号菜单、通知面板);align 此时管纵向:start 顶对齐,end 底对齐
+    side === 'right'
+      ? cn('left-full ml-2', align === 'end' ? 'bottom-0' : 'top-0')
+      : cn(
+          side === 'top' ? 'bottom-full mb-2' : 'top-full mt-2',
+          align === 'end' ? 'right-0' : 'left-0',
+        ),
     className,
   )
 }

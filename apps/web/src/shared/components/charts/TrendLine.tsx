@@ -1,6 +1,8 @@
+import type { ReactNode } from 'react'
 import { CartesianGrid, Line, LineChart, Tooltip, XAxis, YAxis } from 'recharts'
 import { ChartContainer, type ChartConfig } from '@/shared/components/ui/chart'
 import { cn } from '@/shared/lib/utils'
+import { ChartSummary, type ChartPoint } from './ChartSummary'
 
 export interface LineSeries {
   key: string
@@ -36,6 +38,8 @@ export function TrendLine({
   format,
   endLabel,
   yAxisWidth = 40,
+  minPoints = 1,
+  summary,
 }: ChartBase & {
   labels: string[]
   series: LineSeries[]
@@ -44,6 +48,9 @@ export function TrendLine({
   format?: (v: number) => string
   endLabel?: boolean
   yAxisWidth?: number
+  /** 主系列有效点数少于它时不画图,改渲染 summary(默认「数据不足」);默认 1:至少有一个有效点时行为不变,零个有效点时不再画空坐标图,改显示摘要 */
+  minPoints?: number
+  summary?: (points: ChartPoint[]) => ReactNode
 }) {
   const fmt = format ?? ((v: number) => String(v))
   const data = labels.map((x, i) => ({
@@ -59,6 +66,14 @@ export function TrendLine({
   const config: ChartConfig = Object.fromEntries(
     colored.map(({ s, color }) => [s.key, { label: s.label, color }]),
   )
+  const countedSeries = main ?? series[0]
+  const points: ChartPoint[] = countedSeries
+    ? labels.flatMap((x, i) => {
+        const v = countedSeries.values[i]
+        return v == null ? [] : [{ label: x, value: v }]
+      })
+    : []
+  if (points.length < minPoints) return <ChartSummary points={points} summary={summary} />
   const lastIdx = main ? main.values.reduce<number>((acc, v, i) => (v == null ? acc : i), -1) : -1
 
   const chart = (
@@ -93,8 +108,9 @@ export function TrendLine({
         contentStyle={{
           background: 'hsl(var(--ws-popover))',
           color: 'hsl(var(--ws-popover-foreground))',
-          border: '1px solid hsl(var(--ws-border))',
-          borderRadius: 6,
+          border: 'none',
+          borderRadius: 12,
+          boxShadow: 'var(--ws-shadow-overlay)',
           fontSize: 12,
         }}
       />

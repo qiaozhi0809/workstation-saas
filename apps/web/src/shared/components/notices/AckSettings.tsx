@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Input } from '@/shared/components/ui/input'
 import { Button } from '@/shared/components/ui/button'
+import { Checkbox } from '@/shared/components/ui/checkbox'
 import { formatInTz } from '@/shared/lib/date'
 import { localTz } from '@/shared/lib/time'
 import type { AckSpec } from '@/shared/types/admin'
@@ -121,7 +122,7 @@ export default function AckSettings({
     <div className="flex flex-col gap-3">
       <div role="radiogroup" aria-label="回执" className="flex flex-wrap gap-4">
         {KINDS.map((k) => (
-          <label key={k.kind} className="flex items-center gap-1.5 text-sm">
+          <label key={k.kind} className="flex min-h-8 items-center gap-1.5 text-sm">
             <input
               type="radio"
               name="ack-kind"
@@ -148,6 +149,7 @@ export default function AckSettings({
                   type="button"
                   variant="ghost"
                   size="sm"
+                  className="touch-target"
                   aria-label={`删除选项 ${i + 1}`}
                   onClick={() => removeOption(i)}
                 >
@@ -161,20 +163,18 @@ export default function AckSettings({
               type="button"
               variant="outline"
               size="sm"
+              className="touch-target"
               disabled={value.options.length >= MAX_OPTIONS}
               onClick={addOption}
             >
               添加选项
             </Button>
           </div>
-          <label className="flex items-center gap-1.5 text-sm">
-            <input
-              type="checkbox"
-              checked={value.allow_note}
-              onChange={(e) => onChange({ ...value, allow_note: e.target.checked })}
-            />
-            允许留言
-          </label>
+          <Checkbox
+            label="允许留言"
+            checked={value.allow_note}
+            onChange={(e) => onChange({ ...value, allow_note: e.target.checked })}
+          />
           {choiceError && (
             <p role="alert" className="text-sm text-destructive">
               {choiceError}

@@ -1,26 +1,27 @@
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { Table, TableBody, TableHead, TableRow, Td, Th } from '@/shared/components/ui/table'
 import { cn } from '@/shared/lib/utils'
 
 /** 标题一律只用 h3 / h4 两档(同原版"最多到 h3") */
 const components: Components = {
   h1: ({ children }) => (
-    <h3 className="mb-2 mt-4 text-base font-semibold text-foreground">{children}</h3>
+    <h3 className="mb-2 mt-4 text-base font-medium text-foreground">{children}</h3>
   ),
   h2: ({ children }) => (
-    <h3 className="mb-2 mt-4 text-base font-semibold text-foreground">{children}</h3>
+    <h3 className="mb-2 mt-4 text-base font-medium text-foreground">{children}</h3>
   ),
   h3: ({ children }) => (
-    <h3 className="mb-2 mt-4 text-base font-semibold text-foreground">{children}</h3>
+    <h3 className="mb-2 mt-4 text-base font-medium text-foreground">{children}</h3>
   ),
   h4: ({ children }) => (
-    <h4 className="mb-1 mt-3 text-sm font-semibold text-foreground">{children}</h4>
+    <h4 className="mb-1 mt-3 text-sm font-medium text-foreground">{children}</h4>
   ),
   h5: ({ children }) => (
-    <h4 className="mb-1 mt-3 text-sm font-semibold text-foreground">{children}</h4>
+    <h4 className="mb-1 mt-3 text-sm font-medium text-foreground">{children}</h4>
   ),
   h6: ({ children }) => (
-    <h4 className="mb-1 mt-3 text-sm font-semibold text-foreground">{children}</h4>
+    <h4 className="mb-1 mt-3 text-sm font-medium text-foreground">{children}</h4>
   ),
   p: ({ children }) => <p className="my-2 leading-relaxed text-foreground">{children}</p>,
   ul: ({ children }) => <ul className="my-2 list-disc pl-5 text-foreground">{children}</ul>,
@@ -46,18 +47,28 @@ const components: Components = {
       {children}
     </a>
   ),
+  // Table 自带 overflow-x-auto 的外层容器(横向滚动);嵌在气泡 / 卡片里,所以去掉容器自己的底色和阴影
   table: ({ children }) => (
-    <div className="my-2 overflow-x-auto">
-      <table className="w-full border-collapse text-sm">{children}</table>
-    </div>
-  ),
-  th: ({ children }) => (
-    <th className="border border-border bg-muted px-2 py-1 text-left font-medium text-foreground">
+    <Table
+      density="compact"
+      className="w-full"
+      containerClassName="my-2 rounded-none bg-transparent shadow-none"
+    >
       {children}
-    </th>
+    </Table>
+  ),
+  thead: ({ children }) => <TableHead>{children}</TableHead>,
+  tbody: ({ children }) => <TableBody>{children}</TableBody>,
+  tr: ({ children }) => <TableRow>{children}</TableRow>,
+  th: ({ children }) => (
+    <Th nowrap={false} className="text-foreground">
+      {children}
+    </Th>
   ),
   td: ({ children }) => (
-    <td className="border border-border px-2 py-1 text-foreground">{children}</td>
+    <Td nowrap={false} className="text-foreground">
+      {children}
+    </Td>
   ),
   hr: () => <hr className="my-3 border-border" />,
 }

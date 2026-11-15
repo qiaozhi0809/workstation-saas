@@ -7,6 +7,7 @@ import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import Modal from '@/shared/components/overlay/Modal'
 import { Button } from '@/shared/components/ui/button'
 import { SegmentedTabs } from '@/shared/components/ui/segmented-tabs'
+import { Table, TableBody, TableHead, TableRow, Td, Th } from '@/shared/components/ui/table'
 import { downloadBlob } from '@/shared/lib/download'
 import type { AckRow, AckStats } from '@/shared/types/admin'
 
@@ -130,38 +131,42 @@ function Body({ data, tab, setTab }: { data: AckStats; tab: Tab; setTab(t: Tab):
         <p className="py-4 text-center text-sm text-muted-foreground">暂无</p>
       ) : (
         <div className="max-h-72 overflow-y-auto">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b text-muted-foreground">
+          <Table
+            density="compact"
+            className="w-full"
+            containerClassName="rounded-none bg-transparent shadow-none"
+          >
+            <TableHead>
+              <TableRow>
                 {parents ? (
                   <>
-                    <th className="py-1 pr-3 font-medium">班级</th>
-                    <th className="py-1 pr-3 font-medium">学生</th>
-                    <th className="py-1 pr-3 font-medium">家长</th>
+                    <Th>班级</Th>
+                    <Th>学生</Th>
+                    <Th>家长</Th>
                   </>
                 ) : (
-                  <th className="py-1 pr-3 font-medium">姓名</th>
+                  <Th>姓名</Th>
                 )}
-                {withAck && <th className="py-1 font-medium">回执</th>}
-              </tr>
-            </thead>
-            <tbody>
+                {withAck && <Th>回执</Th>}
+              </TableRow>
+            </TableHead>
+            <TableBody>
               {rows.map((r) => (
-                <tr key={`${r.user_id}:${r.student_id ?? ''}`} className="border-b last:border-0">
+                <TableRow key={`${r.user_id}:${r.student_id ?? ''}`}>
                   {parents ? (
                     <>
-                      <td className="py-1 pr-3">{r.class_name}</td>
-                      <td className="py-1 pr-3">{r.student_name}</td>
-                      <td className="py-1 pr-3">{r.user_name}</td>
+                      <Td>{r.class_name}</Td>
+                      <Td>{r.student_name}</Td>
+                      <Td>{r.user_name}</Td>
                     </>
                   ) : (
-                    <td className="py-1 pr-3">{r.user_name}</td>
+                    <Td>{r.user_name}</Td>
                   )}
-                  {withAck && <td className="py-1">{ackText(data, r)}</td>}
-                </tr>
+                  {withAck && <Td nowrap={false}>{ackText(data, r)}</Td>}
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
     </div>

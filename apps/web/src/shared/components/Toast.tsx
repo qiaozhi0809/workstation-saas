@@ -33,12 +33,12 @@ function ToastRow({ item }: { item: ToastItem }) {
     return () => clearTimeout(t)
   }, [id, ms])
   return (
-    <div className="pointer-events-auto flex items-center gap-3 rounded-md bg-foreground px-4 py-2 text-sm text-background shadow-lg">
+    <div className="pointer-events-auto flex items-center gap-3 rounded-md bg-foreground px-4 py-2 text-sm text-background shadow-overlay">
       <span>{item.text}</span>
       {item.action && (
         <button
           type="button"
-          className="font-semibold underline underline-offset-2"
+          className="font-medium underline underline-offset-2"
           onClick={() => {
             dismiss(id)
             item.action!.onClick()

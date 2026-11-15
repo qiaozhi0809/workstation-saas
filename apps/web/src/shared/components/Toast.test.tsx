@@ -35,3 +35,16 @@ it('runs the action and dismisses', () => {
   expect(onClick).toHaveBeenCalledTimes(1)
   expect(screen.queryByText('已撤销')).not.toBeInTheDocument()
 })
+
+it('uses the overlay shadow and a medium-weight action button', () => {
+  render(<Toaster />)
+  act(() => {
+    toast('已删除', { action: { label: '撤销', onClick: vi.fn() } })
+  })
+  const row = screen.getByText('已删除').parentElement!
+  expect(row).toHaveClass('shadow-overlay')
+  expect(row).not.toHaveClass('shadow-lg')
+  const action = screen.getByRole('button', { name: '撤销' })
+  expect(action).toHaveClass('font-medium')
+  expect(action).not.toHaveClass('font-semibold')
+})
