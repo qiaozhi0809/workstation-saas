@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import Modal from '@/shared/components/overlay/Modal'
+import { Table, TableBody, TableHead, TableRow, Td, Th } from '@/shared/components/ui/table'
 import type { ReviewSummary } from '@/shared/types/review'
 import type { StudentSeat } from '@/shared/types/student'
 
@@ -64,30 +65,31 @@ export default function Leaderboard({
           ))}
         </ul>
       )}
-      <div className="max-h-[60vh] overflow-y-auto">
-        <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-background text-left font-medium text-muted-foreground">
-            <tr>
-              <th className="py-1.5 font-medium">名次</th>
-              <th className="py-1.5 font-medium">姓名</th>
-              <th className="py-1.5 text-right font-medium">积分</th>
-              <th className="py-1.5 text-right font-medium">加分次数</th>
-              <th className="py-1.5 text-right font-medium">扣分次数</th>
-            </tr>
-          </thead>
-          <tbody>
-            {ranked.map((r) => (
-              <tr key={r.seat.enrollment_id} className="border-t">
-                <td className="py-1.5 tabular-nums">{r.rank}</td>
-                <td className="py-1.5">{r.seat.name}</td>
-                <td className="py-1.5 text-right tabular-nums">{r.total}</td>
-                <td className="py-1.5 text-right tabular-nums">{r.plus}</td>
-                <td className="py-1.5 text-right tabular-nums">{r.minus}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <Table
+        density="compact"
+        containerClassName="max-h-[60vh] overflow-y-auto rounded-none bg-transparent shadow-none"
+      >
+        <TableHead className="sticky top-0 bg-background">
+          <TableRow>
+            <Th>名次</Th>
+            <Th>姓名</Th>
+            <Th numeric>积分</Th>
+            <Th numeric>加分次数</Th>
+            <Th numeric>扣分次数</Th>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {ranked.map((r) => (
+            <TableRow key={r.seat.enrollment_id}>
+              <Td className="tabular-nums">{r.rank}</Td>
+              <Td>{r.seat.name}</Td>
+              <Td numeric>{r.total}</Td>
+              <Td numeric>{r.plus}</Td>
+              <Td numeric>{r.minus}</Td>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
     </Modal>
   )
 }

@@ -161,7 +161,7 @@ export default function CameraStrip({
               if (el) tilesRef.current.set(c.id, el)
               else tilesRef.current.delete(c.id)
             }}
-            className="relative h-[120px] w-[213px] shrink-0 overflow-hidden rounded-lg border bg-muted"
+            className="relative h-[120px] w-[213px] shrink-0 overflow-hidden rounded-lg bg-muted"
           >
             {full ? (
               // 全屏期间不挂播放器:截下的最后一帧垫底(截不到就只有文字),上面写明状态
@@ -199,7 +199,7 @@ export default function CameraStrip({
     <section
       data-testid="camera-strip"
       aria-label="教室画面"
-      className="flex flex-col gap-2 rounded-xl border bg-card p-2 shadow-sm"
+      className="flex flex-col gap-2 rounded-lg bg-card p-2 shadow-surface"
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1">
         <h3 className="text-sm font-medium">教室画面</h3>

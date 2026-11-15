@@ -23,7 +23,7 @@ export default function FeedSection({
   const items = feed.data?.items ?? []
   return (
     <Card className="p-3">
-      <h3 className="text-sm font-semibold">最近点评</h3>
+      <h3 className="text-sm font-medium">最近点评</h3>
       {items.length === 0 ? (
         <p className="mt-1 text-xs text-muted-foreground">还没有点评记录</p>
       ) : (

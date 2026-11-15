@@ -2,8 +2,9 @@ import { Trash2 } from 'lucide-react'
 import { useState, type KeyboardEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { todosApi } from '@/shared/api/todos'
-import { Button } from '@/shared/components/ui/button'
 import { Card } from '@/shared/components/ui/card'
+import { Checkbox } from '@/shared/components/ui/checkbox'
+import { IconButton } from '@/shared/components/ui/icon-button'
 import { Input } from '@/shared/components/ui/input'
 import { toast } from '@/shared/components/Toast'
 
@@ -43,12 +44,11 @@ export default function TodoSection() {
 
   return (
     <Card className="p-3">
-      <h3 className="text-sm font-semibold">待办</h3>
+      <h3 className="text-sm font-medium">待办</h3>
       <ul className="mt-1 flex flex-col gap-1 text-sm">
         {(todos.data?.items ?? []).map((t) => (
           <li key={t.id} className="flex items-center gap-2">
-            <input
-              type="checkbox"
+            <Checkbox
               aria-label={t.content}
               checked={t.done}
               onChange={() => update.mutate({ id: t.id, done: !t.done })}
@@ -56,16 +56,12 @@ export default function TodoSection() {
             <span className={`flex-1 ${t.done ? 'text-muted-foreground line-through' : ''}`}>
               {t.content}
             </span>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
+            <IconButton
+              size="sm"
+              icon={Trash2}
               aria-label={`删除 ${t.content}`}
               onClick={() => remove.mutate(t.id)}
-            >
-              <Trash2 aria-hidden />
-            </Button>
+            />
           </li>
         ))}
       </ul>
@@ -74,7 +70,8 @@ export default function TodoSection() {
         onChange={(e) => setText(e.target.value)}
         onKeyDown={onKeyDown}
         placeholder="添加一件要做的事"
-        className="mt-2 h-8"
+        controlSize="sm"
+        className="mt-2"
       />
     </Card>
   )

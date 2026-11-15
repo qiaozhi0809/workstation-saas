@@ -59,7 +59,7 @@ test('homeroom teacher sets triple desks with a podium seat and keeps them throu
   await dialog.getByRole('button', { name: '每排增加' }).click()
   await dialog.getByRole('button', { name: '每排增加' }).click()
   await dialog.getByRole('button', { name: '左边增加' }).click()
-  await dialog.getByRole('button', { name: '按学号横着排' }).click()
+  await dialog.getByRole('tab', { name: '按学号横着排' }).click()
   await expect(
     dialog.getByText('4 排 × 9 个座位 + 讲台边 1 个 = 37 个座位 · 学生 10 人'),
   ).toBeVisible()
