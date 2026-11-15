@@ -33,6 +33,17 @@ describe('Switch', () => {
     expect(screen.getByRole('switch', { name: /提醒/ })).toBeDisabled()
   })
 
+  it('native input overlays the track instead of being sr-only', () => {
+    render(<Switch label="本周之星" />)
+    const sw = screen.getByRole('switch')
+    expect(sw).not.toHaveClass('sr-only')
+    expect(sw).toHaveClass('absolute', 'inset-0')
+    const shell = sw.parentElement
+    expect(shell).toHaveClass('relative', 'h-5', 'w-9')
+    expect(sw.nextElementSibling).toHaveAttribute('aria-hidden', 'true')
+    expect(sw.nextElementSibling).toHaveClass('pointer-events-none')
+  })
+
   it('hit area is at least 32', () => {
     render(<Switch label="本周之星" />)
     expect(screen.getByRole('switch').closest('label')).toHaveClass('min-h-8')
