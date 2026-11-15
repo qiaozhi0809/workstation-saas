@@ -306,6 +306,9 @@ it('expands a class into its student table with ranks and sorts by column', asyn
     .map((c) => c.textContent)
   expect(last).toEqual(['S4', '赵小四', '—', '—', '—', '—', '—'])
 
+  // 去掉下划线后悬停要有底色反馈
+  expect(within(table).getByRole('button', { name: '数学' })).toHaveClass('hover:bg-accent')
+
   // 点数学列:降序,空值始终排最后
   fireEvent.click(within(table).getByRole('button', { name: '数学' }))
   expect(names()).toEqual(['李小二', '王小一', '张小三', '赵小四'])

@@ -30,7 +30,7 @@ export default function RecipientsDialog({
           retrying={q.isFetching}
         />
       ) : !q.data ? (
-        <LoadingState />
+        <LoadingState variant="form" />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
           <section className="flex flex-col gap-1.5">

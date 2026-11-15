@@ -28,7 +28,7 @@ export default function StatTip({ text, tip }: { text: string; tip: string }) {
         onKeyDown={(e) => {
           if (e.key === 'Escape') setPinned(false)
         }}
-        className="peer -mr-2 px-2 font-normal tabular-nums text-foreground hover:no-underline"
+        className="peer -mr-2 px-2 font-normal tabular-nums text-foreground hover:bg-accent hover:no-underline"
       >
         {text}
       </Button>

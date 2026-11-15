@@ -142,6 +142,7 @@ describe('月度考勤报告', () => {
     setup()
     await screen.findByText('三年一班')
     expect(adminApi.attendanceClass).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: /三年一班/ })).toHaveClass('hover:bg-accent')
     fireEvent.click(screen.getByRole('button', { name: /三年一班/ }))
     expect(await screen.findByText('王小一')).toBeInTheDocument()
     expect(screen.getByText('李小二')).toBeInTheDocument()
