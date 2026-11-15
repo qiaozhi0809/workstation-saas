@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
 import { expect, test, type Page } from '@playwright/test'
-import { applyTheme, expectBaselineLayout, signInAs } from './helpers/layout'
+import { applyTheme, expectBaselineLayout, patchJson, signInAs } from './helpers/layout'
 
 /**
  * M6 段 A1:管理端 组织架构 / 班级信息 / 账号 / 学校设置 / 作息课表 / 学年升级 的布局基线。
@@ -68,6 +68,15 @@ const PAGES: PageSpec[] = [
   {
     slug: 'timetable',
     open: async (page) => {
+      // 种子库没有作息节次时课表格不渲染(只有空状态):只在 GET 响应为空时补两节虚构的节次,不写任何数据
+      await patchJson(page, /\/api\/v1\/periods(\?|$)/, (json) => {
+        if (Array.isArray(json) && json.length === 0) {
+          json.push(
+            { no: 1, starts_at: '08:00', ends_at: '08:40' },
+            { no: 2, starts_at: '08:50', ends_at: '09:30' },
+          )
+        }
+      })
       await page.goto('/admin/timetable')
       await expect(page.getByRole('heading', { level: 1, name: '作息与课表' })).toBeVisible()
       await expect(page.getByTestId('timetable-grid')).toBeVisible()
