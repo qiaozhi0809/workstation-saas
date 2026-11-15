@@ -44,6 +44,19 @@ it('shows the profile in read-only groups', async () => {
   expect(parentApi.profile).toHaveBeenCalledWith('s1')
 })
 
+it('draws groups as borderless cards with touch-size edit button and square-cornered tags (P1-2)', async () => {
+  vi.mocked(parentApi.profile).mockResolvedValue(full())
+  open()
+  const heading = await screen.findByRole('heading', { name: '基本信息' })
+  expect(heading.closest('[data-slot="card"]')).not.toBeNull()
+  expect(screen.getByRole('button', { name: '编辑联系人' }).className).toMatch(/min-h-11/)
+  const tag = screen.getByText('爱画画')
+  expect(tag).toHaveClass('rounded-sm')
+  expect(tag.className).not.toMatch(/rounded-full/)
+  // 联系人块不带边框
+  expect(screen.getByText('王妈妈').closest('li')!.className).not.toMatch(/\bborder\b/)
+})
+
 it('copes with null and missing fields from the backend', async () => {
   vi.mocked(parentApi.profile).mockResolvedValue({
     ...profile({ can_edit_contacts: false }),
@@ -103,8 +116,18 @@ it('rejects a contact with neither name nor phone and keeps the form open', asyn
     target: { value: '父亲' },
   })
   fireEvent.click(screen.getByRole('button', { name: '保存' }))
-  expect(await screen.findByRole('alert')).toHaveTextContent('联系人姓名和电话至少填一项')
+  // 就地报错:挂在出错那一行的姓名框下面,焦点移过去;保存按钮不因此禁用
+  const alert = await screen.findByRole('alert')
+  expect(alert).toHaveTextContent('联系人姓名和电话至少填一项')
+  const name = screen.getByRole('textbox', { name: '联系人2姓名' })
+  expect(name).toHaveAttribute('aria-invalid', 'true')
+  expect(name.getAttribute('aria-describedby')).toContain(alert.id)
+  expect(name).toHaveFocus()
+  expect(screen.getByRole('button', { name: '保存' })).toBeEnabled()
   expect(parentApi.saveContacts).not.toHaveBeenCalled()
+  // 改了这一行就清掉它的错误
+  fireEvent.change(name, { target: { value: '王爸爸' } })
+  expect(screen.queryByRole('alert')).toBeNull()
 })
 
 it('keeps the form and shows the server message when saving fails', async () => {

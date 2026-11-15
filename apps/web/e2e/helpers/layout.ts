@@ -71,7 +71,8 @@ const CONTROL_HEIGHTS = [32, 40, 44, 48]
  * 2) main 内可见的 button / input(非复选、单选)/ select 高度 ∈ {32, 40, 44, 48},跳过 [data-layout-exempt] 及后代;
  * 3) [data-slot=card] 无边框、圆角 ∈ {6, 12, 16};
  * 4) 没有横向溢出;
- * 5) 深色下 [data-slot=card] 与 [data-slot=table-container](纯表格页没有卡片)背景与 body 背景的 WCAG 对比 ≥ 1.15。
+ * 5) 深色下 [data-slot=card] 与 [data-slot=table-container](纯表格页没有卡片)背景与 body 背景的 WCAG 对比 ≥ 1.15;
+ *    背景完全透明(alpha 0,如卡片里 bg-transparent 的表格容器)的表面没有自己的底色,不量;有底色的表面数要 > 0。
  */
 export async function expectBaselineLayout(
   page: Page,
@@ -138,10 +139,18 @@ export async function expectBaselineLayout(
         return 0.2126 * r + 0.7152 * g + 0.0722 * b
       }
       const body = luminance(getComputedStyle(document.body).backgroundColor)
-      const surfaces = document.querySelectorAll<HTMLElement>(
-        '[data-slot=card], [data-slot=table-container]',
-      )
-      return Array.from(surfaces).map((el) => {
+      // 背景是否完全透明:画到 1x1 canvas 上读回 alpha,0 就是透明(transparent、rgba(0, 0, 0, 0)、… / 0 都算)
+      const isTransparent = (color: string) => {
+        const ctx = document.createElement('canvas').getContext('2d')!
+        ctx.clearRect(0, 0, 1, 1)
+        ctx.fillStyle = color
+        ctx.fillRect(0, 0, 1, 1)
+        return ctx.getImageData(0, 0, 1, 1).data[3] === 0
+      }
+      const surfaces = Array.from(
+        document.querySelectorAll<HTMLElement>('[data-slot=card], [data-slot=table-container]'),
+      ).filter((el) => !isTransparent(getComputedStyle(el).backgroundColor))
+      return surfaces.map((el) => {
         const card = luminance(getComputedStyle(el).backgroundColor)
         const [hi, lo] = card > body ? [card, body] : [body, card]
         return (hi + 0.05) / (lo + 0.05)

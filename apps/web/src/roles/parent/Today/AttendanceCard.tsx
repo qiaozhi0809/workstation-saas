@@ -1,3 +1,4 @@
+import { Card } from '@/shared/components/ui/card'
 import { cn } from '@/shared/lib/utils'
 import type { ParentToday } from '@/shared/types/parent'
 
@@ -28,9 +29,9 @@ function describe(a: ParentToday['attendance']): { text: string; tone: string } 
 export default function AttendanceCard({ attendance }: { attendance: ParentToday['attendance'] }) {
   const { text, tone } = describe(attendance)
   return (
-    <section aria-label="今日出勤" className="rounded-xl border bg-card p-4 text-card-foreground">
+    <Card role="region" aria-label="今日出勤" className="p-4">
       <h2 className="text-sm text-muted-foreground">今日出勤</h2>
-      <p className={cn('mt-1 text-xl font-semibold', tone)}>{text}</p>
-    </section>
+      <p className={cn('mt-1 text-base font-medium', tone)}>{text}</p>
+    </Card>
   )
 }
