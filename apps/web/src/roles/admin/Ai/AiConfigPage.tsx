@@ -6,9 +6,11 @@ import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { toast } from '@/shared/components/Toast'
 import { Button } from '@/shared/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card'
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/shared/components/ui/card'
 import { Input } from '@/shared/components/ui/input'
 import { NativeSelect } from '@/shared/components/ui/native-select'
+import { PageContainer, PageHeader } from '@/shared/components/ui/page'
+import { Switch } from '@/shared/components/ui/switch'
 import type { AiConfigSave, AiConfigView } from '@/shared/types/admin'
 import ConfirmBox from '../Org/ConfirmBox'
 
@@ -146,18 +148,12 @@ function ConfigForm({ view }: { view: AiConfigView }) {
       </CardHeader>
       <CardContent className="space-y-4">
         {view.key_undecryptable && (
-          <p
-            role="alert"
-            className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning"
-          >
+          <p role="status" className="rounded-md bg-warning/10 px-3 py-2 text-sm text-warning">
             已保存的 API Key 无法解密,请重新输入 API Key 后保存。
           </p>
         )}
         {needKeyRenew && (
-          <p
-            role="alert"
-            className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning"
-          >
+          <p role="status" className="rounded-md bg-warning/10 px-3 py-2 text-sm text-warning">
             {KEY_RENEW_NOTICE}
           </p>
         )}
@@ -225,23 +221,13 @@ function ConfigForm({ view }: { view: AiConfigView }) {
           </label>
         </div>
 
-        <div className="flex items-start gap-3">
-          <input
-            type="checkbox"
-            role="switch"
-            id="ai-mask"
-            aria-label="强制隐去学生姓名"
-            className="mt-1"
-            checked={maskForced}
-            onChange={(e) => setMaskForced(e.target.checked)}
-          />
-          <div className="text-sm">
-            <label htmlFor="ai-mask">强制隐去学生姓名</label>
-            <p className="text-xs text-muted-foreground">
-              打开后,发给 AI 的内容里学生姓名一律替换掉,老师不能关闭
-            </p>
-          </div>
-        </div>
+        <Switch
+          aria-label="强制隐去学生姓名"
+          label="强制隐去学生姓名"
+          description="打开后,发给 AI 的内容里学生姓名一律替换掉,老师不能关闭"
+          checked={maskForced}
+          onChange={(e) => setMaskForced(e.target.checked)}
+        />
 
         {error && (
           <p role="alert" className="text-sm text-destructive">
@@ -256,20 +242,21 @@ function ConfigForm({ view }: { view: AiConfigView }) {
             {test.message}
           </p>
         )}
-
+      </CardContent>
+      <CardFooter className="flex-wrap justify-between gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          className="text-destructive"
+          disabled={busy !== ''}
+          onClick={() => {
+            setClearError('')
+            setConfirmClear(true)
+          }}
+        >
+          清除配置
+        </Button>
         <div className="flex flex-wrap justify-end gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            className="mr-auto text-destructive"
-            disabled={busy !== ''}
-            onClick={() => {
-              setClearError('')
-              setConfirmClear(true)
-            }}
-          >
-            清除配置
-          </Button>
           <Button
             type="button"
             variant="outline"
@@ -282,7 +269,7 @@ function ConfigForm({ view }: { view: AiConfigView }) {
             保存
           </Button>
         </div>
-      </CardContent>
+      </CardFooter>
 
       <ConfirmBox
         open={confirmClear}
@@ -302,10 +289,10 @@ function ConfigForm({ view }: { view: AiConfigView }) {
 export default function AiConfigPage() {
   const q = useQuery({ queryKey: ['ai-config'], queryFn: adminApi.aiConfig })
   return (
-    <div className="mx-auto w-full max-w-3xl space-y-4 p-4 md:p-6">
-      <h1 className="text-lg font-semibold">AI 配置</h1>
+    <PageContainer width="narrow">
+      <PageHeader title="AI 配置" />
       {q.isPending ? (
-        <LoadingState />
+        <LoadingState variant="form" />
       ) : q.isError ? (
         <ErrorState
           title={q.error instanceof ApiError ? q.error.message : '加载失败,请重试'}
@@ -327,6 +314,6 @@ export default function AiConfigPage() {
           view={q.data}
         />
       )}
-    </div>
+    </PageContainer>
   )
 }

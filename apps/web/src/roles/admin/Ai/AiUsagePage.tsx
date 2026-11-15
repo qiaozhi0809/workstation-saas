@@ -7,6 +7,16 @@ import { EmptyState } from '@/shared/components/feedback/EmptyState'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { Button } from '@/shared/components/ui/button'
+import { PageContainer, PageHeader } from '@/shared/components/ui/page'
+import {
+  Table,
+  TableBody,
+  TableFoot,
+  TableHead,
+  TableRow,
+  Td,
+  Th,
+} from '@/shared/components/ui/table'
 import { monthIn, useSchoolTz } from '@/shared/hooks/useSchoolTz'
 
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -20,13 +30,10 @@ const monthLabel = (m: string) => {
   return `${y}年${mo}月`
 }
 
-const HEADS = ['老师', '调用次数', '失败', '输入 token', '输出 token', '常用场景']
-const NUM = 'whitespace-nowrap px-3 py-2 text-right tabular-nums'
-
 /** 默认月份要按学校时区算(后端按学校时区算日界,L43),所以等拿到时区再初始化状态 */
 export default function AiUsagePage() {
   const school = useSchoolTz()
-  if (!school.ready) return <LoadingState />
+  if (!school.ready) return <LoadingState variant="table" />
   return <AiUsage tz={school.tz} />
 }
 
@@ -40,34 +47,35 @@ function AiUsage({ tz }: { tz: string }) {
   const isCurrent = month >= monthIn(tz)
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-4 p-4 md:p-6">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-lg font-semibold">AI 使用</h1>
-        <p className="text-sm text-muted-foreground">按月统计各位老师使用 AI 助手的情况</p>
-      </div>
-
-      <div className="flex items-center gap-1">
-        <Button
-          variant="outline"
-          size="icon"
-          aria-label="上一月"
-          onClick={() => setMonth((m) => shiftMonth(m, -1))}
-        >
-          <ChevronLeft aria-hidden="true" />
-        </Button>
-        <span className="min-w-24 text-center text-sm font-medium" aria-live="polite">
-          {monthLabel(month)}
-        </span>
-        <Button
-          variant="outline"
-          size="icon"
-          aria-label="下一月"
-          disabled={isCurrent}
-          onClick={() => setMonth((m) => shiftMonth(m, 1))}
-        >
-          <ChevronRight aria-hidden="true" />
-        </Button>
-      </div>
+    <PageContainer width="default">
+      <PageHeader
+        title="AI 使用"
+        description="按月统计各位老师使用 AI 助手的情况"
+        actions={
+          <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="上一月"
+              onClick={() => setMonth((m) => shiftMonth(m, -1))}
+            >
+              <ChevronLeft aria-hidden="true" />
+            </Button>
+            <span className="min-w-24 text-center text-sm font-medium" aria-live="polite">
+              {monthLabel(month)}
+            </span>
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="下一月"
+              disabled={isCurrent}
+              onClick={() => setMonth((m) => shiftMonth(m, 1))}
+            >
+              <ChevronRight aria-hidden="true" />
+            </Button>
+          </div>
+        }
+      />
 
       {q.isError ? (
         <ErrorState
@@ -76,54 +84,49 @@ function AiUsage({ tz }: { tz: string }) {
           retrying={q.isFetching}
         />
       ) : !q.data ? (
-        <LoadingState />
+        <LoadingState variant="table" />
       ) : q.data.rows.length === 0 ? (
         <EmptyState title="这个月还没有人使用 AI 助手" />
       ) : (
-        <div className="overflow-x-auto rounded-md border">
-          <table className="w-full min-w-[40rem] text-sm">
-            <thead className="bg-muted text-left text-muted-foreground">
-              <tr>
-                {HEADS.map((h, i) => (
-                  <th
-                    key={h}
-                    scope="col"
-                    className={`whitespace-nowrap px-3 py-2 font-medium ${i >= 1 && i <= 4 ? 'text-right' : ''}`}
-                  >
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {q.data.rows.map((r) => (
-                <tr key={r.user_id} className="border-t">
-                  <td className="whitespace-nowrap px-3 py-2 font-medium">{r.display_name}</td>
-                  <td className={NUM}>{r.calls}</td>
-                  <td className={NUM}>{r.failed}</td>
-                  <td className={NUM}>{r.prompt_tokens}</td>
-                  <td className={NUM}>{r.completion_tokens}</td>
-                  <td className="px-3 py-2">
-                    {r.top_templates.length === 0
-                      ? '—'
-                      : r.top_templates.map((t) => `${t.label} × ${t.count}`).join('、')}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr className="border-t bg-muted/50 font-medium">
-                <td className="whitespace-nowrap px-3 py-2">合计</td>
-                <td className={NUM}>{q.data.total.calls}</td>
-                <td className={NUM}>{q.data.total.failed}</td>
-                <td className={NUM}>{q.data.total.prompt_tokens}</td>
-                <td className={NUM}>{q.data.total.completion_tokens}</td>
-                <td className="px-3 py-2" />
-              </tr>
-            </tfoot>
-          </table>
-        </div>
+        <Table minWidth={640}>
+          <TableHead>
+            <TableRow>
+              <Th>老师</Th>
+              <Th numeric>调用次数</Th>
+              <Th numeric>失败</Th>
+              <Th numeric>输入 token</Th>
+              <Th numeric>输出 token</Th>
+              <Th>常用场景</Th>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {q.data.rows.map((r) => (
+              <TableRow key={r.user_id}>
+                <Td className="font-medium">{r.display_name}</Td>
+                <Td numeric>{r.calls}</Td>
+                <Td numeric>{r.failed}</Td>
+                <Td numeric>{r.prompt_tokens}</Td>
+                <Td numeric>{r.completion_tokens}</Td>
+                <Td nowrap={false}>
+                  {r.top_templates.length === 0
+                    ? '—'
+                    : r.top_templates.map((t) => `${t.label} × ${t.count}`).join('、')}
+                </Td>
+              </TableRow>
+            ))}
+          </TableBody>
+          <TableFoot>
+            <TableRow className="bg-muted/50">
+              <Td>合计</Td>
+              <Td numeric>{q.data.total.calls}</Td>
+              <Td numeric>{q.data.total.failed}</Td>
+              <Td numeric>{q.data.total.prompt_tokens}</Td>
+              <Td numeric>{q.data.total.completion_tokens}</Td>
+              <Td />
+            </TableRow>
+          </TableFoot>
+        </Table>
       )}
-    </div>
+    </PageContainer>
   )
 }
