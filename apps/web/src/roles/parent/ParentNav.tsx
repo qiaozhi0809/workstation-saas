@@ -10,7 +10,7 @@ const TABS: { path: string; label: string; icon: LucideIcon }[] = [
   { path: 'notices', label: '通知', icon: Bell },
 ]
 
-/** < 768 底部固定页签(图标在上文字在下,避开 iOS 安全区);≥ 768 放进顶栏 */
+/** < 768 底部固定页签(图标在上文字在下,避开 iOS 安全区);≥ 1024 放进顶栏、768–1023 放进顶栏下的第二行 */
 export default function ParentNav({
   placement,
   childId,
@@ -38,7 +38,7 @@ export default function ParentNav({
           to={{ pathname: `/parent/${path}`, search }}
           className={({ isActive }) =>
             cn(
-              'flex min-h-[44px] items-center justify-center rounded-md text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              'flex min-h-[44px] items-center justify-center whitespace-nowrap rounded-md text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
               bottom
                 ? 'min-w-[44px] flex-1 flex-col gap-0.5 py-1 text-xs'
                 : 'min-w-[44px] gap-1.5 px-3',
@@ -52,7 +52,7 @@ export default function ParentNav({
             {path === 'notices' && unread > 0 && (
               <span
                 aria-hidden="true"
-                className="absolute -right-2 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-destructive-foreground"
+                className="absolute -right-2 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-medium leading-none text-destructive-foreground"
               >
                 {unread > 99 ? '99+' : unread}
               </span>

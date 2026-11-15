@@ -47,12 +47,13 @@ export default function ParentNoticeItem({
     <li>
       <button
         type="button"
+        data-layout-exempt
         aria-expanded={open}
         onClick={onToggle}
         className={cn(
           'flex min-h-[44px] w-full flex-col gap-1 rounded-md px-3 py-2 text-left text-sm',
           'hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-          unread && 'font-semibold',
+          unread && 'font-medium',
         )}
       >
         <span className="flex items-center gap-2">

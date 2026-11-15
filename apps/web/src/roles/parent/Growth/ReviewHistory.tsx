@@ -5,6 +5,7 @@ import { EmptyState } from '@/shared/components/feedback/EmptyState'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { Button } from '@/shared/components/ui/button'
+import { Card } from '@/shared/components/ui/card'
 import { useSchoolTz } from '@/shared/hooks/useSchoolTz'
 import { formatInTz } from '@/shared/lib/date'
 import { cn } from '@/shared/lib/utils'
@@ -42,30 +43,32 @@ export default function ReviewHistory({ sid }: { sid: string }) {
 
   return (
     <div>
-      <ul className="divide-y rounded-xl border bg-card px-3 text-card-foreground">
-        {items.map((r) => (
-          <li key={r.id} className="flex items-start gap-3 py-3">
-            <span
-              className={cn(
-                'min-w-10 shrink-0 text-base font-semibold tabular-nums',
-                r.score_delta > 0 && 'text-success',
-                r.score_delta < 0 && 'text-destructive',
-                r.score_delta === 0 && 'text-muted-foreground',
-              )}
-            >
-              {r.score_delta > 0 ? `+${r.score_delta}` : `${r.score_delta}`}
-            </span>
-            <div className="min-w-0 text-sm">
-              <p className="break-words">{r.reason_text}</p>
-              <p className="text-xs text-muted-foreground">
-                {[formatInTz(r.given_at, tz).slice(0, 10), r.subject, r.given_by_name]
-                  .filter(Boolean)
-                  .join(' · ')}
-              </p>
-            </div>
-          </li>
-        ))}
-      </ul>
+      <Card className="px-3">
+        <ul className="divide-y">
+          {items.map((r) => (
+            <li key={r.id} className="flex items-start gap-3 py-3">
+              <span
+                className={cn(
+                  'min-w-10 shrink-0 text-base font-medium tabular-nums',
+                  r.score_delta > 0 && 'text-success',
+                  r.score_delta < 0 && 'text-destructive',
+                  r.score_delta === 0 && 'text-muted-foreground',
+                )}
+              >
+                {r.score_delta > 0 ? `+${r.score_delta}` : `${r.score_delta}`}
+              </span>
+              <div className="min-w-0 text-sm">
+                <p className="break-words">{r.reason_text}</p>
+                <p className="text-xs text-muted-foreground">
+                  {[formatInTz(r.given_at, tz).slice(0, 10), r.subject, r.given_by_name]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </p>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </Card>
       {isFetchNextPageError && (
         <p role="alert" className="mt-2 text-center text-sm text-destructive">
           加载更多失败
@@ -75,7 +78,7 @@ export default function ReviewHistory({ sid }: { sid: string }) {
         <div ref={sentinel} className="flex justify-center py-3">
           <Button
             variant="outline"
-            className="min-h-11"
+            size="touch"
             disabled={isFetchingNextPage}
             onClick={() => void fetchNextPage()}
           >

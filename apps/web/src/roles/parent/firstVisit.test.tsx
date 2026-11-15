@@ -66,6 +66,18 @@ it('first visit card dismisses', async () => {
   expect(card()).toBeNull()
 })
 
+it('first visit card is a plain card with a touch-size button and no icon (P1-3)', async () => {
+  renderCard()
+  const region = await screen.findByRole('region', { name: '首次使用提示' })
+  expect(region).toHaveAttribute('data-slot', 'card')
+  expect(region.className).toMatch(/bg-muted/)
+  expect(region.className).not.toMatch(/border|bg-primary/)
+  expect(region.querySelector('svg')).toBeNull()
+  const button = within(region).getByRole('button', { name: '知道了' })
+  expect(button.className).toMatch(/min-h-11/)
+  expect(button.className).not.toMatch(/sm:min-h-0/)
+})
+
 it('stays hidden when already done, when preferences fail, or on an old backend', async () => {
   // 老师兼家长:teacher 键不影响 parent 这边,parent 已完成才算完成
   server = {

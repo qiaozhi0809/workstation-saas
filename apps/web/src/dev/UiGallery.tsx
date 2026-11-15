@@ -104,11 +104,43 @@ function FullWidthScene() {
   )
 }
 
+/** ?scene=card-table:卡片里放透明底的表格(containerClassName 去掉底色与阴影),给 e2e 量深色下跳过透明表面。 */
+function CardTableScene() {
+  return (
+    <main>
+      <PageContainer>
+        <PageHeader title="卡片内表格样例" />
+        <Card>
+          <CardContent>
+            <Table caption="成绩示例" containerClassName="bg-transparent shadow-none">
+              <TableHead>
+                <TableRow>
+                  <Th>姓名</Th>
+                  <Th numeric>总分</Th>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {SCORES.map((r) => (
+                  <TableRow key={r.no}>
+                    <Td>{r.name}</Td>
+                    <Td numeric>{r.score}</Td>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      </PageContainer>
+    </main>
+  )
+}
+
 /** /dev/ui:Arc 件与项目现有件并排陈列(仅开发环境注册),给 e2e 量尺寸、给人眼对照。 */
 export default function UiGallery() {
   const [params] = useSearchParams()
   const scene = params.get('scene')
   if (scene === 'full') return <FullWidthScene />
+  if (scene === 'card-table') return <CardTableScene />
   return (
     <main>
       <PageContainer>

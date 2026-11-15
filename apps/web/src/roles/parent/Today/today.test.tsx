@@ -121,6 +121,26 @@ it('draws the mini classroom with only the own child named', async () => {
   expect(container.querySelectorAll('[data-seat]').length).toBeGreaterThanOrEqual(3)
 })
 
+it('uses card surfaces and the 18px / 500 status text on the today page (S3, S4)', async () => {
+  open()
+  const attendance = await screen.findByRole('region', { name: '今日出勤' })
+  expect(attendance).toHaveAttribute('data-slot', 'card')
+  const status = within(attendance).getByText('出勤')
+  expect(status).toHaveClass('text-base', 'font-medium')
+  expect(status.className).not.toMatch(/font-semibold|text-xl/)
+  for (const name of ['今日点评', '班级座位', '班级信息'])
+    expect(screen.getByRole('region', { name })).toHaveAttribute('data-slot', 'card')
+  // 座位图按地图宽高比铺,不再用 40vh 固定高度
+  const frame = await screen.findByTestId('seat-frame')
+  expect(frame.className).toMatch(/aspect-\[4\/3\]/)
+  expect(frame.className).not.toMatch(/h-\[40vh\]/)
+  // 班级信息的 dt 不再写死 w-14
+  expect(within(screen.getByRole('region', { name: '班级信息' })).getByText('班主任')).toHaveClass(
+    'w-auto',
+    'min-w-14',
+  )
+})
+
 it('does not draw the map when the child has no seat of their own', async () => {
   vi.mocked(parentApi.today).mockResolvedValue(
     today({
@@ -280,6 +300,8 @@ it('shows only the note card for a read-only child', async () => {
   expect(screen.queryByRole('region', { name: '班级座位' })).toBeNull()
   expect(screen.queryByRole('region', { name: '今日点评' })).toBeNull()
   expect(screen.queryByRole('region', { name: '班级信息' })).toBeNull()
+  // 只读状态也有唯一的 <h1>
+  expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
 })
 
 it('shows a retryable error when today fails', async () => {
