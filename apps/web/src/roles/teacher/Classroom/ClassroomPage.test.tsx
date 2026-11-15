@@ -700,3 +700,14 @@ it('falls back to double desks when the class has no desk size yet', async () =>
   const card = await hoverCard(container, '1-1')
   expect(card.innerHTML).toContain('#3fb8a9')
 })
+
+it('draws the stage as a surface card without a border and a rounded-md saving hint', async () => {
+  setup()
+  const stage = await screen.findByTestId('classroom-stage')
+  const classes = stage.classList
+  expect(classes.contains('rounded-lg')).toBe(true)
+  expect(classes.contains('shadow-surface')).toBe(true)
+  expect(classes.contains('border')).toBe(false)
+  expect(classes.contains('min-h-[120px]')).toBe(true)
+  expect(classes.contains('[@media(min-height:560px)]:min-h-[240px]')).toBe(true)
+})
