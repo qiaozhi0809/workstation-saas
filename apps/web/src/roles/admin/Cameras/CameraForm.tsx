@@ -9,6 +9,7 @@ import { Button } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
 import { Label } from '@/shared/components/ui/label'
 import { NativeSelect } from '@/shared/components/ui/native-select'
+import { Switch } from '@/shared/components/ui/switch'
 import type { CameraInput, CameraLocation, CameraOut } from '@/shared/types/camera'
 import { groupByGrade } from '../shared/groupByGrade'
 
@@ -82,7 +83,7 @@ export default function CameraForm({ camera, onClose }: { camera?: CameraOut; on
       onClose={onClose}
       title={camera ? '编辑摄像头' : '新建摄像头'}
       dismissOnOutside={false}
-      className="max-w-md"
+      className="max-w-lg"
     >
       <form data-testid="camera-form" onSubmit={(e) => void submit(e)} className="space-y-3">
         <div className="space-y-1">
@@ -205,7 +206,7 @@ export default function CameraForm({ camera, onClose }: { camera?: CameraOut; on
             </div>
           )}
           {clearCreds && (
-            <div className="flex flex-wrap items-center gap-2 text-xs text-destructive">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-warning">
               <span>保存后将清除已保存的用户名和密码。</span>
               <Button type="button" variant="ghost" size="sm" onClick={() => setClearCreds(false)}>
                 撤销
@@ -213,23 +214,17 @@ export default function CameraForm({ camera, onClose }: { camera?: CameraOut; on
             </div>
           )}
         </fieldset>
-        <div className="space-y-2 text-sm">
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={enabled}
-              onChange={(e) => setEnabled(e.target.checked)}
-            />
-            启用(停用后不拉流,也看不到画面)
-          </label>
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={transcode}
-              onChange={(e) => setTranscode(e.target.checked)}
-            />
-            转码(摄像头不是 H.264 时勾选,更占 CPU)
-          </label>
+        <div className="flex flex-col gap-1">
+          <Switch
+            label="启用(停用后不拉流,也看不到画面)"
+            checked={enabled}
+            onChange={(e) => setEnabled(e.target.checked)}
+          />
+          <Switch
+            label="转码(摄像头不是 H.264 时打开,更占 CPU)"
+            checked={transcode}
+            onChange={(e) => setTranscode(e.target.checked)}
+          />
         </div>
         {error && (
           <p role="alert" className="text-sm text-destructive">

@@ -144,6 +144,26 @@ describe('AI 使用', () => {
     ).toEqual(['合计', '15', '2', '3400', '1700', ''])
   })
 
+  it('用页面骨架:说明在页头,月份切换放进页头操作区,数字列右对齐', async () => {
+    wrap(<AiUsagePage />)
+    await screen.findByText('李老师')
+    expect(document.querySelector('[data-page-container]')).toHaveAttribute('data-width', 'default')
+    const header = document.querySelector('[data-page-header]') as HTMLElement
+    expect(within(header).getByText('按月统计各位老师使用 AI 助手的情况')).toBeInTheDocument()
+    expect(within(header).getByRole('button', { name: '上一月' })).toBeInTheDocument()
+    expect(within(header).getByText('2026年11月')).toBeInTheDocument()
+    expect(screen.getByRole('table').closest('[data-slot="table-container"]')).not.toBeNull()
+    const row = screen.getByText('李老师').closest('tr') as HTMLElement
+    const cells = within(row).getAllByRole('cell')
+    for (const i of [1, 2, 3, 4]) {
+      expect(cells[i].classList.contains('text-right')).toBe(true)
+      expect(cells[i].classList.contains('tabular-nums')).toBe(true)
+    }
+    expect(cells[5].classList.contains('text-right')).toBe(false)
+    // 合计行仍在 tfoot 里
+    expect(screen.getByText('合计').closest('tfoot')).not.toBeNull()
+  })
+
   it('切换月份时请求对应月份', async () => {
     wrap(<AiUsagePage />)
     await screen.findByText('李老师')
@@ -168,6 +188,32 @@ describe('AI 配置', () => {
     wrap(<AiConfigPage />)
     await screen.findByLabelText('接口地址')
   }
+
+  it('用窄页骨架;强制隐去姓名是 Switch;按钮行在卡片底部,清除在左、测试与保存成组在右', async () => {
+    await renderConfig()
+    expect(document.querySelector('[data-page-container]')).toHaveAttribute('data-width', 'narrow')
+    const mask = screen.getByRole('switch', { name: '强制隐去学生姓名' })
+    expect(mask.closest('label')?.classList.contains('min-h-8')).toBe(true)
+    const clear = screen.getByRole('button', { name: '清除配置' })
+    const testBtn = screen.getByRole('button', { name: '测试连接' })
+    const save = screen.getByRole('button', { name: '保存' })
+    expect(testBtn.parentElement).toBe(save.parentElement)
+    expect(testBtn.parentElement?.contains(clear)).toBe(false)
+    const footer = clear.parentElement as HTMLElement
+    expect(footer.contains(save)).toBe(true)
+    expect(footer.firstElementChild).toBe(clear)
+    expect(clear.classList.contains('mr-auto')).toBe(false)
+  })
+
+  it('提示是警示不是错误:role=status + text-warning,没有边框', async () => {
+    vi.mocked(adminApi.aiConfig).mockResolvedValue(view({ key_undecryptable: true }))
+    await renderConfig()
+    const notice = screen.getByText('已保存的 API Key 无法解密,请重新输入 API Key 后保存。')
+    expect(notice).toHaveAttribute('role', 'status')
+    expect(notice.classList.contains('text-warning')).toBe(true)
+    expect(notice.classList.contains('border')).toBe(false)
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
 
   it('已配置 Key 时占位提示留空不修改;留空保存时 api_key 为 null', async () => {
     vi.mocked(adminApi.saveAiConfig).mockResolvedValue(view())
