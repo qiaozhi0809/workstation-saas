@@ -237,5 +237,8 @@ it('keeps the layout entry disabled in the menu while the draft is dirty', () =>
   })
   resizeTo(900)
   fireEvent.click(screen.getByRole('button', { name: '更多操作' }))
-  expect(screen.getByRole('menuitem', { name: '桌椅排列' })).toHaveAttribute('aria-disabled', 'true')
+  expect(screen.getByRole('menuitem', { name: '桌椅排列' })).toHaveAttribute(
+    'aria-disabled',
+    'true',
+  )
 })

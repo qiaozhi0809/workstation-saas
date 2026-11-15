@@ -33,9 +33,9 @@ it('is a muted block without a border and a medium-weight heading', () => {
   const region = screen.getByRole('region', { name: '待安排 (2)' })
   expect(region.classList.contains('bg-muted')).toBe(true)
   expect(region.classList.contains('border')).toBe(false)
-  expect(screen.getByRole('heading', { name: '待安排 (2)' }).classList.contains('font-semibold')).toBe(
-    false,
-  )
+  expect(
+    screen.getByRole('heading', { name: '待安排 (2)' }).classList.contains('font-semibold'),
+  ).toBe(false)
 })
 
 it('draws each student as a 32px rounded-sm chip that keeps aria-pressed', () => {

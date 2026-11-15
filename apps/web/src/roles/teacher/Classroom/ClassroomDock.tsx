@@ -1,9 +1,10 @@
-import type { ReactNode } from 'react'
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { Ellipsis, Maximize2, Minimize2, ListTodo, Video } from 'lucide-react'
 import Menu from '@/shared/components/overlay/Menu'
 import { Button } from '@/shared/components/ui/button'
 import { Separator } from '@/shared/components/ui/separator'
 import type { ClassPerm } from '@/shared/types/classroom'
+import { DOCK_COMPACT_BELOW, DockCompactContext } from './dockCompact'
 import ModeBar, { type ClassroomUiMode } from './ModeBar'
 
 export interface ClassroomDockProps {
@@ -40,74 +41,93 @@ export default function ClassroomDock({
   onOpenPanel,
   cameras,
 }: ClassroomDockProps) {
+  // 按操作台自己的宽度(而不是视口宽度)判断:侧栏展开时内容区比视口窄得多
+  const barRef = useRef<HTMLDivElement>(null)
+  const [compact, setCompact] = useState(false)
+  useLayoutEffect(() => {
+    const el = barRef.current
+    if (!el) return
+    // 宽度为 0 表示还没排版(或没有排版引擎),不当成窄
+    const apply = (width: number) => setCompact(width > 0 && width < DOCK_COMPACT_BELOW)
+    apply(el.getBoundingClientRect().width)
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(([entry]) => {
+      if (entry) apply(entry.contentRect.width + 16)
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
   return (
-    <div
-      role="toolbar"
-      aria-label="教室工具"
-      className="flex flex-wrap items-center gap-2 rounded-xl border bg-card px-2 py-1.5 shadow-sm"
-    >
-      <ModeBar mode={mode} perms={perms} onChange={onModeChange} />
-      {/* actions 始终在同一树位置(SeatingBar 带弹层状态,不能因 common / status 出现而重挂) */}
-      {actions ? <Separator orientation="vertical" className="h-6" /> : null}
-      {actions}
-      {common ? <Separator orientation="vertical" className="h-6" /> : null}
-      {common}
-      {menu ? (
-        <Menu
-          label="更多操作"
-          side="top"
-          trigger={<Ellipsis aria-hidden />}
-          triggerProps={{
-            variant: 'outline',
-            size: 'icon',
-            'aria-label': '更多操作',
-            title: '更多操作',
-          }}
-        >
-          {menu}
-        </Menu>
-      ) : null}
-      {status && (
-        <span role="status" className="text-sm text-muted-foreground">
-          {status}
-        </span>
-      )}
-      <div className="ml-auto flex items-center gap-2">
-        {cameras && (
-          <Button
-            variant={cameras.open ? 'secondary' : 'outline'}
-            size="icon"
-            aria-label="看看教室"
-            title="看看教室"
-            aria-pressed={cameras.open}
-            data-testid="camera-toggle"
-            onClick={cameras.onToggle}
+    <DockCompactContext.Provider value={compact}>
+      <div
+        ref={barRef}
+        role="toolbar"
+        aria-label="教室工具"
+        className="flex flex-wrap items-center gap-2 rounded-lg bg-card px-2 py-1.5 shadow-surface"
+      >
+        <ModeBar mode={mode} perms={perms} onChange={onModeChange} />
+        {/* actions 始终在同一树位置(SeatingBar 带弹层状态,不能因 common / status 出现而重挂) */}
+        {actions ? <Separator orientation="vertical" className="h-6" /> : null}
+        {actions}
+        {common ? <Separator orientation="vertical" className="h-6" /> : null}
+        {common}
+        {menu ? (
+          <Menu
+            label="更多操作"
+            side="top"
+            trigger={<Ellipsis aria-hidden />}
+            triggerProps={{
+              variant: 'outline',
+              size: 'icon',
+              'aria-label': '更多操作',
+              title: '更多操作',
+            }}
           >
-            <Video aria-hidden />
-          </Button>
+            {menu}
+          </Menu>
+        ) : null}
+        {status && (
+          <span role="status" className="text-sm text-muted-foreground">
+            {status}
+          </span>
         )}
-        <Button
-          variant="outline"
-          size="icon"
-          aria-label={presenting ? '退出全屏' : '全屏'}
-          title={presenting ? '退出全屏' : '全屏'}
-          onClick={onTogglePresent}
-        >
-          {presenting ? <Minimize2 aria-hidden /> : <Maximize2 aria-hidden />}
-        </Button>
-        {!presenting && (
+        <div className="ml-auto flex items-center gap-2">
+          {cameras && (
+            <Button
+              variant={cameras.open ? 'secondary' : 'outline'}
+              size="icon"
+              aria-label="看看教室"
+              title="看看教室"
+              aria-pressed={cameras.open}
+              data-testid="camera-toggle"
+              onClick={cameras.onToggle}
+            >
+              <Video aria-hidden />
+            </Button>
+          )}
           <Button
             variant="outline"
             size="icon"
-            aria-label="待办与点评"
-            title="待办与点评"
-            aria-haspopup="dialog"
-            onClick={onOpenPanel}
+            aria-label={presenting ? '退出全屏' : '全屏'}
+            title={presenting ? '退出全屏' : '全屏'}
+            onClick={onTogglePresent}
           >
-            <ListTodo aria-hidden />
+            {presenting ? <Minimize2 aria-hidden /> : <Maximize2 aria-hidden />}
           </Button>
-        )}
+          {!presenting && (
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="待办与点评"
+              title="待办与点评"
+              aria-haspopup="dialog"
+              onClick={onOpenPanel}
+            >
+              <ListTodo aria-hidden />
+            </Button>
+          )}
+        </div>
       </div>
-    </div>
+    </DockCompactContext.Provider>
   )
 }
