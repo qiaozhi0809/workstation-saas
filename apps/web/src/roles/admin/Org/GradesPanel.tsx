@@ -326,7 +326,7 @@ export default function GradesPanel() {
           {classes.data && classes.data.length > 0 && (
             <Table
               minWidth={512}
-              containerClassName="rounded-none bg-transparent shadow-none"
+              containerClassName="relative rounded-none bg-transparent shadow-none"
               className="w-full"
             >
               <TableHead>
@@ -336,6 +336,7 @@ export default function GradesPanel() {
                   <Th>班主任</Th>
                   <Th numeric>学生数</Th>
                   <Th align="end">
+                    {/* sr-only 是绝对定位:外层容器 relative,才会被它的横向滚动裁住,不撑宽整页 */}
                     <span className="sr-only">操作</span>
                   </Th>
                 </TableRow>
