@@ -97,7 +97,12 @@ it('saves a handwritten comment', async () => {
   const box = await screen.findByLabelText('评语内容')
   expect(box).toHaveAttribute('maxlength', '1000')
   const save = screen.getByRole('button', { name: '保存评语' })
-  expect(save).toBeDisabled()
+  // 空内容不禁用按钮:点保存就地报错并聚焦
+  expect(save).toBeEnabled()
+  fireEvent.click(save)
+  expect(await screen.findByText('请填写评语内容')).toBeInTheDocument()
+  expect(box).toHaveFocus()
+  expect(commentsApi.create).not.toHaveBeenCalled()
   fireEvent.change(box, { target: { value: ' 本学期表现优秀 ' } })
   fireEvent.click(save)
   await waitFor(() =>

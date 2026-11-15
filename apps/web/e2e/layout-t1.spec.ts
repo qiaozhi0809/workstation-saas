@@ -8,12 +8,42 @@ import { applyTheme, expectBaselineLayout, patchJson, signInAs } from './helpers
  */
 
 const PAGES = [
-  { slug: 'scores', path: '/teacher/scores', title: '成绩录入' },
-  { slug: 'analysis', path: '/teacher/analysis', title: '成绩分析' },
-  { slug: 'students', path: '/teacher/students', title: '学生' },
-  { slug: 'ai', path: '/teacher/ai', title: 'AI 助手' },
-  { slug: 'notices', path: '/teacher/notices', title: '班级公告' },
-  { slug: 'preferences', path: '/teacher/preferences', title: '我的偏好' },
+  {
+    slug: 'scores',
+    path: '/teacher/scores',
+    title: '成绩录入',
+    ready: (page: Page) => page.getByRole('region', { name: '当前考试' }),
+  },
+  {
+    slug: 'analysis',
+    path: '/teacher/analysis',
+    title: '成绩分析',
+    ready: (page: Page) => page.locator('[data-kpi]').first(),
+  },
+  {
+    slug: 'students',
+    path: '/teacher/students',
+    title: '学生',
+    ready: (page: Page) => page.getByLabel('搜索学生'),
+  },
+  {
+    slug: 'ai',
+    path: '/teacher/ai',
+    title: 'AI 助手',
+    ready: (page: Page) => page.getByLabel('要做什么'),
+  },
+  {
+    slug: 'notices',
+    path: '/teacher/notices',
+    title: '班级公告',
+    ready: (page: Page) => page.getByRole('region', { name: '写公告' }),
+  },
+  {
+    slug: 'preferences',
+    path: '/teacher/preferences',
+    title: '我的偏好',
+    ready: (page: Page) => page.getByRole('group', { name: '老师形象' }),
+  },
 ] as const
 
 const VARIANTS = [
@@ -33,6 +63,9 @@ async function openStudentDrawer(page: Page) {
   await expect(page.getByRole('heading', { level: 1, name: '学生' })).toBeVisible()
   await page.getByRole('button', { name: '王小一', exact: true }).click()
   await expect(page.getByRole('tab', { name: '概览' })).toBeVisible()
+  // 抽屉里的内容(概况指标)出现、骨架屏消失后再量
+  await expect(page.getByRole('group', { name: '概况指标' })).toBeVisible()
+  await expect(page.locator('[aria-busy="true"]')).toHaveCount(0)
 }
 
 for (const variant of VARIANTS) {
@@ -46,7 +79,9 @@ for (const variant of VARIANTS) {
         await signInAs(page, 'teacher')
         await page.goto(spec.path)
         await expect(page.getByRole('heading', { level: 1, name: spec.title })).toBeVisible()
-        await expect(page.getByText('加载中…')).toHaveCount(0)
+        await expect(spec.ready(page)).toBeVisible()
+        // 骨架屏(LoadingState 的 table / cards / form 变体)都带 aria-busy,等它们都消失再量
+        await expect(page.locator('[aria-busy="true"]')).toHaveCount(0)
         await expectBaselineLayout(page, { checkTitleX: variant.checkTitleX })
       })
     }
@@ -79,3 +114,23 @@ test('profile charts with one exam show a summary', async ({ page }) => {
   })
   await expect(trend.locator('.recharts-surface')).toHaveCount(0)
 })
+
+// 窄页:正文最宽 768(max-w-3xl),标题仍在 default 的左缘
+for (const spec of PAGES.filter((p) => p.slug === 'ai' || p.slug === 'preferences')) {
+  test(`${spec.slug} body is capped at 768 on a wide screen`, async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await guardReadOnly(page)
+    await applyTheme(page, 'light')
+    await signInAs(page, 'teacher')
+    await page.goto(spec.path)
+    await expect(spec.ready(page)).toBeVisible()
+    await expect(page.locator('[aria-busy="true"]')).toHaveCount(0)
+    const root = page.locator('[data-page-container][data-width="narrow"]')
+    await expect(root).toHaveCount(1)
+    const body = root.locator(':scope > :not([data-page-header])').first()
+    const box = await body.boundingBox()
+    expect(box).not.toBeNull()
+    expect(box!.width).toBeGreaterThan(0)
+    expect(box!.width).toBeLessThanOrEqual(768)
+  })
+}

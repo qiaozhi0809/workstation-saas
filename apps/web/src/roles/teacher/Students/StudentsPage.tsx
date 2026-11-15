@@ -451,7 +451,7 @@ function StudentRow({
         {r.birthdate ? (
           <span
             {...(r.daysToBirthday === 0 ? { 'data-birthday-today': true } : {})}
-            className={cn(r.daysToBirthday === 0 && 'font-medium text-destructive')}
+            className={cn(r.daysToBirthday === 0 && 'font-medium text-warning')}
           >
             {r.birthdate}
             {r.daysToBirthday === 0 && ' 今天生日'}

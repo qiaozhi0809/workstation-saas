@@ -42,7 +42,7 @@ export function SubjectTable({
   return (
     <Card>
       <section aria-label="各科明细">
-        <h2 className="px-4 pt-4 text-base font-medium">各科明细</h2>
+        <h2 className="px-3 pt-4 text-base font-medium">各科明细</h2>
         <Table className="mt-2" containerClassName="rounded-none bg-transparent shadow-none">
           <TableHead>
             <TableRow>
@@ -74,7 +74,7 @@ export function SubjectTable({
             ))}
           </TableBody>
         </Table>
-        <p className="px-4 pb-4 pt-2 text-xs text-muted-foreground">
+        <p className="px-3 pb-4 pt-2 text-xs text-muted-foreground">
           及格 = 满分 {Math.round(ratios.pass_ratio * 100)}%,优秀 = 满分{' '}
           {Math.round(ratios.good_ratio * 100)}%
         </p>

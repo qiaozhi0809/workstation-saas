@@ -31,9 +31,9 @@ export function RankTable({
   onOpen: (enrollmentId: string) => void
 }) {
   return (
-    <Card>
+    <Card className="min-w-0">
       <section aria-label="成绩排名">
-        <h2 className="px-4 pt-4 text-base font-medium">成绩排名</h2>
+        <h2 className="px-3 pt-4 text-base font-medium">成绩排名</h2>
         <div data-testid="rank-scroll" className="mt-2 max-h-[460px] overflow-auto">
           <Table containerClassName="overflow-visible rounded-none bg-transparent shadow-none">
             <TableHead>

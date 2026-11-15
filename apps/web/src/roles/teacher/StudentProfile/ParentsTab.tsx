@@ -10,6 +10,7 @@ import Modal from '@/shared/components/overlay/Modal'
 import { toast } from '@/shared/components/Toast'
 import { Badge } from '@/shared/components/ui/badge'
 import { Button } from '@/shared/components/ui/button'
+import { Field, useFormErrors } from '@/shared/components/ui/field'
 import { Input } from '@/shared/components/ui/input'
 import { NativeSelect } from '@/shared/components/ui/native-select'
 import type { ParentOfStudent, ParentRelation } from '@/shared/types/parent'
@@ -85,6 +86,7 @@ function AddForm({
   const [phone, setPhone] = useState('')
   const [name, setName] = useState('')
   const [relation, setRelation] = useState<ParentRelation>('母亲')
+  const { errors, report, clear, fieldRef } = useFormErrors(['phone', 'name'] as const)
   const add = useMutation({
     // 临时密码只交给对话框,不留在 mutation 状态 / MutationCache 里
     mutationFn: async () => {
@@ -108,41 +110,61 @@ function AddForm({
 
   return (
     <div className="mb-4 space-y-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <Input
-          aria-label="手机号"
-          inputMode="numeric"
-          maxLength={11}
-          placeholder="手机号"
-          className="h-8 w-36"
-          value={phone}
-          onChange={(e) => setPhone(e.target.value)}
-        />
-        <Input
-          aria-label="称呼"
-          maxLength={20}
-          placeholder="称呼"
-          className="h-8 w-28"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
-        <NativeSelect
-          aria-label="关系"
-          className="h-8"
-          value={relation}
-          onChange={(e) => setRelation(e.target.value as ParentRelation)}
-        >
-          {RELATIONS.map((r) => (
-            <option key={r} value={r}>
-              {r}
-            </option>
-          ))}
-        </NativeSelect>
+      <div className="flex flex-wrap items-start gap-2">
+        <Field label="手机号" error={errors.phone}>
+          <Input
+            ref={fieldRef('phone')}
+            inputMode="numeric"
+            maxLength={11}
+            placeholder="手机号"
+            controlSize="sm"
+            className="w-36"
+            value={phone}
+            onChange={(e) => {
+              setPhone(e.target.value)
+              clear('phone')
+            }}
+          />
+        </Field>
+        <Field label="称呼" error={errors.name}>
+          <Input
+            ref={fieldRef('name')}
+            maxLength={20}
+            placeholder="称呼"
+            controlSize="sm"
+            className="w-28"
+            value={name}
+            onChange={(e) => {
+              setName(e.target.value)
+              clear('name')
+            }}
+          />
+        </Field>
+        <Field label="关系">
+          <NativeSelect
+            controlSize="sm"
+            value={relation}
+            onChange={(e) => setRelation(e.target.value as ParentRelation)}
+          >
+            {RELATIONS.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </NativeSelect>
+        </Field>
         <Button
           type="button"
           size="sm"
-          disabled={full || add.isPending || !phone.trim() || !name.trim()}
-          onClick={() => add.mutate()}
+          className="mt-5"
+          disabled={full || add.isPending}
+          onClick={() => {
+            const missing: { phone?: string; name?: string } = {}
+            if (!phone.trim()) missing.phone = '请填写手机号'
+            if (!name.trim()) missing.name = '请填写称呼'
+            if (!report(missing)) return
+            add.mutate()
+          }}
         >
           添加家长
         </Button>

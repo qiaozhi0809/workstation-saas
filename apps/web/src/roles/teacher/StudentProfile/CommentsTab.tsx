@@ -11,6 +11,7 @@ import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { toast } from '@/shared/components/Toast'
 import { Badge } from '@/shared/components/ui/badge'
 import { Button } from '@/shared/components/ui/button'
+import { Field, useFormErrors } from '@/shared/components/ui/field'
 import { Switch } from '@/shared/components/ui/switch'
 import { Textarea } from '@/shared/components/ui/textarea'
 import { aiLink } from '@/shared/lib/aiLink'
@@ -30,6 +31,7 @@ function AddForm({ profile, canUseAi }: { profile: StudentProfile; canUseAi: boo
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const [content, setContent] = useState('')
+  const { errors, report, clear, fieldRef } = useFormErrors(['content'] as const)
   const save = useMutation({
     mutationFn: () =>
       commentsApi.create(profile.id, { content: content.trim(), generated_by_ai: false }),
@@ -43,14 +45,19 @@ function AddForm({ profile, canUseAi }: { profile: StudentProfile; canUseAi: boo
 
   return (
     <div className="mb-4 space-y-2">
-      <Textarea
-        aria-label="评语内容"
-        maxLength={1000}
-        rows={4}
-        placeholder="写下本学期的评语"
-        value={content}
-        onChange={(e) => setContent(e.target.value)}
-      />
+      <Field label="评语内容" error={errors.content}>
+        <Textarea
+          ref={fieldRef('content')}
+          maxLength={1000}
+          rows={4}
+          placeholder="写下本学期的评语"
+          value={content}
+          onChange={(e) => {
+            setContent(e.target.value)
+            clear('content')
+          }}
+        />
+      </Field>
       <div className="flex items-center gap-2">
         {canUseAi && (
           <Button
@@ -66,8 +73,11 @@ function AddForm({ profile, canUseAi }: { profile: StudentProfile; canUseAi: boo
           type="button"
           size="sm"
           className="ml-auto"
-          disabled={save.isPending || !content.trim()}
-          onClick={() => save.mutate()}
+          disabled={save.isPending}
+          onClick={() => {
+            if (!report(content.trim() ? {} : { content: '请填写评语内容' })) return
+            save.mutate()
+          }}
         >
           保存评语
         </Button>
