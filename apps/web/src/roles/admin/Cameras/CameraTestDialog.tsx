@@ -76,10 +76,7 @@ export default function CameraTestDialog({
         )}
         {line && <p className="text-muted-foreground">{line}</p>}
         {probe && !probe.browser_playable && (
-          <div
-            role="alert"
-            className="space-y-1 rounded-md bg-warning/10 p-3"
-          >
+          <div role="alert" className="space-y-1 rounded-md bg-warning/10 p-3">
             {data?.ok && <p className="font-medium">测试成功,但浏览器放不出这路画面</p>}
             <p>{probe.hint ?? FALLBACK_HINT}</p>
           </div>

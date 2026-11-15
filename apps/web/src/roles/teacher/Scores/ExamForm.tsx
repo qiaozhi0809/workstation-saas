@@ -399,10 +399,7 @@ function FormBody(p: Props & { catalog: SubjectFull[] }) {
       )}
 
       {dropAck && dropped.length > 0 && (
-        <p
-          role="alert"
-          className="rounded-md bg-destructive/10 p-3 text-sm text-destructive"
-        >
+        <p role="alert" className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
           去掉「{dropped.join('、')}」会同时删除该科已录的分数
         </p>
       )}
