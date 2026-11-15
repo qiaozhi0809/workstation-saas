@@ -1,6 +1,7 @@
 import { useRef, type MouseEvent, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { GraduationCap } from 'lucide-react'
+import { cn } from '@/shared/lib/utils'
 
 export interface AppShellProps {
   /** 品牌("班级工作台")链接目标 */
@@ -9,6 +10,8 @@ export interface AppShellProps {
   context?: ReactNode
   /** 紧随 context 之后、同一行的主导航;不收缩(shrink-0),窄屏由导航自己缩成图标 */
   nav?: ReactNode
+  /** 顶栏下面的第二行(家长端 768–1023 宽的导航):和顶栏之间只有一条分隔线,不随 main 滚动 */
+  subNav?: ReactNode
   /** 顶栏右侧的操作,所有宽度都显示。AppShell 自身不渲染 ThemeToggle,各 shell 须在此放入 */
   actions: ReactNode
   /** 放在 <main> 之外的东西(抽屉、Toaster) */
@@ -20,6 +23,7 @@ export default function AppShell({
   home,
   context,
   nav,
+  subNav,
   actions,
   overlays,
   children,
@@ -41,7 +45,12 @@ export default function AppShell({
       >
         跳到主要内容
       </a>
-      <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b bg-background px-3 md:px-4">
+      <header
+        className={cn(
+          'flex h-14 shrink-0 items-center justify-between gap-2 bg-background px-3 md:px-4',
+          !subNav && 'border-b',
+        )}
+      >
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <Link
             to={home}
@@ -56,6 +65,7 @@ export default function AppShell({
         </div>
         <div className="flex shrink-0 items-center gap-1">{actions}</div>
       </header>
+      {subNav && <div className="shrink-0 border-b bg-background px-3 md:px-4">{subNav}</div>}
       <main
         ref={mainRef}
         id="main"

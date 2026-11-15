@@ -59,3 +59,30 @@ it('renders the nav slot in the header after the context', () => {
   ).toBeTruthy()
   expect(within(screen.getByRole('main')).queryByRole('navigation')).toBeNull()
 })
+
+it('renders the subNav slot as a second row between the header and main', () => {
+  render(
+    <MemoryRouter initialEntries={['/a']}>
+      <AppShell
+        home="/a"
+        subNav={<nav aria-label="二级导航">二级</nav>}
+        actions={<span>操作</span>}
+      >
+        <p>内容</p>
+      </AppShell>
+    </MemoryRouter>,
+  )
+  const header = screen.getByRole('banner')
+  const nav = screen.getByRole('navigation', { name: '二级导航' })
+  expect(header).not.toContainElement(nav)
+  expect(screen.getByRole('main')).not.toContainElement(nav)
+  expect(header.nextElementSibling).toContainElement(nav)
+  expect(screen.getByRole('main').previousElementSibling).toContainElement(nav)
+  // 分隔线只画一条:有第二行时顶栏自己不再画底线
+  expect(header).not.toHaveClass('border-b')
+})
+
+it('keeps the header bottom border without a subNav', () => {
+  renderShell()
+  expect(screen.getByRole('banner')).toHaveClass('border-b')
+})
