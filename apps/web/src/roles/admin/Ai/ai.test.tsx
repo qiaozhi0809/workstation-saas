@@ -202,7 +202,7 @@ describe('AI 配置', () => {
     const footer = clear.parentElement as HTMLElement
     expect(footer.contains(save)).toBe(true)
     expect(footer.firstElementChild).toBe(clear)
-    expect(clear.className).not.toContain('mr-auto')
+    expect(clear.classList.contains('mr-auto')).toBe(false)
   })
 
   it('提示是警示不是错误:role=status + text-warning,没有边框', async () => {

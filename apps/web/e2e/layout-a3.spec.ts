@@ -25,38 +25,43 @@ async function fakeCameras(page: Page): Promise<void> {
   await patchJson(page, /\/api\/v1\/admin\/settings\/switches(\?|$)/, (json) => {
     json.monitor = true
   })
-  await patchJson(page, /\/api\/v1\/admin\/cameras(\?|$)/, (json) => {
-    if (Array.isArray(json) && json.length === 0) {
-      json.push(
-        {
-          id: 'fake-cam-1',
-          name: '示例摄像头一',
-          class_id: null,
-          class_name: null,
-          location: '走廊',
-          enabled: true,
-          transcode: false,
-          rtsp_url: 'rtsp://192.168.1.10:554/stream1',
-          has_credentials: false,
-          status: 'streaming',
-          last_error: null,
-        },
-        {
-          id: 'fake-cam-2',
-          name: '示例摄像头二',
-          class_id: null,
-          class_name: null,
-          location: '操场',
-          enabled: false,
-          transcode: true,
-          rtsp_url: 'rtsp://192.168.1.11:554/stream1',
-          has_credentials: true,
-          status: 'error',
-          last_error: '连接超时',
-        },
-      )
-    }
-  })
+  // 种子库里监控开关是关的,后端此时对摄像头接口一律 404:列表和健康检查都直接 fulfill(只 GET)
+  const cameras = [
+    {
+      id: 'fake-cam-1',
+      name: '示例摄像头一',
+      class_id: null,
+      class_name: null,
+      location: '走廊',
+      enabled: true,
+      transcode: false,
+      rtsp_url: 'rtsp://192.168.1.10:554/stream1',
+      has_credentials: false,
+      status: 'streaming',
+      last_error: null,
+    },
+    {
+      id: 'fake-cam-2',
+      name: '示例摄像头二',
+      class_id: null,
+      class_name: null,
+      location: '操场',
+      enabled: false,
+      transcode: true,
+      rtsp_url: 'rtsp://192.168.1.11:554/stream1',
+      has_credentials: true,
+      status: 'error',
+      last_error: '连接超时',
+    },
+  ]
+  await page.route(/\/api\/v1\/admin\/cameras\/health(\?|$)/, (route) =>
+    route.request().method() === 'GET'
+      ? route.fulfill({ json: { public_hosts: [] } })
+      : route.fallback(),
+  )
+  await page.route(/\/api\/v1\/admin\/cameras(\?|$)/, (route) =>
+    route.request().method() === 'GET' ? route.fulfill({ json: cameras }) : route.fallback(),
+  )
 }
 
 async function fakeAudit(page: Page): Promise<void> {
@@ -243,4 +248,22 @@ test('audit filter controls share one baseline', async ({ page }) => {
     }
   }
   expect(sameRowPairs).toBeGreaterThan(0)
+})
+
+// 窄页:标题仍对齐 default 的左缘,正文块最宽 768(max-w-3xl,见 ui/page.tsx)
+test('narrow page body is capped at 768 on /admin/ai/config', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await signInAs(page, 'admin')
+  await page.goto('/admin/ai/config')
+  await expect(page.getByRole('heading', { level: 1, name: 'AI 配置' })).toBeVisible()
+  await expect(page.getByLabel('服务商')).toBeVisible()
+  const widths = await page.evaluate(() =>
+    Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[data-page-container][data-width="narrow"] > :not([data-page-header])',
+      ),
+    ).map((el) => el.getBoundingClientRect().width),
+  )
+  expect(widths.length).toBeGreaterThan(0)
+  for (const w of widths) expect(w).toBeLessThanOrEqual(768.5)
 })

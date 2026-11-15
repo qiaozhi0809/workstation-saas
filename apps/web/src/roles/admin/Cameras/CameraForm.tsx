@@ -214,14 +214,14 @@ export default function CameraForm({ camera, onClose }: { camera?: CameraOut; on
             </div>
           )}
         </fieldset>
-        <div className="space-y-1">
+        <div className="flex flex-col gap-1">
           <Switch
             label="启用(停用后不拉流,也看不到画面)"
             checked={enabled}
             onChange={(e) => setEnabled(e.target.checked)}
           />
           <Switch
-            label="转码(摄像头不是 H.264 时勾选,更占 CPU)"
+            label="转码(摄像头不是 H.264 时打开,更占 CPU)"
             checked={transcode}
             onChange={(e) => setTranscode(e.target.checked)}
           />

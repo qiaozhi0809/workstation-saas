@@ -198,7 +198,7 @@ export default function LoginLogsPage() {
       ) : list.data.items.length === 0 ? (
         <EmptyState title="没有符合条件的记录" />
       ) : (
-        <Table minWidth={896}>
+        <Table minWidth={896} containerClassName="w-fit max-w-full">
           <TableHead>
             <TableRow>
               {HEADS.map((h) => (

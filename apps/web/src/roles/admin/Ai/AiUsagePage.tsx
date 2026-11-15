@@ -88,7 +88,7 @@ function AiUsage({ tz }: { tz: string }) {
       ) : q.data.rows.length === 0 ? (
         <EmptyState title="这个月还没有人使用 AI 助手" />
       ) : (
-        <Table minWidth={640}>
+        <Table minWidth={640} containerClassName="w-fit max-w-full">
           <TableHead>
             <TableRow>
               <Th>老师</Th>

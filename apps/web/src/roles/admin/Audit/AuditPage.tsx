@@ -104,7 +104,7 @@ function AuditLog({ tz }: { tz: string }) {
       ) : list.data.items.length === 0 ? (
         <EmptyState title="没有符合条件的记录" />
       ) : (
-        <Table minWidth={768}>
+        <Table minWidth={768} containerClassName="w-fit max-w-full">
           <TableHead>
             <TableRow>
               {HEADS.map((h) => (

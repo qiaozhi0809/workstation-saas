@@ -194,7 +194,7 @@ export default function CamerasPage() {
             description={'点右上角"新建摄像头",填入校园内网里的 RTSP 地址'}
           />
         ) : (
-          <Table data-testid="camera-list" minWidth={832}>
+          <Table data-testid="camera-list" minWidth={832} containerClassName="w-fit max-w-full">
             <TableHead>
               <TableRow>
                 {['名称', '班级 / 公共区域', '位置', '状态', '启用'].map((h) => (

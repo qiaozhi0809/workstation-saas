@@ -270,7 +270,7 @@ it('creates a camera, checks the rtsp prefix locally and shows backend url error
   fireEvent.change(within(dlg).getByLabelText('RTSP 地址'), {
     target: { value: 'rtsp://192.168.1.20/live' },
   })
-  fireEvent.click(within(dlg).getByLabelText('转码(摄像头不是 H.264 时勾选,更占 CPU)'))
+  fireEvent.click(within(dlg).getByLabelText('转码(摄像头不是 H.264 时打开,更占 CPU)'))
   fireEvent.click(within(dlg).getByRole('button', { name: '保存' }))
   await waitFor(() =>
     expect(camerasApi.create).toHaveBeenLastCalledWith(
