@@ -154,7 +154,11 @@ function CommentList({ profile, timezone }: { profile: StudentProfile; timezone:
               label="给家长看"
               checked={c.parent_visible}
               disabled={!c.can_share || share.isPending}
-              onChange={() => share.mutate({ id: c.id, visible: !c.parent_visible })}
+              onChange={() => {
+                // 禁用时不处理(fireEvent 能点到被禁用的 checkbox,真实浏览器不会)
+                if (!c.can_share || share.isPending) return
+                share.mutate({ id: c.id, visible: !c.parent_visible })
+              }}
             />
             {c.id === firstLocked && <span>只有孩子现在的班主任能改</span>}
             {c.generated_by_ai && !c.parent_visible && (

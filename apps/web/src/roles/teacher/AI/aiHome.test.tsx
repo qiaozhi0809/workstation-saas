@@ -35,6 +35,8 @@ describe('AiHomePage', () => {
 
   it('puts the title and greeting in a narrow page header', async () => {
     home()
+    // 等正文(输入框)出现,ClassGate 的加载态也有 h1(default 宽度)
+    await box()
     const h1 = await screen.findByRole('heading', { level: 1, name: 'AI 助手' })
     expect(h1).not.toHaveClass('sr-only')
     const root = h1.closest('[data-page-container]') as HTMLElement

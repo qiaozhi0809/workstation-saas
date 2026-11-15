@@ -220,6 +220,8 @@ describe('AnalysisPage', () => {
 
   it('puts the title and the AI shortcuts in the page header', async () => {
     setup([first, second])
+    // 等正文(KPI 卡片)出现,加载态页头也有 h1
+    await avgCard()
     const h1 = await screen.findByRole('heading', { level: 1, name: '成绩分析' })
     expect(h1).not.toHaveClass('sr-only')
     expect(h1.closest('[data-page-container]')).not.toBeNull()
@@ -284,7 +286,7 @@ describe('AnalysisPage', () => {
       e3: { 语文: 85, 数学: 85 },
     })
     const bandFills = () => {
-      const section = screen.getByText('总分分数段').closest('section') as HTMLElement
+      const section = screen.getByText('总分分数段').closest('[data-slot="card"]') as HTMLElement
       return Array.from(section.querySelectorAll('path.recharts-rectangle')).map((p) =>
         p.getAttribute('fill'),
       )
@@ -307,7 +309,8 @@ describe('AnalysisPage', () => {
 
   it('draws the subject rate chart against the school pass line, not a fixed 60%', async () => {
     // 第一次月考两科平均得分率都是 60%
-    const chart = () => screen.getByText('各科平均得分率').closest('section') as HTMLElement
+    const chart = () =>
+      screen.getByText('各科平均得分率').closest('[data-slot="card"]') as HTMLElement
     const fills = () =>
       Array.from(chart().querySelectorAll('path.recharts-rectangle')).map((p) =>
         p.getAttribute('fill'),

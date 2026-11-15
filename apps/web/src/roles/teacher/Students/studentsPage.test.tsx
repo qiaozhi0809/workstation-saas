@@ -183,6 +183,8 @@ it('keeps cells and headers on one line and the filter tabs unsqueezed on narrow
 it('puts the title and the toolbar buttons in the page header', async () => {
   setup([...ALL, ...MANAGE])
   renderPage()
+  // 等正文(搜索框)出现,加载态页头里还没有按钮
+  await screen.findByLabelText('搜索学生')
   const h1 = await screen.findByRole('heading', { level: 1, name: '学生' })
   expect(h1).not.toHaveClass('sr-only')
   const header = h1.closest('[data-page-header]') as HTMLElement
