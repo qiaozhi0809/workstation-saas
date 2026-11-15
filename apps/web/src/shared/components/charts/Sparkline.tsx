@@ -1,6 +1,8 @@
+import type { ReactNode } from 'react'
 import { Line, LineChart } from 'recharts'
 import { ChartContainer, type ChartConfig } from '@/shared/components/ui/chart'
 import { cn } from '@/shared/lib/utils'
+import { ChartSummary, type ChartPoint } from './ChartSummary'
 
 interface ChartBase {
   label: string
@@ -18,7 +20,18 @@ export function Sparkline({
   height = 220,
   className,
   values,
-}: ChartBase & { values: (number | null)[] }) {
+  minPoints = 1,
+  summary,
+}: ChartBase & {
+  values: (number | null)[]
+  /** 有效点数少于它时不画图,改渲染 summary(默认「数据不足」);默认 1,行为同以前 */
+  minPoints?: number
+  summary?: (points: ChartPoint[]) => ReactNode
+}) {
+  const points: ChartPoint[] = values.flatMap((v, i) =>
+    v == null ? [] : [{ label: String(i + 1), value: v }],
+  )
+  if (points.length < minPoints) return <ChartSummary points={points} summary={summary} />
   const data = values.map((v) => ({ v }))
   const chart = (
     <LineChart
