@@ -100,6 +100,7 @@ function SentList({ page, setPage }: { page: number; setPage(p: number): void })
                   type="button"
                   variant="link"
                   size="sm"
+                  className="text-destructive"
                   aria-label={`撤回 ${n.title}`}
                   onClick={() => {
                     setError('')

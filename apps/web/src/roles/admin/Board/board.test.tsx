@@ -108,7 +108,7 @@ describe('全校看板', () => {
     expect(grid.className).not.toMatch(/(^|\s)(md|lg|xl|2xl):grid-cols-\d/)
   })
 
-  it('班级卡是 Card;教室与班主任各占一行,班主任各占一行', async () => {
+  it('班级卡是 Card;教室与班主任各占一行', async () => {
     setup()
     const card = (await screen.findByText('三年一班')).closest('[data-class-card]') as HTMLElement
     expect(card).toHaveAttribute('data-slot', 'card')

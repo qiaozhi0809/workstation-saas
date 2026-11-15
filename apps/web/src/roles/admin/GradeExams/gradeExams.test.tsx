@@ -397,6 +397,22 @@ it('stage from grade brief', async () => {
   expect(within(dlg).getByRole('button', { name: '保存' })).toBeDisabled()
 })
 
+it('an empty name is reported under the field, focuses it, and does not call the api (Q12)', async () => {
+  await renderPage()
+  fireEvent.click(screen.getByRole('button', { name: '新建联考' }))
+  const dlg = within(await screen.findByRole('dialog'))
+  await dlg.findByRole('checkbox', { name: '语文' })
+  fireEvent.click(dlg.getByRole('button', { name: '保存' }))
+  const input = dlg.getByLabelText('考试名称')
+  expect(await dlg.findByRole('alert')).toHaveTextContent('请填写考试名称')
+  expect(input).toHaveAttribute('aria-invalid', 'true')
+  expect(input).toHaveFocus()
+  expect(adminApi.createGradeExam).not.toHaveBeenCalled()
+  // 输入后错误就地消失
+  fireEvent.change(input, { target: { value: '期中联考' } })
+  expect(dlg.queryByRole('alert')).toBeNull()
+})
+
 it('requires a name and at least one subject locally', async () => {
   await renderPage()
   fireEvent.click(screen.getByRole('button', { name: '新建联考' }))
