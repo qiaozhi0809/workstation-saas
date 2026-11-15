@@ -1,9 +1,12 @@
-import type { ReactNode } from 'react'
+import type { HTMLAttributes, ReactNode } from 'react'
 import { cn } from '@/shared/lib/utils'
 
 export type PageWidth = 'default' | 'narrow' | 'full'
 
-export interface PageContainerProps {
+export interface PageContainerProps extends Omit<
+  HTMLAttributes<HTMLDivElement>,
+  'className' | 'children'
+> {
   width?: PageWidth
   className?: string
   children: ReactNode
@@ -12,10 +15,17 @@ export interface PageContainerProps {
 /**
  * 页面容器:default 最大宽 1320;narrow 外框同 default(标题左缘对齐),
  * 除标题区之外的内容限 max-w-3xl;full 不限宽。左右 16 / ≥1024 宽 32,上下 24。
+ * 其余 div 属性(data-testid 等)原样透传;展开在前面,盖不掉 data-page-container / data-width。
  */
-export function PageContainer({ width = 'default', className, children }: PageContainerProps) {
+export function PageContainer({
+  width = 'default',
+  className,
+  children,
+  ...rest
+}: PageContainerProps) {
   return (
     <div
+      {...rest}
       data-page-container
       data-width={width}
       className={cn(
