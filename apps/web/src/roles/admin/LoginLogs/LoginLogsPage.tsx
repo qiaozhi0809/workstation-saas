@@ -116,6 +116,31 @@ export default function LoginLogsPage() {
   const total = list.data?.total ?? 0
   const pages = Math.min(MAX_PAGE, Math.max(1, Math.ceil(total / PAGE_SIZE)))
 
+  const hasTable = !list.isError && !!list.data && list.data.items.length > 0
+  const pager = total > PAGE_SIZE && (
+    <div className="flex items-center justify-end gap-2 text-sm">
+      <span className="text-muted-foreground">{`共 ${total} 条,第 ${page} / ${pages} 页`}</span>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={page <= 1}
+        onClick={() => setPage(page - 1)}
+      >
+        上一页
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={page >= pages}
+        onClick={() => setPage(page + 1)}
+      >
+        下一页
+      </Button>
+    </div>
+  )
+
   return (
     <PageContainer width="default">
       <PageHeader
@@ -198,65 +223,46 @@ export default function LoginLogsPage() {
       ) : list.data.items.length === 0 ? (
         <EmptyState title="没有符合条件的记录" />
       ) : (
-        <Table minWidth={896} containerClassName="w-fit max-w-full">
-          <TableHead>
-            <TableRow>
-              {HEADS.map((h) => (
-                <Th key={h}>{h}</Th>
-              ))}
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {list.data.items.map((r) => (
-              <TableRow key={r.id}>
-                <Td>{formatInTz(r.at, school.tz)}</Td>
-                <Td>{r.login_name}</Td>
-                <Td>{r.user?.display_name ?? '—'}</Td>
-                <Td>
-                  <Badge variant={r.result === 'success' ? 'success' : 'danger'}>
-                    {RESULT_LABEL[r.result] ?? r.result}
-                  </Badge>
-                </Td>
-                <Td>{r.ip ?? '—'}</Td>
-                <Td>{browserSummary(r.user_agent)}</Td>
-                <Td nowrap={false}>
-                  <div className="flex flex-wrap gap-x-3 gap-y-1">
-                    {r.suspicious.map((s) => (
-                      <StatusDot key={s} tone="warning">
-                        {SUSPICION_LABEL[s] ?? s}
-                      </StatusDot>
-                    ))}
-                  </div>
-                </Td>
+        <div className="flex w-fit max-w-full flex-col gap-3">
+          <Table minWidth={896} containerClassName="w-fit max-w-full">
+            <TableHead>
+              <TableRow>
+                {HEADS.map((h) => (
+                  <Th key={h}>{h}</Th>
+                ))}
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      )}
-
-      {total > PAGE_SIZE && (
-        <div className="flex items-center justify-end gap-2 text-sm">
-          <span className="text-muted-foreground">{`共 ${total} 条,第 ${page} / ${pages} 页`}</span>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={page <= 1}
-            onClick={() => setPage(page - 1)}
-          >
-            上一页
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={page >= pages}
-            onClick={() => setPage(page + 1)}
-          >
-            下一页
-          </Button>
+            </TableHead>
+            <TableBody>
+              {list.data.items.map((r) => (
+                <TableRow key={r.id}>
+                  <Td>{formatInTz(r.at, school.tz)}</Td>
+                  <Td>{r.login_name}</Td>
+                  <Td>{r.user?.display_name ?? '—'}</Td>
+                  <Td>
+                    <Badge variant={r.result === 'success' ? 'success' : 'danger'}>
+                      {RESULT_LABEL[r.result] ?? r.result}
+                    </Badge>
+                  </Td>
+                  <Td>{r.ip ?? '—'}</Td>
+                  <Td>{browserSummary(r.user_agent)}</Td>
+                  <Td nowrap={false}>
+                    <div className="flex flex-wrap gap-x-3 gap-y-1">
+                      {r.suspicious.map((s) => (
+                        <StatusDot key={s} tone="warning">
+                          {SUSPICION_LABEL[s] ?? s}
+                        </StatusDot>
+                      ))}
+                    </div>
+                  </Td>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          {pager}
         </div>
       )}
+
+      {!hasTable && pager}
     </PageContainer>
   )
 }

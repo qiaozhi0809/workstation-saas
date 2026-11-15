@@ -88,6 +88,31 @@ function AuditLog({ tz }: { tz: string }) {
   const total = list.data?.total ?? 0
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
+  const hasTable = !list.isError && !!list.data && list.data.items.length > 0
+  const pager = total > PAGE_SIZE && (
+    <div className="flex items-center justify-end gap-2 text-sm">
+      <span className="text-muted-foreground">{`共 ${total} 条,第 ${page} / ${pages} 页`}</span>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={page <= 1}
+        onClick={() => goto(page - 1)}
+      >
+        上一页
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={page >= pages}
+        onClick={() => goto(page + 1)}
+      >
+        下一页
+      </Button>
+    </div>
+  )
+
   return (
     <PageContainer width="default">
       <PageHeader title="审计日志" />
@@ -104,84 +129,68 @@ function AuditLog({ tz }: { tz: string }) {
       ) : list.data.items.length === 0 ? (
         <EmptyState title="没有符合条件的记录" />
       ) : (
-        <Table minWidth={768} containerClassName="w-fit max-w-full">
-          <TableHead>
-            <TableRow>
-              {HEADS.map((h) => (
-                <Th key={h}>{h}</Th>
-              ))}
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {list.data.items.map((r) => {
-              const hasExtra = !!r.extra && Object.keys(r.extra).length > 0
-              const expanded = open.has(r.id)
-              return (
-                <Fragment key={r.id}>
-                  {/* 被拒只在结果列用徽章标出,整行不染色;data-failed 留给测试和筛选脚本 */}
-                  <TableRow data-failed={r.success ? 'false' : 'true'}>
-                    {/* 时间按学校时区显示,与上面的筛选区间同一口径(L270) */}
-                    <Td>{formatInTz(r.at, tz)}</Td>
-                    <Td>{r.user_name ?? '—'}</Td>
-                    <Td nowrap={false}>
-                      <span className="inline-flex items-center gap-1">
-                        {hasExtra && (
-                          <IconButton
-                            size="sm"
-                            icon={expanded ? ChevronDown : ChevronRight}
-                            aria-expanded={expanded}
-                            aria-label={`${expanded ? '收起' : '展开'} ${r.action_label}`}
-                            onClick={() => toggle(r.id)}
-                          />
-                        )}
-                        {r.action_label}
-                      </span>
-                    </Td>
-                    <Td nowrap={false}>{objectText(r)}</Td>
-                    <Td>{r.ip ?? '—'}</Td>
-                    <Td>
-                      <Badge variant={r.success ? 'success' : 'danger'}>
-                        {r.success ? '成功' : '被拒'}
-                      </Badge>
-                    </Td>
-                  </TableRow>
-                  {hasExtra && expanded && (
-                    <TableRow className="bg-muted/40">
-                      <Td colSpan={HEADS.length} nowrap={false} className="py-2">
-                        <AuditRowDetail extra={r.extra as Record<string, unknown>} />
+        <div className="flex w-fit max-w-full flex-col gap-3">
+          <Table minWidth={768} containerClassName="w-fit max-w-full">
+            <TableHead>
+              <TableRow>
+                {HEADS.map((h) => (
+                  <Th key={h}>{h}</Th>
+                ))}
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {list.data.items.map((r) => {
+                const hasExtra = !!r.extra && Object.keys(r.extra).length > 0
+                const expanded = open.has(r.id)
+                return (
+                  <Fragment key={r.id}>
+                    {/* 被拒只在结果列用徽章标出,整行不染色;data-failed 留给测试和筛选脚本 */}
+                    <TableRow data-failed={r.success ? 'false' : 'true'}>
+                      {/* 时间按学校时区显示,与上面的筛选区间同一口径(L270) */}
+                      <Td>{formatInTz(r.at, tz)}</Td>
+                      <Td>{r.user_name ?? '—'}</Td>
+                      <Td nowrap={false}>
+                        <span className="inline-flex items-center gap-1">
+                          {hasExtra ? (
+                            <IconButton
+                              size="sm"
+                              icon={expanded ? ChevronDown : ChevronRight}
+                              aria-expanded={expanded}
+                              aria-label={`${expanded ? '收起' : '展开'} ${r.action_label}`}
+                              onClick={() => toggle(r.id)}
+                            />
+                          ) : (
+                            // 与展开按钮同宽的占位:让整列操作文字左缘一致
+                            <span aria-hidden="true" className="inline-block h-8 w-8 shrink-0" />
+                          )}
+                          {r.action_label}
+                        </span>
+                      </Td>
+                      <Td nowrap={false}>{objectText(r)}</Td>
+                      <Td>{r.ip ?? '—'}</Td>
+                      <Td>
+                        <Badge variant={r.success ? 'success' : 'danger'}>
+                          {r.success ? '成功' : '被拒'}
+                        </Badge>
                       </Td>
                     </TableRow>
-                  )}
-                </Fragment>
-              )
-            })}
-          </TableBody>
-        </Table>
-      )}
-
-      {total > PAGE_SIZE && (
-        <div className="flex items-center justify-end gap-2 text-sm">
-          <span className="text-muted-foreground">{`共 ${total} 条,第 ${page} / ${pages} 页`}</span>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={page <= 1}
-            onClick={() => goto(page - 1)}
-          >
-            上一页
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={page >= pages}
-            onClick={() => goto(page + 1)}
-          >
-            下一页
-          </Button>
+                    {hasExtra && expanded && (
+                      <TableRow className="bg-muted/40">
+                        <Td colSpan={HEADS.length} nowrap={false} className="py-2">
+                          <AuditRowDetail extra={r.extra as Record<string, unknown>} />
+                        </Td>
+                      </TableRow>
+                    )}
+                  </Fragment>
+                )
+              })}
+            </TableBody>
+          </Table>
+          {pager}
         </div>
       )}
+
+      {!hasTable && pager}
     </PageContainer>
   )
 }
