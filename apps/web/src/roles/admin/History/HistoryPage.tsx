@@ -6,6 +6,7 @@ import { ApiError } from '@/shared/api/client'
 import { EmptyState } from '@/shared/components/feedback/EmptyState'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
+import { Card } from '@/shared/components/ui/card'
 import { NativeSelect } from '@/shared/components/ui/native-select'
 import { PageContainer, PageHeader } from '@/shared/components/ui/page'
 import { groupByGrade } from '../shared/groupByGrade'
@@ -78,18 +79,21 @@ export default function HistoryPage() {
             <h2 className="text-base font-medium">{grade}</h2>
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {list.map((c) => (
-                <Link
+                <Card
                   key={c.class_id}
-                  to={`/admin/history/classes/${c.class_id}?year=${yearId}`}
-                  data-slot="card"
-                  className="flex flex-col gap-1 rounded-lg bg-card p-4 text-card-foreground shadow-surface transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="relative flex flex-col gap-1 p-4 transition-colors focus-within:ring-2 focus-within:ring-ring hover:bg-accent"
                 >
-                  <span className="text-base font-medium">{c.class_name}</span>
+                  <Link
+                    to={`/admin/history/classes/${c.class_id}?year=${yearId}`}
+                    className="w-fit rounded-sm text-base font-medium after:absolute after:inset-0 after:z-10 focus-visible:outline-none"
+                  >
+                    {c.class_name}
+                  </Link>
                   <span className="text-sm text-muted-foreground">
                     {c.homeroom_name ? `班主任 ${c.homeroom_name}` : '未设班主任'}
                   </span>
                   <span className="text-sm tabular-nums text-muted-foreground">{`${c.students} 人`}</span>
-                </Link>
+                </Card>
               ))}
             </div>
           </section>

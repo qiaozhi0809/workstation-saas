@@ -64,7 +64,7 @@ export default function ScoreClassTable({
   onToggle(classId: string): void
 }) {
   return (
-    <Table aria-label="班级成绩汇总">
+    <Table aria-label="班级成绩汇总" containerClassName="w-fit max-w-full">
       <TableHead>
         <TableRow className="bg-muted/50">
           <Th>班级</Th>

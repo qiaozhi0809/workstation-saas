@@ -58,38 +58,28 @@ function ClassDetail({ month, classId }: { month: string; classId: string }) {
   if (q.data.students.length === 0)
     return <p className="py-2 text-sm text-muted-foreground">本月该班没有学生记录</p>
   return (
-    <table className="w-full text-sm">
-      <thead className="text-xs text-muted-foreground">
-        <tr>
-          <th scope="col" className="px-3 py-1 text-left font-medium">
-            姓名
-          </th>
-          <th scope="col" className="px-3 py-1 text-left font-medium">
-            学号
-          </th>
-          <th scope="col" className="whitespace-nowrap px-3 py-1 text-right font-medium">
-            请假
-          </th>
-          <th scope="col" className="whitespace-nowrap px-3 py-1 text-right font-medium">
-            缺勤
-          </th>
-          <th scope="col" className="whitespace-nowrap px-3 py-1 text-right font-medium">
-            迟到
-          </th>
-        </tr>
-      </thead>
-      <tbody>
+    <Table density="compact" containerClassName="w-full bg-transparent shadow-none">
+      <TableHead>
+        <TableRow>
+          <Th>姓名</Th>
+          <Th>学号</Th>
+          <Th numeric>请假</Th>
+          <Th numeric>缺勤</Th>
+          <Th numeric>迟到</Th>
+        </TableRow>
+      </TableHead>
+      <TableBody>
         {q.data.students.map((s) => (
-          <tr key={s.student_id} className="border-t border-border/60">
-            <td className="px-3 py-1.5">{s.name}</td>
-            <td className="px-3 py-1.5 text-muted-foreground">{s.student_no ?? '—'}</td>
-            <td className="px-3 py-1.5 text-right tabular-nums">{s.leave}</td>
-            <td className="px-3 py-1.5 text-right tabular-nums">{s.absent}</td>
-            <td className="px-3 py-1.5 text-right tabular-nums">{s.late}</td>
-          </tr>
+          <TableRow key={s.student_id}>
+            <Td>{s.name}</Td>
+            <Td className="text-muted-foreground">{s.student_no ?? '—'}</Td>
+            <Td numeric>{s.leave}</Td>
+            <Td numeric>{s.absent}</Td>
+            <Td numeric>{s.late}</Td>
+          </TableRow>
         ))}
-      </tbody>
-    </table>
+      </TableBody>
+    </Table>
   )
 }
 
@@ -102,7 +92,7 @@ export default function AttendanceClassTable({
 }) {
   const [open, setOpen] = useState<string | null>(null)
   return (
-    <Table minWidth={640}>
+    <Table minWidth={640} containerClassName="w-fit max-w-full">
       <TableHead>
         <TableRow className="bg-muted/50">
           <Th>班级</Th>

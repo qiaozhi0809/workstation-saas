@@ -73,7 +73,7 @@ export default function ClassViewPage() {
     return (
       <PageContainer width="full">
         <PageHeader title="班级" actions={backLink} />
-        <LoadingState />
+        <LoadingState variant="cards" />
       </PageContainer>
     )
 

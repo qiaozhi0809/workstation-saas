@@ -108,14 +108,15 @@ describe('全校看板', () => {
     expect(grid.className).not.toMatch(/(^|\s)(md|lg|xl|2xl):grid-cols-\d/)
   })
 
-  it('班级卡是 Card;教室与班主任各占一行,班主任不截断', async () => {
+  it('班级卡是 Card;教室与班主任各占一行,班主任各占一行', async () => {
     setup()
     const card = (await screen.findByText('三年一班')).closest('[data-class-card]') as HTMLElement
     expect(card).toHaveAttribute('data-slot', 'card')
     expect(within(card).getByText('教室 301')).toBeInTheDocument()
     const teacher = within(card).getByText('班主任 赵老师')
     expect(teacher).toHaveAttribute('data-homeroom')
-    expect(teacher.className).not.toContain('truncate')
+    // 能被 e2e 的 scrollWidth <= clientWidth 量到,不是自由折行
+    expect(teacher.className).toContain('truncate')
     // 没有班主任的班不渲染这一行
     const other = screen.getByText('三年二班').closest('[data-class-card]') as HTMLElement
     expect(other.querySelector('[data-homeroom]')).toBeNull()
@@ -128,8 +129,8 @@ describe('全校看板', () => {
     expect(within(header as HTMLElement).getByRole('tab', { name: '三年级' })).toBeInTheDocument()
   })
 
-  // L216:带监控侧栏时(≥ 1024)侧栏随滚动固定在 #main 顶部、不高于主区域(视口减 3.5rem 顶栏)并自己滚动;
-  // 卡片在 1024 宽保持两列,xl 才三列(没有侧栏时 lg 就是三列,见上一条)
+  // L216:带监控侧栏时,≥ 1536 侧栏并排在右侧,随滚动固定在 #main 顶部 24 px、不高于主区域并自己滚动;
+  // 更窄时落在班级卡下面并限宽(max-w-xl),避免单路画面撑满一屏
   it('sidebar is sticky', async () => {
     useAuthStore.setState({ user: { admin_perms: ['camera.view'] } as never })
     setup()
@@ -142,6 +143,7 @@ describe('全校看板', () => {
       '2xl:max-h-[calc(100dvh-1.5rem)]',
       '2xl:overflow-auto',
       '2xl:w-96',
+      'max-w-xl',
     )
     expect(side).not.toHaveClass('lg:sticky')
     const grid = screen.getByText('三年一班').closest('[data-class-grid]') as HTMLElement

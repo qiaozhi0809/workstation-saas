@@ -182,9 +182,12 @@ describe('往年班级列表页', () => {
     expect(g1.compareDocumentPosition(g2) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     const c1 = screen.getByRole('link', { name: /高一1班/ })
     expect(c1).toHaveAttribute('href', '/admin/history/classes/c1?year=y25')
-    expect(c1).toHaveTextContent('班主任 赵老师')
-    expect(c1).toHaveTextContent('42 人')
-    expect(screen.getByRole('link', { name: /高一2班/ })).toHaveTextContent('未设班主任')
+    const card1 = c1.closest('[data-slot="card"]')
+    expect(card1).toHaveTextContent('班主任 赵老师')
+    expect(card1).toHaveTextContent('42 人')
+    expect(
+      screen.getByRole('link', { name: /高一2班/ }).closest('[data-slot="card"]'),
+    ).toHaveTextContent('未设班主任')
     expect(screen.getByRole('link', { name: /高二1班/ })).toHaveAttribute(
       'href',
       '/admin/history/classes/c3?year=y25',
@@ -235,10 +238,11 @@ describe('往年班级列表页', () => {
     expect(adminApi.historyStudents).toHaveBeenCalledWith('c3')
   })
 
-  it('班级入口是 Card 链接,学年下拉在页头操作区', async () => {
+  it('班级入口是 Card 里的链接(名称为班名,整卡可点),学年下拉在页头操作区', async () => {
     setup()
-    const link = await screen.findByRole('link', { name: /高二1班/ })
-    expect(link).toHaveAttribute('data-slot', 'card')
+    const link = await screen.findByRole('link', { name: '高二1班' })
+    expect(link.closest('[data-slot="card"]')).not.toBeNull()
+    expect(link.className).toContain('after:absolute')
     const header = screen.getByRole('heading', { level: 1, name: '往年班级' }).closest('header')!
     expect(
       within(header as HTMLElement).getByRole('combobox', { name: '学年' }),

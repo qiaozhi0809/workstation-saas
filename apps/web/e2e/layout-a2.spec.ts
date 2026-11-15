@@ -15,6 +15,73 @@ const VIEWS = [
   { width: 375, height: 812, theme: 'light', checkTitleX: false },
 ] as const
 
+/**
+ * 联考页和往年页在种子库里可能没有数据,只剩空状态,量不到卡片、表格。
+ * 这里只改 GET 的响应(非 GET 仍由 guardReadOnly 中止),数据都是虚构的。
+ */
+async function stubExamAndHistory(page: Page) {
+  const json = (url: RegExp, body: unknown) =>
+    page.route(url, (route) =>
+      route.request().method() === 'GET' ? route.fulfill({ json: body }) : route.fallback(),
+    )
+  await json(/\/api\/v1\/admin\/grade-exams(\?|$)/, [
+    {
+      id: 'ge-a2',
+      grade_id: 'g-a2',
+      grade_name: '示例年级',
+      name: '示例期中联考',
+      exam_type: '期中',
+      date: '2026-11-03',
+      subjects: [
+        { name: '语文', full: 100 },
+        { name: '数学', full: 100 },
+      ],
+      classes: [
+        {
+          class_id: 'c-a2-1',
+          class_name: '示例一班',
+          exam_id: 'e-a2-1',
+          entered: 20,
+          expected: 40,
+        },
+        {
+          class_id: 'c-a2-2',
+          class_name: '示例二班',
+          exam_id: 'e-a2-2',
+          entered: 40,
+          expected: 40,
+        },
+      ],
+      missing_classes: [],
+    },
+  ])
+  await json(/\/api\/v1\/admin\/history\/years(\?|$)/, [
+    { id: 'y-a2', name: '2025-2026 学年', start_date: '2025-09-01', end_date: '2026-07-01' },
+  ])
+  await json(/\/api\/v1\/admin\/history\/classes\?/, [
+    {
+      class_id: 'hc-a2-1',
+      class_name: '示例一班',
+      grade_name: '示例年级',
+      homeroom_name: '示例老师',
+      students: 40,
+    },
+    {
+      class_id: 'hc-a2-2',
+      class_name: '示例二班',
+      grade_name: '示例年级',
+      homeroom_name: null,
+      students: 38,
+    },
+  ])
+  await json(/\/api\/v1\/admin\/history\/classes\/[^/?]+\/students/, {
+    students: [
+      { student_id: 'hs-1', name: '示例学生甲', student_no: '2501', status: 'promoted' },
+      { student_id: 'hs-2', name: '示例学生乙', student_no: null, status: 'graduated' },
+    ],
+  })
+}
+
 /** 页面标题出现、没有加载中、网络空闲 */
 async function settle(page: Page) {
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
@@ -39,6 +106,9 @@ for (const view of VIEWS) {
     for (const p of STATIC_PAGES) {
       test(`${p.name} meets the baseline`, async ({ page }) => {
         await guardReadOnly(page)
+        if (p.path === '/admin/grade-exams' || p.path === '/admin/history') {
+          await stubExamAndHistory(page)
+        }
         await applyTheme(page, view.theme)
         await signInAs(page, 'admin')
         await page.goto(p.path)
@@ -62,14 +132,16 @@ for (const view of VIEWS) {
 
     test('往年单班 meets the baseline', async ({ page }) => {
       await guardReadOnly(page)
+      await stubExamAndHistory(page)
       await applyTheme(page, view.theme)
       await signInAs(page, 'admin')
       await page.goto('/admin/history')
       await settle(page)
-      const link = page.locator('a[href^="/admin/history/classes/"]').first()
-      // 种子里没有往年数据时没有入口,这一页无从量起
-      test.skip((await link.count()) === 0, '没有往年班级入口')
-      const href = await link.getAttribute('href')
+      const href = await page
+        .locator('a[href^="/admin/history/classes/"]')
+        .first()
+        .getAttribute('href')
+      expect(href).toContain('/admin/history/classes/hc-a2-1')
       await page.goto(href!)
       await settle(page)
       await expectBaselineLayout(page, { checkTitleX: view.checkTitleX })
@@ -87,7 +159,7 @@ test('board class cards keep teacher names at 1280', async ({ page }) => {
     for (let i = classes.length; i < 6; i++) {
       classes.push({ ...base, id: `${base.id}-copy${i}`, name: `${base.name}${i}` })
     }
-    for (const c of classes) c.homeroom_name = '欧阳慕容老'
+    for (const c of classes) c.homeroom_name = '欧阳慕容老师'
   })
   await signInAs(page, 'admin')
   await page.goto('/admin/board')

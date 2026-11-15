@@ -45,7 +45,7 @@ function StudentSection({
         retrying={q.isFetching}
       />
     )
-  if (!q.data) return <LoadingState />
+  if (!q.data) return <LoadingState variant="table" />
   return (
     <ScoreStudentTable label={`${className} 学生成绩`} subjects={subjects} rows={q.data.students} />
   )

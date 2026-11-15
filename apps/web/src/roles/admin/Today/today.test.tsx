@@ -105,8 +105,8 @@ describe('今日关注页', () => {
   it('标题、日期星期与 KPI 计算', async () => {
     setup(view())
     expect(await screen.findByRole('heading', { level: 1, name: '今日关注' })).toBeInTheDocument()
-    // 范围放在标题旁的标签里,不再拼进标题
-    expect(screen.getByText('全校')).toBeInTheDocument()
+    // 范围放在标题旁的标签里,不再拼进标题;加载态的页头没有它,要等数据到
+    expect(await screen.findByText('全校')).toBeInTheDocument()
     expect(screen.getByText('2026-10-14 星期三')).toBeInTheDocument()
     const kpi = (name: string) =>
       screen
@@ -167,7 +167,7 @@ describe('今日关注页', () => {
   it('年级组长标题显示年级', async () => {
     setup(view({ scope_label: '三年级' }))
     expect(await screen.findByRole('heading', { level: 1, name: '今日关注' })).toBeInTheDocument()
-    expect(screen.getByText('三年级')).toBeInTheDocument()
+    expect(await screen.findByText('三年级')).toBeInTheDocument()
   })
 
   it('统计卡数值用等宽数字、字重 500', async () => {

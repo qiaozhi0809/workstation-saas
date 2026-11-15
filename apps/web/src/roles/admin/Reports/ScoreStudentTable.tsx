@@ -86,7 +86,7 @@ export default function ScoreStudentTable({
   }
 
   return (
-    <Table aria-label={label}>
+    <Table aria-label={label} containerClassName="w-fit max-w-full">
       <TableHead>
         <TableRow className="bg-muted/50">
           <Th>学号</Th>

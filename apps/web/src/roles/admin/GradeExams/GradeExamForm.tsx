@@ -6,16 +6,18 @@ import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import Modal from '@/shared/components/overlay/Modal'
 import { Button } from '@/shared/components/ui/button'
 import { Checkbox } from '@/shared/components/ui/checkbox'
+import { Field, useFormErrors } from '@/shared/components/ui/field'
 import { Input } from '@/shared/components/ui/input'
 import { SegmentedTabs } from '@/shared/components/ui/segmented-tabs'
 import type { GradeExam, GradeExamInput } from '@/shared/types/admin'
 import { EXAM_TYPES, type ExamType, type SubjectFull } from '@/shared/types/grades'
 import { STAGE_LABEL, type Stage } from '@/shared/types/school'
 import { errMsg } from '../Org/errMsg'
-import Field from '../Org/Field'
 import { invalidateTeacherExamCaches } from './teacherCache'
 
 const NAME_MAX = 30
+/** 提交时按这个顺序聚焦第一个出错的字段 */
+const FIELD_ORDER = ['name', 'date', 'subjects'] as const
 
 /** 可选科目:目录里的按目录满分;考试里已有的按考试满分;考试里有但目录没有的保留并标注 */
 interface Option extends SubjectFull {
@@ -58,7 +60,9 @@ export default function GradeExamForm({
   const [picked, setPicked] = useState<Set<string> | null>(null)
   // 编辑态已勾选科目的满分草稿(按科目名),先存字符串,提交时转数字校验;没改过的用考试 / 目录里的值(L235)
   const [fulls, setFulls] = useState<Record<string, string>>({})
+  // 服务端返回的错误;字段校验的错误在字段下方就地显示
   const [error, setError] = useState<string | null>(null)
+  const { errors, report, clear, fieldRef } = useFormErrors(FIELD_ORDER)
 
   const catalog = useQuery({
     queryKey: ['school', 'subject-catalog'],
@@ -83,6 +87,7 @@ export default function GradeExamForm({
   })
 
   const toggle = (subject: string) => {
+    clear('subjects')
     const next = new Set(selected)
     if (next.has(subject)) next.delete(subject)
     else next.add(subject)
@@ -92,15 +97,18 @@ export default function GradeExamForm({
   const submit = () => {
     const n = name.trim()
     if (!n) {
-      setError('请填写考试名称')
+      setError(null)
+      report({ name: '请填写考试名称' })
       return
     }
     if (n.length > NAME_MAX) {
-      setError(`考试名称不能超过 ${NAME_MAX} 个字`)
+      setError(null)
+      report({ name: `考试名称不能超过 ${NAME_MAX} 个字` })
       return
     }
     if (!date) {
-      setError('请选择日期')
+      setError(null)
+      report({ date: '请选择日期' })
       return
     }
     // 编辑时保持考试原有的科目顺序,新勾上的按目录序追加在后;新建时就是目录序
@@ -123,16 +131,19 @@ export default function GradeExamForm({
       const raw = fullOf(o).trim()
       const full = Number(raw)
       if (raw === '' || !validFull(full)) {
-        setError(`「${o.name}」的满分须为 1–1000 的整数`)
+        setError(null)
+        report({ subjects: `「${o.name}」的满分须为 1–1000 的整数` })
         return
       }
       subjects.push({ name: o.name, full })
     }
     if (subjects.length === 0) {
-      setError('至少选择一个科目')
+      setError(null)
+      report({ subjects: '至少选择一个科目' })
       return
     }
     setError(null)
+    report({})
     save.mutate({ grade_id: exam?.grade_id ?? gradeId, name: n, exam_type: type, date, subjects })
   }
 
@@ -152,11 +163,27 @@ export default function GradeExamForm({
           submit()
         }}
       >
-        <Field label="考试名称">
-          <Input value={name} maxLength={NAME_MAX} onChange={(e) => setName(e.target.value)} />
+        <Field label="考试名称" error={errors.name}>
+          <Input
+            ref={fieldRef('name')}
+            value={name}
+            maxLength={NAME_MAX}
+            onChange={(e) => {
+              clear('name')
+              setName(e.target.value)
+            }}
+          />
         </Field>
-        <Field label="日期">
-          <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+        <Field label="日期" error={errors.date}>
+          <Input
+            ref={fieldRef('date')}
+            type="date"
+            value={date}
+            onChange={(e) => {
+              clear('date')
+              setDate(e.target.value)
+            }}
+          />
         </Field>
 
         <div className="grid gap-1 text-sm">
@@ -164,7 +191,6 @@ export default function GradeExamForm({
           <div className="max-w-full overflow-x-auto">
             <SegmentedTabs<ExamType>
               label="考试类型"
-              size="sm"
               items={EXAM_TYPES.map((t) => ({ value: t, label: t }))}
               value={type}
               onChange={setType}
@@ -172,7 +198,13 @@ export default function GradeExamForm({
           </div>
         </div>
 
-        <div role="group" aria-label="科目" className="grid gap-2 text-sm">
+        <div
+          role="group"
+          aria-label="科目"
+          ref={fieldRef('subjects')}
+          tabIndex={-1}
+          className="grid gap-2 text-sm outline-none"
+        >
           <div className="flex items-baseline justify-between gap-2">
             <span className="text-muted-foreground">科目与满分</span>
             {stage && (
@@ -208,7 +240,10 @@ export default function GradeExamForm({
                         aria-label={`${o.name} 满分`}
                         className="h-8 w-20 text-sm text-foreground"
                         value={fullOf(o)}
-                        onChange={(e) => setFulls({ ...fulls, [o.name]: e.target.value })}
+                        onChange={(e) => {
+                          clear('subjects')
+                          setFulls({ ...fulls, [o.name]: e.target.value })
+                        }}
                       />
                     </label>
                   ) : (
@@ -223,6 +258,11 @@ export default function GradeExamForm({
             </p>
           ) : (
             <LoadingState />
+          )}
+          {errors.subjects && (
+            <p role="alert" className="text-xs text-destructive">
+              {errors.subjects}
+            </p>
           )}
           <p className="text-xs text-muted-foreground">
             可选科目来自学校设置里的科目目录;要加新科目请先去学校设置里维护目录。

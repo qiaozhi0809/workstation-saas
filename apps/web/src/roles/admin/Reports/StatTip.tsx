@@ -30,7 +30,7 @@ export default function StatTip({ text, tip }: { text: string; tip: string }) {
         }}
         className="peer -mr-2 px-2 font-normal tabular-nums"
       >
-        {text}
+        <>{text}</>
       </Button>
       <span
         id={id}

@@ -122,7 +122,7 @@ function ScoresTab({ classId }: { classId: string }) {
       />
     )
   }
-  if (!exams.data) return <LoadingState />
+  if (!exams.data) return <LoadingState variant="table" />
   if (exams.data.length === 0) return <EmptyState title="这个班没有考试记录" />
   // 接口按日期倒序,默认第一场即最近一场
   const examId = picked ?? exams.data[0].id
@@ -196,7 +196,7 @@ export default function HistoryClassPage() {
                 ← 往年班级
               </Link>
             </Button>
-            <SegmentedTabs<Tab> label="内容" size="sm" value={tab} onChange={setTab} items={TABS} />
+            <SegmentedTabs<Tab> label="内容" value={tab} onChange={setTab} items={TABS} />
           </>
         }
       />

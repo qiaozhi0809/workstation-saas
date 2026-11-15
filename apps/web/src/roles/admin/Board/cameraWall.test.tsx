@@ -177,7 +177,7 @@ describe('CameraWallMini', () => {
     const c9 = within(wall).getByTestId('camera-wall-class-c9')
     expect(c1.compareDocumentPosition(c9) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(c9.compareDocumentPosition(pub) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    // 侧栏在看板之后(窄屏时落在页面下方);有侧栏时看板少一列
+    // 侧栏在看板之后(< 1536 宽时落在班级卡下面)
     const grid = document.querySelector('[data-class-grid]')!
     expect(grid.compareDocumentPosition(wall) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(grid).toHaveClass('grid-cols-[repeat(auto-fill,minmax(17rem,1fr))]')

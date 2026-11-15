@@ -33,7 +33,7 @@ export default function ClassCard({ cls }: { cls: BoardClass }) {
             <p className="truncate text-sm text-muted-foreground">{`教室 ${cls.room}`}</p>
           )}
           {cls.homeroom_name && (
-            <p data-homeroom className="text-sm text-muted-foreground">
+            <p data-homeroom className="truncate text-sm text-muted-foreground">
               {`班主任 ${cls.homeroom_name}`}
             </p>
           )}

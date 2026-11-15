@@ -103,7 +103,8 @@ describe('月度考勤报告', () => {
   it('默认学校时区里的本月(L43),左右箭头与年级筛选改变请求参数', async () => {
     setup()
     expect(await screen.findByRole('heading', { name: '月度考勤报告' })).toBeInTheDocument()
-    expect(screen.getByText('只统计班主任确认过考勤的日子;迟到算出勤')).toBeInTheDocument()
+    // 标题在加载态的页头里就有了,说明文字要等学校时区就绪后才出现
+    expect(await screen.findByText('只统计班主任确认过考勤的日子;迟到算出勤')).toBeInTheDocument()
     await waitFor(() => expect(adminApi.attendanceReport).toHaveBeenLastCalledWith('2026-11', null))
     expect(screen.getByText('2026年11月')).toBeInTheDocument()
     // 只请求过一次:不是先按浏览器月份查一遍再改

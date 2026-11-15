@@ -50,7 +50,6 @@ export default function BoardPage() {
             <div className="max-w-full overflow-x-auto">
               <SegmentedTabs
                 label="年级"
-                size="sm"
                 items={d.grades.map((g) => ({ value: g.id, label: g.name }))}
                 value={active ?? ''}
                 onChange={setGradeId}
@@ -77,7 +76,7 @@ export default function BoardPage() {
         {canWatch && (
           // ≥ 1536 侧栏随滚动固定在 #main(滚动容器)顶部 24 px 处,高度不超过主区域,
           // 班级列表多时在侧栏内部滚动(L216);更窄时在班级卡下面,按内容高度排
-          <div className="w-full 2xl:sticky 2xl:top-6 2xl:max-h-[calc(100dvh-1.5rem)] 2xl:w-96 2xl:shrink-0 2xl:overflow-auto">
+          <div className="w-full max-w-xl 2xl:sticky 2xl:top-6 2xl:max-h-[calc(100dvh-1.5rem)] 2xl:w-96 2xl:max-w-none 2xl:shrink-0 2xl:overflow-auto">
             <CameraWallMini gradeId={active} />
           </div>
         )}

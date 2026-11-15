@@ -204,7 +204,6 @@ export default function GradeExamsPage() {
               <div className="max-w-full overflow-x-auto">
                 <SegmentedTabs
                   label="年级"
-                  size="sm"
                   value={gradeId ?? ''}
                   items={list.map((g) => ({ value: g.id, label: g.name }))}
                   onChange={setSel}

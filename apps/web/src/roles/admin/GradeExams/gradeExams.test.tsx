@@ -126,7 +126,7 @@ it('exam actions: delete is a destructive link-style button, class names are not
   expect(del.className).toContain('text-destructive')
   expect(del.className).toContain('underline-offset-4')
   const label = within(row()).getByText('三年一班 20/40')
-  expect(label.className).not.toContain('w-28')
+  expect(label.classList.contains('w-28')).toBe(false)
   expect(label).toHaveAttribute('title', '三年一班 20/40')
 })
 
