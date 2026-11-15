@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { adminApi } from '@/shared/api/admin'
 import { ApiError } from '@/shared/api/client'
+import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { toast } from '@/shared/components/Toast'
 import { Badge } from '@/shared/components/ui/badge'
 import { Button } from '@/shared/components/ui/button'
@@ -57,7 +58,7 @@ export default function UpgradeLatestCard({ onRolledBack }: { onRolledBack?(): v
             最近一次升级加载失败
           </p>
         ) : up === undefined ? (
-          <p className="text-muted-foreground">加载中…</p>
+          <LoadingState className="justify-start py-1" />
         ) : up === null ? (
           <p className="text-muted-foreground">还没有执行过学年升级</p>
         ) : (

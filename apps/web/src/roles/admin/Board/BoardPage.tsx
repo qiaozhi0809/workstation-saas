@@ -5,8 +5,8 @@ import { adminApi } from '@/shared/api/admin'
 import { EmptyState } from '@/shared/components/feedback/EmptyState'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
+import { PageContainer, PageHeader } from '@/shared/components/ui/page'
 import { SegmentedTabs } from '@/shared/components/ui/segmented-tabs'
-import { cn } from '@/shared/lib/utils'
 import { useAuthStore } from '@/shared/stores/auth'
 import CameraWallMini from './CameraWallMini'
 import ClassCard from './ClassCard'
@@ -25,24 +25,28 @@ export default function BoardPage() {
 
   if (q.isError)
     return (
-      <ErrorState
-        title="加载失败"
-        onRetry={() => void q.refetch()}
-        retrying={q.isFetching}
-        className="p-6"
-      />
+      <PageContainer width="full">
+        <PageHeader title="全校看板" />
+        <ErrorState title="加载失败" onRetry={() => void q.refetch()} retrying={q.isFetching} />
+      </PageContainer>
     )
-  if (!q.data) return <LoadingState />
+  if (!q.data)
+    return (
+      <PageContainer width="full">
+        <PageHeader title="全校看板" />
+        <LoadingState variant="cards" />
+      </PageContainer>
+    )
   const d = q.data
   const active = gradeId ?? d.grade_id
 
-  // ≥ 1024 时侧栏固定宽度放右侧(看板少一列),更窄时侧栏落到页面下方
+  // 侧栏壳在 1280 宽占掉 264,监控放右侧会把班级卡挤成一列:≥ 1536 才并排,更窄时监控落在班级卡下面
   return (
-    <div className="flex flex-col gap-4 p-4 md:p-6 lg:flex-row lg:items-start">
-      <div className="flex min-w-0 flex-1 flex-col gap-4">
-        <header className="flex flex-col gap-3">
-          <h1 className="text-xl font-semibold">全校看板</h1>
-          {d.grades.length > 0 && (
+    <PageContainer width="full">
+      <PageHeader
+        title="全校看板"
+        actions={
+          d.grades.length > 0 ? (
             <div className="max-w-full overflow-x-auto">
               <SegmentedTabs
                 label="年级"
@@ -51,32 +55,32 @@ export default function BoardPage() {
                 onChange={setGradeId}
               />
             </div>
+          ) : undefined
+        }
+      />
+      <div className="flex flex-col gap-6 2xl:flex-row 2xl:items-start">
+        <div className="min-w-0 flex-1">
+          {d.classes.length === 0 ? (
+            <EmptyState title="暂无班级" />
+          ) : (
+            <div
+              data-class-grid
+              className="grid grid-cols-[repeat(auto-fill,minmax(17rem,1fr))] gap-6"
+            >
+              {d.classes.map((c) => (
+                <ClassCard key={c.id} cls={c} />
+              ))}
+            </div>
           )}
-        </header>
-        {d.classes.length === 0 ? (
-          <EmptyState title="暂无班级" />
-        ) : (
-          // 带侧栏时 1024 宽只剩约 640 px 给卡片,保持两列到 xl 才三列(L216)
-          <div
-            data-class-grid
-            className={cn(
-              'grid grid-cols-1 gap-4 md:grid-cols-2',
-              canWatch ? 'xl:grid-cols-3 2xl:grid-cols-4' : 'lg:grid-cols-3 xl:grid-cols-4',
-            )}
-          >
-            {d.classes.map((c) => (
-              <ClassCard key={c.id} cls={c} />
-            ))}
+        </div>
+        {canWatch && (
+          // ≥ 1536 侧栏随滚动固定在 #main(滚动容器)顶部 24 px 处,高度不超过主区域,
+          // 班级列表多时在侧栏内部滚动(L216);更窄时在班级卡下面,按内容高度排
+          <div className="w-full max-w-xl 2xl:sticky 2xl:top-6 2xl:max-h-[calc(100dvh-1.5rem)] 2xl:w-96 2xl:max-w-none 2xl:shrink-0 2xl:overflow-auto">
+            <CameraWallMini gradeId={active} />
           </div>
         )}
       </div>
-      {canWatch && (
-        // ≥ 1024 侧栏随滚动固定在 #main(滚动容器)顶部;高度不超过主区域(视口减去 3.5rem 顶栏,
-        // 否则底部 56 px 被裁掉),班级列表多时在侧栏内部滚动(L216)
-        <div className="w-full lg:sticky lg:top-0 lg:max-h-[calc(100dvh-3.5rem)] lg:w-80 lg:shrink-0 lg:overflow-auto xl:w-96">
-          <CameraWallMini gradeId={active} />
-        </div>
-      )}
-    </div>
+    </PageContainer>
   )
 }

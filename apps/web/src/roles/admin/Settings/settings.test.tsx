@@ -361,9 +361,12 @@ it('alerts loudly when there has never been a backup', async () => {
   asAdmin(['settings.manage'])
   vi.mocked(adminApi.systemInfo).mockResolvedValue({ ...INFO, last_backup: null })
   await renderPage()
-  const alert = await screen.findByRole('alert')
-  expect(alert).toHaveTextContent('从未备份,请检查定时任务')
-  expect(alert).toHaveClass('border-destructive')
+  const alert = await screen.findByText('从未备份,请检查定时任务')
+  // 备份过期是警示不是错误:role=status + 警示色,不再是红色 alert
+  expect(alert).toHaveAttribute('role', 'status')
+  expect(alert).toHaveClass('text-warning')
+  expect(alert).not.toHaveClass('border-destructive')
+  expect(screen.queryByRole('alert')).toBeNull()
 })
 
 it('alerts when the last backup is older than 48 hours, with the age in days', async () => {
@@ -374,9 +377,10 @@ it('alerts when the last backup is older than 48 hours, with the age in days', a
     last_backup: { at, file: 'f', size_bytes: 1, caddy: null },
   })
   await renderPage()
-  const alert = await screen.findByRole('alert')
-  expect(alert).toHaveTextContent('上次备份是 5 天前,请检查定时任务')
-  expect(alert).toHaveClass('border-destructive')
+  const alert = await screen.findByText('上次备份是 5 天前,请检查定时任务')
+  expect(alert).toHaveAttribute('role', 'status')
+  expect(alert).toHaveClass('text-warning')
+  expect(screen.queryByRole('alert')).toBeNull()
 })
 
 it('does not alert at 30 hours, alerts just past 48 hours', async () => {
@@ -388,7 +392,6 @@ it('does not alert at 30 hours, alerts just past 48 hours', async () => {
   })
   await renderPage()
   await screen.findByText('0.7.0')
-  expect(screen.queryByRole('alert')).toBeNull()
   expect(screen.queryByText(/请检查定时任务/)).toBeNull()
   cleanup()
   vi.mocked(adminApi.systemInfo).mockResolvedValue({
@@ -396,7 +399,10 @@ it('does not alert at 30 hours, alerts just past 48 hours', async () => {
     last_backup: { at: ago(49), file: 'f', size_bytes: 1, caddy: null },
   })
   await renderPage()
-  expect(await screen.findByRole('alert')).toHaveTextContent('上次备份是 2 天前,请检查定时任务')
+  expect(await screen.findByText('上次备份是 2 天前,请检查定时任务')).toHaveAttribute(
+    'role',
+    'status',
+  )
 })
 
 // 审查 Minor 5:备份时间解析不了时不能显示"NaN 天前"
@@ -407,8 +413,8 @@ it('shows a neutral notice when the last backup time cannot be parsed', async ()
     last_backup: { at: 'not-a-date', file: 'f', size_bytes: 1, caddy: null },
   })
   await renderPage()
-  const alert = await screen.findByRole('alert')
-  expect(alert).toHaveTextContent('上次备份时间无法识别,请检查备份记录')
+  const alert = await screen.findByText('上次备份时间无法识别,请检查备份记录')
+  expect(alert).toHaveAttribute('role', 'status')
   expect(alert).not.toHaveTextContent('NaN')
 })
 
@@ -559,19 +565,30 @@ it('grading card validates', async () => {
   const save = card.getByRole('button', { name: '保存及格线' })
   expect(save).toBeDisabled() // 没改过
 
+  // 非法输入不禁用按钮:点保存时就地报错并聚焦出问题的那一格,不发请求
+  const tryInvalid = (expected: string, focus: string) => {
+    expect(save).toBeEnabled()
+    fireEvent.click(save)
+    const alert = card.getByRole('alert')
+    expect(alert).toHaveTextContent(expected)
+    const field = card.getByLabelText(focus)
+    expect(field).toHaveFocus()
+    expect(field).toHaveAttribute('aria-invalid', 'true')
+    expect(field).toHaveAttribute('aria-describedby', alert.id)
+  }
   // 优秀线不高于及格线
   fireEvent.change(card.getByLabelText('及格线(%)'), { target: { value: '85' } })
-  expect(card.getByRole('alert')).toHaveTextContent('优秀线要高于及格线')
-  expect(save).toBeDisabled()
+  expect(card.queryByRole('alert')).toBeNull() // 没点保存之前不报
+  tryInvalid('优秀线要高于及格线', '优秀线(%)')
   // 越界
   fireEvent.change(card.getByLabelText('及格线(%)'), { target: { value: '20' } })
-  expect(card.getByRole('alert')).toHaveTextContent('及格线要在 30%–95% 之间的整数')
+  expect(card.queryByRole('alert')).toBeNull() // 再改就先收起旧提示
+  tryInvalid('及格线要在 30%–95% 之间的整数', '及格线(%)')
   fireEvent.change(card.getByLabelText('及格线(%)'), { target: { value: '70' } })
   fireEvent.change(card.getByLabelText('优秀线(%)'), { target: { value: '101' } })
-  expect(card.getByRole('alert')).toHaveTextContent('优秀线要在 40%–100% 之间的整数')
+  tryInvalid('优秀线要在 40%–100% 之间的整数', '优秀线(%)')
   fireEvent.change(card.getByLabelText('优秀线(%)'), { target: { value: '90.5' } })
-  expect(card.getByRole('alert')).toHaveTextContent('优秀线要在 40%–100% 之间的整数')
-  expect(save).toBeDisabled()
+  tryInvalid('优秀线要在 40%–100% 之间的整数', '优秀线(%)')
   expect(schoolApi.saveGrading).not.toHaveBeenCalled()
 
   // 合法:发两位小数的比例,保存后 PUT 的返回值直接进 ['school','grading'] 缓存
@@ -743,4 +760,51 @@ it('shows the backend message when saving the catalog fails', async () => {
   fireEvent.click(card.getByRole('button', { name: '删除 数学' }))
   fireEvent.click(card.getByRole('button', { name: '保存科目目录' }))
   expect(await card.findByText('科目名重复(后端)')).toBeInTheDocument()
+})
+
+it('tag pool buttons are real 32px icon buttons and chips are not pills', async () => {
+  await renderPage()
+  const chip = list().querySelector('[data-tag="近视"]') as HTMLElement
+  expect(chip.className).toContain('rounded-sm')
+  expect(chip.className).not.toContain('rounded-full')
+  for (const name of ['上移 近视', '下移 近视', '删除 近视']) {
+    const btn = within(chip).getByRole('button', { name })
+    expect(btn.className).toContain('h-8')
+    expect(btn.className).toContain('w-8')
+  }
+})
+
+it('save buttons are ghost until something changed, then primary', async () => {
+  await renderPage()
+  const save = screen.getByRole('button', { name: '保存标签池' })
+  expect(save.className).toContain('ghost')
+  expect(save).toBeDisabled()
+  fireEvent.click(screen.getByRole('button', { name: '下移 重点关注' }))
+  expect(screen.getByRole('button', { name: '保存标签池' }).className).toContain('primary')
+  expect(screen.getByRole('button', { name: '保存标签池' })).toBeEnabled()
+})
+
+it('settings switches keep their switch role and use the shared Switch', async () => {
+  await renderPage()
+  const sw = await screen.findByRole('switch', { name: '本周之星' })
+  expect(sw).toHaveAttribute('type', 'checkbox')
+  expect(sw.closest('label')).not.toBeNull()
+  expect(screen.getAllByRole('switch')).toHaveLength(9)
+})
+
+it('security card reports a bad min length in place on save instead of disabling it', async () => {
+  await renderPage()
+  const card = await screen.findByRole('group', { name: '账号安全' })
+  const input = within(card).getByLabelText('密码最短长度')
+  fireEvent.change(input, { target: { value: '4' } })
+  const save = within(card).getByRole('button', { name: '保存安全设置' })
+  expect(save).toBeEnabled()
+  expect(within(card).queryByRole('alert')).toBeNull()
+  fireEvent.click(save)
+  const alert = within(card).getByRole('alert')
+  expect(alert).toHaveTextContent('8 到 32')
+  expect(input).toHaveFocus()
+  expect(input).toHaveAttribute('aria-invalid', 'true')
+  expect(input).toHaveAttribute('aria-describedby', alert.id)
+  expect(adminApi.saveSecuritySettings).not.toHaveBeenCalled()
 })

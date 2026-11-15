@@ -4,7 +4,7 @@ import { ApiError } from '@/shared/api/client'
 import { timetableApi } from '@/shared/api/timetable'
 import { toast } from '@/shared/components/Toast'
 import { Button } from '@/shared/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card'
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/shared/components/ui/card'
 import { Input } from '@/shared/components/ui/input'
 import { NativeSelect } from '@/shared/components/ui/native-select'
 import type { Period } from '@/shared/types/timetable'
@@ -128,7 +128,8 @@ export default function PeriodsEditor({ periods }: { periods: Period[] }) {
                 第
                 <NativeSelect
                   aria-label={`第 ${p.no} 节的编号`}
-                  className="h-8 w-16"
+                  controlSize="sm"
+                  className="w-16"
                   value={p.no}
                   onChange={(e) => update(i, { no: Number(e.target.value) })}
                 >
@@ -144,7 +145,8 @@ export default function PeriodsEditor({ periods }: { periods: Period[] }) {
                 type="time"
                 step={60}
                 aria-label={`第 ${p.no} 节开始时间`}
-                className="h-8 w-28"
+                controlSize="sm"
+                className="w-28"
                 value={p.starts_at}
                 onChange={(e) => update(i, { starts_at: e.target.value })}
               />
@@ -153,7 +155,8 @@ export default function PeriodsEditor({ periods }: { periods: Period[] }) {
                 type="time"
                 step={60}
                 aria-label={`第 ${p.no} 节结束时间`}
-                className="h-8 w-28"
+                controlSize="sm"
+                className="w-28"
                 value={p.ends_at}
                 onChange={(e) => update(i, { ends_at: e.target.value })}
               />
@@ -194,14 +197,21 @@ export default function PeriodsEditor({ periods }: { periods: Period[] }) {
           >
             添加节次
           </Button>
-          <span className="mr-auto text-xs text-muted-foreground">
+          <span className="text-xs text-muted-foreground">
             最多 {MAX_PERIODS} 节;被课表用到的节次不能删除
           </span>
-          <Button type="button" disabled={busy || draft === null} onClick={() => void save()}>
-            保存作息
-          </Button>
         </div>
       </CardContent>
+      <CardFooter className="justify-end">
+        <Button
+          type="button"
+          variant={draft === null ? 'ghost' : 'default'}
+          disabled={busy || draft === null}
+          onClick={() => void save()}
+        >
+          保存作息
+        </Button>
+      </CardFooter>
     </Card>
   )
 }

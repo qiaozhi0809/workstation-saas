@@ -69,6 +69,15 @@ describe('单班只读页', () => {
     expect(within(sum).getByRole('button', { name: /张小三/ })).toHaveTextContent('迟到')
   })
 
+  it('出勤侧栏是 Card,缺勤行按钮不再是手写样式', async () => {
+    setup()
+    const sum = await screen.findByRole('region', { name: '今日考勤' })
+    expect(sum).toHaveAttribute('data-slot', 'card')
+    const row = within(sum).getByRole('button', { name: /李小二/ })
+    expect(row.className).toContain('underline-offset-4')
+    expect(row.className).not.toContain('text-left text-sm')
+  })
+
   it('座位带考勤小牌,点座位打开档案抽屉', async () => {
     setup()
     const seat = await screen.findByRole('button', { name: /李小二，第1排第2列，缺/ })

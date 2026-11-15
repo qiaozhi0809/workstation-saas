@@ -4,6 +4,8 @@ import { useStudentDrawer } from '@/roles/teacher/StudentProfile/useStudentDrawe
 import { adminApi } from '@/shared/api/admin'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
+import { Badge } from '@/shared/components/ui/badge'
+import { PageContainer, PageHeader } from '@/shared/components/ui/page'
 import { weekdayCN } from '@/shared/lib/date'
 import { useAuthStore } from '@/shared/stores/auth'
 import { AbsenteeList } from './AbsenteeList'
@@ -17,7 +19,7 @@ import { WeekReviews } from './WeekReviews'
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="text-base font-semibold">{title}</h2>
+      <h2 className="text-base font-medium">{title}</h2>
       {children}
     </section>
   )
@@ -36,31 +38,34 @@ export default function TodayPage() {
 
   if (!canViewSchool)
     return (
-      <div className="mx-auto flex max-w-6xl flex-col gap-6 p-4 md:p-6">
-        <header className="flex flex-col gap-1">
-          <h1 className="text-xl font-semibold">今日关注</h1>
-        </header>
+      <PageContainer width="default">
+        <PageHeader title="今日关注" />
         <SetupChecklist />
-      </div>
+      </PageContainer>
     )
   if (q.isError)
     return (
-      <ErrorState
-        title="加载失败"
-        onRetry={() => void q.refetch()}
-        retrying={q.isFetching}
-        className="p-6"
-      />
+      <PageContainer width="default">
+        <PageHeader title="今日关注" />
+        <ErrorState title="加载失败" onRetry={() => void q.refetch()} retrying={q.isFetching} />
+      </PageContainer>
     )
-  if (!q.data) return <LoadingState />
+  if (!q.data)
+    return (
+      <PageContainer width="default">
+        <PageHeader title="今日关注" />
+        <LoadingState variant="cards" />
+      </PageContainer>
+    )
   const d = q.data
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 p-4 md:p-6">
-      <header className="flex flex-col gap-1">
-        <h1 className="text-xl font-semibold">{`今日关注 · ${d.scope_label}`}</h1>
-        <p className="text-sm text-muted-foreground">{`${d.date} ${weekdayCN(d.date)}`}</p>
-      </header>
+    <PageContainer width="default">
+      <PageHeader
+        title="今日关注"
+        description={`${d.date} ${weekdayCN(d.date)}`}
+        meta={<Badge variant="secondary">{d.scope_label}</Badge>}
+      />
       {/* 开学准备清单:只有 org.manage / settings.manage 看得到,全部完成后折叠成一行 */}
       <SetupChecklist />
       <KpiRow totals={d.totals} />
@@ -80,6 +85,6 @@ export default function TodayPage() {
         <WeekReviews data={d.week_reviews} />
       </Section>
       {studentId && <StudentProfileDrawer key={studentId} studentId={studentId} />}
-    </div>
+    </PageContainer>
   )
 }

@@ -6,7 +6,7 @@ import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { toast } from '@/shared/components/Toast'
 import { Button } from '@/shared/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card'
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/shared/components/ui/card'
 import { downloadBlob } from '@/shared/lib/download'
 import { useAuthStore } from '@/shared/stores/auth'
 import type { SystemInfo } from '@/shared/types/admin'
@@ -90,8 +90,8 @@ export default function SystemCard() {
       <div className="space-y-3">
         {alert && (
           <p
-            role="alert"
-            className="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive"
+            role="status"
+            className="rounded-md bg-warning/10 p-3 text-sm font-medium text-warning"
           >
             {alert}
           </p>
@@ -108,10 +108,7 @@ export default function SystemCard() {
         </dl>
         {info.last_backup?.caddy === 'skipped' && (
           // web 容器长期停机时每一份备份都不含网关(含 CA 私钥)数据,这里是管理员唯一能看出来的地方(L277)
-          <p
-            role="status"
-            className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning"
-          >
+          <p role="status" className="rounded-md bg-warning/10 p-3 text-sm text-warning">
             上次备份未包含网关数据(当时网关未运行)
           </p>
         )}
@@ -129,12 +126,12 @@ export default function SystemCard() {
         <p className="text-xs text-muted-foreground">
           诊断包不含学生、成绩等业务数据,可以发给技术支持
         </p>
-        <div className="flex justify-end">
-          <Button type="button" disabled={busy} onClick={() => void exportDiag()}>
-            导出诊断信息
-          </Button>
-        </div>
       </CardContent>
+      <CardFooter className="justify-end">
+        <Button type="button" variant="outline" disabled={busy} onClick={() => void exportDiag()}>
+          导出诊断信息
+        </Button>
+      </CardFooter>
     </Card>
   )
 }

@@ -14,7 +14,7 @@ export default function DeskSummary({ cls }: { cls: ClassAdmin }) {
           <li>{`每桌 ${cls.desk_size} 人`}</li>
           <li>{`排列方式:${cls.seat_layout === 'auto' ? '按学号自动排' : '手动排'}`}</li>
         </ul>
-        <div className="h-48 min-w-0 overflow-hidden rounded-md border">
+        <div className="h-48 min-w-0 overflow-hidden rounded-md bg-muted">
           <ClassroomMap
             mode="mini"
             rows={cls.seat_rows}

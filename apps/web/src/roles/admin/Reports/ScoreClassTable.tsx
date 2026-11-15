@@ -1,4 +1,13 @@
-import { cn } from '@/shared/lib/utils'
+import { Button } from '@/shared/components/ui/button'
+import {
+  Table,
+  TableBody,
+  TableFoot,
+  TableHead,
+  TableRow,
+  Td,
+  Th,
+} from '@/shared/components/ui/table'
 import type { ScoreSummary, SubjectStat, TotalStat } from '@/shared/types/admin'
 import StatTip from './StatTip'
 
@@ -24,8 +33,6 @@ function subjectText(s: SubjectStat, view: ScoreView) {
 // 总分没有及格率 / 优秀率,只在平均分视图里显示
 const totalText = (t: TotalStat, view: ScoreView) => (view === 'avg' ? fmtAvg(t.avg) : DASH)
 
-const cell = 'px-3 py-2 text-right tabular-nums'
-
 // 按科目名取统计,不依赖数组顺序与表头一致
 const byName = (stats: SubjectStat[], name: string) => stats.find((s) => s.subject === name)
 
@@ -37,11 +44,11 @@ function ValueCell({
   text: string
   stat: { max: number | null; min: number | null; count: number }
 }) {
-  return <td className={cell}>{text === DASH ? DASH : <StatTip text={text} tip={tip(stat)} />}</td>
+  return <Td numeric>{text === DASH ? DASH : <StatTip text={text} tip={tip(stat)} />}</Td>
 }
 
 function StatCell({ stat, view }: { stat: SubjectStat | undefined; view: ScoreView }) {
-  if (!stat) return <td className={cell}>{DASH}</td>
+  if (!stat) return <Td numeric>{DASH}</Td>
   return <ValueCell text={subjectText(stat, view)} stat={stat} />
 }
 
@@ -57,56 +64,54 @@ export default function ScoreClassTable({
   onToggle(classId: string): void
 }) {
   return (
-    <div className="max-w-full overflow-x-auto rounded-lg border">
-      <table aria-label="班级成绩汇总" className="w-full min-w-max border-collapse text-sm">
-        <thead>
-          <tr className="border-b bg-muted/50 text-muted-foreground">
-            <th scope="col" className="px-3 py-2 text-left font-medium">
-              班级
-            </th>
-            {summary.subjects.map((s) => (
-              <th key={s.name} scope="col" className={cn(cell, 'font-medium')}>
-                {s.name}
-              </th>
-            ))}
-            <th scope="col" className={cn(cell, 'font-medium')}>
-              总分
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {summary.classes.map((c) => {
-            const open = c.class_id === openClassId
-            return (
-              <tr key={c.class_id} className="border-b">
-                <th scope="row" className="px-3 py-2 text-left font-medium">
-                  <button
-                    type="button"
-                    aria-expanded={open}
-                    onClick={() => onToggle(c.class_id)}
-                    className="rounded text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    {c.class_name}
-                  </button>
-                </th>
-                {summary.subjects.map((h) => (
-                  <StatCell key={h.name} stat={byName(c.subjects, h.name)} view={view} />
-                ))}
-                <ValueCell text={totalText(c.total, view)} stat={c.total} />
-              </tr>
-            )
-          })}
-          <tr className="bg-muted/30 font-medium">
-            <th scope="row" className="px-3 py-2 text-left">
-              全年级
-            </th>
-            {summary.subjects.map((h) => (
-              <StatCell key={h.name} stat={byName(summary.grade.subjects, h.name)} view={view} />
-            ))}
-            <ValueCell text={totalText(summary.grade.total, view)} stat={summary.grade.total} />
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    <Table aria-label="班级成绩汇总" containerClassName="w-fit max-w-full">
+      <TableHead>
+        <TableRow className="bg-muted/50">
+          <Th>班级</Th>
+          {summary.subjects.map((s) => (
+            <Th key={s.name} numeric>
+              {s.name}
+            </Th>
+          ))}
+          <Th numeric>总分</Th>
+        </TableRow>
+      </TableHead>
+      <TableBody>
+        {summary.classes.map((c) => {
+          const open = c.class_id === openClassId
+          return (
+            <TableRow key={c.class_id}>
+              <Th scope="row" className="text-sm font-medium text-foreground">
+                <Button
+                  type="button"
+                  variant="link"
+                  size="sm"
+                  aria-expanded={open}
+                  onClick={() => onToggle(c.class_id)}
+                  className="-ml-3"
+                >
+                  {c.class_name}
+                </Button>
+              </Th>
+              {summary.subjects.map((h) => (
+                <StatCell key={h.name} stat={byName(c.subjects, h.name)} view={view} />
+              ))}
+              <ValueCell text={totalText(c.total, view)} stat={c.total} />
+            </TableRow>
+          )
+        })}
+      </TableBody>
+      <TableFoot>
+        <TableRow className="bg-muted/30">
+          <Th scope="row" className="text-sm font-medium text-foreground">
+            全年级
+          </Th>
+          {summary.subjects.map((h) => (
+            <StatCell key={h.name} stat={byName(summary.grade.subjects, h.name)} view={view} />
+          ))}
+          <ValueCell text={totalText(summary.grade.total, view)} stat={summary.grade.total} />
+        </TableRow>
+      </TableFoot>
+    </Table>
   )
 }

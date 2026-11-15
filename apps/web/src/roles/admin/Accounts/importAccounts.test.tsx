@@ -195,3 +195,13 @@ it('offers the CSV download even when only one account was imported', async () =
   fireEvent.click(within(dlg).getByRole('button', { name: '下载 CSV' }))
   expect(vi.mocked(downloadText).mock.calls[0][1]).toContain('Pw1aaaaaaa')
 })
+
+it('reports an empty CSV in place on 预览 instead of disabling it', async () => {
+  await openImport()
+  const preview = screen.getByRole('button', { name: '预览' })
+  expect(preview).toBeEnabled()
+  fireEvent.click(preview)
+  expect(await screen.findByText('请先粘贴或选择 CSV')).toBeInTheDocument()
+  expect(screen.getByLabelText('粘贴 CSV 内容')).toHaveFocus()
+  expect(adminApi.importPreview).not.toHaveBeenCalled()
+})

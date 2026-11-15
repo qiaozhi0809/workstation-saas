@@ -2,8 +2,8 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { adminApi } from '@/shared/api/admin'
 import { Button } from '@/shared/components/ui/button'
-import { Card, CardContent } from '@/shared/components/ui/card'
-import { cn } from '@/shared/lib/utils'
+import { Card, CardContent, CardFooter } from '@/shared/components/ui/card'
+import { PageContainer, PageHeader } from '@/shared/components/ui/page'
 import ConfirmBox from '../Org/ConfirmBox'
 import { errMsg } from '../Org/errMsg'
 import { isStale, problemOf, stepOfSection, type Problem, type StepKey } from './errors'
@@ -136,14 +136,11 @@ export default function UpgradePage() {
   const stepProps = plan && { plan, edit, problem, nameOf, remember: d.rememberNames }
 
   return (
-    <div className="grid gap-4 p-4">
-      <h1 className="text-xl font-semibold">学年升级</h1>
+    <PageContainer width="narrow">
+      <PageHeader title="学年升级" />
       <UpgradeLatestCard onRolledBack={() => setDone(false)} />
       {done && (
-        <p
-          role="status"
-          className="rounded-md border border-success/40 bg-success/10 px-3 py-2 text-sm"
-        >
+        <p role="status" className="rounded-md bg-success/10 p-3 text-sm text-success">
           升级已执行,新学年已生效
         </p>
       )}
@@ -166,8 +163,8 @@ export default function UpgradePage() {
       </nav>
       {(stale || draftOld) && (
         <div
-          role="alert"
-          className="flex flex-wrap items-center gap-3 rounded-md border border-destructive px-3 py-2 text-sm text-destructive"
+          role="status"
+          className="flex flex-wrap items-center gap-3 rounded-md bg-warning/10 p-3 text-sm text-warning"
         >
           <span>{stale ? '方案已过期,请重新生成' : '草稿基于旧学年,请重新生成'}</span>
           <Button
@@ -191,7 +188,7 @@ export default function UpgradePage() {
         </p>
       )}
       <Card>
-        <CardContent className={cn('pt-6')}>
+        <CardContent className="pt-6">
           {step === 'year' && (
             <StepYear
               year={draft.year}
@@ -231,29 +228,30 @@ export default function UpgradePage() {
             />
           )}
         </CardContent>
+        <CardFooter className="flex-wrap gap-2">
+          <Button
+            variant="ghost"
+            disabled={
+              plan === null && !draft.year.name && !draft.year.start_date && !draft.year.end_date
+            }
+            onClick={() => setAskDiscard(true)}
+          >
+            放弃草稿
+          </Button>
+          <div className="ml-auto flex gap-2">
+            <Button variant="outline" disabled={idx <= 0} onClick={() => goto(STEPS[idx - 1].key)}>
+              上一步
+            </Button>
+            <Button
+              variant="outline"
+              disabled={plan === null || idx >= STEPS.length - 1}
+              onClick={() => goto(STEPS[idx + 1].key)}
+            >
+              下一步
+            </Button>
+          </div>
+        </CardFooter>
       </Card>
-      <div className="flex flex-wrap items-center gap-2">
-        <Button variant="outline" disabled={idx <= 0} onClick={() => goto(STEPS[idx - 1].key)}>
-          上一步
-        </Button>
-        <Button
-          variant="outline"
-          disabled={plan === null || idx >= STEPS.length - 1}
-          onClick={() => goto(STEPS[idx + 1].key)}
-        >
-          下一步
-        </Button>
-        <Button
-          variant="ghost"
-          className="ml-auto"
-          disabled={
-            plan === null && !draft.year.name && !draft.year.start_date && !draft.year.end_date
-          }
-          onClick={() => setAskDiscard(true)}
-        >
-          放弃草稿
-        </Button>
-      </div>
       <ConfirmBox
         open={askRegen}
         title="重新生成建议"
@@ -279,6 +277,6 @@ export default function UpgradePage() {
       >
         <p>草稿方案将被清除,无法恢复</p>
       </ConfirmBox>
-    </div>
+    </PageContainer>
   )
 }

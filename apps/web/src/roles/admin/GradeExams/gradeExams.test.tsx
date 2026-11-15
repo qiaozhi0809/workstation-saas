@@ -101,6 +101,35 @@ const renderPage = async () => {
 }
 const row = () => screen.getByRole('listitem', { name: '十月联考' })
 
+it('exam type is a segmented tab group with the current type selected', async () => {
+  await renderPage()
+  fireEvent.click(screen.getByRole('button', { name: '新建联考' }))
+  const dlg = await screen.findByRole('dialog')
+  await within(dlg).findByRole('checkbox', { name: '语文' })
+  const tabs = within(dlg).getByRole('tablist', { name: '考试类型' })
+  expect(within(tabs).getByRole('tab', { name: '月考' })).toHaveAttribute('aria-selected', 'true')
+  expect(within(tabs).getByRole('tab', { name: '期中' })).toHaveAttribute('aria-selected', 'false')
+})
+
+it('page header holds the grade tabs and the create button; each exam is a Card', async () => {
+  await renderPage()
+  const header = screen.getByRole('heading', { level: 1, name: '年级联考' }).closest('header')!
+  const h = within(header as HTMLElement)
+  expect(h.getByRole('tab', { name: '三年级' })).toBeInTheDocument()
+  expect(h.getByRole('button', { name: '新建联考' })).toBeInTheDocument()
+  expect(within(row()).getByText('十月联考').closest('[data-slot="card"]')).not.toBeNull()
+})
+
+it('exam actions: delete is a destructive link-style button, class names are not clipped by a fixed width', async () => {
+  await renderPage()
+  const del = within(row()).getByRole('button', { name: '删除' })
+  expect(del.className).toContain('text-destructive')
+  expect(del.className).toContain('underline-offset-4')
+  const label = within(row()).getByText('三年一班 20/40')
+  expect(label.classList.contains('w-28')).toBe(false)
+  expect(label).toHaveAttribute('title', '三年一班 20/40')
+})
+
 it('lists the exams of the selected grade tab with per-class progress', async () => {
   await renderPage()
   expect(adminApi.gradeExams).toHaveBeenCalledWith('g3')
@@ -317,7 +346,7 @@ it('grade exam form picks from catalog', async () => {
   expect(within(dlg).queryByRole('button', { name: '添加科目' })).toBeNull()
 
   fireEvent.click(within(dlg).getByRole('checkbox', { name: '英语' }))
-  fireEvent.click(within(dlg).getByRole('button', { name: '期中' }))
+  fireEvent.click(within(dlg).getByRole('tab', { name: '期中' }))
   fireEvent.click(within(dlg).getByRole('button', { name: '保存' }))
   await waitFor(() => expect(adminApi.createGradeExam).toHaveBeenCalledTimes(1))
   expect(adminApi.createGradeExam).toHaveBeenCalledWith({
@@ -359,9 +388,29 @@ it('stage from grade brief', async () => {
   await waitFor(() => expect(adminApi.gradeExams).toHaveBeenCalledWith('g0'))
   fireEvent.click(screen.getByRole('button', { name: '新建联考' }))
   dlg = await screen.findByRole('dialog')
-  expect(await within(dlg).findByRole('alert')).toHaveTextContent('这个年级还没有学段')
+  // 年级没设学段是配置缺失,不是表单错误:status + 警示色,不是 alert
+  const missing = await within(dlg).findByRole('status')
+  expect(missing).toHaveTextContent('这个年级还没有学段')
+  expect(missing.className).toContain('text-warning')
+  expect(within(dlg).queryByRole('alert')).toBeNull()
   expect(within(dlg).queryByRole('checkbox')).toBeNull()
   expect(within(dlg).getByRole('button', { name: '保存' })).toBeDisabled()
+})
+
+it('an empty name is reported under the field, focuses it, and does not call the api (Q12)', async () => {
+  await renderPage()
+  fireEvent.click(screen.getByRole('button', { name: '新建联考' }))
+  const dlg = within(await screen.findByRole('dialog'))
+  await dlg.findByRole('checkbox', { name: '语文' })
+  fireEvent.click(dlg.getByRole('button', { name: '保存' }))
+  const input = dlg.getByLabelText('考试名称')
+  expect(await dlg.findByRole('alert')).toHaveTextContent('请填写考试名称')
+  expect(input).toHaveAttribute('aria-invalid', 'true')
+  expect(input).toHaveFocus()
+  expect(adminApi.createGradeExam).not.toHaveBeenCalled()
+  // 输入后错误就地消失
+  fireEvent.change(input, { target: { value: '期中联考' } })
+  expect(dlg.queryByRole('alert')).toBeNull()
 })
 
 it('requires a name and at least one subject locally', async () => {

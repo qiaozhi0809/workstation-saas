@@ -13,10 +13,12 @@ import {
   CardHeader,
   CardTitle,
 } from '@/shared/components/ui/card'
+import { Field, useFormErrors } from '@/shared/components/ui/field'
 import { Input } from '@/shared/components/ui/input'
 import type { YearAdmin } from '@/shared/types/admin'
 import { errMsg } from './errMsg'
-import Field from './Field'
+
+const NAME_ORDER = ['name'] as const
 
 function YearForm({ year }: { year: YearAdmin }) {
   const qc = useQueryClient()
@@ -25,6 +27,7 @@ function YearForm({ year }: { year: YearAdmin }) {
   const [term2, setTerm2] = useState(year.term2_start ?? '')
   const [end, setEnd] = useState(year.end_date)
   const [problem, setProblem] = useState<string | null>(null)
+  const { errors, report, clear, fieldRef } = useFormErrors(NAME_ORDER)
   const save = useMutation({
     mutationFn: () =>
       adminApi.saveYear(year.id, {
@@ -39,6 +42,7 @@ function YearForm({ year }: { year: YearAdmin }) {
     },
   })
   const submit = () => {
+    if (!report(name.trim() ? {} : { name: '请填写学年名称' })) return
     if (!start || !end || start >= end) return setProblem('结束日期须晚于开学日期')
     if (term2 && !(start < term2 && term2 < end))
       return setProblem('第二学期开学日期须晚于开学日期、早于结束日期')
@@ -48,17 +52,26 @@ function YearForm({ year }: { year: YearAdmin }) {
   const shown = problem ?? (save.isError ? errMsg(save.error) : null)
   return (
     <CardContent className="grid gap-3">
-      <Field label="学年名称">
-        <Input value={name} maxLength={20} onChange={(e) => setName(e.target.value)} />
+      <Field label="学年名称" error={errors.name}>
+        <Input
+          ref={fieldRef('name')}
+          value={name}
+          maxLength={20}
+          onChange={(e) => {
+            setName(e.target.value)
+            clear('name')
+          }}
+        />
       </Field>
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Field label="开学日期">
+      {/* 卡片只有半屏宽(侧栏展开时更窄):按最小列宽自动换行,三个日期框不会互相挤压(G-A1-1) */}
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(11rem,1fr))] gap-3">
+        <Field label="开学日期" className="min-w-0">
           <Input type="date" value={start} onChange={(e) => setStart(e.target.value)} />
         </Field>
-        <Field label="第二学期开学日期">
+        <Field label="第二学期开学日期" className="min-w-0">
           <Input type="date" value={term2} onChange={(e) => setTerm2(e.target.value)} />
         </Field>
-        <Field label="结束日期">
+        <Field label="结束日期" className="min-w-0">
           <Input type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
         </Field>
       </div>
@@ -68,7 +81,7 @@ function YearForm({ year }: { year: YearAdmin }) {
         </p>
       )}
       <div>
-        <Button disabled={!name.trim() || save.isPending} onClick={submit}>
+        <Button disabled={save.isPending} onClick={submit}>
           保存学年
         </Button>
       </div>

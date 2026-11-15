@@ -58,7 +58,8 @@ test('principal lands on today, browses the board and opens a read-only class vi
 }) => {
   await signIn(page, 'principal01')
   await expect(page).toHaveURL(/\/admin\/today/)
-  await expect(page.getByRole('heading', { name: '今日关注 · 全校' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '今日关注', exact: true })).toBeVisible()
+  await expect(page.locator('[data-page-header]').getByText('全校', { exact: true })).toBeVisible()
 
   await page.getByRole('link', { name: '全校看板' }).first().click()
   await expect(page.getByRole('heading', { name: '全校看板' })).toBeVisible()
@@ -207,7 +208,10 @@ test('grade head only sees her own grade and gets 403 on another grade board', a
   request,
 }) => {
   await signIn(page, 'gradehead03')
-  await expect(page.getByRole('heading', { name: '今日关注 · 三年级' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '今日关注', exact: true })).toBeVisible()
+  await expect(
+    page.locator('[data-page-header]').getByText('三年级', { exact: true }),
+  ).toBeVisible()
   await page.getByRole('link', { name: '全校看板' }).first().click()
   await expect(page.getByRole('tab', { name: '三年级' })).toBeVisible()
   await expect(page.getByRole('tab', { name: '四年级' })).toHaveCount(0)
@@ -240,7 +244,10 @@ test('teacher01 gets a grade head role and can switch between teacher and admin 
   await page.getByRole('button', { name: '账号菜单' }).click()
   await page.getByRole('menuitem', { name: '切换到管理端' }).click()
   await expect(page).toHaveURL(/\/admin\/today/)
-  await expect(page.getByRole('heading', { name: '今日关注 · 三年级' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '今日关注', exact: true })).toBeVisible()
+  await expect(
+    page.locator('[data-page-header]').getByText('三年级', { exact: true }),
+  ).toBeVisible()
 
   await page.getByRole('button', { name: '账号菜单' }).click()
   await page.getByRole('menuitem', { name: /切换到教师端/ }).click()

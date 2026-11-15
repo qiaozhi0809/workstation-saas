@@ -6,7 +6,8 @@ import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { toast } from '@/shared/components/Toast'
 import { Button } from '@/shared/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card'
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/shared/components/ui/card'
+import { Switch } from '@/shared/components/ui/switch'
 import type { Switches } from '@/shared/types/admin'
 
 const PARENT_NOTE = '家长端下次刷新即生效'
@@ -85,26 +86,20 @@ export default function SwitchesCard() {
       </CardHeader>
       <CardContent className="space-y-4">
         {GROUPS.map((g) => (
-          <fieldset key={g.title} aria-label={g.title} className="space-y-2">
+          <fieldset key={g.title} aria-label={g.title} className="space-y-1">
             <legend className="mb-1 text-sm font-medium">{g.title}</legend>
             {g.items.map((it) => {
               const locked = it.key === 'parent_monitor'
               return (
-                <div key={it.key} className="flex items-start gap-3">
-                  <input
-                    type="checkbox"
-                    role="switch"
-                    id={`sw-${it.key}`}
+                <div key={it.key}>
+                  <Switch
                     aria-label={it.label}
-                    className="mt-1"
+                    label={it.label}
+                    description={it.note}
                     checked={locked ? false : value[it.key]}
                     disabled={locked}
                     onChange={(e) => setDraft({ ...value, [it.key]: e.target.checked })}
                   />
-                  <div className="text-sm">
-                    <label htmlFor={`sw-${it.key}`}>{it.label}</label>
-                    {it.note && <p className="text-xs text-muted-foreground">{it.note}</p>}
-                  </div>
                 </div>
               )
             })}
@@ -115,12 +110,17 @@ export default function SwitchesCard() {
             {error}
           </p>
         )}
-        <div className="flex justify-end">
-          <Button type="button" disabled={busy} onClick={() => void save()}>
-            保存开关
-          </Button>
-        </div>
       </CardContent>
+      <CardFooter className="justify-end">
+        <Button
+          type="button"
+          variant={draft === null ? 'ghost' : 'default'}
+          disabled={busy}
+          onClick={() => void save()}
+        >
+          保存开关
+        </Button>
+      </CardFooter>
     </Card>
   )
 }

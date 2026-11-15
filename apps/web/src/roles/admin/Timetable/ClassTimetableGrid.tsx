@@ -9,7 +9,10 @@ import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import Modal from '@/shared/components/overlay/Modal'
 import { toast } from '@/shared/components/Toast'
 import { Button } from '@/shared/components/ui/button'
+import { Checkbox } from '@/shared/components/ui/checkbox'
+import { Field, useFormErrors } from '@/shared/components/ui/field'
 import { NativeSelect } from '@/shared/components/ui/native-select'
+import { Table, TableBody, TableHead, TableRow, Td, Th } from '@/shared/components/ui/table'
 import { cn } from '@/shared/lib/utils'
 import type { ClassAdmin } from '@/shared/types/admin'
 import type {
@@ -19,6 +22,8 @@ import type {
   TimetableCellInput,
 } from '@/shared/types/timetable'
 import { ALL_DAYS, WEEKDAY_LABEL, WORKDAYS, type Weekday } from './weekdays'
+
+const SUBJECT_ORDER = ['subject'] as const
 
 type Slot = { weekday: Weekday; period_no: number }
 const sameSlot = (a: Slot, b: Slot) => a.weekday === b.weekday && a.period_no === b.period_no
@@ -75,6 +80,7 @@ function CellEditor({
 }) {
   const [subject, setSubject] = useState(cell?.subject ?? '')
   const [teacherId, setTeacherId] = useState(cell?.teacher?.id ?? '')
+  const { errors, report, clear, fieldRef } = useFormErrors(SUBJECT_ORDER)
   // 科目候选 = 组织架构里本班有在任老师的科目 ∪ 课表里已出现的科目
   const subjects = [
     ...new Set([...(cls?.subjects.map((s) => s.subject) ?? []), ...cells.map((c) => c.subject)]),
@@ -93,6 +99,11 @@ function CellEditor({
           ? `在任老师:${staff[0]}`
           : `在任老师:${staff.join('、')}(多位时自动匹配会留空)`
 
+  const submit = () => {
+    if (!report(subject ? {} : { subject: '请选择科目' })) return
+    onSave(subject, teacherId || null)
+  }
+
   return (
     <Modal
       open
@@ -102,14 +113,14 @@ function CellEditor({
       className="max-w-sm"
     >
       <div className="space-y-3">
-        <label className="grid gap-1 text-sm">
-          <span className="text-muted-foreground">科目</span>
+        <Field label="科目" error={errors.subject}>
           <NativeSelect
-            aria-label="科目"
+            ref={fieldRef('subject')}
             value={subject}
             onChange={(e) => {
               setSubject(e.target.value)
               setTeacherId('')
+              clear('subject')
             }}
           >
             <option value="">请选择</option>
@@ -119,7 +130,7 @@ function CellEditor({
               </option>
             ))}
           </NativeSelect>
-        </label>
+        </Field>
         {subjects.length === 0 && cls && (
           <p className="text-xs text-muted-foreground">
             本班还没有任课老师,先到
@@ -132,10 +143,8 @@ function CellEditor({
             里添加。
           </p>
         )}
-        <label className="grid gap-1 text-sm">
-          <span className="text-muted-foreground">老师</span>
+        <Field label="老师">
           <NativeSelect
-            aria-label="老师"
             value={teacherId}
             disabled={!subject}
             onChange={(e) => setTeacherId(e.target.value)}
@@ -147,7 +156,7 @@ function CellEditor({
               </option>
             ))}
           </NativeSelect>
-        </label>
+        </Field>
         {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
         {clsError && (
           <p className="text-xs text-destructive">
@@ -174,11 +183,7 @@ function CellEditor({
           <Button type="button" variant="outline" onClick={onClose}>
             取消
           </Button>
-          <Button
-            type="button"
-            disabled={busy || !subject}
-            onClick={() => onSave(subject, teacherId || null)}
-          >
+          <Button type="button" disabled={busy} onClick={submit}>
             保存
           </Button>
         </div>
@@ -220,7 +225,7 @@ export default function ClassTimetableGrid({
     onError: (err) => setError(err instanceof ApiError ? err.message : '保存失败,请重试'),
   })
 
-  if (tt.isPending) return <LoadingState />
+  if (tt.isPending) return <LoadingState variant="table" />
   if (tt.isError) {
     return (
       <ErrorState
@@ -246,45 +251,47 @@ export default function ClassTimetableGrid({
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-3 text-sm">
         <span className="text-muted-foreground">{tt.data.class_name}:点格子安排科目与老师</span>
-        <label className="ml-auto flex items-center gap-1.5">
-          <input
-            type="checkbox"
-            checked={hasWeekend || weekend}
-            disabled={hasWeekend}
-            onChange={(e) => setWeekend(e.target.checked)}
-          />
-          显示周六日
-        </label>
+        <Checkbox
+          label="显示周六日"
+          className="ml-auto"
+          checked={hasWeekend || weekend}
+          disabled={hasWeekend}
+          onChange={(e) => setWeekend(e.target.checked)}
+        />
       </div>
-      {/* 375 宽时在这个容器里横向滚动,页面本身不溢出 */}
-      <div data-testid="timetable-grid" className="overflow-x-auto rounded-md border">
-        <table className="w-full min-w-[32rem] table-fixed text-sm">
-          <thead className="bg-muted text-muted-foreground">
-            <tr>
-              <th scope="col" className="w-24 px-2 py-2 text-left font-medium">
-                节次
-              </th>
+      {/* 375 宽时在 Table 的滚动容器里横向滚动,页面本身不溢出 */}
+      <div data-testid="timetable-grid">
+        <Table
+          minWidth={720}
+          containerClassName="rounded-none bg-transparent shadow-none"
+          className="w-full table-fixed"
+        >
+          <TableHead>
+            <TableRow>
+              <Th className="w-24">节次</Th>
               {days.map((d) => (
-                <th key={d} scope="col" className="px-1 py-2 font-medium">
-                  {WEEKDAY_LABEL[d]}
-                </th>
+                <Th key={d}>{WEEKDAY_LABEL[d]}</Th>
               ))}
-            </tr>
-          </thead>
-          <tbody>
+            </TableRow>
+          </TableHead>
+          <TableBody>
             {ordered.map((p) => (
-              <tr key={p.no} className="border-t">
-                <th scope="row" className="px-2 py-1 text-left font-normal">
+              <TableRow key={p.no}>
+                <Th
+                  scope="row"
+                  nowrap={false}
+                  className="h-auto py-1 text-sm font-normal text-foreground"
+                >
                   <div>第 {p.no} 节</div>
                   <div className="text-xs text-muted-foreground">
                     {p.starts_at}–{p.ends_at}
                   </div>
-                </th>
+                </Th>
                 {days.map((d) => {
                   const slot: Slot = { weekday: d, period_no: p.no }
                   const cell = cellAt(slot)
                   return (
-                    <td key={d} className="p-1 align-top">
+                    <Td key={d} className="p-1 align-top">
                       <button
                         type="button"
                         data-testid={`timetable-cell-${d}-${p.no}`}
@@ -292,7 +299,7 @@ export default function ClassTimetableGrid({
                           cell ? `${cell.subject} ${cell.teacher?.name ?? '未指定老师'}` : '空'
                         }`}
                         className={cn(
-                          'flex min-h-12 w-full flex-col items-center justify-center rounded-md border px-1 py-1 text-center focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
+                          'flex h-12 w-full min-w-0 flex-col items-center justify-center rounded-md border px-1 py-1 text-center focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
                           cell
                             ? 'border-transparent bg-primary/10 hover:bg-primary/20'
                             : 'border-dashed text-muted-foreground hover:bg-accent',
@@ -304,10 +311,10 @@ export default function ClassTimetableGrid({
                       >
                         {cell ? (
                           <>
-                            <span className="font-medium">{cell.subject}</span>
+                            <span className="max-w-full truncate font-medium">{cell.subject}</span>
                             <span
                               className={cn(
-                                'text-xs',
+                                'max-w-full truncate text-xs',
                                 cell.teacher ? 'text-muted-foreground' : 'text-warning',
                               )}
                             >
@@ -318,13 +325,13 @@ export default function ClassTimetableGrid({
                           <span aria-hidden="true">＋</span>
                         )}
                       </button>
-                    </td>
+                    </Td>
                   )
                 })}
-              </tr>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
       {editing && (
         <CellEditor

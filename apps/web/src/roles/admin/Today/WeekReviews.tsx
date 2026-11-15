@@ -1,3 +1,4 @@
+import { Card } from '@/shared/components/ui/card'
 import { EmptyState } from '@/shared/components/feedback/EmptyState'
 import { TONE_FILL, TONE_TEXT, scoreTone } from '@/shared/lib/tone'
 import { cn } from '@/shared/lib/utils'
@@ -28,7 +29,7 @@ export function WeekReviews({ data }: { data: TodayView['week_reviews'] }) {
             <li key={c.class_id} className="flex flex-col gap-1 text-sm">
               <div className="flex justify-between gap-2">
                 <span>{c.class_name}</span>
-                <span className={cn('font-medium', TONE_TEXT[scoreTone(c.net)])}>
+                <span className={cn('font-medium tabular-nums', TONE_TEXT[scoreTone(c.net)])}>
                   {signed(c.net)}
                 </span>
               </div>
@@ -46,39 +47,43 @@ export function WeekReviews({ data }: { data: TodayView['week_reviews'] }) {
         {data.bottom.length === 0 ? (
           <p className="text-sm text-muted-foreground">暂无</p>
         ) : (
-          <ul className="flex flex-col divide-y rounded-lg border bg-card">
-            {data.bottom.map((b) => (
-              <li
-                key={b.student_id}
-                className="flex items-center justify-between gap-2 px-3 py-2 text-sm"
-              >
-                <span>
-                  {b.name}
-                  <span className="ml-2 text-muted-foreground">{b.class_name}</span>
-                </span>
-                <span className={cn('font-medium', TONE_TEXT[scoreTone(b.net)])}>
-                  {signed(b.net)}
-                </span>
-              </li>
-            ))}
-          </ul>
+          <Card>
+            <ul className="flex flex-col divide-y divide-border/60">
+              {data.bottom.map((b) => (
+                <li
+                  key={b.student_id}
+                  className="flex items-center justify-between gap-2 px-3 py-2 text-sm"
+                >
+                  <span>
+                    {b.name}
+                    <span className="ml-2 text-muted-foreground">{b.class_name}</span>
+                  </span>
+                  <span className={cn('font-medium tabular-nums', TONE_TEXT[scoreTone(b.net)])}>
+                    {signed(b.net)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </Card>
         )}
       </Block>
       <Block title="老师点评次数">
         {data.teachers.length === 0 ? (
           <p className="text-sm text-muted-foreground">暂无</p>
         ) : (
-          <ul className="flex flex-col divide-y rounded-lg border bg-card">
-            {data.teachers.map((t) => (
-              <li
-                key={t.user_id}
-                className="flex items-center justify-between gap-2 px-3 py-2 text-sm"
-              >
-                <span>{t.display_name}</span>
-                <span className="font-medium">{`${t.count} 次`}</span>
-              </li>
-            ))}
-          </ul>
+          <Card>
+            <ul className="flex flex-col divide-y divide-border/60">
+              {data.teachers.map((t) => (
+                <li
+                  key={t.user_id}
+                  className="flex items-center justify-between gap-2 px-3 py-2 text-sm"
+                >
+                  <span>{t.display_name}</span>
+                  <span className="font-medium tabular-nums">{`${t.count} 次`}</span>
+                </li>
+              ))}
+            </ul>
+          </Card>
         )}
       </Block>
     </div>

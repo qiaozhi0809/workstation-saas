@@ -1,3 +1,4 @@
+import { Checkbox } from '@/shared/components/ui/checkbox'
 import { Input } from '@/shared/components/ui/input'
 import { NativeSelect } from '@/shared/components/ui/native-select'
 import { cn } from '@/shared/lib/utils'
@@ -40,7 +41,7 @@ export default function StepClasses({
           <li
             key={c.from_class_id}
             data-invalid={bad || undefined}
-            className={cn('grid gap-2 rounded-md border p-3', bad && 'border-destructive')}
+            className={cn('grid gap-2 rounded-md bg-muted p-3', bad && 'bg-destructive/10')}
           >
             <div className="flex flex-wrap items-center gap-3">
               <span className="font-medium">{name}</span>
@@ -89,15 +90,12 @@ export default function StepClasses({
                     }}
                   />
                 </div>
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    aria-label={`${name} 保留任课老师`}
-                    checked={c.keep_teachers}
-                    onChange={(e) => patch(i, { keep_teachers: e.target.checked })}
-                  />
-                  保留任课老师
-                </label>
+                <Checkbox
+                  aria-label={`${name} 保留任课老师`}
+                  label="保留任课老师"
+                  checked={c.keep_teachers}
+                  onChange={(e) => patch(i, { keep_teachers: e.target.checked })}
+                />
               </div>
             ) : (
               <p className="text-sm text-muted-foreground">这个班毕业,学生不再进入新学年</p>

@@ -10,6 +10,8 @@ import { toast } from '@/shared/components/Toast'
 import { Button } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
 import { NativeSelect } from '@/shared/components/ui/native-select'
+import { PageContainer, PageHeader } from '@/shared/components/ui/page'
+import { Table, TableBody, TableHead, TableRow, Th } from '@/shared/components/ui/table'
 import { useAuthStore } from '@/shared/stores/auth'
 import type { Account } from '@/shared/types/admin'
 import AccountForm from './AccountForm'
@@ -151,29 +153,35 @@ export default function AccountsPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-4 p-4 md:p-6">
-      <div className="flex flex-wrap items-center gap-2">
-        <h1 className="mr-auto text-lg font-semibold">账号</h1>
-        <Button type="button" variant="outline" onClick={() => setDialog({ kind: 'import' })}>
-          批量导入
-        </Button>
-        <Button type="button" onClick={() => setDialog({ kind: 'form' })}>
-          新建账号
-        </Button>
-      </div>
+    <PageContainer width="default">
+      <PageHeader
+        title="账号"
+        actions={
+          <>
+            <Button type="button" variant="outline" onClick={() => setDialog({ kind: 'import' })}>
+              批量导入
+            </Button>
+            <Button type="button" onClick={() => setDialog({ kind: 'form' })}>
+              新建账号
+            </Button>
+          </>
+        }
+      />
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-3">
         <Input
           aria-label="搜索姓名或登录名"
           placeholder="搜索姓名或登录名"
+          controlSize="md"
           className="w-56"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <label className="flex items-center gap-1.5 text-sm">
+        <label className="flex items-center gap-2 text-sm">
           身份
           <NativeSelect
             aria-label="身份"
+            controlSize="md"
             value={role}
             onChange={(e) => change(() => setRole(e.target.value))}
           >
@@ -184,10 +192,11 @@ export default function AccountsPage() {
             ))}
           </NativeSelect>
         </label>
-        <label className="flex items-center gap-1.5 text-sm">
+        <label className="flex items-center gap-2 text-sm">
           状态
           <NativeSelect
             aria-label="状态"
+            controlSize="md"
             value={status}
             onChange={(e) => change(() => setStatus(e.target.value))}
           >
@@ -201,7 +210,7 @@ export default function AccountsPage() {
       </div>
 
       {list.isPending ? (
-        <LoadingState />
+        <LoadingState variant="table" />
       ) : list.isError ? (
         <ErrorState
           title={list.error instanceof ApiError ? list.error.message : '加载失败,请重试'}
@@ -211,39 +220,36 @@ export default function AccountsPage() {
       ) : list.data.items.length === 0 ? (
         <EmptyState title="没有符合条件的账号" />
       ) : (
-        <div className="overflow-x-auto rounded-md border">
-          <table className="w-full min-w-[56rem] text-sm">
-            <thead className="bg-muted text-left text-muted-foreground">
-              <tr>
-                {['姓名', '登录名', '身份', '工号', '最后登录', '状态', '操作'].map((h) => (
-                  <th key={h} scope="col" className="whitespace-nowrap px-3 py-2 font-medium">
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {list.data.items.map((a) => (
-                <AccountRow
-                  key={a.id}
-                  account={a}
-                  isSelf={a.id === selfId}
-                  onEdit={() => setDialog({ kind: 'form', account: a })}
-                  onReset={() => void resetPassword(a)}
-                  onFreeze={() => {
-                    setFreezeError('')
-                    setFreezing(a)
-                  }}
-                  onUnfreeze={() => void unfreeze(a)}
-                  onResetTotp={() => {
-                    setTotpError('')
-                    setTotpTarget(a)
-                  }}
-                />
+        <Table minWidth={896}>
+          <TableHead>
+            <TableRow>
+              {['姓名', '登录名', '身份', '工号', '最后登录', '状态'].map((h) => (
+                <Th key={h}>{h}</Th>
               ))}
-            </tbody>
-          </table>
-        </div>
+              <Th align="end">操作</Th>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {list.data.items.map((a) => (
+              <AccountRow
+                key={a.id}
+                account={a}
+                isSelf={a.id === selfId}
+                onEdit={() => setDialog({ kind: 'form', account: a })}
+                onReset={() => void resetPassword(a)}
+                onFreeze={() => {
+                  setFreezeError('')
+                  setFreezing(a)
+                }}
+                onUnfreeze={() => void unfreeze(a)}
+                onResetTotp={() => {
+                  setTotpError('')
+                  setTotpTarget(a)
+                }}
+              />
+            ))}
+          </TableBody>
+        </Table>
       )}
 
       {total > PAGE_SIZE && (
@@ -342,6 +348,6 @@ export default function AccountsPage() {
           onClose={() => setTemp(null)}
         />
       )}
-    </div>
+    </PageContainer>
   )
 }

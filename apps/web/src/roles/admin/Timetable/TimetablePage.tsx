@@ -9,6 +9,7 @@ import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { Button } from '@/shared/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card'
 import { NativeSelect } from '@/shared/components/ui/native-select'
+import { PageContainer, PageHeader } from '@/shared/components/ui/page'
 import { groupByGrade } from '../shared/groupByGrade'
 import ClassTimetableGrid from './ClassTimetableGrid'
 import PeriodsEditor from './PeriodsEditor'
@@ -23,11 +24,11 @@ export default function TimetablePage() {
   const selected = list.some((c) => c.id === classId) ? classId : (list[0]?.id ?? '')
 
   return (
-    <div data-testid="timetable-page" className="mx-auto w-full max-w-6xl space-y-4 p-4 md:p-6">
-      <h1 className="text-lg font-semibold">作息与课表</h1>
+    <PageContainer width="default">
+      <PageHeader title="作息与课表" />
 
       {periods.isPending ? (
-        <LoadingState />
+        <LoadingState variant="form" />
       ) : periods.isError ? (
         <ErrorState
           title={periods.error instanceof ApiError ? periods.error.message : '加载失败,请重试'}
@@ -41,10 +42,11 @@ export default function TimetablePage() {
       <Card>
         <CardHeader className="flex flex-row flex-wrap items-center gap-2 space-y-0">
           <CardTitle className="mr-auto">课表</CardTitle>
-          <label className="flex items-center gap-1.5 text-sm">
+          <label className="flex items-center gap-2 text-sm">
             班级
             <NativeSelect
               aria-label="班级"
+              controlSize="sm"
               value={selected}
               disabled={list.length === 0}
               onChange={(e) => setClassId(e.target.value)}
@@ -68,7 +70,7 @@ export default function TimetablePage() {
           {periods.data && periods.data.length === 0 ? (
             <EmptyState title="先在上面设置作息时间,再排课表" />
           ) : classes.isPending ? (
-            <LoadingState />
+            <LoadingState variant="table" />
           ) : classes.isError ? (
             <ErrorState
               title={
@@ -86,6 +88,6 @@ export default function TimetablePage() {
       </Card>
 
       {importing && <TimetableImportDialog onClose={() => setImporting(false)} />}
-    </div>
+    </PageContainer>
   )
 }

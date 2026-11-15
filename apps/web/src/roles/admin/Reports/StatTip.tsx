@@ -1,4 +1,5 @@
 import { useId, useState } from 'react'
+import { Button } from '@/shared/components/ui/button'
 import { cn } from '@/shared/lib/utils'
 
 /**
@@ -18,23 +19,25 @@ export default function StatTip({ text, tip }: { text: string; tip: string }) {
         if (!(next instanceof Node && e.currentTarget.contains(next))) setPinned(false)
       }}
     >
-      <button
+      <Button
         type="button"
+        variant="link"
+        size="sm"
         aria-describedby={id}
         onClick={() => setPinned((p) => !p)}
         onKeyDown={(e) => {
           if (e.key === 'Escape') setPinned(false)
         }}
-        className="peer rounded tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="peer -mr-2 px-2 font-normal tabular-nums text-foreground hover:no-underline"
       >
         {text}
-      </button>
+      </Button>
       <span
         id={id}
         role="tooltip"
         data-open={pinned || undefined}
         className={cn(
-          'pointer-events-none absolute bottom-full right-0 z-10 mb-1 hidden w-max max-w-[9rem] rounded-md border bg-popover px-2 py-1 text-left text-xs font-normal text-popover-foreground shadow-md',
+          'pointer-events-none absolute bottom-full right-0 z-10 mb-1 hidden w-max max-w-[9rem] rounded-md bg-popover px-2 py-1 text-left text-xs font-normal text-popover-foreground shadow-overlay',
           'group-hover:block peer-focus-visible:block data-[open]:block',
         )}
       >

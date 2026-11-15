@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { adminApi } from '@/shared/api/admin'
 import { ApiError } from '@/shared/api/client'
@@ -6,10 +6,11 @@ import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { toast } from '@/shared/components/Toast'
 import { Button } from '@/shared/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card'
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/shared/components/ui/card'
 import { Input } from '@/shared/components/ui/input'
 import { Label } from '@/shared/components/ui/label'
 import { NativeSelect } from '@/shared/components/ui/native-select'
+import { Switch } from '@/shared/components/ui/switch'
 import type { SecuritySettings } from '@/shared/types/admin'
 
 const AGES: { value: SecuritySettings['password_max_age_days']; label: string }[] = [
@@ -28,6 +29,8 @@ export default function SecurityCard() {
   const [draft, setDraft] = useState<SecuritySettings | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [showLenError, setShowLenError] = useState(false)
+  const lenRef = useRef<HTMLInputElement>(null)
 
   if (q.isPending) return <LoadingState />
   if (q.isError) {
@@ -47,6 +50,11 @@ export default function SecurityCard() {
     value.password_min_length <= 32
 
   const save = async () => {
+    if (!lenValid) {
+      setShowLenError(true)
+      lenRef.current?.focus()
+      return
+    }
     setBusy(true)
     setError('')
     try {
@@ -68,21 +76,13 @@ export default function SecurityCard() {
         <CardTitle>账号安全</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex items-start gap-3">
-          <input
-            type="checkbox"
-            role="switch"
-            id="sec-totp-allowed"
-            aria-label="允许账号开启两步验证"
-            className="mt-1"
-            checked={value.totp_allowed}
-            onChange={(e) => setDraft({ ...value, totp_allowed: e.target.checked })}
-          />
-          <div className="text-sm">
-            <label htmlFor="sec-totp-allowed">允许账号开启两步验证</label>
-            <p className="text-xs text-muted-foreground">关闭后已开启的账号仍可正常登录和关闭</p>
-          </div>
-        </div>
+        <Switch
+          aria-label="允许账号开启两步验证"
+          label="允许账号开启两步验证"
+          description="关闭后已开启的账号仍可正常登录和关闭"
+          checked={value.totp_allowed}
+          onChange={(e) => setDraft({ ...value, totp_allowed: e.target.checked })}
+        />
         <div className="space-y-1">
           <Label htmlFor="sec-min-length">密码最短长度</Label>
           <Input
@@ -91,10 +91,21 @@ export default function SecurityCard() {
             min={8}
             max={32}
             className="w-28"
+            ref={lenRef}
+            aria-invalid={showLenError && !lenValid ? true : undefined}
+            aria-describedby={showLenError && !lenValid ? 'sec-len-error' : undefined}
             value={Number.isNaN(value.password_min_length) ? '' : value.password_min_length}
-            onChange={(e) => setDraft({ ...value, password_min_length: e.target.valueAsNumber })}
+            onChange={(e) => {
+              setShowLenError(false)
+              setDraft({ ...value, password_min_length: e.target.valueAsNumber })
+            }}
           />
           <p className="text-xs text-muted-foreground">8 到 32 位</p>
+          {showLenError && !lenValid && (
+            <p id="sec-len-error" role="alert" className="text-xs text-destructive">
+              密码最短长度要在 8 到 32 之间的整数
+            </p>
+          )}
           {value.password_min_length > saved.password_min_length && (
             <p className="text-xs text-muted-foreground">已有密码不受影响,下次修改时生效</p>
           )}
@@ -121,16 +132,21 @@ export default function SecurityCard() {
           </NativeSelect>
         </div>
         {error && (
-          <p role="alert" className="text-sm text-destructive">
+          <p role="alert" className="text-xs text-destructive">
             {error}
           </p>
         )}
-        <div className="flex justify-end">
-          <Button type="button" disabled={busy || !lenValid} onClick={() => void save()}>
-            保存安全设置
-          </Button>
-        </div>
       </CardContent>
+      <CardFooter className="justify-end">
+        <Button
+          type="button"
+          variant={draft === null ? 'ghost' : 'default'}
+          disabled={busy}
+          onClick={() => void save()}
+        >
+          保存安全设置
+        </Button>
+      </CardFooter>
     </Card>
   )
 }

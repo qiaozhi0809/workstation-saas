@@ -7,13 +7,16 @@ import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { toast } from '@/shared/components/Toast'
 import { Button } from '@/shared/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card'
+import { Field, useFormErrors } from '@/shared/components/ui/field'
 import { Input } from '@/shared/components/ui/input'
 import { NativeSelect } from '@/shared/components/ui/native-select'
+import { PageContainer, PageHeader } from '@/shared/components/ui/page'
 import type { ClassAdmin } from '@/shared/types/admin'
 import DeskSummary from './DeskSummary'
 import { errMsg } from './errMsg'
-import Field from './Field'
 import StaffEditor from './StaffEditor'
+
+const NAME_ORDER = ['name'] as const
 
 function BasicCard({ cls }: { cls: ClassAdmin }) {
   const qc = useQueryClient()
@@ -21,6 +24,7 @@ function BasicCard({ cls }: { cls: ClassAdmin }) {
   const [name, setName] = useState(cls.name)
   const [gradeId, setGradeId] = useState(cls.grade_id)
   const [room, setRoom] = useState(cls.room)
+  const { errors, report, clear, fieldRef } = useFormErrors(NAME_ORDER)
   const save = useMutation({
     mutationFn: () =>
       adminApi.updateClass(cls.id, { grade_id: gradeId, name: name.trim(), room: room.trim() }),
@@ -31,6 +35,10 @@ function BasicCard({ cls }: { cls: ClassAdmin }) {
       void qc.invalidateQueries({ queryKey: ['admin', 'grades'] })
     },
   })
+  const submit = () => {
+    if (!report(name.trim() ? {} : { name: '请填写班级名称' })) return
+    save.mutate()
+  }
   const list = grades.data ?? []
   const stage = list.find((g) => g.id === gradeId)?.effective_stage
   return (
@@ -40,8 +48,16 @@ function BasicCard({ cls }: { cls: ClassAdmin }) {
       </CardHeader>
       <CardContent className="grid gap-3">
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="班级名称">
-            <Input value={name} maxLength={20} onChange={(e) => setName(e.target.value)} />
+          <Field label="班级名称" error={errors.name}>
+            <Input
+              ref={fieldRef('name')}
+              value={name}
+              maxLength={20}
+              onChange={(e) => {
+                setName(e.target.value)
+                clear('name')
+              }}
+            />
           </Field>
           <Field label="年级">
             <NativeSelect value={gradeId} onChange={(e) => setGradeId(e.target.value)}>
@@ -56,9 +72,9 @@ function BasicCard({ cls }: { cls: ClassAdmin }) {
           <Field label="教室">
             <Input value={room} maxLength={30} onChange={(e) => setRoom(e.target.value)} />
           </Field>
-          <div className="grid gap-1 text-sm">
-            <span className="text-muted-foreground">学段</span>
-            <span className="flex h-9 items-center">{stage ?? '—'}</span>
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-muted-foreground">学段</span>
+            <span className="flex h-10 items-center text-sm">{stage ?? '—'}</span>
           </div>
         </div>
         {save.isError && (
@@ -67,7 +83,7 @@ function BasicCard({ cls }: { cls: ClassAdmin }) {
           </p>
         )}
         <div>
-          <Button disabled={!name.trim() || save.isPending} onClick={() => save.mutate()}>
+          <Button disabled={save.isPending} onClick={submit}>
             保存
           </Button>
         </div>
@@ -80,15 +96,18 @@ export default function ClassInfoPage() {
   const { id = '' } = useParams()
   const q = useQuery({ queryKey: ['admin', 'class', id], queryFn: () => adminApi.class(id) })
   return (
-    <div className="grid gap-4 p-4 md:p-6">
-      <div className="flex items-center gap-3">
-        <Link to="/admin/org" className="text-sm text-primary underline-offset-4 hover:underline">
-          返回组织架构
-        </Link>
-        <h1 className="text-lg font-semibold">{q.data ? q.data.name : '班级信息'}</h1>
-        {q.data && <span className="text-sm text-muted-foreground">{q.data.grade_name}</span>}
-      </div>
-      {q.isPending && <LoadingState />}
+    <PageContainer width="default">
+      <Link
+        to="/admin/org"
+        className="-mb-3 w-fit text-sm text-primary underline-offset-4 hover:underline"
+      >
+        返回组织架构
+      </Link>
+      <PageHeader
+        title={q.data ? q.data.name : '班级信息'}
+        description={q.data ? q.data.grade_name : undefined}
+      />
+      {q.isPending && <LoadingState variant="form" />}
       {q.isError && (
         <ErrorState
           title="班级信息加载失败"
@@ -106,6 +125,6 @@ export default function ClassInfoPage() {
           <DeskSummary cls={q.data} />
         </>
       )}
-    </div>
+    </PageContainer>
   )
 }
