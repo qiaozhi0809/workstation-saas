@@ -38,10 +38,13 @@ export function Table({
     <DensityContext.Provider value={density}>
       <div
         data-slot="table-container"
-        className={cn('overflow-x-auto rounded-lg bg-card shadow-surface', containerClassName)}
+        className={cn(
+          'relative overflow-x-auto rounded-lg bg-card shadow-surface',
+          containerClassName,
+        )}
       >
         {minWidth ? (
-          <div data-table-scroll className="overflow-x-auto rounded-lg">
+          <div data-table-scroll className="relative overflow-x-auto rounded-lg">
             {table}
           </div>
         ) : (
