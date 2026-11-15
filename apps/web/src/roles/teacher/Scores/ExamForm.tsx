@@ -286,7 +286,6 @@ function FormBody(p: Props & { catalog: SubjectFull[] }) {
           items={examTypeItems}
           value={type}
           onChange={(v) => setType(v)}
-          size="sm"
           className="flex-wrap self-start"
         />
       </div>
