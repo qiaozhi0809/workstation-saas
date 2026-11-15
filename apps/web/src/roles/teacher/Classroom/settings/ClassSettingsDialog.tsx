@@ -175,7 +175,7 @@ export default function ClassSettingsDialog({
       onClose={close}
       title={`班级设置 · ${cls.name}`}
       dismissOnOutside={false}
-      className="max-w-3xl"
+      className="max-w-4xl"
     >
       <div className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-2">
@@ -196,8 +196,8 @@ export default function ClassSettingsDialog({
           </label>
         </div>
 
-        <h3 className="text-sm font-semibold">桌椅排列</h3>
-        <div className="grid gap-4 md:grid-cols-2">
+        <h3 className="text-sm font-medium">桌椅排列</h3>
+        <div className="grid gap-4 md:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
           <div className="space-y-4">
             <div className="space-y-1">
               <div className="text-sm">每张桌子</div>
@@ -264,20 +264,13 @@ export default function ClassSettingsDialog({
             </div>
             <div className="space-y-2">
               <div className="text-sm">学生坐哪儿</div>
-              <div className="flex flex-wrap gap-2">
-                {HOW_OPTIONS.map((o) => (
-                  <Button
-                    key={o.value}
-                    type="button"
-                    size="sm"
-                    variant={draft.how === o.value ? 'default' : 'outline'}
-                    aria-pressed={draft.how === o.value}
-                    onClick={() => patch({ how: o.value })}
-                  >
-                    {o.label}
-                  </Button>
-                ))}
-              </div>
+              <SegmentedTabs
+                label="学生坐哪儿"
+                items={HOW_OPTIONS}
+                value={draft.how}
+                onChange={(v) => patch({ how: v })}
+                className="max-w-full overflow-x-auto"
+              />
               <p className="text-xs text-muted-foreground">{howNote(draft.how, draft.desk_size)}</p>
             </div>
           </div>

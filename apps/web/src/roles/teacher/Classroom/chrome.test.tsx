@@ -1,8 +1,9 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
-import { expect, it, vi } from 'vitest'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { afterEach, expect, it, vi } from 'vitest'
 import { MenuItem } from '@/shared/components/overlay/Menu'
 import ClassroomDock, { type ClassroomDockProps } from './ClassroomDock'
 import ModeBar from './ModeBar'
+import SeatingBar, { SeatingMenuItems } from './seating/SeatingBar'
 
 it('mode bar moves focus with arrow keys and switches on click only', () => {
   const onChange = vi.fn()
@@ -142,4 +143,126 @@ it('renders one 更多操作 menu from the menu items, after the common zone, an
   unmount()
   dock()
   expect(screen.queryByRole('button', { name: '更多操作' })).toBeNull()
+})
+
+// ---- 操作台按容器宽度自适应(M6 CR) ----
+const observers: ((
+  entries: { contentRect: { width: number }; borderBoxSize: { inlineSize: number }[] }[],
+) => void)[] = []
+function stubResizeObserver() {
+  observers.length = 0
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      constructor(
+        cb: (
+          entries: { contentRect: { width: number }; borderBoxSize: { inlineSize: number }[] }[],
+        ) => void,
+      ) {
+        observers.push(cb)
+      }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  )
+}
+const resizeTo = (width: number) =>
+  act(() => {
+    for (const cb of observers)
+      cb([{ contentRect: { width }, borderBoxSize: [{ inlineSize: width }] }])
+  })
+afterEach(() => vi.unstubAllGlobals())
+
+const seatingProps = {
+  deskSize: 2 as const,
+  onOpenLayout: vi.fn(),
+  layoutBlocked: false,
+  canUndo: false,
+  dirty: false,
+  busy: false,
+  selected: null,
+  conflict: false,
+  onShuffle: vi.fn(),
+  onPair: vi.fn(),
+  onMentor: vi.fn(),
+  canMentor: false,
+  onUndo: vi.fn(),
+  onDiscard: vi.fn(),
+  onToggleLock: vi.fn(),
+  onPrint: vi.fn(),
+  onSave: vi.fn(),
+  onReload: vi.fn(),
+  onKeepEditing: vi.fn(),
+}
+const seatingDock = () =>
+  dock({
+    mode: 'seating',
+    common: undefined,
+    status: undefined,
+    actions: <SeatingBar {...seatingProps} />,
+    menu: <SeatingMenuItems {...seatingProps} />,
+  })
+
+it('uses the surface-token card style without a border', () => {
+  dock()
+  const bar = screen.getByRole('toolbar', { name: '教室工具' })
+  expect(bar.classList.contains('rounded-lg')).toBe(true)
+  expect(bar.classList.contains('shadow-surface')).toBe(true)
+  expect(bar.classList.contains('border')).toBe(false)
+})
+
+it('keeps every seating action as a button while the dock is wide', () => {
+  stubResizeObserver()
+  seatingDock()
+  resizeTo(1200)
+  expect(screen.getByRole('button', { name: '桌椅排列' })).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '更多操作' }))
+  expect(screen.queryByRole('menuitem', { name: '桌椅排列' })).toBeNull()
+})
+
+it('moves 桌椅排列 into the 更多操作 menu when the dock is narrower than the container threshold', () => {
+  stubResizeObserver()
+  seatingDock()
+  resizeTo(1039)
+  expect(screen.queryByRole('button', { name: '桌椅排列' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '更多操作' }))
+  const item = screen.getByRole('menuitem', { name: '桌椅排列' })
+  fireEvent.click(item)
+  expect(seatingProps.onOpenLayout).toHaveBeenCalledTimes(1)
+  // 宽度回来后按钮回到操作条
+  resizeTo(1200)
+  expect(screen.getByRole('button', { name: '桌椅排列' })).toBeInTheDocument()
+})
+
+it('keeps the layout entry disabled in the menu while the draft is dirty', () => {
+  stubResizeObserver()
+  dock({
+    mode: 'seating',
+    actions: <SeatingBar {...seatingProps} layoutBlocked dirty />,
+    menu: <SeatingMenuItems {...seatingProps} layoutBlocked dirty />,
+  })
+  resizeTo(900)
+  fireEvent.click(screen.getByRole('button', { name: '更多操作' }))
+  // MenuItem 不透传 title / aria-describedby:不可用原因以读屏文字并进菜单项名称
+  const item = screen.getByRole('menuitem', { name: /^桌椅排列/ })
+  expect(item).toHaveAttribute('aria-disabled', 'true')
+  expect(item).toHaveTextContent('先保存或放弃当前的座位修改')
+})
+
+it('turns the 还没有考试成绩 hint into screen-reader text only in the compact dock, and keeps the boundary at 1040', () => {
+  stubResizeObserver()
+  dock({
+    mode: 'seating',
+    actions: <SeatingBar {...seatingProps} canMentor={false} />,
+  })
+  const hint = () => screen.getByText('还没有考试成绩')
+  resizeTo(1040)
+  expect(hint().classList.contains('sr-only')).toBe(false)
+  resizeTo(1039)
+  expect(hint().classList.contains('sr-only')).toBe(true)
+  expect(screen.getByRole('button', { name: '优带弱' })).toHaveAttribute(
+    'aria-describedby',
+    hint().id,
+  )
 })

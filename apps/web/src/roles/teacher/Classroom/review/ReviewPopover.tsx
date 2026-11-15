@@ -3,6 +3,7 @@ import { X } from 'lucide-react'
 import { placeCard } from '@/shared/components/ClassroomMap/placeCard'
 import type { SeatAnchor } from '@/shared/components/ClassroomMap/types'
 import { Button } from '@/shared/components/ui/button'
+import { IconButton } from '@/shared/components/ui/icon-button'
 import { Input } from '@/shared/components/ui/input'
 import { NativeSelect } from '@/shared/components/ui/native-select'
 import { useEscapeLayer } from '@/shared/hooks/useEscapeLayer'
@@ -70,20 +71,11 @@ export default function ReviewPopover({
       role="dialog"
       aria-label={`点评 ${seat.name}`}
       style={{ left: pos.left, top: pos.top, width: CARD.w }}
-      className="absolute z-20 flex flex-col gap-2 rounded-lg border bg-popover p-3 text-popover-foreground shadow-lg"
+      className="absolute z-20 flex flex-col gap-2 rounded-lg bg-popover p-3 text-popover-foreground shadow-overlay"
     >
       <div className="flex items-center justify-between">
         <strong className="text-sm">{seat.name}</strong>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          aria-label="关闭"
-          className="h-7 w-7"
-          onClick={onClose}
-        >
-          <X />
-        </Button>
+        <IconButton size="sm" icon={X} aria-label="关闭" onClick={onClose} />
       </div>
       {subject.subjects.length > 0 && (
         <label className="flex items-center gap-2 text-sm">
@@ -152,7 +144,8 @@ export default function ReviewPopover({
           disabled={pending}
           placeholder="理由"
           onChange={(e) => setText(e.target.value)}
-          className="h-8 min-w-0 flex-1"
+          controlSize="sm"
+          className="min-w-0 flex-1"
         />
         <Input
           aria-label="分值"
@@ -163,7 +156,8 @@ export default function ReviewPopover({
           disabled={pending}
           placeholder="分值"
           onChange={(e) => setDelta(e.target.value)}
-          className="h-8 w-16 px-2"
+          controlSize="sm"
+          className="w-16 px-2"
         />
         <Button type="submit" size="sm" disabled={pending || !customOk}>
           确定

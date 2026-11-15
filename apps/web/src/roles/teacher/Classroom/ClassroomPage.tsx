@@ -512,7 +512,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
           ref={stageRef}
           data-testid="classroom-stage"
           aria-busy={seatingPending ? true : undefined}
-          className={`relative min-h-[120px] flex-1 overflow-hidden [@media(min-height:560px)]:min-h-[240px] rounded-xl border bg-card ${
+          className={`relative min-h-[120px] flex-1 overflow-hidden [@media(min-height:560px)]:min-h-[240px] rounded-lg bg-card shadow-surface ${
             seatingPending ? 'cursor-progress' : ''
           }`}
           onPointerDownCapture={(e) => {
@@ -526,7 +526,7 @@ function ClassroomView({ cls }: { cls: ClassView }) {
             // 工具栏的 status 已经朗读,这里只做可见提示
             <p
               aria-hidden="true"
-              className="pointer-events-none absolute left-1/2 top-3 z-10 -translate-x-1/2 rounded-full bg-foreground/80 px-3 py-1 text-sm text-background"
+              className="pointer-events-none absolute left-1/2 top-3 z-10 -translate-x-1/2 rounded-md bg-foreground/80 px-3 py-1 text-sm text-background"
             >
               {seatingPending === 'saving'
                 ? '正在保存,暂时不能调整座位'

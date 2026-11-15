@@ -79,8 +79,8 @@ it('shows the class name read-only and edits the room', async () => {
 
 it('previews with the default how and sends drafts as controls change', async () => {
   renderDialog()
-  expect(screen.getByRole('button', { name: '保持现在的座位' })).toHaveAttribute(
-    'aria-pressed',
+  expect(screen.getByRole('tab', { name: '保持现在的座位' })).toHaveAttribute(
+    'aria-selected',
     'true',
   )
   await waitFor(() => expect(seatingApi.preview).toHaveBeenCalledTimes(1))
@@ -92,8 +92,8 @@ it('previews with the default how and sends drafts as controls change', async ()
 
 it('defaults how to the class seat order when nobody is seated', async () => {
   renderDialog({ hasSeated: false, cls: { ...cls, seat_order: 'col' } })
-  expect(screen.getByRole('button', { name: '按学号一组一组竖着排' })).toHaveAttribute(
-    'aria-pressed',
+  expect(screen.getByRole('tab', { name: '按学号一组一组竖着排' })).toHaveAttribute(
+    'aria-selected',
     'true',
   )
   expect(screen.getByText('竖着排:先坐满第一组,从前往后,再坐下一组')).toBeInTheDocument()
@@ -135,7 +135,7 @@ it('shows the unseated hint and keeps the last preview on error', async () => {
   renderDialog()
   expect(await screen.findByText('2 人未排座,可以在「排座」模式里拖到空位')).toBeInTheDocument()
   vi.mocked(seatingApi.preview).mockRejectedValue(new Error('x'))
-  fireEvent.click(screen.getByRole('button', { name: '按学号横着排' }))
+  fireEvent.click(screen.getByRole('tab', { name: '按学号横着排' }))
   expect(await screen.findByText('预览加载失败')).toBeInTheDocument()
   expect(screen.getByText('2 人未排座,可以在「排座」模式里拖到空位')).toBeInTheDocument()
 })
@@ -232,4 +232,12 @@ it('blocks cancel and closing while saving', async () => {
   expect(p.onClose).not.toHaveBeenCalled()
   release({ version: 8, moved: false, rows: 2, cols: 4 })
   await waitFor(() => expect(p.onClose).toHaveBeenCalledTimes(1))
+})
+
+it('学生坐哪儿用分段选择(tablist),标题是中等字重', () => {
+  renderDialog()
+  expect(screen.getByRole('tablist', { name: '学生坐哪儿' })).toBeInTheDocument()
+  const h3 = screen.getByRole('heading', { name: '桌椅排列' })
+  expect(h3.classList.contains('font-medium')).toBe(true)
+  expect(h3.classList.contains('font-semibold')).toBe(false)
 })

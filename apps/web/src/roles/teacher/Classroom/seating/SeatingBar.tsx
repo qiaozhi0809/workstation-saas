@@ -3,6 +3,7 @@ import { Undo2 } from 'lucide-react'
 import { MenuItem } from '@/shared/components/overlay/Menu'
 import Modal from '@/shared/components/overlay/Modal'
 import { Button } from '@/shared/components/ui/button'
+import { useDockCompact } from '../dockCompact'
 import type { DeskSize } from '@/shared/types/seating'
 import type { DraftStudent } from './draft'
 
@@ -34,6 +35,9 @@ export interface SeatingBarProps {
   onKeepEditing(): void
 }
 
+const NO_SCORES = '还没有考试成绩'
+const LAYOUT_BLOCKED = '先保存或放弃当前的座位修改'
+
 function ConflictDialog({
   onReload,
   onKeepEditing,
@@ -64,10 +68,20 @@ export function SeatingMenuItems(
   p: Pick<
     SeatingBarProps,
     'busy' | 'dirty' | 'selected' | 'onDiscard' | 'onToggleLock' | 'onPrint'
-  >,
+  > &
+    Partial<Pick<SeatingBarProps, 'onOpenLayout' | 'layoutBlocked'>>,
 ) {
+  // 操作台窄时「桌椅排列」从操作条收进这里,功能不丢
+  const compact = useDockCompact()
   return (
     <>
+      {compact && p.onOpenLayout && (
+        <MenuItem disabled={p.busy || p.layoutBlocked} onSelect={p.onOpenLayout}>
+          桌椅排列
+          {/* MenuItem 没有 title:不可用原因写成读屏文字,与操作条按钮的 title 对应 */}
+          {p.layoutBlocked && <span className="sr-only">{LAYOUT_BLOCKED}</span>}
+        </MenuItem>
+      )}
       <MenuItem disabled={p.busy || !p.dirty} onSelect={p.onDiscard}>
         放弃修改
       </MenuItem>
@@ -79,11 +93,10 @@ export function SeatingMenuItems(
   )
 }
 
-const NO_SCORES = '还没有考试成绩'
-
 /** 排座操作条:常用操作直接可见,放弃修改 / 固定 / 打印在操作台的"更多操作"里(SeatingMenuItems)。 */
 export default function SeatingBar(p: SeatingBarProps) {
   const mentorHintId = useId()
+  const compact = useDockCompact()
   return (
     <div className="flex flex-wrap items-center gap-1.5 text-sm">
       <Button type="button" variant="outline" disabled={p.busy} onClick={p.onShuffle}>
@@ -108,7 +121,10 @@ export default function SeatingBar(p: SeatingBarProps) {
           </Button>
           {/* 不可用原因:title 在触屏和读屏上都看不到,所以按钮旁再写一遍并用 aria-describedby 关联(L14) */}
           {!p.canMentor && (
-            <span id={mentorHintId} className="text-xs text-muted-foreground">
+            <span
+              id={mentorHintId}
+              className={compact ? 'sr-only' : 'text-xs text-muted-foreground'}
+            >
               {NO_SCORES}
             </span>
           )}
@@ -125,12 +141,12 @@ export default function SeatingBar(p: SeatingBarProps) {
       >
         <Undo2 aria-hidden />
       </Button>
-      {p.onOpenLayout && (
+      {p.onOpenLayout && !compact && (
         <Button
           type="button"
           variant="outline"
           disabled={p.busy || p.layoutBlocked}
-          title={p.layoutBlocked ? '先保存或放弃当前的座位修改' : undefined}
+          title={p.layoutBlocked ? LAYOUT_BLOCKED : undefined}
           onClick={p.onOpenLayout}
         >
           桌椅排列
