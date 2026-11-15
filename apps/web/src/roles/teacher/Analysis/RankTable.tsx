@@ -35,7 +35,7 @@ export function RankTable({
       <section aria-label="成绩排名">
         <h2 className="px-3 pt-4 text-base font-medium">成绩排名</h2>
         <div data-testid="rank-scroll" className="mt-2 max-h-[460px] overflow-auto">
-          <Table containerClassName="overflow-visible rounded-none bg-transparent shadow-none">
+          <Table containerClassName="overflow-visible rounded-none bg-transparent shadow-[none]">
             <TableHead>
               <TableRow>
                 <Th className="sticky top-0 bg-card">名次</Th>

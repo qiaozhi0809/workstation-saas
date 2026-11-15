@@ -283,7 +283,7 @@ function Roster({ ctx: { cls, summary, perms } }: { ctx: ClassContext }) {
       {visible.length === 0 ? (
         <EmptyState title="没有符合条件的学生" />
       ) : (
-        <Table containerClassName="relative">
+        <Table containerClassName="w-fit max-w-full">
           <TableHead className="bg-muted/50">
             <TableRow>
               <SortHead by="no" {...sortProps}>

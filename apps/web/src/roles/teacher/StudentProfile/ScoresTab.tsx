@@ -43,7 +43,7 @@ export default function ScoresTab({ profile }: { profile: StudentProfile }) {
   return (
     <div className="space-y-4">
       <div>
-        <Table density="compact" aria-label="历次成绩">
+        <Table density="compact" aria-label="历次成绩" containerClassName="w-fit max-w-full">
           <TableHead>
             <TableRow>
               <Th>考试</Th>

@@ -193,6 +193,17 @@ describe('table alignment', () => {
     expect(within(chinese).getByText('76.7%')).toHaveClass('text-right', 'tabular-nums')
   })
 
+  it('draws both tables flat inside their cards, without their own surface outline', async () => {
+    setup([first, second], '/teacher/analysis?exam=x2&cmp=x1')
+    const rank = await rankRegion()
+    const detail = within(await screen.findByRole('region', { name: '各科明细' }))
+    for (const region of [rank, detail]) {
+      const container = region.getByRole('table').closest('[data-slot="table-container"]')
+      expect(container).toHaveClass('shadow-[none]', 'bg-transparent')
+      expect(container).not.toHaveClass('shadow-surface')
+    }
+  })
+
   it('opens a student from a link-styled name button', async () => {
     setup([first, second], '/teacher/analysis?exam=x2&cmp=x1')
     const table = await rankRegion()

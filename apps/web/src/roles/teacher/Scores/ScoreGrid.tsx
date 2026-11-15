@@ -200,7 +200,7 @@ export default function ScoreGrid({
   }
 
   return (
-    <Table>
+    <Table containerClassName="w-fit max-w-full">
       <TableHead className="bg-muted/50">
         <TableRow>
           <Th>学号</Th>
