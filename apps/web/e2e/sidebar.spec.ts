@@ -105,6 +105,24 @@ for (const [name, trigger, layer] of [
   })
 }
 
+test('admin nav scrolls fully above the footer buttons at 1280×800', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await signIn(page, 'principal01', /\/admin\/today/)
+  const nav = aside(page).getByRole('navigation', { name: '主导航' })
+  const last = nav.getByRole('link').last()
+  await last.scrollIntoViewIfNeeded()
+  // 滚到底后最后一项整个落在导航区里,不被下面的折叠按钮、通知 / 账号区压住
+  await expect(async () => {
+    const n = (await nav.boundingBox())!
+    const l = (await last.boundingBox())!
+    expect(l.y).toBeGreaterThanOrEqual(n.y - 1)
+    expect(l.y + l.height).toBeLessThanOrEqual(n.y + n.height + 1)
+  }).toPass()
+  const toggle = (await aside(page).getByRole('button', { name: '折叠侧栏' }).boundingBox())!
+  const l = (await last.boundingBox())!
+  expect(l.y + l.height).toBeLessThanOrEqual(toggle.y + 1)
+})
+
 test('classroom defaults to rail', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 })
   await signInTeacher(page)

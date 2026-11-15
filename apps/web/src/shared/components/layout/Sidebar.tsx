@@ -67,7 +67,9 @@ export function Sidebar({
         aria-label="主导航"
         aria-busy={navLoading || undefined}
         className={cn(
-          'flex min-h-0 flex-1 flex-col overflow-y-auto px-3',
+          // 导航超过一屏时在这里滚动:底部留 16 的内边距、再用渐隐遮住贴着底部按钮区的那一截,
+          // 既不会让最后一项被压在按钮区下面,也提示下面还有内容(滚到底时渐隐只落在空白内边距上)
+          'flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pb-4 [mask-image:linear-gradient(to_bottom,#000_calc(100%-1rem),transparent)]',
           collapsed && 'items-center',
         )}
       >

@@ -112,6 +112,13 @@ describe('Sidebar', () => {
     expect(screen.getByRole('link', { name: '今日关注' })).not.toHaveAttribute('aria-current')
   })
 
+  it('nav scrolls on its own with a bottom inset and a fade so the last item is never pinned under the footer', () => {
+    sidebar()
+    const nav = screen.getByRole('navigation', { name: '主导航' })
+    expect(nav).toHaveClass('overflow-y-auto', 'min-h-0', 'flex-1', 'pb-4')
+    expect(nav.className).toContain('mask-image:linear-gradient(to_bottom')
+  })
+
   it('rail hides labels but keeps names', () => {
     sidebar({ collapsed: true })
     expect(screen.getByRole('link', { name: '组织架构' })).toBeInTheDocument()
