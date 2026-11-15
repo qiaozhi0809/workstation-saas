@@ -146,13 +146,19 @@ it('renders one 更多操作 menu from the menu items, after the common zone, an
 })
 
 // ---- 操作台按容器宽度自适应(M6 CR) ----
-const observers: ((entries: { contentRect: { width: number } }[]) => void)[] = []
+const observers: ((
+  entries: { contentRect: { width: number }; borderBoxSize: { inlineSize: number }[] }[],
+) => void)[] = []
 function stubResizeObserver() {
   observers.length = 0
   vi.stubGlobal(
     'ResizeObserver',
     class {
-      constructor(cb: (entries: { contentRect: { width: number } }[]) => void) {
+      constructor(
+        cb: (
+          entries: { contentRect: { width: number }; borderBoxSize: { inlineSize: number }[] }[],
+        ) => void,
+      ) {
         observers.push(cb)
       }
       observe() {}
@@ -163,7 +169,8 @@ function stubResizeObserver() {
 }
 const resizeTo = (width: number) =>
   act(() => {
-    for (const cb of observers) cb([{ contentRect: { width } }])
+    for (const cb of observers)
+      cb([{ contentRect: { width }, borderBoxSize: [{ inlineSize: width }] }])
   })
 afterEach(() => vi.unstubAllGlobals())
 
@@ -217,7 +224,7 @@ it('keeps every seating action as a button while the dock is wide', () => {
 it('moves 桌椅排列 into the 更多操作 menu when the dock is narrower than the container threshold', () => {
   stubResizeObserver()
   seatingDock()
-  resizeTo(984)
+  resizeTo(1039)
   expect(screen.queryByRole('button', { name: '桌椅排列' })).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: '更多操作' }))
   const item = screen.getByRole('menuitem', { name: '桌椅排列' })
@@ -240,5 +247,22 @@ it('keeps the layout entry disabled in the menu while the draft is dirty', () =>
   expect(screen.getByRole('menuitem', { name: '桌椅排列' })).toHaveAttribute(
     'aria-disabled',
     'true',
+  )
+})
+
+it('turns the 还没有考试成绩 hint into screen-reader text only in the compact dock, and keeps the boundary at 1040', () => {
+  stubResizeObserver()
+  dock({
+    mode: 'seating',
+    actions: <SeatingBar {...seatingProps} canMentor={false} />,
+  })
+  const hint = () => screen.getByText('还没有考试成绩')
+  resizeTo(1040)
+  expect(hint().classList.contains('sr-only')).toBe(false)
+  resizeTo(1039)
+  expect(hint().classList.contains('sr-only')).toBe(true)
+  expect(screen.getByRole('button', { name: '优带弱' })).toHaveAttribute(
+    'aria-describedby',
+    hint().id,
   )
 })

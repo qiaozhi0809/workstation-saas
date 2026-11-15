@@ -30,13 +30,13 @@ const MODES: { slug: string; path: string; tab: string; ready: (page: Page) => L
     slug: 'review',
     path: '/teacher/classroom?mode=review',
     tab: '点评',
-    ready: (p) => p.getByRole('button', { name: '待办与点评' }),
+    ready: (p) => p.getByRole('button', { name: '积分榜' }),
   },
   {
     slug: 'grades',
     path: '/teacher/classroom?mode=grades',
     tab: '成绩',
-    ready: (p) => p.getByRole('button', { name: '待办与点评' }),
+    ready: (p) => p.getByLabel('选择考试').or(p.getByRole('link', { name: '去录入' })),
   },
   {
     slug: 'seating',

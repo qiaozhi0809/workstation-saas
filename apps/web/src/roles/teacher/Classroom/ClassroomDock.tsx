@@ -47,12 +47,12 @@ export default function ClassroomDock({
   useLayoutEffect(() => {
     const el = barRef.current
     if (!el) return
-    // 宽度为 0 表示还没排版(或没有排版引擎),不当成窄
+    // 统一取 border-box 宽度,与阈值同口径;0 表示还没排版(或没有排版引擎),不当成窄
     const apply = (width: number) => setCompact(width > 0 && width < DOCK_COMPACT_BELOW)
     apply(el.getBoundingClientRect().width)
     if (typeof ResizeObserver === 'undefined') return
     const ro = new ResizeObserver(([entry]) => {
-      if (entry) apply(entry.contentRect.width + 16)
+      if (entry) apply(entry.borderBoxSize?.[0]?.inlineSize ?? el.getBoundingClientRect().width)
     })
     ro.observe(el)
     return () => ro.disconnect()
