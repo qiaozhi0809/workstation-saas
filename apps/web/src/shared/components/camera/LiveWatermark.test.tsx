@@ -29,6 +29,8 @@ describe('LiveWatermark', () => {
     const el = screen.getByText(/正在直播/)
     expect(el).toHaveTextContent('正在直播 · 示例小学 · 2026/11/02 09:00:00 · 赵老师')
     expect(container.firstElementChild).toHaveClass('pointer-events-none')
+    expect(container.firstElementChild).toHaveClass('rounded-sm')
+    expect(container.firstElementChild).not.toHaveClass('rounded')
     act(() => void vi.advanceTimersByTime(1000))
     expect(el).toHaveTextContent('09:00:01')
     unmount()

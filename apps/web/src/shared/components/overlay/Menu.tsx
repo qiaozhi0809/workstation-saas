@@ -23,7 +23,7 @@ const ARROW_FOCUS: Record<string, LayerFocus> = { ArrowDown: 'first', ArrowUp: '
 
 // aria-disabled 项:悬停不高亮(免得看着能点);聚焦换成中性的 muted 底色,键盘仍能看出焦点在哪
 const ITEM = cn(
-  'flex w-full items-center rounded-sm px-2 py-1.5 text-left text-sm outline-none',
+  'flex min-h-8 w-full items-center rounded-sm px-2 py-1.5 text-left text-sm outline-none',
   'hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground',
   'aria-disabled:cursor-not-allowed aria-disabled:opacity-50',
   'aria-disabled:hover:bg-transparent aria-disabled:hover:text-inherit aria-disabled:focus:bg-muted aria-disabled:focus:text-inherit',

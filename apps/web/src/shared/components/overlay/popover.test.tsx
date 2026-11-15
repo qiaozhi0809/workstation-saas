@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import Menu, { MenuItem, MenuLabel, MenuLinkItem } from './Menu'
 import Popover from './Popover'
@@ -265,4 +265,60 @@ it('closes the layer when its trigger becomes disabled', () => {
   expect(screen.getByRole('dialog')).toBeInTheDocument()
   popover.rerender(<Harness kind="popover" busy />)
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+})
+
+// M6 段 X:浮层外观改成无边框 + shadow-overlay,并支持 side="right"
+describe('overlay surface (M6)', () => {
+  const open = (side?: 'top' | 'bottom' | 'right', align?: 'start' | 'end') => {
+    render(
+      <Popover label="面板" trigger="开" side={side} align={align}>
+        <span>内容</span>
+      </Popover>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: '开' }))
+    return screen.getByRole('dialog', { name: '面板' })
+  }
+
+  it('popover has no border and uses the overlay shadow', () => {
+    const layer = open()
+    expect(layer).toHaveClass('rounded-lg', 'shadow-overlay')
+    expect(layer).not.toHaveClass('border')
+    expect(layer).not.toHaveClass('shadow-md')
+  })
+
+  it('side right opens beside the trigger, aligned to its top by default', () => {
+    const layer = open('right')
+    expect(layer).toHaveClass('left-full', 'ml-2', 'top-0')
+    expect(layer).not.toHaveClass('top-full')
+    expect(layer).not.toHaveClass('left-0')
+  })
+
+  it('side right with align end is aligned to the trigger bottom', () => {
+    const layer = open('right', 'end')
+    expect(layer).toHaveClass('left-full', 'ml-2', 'bottom-0')
+    expect(layer).not.toHaveClass('top-0')
+  })
+
+  it('bottom and top placements are unchanged', () => {
+    expect(open('bottom')).toHaveClass('top-full', 'mt-2', 'left-0')
+    cleanup()
+    expect(open('top', 'end')).toHaveClass('bottom-full', 'mb-2', 'right-0')
+  })
+
+  it('menu supports side right too and items are at least 32 high', () => {
+    render(
+      <MemoryRouter>
+        <Menu label="账号" trigger="账号" side="right">
+          <MenuItem onSelect={vi.fn()}>退出</MenuItem>
+        </Menu>
+      </MemoryRouter>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: '账号' }))
+    const menu = screen.getByRole('menu', { name: '账号' })
+    expect(menu).toHaveClass('left-full', 'ml-2', 'shadow-overlay')
+    expect(menu).not.toHaveClass('border')
+    const item = within(menu).getByRole('menuitem', { name: '退出' })
+    expect(item).toHaveClass('min-h-8')
+    expect(item).toHaveClass('focus:bg-accent', 'focus:text-accent-foreground')
+  })
 })
