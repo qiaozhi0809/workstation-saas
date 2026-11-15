@@ -55,6 +55,58 @@ async function stubExamAndHistory(page: Page) {
       missing_classes: [],
     },
   ])
+  const stat = (subject: string, avg: number) => ({
+    subject,
+    full: 100,
+    count: 38,
+    missing: 2,
+    avg,
+    max: 99,
+    min: 41,
+    pass_rate: 0.86,
+    good_rate: 0.25,
+  })
+  const total = { full: 200, count: 38, avg: 160.5, max: 195, min: 90 }
+  await json(/\/api\/v1\/admin\/reports\/scores(\?|$)/, {
+    grade_exam: { id: 'ge-a2', name: '示例期中联考', date: '2026-11-03', grade_name: '示例年级' },
+    subjects: [
+      { name: '语文', full: 100 },
+      { name: '数学', full: 100 },
+    ],
+    classes: [
+      {
+        class_id: 'c-a2-1',
+        class_name: '示例一班',
+        subjects: [stat('语文', 82.3), stat('数学', 79.1)],
+        total,
+      },
+      {
+        class_id: 'c-a2-2',
+        class_name: '示例二班',
+        subjects: [stat('语文', 75.5), stat('数学', 88)],
+        total,
+      },
+    ],
+    grade: { subjects: [stat('语文', 78.9), stat('数学', 83.5)], total },
+  })
+  const counts = {
+    days: 20,
+    expected: 800,
+    present: 780,
+    leave: 12,
+    absent: 8,
+    late: 5,
+    rate: 0.975,
+  }
+  await json(/\/api\/v1\/admin\/reports\/attendance(\?|$)/, {
+    month: '2026-11',
+    scope_label: '示例年级',
+    classes: [
+      { class_id: 'c-a2-1', class_name: '示例一班', grade_name: '示例年级', ...counts },
+      { class_id: 'c-a2-2', class_name: '示例二班', grade_name: '示例年级', ...counts },
+    ],
+    total: counts,
+  })
   await json(/\/api\/v1\/admin\/history\/years(\?|$)/, [
     { id: 'y-a2', name: '2025-2026 学年', start_date: '2025-09-01', end_date: '2026-07-01' },
   ])
@@ -86,8 +138,21 @@ async function stubExamAndHistory(page: Page) {
 async function settle(page: Page) {
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
   await expect(page.getByRole('status').filter({ hasText: /加载中/ })).toHaveCount(0)
+  // 每页都要等到有真实内容(卡片或表格容器)再量,不只是等 h1;骨架屏是 aria-busy
+  await expect(
+    page.locator('main [data-slot=card], main [data-slot=table-container]').first(),
+  ).toBeVisible()
+  await expect(page.locator('main [aria-busy="true"]')).toHaveCount(0)
   await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => {})
 }
+
+/** 种子库里可能没有数据、只剩空状态的页面:用虚构数据保证有卡片或表格可量 */
+const STUBBED_PATHS: readonly string[] = [
+  '/admin/grade-exams',
+  '/admin/history',
+  '/admin/reports/scores',
+  '/admin/reports/attendance',
+]
 
 const STATIC_PAGES = [
   { name: '今日关注', path: '/admin/today' },
@@ -106,9 +171,7 @@ for (const view of VIEWS) {
     for (const p of STATIC_PAGES) {
       test(`${p.name} meets the baseline`, async ({ page }) => {
         await guardReadOnly(page)
-        if (p.path === '/admin/grade-exams' || p.path === '/admin/history') {
-          await stubExamAndHistory(page)
-        }
+        if (STUBBED_PATHS.includes(p.path)) await stubExamAndHistory(page)
         await applyTheme(page, view.theme)
         await signInAs(page, 'admin')
         await page.goto(p.path)
