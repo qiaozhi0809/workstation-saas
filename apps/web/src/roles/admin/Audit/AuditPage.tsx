@@ -8,9 +8,11 @@ import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { Badge } from '@/shared/components/ui/badge'
 import { Button } from '@/shared/components/ui/button'
+import { IconButton } from '@/shared/components/ui/icon-button'
+import { PageContainer, PageHeader } from '@/shared/components/ui/page'
+import { Table, TableBody, TableHead, TableRow, Td, Th } from '@/shared/components/ui/table'
 import { todayIn, useSchoolTz } from '@/shared/hooks/useSchoolTz'
 import { addDays, formatInTz } from '@/shared/lib/date'
-import { cn } from '@/shared/lib/utils'
 import type { AuditRow } from '@/shared/types/admin'
 import AuditFilters, { type AuditFilterValue } from './AuditFilters'
 import AuditRowDetail from './AuditRowDetail'
@@ -29,7 +31,7 @@ const objectText = (r: AuditRow) => r.object_label ?? (r.object_id ? r.action_la
 /** 默认区间要按学校时区算,所以等拿到时区再初始化筛选状态 */
 export default function AuditPage() {
   const school = useSchoolTz()
-  if (!school.ready) return <LoadingState />
+  if (!school.ready) return <LoadingState variant="table" />
   return <AuditLog tz={school.tz} />
 }
 
@@ -87,8 +89,8 @@ function AuditLog({ tz }: { tz: string }) {
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-4 p-4 md:p-6">
-      <h1 className="text-lg font-semibold">审计日志</h1>
+    <PageContainer width="default">
+      <PageHeader title="审计日志" />
       <AuditFilters value={filter} actions={actions.data} onChange={change} />
 
       {list.isError ? (
@@ -98,80 +100,63 @@ function AuditLog({ tz }: { tz: string }) {
           retrying={list.isFetching}
         />
       ) : !list.data ? (
-        <LoadingState />
+        <LoadingState variant="table" />
       ) : list.data.items.length === 0 ? (
         <EmptyState title="没有符合条件的记录" />
       ) : (
-        <div className="overflow-x-auto rounded-md border">
-          <table className="w-full min-w-[48rem] text-sm">
-            <thead className="bg-muted text-left text-muted-foreground">
-              <tr>
-                {HEADS.map((h) => (
-                  <th key={h} scope="col" className="whitespace-nowrap px-3 py-2 font-medium">
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {list.data.items.map((r) => {
-                const hasExtra = !!r.extra && Object.keys(r.extra).length > 0
-                const expanded = open.has(r.id)
-                return (
-                  <Fragment key={r.id}>
-                    <tr
-                      data-failed={r.success ? 'false' : 'true'}
-                      className={cn(
-                        'border-t align-middle',
-                        !r.success && 'bg-destructive/5 text-destructive',
-                      )}
-                    >
-                      {/* 时间按学校时区显示,与上面的筛选区间同一口径(L270) */}
-                      <td className="whitespace-nowrap px-3 py-2">{formatInTz(r.at, tz)}</td>
-                      <td className="whitespace-nowrap px-3 py-2">{r.user_name ?? '—'}</td>
-                      <td className="px-3 py-2">
-                        <span className="inline-flex items-center gap-1">
-                          {hasExtra && (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6"
-                              aria-expanded={expanded}
-                              aria-label={`${expanded ? '收起' : '展开'} ${r.action_label}`}
-                              onClick={() => toggle(r.id)}
-                            >
-                              {expanded ? (
-                                <ChevronDown aria-hidden="true" />
-                              ) : (
-                                <ChevronRight aria-hidden="true" />
-                              )}
-                            </Button>
-                          )}
-                          {r.action_label}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2">{objectText(r)}</td>
-                      <td className="whitespace-nowrap px-3 py-2">{r.ip ?? '—'}</td>
-                      <td className="whitespace-nowrap px-3 py-2">
-                        <Badge variant={r.success ? 'success' : 'danger'}>
-                          {r.success ? '成功' : '被拒'}
-                        </Badge>
-                      </td>
-                    </tr>
-                    {hasExtra && expanded && (
-                      <tr className="bg-muted/40">
-                        <td colSpan={HEADS.length} className="px-3 py-2">
-                          <AuditRowDetail extra={r.extra as Record<string, unknown>} />
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
+        <Table minWidth={768}>
+          <TableHead>
+            <TableRow>
+              {HEADS.map((h) => (
+                <Th key={h}>{h}</Th>
+              ))}
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {list.data.items.map((r) => {
+              const hasExtra = !!r.extra && Object.keys(r.extra).length > 0
+              const expanded = open.has(r.id)
+              return (
+                <Fragment key={r.id}>
+                  {/* 被拒只在结果列用徽章标出,整行不染色;data-failed 留给测试和筛选脚本 */}
+                  <TableRow data-failed={r.success ? 'false' : 'true'}>
+                    {/* 时间按学校时区显示,与上面的筛选区间同一口径(L270) */}
+                    <Td>{formatInTz(r.at, tz)}</Td>
+                    <Td>{r.user_name ?? '—'}</Td>
+                    <Td nowrap={false}>
+                      <span className="inline-flex items-center gap-1">
+                        {hasExtra && (
+                          <IconButton
+                            size="sm"
+                            icon={expanded ? ChevronDown : ChevronRight}
+                            aria-expanded={expanded}
+                            aria-label={`${expanded ? '收起' : '展开'} ${r.action_label}`}
+                            onClick={() => toggle(r.id)}
+                          />
+                        )}
+                        {r.action_label}
+                      </span>
+                    </Td>
+                    <Td nowrap={false}>{objectText(r)}</Td>
+                    <Td>{r.ip ?? '—'}</Td>
+                    <Td>
+                      <Badge variant={r.success ? 'success' : 'danger'}>
+                        {r.success ? '成功' : '被拒'}
+                      </Badge>
+                    </Td>
+                  </TableRow>
+                  {hasExtra && expanded && (
+                    <TableRow className="bg-muted/40">
+                      <Td colSpan={HEADS.length} nowrap={false} className="py-2">
+                        <AuditRowDetail extra={r.extra as Record<string, unknown>} />
+                      </Td>
+                    </TableRow>
+                  )}
+                </Fragment>
+              )
+            })}
+          </TableBody>
+        </Table>
       )}
 
       {total > PAGE_SIZE && (
@@ -197,6 +182,6 @@ function AuditLog({ tz }: { tz: string }) {
           </Button>
         </div>
       )}
-    </div>
+    </PageContainer>
   )
 }

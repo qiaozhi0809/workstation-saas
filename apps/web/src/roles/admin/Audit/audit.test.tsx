@@ -287,7 +287,7 @@ describe('审计日志', () => {
     await waitFor(() => expect(lastFilters()).toMatchObject({ object_type: 'camera', page: 1 }))
   })
 
-  it('被拒的行用红色标记,成功的不标', async () => {
+  it('被拒的行只在结果列用红色徽章标记,整行不再染红', async () => {
     vi.mocked(adminApi.audit).mockResolvedValue({
       items: [
         row({ id: 'ok' }),
@@ -302,6 +302,29 @@ describe('审计日志', () => {
     expect(failed[0]).toHaveTextContent('越权访问')
     expect(failed[0]).toHaveTextContent('被拒')
     expect(container.querySelectorAll('tr[data-failed="false"]')).toHaveLength(1)
+    const cls = Array.from(failed[0].classList)
+    expect(cls.some((c) => c.includes('destructive'))).toBe(false)
+  })
+
+  it('页面用页面骨架,表格在 table-container 里,筛选控件统一 40 高', async () => {
+    setup()
+    await screen.findByRole('table')
+    expect(document.querySelector('[data-page-container]')).toHaveAttribute('data-width', 'default')
+    expect(screen.getByRole('table').closest('[data-slot="table-container"]')).not.toBeNull()
+    expect(screen.getByLabelText('开始日期').classList.contains('h-10')).toBe(true)
+    expect(screen.getByLabelText('分组').classList.contains('h-10')).toBe(true)
+  })
+
+  it('操作人胶囊 40 高,清除按钮 32 见方', async () => {
+    setup()
+    await screen.findByRole('table')
+    fireEvent.change(screen.getByLabelText('搜索操作人'), { target: { value: '李' } })
+    fireEvent.click(
+      await screen.findByRole('button', { name: '选择 李老师(li)' }, { timeout: 2000 }),
+    )
+    const clear = await screen.findByRole('button', { name: '清除操作人' })
+    expect(clear.classList.contains('h-8') && clear.classList.contains('w-8')).toBe(true)
+    expect(clear.parentElement?.classList.contains('h-10')).toBe(true)
   })
 
   it('展开一行显示 extra 的键值', async () => {

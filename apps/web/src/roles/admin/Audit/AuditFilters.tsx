@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { X } from 'lucide-react'
 import { adminApi } from '@/shared/api/admin'
-import { Button } from '@/shared/components/ui/button'
+import { Checkbox } from '@/shared/components/ui/checkbox'
+import { IconButton } from '@/shared/components/ui/icon-button'
 import { Input } from '@/shared/components/ui/input'
 import { NativeSelect } from '@/shared/components/ui/native-select'
 import type { AuditActions } from '@/shared/types/admin'
@@ -59,22 +60,18 @@ function OperatorSearch({
 
   if (value) {
     return (
-      <span className="flex h-9 items-center gap-1 rounded-md border bg-muted px-2 text-sm">
+      <span className="flex h-10 items-center gap-1 rounded-md bg-muted pl-3 pr-1 text-sm">
         {value.name}
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-6 w-6"
+        <IconButton
+          size="sm"
+          icon={X}
           aria-label="清除操作人"
           onClick={() => {
             onChange(null)
             setText('')
             setQ('')
           }}
-        >
-          <X aria-hidden="true" />
-        </Button>
+        />
       </span>
     )
   }
@@ -107,7 +104,7 @@ function OperatorSearch({
         }}
       />
       {open && q !== '' && res.isSuccess && (
-        <ul className="absolute z-10 mt-1 max-h-56 w-72 overflow-y-auto rounded-md border bg-background p-1 shadow-md">
+        <ul className="absolute z-10 mt-1 max-h-56 w-72 overflow-y-auto rounded-md bg-background p-1 shadow-overlay">
           {items.length === 0 && (
             <li className="px-2 py-1.5 text-sm text-muted-foreground">没有找到账号</li>
           )}
@@ -116,7 +113,7 @@ function OperatorSearch({
               <button
                 type="button"
                 aria-label={`选择 ${a.display_name}(${a.login_name})`}
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
+                className="flex min-h-8 w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
                 onClick={() => {
                   onChange({ id: a.id, name: a.display_name })
                   setText('')
@@ -133,7 +130,7 @@ function OperatorSearch({
             <li>
               <button
                 type="button"
-                className="w-full rounded px-2 py-1.5 text-left text-sm text-primary hover:bg-accent disabled:opacity-50"
+                className="min-h-8 w-full rounded px-2 py-1.5 text-left text-sm text-primary hover:bg-accent disabled:opacity-50"
                 disabled={res.isFetchingNextPage}
                 onClick={() => void res.fetchNextPage()}
               >
@@ -161,7 +158,7 @@ export default function AuditFilters({
     (g) => g.actions.length > 0 && (!value.group || g.key === value.group),
   )
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+    <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
       <label className="flex items-center gap-1.5 text-sm">
         开始
         <Input
@@ -242,14 +239,12 @@ export default function AuditFilters({
           ))}
         </NativeSelect>
       </label>
-      <label className="flex items-center gap-1.5 text-sm">
-        <input
-          type="checkbox"
-          checked={value.deniedOnly}
-          onChange={(e) => onChange({ deniedOnly: e.target.checked })}
-        />
-        只看被拒
-      </label>
+      <Checkbox
+        label="只看被拒"
+        className="h-10 items-center"
+        checked={value.deniedOnly}
+        onChange={(e) => onChange({ deniedOnly: e.target.checked })}
+      />
     </div>
   )
 }
