@@ -7,7 +7,7 @@ import { Building2, Sun } from 'lucide-react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AccountMenu from './AccountMenu'
 import { Sidebar, type SidebarGroup } from './Sidebar'
-import { DRAWER_BREAKPOINT } from './useSidebarState'
+import { DRAWER_BREAKPOINT, SIDEBAR_QUERIES } from './useSidebarState'
 import SidebarShell from './SidebarShell'
 import { Breadcrumb } from './Breadcrumb'
 import { adminCrumbs, teacherCrumbs } from './crumbs'
@@ -80,6 +80,35 @@ describe('Sidebar', () => {
   it('marks the current page', () => {
     sidebar()
     expect(screen.getByRole('link', { name: '组织架构' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: '今日关注' })).not.toHaveAttribute('aria-current')
+  })
+
+  it('highlights the parent item on a sub page listed in alsoActive', () => {
+    render(
+      <Wrap at="/admin/classes/c1">
+        <Sidebar
+          groups={[
+            {
+              key: 'top',
+              items: [
+                {
+                  to: '/admin/board',
+                  label: '全校看板',
+                  icon: Sun,
+                  alsoActive: ['/admin/classes/:id'],
+                },
+                { to: '/admin/today', label: '今日关注', icon: Sun },
+              ],
+            },
+          ]}
+          collapsed={false}
+          onToggle={() => {}}
+          header={null}
+          footer={null}
+        />
+      </Wrap>,
+    )
+    expect(screen.getByRole('link', { name: '全校看板' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('link', { name: '今日关注' })).not.toHaveAttribute('aria-current')
   })
 
@@ -209,6 +238,19 @@ describe('SidebarShell', () => {
 
   it('exports one drawer breakpoint per scope', () => {
     expect(DRAWER_BREAKPOINT).toEqual({ default: 1024, classroom: 1280 })
+  })
+
+  it('media queries are built from the same breakpoints', () => {
+    expect(SIDEBAR_QUERIES).toEqual([
+      `(min-width: ${DRAWER_BREAKPOINT.default}px)`,
+      `(min-width: ${DRAWER_BREAKPOINT.classroom}px)`,
+    ])
+  })
+
+  it('the drawer menu button is a touch target', () => {
+    mockWidth(800)
+    shell(null)
+    expect(screen.getByRole('button', { name: '打开菜单' })).toHaveClass('touch-target')
   })
 
   it('classroom scope is a drawer at 1024 and a rail at 1280', () => {

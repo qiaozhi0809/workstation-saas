@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react'
-import { NavLink } from 'react-router-dom'
+import { Link, matchPath, useLocation } from 'react-router-dom'
 import { Button } from '@/shared/components/ui/button'
 import { cn } from '@/shared/lib/utils'
 import { RailTip } from './RailTip'
@@ -10,6 +10,8 @@ export interface SidebarItem {
   to: string
   label: string
   icon: LucideIcon
+  /** 也算「当前页」的路径模式(react-router 写法,如 `/admin/classes/:id`):导航里没有入口的子页挂在这一项下 */
+  alsoActive?: string[]
 }
 /** 没有 label = 不显示组标题 */
 export interface SidebarGroup {
@@ -128,13 +130,18 @@ export function Sidebar({
 }
 
 function SidebarLink({ item, collapsed }: { item: SidebarItem; collapsed: boolean }) {
-  const { to, label, icon: Icon } = item
+  const { to, label, icon: Icon, alsoActive } = item
+  const { pathname } = useLocation()
+  const current =
+    matchPath({ path: to, end: false }, pathname) !== null ||
+    (alsoActive ?? []).some((p) => matchPath({ path: p, end: false }, pathname) !== null)
   // className 必须是字符串:RailTip 的 Tooltip.Trigger asChild 经 Slot 合并 props,
-  // 函数式 className 会被拼成源码字符串;当前页由 NavLink 写的 aria-current="page" 驱动样式
+  // 函数式 className 会被拼成源码字符串;当前页由 aria-current="page" 驱动样式
   return (
     <RailTip label={label} disabled={!collapsed}>
-      <NavLink
+      <Link
         to={to}
+        aria-current={current ? 'page' : undefined}
         className={cn(
           'touch-target flex h-10 shrink-0 items-center gap-2 rounded-md text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
           'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
@@ -147,7 +154,7 @@ function SidebarLink({ item, collapsed }: { item: SidebarItem; collapsed: boolea
           aria-hidden="true"
         />
         <span className={cn('truncate', collapsed && 'sr-only')}>{label}</span>
-      </NavLink>
+      </Link>
     </RailTip>
   )
 }
