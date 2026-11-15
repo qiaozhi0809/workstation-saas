@@ -64,7 +64,7 @@ export default function TotpStep({
     <>
       <CardHeader>
         <ShieldCheck className="h-8 w-8 text-primary" aria-hidden="true" />
-        <h1 className="text-xl font-semibold tracking-tight">两步验证</h1>
+        <h1 className="text-xl font-medium">两步验证</h1>
         <CardDescription>请输入验证器应用里显示的 6 位数字</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -79,6 +79,7 @@ export default function TotpStep({
             autoComplete="one-time-code"
             maxLength={6}
             readOnly={pending}
+            className="text-center tabular-nums tracking-[0.3em]"
           />
         </div>
         {error && (
