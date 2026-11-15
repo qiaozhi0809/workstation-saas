@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { Link, matchPath, useLocation } from 'react-router-dom'
-import { Button } from '@/shared/components/ui/button'
+import { IconButton } from '@/shared/components/ui/icon-button'
 import { cn } from '@/shared/lib/utils'
 import { RailTip } from './RailTip'
 
@@ -105,17 +105,14 @@ export function Sidebar({
       {variant === 'floating' && (
         <div className={cn('flex shrink-0 px-3 pt-2', collapsed && 'justify-center')}>
           <RailTip label={collapsed ? '展开侧栏' : '折叠侧栏'} disabled={!collapsed}>
-            <Button
-              variant="ghost"
-              size="icon"
+            <IconButton
+              icon={ToggleIcon}
               className="touch-target text-muted-foreground"
               aria-label={collapsed ? '展开侧栏' : '折叠侧栏'}
               aria-expanded={!collapsed}
               aria-keyshortcuts="["
               onClick={onToggle}
-            >
-              <ToggleIcon className="h-4 w-4" aria-hidden="true" />
-            </Button>
+            />
           </RailTip>
         </div>
       )}

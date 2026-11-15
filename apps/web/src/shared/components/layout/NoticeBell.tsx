@@ -18,7 +18,9 @@ import { useRealtimeEvent } from '@/shared/realtime/useRealtimeEvent'
 import NoticeList from './NoticeList'
 
 /** 顶栏铃铛:未读数徽标(全量)+ 收件箱按页加载(L90);必须在 RealtimeProvider 与 router 之内 */
-export default function NoticeBell({ side = 'bottom' }: { side?: 'top' | 'bottom' | 'right' } = {}) {
+export default function NoticeBell({
+  side = 'bottom',
+}: { side?: 'top' | 'bottom' | 'right' } = {}) {
   const qc = useQueryClient()
   const inbox = useInbox()
   const refresh = () => void qc.invalidateQueries({ queryKey: INBOX_KEY })

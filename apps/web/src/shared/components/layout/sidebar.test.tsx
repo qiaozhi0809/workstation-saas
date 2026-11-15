@@ -260,6 +260,21 @@ describe('SidebarShell', () => {
     expect(screen.getByRole('button', { name: '打开菜单' })).toHaveClass('touch-target')
   })
 
+  // G-S14:侧栏自己的图标按钮是 ui/icon-button(40 方、不走 Arc Button)
+  it('the sidebar icon buttons are IconButtons, not Arc buttons', () => {
+    mockWidth(800)
+    const { unmount } = shell(null)
+    const menu = screen.getByRole('button', { name: '打开菜单' })
+    expect(menu).toHaveClass('h-10', 'w-10')
+    expect(menu).not.toHaveClass('ws-btn')
+    unmount()
+    mockWidth(1440)
+    shell(null)
+    const toggle = screen.getByRole('button', { name: '折叠侧栏' })
+    expect(toggle).toHaveClass('h-10', 'w-10')
+    expect(toggle).not.toHaveClass('ws-btn')
+  })
+
   it('classroom scope is a drawer at 1024 and a rail at 1280', () => {
     mockWidth(1024)
     const first = shell(null, '/teacher/classroom', 'classroom')
