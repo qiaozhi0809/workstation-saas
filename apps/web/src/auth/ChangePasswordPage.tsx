@@ -22,10 +22,12 @@ function ReasonNote({ reason }: { reason: Reason }) {
     staleTime: 60_000,
   })
   const days = policy.data?.max_age_days
-  if (reason === 'first_login') return <p className="text-sm">管理员设置了临时密码,请设置新密码</p>
-  if (reason !== 'expired') return <p className="text-sm">管理员要求你先修改密码</p>
+  if (reason === 'first_login')
+    return <p className="text-sm text-muted-foreground">管理员设置了临时密码,请设置新密码</p>
+  if (reason !== 'expired')
+    return <p className="text-sm text-muted-foreground">管理员要求你先修改密码</p>
   return (
-    <p className="text-sm">
+    <p className="text-sm text-muted-foreground">
       {days ? `密码已超过 ${days} 天未更换,请设置新密码` : '密码已过期,请设置新密码'}
     </p>
   )
@@ -91,7 +93,7 @@ export default function ChangePasswordPage() {
   const reason = user?.password_change_reason
 
   return (
-    <div className="relative grid min-h-full place-items-center bg-muted/40 px-4 pb-8 pt-16">
+    <div className="relative grid min-h-full place-items-center bg-muted/40 px-4 py-16">
       <ThemeToggle className="absolute right-4 top-4" />
       <Card className="w-full max-w-sm">
         <CardHeader>
@@ -99,7 +101,7 @@ export default function ChangePasswordPage() {
           {meta.data?.school_name && (
             <p className="text-sm text-muted-foreground">{meta.data.school_name}</p>
           )}
-          <h1 className="text-xl font-semibold tracking-tight">
+          <h1 className="text-xl font-medium">
             {reason === 'first_login' ? '管理员设置了临时密码,请先修改密码' : '请先修改密码'}
           </h1>
         </CardHeader>
