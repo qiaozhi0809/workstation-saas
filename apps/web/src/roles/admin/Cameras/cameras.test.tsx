@@ -148,6 +148,27 @@ it('lists cameras with class, location, status and enabled switch', async () => 
   expect(screen.queryByTestId('camera-monitor-off-notice')).toBeNull()
 })
 
+it('uses the page skeleton with the create action in the header', async () => {
+  renderPage()
+  await screen.findByText('一楼走廊')
+  const container = document.querySelector('[data-page-container]')
+  expect(container).not.toBeNull()
+  expect(container).toHaveAttribute('data-width', 'default')
+  const create = screen.getByRole('button', { name: '新建摄像头' })
+  expect(create.closest('[data-page-header]')).not.toBeNull()
+  // 表格换成 Table:外层是 table-container,状态用圆点 + 文字
+  expect(screen.getByTestId('camera-list').closest('[data-slot="table-container"]')).not.toBeNull()
+})
+
+it('camera form uses switches for enabled and transcode', async () => {
+  renderPage()
+  await screen.findByText('一楼走廊')
+  fireEvent.click(screen.getByRole('button', { name: '新建摄像头' }))
+  const dlg = await screen.findByRole('dialog', { name: '新建摄像头' })
+  expect(within(dlg).getByRole('switch', { name: /^启用/ })).toBeChecked()
+  expect(within(dlg).getByRole('switch', { name: /^转码/ })).not.toBeChecked()
+})
+
 it('password blank keeps existing', async () => {
   vi.mocked(camerasApi.update).mockResolvedValue(cam({ name: '三年二班后门' }))
   renderPage()
@@ -266,7 +287,9 @@ it('shows public host warning', async () => {
   })
   renderPage()
   const warn = await screen.findByTestId('camera-public-host-warning')
-  expect(warn).toHaveAttribute('role', 'alert')
+  // 公网地址是警示不是错误:role=status + text-warning
+  expect(warn).toHaveAttribute('role', 'status')
+  expect(warn.classList.contains('text-warning')).toBe(true)
   expect(warn).toHaveTextContent('以下摄像头地址不在校园内网,已拒绝拉流')
   expect(warn).toHaveTextContent('203.0.113.7')
   expect(warn).toHaveTextContent('cam.example.com')
