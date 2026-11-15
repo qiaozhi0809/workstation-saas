@@ -229,4 +229,53 @@ describe('charts', () => {
     expect(container.querySelector('.recharts-line-curve')).not.toBeNull()
     expect(container.querySelector('.recharts-cartesian-axis')).toBeNull()
   })
+
+  it('renders summary when points are fewer than minPoints', () => {
+    const { container } = render(
+      <TrendLine
+        label="趋势"
+        width={400}
+        minPoints={2}
+        labels={['期中', '期末']}
+        series={[{ key: 'me', label: '我', values: [null, 88] }]}
+        summary={(pts) => `只有 ${pts.length} 次:${pts[0].label} ${pts[0].value}`}
+      />,
+    )
+    expect(screen.getByText('只有 1 次:期末 88')).toBeInTheDocument()
+    expect(screen.queryByRole('img', { name: '趋势' })).toBeNull()
+    expect(container.querySelector('.recharts-line-curve')).toBeNull()
+  })
+
+  it('falls back to a default summary text when none is given', () => {
+    render(<Sparkline label="迷你" width={100} minPoints={3} values={[1, null, 2]} />)
+    expect(screen.getByText('数据不足')).toBeInTheDocument()
+    expect(screen.queryByRole('img', { name: '迷你' })).toBeNull()
+  })
+
+  it('keeps drawing with the default minPoints', () => {
+    const { container } = render(
+      <TrendLine
+        label="趋势"
+        width={400}
+        labels={['期末']}
+        series={[{ key: 'me', label: '我', values: [88] }]}
+      />,
+    )
+    expect(screen.getByRole('img', { name: '趋势' })).toBeInTheDocument()
+    expect(screen.queryByText('数据不足')).toBeNull()
+    expect(container.querySelector('.recharts-line')).not.toBeNull()
+  })
+
+  it('draws when the point count reaches minPoints', () => {
+    render(
+      <TrendLine
+        label="趋势"
+        width={400}
+        minPoints={2}
+        labels={['a', 'b']}
+        series={[{ key: 'me', label: '我', values: [70, 80] }]}
+      />,
+    )
+    expect(screen.getByRole('img', { name: '趋势' })).toBeInTheDocument()
+  })
 })

@@ -60,4 +60,18 @@ describe('Markdown', () => {
     expect(a?.getAttribute('target')).toBe('_blank')
     expect(a?.getAttribute('rel')).toBe('noopener noreferrer')
   })
+
+  it('headings are medium weight, never semibold', () => {
+    const { container } = render(<Markdown text={'# 一\n\n#### 二'} />)
+    expect(container.innerHTML).not.toContain('font-semibold')
+    expect(container.querySelector('h3')).toHaveClass('font-medium')
+    expect(container.querySelector('h4')).toHaveClass('font-medium')
+  })
+
+  it('renders tables with the compact Table component', () => {
+    const { container } = render(<Markdown text={'| a | b |\n| - | - |\n| 1 | 2 |'} />)
+    expect(container.querySelector('[data-slot="table-container"]')).not.toBeNull()
+    expect(container.querySelector('tr')).toHaveClass('h-9')
+    expect(container.querySelector('th')).toHaveAttribute('scope', 'col')
+  })
 })

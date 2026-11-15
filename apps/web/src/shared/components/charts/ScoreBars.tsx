@@ -64,7 +64,7 @@ export function ScoreBars({
           const d = active ? (payload?.[0]?.payload as BarDatum | undefined) : undefined
           if (!d) return null
           return (
-            <div className="rounded-md border bg-popover px-2 py-1 text-xs text-popover-foreground shadow-md">
+            <div className="rounded-md bg-popover px-2 py-1 text-xs text-popover-foreground shadow-overlay">
               <div className="font-medium">
                 {d.label}:{fmt(d.value)}
               </div>

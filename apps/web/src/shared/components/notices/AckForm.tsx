@@ -84,7 +84,13 @@ export default function AckForm({ item, onSubmitted }: { item: InboxItem; onSubm
             已回执:{choiceLabel(mine.choice)},{formatInTz(mine.acked_at, localTz())}
           </span>
           {item.can_ack && (
-            <Button type="button" variant="ghost" size="sm" onClick={startEdit}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="touch-target"
+              onClick={startEdit}
+            >
               修改
             </Button>
           )}
@@ -101,13 +107,20 @@ export default function AckForm({ item, onSubmitted }: { item: InboxItem; onSubm
           <Button
             type="button"
             size="sm"
+            className="touch-target"
             disabled={mut.isPending}
             onClick={() => submit({ choice: null, note: null })}
           >
             已知晓
           </Button>
           {editing && (
-            <Button type="button" variant="ghost" size="sm" onClick={() => setEditing(false)}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="touch-target"
+              onClick={() => setEditing(false)}
+            >
               取消
             </Button>
           )}
@@ -146,6 +159,7 @@ export default function AckForm({ item, onSubmitted }: { item: InboxItem; onSubm
             <Button
               type="button"
               size="sm"
+              className="touch-target"
               disabled={choice === null || mut.isPending}
               onClick={() =>
                 submit({ choice, note: spec.allow_note && note.trim() ? note.trim() : null })
@@ -154,7 +168,13 @@ export default function AckForm({ item, onSubmitted }: { item: InboxItem; onSubm
               提交回执
             </Button>
             {editing && (
-              <Button type="button" variant="ghost" size="sm" onClick={() => setEditing(false)}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="touch-target"
+                onClick={() => setEditing(false)}
+              >
                 取消
               </Button>
             )}
