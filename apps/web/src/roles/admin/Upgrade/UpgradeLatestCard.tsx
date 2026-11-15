@@ -66,7 +66,7 @@ export default function UpgradeLatestCard({ onRolledBack }: { onRolledBack?(): v
             <span>
               {up.from_year_name} → {up.to_year_name},执行于 {when(up.executed_at)}
             </span>
-            {up.rolled_back && <Badge variant="secondary">已回滚</Badge>}
+            {up.rolled_back && <Badge variant="neutral">已回滚</Badge>}
             <Button
               variant="outline"
               size="sm"

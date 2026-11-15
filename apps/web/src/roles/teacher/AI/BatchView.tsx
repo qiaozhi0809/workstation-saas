@@ -114,7 +114,7 @@ export default function BatchView({ chat, classId, perms }: Props) {
       </div>
 
       {notConfigured && !running && (
-        <div className="space-y-2 rounded-lg border border-destructive p-3">
+        <div className="space-y-2 rounded-lg bg-destructive/10 p-3">
           <p className="text-sm text-destructive">{NOT_CONFIGURED}</p>
           <Button size="sm" variant="outline" onClick={openPrompt}>
             复制提示词

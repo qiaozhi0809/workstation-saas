@@ -23,7 +23,7 @@ export function ErrorBox({
   onCopyPrompt(): void
 }) {
   return (
-    <div data-testid="error-box" className="space-y-2 rounded-lg border border-destructive p-3">
+    <div data-testid="error-box" className="space-y-2 rounded-lg bg-destructive/10 p-3">
       <p className="text-sm text-destructive">{message}</p>
       <div className="flex gap-2">
         {onRetry && (

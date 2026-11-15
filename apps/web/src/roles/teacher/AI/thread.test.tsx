@@ -176,7 +176,7 @@ describe('AiThreadPage streaming', () => {
       calls[0].resolve()
     })
     const err = await screen.findByText('密钥无效')
-    expect(err.closest('[data-testid="error-box"]')).toHaveClass('border-destructive')
+    expect(err.closest('[data-testid="error-box"]')).toHaveClass('bg-destructive/10')
     fireEvent.click(screen.getByRole('button', { name: '改为复制提示词' }))
     const dlg = await screen.findByRole('dialog')
     expect(within(dlg).getByDisplayValue('请写发言稿')).toBeInTheDocument()

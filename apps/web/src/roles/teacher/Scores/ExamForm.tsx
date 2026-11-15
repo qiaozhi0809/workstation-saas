@@ -401,14 +401,14 @@ function FormBody(p: Props & { catalog: SubjectFull[] }) {
       {dropAck && dropped.length > 0 && (
         <p
           role="alert"
-          className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+          className="rounded-md bg-destructive/10 p-3 text-sm text-destructive"
         >
           去掉「{dropped.join('、')}」会同时删除该科已录的分数
         </p>
       )}
 
       {confirming && p.exam && (
-        <div className="flex flex-col gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
+        <div className="flex flex-col gap-2 rounded-md bg-destructive/10 p-3 text-sm">
           <p className="text-destructive">删除「{p.exam.name}」及其全部分数?</p>
           <div className="flex gap-2">
             <Button
