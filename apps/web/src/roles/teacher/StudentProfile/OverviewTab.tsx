@@ -28,7 +28,6 @@ import { toast } from '@/shared/components/Toast'
 import type { StudentProfile } from '@/shared/types/student'
 import Field from './Field'
 import { GROWTH_TONE } from './GrowthTab'
-import SingleExamSummary from './SingleExamSummary'
 import { useStudentDrawer } from './useStudentDrawer'
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -224,25 +223,23 @@ function ScoreBlocks({ student, enabled }: { student: StudentProfile; enabled: b
       </section>
       <section>
         <h3 className="mb-1 text-sm font-medium">总分得分率</h3>
-        {trend.length < 2 ? (
-          <SingleExamSummary
-            text={`只有 1 次考试:总分得分率 ${
-              trend[0]?.rate == null ? '—' : `${Math.round(trend[0].rate)}%`
-            }`}
-          />
-        ) : (
-          <TrendLine
-            label="总分得分率"
-            labels={trend.map((p) => p.name)}
-            domain={[40, 100]}
-            endLabel
-            format={(v) => `${Math.round(v)}%`}
-            series={[
-              { key: 'avg', label: '班级平均', values: classRate, muted: true },
-              { key: 'me', label: student.name, values: trend.map((p) => p.rate) },
-            ]}
-          />
-        )}
+        <TrendLine
+          label="总分得分率"
+          labels={trend.map((p) => p.name)}
+          domain={[40, 100]}
+          endLabel
+          minPoints={2}
+          summary={(points) =>
+            points.length === 1
+              ? `只有 1 次考试有成绩:总分得分率 ${Math.round(points[0].value)}%`
+              : undefined
+          }
+          format={(v) => `${Math.round(v)}%`}
+          series={[
+            { key: 'avg', label: '班级平均', values: classRate, muted: true },
+            { key: 'me', label: student.name, values: trend.map((p) => p.rate) },
+          ]}
+        />
       </section>
       {axes.length > 0 && (
         <section>

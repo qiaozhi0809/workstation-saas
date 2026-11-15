@@ -212,9 +212,11 @@ describe('AnalysisPage', () => {
     setup([first, unscored])
     await avgCard()
     expect(screen.queryByText(/纵轴/)).not.toBeInTheDocument()
-    expect(screen.getByText(/总分 只有 1 次考试/)).toBeInTheDocument()
-    expect(screen.getByText(/语文 只有 1 次考试/)).toBeInTheDocument()
-    const card = screen.getByText(/总分 只有 1 次考试/).closest('[data-slot="card"]') as HTMLElement
+    // 每条线各自走 TrendLine 的 minPoints:总分、语文各一行「只有 1 次考试」
+    expect(screen.getAllByText(/只有 1 次考试:得分率/).length).toBeGreaterThanOrEqual(2)
+    const card = screen
+      .getAllByText(/只有 1 次考试:得分率/)[0]
+      .closest('[data-slot="card"]') as HTMLElement
     expect(card.querySelector('.recharts-surface')).toBeNull()
   })
 

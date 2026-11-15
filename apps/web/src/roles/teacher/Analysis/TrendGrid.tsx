@@ -5,7 +5,9 @@ import type { GradebookExam } from '@/shared/types/grades'
 import type { Grading } from '@/shared/types/school'
 import { round1 } from './round1'
 
-/** book:按时间排好的成绩册;ids:enrollment_id;ratios:学校及格比例(useGrading())。两场以上画折线;只有一场时给一行摘要,不画孤点。 */
+const MIN_POINTS = 2
+
+/** book:按时间排好的成绩册;ids:enrollment_id;ratios:学校及格比例(useGrading())。一个系列有两个以上有效点才画折线,否则(TrendLine 的 minPoints)给一行摘要,不画孤点。 */
 export function TrendGrid({
   book,
   ids,
@@ -26,25 +28,6 @@ export function TrendGrid({
   const names: string[] = []
   for (const { exam } of scored)
     for (const s of exam.subjects) if (!names.includes(s.name)) names.push(s.name)
-  if (scored.length === 1) {
-    const only = scored[0]
-    return (
-      <Card className="p-4">
-        <h2 className="mb-2 text-base font-medium">得分率趋势</h2>
-        <ul className="flex flex-col gap-1 text-sm text-muted-foreground">
-          <li>总分 只有 1 次考试:得分率 {round1(only.stats.rate)}%</li>
-          {names.map((name) => {
-            const st = subjectStats(only.exam, name, ids, ratios)
-            return st ? (
-              <li key={name}>
-                {name} 只有 1 次考试:得分率 {round1(st.rate)}%
-              </li>
-            ) : null
-          })}
-        </ul>
-      </Card>
-    )
-  }
   const labels = scored.map(({ exam }) => exam.name)
   const rows = [
     {
@@ -61,14 +44,18 @@ export function TrendGrid({
       }) as (number | null)[],
     })),
   ]
+  // 至少有一条线真的画出来了,才有纵轴可说
+  const drawn = rows.some((r) => r.values.filter((v) => v !== null).length >= MIN_POINTS)
   const [lo, hi] = trendDomain(rows.flatMap((r) => r.values.filter((v): v is number => v !== null)))
   return (
     <Card className="p-4">
       <div className="mb-2 flex items-baseline justify-between">
         <h2 className="text-base font-medium">得分率趋势</h2>
-        <span className="text-xs text-muted-foreground">
-          纵轴 {lo}–{hi}%
-        </span>
+        {drawn && (
+          <span className="text-xs text-muted-foreground">
+            纵轴 {lo}–{hi}%
+          </span>
+        )}
       </div>
       <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
         {rows.map((r) => (
@@ -82,6 +69,10 @@ export function TrendGrid({
               series={[{ key: r.key, label: r.label, values: r.values }]}
               domain={[lo, hi]}
               endLabel
+              minPoints={MIN_POINTS}
+              summary={(points) =>
+                points.length === 1 ? `只有 1 次考试:得分率 ${round1(points[0].value)}%` : undefined
+              }
               format={(v) => `${round1(v)}%`}
             />
           </div>

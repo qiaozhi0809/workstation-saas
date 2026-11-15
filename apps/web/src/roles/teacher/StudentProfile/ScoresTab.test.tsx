@@ -23,8 +23,23 @@ vi.mock('@/shared/api/exams', () => ({ examsApi: { gradebook: vi.fn() } }))
 vi.mock('@/shared/api/school', () => ({ schoolApi: { grading: vi.fn() } }))
 const trendLine = vi.hoisted(() => vi.fn())
 vi.mock('@/shared/components/charts/TrendLine', () => ({
-  TrendLine: (props: { label: string; yAxisWidth?: number }) => {
+  TrendLine: (props: {
+    label: string
+    yAxisWidth?: number
+    minPoints?: number
+    series: { values: (number | null)[]; muted?: boolean }[]
+    labels: string[]
+    summary?: (points: { label: string; value: number }[]) => string | undefined
+  }) => {
     trendLine(props)
+    // 与真 TrendLine 一致:主系列有效点数不足 minPoints 时不画图,显示 summary
+    const main = props.series.find((s) => !s.muted) ?? props.series[0]
+    const points = props.labels.flatMap((label, i) => {
+      const value = main.values[i]
+      return value == null ? [] : [{ label, value }]
+    })
+    if (points.length < (props.minPoints ?? 1))
+      return <p>{props.summary?.(points) ?? '数据不足'}</p>
     return <div role="img" aria-label={props.label} />
   },
 }))
@@ -144,6 +159,7 @@ it('says there is only one exam instead of drawing a lone rank point', async () 
   renderTab()
   expect(await screen.findByText(/只有 1 次考试/)).toBeInTheDocument()
   expect(screen.queryByRole('img', { name: '排名变化' })).toBeNull()
+  expect(trendLine.mock.calls.at(-1)![0].minPoints).toBe(2)
 })
 
 it('draws the rank curve reversed', async () => {
