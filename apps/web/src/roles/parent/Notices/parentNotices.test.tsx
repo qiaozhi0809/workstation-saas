@@ -182,12 +182,16 @@ it('lists notices of all children, bold when unread, with the children named', a
   )
   renderAt('/parent/notices?child=s1')
   const unread = (await screen.findByText('周五春游')).closest('button')!
-  expect(unread.className).toMatch(/font-semibold/)
+  expect(unread.className).toMatch(/font-medium/)
   expect(within(unread).getByText(/王小一\(三年二班\)/)).toBeInTheDocument()
   const read = screen.getByText('班会').closest('button')!
-  expect(read.className).not.toMatch(/font-semibold/)
+  expect(read.className).not.toMatch(/font-medium/)
   expect(within(read).getByText(/王小二\(五年一班\)/)).toBeInTheDocument()
   expect(read.className).toMatch(/min-h-\[44px\]/)
+  // 列表是一张无边框卡片,行之间用分隔线
+  const card = unread.closest('[data-slot="card"]')!
+  expect(card).not.toBeNull()
+  expect(card.querySelector('ul')!.className).toMatch(/divide-y/)
 })
 
 it('names the children with the class snapshot taken when the notice was sent (L87)', async () => {
@@ -230,7 +234,7 @@ it('marks as read on open and shows the content', async () => {
   await waitFor(() => expect(noticesApi.read).toHaveBeenCalledWith('n1'))
   expect(screen.getByText('带水杯')).toBeInTheDocument()
   // 已读是就地写进缓存的(L280),不靠重取收件箱
-  await waitFor(() => expect(row.className).not.toMatch(/font-semibold/))
+  await waitFor(() => expect(row.className).not.toMatch(/font-medium/))
   expect(noticesApi.inbox).toHaveBeenCalledTimes(1)
 })
 
@@ -363,7 +367,7 @@ it('mark read does not refetch pages', async () => {
   await waitFor(() => expect(noticesApi.read).toHaveBeenCalledWith('n1'))
   // 就地改缓存(L280):这条变已读、全量未读数减一;两页都还在,没有按已加载页数逐页重取
   await waitFor(() => expect(tab()).toHaveAccessibleName('通知 22 条未读'))
-  expect(row.className).not.toMatch(/font-semibold/)
+  expect(row.className).not.toMatch(/font-medium/)
   expect(screen.getByText('通知25')).toBeInTheDocument()
   expect(noticesApi.inbox).toHaveBeenCalledTimes(2)
 })
