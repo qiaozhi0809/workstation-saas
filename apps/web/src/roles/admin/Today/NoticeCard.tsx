@@ -1,15 +1,13 @@
 import { Link } from 'react-router-dom'
+import { Card } from '@/shared/components/ui/card'
 import type { TodayView } from '@/shared/types/admin'
 
 /** 我最近发出的几条通知与已读率;没有时不渲染 */
 export function NoticeCard({ notices }: { notices: TodayView['my_notices'] }) {
   if (!notices || notices.length === 0) return null
   return (
-    <section
-      aria-label="我发出的通知"
-      className="flex flex-col gap-3 rounded-lg border bg-card p-4"
-    >
-      <h2 className="text-base font-semibold">我发出的通知</h2>
+    <Card role="region" aria-label="我发出的通知" className="flex flex-col gap-3 p-4">
+      <h2 className="text-base font-medium">我发出的通知</h2>
       <ul className="flex flex-col divide-y">
         {notices.map((n) => (
           <li
@@ -31,6 +29,6 @@ export function NoticeCard({ notices }: { notices: TodayView['my_notices'] }) {
       >
         去发通知
       </Link>
-    </section>
+    </Card>
   )
 }

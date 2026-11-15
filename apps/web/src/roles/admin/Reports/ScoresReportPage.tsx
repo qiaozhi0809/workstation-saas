@@ -8,6 +8,7 @@ import { LoadingState } from '@/shared/components/feedback/LoadingState'
 import { toast } from '@/shared/components/Toast'
 import { Button } from '@/shared/components/ui/button'
 import { NativeSelect } from '@/shared/components/ui/native-select'
+import { PageContainer, PageHeader } from '@/shared/components/ui/page'
 import { SegmentedTabs } from '@/shared/components/ui/segmented-tabs'
 import { downloadBlob } from '@/shared/lib/download'
 import { NO_PERM_SCORES, isForbidden } from './forbidden'
@@ -44,7 +45,7 @@ function StudentSection({
         retrying={q.isFetching}
       />
     )
-  if (!q.data) return <LoadingState />
+  if (!q.data) return <LoadingState variant="table" />
   return (
     <ScoreStudentTable label={`${className} 学生成绩`} subjects={subjects} rows={q.data.students} />
   )
@@ -88,17 +89,31 @@ export default function ScoresReportPage() {
     }
   }
 
-  if (isForbidden(exams.error)) return <EmptyState title={NO_PERM_SCORES} className="p-6" />
+  if (isForbidden(exams.error))
+    return (
+      <PageContainer width="default">
+        <PageHeader title="成绩汇总" />
+        <EmptyState title={NO_PERM_SCORES} />
+      </PageContainer>
+    )
   if (exams.isError)
     return (
-      <ErrorState
-        title="加载失败"
-        onRetry={() => void exams.refetch()}
-        retrying={exams.isFetching}
-        className="p-6"
-      />
+      <PageContainer width="default">
+        <PageHeader title="成绩汇总" />
+        <ErrorState
+          title="加载失败"
+          onRetry={() => void exams.refetch()}
+          retrying={exams.isFetching}
+        />
+      </PageContainer>
     )
-  if (!exams.data) return <LoadingState />
+  if (!exams.data)
+    return (
+      <PageContainer width="default">
+        <PageHeader title="成绩汇总" />
+        <LoadingState variant="table" />
+      </PageContainer>
+    )
 
   let body
   if (list.length === 0)
@@ -112,7 +127,7 @@ export default function ScoresReportPage() {
         retrying={summary.isFetching}
       />
     )
-  } else if (!summary.data) body = <LoadingState />
+  } else if (!summary.data) body = <LoadingState variant="table" />
   else if (summary.data.classes.length === 0) {
     body = (
       <EmptyState
@@ -124,7 +139,7 @@ export default function ScoresReportPage() {
     const s = summary.data
     const open = s.classes.find((c) => c.class_id === openClass)
     body = (
-      <>
+      <div className="flex min-w-0 flex-col gap-6">
         <SegmentedTabs<ScoreView> label="指标" items={VIEWS} value={view} onChange={setView} />
         <ScoreClassTable
           summary={s}
@@ -133,8 +148,8 @@ export default function ScoresReportPage() {
           onToggle={(id) => setOpenClass((cur) => (cur === id ? null : id))}
         />
         {open && examId && (
-          <section aria-label={`${open.class_name} 学生`} className="flex min-w-0 flex-col gap-2">
-            <h2 className="text-base font-semibold">{open.class_name}</h2>
+          <section aria-label={`${open.class_name} 学生`} className="flex min-w-0 flex-col gap-3">
+            <h2 className="text-base font-medium">{open.class_name}</h2>
             <StudentSection
               key={open.class_id}
               examId={examId}
@@ -144,41 +159,42 @@ export default function ScoresReportPage() {
             />
           </section>
         )}
-      </>
+      </div>
     )
   }
 
   return (
-    <div className="mx-auto flex w-full min-w-0 max-w-6xl flex-col gap-4 p-4 md:p-6">
-      <header className="flex flex-wrap items-end gap-3">
-        <h1 className="text-lg font-semibold">成绩汇总</h1>
-        {list.length > 0 && (
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-muted-foreground">选择联考</span>
-            <NativeSelect
-              value={examId ?? ''}
-              className="max-w-full"
-              onChange={(e) => {
-                setSel(e.target.value)
-                setOpenClass(null)
-              }}
+    <PageContainer width="default">
+      <PageHeader
+        title="成绩汇总"
+        actions={
+          <>
+            {list.length > 0 && (
+              <NativeSelect
+                aria-label="选择联考"
+                value={examId ?? ''}
+                className="max-w-full"
+                onChange={(e) => {
+                  setSel(e.target.value)
+                  setOpenClass(null)
+                }}
+              >
+                {list.map((x) => (
+                  <option key={x.id} value={x.id}>{`${x.name}(${x.grade_name} ${x.date})`}</option>
+                ))}
+              </NativeSelect>
+            )}
+            <Button
+              variant="outline"
+              disabled={!current || exporting || summary.data?.classes.length === 0}
+              onClick={() => void exportCsv()}
             >
-              {list.map((x) => (
-                <option key={x.id} value={x.id}>{`${x.name}(${x.grade_name} ${x.date})`}</option>
-              ))}
-            </NativeSelect>
-          </label>
-        )}
-        <Button
-          className="ml-auto"
-          variant="outline"
-          disabled={!current || exporting || summary.data?.classes.length === 0}
-          onClick={() => void exportCsv()}
-        >
-          导出 CSV
-        </Button>
-      </header>
+              导出 CSV
+            </Button>
+          </>
+        }
+      />
       {body}
-    </div>
+    </PageContainer>
   )
 }

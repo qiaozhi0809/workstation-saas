@@ -6,8 +6,9 @@ import AckSettings from '@/shared/components/notices/AckSettings'
 import { ackSpecError, normalizeAck } from '@/shared/components/notices/ackSpec'
 import Modal from '@/shared/components/overlay/Modal'
 import { Button } from '@/shared/components/ui/button'
+import { Card } from '@/shared/components/ui/card'
+import { Field, useFormErrors } from '@/shared/components/ui/field'
 import { Input } from '@/shared/components/ui/input'
-import { Label } from '@/shared/components/ui/label'
 import { Textarea } from '@/shared/components/ui/textarea'
 import type {
   AckSpec,
@@ -18,6 +19,9 @@ import type {
 } from '@/shared/types/admin'
 import TargetPicker, { MAX_USERS, type TargetKind } from './TargetPicker'
 import { kindsFor } from './targetKinds'
+
+/** 提交时按这个顺序聚焦第一个出错的字段 */
+const FIELD_ORDER = ['title', 'content', 'target'] as const
 
 const ackText = (a: AckSpec) =>
   a.kind === 'none' ? '不要回执' : a.kind === 'confirm' ? '已知晓' : `单选(${a.options.length} 项)`
@@ -58,6 +62,7 @@ export default function NoticeComposer({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [result, setResult] = useState('')
+  const { errors, report, clear, fieldRef } = useFormErrors(FIELD_ORDER)
 
   // options 刷新后 school_wide 可能变化:当前对象不在合法范围内时校正
   const kind: TargetKind = kindsFor(audience, schoolWide).includes(pickedKind)
@@ -92,7 +97,16 @@ export default function NoticeComposer({
     target = { kind: 'users', user_ids: users.map((u) => u.user_id) }
     label = `指定 ${users.length} 人`
   }
-  const canSend = title.trim() !== '' && content.trim() !== '' && target !== null
+  const targetError =
+    target !== null
+      ? undefined
+      : kind === 'class'
+        ? '请选择班级'
+        : kind === 'users'
+          ? users.length > MAX_USERS
+            ? `最多选 ${MAX_USERS} 人`
+            : '请选择要发送的人'
+          : '请选择发送对象'
 
   const clearUnavailable = () => {
     setUnavailable(new Set())
@@ -101,15 +115,22 @@ export default function NoticeComposer({
   const changeGrade = (id: string) => {
     setPickedGrade(id)
     setClassId('')
+    clear('target')
+  }
+  const changeClass = (id: string) => {
+    setClassId(id)
+    clear('target')
   }
   const changeKind = (k: TargetKind) => {
     setKind(k)
     setClassId('')
+    clear('target')
     clearUnavailable()
   }
   // 家长对象没有"指定的人":切换时把落在 users 上的对象和已选的人重置到合法值
   const changeAudience = (a: Audience) => {
     setAudience(a)
+    clear('target')
     if (a === 'parents' && !kindsFor('parents', schoolWide).includes(kind)) {
       setKind(schoolWide ? 'school' : 'grade')
       setClassId('')
@@ -121,6 +142,7 @@ export default function NoticeComposer({
   }
   const changeUsers = (next: NoticePerson[]) => {
     setUsers(next)
+    clear('target')
     const left = [...unavailable].filter((id) => next.some((u) => u.user_id === id))
     setUnavailable(new Set(left))
     // 不可选的人都去掉后,"有 N 位已不能接收通知"的提示一并收起
@@ -130,6 +152,13 @@ export default function NoticeComposer({
   // AckSettings 的校验只显示、不拦截:点发送与确认发送前都要用 ackSpecError 拦一道
   const openConfirm = () => {
     setResult('')
+    // 缺标题 / 正文 / 对象:就地报错并聚焦第一个出错的字段,不禁用发送按钮
+    const ok = report({
+      title: title.trim() === '' ? '请填写标题' : undefined,
+      content: content.trim() === '' ? '请填写正文' : undefined,
+      target: targetError,
+    })
+    if (!ok) return
     const err = ackSpecError(ack, deadline)
     setError(err ?? '')
     if (!err) setConfirming(true)
@@ -179,27 +208,33 @@ export default function NoticeComposer({
   }
 
   return (
-    <section aria-label="写通知" className="flex flex-col gap-4 rounded-lg border bg-card p-4">
-      <h2 className="text-base font-semibold">写通知</h2>
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="notice-title">标题</Label>
+    <Card role="region" aria-label="写通知" className="flex flex-col gap-4 p-4">
+      <h2 className="text-base font-medium">写通知</h2>
+      <Field label="标题" error={errors.title}>
         <Input
           id="notice-title"
+          ref={fieldRef('title')}
           maxLength={50}
           value={title}
-          onChange={(e) => setTitle(e.target.value)}
+          onChange={(e) => {
+            clear('title')
+            setTitle(e.target.value)
+          }}
         />
-      </div>
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="notice-content">正文</Label>
+      </Field>
+      <Field label="正文" error={errors.content}>
         <Textarea
           id="notice-content"
+          ref={fieldRef('content')}
           rows={6}
           maxLength={2000}
           value={content}
-          onChange={(e) => setContent(e.target.value)}
+          onChange={(e) => {
+            clear('content')
+            setContent(e.target.value)
+          }}
         />
-      </div>
+      </Field>
       <div role="radiogroup" aria-label="对象类型" className="flex gap-4">
         {(['teachers', 'parents'] as const).map((a) => (
           <label key={a} className="flex items-center gap-1.5 text-sm">
@@ -213,20 +248,27 @@ export default function NoticeComposer({
           </label>
         ))}
       </div>
-      <TargetPicker
-        audience={audience}
-        options={options}
-        kind={kind}
-        onKind={changeKind}
-        gradeId={gradeId}
-        onGrade={changeGrade}
-        classId={classId}
-        onClass={setClassId}
-        users={users}
-        onUsers={changeUsers}
-        unavailable={unavailable}
-        unavailableMessage={unavailableMessage}
-      />
+      <div ref={fieldRef('target')} tabIndex={-1} className="flex flex-col gap-1 outline-none">
+        <TargetPicker
+          audience={audience}
+          options={options}
+          kind={kind}
+          onKind={changeKind}
+          gradeId={gradeId}
+          onGrade={changeGrade}
+          classId={classId}
+          onClass={changeClass}
+          users={users}
+          onUsers={changeUsers}
+          unavailable={unavailable}
+          unavailableMessage={unavailableMessage}
+        />
+        {errors.target && (
+          <p role="alert" className="text-xs text-destructive">
+            {errors.target}
+          </p>
+        )}
+      </div>
       <AckSettings
         key={ackKey}
         value={ack}
@@ -251,7 +293,7 @@ export default function NoticeComposer({
             </p>
           )}
         </div>
-        <Button type="button" disabled={!canSend} onClick={openConfirm}>
+        <Button type="button" onClick={openConfirm}>
           发送
         </Button>
       </div>
@@ -274,6 +316,6 @@ export default function NoticeComposer({
           </div>
         </Modal>
       )}
-    </section>
+    </Card>
   )
 }

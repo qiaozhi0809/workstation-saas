@@ -1,6 +1,8 @@
 import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import ClassroomMap from '@/shared/components/ClassroomMap'
+import { Badge } from '@/shared/components/ui/badge'
+import { Card } from '@/shared/components/ui/card'
 import type { BoardClass } from '@/shared/types/admin'
 import { attendanceViews, signed } from './attendanceViews'
 
@@ -12,17 +14,14 @@ export default function ClassCard({ cls }: { cls: BoardClass }) {
   )
   const m = cls.metrics
   const to = `/admin/classes/${encodeURIComponent(cls.id)}`
-  const meta = [cls.room, cls.homeroom_name ? `班主任 ${cls.homeroom_name}` : null]
-    .filter(Boolean)
-    .join(' · ')
   return (
-    <article
+    <Card
       data-class-card
-      className="relative flex min-w-0 flex-col gap-2 rounded-lg border bg-card p-3 text-card-foreground focus-within:ring-2 focus-within:ring-ring hover:bg-accent/40"
+      className="relative flex min-w-0 flex-col gap-2 p-4 focus-within:ring-2 focus-within:ring-ring hover:bg-accent/40"
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <h2 className="truncate text-base font-semibold">
+          <h2 className="truncate text-base font-medium">
             <Link
               to={to}
               className="rounded-sm after:absolute after:inset-0 after:z-10 focus-visible:outline-none"
@@ -30,12 +29,19 @@ export default function ClassCard({ cls }: { cls: BoardClass }) {
               {cls.name}
             </Link>
           </h2>
-          {meta && <p className="truncate text-sm text-muted-foreground">{meta}</p>}
+          {cls.room && (
+            <p className="truncate text-sm text-muted-foreground">{`教室 ${cls.room}`}</p>
+          )}
+          {cls.homeroom_name && (
+            <p data-homeroom className="truncate text-sm text-muted-foreground">
+              {`班主任 ${cls.homeroom_name}`}
+            </p>
+          )}
         </div>
         {!m.confirmed && (
-          <span className="shrink-0 rounded-md bg-warning/15 px-2 py-0.5 text-xs font-medium text-warning">
+          <Badge variant="warning" className="shrink-0">
             未确认考勤
-          </span>
+          </Badge>
         )}
       </div>
       <div className="pointer-events-none h-60 overflow-hidden rounded-md">
@@ -49,9 +55,9 @@ export default function ClassCard({ cls }: { cls: BoardClass }) {
           views={views}
         />
       </div>
-      <p className="text-sm text-muted-foreground">
+      <p className="text-sm tabular-nums text-muted-foreground">
         {`出勤 ${m.present}/${m.students} · 缺勤 ${m.absent} · 本周点评 ${signed(m.week_net)}`}
       </p>
-    </article>
+    </Card>
   )
 }

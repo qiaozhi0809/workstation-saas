@@ -6,7 +6,9 @@ import { ApiError } from '@/shared/api/client'
 import { EmptyState } from '@/shared/components/feedback/EmptyState'
 import { ErrorState } from '@/shared/components/feedback/ErrorState'
 import { LoadingState } from '@/shared/components/feedback/LoadingState'
+import { Card } from '@/shared/components/ui/card'
 import { NativeSelect } from '@/shared/components/ui/native-select'
+import { PageContainer, PageHeader } from '@/shared/components/ui/page'
 import { groupByGrade } from '../shared/groupByGrade'
 
 const statusOf = (e: unknown) => (e instanceof ApiError ? e.status : null)
@@ -25,18 +27,28 @@ export default function HistoryPage() {
   })
 
   if (years.isError) {
-    return statusOf(years.error) === 403 ? (
-      <EmptyState title="没有权限查看往年班级" className="p-6" />
-    ) : (
-      <ErrorState
-        title="加载失败"
-        onRetry={() => void years.refetch()}
-        retrying={years.isFetching}
-        className="p-6"
-      />
+    return (
+      <PageContainer width="default">
+        <PageHeader title="往年班级" />
+        {statusOf(years.error) === 403 ? (
+          <EmptyState title="没有权限查看往年班级" />
+        ) : (
+          <ErrorState
+            title="加载失败"
+            onRetry={() => void years.refetch()}
+            retrying={years.isFetching}
+          />
+        )}
+      </PageContainer>
     )
   }
-  if (!years.data) return <LoadingState />
+  if (!years.data)
+    return (
+      <PageContainer width="default">
+        <PageHeader title="往年班级" />
+        <LoadingState variant="cards" />
+      </PageContainer>
+    )
 
   let body
   if (years.data.length === 0) {
@@ -56,7 +68,7 @@ export default function HistoryPage() {
         />
       )
   } else if (!classes.data) {
-    body = <LoadingState />
+    body = <LoadingState variant="cards" />
   } else if (classes.data.length === 0) {
     body = <EmptyState title="该学年没有可查看的班级" />
   } else {
@@ -64,20 +76,24 @@ export default function HistoryPage() {
       <div className="flex flex-col gap-6">
         {groupByGrade(classes.data).map(({ grade, classes: list }) => (
           <section key={grade} className="flex flex-col gap-3">
-            <h2 className="text-base font-semibold">{grade}</h2>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <h2 className="text-base font-medium">{grade}</h2>
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {list.map((c) => (
-                <Link
+                <Card
                   key={c.class_id}
-                  to={`/admin/history/classes/${c.class_id}?year=${yearId}`}
-                  className="flex flex-col gap-1 rounded-lg border bg-card p-4 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="relative flex flex-col gap-1 p-4 transition-colors focus-within:ring-2 focus-within:ring-ring hover:bg-accent"
                 >
-                  <span className="text-base font-semibold">{c.class_name}</span>
+                  <Link
+                    to={`/admin/history/classes/${c.class_id}?year=${yearId}`}
+                    className="w-fit rounded-sm text-base font-medium after:absolute after:inset-0 after:z-10 focus-visible:outline-none"
+                  >
+                    {c.class_name}
+                  </Link>
                   <span className="text-sm text-muted-foreground">
                     {c.homeroom_name ? `班主任 ${c.homeroom_name}` : '未设班主任'}
                   </span>
-                  <span className="text-sm text-muted-foreground">{`${c.students} 人`}</span>
-                </Link>
+                  <span className="text-sm tabular-nums text-muted-foreground">{`${c.students} 人`}</span>
+                </Card>
               ))}
             </div>
           </section>
@@ -87,25 +103,27 @@ export default function HistoryPage() {
   }
 
   return (
-    <div className="flex flex-col gap-4 p-4 md:p-6">
-      <header className="flex flex-col gap-3">
-        <h1 className="text-xl font-semibold">往年班级</h1>
-        {years.data.length > 0 && (
-          <NativeSelect
-            aria-label="学年"
-            className="w-fit max-w-full"
-            value={yearId}
-            onChange={(e) => setPicked(e.target.value)}
-          >
-            {years.data.map((y) => (
-              <option key={y.id} value={y.id}>
-                {y.name}
-              </option>
-            ))}
-          </NativeSelect>
-        )}
-      </header>
+    <PageContainer width="default">
+      <PageHeader
+        title="往年班级"
+        actions={
+          years.data.length > 0 ? (
+            <NativeSelect
+              aria-label="学年"
+              className="max-w-full"
+              value={yearId}
+              onChange={(e) => setPicked(e.target.value)}
+            >
+              {years.data.map((y) => (
+                <option key={y.id} value={y.id}>
+                  {y.name}
+                </option>
+              ))}
+            </NativeSelect>
+          ) : undefined
+        }
+      />
       {body}
-    </div>
+    </PageContainer>
   )
 }

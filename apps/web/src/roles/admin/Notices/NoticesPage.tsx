@@ -9,6 +9,8 @@ import Modal from '@/shared/components/overlay/Modal'
 import { toast } from '@/shared/components/Toast'
 import { Badge } from '@/shared/components/ui/badge'
 import { Button } from '@/shared/components/ui/button'
+import { Card } from '@/shared/components/ui/card'
+import { PageContainer, PageHeader } from '@/shared/components/ui/page'
 import AckStatsDialog from '@/shared/components/notices/AckStatsDialog'
 import { formatInTz } from '@/shared/lib/date'
 import { localTz } from '@/shared/lib/time'
@@ -54,8 +56,8 @@ function SentList({ page, setPage }: { page: number; setPage(p: number): void })
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   return (
-    <section aria-label="我发出的" className="flex flex-col gap-3 rounded-lg border bg-card p-4">
-      <h2 className="text-base font-semibold">我发出的</h2>
+    <Card role="region" aria-label="我发出的" className="flex flex-col gap-3 p-4">
+      <h2 className="text-base font-medium">我发出的</h2>
       {list.isPending ? (
         <LoadingState />
       ) : list.isError ? (
@@ -67,21 +69,23 @@ function SentList({ page, setPage }: { page: number; setPage(p: number): void })
       ) : list.data.items.length === 0 ? (
         <EmptyState title="还没有发出过通知" />
       ) : (
-        <ul className="flex flex-col divide-y">
+        <ul className="flex flex-col divide-y divide-border/60">
           {list.data.items.map((n) => (
             <li
               key={n.id}
               className="flex flex-wrap items-start justify-between gap-2 py-2.5 text-sm"
             >
               <div className="flex min-w-0 flex-col gap-0.5">
-                <button
+                <Button
                   type="button"
+                  variant="link"
+                  size="touch"
                   aria-haspopup="dialog"
                   onClick={() => setViewing(n)}
-                  className="break-words rounded-sm text-left font-medium underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  className="min-w-0 justify-start whitespace-normal px-0 text-left font-medium text-foreground"
                 >
-                  {n.title}
-                </button>
+                  <span className="line-clamp-2 break-words">{n.title}</span>
+                </Button>
                 <span className="text-xs text-muted-foreground">{`${n.target_label} · ${formatInTz(n.created_at, tz)}`}</span>
                 <span className="flex flex-wrap items-center gap-x-2 text-xs">
                   {n.audience === 'parents' && <Badge variant="neutral">家长</Badge>}
@@ -94,8 +98,9 @@ function SentList({ page, setPage }: { page: number; setPage(p: number): void })
               ) : (
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant="link"
                   size="sm"
+                  className="text-destructive"
                   aria-label={`撤回 ${n.title}`}
                   onClick={() => {
                     setError('')
@@ -166,7 +171,7 @@ function SentList({ page, setPage }: { page: number; setPage(p: number): void })
           </div>
         </Modal>
       )}
-    </section>
+    </Card>
   )
 }
 
@@ -177,9 +182,9 @@ export default function NoticesPage() {
   const [page, setPage] = useState(1)
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-4 p-4 md:p-6">
-      <h1 className="text-xl font-semibold">通知</h1>
-      <div className="grid items-start gap-4 md:grid-cols-2">
+    <PageContainer width="default">
+      <PageHeader title="通知" />
+      <div className="grid items-start gap-6 md:grid-cols-2">
         {opts.isError && !opts.data ? (
           <ErrorState
             title="加载失败"
@@ -187,12 +192,12 @@ export default function NoticesPage() {
             retrying={opts.isFetching}
           />
         ) : !opts.data ? (
-          <LoadingState />
+          <LoadingState variant="form" />
         ) : (
           <NoticeComposer options={opts.data} onSent={() => setPage(1)} />
         )}
         <SentList page={page} setPage={setPage} />
       </div>
-    </div>
+    </PageContainer>
   )
 }

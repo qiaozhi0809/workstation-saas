@@ -182,9 +182,12 @@ describe('往年班级列表页', () => {
     expect(g1.compareDocumentPosition(g2) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     const c1 = screen.getByRole('link', { name: /高一1班/ })
     expect(c1).toHaveAttribute('href', '/admin/history/classes/c1?year=y25')
-    expect(c1).toHaveTextContent('班主任 赵老师')
-    expect(c1).toHaveTextContent('42 人')
-    expect(screen.getByRole('link', { name: /高一2班/ })).toHaveTextContent('未设班主任')
+    const card1 = c1.closest('[data-slot="card"]')
+    expect(card1).toHaveTextContent('班主任 赵老师')
+    expect(card1).toHaveTextContent('42 人')
+    expect(
+      screen.getByRole('link', { name: /高一2班/ }).closest('[data-slot="card"]'),
+    ).toHaveTextContent('未设班主任')
     expect(screen.getByRole('link', { name: /高二1班/ })).toHaveAttribute(
       'href',
       '/admin/history/classes/c3?year=y25',
@@ -233,6 +236,17 @@ describe('往年班级列表页', () => {
       await screen.findByRole('heading', { level: 1, name: '2025-2026 学年 高二1班' }),
     ).toBeInTheDocument()
     expect(adminApi.historyStudents).toHaveBeenCalledWith('c3')
+  })
+
+  it('班级入口是 Card 里的链接(名称为班名,整卡可点),学年下拉在页头操作区', async () => {
+    setup()
+    const link = await screen.findByRole('link', { name: '高二1班' })
+    expect(link.closest('[data-slot="card"]')).not.toBeNull()
+    expect(link.className).toContain('after:absolute')
+    const header = screen.getByRole('heading', { level: 1, name: '往年班级' }).closest('header')!
+    expect(
+      within(header as HTMLElement).getByRole('combobox', { name: '学年' }),
+    ).toBeInTheDocument()
   })
 
   it('从较早学年的班返回时回到原来那个学年的列表', async () => {
@@ -406,7 +420,30 @@ describe('往年单班页', () => {
         .getAllByRole('cell')
         .map((c) => c.textContent),
     ).toEqual(['—', '李小二', '110', '—', '—', '—'])
-    expect(table.parentElement).toHaveClass('overflow-x-auto')
+    expect(table.closest('[data-table-scroll]')).not.toBeNull()
+  })
+
+  it('成绩表:学号姓名靠左,各科、总分、名次右对齐且表头同侧', async () => {
+    setup('/admin/history/classes/c1?year=y25')
+    fireEvent.click(await screen.findByRole('tab', { name: '成绩' }))
+    const table = await screen.findByRole('table', { name: '成绩表' })
+    await within(table).findByRole('row', { name: /张小三/ })
+    const heads = within(table).getAllByRole('columnheader')
+    expect(heads[0]).toHaveClass('text-left')
+    expect(heads[1]).toHaveClass('text-left')
+    for (const th of heads.slice(2)) expect(th).toHaveClass('text-right')
+    const cells = within(within(table).getByRole('row', { name: /张小三/ })).getAllByRole('cell')
+    expect(cells[0]).toHaveClass('text-left')
+    expect(cells[1]).toHaveClass('text-left')
+    for (const td of cells.slice(2)) expect(td).toHaveClass('text-right', 'tabular-nums')
+  })
+
+  it('页头操作区放返回链接与名单 / 成绩页签', async () => {
+    setup('/admin/history/classes/c1?year=y25')
+    const header = (await screen.findByRole('heading', { level: 1 })).closest('header')!
+    const h = within(header as HTMLElement)
+    expect(h.getByRole('link', { name: '← 往年班级' })).toBeInTheDocument()
+    expect(h.getByRole('tab', { name: '名单' })).toBeInTheDocument()
   })
 
   it('切换考试重新请求成绩', async () => {

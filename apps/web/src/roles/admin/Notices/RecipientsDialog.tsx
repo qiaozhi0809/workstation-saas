@@ -22,7 +22,7 @@ export default function RecipientsDialog({
   })
   const tz = localTz()
   return (
-    <Modal open onClose={onClose} title={notice.title} className="max-w-md">
+    <Modal open onClose={onClose} title={notice.title} className="max-w-lg">
       {q.isError ? (
         <ErrorState
           title={q.error instanceof ApiError ? q.error.message : '加载失败'}
@@ -34,7 +34,7 @@ export default function RecipientsDialog({
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
           <section className="flex flex-col gap-1.5">
-            <h3 className="text-sm font-semibold">{`已读 ${q.data.read.length} 人`}</h3>
+            <h3 className="text-sm font-medium">{`已读 ${q.data.read.length} 人`}</h3>
             {q.data.read.length === 0 ? (
               <p className="text-sm text-muted-foreground">还没有人读过</p>
             ) : (
@@ -51,7 +51,7 @@ export default function RecipientsDialog({
             )}
           </section>
           <section className="flex flex-col gap-1.5">
-            <h3 className="text-sm font-semibold">{`未读 ${q.data.unread.length} 人`}</h3>
+            <h3 className="text-sm font-medium">{`未读 ${q.data.unread.length} 人`}</h3>
             {q.data.unread.length === 0 ? (
               <p className="text-sm text-muted-foreground">全部已读</p>
             ) : (
