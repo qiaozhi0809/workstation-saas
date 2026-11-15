@@ -81,7 +81,7 @@ export default function AttendanceBar(p: AttendanceBarProps) {
         <span
           aria-hidden="true"
           title={`实到 ${arrived}/${p.enrolled} · 请假 ${p.leave} · 缺勤 ${p.absent} · 迟到 ${p.late}`}
-          className="rounded-full border bg-muted px-2 py-0.5 text-xs font-semibold tabular-nums"
+          className="rounded-sm bg-muted px-2 py-0.5 text-xs font-medium tabular-nums"
         >
           {`${arrived}/${p.enrolled}`}
         </span>

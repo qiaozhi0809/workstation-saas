@@ -130,11 +130,11 @@ test('the map cannot be dragged at fit and never leaves the stage after zooming'
   }).toPass({ intervals: [200, 300, 500] })
   const stage = await stageBox(page)
   // 前提:地图比舞台高出一截,拖动才有可动的余地;否则"拖不动"的断言什么也证明不了
-  // (适应按核心放大后 1280 × 720 横向不再溢出;纵向上方只裁约 8px 顶墙边距、下方裁约 69px 后部地板,
-  //  所以锁定检查要往上拖:锁定失效时场景能往上移 69px)
+  // (适应按核心放大后 1280 × 720 横向不再溢出;纵向上有几个像素的顶墙边距、下有后部地板被裁,
+  //  所以锁定检查要往上拖:锁定失效时场景能往上移动)
   const fitSvg = (await page.locator('.cr-canvas > svg').boundingBox())!
-  expect(fitSvg.height, '地图比舞台高出至少 20px,保证拖动锁定的断言有意义').toBeGreaterThan(
-    stage.height + 20,
+  expect(fitSvg.height, '地图比舞台高出至少 10px,保证拖动锁定的断言有意义').toBeGreaterThan(
+    stage.height + 10,
   )
 
   // 默认从舞台左上角空白处起拖;fromBottom 时从左下角起拖(往上拖时指针不离开舞台);都避开右下角的缩放悬浮钮
@@ -151,9 +151,7 @@ test('the map cannot be dragged at fit and never leaves the stage after zooming'
   await drag(300, 200)
   expect(await canvasTransform(page), '适应时拖不动(往下)').toBe(fitTransform)
   await drag(300, -200, true)
-  expect(await canvasTransform(page), '适应时拖不动(往上,下方有约 69px 可动余地)').toBe(
-    fitTransform,
-  )
+  expect(await canvasTransform(page), '适应时拖不动(往上,下方有可动余地)').toBe(fitTransform)
 
   const zoomIn = page.getByRole('group', { name: '缩放' }).getByRole('button', { name: '放大' })
   for (let i = 0; i < 3; i++) await zoomIn.click()

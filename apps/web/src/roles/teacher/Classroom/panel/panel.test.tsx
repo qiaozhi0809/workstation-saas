@@ -186,3 +186,24 @@ it('does not render the exam section without exam.read', async () => {
   expect(within(dlg).queryByRole('heading', { name: '最近考试' })).toBeNull()
   expect(examsApi.gradebook).not.toHaveBeenCalled()
 })
+
+it('panel sections use medium-weight headings, a Checkbox and 32px icon buttons', async () => {
+  vi.mocked(todosApi.list).mockResolvedValue({
+    items: [{ id: 't1', content: '收回执', done: false, created_at: '2026-11-02T01:00:00Z' }],
+  })
+  setup()
+  await openPanel()
+  const box = await screen.findByRole('checkbox', { name: '收回执' })
+  // 换成 Checkbox:外层是 label,方框 appearance-none
+  expect(box.closest('label')).not.toBeNull()
+  expect(box.classList.contains('appearance-none')).toBe(true)
+  const del = screen.getByRole('button', { name: '删除 收回执' })
+  expect(del.classList.contains('h-8')).toBe(true)
+  expect(del.classList.contains('w-8')).toBe(true)
+  for (const name of ['待办', '最近点评', '最近考试']) {
+    const h3 = screen.getByRole('heading', { name })
+    expect(h3.classList.contains('font-medium')).toBe(true)
+    expect(h3.classList.contains('font-semibold')).toBe(false)
+  }
+  expect(screen.getByPlaceholderText('添加一件要做的事').classList.contains('h-8')).toBe(true)
+})

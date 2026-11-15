@@ -29,7 +29,7 @@ export default function ExamSection({
   const stats = latest ? examStats(latest, ids, grading) : null
   return (
     <Card className="p-3">
-      <h3 className="text-sm font-semibold">最近考试</h3>
+      <h3 className="text-sm font-medium">最近考试</h3>
       {book.isError && !book.data ? (
         <p role="alert" className="mt-1 text-xs text-destructive">
           成绩加载失败

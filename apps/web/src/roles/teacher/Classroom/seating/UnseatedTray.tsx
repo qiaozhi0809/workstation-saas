@@ -1,6 +1,6 @@
 import Avatar from '@/shared/components/ClassroomMap/art/Avatar'
 import { groupColor } from '@/shared/components/ClassroomMap/art/palette'
-import { badgeVariants } from '@/shared/components/ui/badge'
+import { Badge } from '@/shared/components/ui/badge'
 import { Button } from '@/shared/components/ui/button'
 import type { DraftStudent } from './draft'
 
@@ -31,12 +31,12 @@ export default function UnseatedTray({
   return (
     <section
       aria-label={title}
-      className="flex max-h-24 flex-wrap items-center gap-2 overflow-y-auto rounded-lg border bg-card px-3 py-2 text-sm text-card-foreground"
+      className="flex max-h-24 flex-wrap items-center gap-2 overflow-y-auto rounded-lg bg-muted px-3 py-2 text-sm"
     >
       {/* 文字仍是"待安排 (n)",人数部分用徽章显示 */}
-      <h3 className="flex items-center gap-1.5 font-semibold">
+      <h3 className="flex items-center gap-1.5 font-medium">
         {'待安排 '}
-        <span className={badgeVariants({ variant: 'neutral' })}>{`(${students.length})`}</span>
+        <Badge variant="neutral">{`(${students.length})`}</Badge>
       </h3>
       {students.length === 0 && <span className="text-muted-foreground">全部已安排</span>}
       {students.map((s) => (
@@ -46,7 +46,7 @@ export default function UnseatedTray({
           aria-pressed={s.enrollmentId === selectedId}
           disabled={busy}
           onClick={() => onSelect(s.enrollmentId)}
-          className="flex items-center gap-1 rounded-full border px-2 py-0.5 hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50 aria-pressed:border-primary aria-pressed:bg-accent"
+          className="flex items-center gap-1 h-8 rounded-sm bg-background px-2 hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50 aria-pressed:bg-accent aria-pressed:shadow-[inset_0_0_0_1px_hsl(var(--ws-primary))]"
         >
           <span aria-hidden="true">
             <Avatar

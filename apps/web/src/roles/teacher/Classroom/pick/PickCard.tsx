@@ -35,7 +35,7 @@ export default function PickCard({
     <div
       role="dialog"
       aria-label="随机点名"
-      className="absolute left-1/2 top-4 z-20 flex w-[min(360px,calc(100%-2rem))] -translate-x-1/2 flex-col items-center gap-3 rounded-xl border bg-popover px-6 py-4 text-popover-foreground shadow-lg"
+      className="absolute left-1/2 top-4 z-20 flex w-[min(360px,calc(100%-2rem))] -translate-x-1/2 flex-col items-center gap-3 rounded-lg bg-popover px-6 py-4 text-popover-foreground shadow-overlay"
     >
       {seat ? (
         <>
@@ -48,7 +48,7 @@ export default function PickCard({
               title={seat.name}
             />
             <div className="flex flex-col leading-6">
-              <span className="text-xl font-semibold">{seat.name}</span>
+              <span className="text-xl font-medium">{seat.name}</span>
               {!presenting && seat.student_no && (
                 <span className="text-sm text-muted-foreground">{`学号 ${seat.student_no}`}</span>
               )}
