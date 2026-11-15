@@ -675,6 +675,20 @@ describe('rail', () => {
     confirmSpy.mockRestore()
   })
 
+  it('picking the current class in the rail does not ask confirmLeave', async () => {
+    vi.mocked(classesApi.mine).mockResolvedValue(TWO_CLASSES())
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    renderLayout()
+    await waitFor(() => expect(useTeacherStore.getState().classId).toBe('a'))
+    useTeacherStore.getState().setUnsaved('seating', true)
+    fireEvent.click(await screen.findByRole('button', { name: /切换班级/ }))
+    const menu = screen.getByRole('menu', { name: '切换班级' })
+    fireEvent.click(within(menu).getByRole('menuitem', { name: '三年二班' }))
+    expect(confirmSpy).not.toHaveBeenCalled()
+    expect(useTeacherStore.getState().classId).toBe('a')
+    confirmSpy.mockRestore()
+  })
+
   it('rail shows week under class button', async () => {
     vi.mocked(classesApi.mine).mockResolvedValue(TWO_CLASSES())
     renderLayout()
