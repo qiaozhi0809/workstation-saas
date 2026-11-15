@@ -11,9 +11,9 @@ export interface PopoverProps {
     ButtonProps,
     'children' | 'onClick' | 'aria-expanded' | 'aria-haspopup' | 'aria-controls'
   >
-  /** 默认 'bottom';底部操作台用 'top' */
-  side?: 'top' | 'bottom'
-  /** 默认 'start' */
+  /** 默认 'bottom';底部操作台用 'top';侧栏里的浮层用 'right'(在触发按钮右侧弹出) */
+  side?: 'top' | 'bottom' | 'right'
+  /** 默认 'start';side 为 'right' 时管纵向:start 与触发按钮顶对齐,end 与底对齐 */
   align?: 'start' | 'end'
   /** 加在浮层上 */
   className?: string

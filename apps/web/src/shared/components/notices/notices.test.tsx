@@ -646,3 +646,50 @@ describe('AckStatsDialog', () => {
     expect(onClose).toHaveBeenCalled()
   })
 })
+
+describe('通知件跟随基线(M6 段 X)', () => {
+  it('AckForm:各回执按钮挂 touch-target(触屏 ≥ 44,桌面仍是 sm 尺寸)', () => {
+    renderForm(item())
+    expect(screen.getByRole('button', { name: '已知晓' })).toHaveClass('touch-target')
+    cleanup()
+    renderForm(item({ ack: choiceAck }))
+    expect(screen.getByRole('button', { name: '提交回执' })).toHaveClass('touch-target')
+    cleanup()
+    renderForm(item({ my_ack: { choice: null, note: null, acked_at: '2026-11-04T02:00:00Z' } }))
+    expect(screen.getByRole('button', { name: '修改' })).toHaveClass('touch-target')
+    fireEvent.click(screen.getByRole('button', { name: '修改' }))
+    expect(screen.getByRole('button', { name: '取消' })).toHaveClass('touch-target')
+  })
+
+  it('AckSettings:允许留言是 Checkbox 组件(label 内有 16px 方框),仍是 checkbox 角色', () => {
+    render(<Harness initial={{ kind: 'choice', options: ['', ''], allow_note: false }} />)
+    const box = screen.getByRole('checkbox', { name: '允许留言' })
+    expect(box.closest('label')).toHaveClass('min-h-8')
+    expect(box).toHaveClass('appearance-none')
+  })
+
+  it('AckSettings:添加 / 删除选项按钮在触屏下不小于 44', () => {
+    render(
+      <Harness initial={{ kind: 'choice', options: ['去', '不去', '再议'], allow_note: false }} />,
+    )
+    expect(screen.getByRole('button', { name: '添加选项' })).toHaveClass('touch-target')
+    expect(screen.getByRole('button', { name: '删除选项 1' })).toHaveClass('touch-target')
+  })
+
+  it('AckSettings:单选仍是原生 radio,点击区不小于 32 高', () => {
+    render(<Harness />)
+    const radio = screen.getByRole('radio', { name: '已知晓' })
+    expect(radio).toHaveAttribute('type', 'radio')
+    expect(radio.closest('label')).toHaveClass('min-h-8')
+  })
+
+  it('AckStatsDialog:名单是 Table 组件(紧凑行高,容器带 data-slot)', async () => {
+    renderStats(stats())
+    await screen.findByText('已读 2 / 4 · 已回执 1 / 4')
+    const table = screen.getByRole('table')
+    expect(table.closest('[data-slot="table-container"]')).not.toBeNull()
+    const row = within(table).getAllByRole('row')[1]
+    expect(row).toHaveClass('h-9')
+    expect(within(table).getAllByRole('columnheader')[0]).toHaveAttribute('scope', 'col')
+  })
+})

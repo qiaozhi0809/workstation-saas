@@ -38,8 +38,9 @@ export function ScoreRadar({
         contentStyle={{
           background: 'hsl(var(--ws-popover))',
           color: 'hsl(var(--ws-popover-foreground))',
-          border: '1px solid hsl(var(--ws-border))',
-          borderRadius: 6,
+          border: 'none',
+          borderRadius: 12,
+          boxShadow: 'var(--ws-shadow-overlay)',
           fontSize: 12,
         }}
         formatter={(v, name) => [v, config[String(name)]?.label ?? name]}
