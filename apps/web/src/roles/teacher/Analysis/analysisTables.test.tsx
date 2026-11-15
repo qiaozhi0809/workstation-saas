@@ -199,7 +199,7 @@ describe('table alignment', () => {
     const detail = within(await screen.findByRole('region', { name: '各科明细' }))
     for (const region of [rank, detail]) {
       const container = region.getByRole('table').closest('[data-slot="table-container"]')
-      expect(container).toHaveClass('shadow-[none]', 'bg-transparent')
+      expect(container).toHaveClass('shadow-none', 'bg-transparent')
       expect(container).not.toHaveClass('shadow-surface')
     }
   })

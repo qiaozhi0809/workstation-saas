@@ -43,7 +43,7 @@ export function SubjectTable({
     <Card>
       <section aria-label="各科明细">
         <h2 className="px-3 pt-4 text-base font-medium">各科明细</h2>
-        <Table className="mt-2" containerClassName="rounded-none bg-transparent shadow-[none]">
+        <Table className="mt-2" containerClassName="rounded-none bg-transparent shadow-none">
           <TableHead>
             <TableRow>
               {heads.map((h, i) => (
